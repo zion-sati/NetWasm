@@ -88,7 +88,7 @@ internal sealed class NativeCallbackThunkEmitter(
                     new(
                         callback.Method.Definition.DeclaringType,
                         callback.Method.DeclaringType,
-                        moduleData,
+                        Lookups.Of(moduleData.StaticInitializerGuards),
                         IsMethodInvocation: true),
                     code.Instructions,
                     functionIndices);

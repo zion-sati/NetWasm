@@ -63,7 +63,7 @@ public sealed class WasmLocalLayoutPlannerTests
             2,
             ImmutableHashSet.Create(0));
 
-        Assert.Equal(30, locals.Length);
+        Assert.Equal(32, locals.Length);
         Assert.Equal(
             [
                 CliValueKind.ManagedAddress,
@@ -109,8 +109,9 @@ public sealed class WasmLocalLayoutPlannerTests
         Assert.Equal(CliValueKind.I4, locals[0]);
         Assert.Equal(CliValueKind.ManagedAddress, locals[1]);
         Assert.Equal(CliValueKind.ManagedReference, locals[2]);
-        Assert.Equal(20, locals.Length);
-        Assert.Equal(WasmLocalLayoutPlanner.TemporaryLocals, locals.TakeLast(8));
+        Assert.Equal(22, locals.Length);
+        Assert.Equal(WasmLocalLayoutPlanner.TemporaryLocals, locals.TakeLast(10));
+        Assert.Equal([CliValueKind.ManagedAddress, CliValueKind.V128], locals.TakeLast(2));
     }
 
     [Fact]

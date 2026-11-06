@@ -68,6 +68,9 @@ internal sealed class CompilationRootMapBuilder(
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(fields);
         ArgumentNullException.ThrowIfNull(methods);
+        var dispatchCallSites = Lookups.Of(program.DispatchCallSites);
+        var allocatingMethods = Lookups.Of(program.AllocatingMethods);
+        var allocatingConstructedMethods = Lookups.Of(program.ConstructedAllocatingMethods);
         // Compiled units are recorded and restored by root-map workers, so a compile that
         // keeps them uses one even without parallelism.
         if (_parallelism.WorkerCount == 1 && units?.Directory is null)
@@ -79,21 +82,21 @@ internal sealed class CompilationRootMapBuilder(
                 layouts.Snapshot.TypeLayouts.ValueLayoutState);
             var values = _valueProviders.Create(valueResolver);
             var analyzer = _analyzers.Create(
-                types, fields, methods, values, program.DispatchCallSites, typeClassifier);
+                types, fields, methods, values, dispatchCallSites, typeClassifier);
             var serial = program with
             {
                 RootMaps = program.Methods.ToImmutableDictionary(
                     pair => pair.Key,
                     pair => analyzer.Analyze(new RootMapAnalysisRequest(
                         pair.Value,
-                        program.AllocatingMethods,
-                        program.ConstructedAllocatingMethods))),
+                        allocatingMethods,
+                        allocatingConstructedMethods))),
                 ConstructedRootMaps = program.ConstructedMethods.ToImmutableDictionary(
                     pair => pair.Key,
                     pair => analyzer.Analyze(new RootMapAnalysisRequest(
                         pair.Value,
-                        program.AllocatingMethods,
-                        program.ConstructedAllocatingMethods)),
+                        allocatingMethods,
+                        allocatingConstructedMethods)),
                     StringComparer.Ordinal),
             };
             _invariants.Validate(types, fields, methods, serial, typeClassifier);
@@ -112,15 +115,15 @@ internal sealed class CompilationRootMapBuilder(
         var workers = forkSet.Workers.Select(fork =>
         {
             var recorder = units?.Directory is null ? null : new UnitRootMapRecorder(units, fork.Values,
-                program.DispatchCallSites, program.AllocatingMethods, program.ConstructedAllocatingMethods, fields);
+                dispatchCallSites, allocatingMethods, allocatingConstructedMethods, fields);
             return (Analyzer: _analyzers.Create(types, fields, methods, recorder?.Values ?? fork.Values,
-                recorder?.DispatchCallSites ?? program.DispatchCallSites, typeClassifier), Units: recorder);
+                recorder?.DispatchCallSites ?? dispatchCallSites, typeClassifier), Units: recorder);
         }).ToArray();
         var results = _work.Execute(workers, bodies.Length, (worker, index) => worker.Units is { } recorder
             ? recorder.Map(bodies[index], () => worker.Analyzer.Analyze(new RootMapAnalysisRequest(
                 bodies[index], recorder.AllocatingMethods, recorder.AllocatingConstructedMethods)))
             : worker.Analyzer.Analyze(new RootMapAnalysisRequest(
-                bodies[index], program.AllocatingMethods, program.ConstructedAllocatingMethods)));
+                bodies[index], allocatingMethods, allocatingConstructedMethods)));
         var ordinaryMaps = ImmutableDictionary.CreateBuilder<EntityKey,
             MethodRootMap>();
         for (var index = 0; index < ordinary.Length; index++)

@@ -63,7 +63,7 @@ public sealed class ObjectConstructionEmitterTests
             Target = original.Target with
             {
                 RuntimeImportSelection = selection,
-                Finalization = new FinalizationPlan(ImmutableHashSet.Create(9), false),
+                FinalizableTypeIds = Lookups.Of(ImmutableHashSet.Create(9)),
             },
         };
         var writer = new RecordingInstructionWriter();

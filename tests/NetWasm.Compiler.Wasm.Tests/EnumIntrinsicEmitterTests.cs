@@ -531,7 +531,6 @@ public sealed class EnumIntrinsicEmitterTests
                 CliTypeIdentity.Named(EnumProgram.TypeKey.Assembly, "Tests", "State", true, underlyingType.StackKind),
                 7, 0, underlyingType, false, false, [])];
         public WasmTargetLayout Target => WasmTargetLayout.Wasm32;
-        public int ReferenceArrayTypeId => 0;
         public int StringTypeId => 0;
         public int TypeTypeId => 0;
         public int StringLengthOffset => 0;

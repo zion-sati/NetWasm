@@ -33,7 +33,7 @@ internal sealed record ReachabilityInstructionAnalysis(
     ImmutableArray<FieldInstanceModel> Fields,
     ImmutableArray<ReachabilityDispatch> Dispatches,
     ImmutableArray<MethodInstanceModel> CallableMethods,
-    ImmutableArray<ManagedCallSite> CallSites = default)
+    ImmutableArray<ManagedCallSite> CallSites)
 {
     public ImmutableArray<MethodInstanceModel> MethodDescriptors { get; init; } = [];
 
@@ -59,8 +59,9 @@ internal sealed record ReachableMethodAnalysis(
     ImmutableArray<ReachabilityExceptionRequirement> Exceptions,
     ReachabilityInstructionAnalysis Instructions)
 {
-    // What the method adds to the whole program, fingerprinted by the worker that analysed it.
-    public NetWasm.Compiler.Metadata.Inputs.InputFingerprint? Contribution { get; init; }
+    // What the method adds to the whole program, fingerprinted by the worker that analysed it
+    // (ReachableMethodAnalyzer, which makes every analysis).
+    public NetWasm.Compiler.Metadata.Inputs.InputFingerprint Contribution { get; init; }
 }
 
 internal sealed record ReachabilityImportAnalysis(

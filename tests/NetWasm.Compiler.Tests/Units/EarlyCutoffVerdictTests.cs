@@ -46,6 +46,44 @@ public sealed class EarlyCutoffVerdictTests
         Assert.Contains("M changed what it adds",
             Verdict(Inputs(10, contribution: 5), Inputs(11, contribution: 6)));
 
+    // An edited method the program no longer reaches adds nothing it added before.
+    [Fact]
+    public void AnEditedMethodNoLongerAnalysedStopsIt() =>
+        Assert.Contains("M is no longer analysed",
+            Verdict(Inputs(10, contribution: 5), Inputs(11)), StringComparison.Ordinal);
+
+    [Fact]
+    public void TheAccountNamesEachEditedInstanceThatChangedOrWentAway()
+    {
+        static MethodContributionRecord Record(int token, ulong fingerprint) => new("App", token, new(fingerprint, fingerprint));
+        var before = new CompilationInputs([new("App", new(1, 1), new(Shape, Bodies(10)))])
+        {
+            Contributions = new Dictionary<string, MethodContributionRecord>
+            {
+                ["Kept"] = Record(0x06000001, 1),
+                ["Changed"] = Record(0x06000001, 2),
+                ["Gone"] = Record(0x06000001, 3),
+            }.ToFrozenDictionary(),
+        };
+        var after = new CompilationInputs([new("App", new(2, 2), new(Shape, Bodies(11)))])
+        {
+            Contributions = new Dictionary<string, MethodContributionRecord>
+            {
+                ["Kept"] = Record(0x06000001, 1),
+                ["Changed"] = Record(0x06000001, 9),
+                ["New"] = Record(0x06000001, 4),
+                ["Unedited"] = Record(0x06000002, 5),
+            }.ToFrozenDictionary(),
+        };
+
+        var account = CompilationInputRecorder.DescribeContributions(before, after, CompilationInputChanges.Between(before, after));
+
+        Assert.StartsWith("contributions: 1 kept, 3 changed: ", account, StringComparison.Ordinal);
+        Assert.Contains("Gone (no longer analysed)", account, StringComparison.Ordinal);
+        Assert.Equal("contributions: no edited methods to compare\n", CompilationInputRecorder.DescribeContributions(
+            before, before, CompilationInputChanges.Between(before, before)));
+    }
+
     private static string Verdict(CompilationInputs before, CompilationInputs after) =>
         CompilationInputRecorder.DescribeCutoff(
             new("units", before, after, CompilationInputChanges.Between(before, after)),

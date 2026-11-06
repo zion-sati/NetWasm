@@ -80,7 +80,8 @@ public sealed class DecimalCompilationTests
             new TransientAggregatePromotionPlanner(
                 methods, new RuntimeIntrinsicRegistry(
                     MetadataCompilationTestActors.Symbols(snapshot), snapshot.Methods),
-                values, CreateInstanceFields(compilation.Layouts))).Create(structured);
+                values, CreateInstanceFields(compilation.Layouts)),
+            new SimdValueFrameSlotAlignmentResolver()).Create(structured);
         Assert.Empty(layout.ArgumentOffsets);
         Assert.Empty(layout.NativeArgumentOffsets);
         Assert.Empty(layout.MemberResultOffsets);

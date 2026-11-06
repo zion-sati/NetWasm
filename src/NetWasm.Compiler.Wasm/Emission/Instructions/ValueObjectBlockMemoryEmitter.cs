@@ -193,7 +193,7 @@ internal sealed class ValueObjectBlockMemoryEmitter(
             layouts.Target,
             0,
             type,
-            layout.Size);
+            layout.Size, scratch: request.Context.VectorScratch);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(request.Context, slot, type.StackKind)))));
         request.Stack[slot] = type.StackKind;
     }
@@ -227,7 +227,7 @@ internal sealed class ValueObjectBlockMemoryEmitter(
                 layouts.Target,
                 0,
                 type,
-                layout.Size);
+                layout.Size, scratch: request.Context.VectorScratch);
         }
         request.Stack.RemoveRange(destination, 2);
     }

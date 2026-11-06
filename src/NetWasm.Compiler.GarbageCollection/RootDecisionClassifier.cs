@@ -12,7 +12,7 @@ public sealed class RootDecisionClassifier(
     ITypeRepository types,
     IFieldRepository fields,
     IMethodRepository methods,
-    IReadOnlyDictionary<string, DispatchCallSiteModel>? dispatchCallSites,
+    IEntryLookup<string, DispatchCallSiteModel>? dispatchCallSites,
     IRuntimeAllocationSafepointClassifier runtimeSafepoints,
     ITypeClassifier typeClassifier,
     IMethodInitializationTriggerClassifier initializationTriggers,
@@ -25,8 +25,8 @@ public sealed class RootDecisionClassifier(
         fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly IMethodRepository _methods =
         methods ?? throw new ArgumentNullException(nameof(methods));
-    private readonly IReadOnlyDictionary<string, DispatchCallSiteModel> _dispatchCallSites =
-        dispatchCallSites ?? ImmutableDictionary<string, DispatchCallSiteModel>.Empty;
+    private readonly IEntryLookup<string, DispatchCallSiteModel> _dispatchCallSites =
+        dispatchCallSites ?? Lookups.NoEntries<string, DispatchCallSiteModel>();
     private readonly IRuntimeAllocationSafepointClassifier _runtimeSafepoints =
         runtimeSafepoints ?? throw new ArgumentNullException(nameof(runtimeSafepoints));
 
@@ -120,8 +120,8 @@ public sealed class RootDecisionClassifier(
     private bool IsAllocatingStaticInitialization(
         ManagedMethodBody accessor,
         CilInstruction instruction,
-        ISet<EntityKey> allocatingMethods,
-        ISet<string> allocatingConstructedMethods)
+        IMembership<EntityKey> allocatingMethods,
+        IMembership<string> allocatingConstructedMethods)
     {
         var field = instruction.Operand switch
         {

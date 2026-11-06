@@ -59,7 +59,7 @@ internal sealed class NativeCallEmitter(
         }
         var functionIndex = functionIndices.Resolve(request.Method);
         _initialization.Emit(new(request.Method.Definition.DeclaringType,
-            request.Method.DeclaringType, instruction.Target.ModuleData, IsMethodInvocation: true),
+            request.Method.DeclaringType, instruction.Target.StaticInitializerGuards, IsMethodInvocation: true),
             code, functionIndices);
         foreach (var parameter in plan.Parameters)
         {
@@ -69,7 +69,7 @@ internal sealed class NativeCallEmitter(
             EmitArgument(parameter);
             if (parameter.Value.LogicalType.StackKind == CliValueKind.V128)
             {
-                ManagedMemoryEmitter.EmitVectorStore(code, 0, parameter.Value.Size);
+                ManagedMemoryEmitter.EmitVectorStore(code, 0, parameter.Value.Size, scratch: instruction.Context.VectorScratch);
                 continue;
             }
             _addresses.Emit(code, parameter.Value.Size);
@@ -140,7 +140,7 @@ internal sealed class NativeCallEmitter(
             else if (result.LogicalType.StackKind == CliValueKind.V128)
             {
                 EmitFrameAddress(resultOffset);
-                ManagedMemoryEmitter.EmitVectorLoad(code, 0, result.Size);
+                ManagedMemoryEmitter.EmitVectorLoad(code, 0, result.Size, scratch: instruction.Context.VectorScratch);
             }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)StackLocal(instruction.Context,

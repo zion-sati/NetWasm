@@ -751,7 +751,7 @@ public sealed class CoreModelTests
         Assert.Equal(0, staticDataLayout.TypeFactsTableAddress);
         Assert.Equal(0, staticDataLayout.TypeFactsTableCount);
         // A layout without static Type objects has none to name.
-        Assert.Empty(staticDataLayout.TypeObjectAddresses);
+        Assert.False(staticDataLayout.TypeObjectAddresses.TryGetValue("Program::Point", out _));
         Assert.Equal(0, staticDataLayout.TypeObjectTableAddress);
         Assert.Equal(0, staticDataLayout.TypeObjectCacheAddress);
         Assert.Equal(0, staticDataLayout.TypeObjectCount);
@@ -962,7 +962,6 @@ public sealed class CoreModelTests
         public StaticFieldLayout GetStaticFieldLayout(FieldInstanceModel field) => new(11);
         public StaticFieldLayout GetStaticFieldLayout(EntityKey field) => new(11);
         public StringLayout GetStringLayout(string value) => new(0, value.Length, 8);
-        public int ReferenceArrayTypeId => 1;
         public int StringTypeId => 2;
         public int TypeTypeId => 3;
         public int DelegateTargetOffset => -1;

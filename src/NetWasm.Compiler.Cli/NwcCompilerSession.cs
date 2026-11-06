@@ -21,14 +21,19 @@ internal sealed class NwcCompilerSessionFactory(IConsole console) : INwcCompiler
     private readonly IConsole _console = console ?? throw new ArgumentNullException(nameof(console));
 
     public INwcCompilerSession Create(ExternalToolCommand? wasmTools) =>
-        NwcCompilerComposition.CreateSession(_console, wasmTools);
+        NwcCompilerComposition.CreateSession(_console, wasmTools, CachingWasmTools.DefaultDirectory());
 }
 
 // The composition root of one compilation: the compiler with the wasm-tools the
-// options name, and nwc's console as a logging provider beside the diagnostic log.
+// options name, cached where the host keeps caches (if it has a place), and nwc's
+// console as a logging provider beside the diagnostic log.
 internal static class NwcCompilerComposition
 {
-    public static NwcCompilerSession CreateSession(IConsole console, ExternalToolCommand? wasmTools)
+    // The wasm-tools a command names, cached in the directory, if there is one.
+    internal static IWasmTools Tools(IWasmTools tools, ExternalToolCommand command, string? cacheDirectory) =>
+        cacheDirectory is { } cache ? new CachingWasmTools(tools, command, cache) : tools;
+
+    public static NwcCompilerSession CreateSession(IConsole console, ExternalToolCommand? wasmTools, string? cacheDirectory)
     {
         var services = new ServiceCollection().AddNetWasmCompiler();
         services.AddLogging(logging => logging
@@ -37,15 +42,8 @@ internal static class NwcCompilerComposition
         if (wasmTools is not null)
         {
             services.RemoveAll<IWasmTools>();
-            services.AddSingleton<IWasmTools>(provider =>
-            {
-                var tools = new ProcessWasmTools(
-                    provider.GetRequiredService<IExternalToolRunner>(),
-                    wasmTools);
-                return CachingWasmTools.DefaultDirectory() is { } cache
-                    ? new CachingWasmTools(tools, wasmTools, cache)
-                    : tools;
-            });
+            services.AddSingleton<IWasmTools>(provider => Tools(
+                new ProcessWasmTools(provider.GetRequiredService<IExternalToolRunner>(), wasmTools), wasmTools, cacheDirectory));
         }
         var provider = services.BuildServiceProvider();
         return new NwcCompilerSession(provider.GetRequiredService<INetWasmModuleCompiler>(), provider);

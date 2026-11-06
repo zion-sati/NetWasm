@@ -23,7 +23,6 @@ public sealed class ManagedLayoutSnapshot :
         TypeLayouts = types;
         StaticData = staticData;
         Target = types.Target;
-        ReferenceArrayTypeId = GetTypeId("System.Array");
         StringTypeId = GetTypeId("System.String");
         TypeTypeId = GetTypeId("System.Type");
     }
@@ -31,7 +30,6 @@ public sealed class ManagedLayoutSnapshot :
     internal ManagedTypeLayouts TypeLayouts { get; }
     internal ManagedStaticData StaticData { get; }
     public WasmTargetLayout Target { get; }
-    public int ReferenceArrayTypeId { get; }
     public int StringTypeId { get; }
     public int TypeTypeId { get; }
     public int StaticDataEnd => StaticData.EndAddress;

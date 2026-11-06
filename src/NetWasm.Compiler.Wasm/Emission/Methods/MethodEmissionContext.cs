@@ -99,4 +99,8 @@ internal sealed record MethodEmissionContext(
 
     // The exception-frame token of a catch the compiler adds inside a method body.
     public int InlineCatchFrame => checked(DispatcherProgramCounter + 2);
+
+    // The address and value a 12-byte vector load or store moves through.
+    public VectorScratch VectorScratch =>
+        new(checked(DispatcherProgramCounter + 3), checked(DispatcherProgramCounter + 4));
 }

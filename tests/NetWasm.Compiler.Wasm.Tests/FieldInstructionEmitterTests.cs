@@ -445,6 +445,70 @@ public sealed class FieldInstructionEmitterTests
         Assert.Contains("spans the whole vector", exception.Message, StringComparison.Ordinal);
     }
 
+    // A vector field at the start of a vector, as Plane's Normal, is the vector
+    // itself: its lanes are the vector's low lanes and the rest are undefined.
+    [Fact]
+    public void AVectorFieldAtTheStartIsTheVectorItself()
+    {
+        var fieldType = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector3", isValueType: true);
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(fieldType), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(0) { Size = 12, Type = fieldType }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey));
+
+        Emit(emitter, request);
+
+        Assert.Equal(CliValueKind.V128, fieldType.StackKind);
+        Assert.Equal([CliValueKind.V128], request.Stack);
+        Assert.Empty(((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions());
+    }
+
+    [Fact]
+    public void AVectorFieldAfterTheStartIsRejected()
+    {
+        var fieldType = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector2", isValueType: true);
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(fieldType), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(8) { Size = 8, Type = fieldType }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey));
+
+        var exception = Assert.Throws<CompilerException>(() => Emit(emitter, request));
+
+        Assert.Contains("does not start the vector", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions());
+    }
+
+    // A struct field of a vector, as Plane's Normal, copies out lane by lane to
+    // its temporary; one at the frame's start is the frame itself.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(16)]
+    public void AVectorsStructFieldCopiesOutToItsTemporary(int temporary)
+    {
+        var valueType = CreateValueType();
+        var context = CreateMethodEmissionContext() with
+        {
+            ValueLayout = new ValueFrameLayout(
+                32,
+                [],
+                [],
+                ImmutableDictionary<int, int>.Empty.Add(0, temporary),
+                []),
+        };
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(valueType), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(0) { Size = 12, Type = valueType }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey), context);
+
+        Emit(emitter, request);
+
+        var opcodes = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions().Select(static instruction => instruction.Opcode)
+            .ToArray();
+        Assert.Equal(temporary != 0, opcodes.Contains(WasmOpcodes.I32Add));
+        Assert.Equal(3, opcodes.Count(static opcode => opcode == WasmOpcodes.SimdPrefixed));
+        Assert.Equal(CliValueKind.ValueType, request.Stack[0]);
+    }
+
     // A struct field of a vector, as Plane's Normal, copies out whole 32-bit
     // lanes; every System.Numerics vector is made of them.
     [Theory]

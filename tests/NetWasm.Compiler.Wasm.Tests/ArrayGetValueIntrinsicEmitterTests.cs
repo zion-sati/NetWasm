@@ -90,7 +90,6 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
             return false;
         }
         public ObjectLayout GetObjectLayout(EntityKey type) => layouts.GetObjectLayout(type);
-        public int ReferenceArrayTypeId => layouts.ReferenceArrayTypeId;
         public int StringTypeId => layouts.StringTypeId;
         public int TypeTypeId => layouts.TypeTypeId;
     }

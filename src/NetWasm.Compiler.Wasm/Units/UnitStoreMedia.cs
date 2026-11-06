@@ -2,9 +2,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -95,8 +97,10 @@ internal static class UnitStoreFiles
 /// its pages come straight from the page cache the last compile filled and nothing lands on
 /// the GC heap. The OS is asked to read each mapping ahead.
 /// </summary>
-internal sealed class MappedFileUnitStoreLoader : IUnitStoreLoader
+internal sealed class MappedFileUnitStoreLoader(IUnitMemoryPrefetcher prefetcher) : IUnitStoreLoader
 {
+    private readonly IUnitMemoryPrefetcher _prefetcher = prefetcher ?? throw new ArgumentNullException(nameof(prefetcher));
+
     public UnitStore Load(string location)
     {
         ArgumentException.ThrowIfNullOrEmpty(location);
@@ -105,9 +109,8 @@ internal sealed class MappedFileUnitStoreLoader : IUnitStoreLoader
         if (!UnitStoreFormat.IsSupported || !File.Exists(manifest))
             return UnitStore.Empty;
         return UnitStore.Over(File.ReadAllBytes(manifest),
-            sequence => new MappedUnitSegmentMemory(UnitStoreFiles.Segment(directory, sequence)));
+            sequence => new MappedUnitSegmentMemory(UnitStoreFiles.Segment(directory, sequence), _prefetcher));
     }
-
 }
 
 /// <summary>
@@ -153,32 +156,48 @@ internal sealed class FileUnitKeptCompileLoader : IUnitKeptCompileLoader
 /// <summary>
 /// Desktop committing: the new segment and the manifest are each written in one sequential
 /// pass beside their final name and moved into place, so a reader never sees a partial file;
-/// then the segments the manifest no longer lists are deleted.
+/// then the segments the manifest no longer lists are deleted. A segment another process
+/// still holds stays for the next compile to delete, and the summary names it.
 /// </summary>
-internal sealed class FileUnitStoreCommitter : IUnitStoreCommitter
+internal sealed class FileUnitStoreCommitter(IUnitFileDeleter files) : IUnitStoreCommitter
 {
+    private readonly IUnitFileDeleter _files = files ?? throw new ArgumentNullException(nameof(files));
+
     public void Commit(string location, UnitStoreChange change)
     {
         ArgumentException.ThrowIfNullOrEmpty(location);
         var directory = UnitStoreFiles.Directory(location);
         System.IO.Directory.CreateDirectory(directory);
+        var summary = change.Summary;
         if (change.Manifest is { } manifest)
         {
             if (change.Segment is { } segment)
                 WriteAside(UnitStoreFiles.Segment(directory, change.Sequence), segment.WriteTo);
             WriteAside(UnitStoreFiles.Manifest(directory), stream => stream.Write(manifest));
+            var stale = new List<string>();
             foreach (var file in System.IO.Directory.EnumerateFiles(directory, "units-*.seg"))
             {
                 if (!UnitStoreFiles.TryParseSequence(file, out var sequence) ||
                     !change.LiveSequences.Contains(sequence))
                 {
-                    TryDelete(file);
+                    stale.Add(file);
                 }
             }
             // The single-file store of earlier versions.
-            TryDelete(Path.Combine(directory, "units.bin"));
+            stale.Add(Path.Combine(directory, "units.bin"));
+            foreach (var file in stale)
+            {
+                try
+                {
+                    _files.Delete(file);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    summary += $"kept {Path.GetFileName(file)}: another process holds it\n";
+                }
+            }
         }
-        File.WriteAllText(Path.Combine(directory, "last-compile.txt"), change.Summary);
+        File.WriteAllText(Path.Combine(directory, "last-compile.txt"), summary);
     }
 
     internal static void WriteAside(string path, Action<Stream> write)
@@ -191,21 +210,18 @@ internal sealed class FileUnitStoreCommitter : IUnitStoreCommitter
         }
         File.Move(staging, path, overwrite: true);
     }
+}
 
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (IOException)
-        {
-            // Another process still maps it; the next compile deletes it.
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
+internal interface IUnitFileDeleter
+{
+    // Deletes a file, if there is one; throws IOException or UnauthorizedAccessException
+    // when another process holds it.
+    void Delete(string path);
+}
+
+internal sealed class UnitFileDeleter : IUnitFileDeleter
+{
+    public void Delete(string path) => File.Delete(path);
 }
 
 /// <summary>A segment file mapped read-only into the address space.</summary>
@@ -217,8 +233,9 @@ internal sealed unsafe class MappedUnitSegmentMemory : UnitSegmentMemory
     private readonly long _length;
     private bool _acquired;
 
-    public MappedUnitSegmentMemory(string path)
+    public MappedUnitSegmentMemory(string path, IUnitMemoryPrefetcher prefetcher)
     {
+        ArgumentNullException.ThrowIfNull(prefetcher);
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
             FileShare.Read | FileShare.Delete, 1, FileOptions.None);
         MemoryMappedFile? file = null;
@@ -235,7 +252,7 @@ internal sealed unsafe class MappedUnitSegmentMemory : UnitSegmentMemory
             view.SafeMemoryMappedViewHandle.AcquirePointer(ref address);
             _acquired = true;
             _pointer = address + view.PointerOffset;
-            UnitMemoryPrefetch.Request(address, (nuint)(_length + view.PointerOffset));
+            _ = prefetcher.Prefetch(address, (nuint)(_length + view.PointerOffset));
         }
         catch
         {
@@ -266,70 +283,101 @@ internal sealed unsafe class MappedUnitSegmentMemory : UnitSegmentMemory
 
 /// <summary>
 /// Asks the OS to read a mapped range ahead, so a cold segment streams in sequentially
-/// instead of faulting page by page: madvise(MADV_WILLNEED) on Linux and macOS,
-/// PrefetchVirtualMemory on Windows. A host without either reads on demand.
+/// instead of faulting page by page.
 /// </summary>
-internal static unsafe class UnitMemoryPrefetch
+internal unsafe interface IUnitMemoryPrefetcher
 {
-    private const int WillNeed = 3; // MADV_WILLNEED on Linux and macOS
-    private static readonly nint Function = Resolve();
+    // Whether the OS took the request; a mapping reads on demand either way.
+    bool Prefetch(byte* address, nuint length);
+}
 
-    public static void Request(byte* address, nuint length)
+/// <summary>madvise(MADV_WILLNEED), on Linux and macOS.</summary>
+internal sealed unsafe class AdvisingUnitMemoryPrefetcher(nint madvise) : IUnitMemoryPrefetcher
+{
+    private const int WillNeed = 3;
+
+    public bool Prefetch(byte* address, nuint length) =>
+        ((delegate* unmanaged<void*, nuint, int, int>)madvise)(address, length, WillNeed) == 0;
+}
+
+/// <summary>PrefetchVirtualMemory, on Windows, for the current process.</summary>
+internal sealed unsafe class VirtualMemoryUnitMemoryPrefetcher(nint prefetchVirtualMemory) : IUnitMemoryPrefetcher
+{
+    // The current process's pseudo-handle.
+    private const nint CurrentProcess = -1;
+
+    public bool Prefetch(byte* address, nuint length)
     {
-        if (Function == 0 || length == 0)
-            return;
-        if (OperatingSystem.IsWindows())
-        {
-            var range = new MemoryRange { Address = address, Size = length };
-            // The current process's pseudo-handle is -1.
-            _ = ((delegate* unmanaged[Stdcall]<nint, nuint, MemoryRange*, uint, int>)Function)(-1, 1, &range, 0);
-        }
-        else
-        {
-            _ = ((delegate* unmanaged<void*, nuint, int, int>)Function)(address, length, WillNeed);
-        }
+        var range = new MemoryRange { Address = address, Size = length };
+        return ((delegate* unmanaged[Stdcall]<nint, nuint, MemoryRange*, uint, int>)prefetchVirtualMemory)(
+            CurrentProcess, 1, &range, 0) != 0;
     }
 
-    private static nint Resolve()
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MemoryRange
     {
-        string[] libraries;
-        string export;
-        if (OperatingSystem.IsLinux())
-        {
-            libraries = ["libc.so.6", "libc"];
-            export = "madvise";
-        }
-        else if (OperatingSystem.IsMacOS())
-        {
-            libraries = ["/usr/lib/libSystem.B.dylib"];
-            export = "madvise";
-        }
-        else if (OperatingSystem.IsWindows())
-        {
-            libraries = ["kernel32.dll"];
-            export = "PrefetchVirtualMemory";
-        }
-        else
-        {
-            return 0;
-        }
-        foreach (var library in libraries)
+        public void* Address;
+        public nuint Size;
+    }
+}
+
+/// <summary>A host with neither reads on demand.</summary>
+internal sealed unsafe class NoUnitMemoryPrefetcher : IUnitMemoryPrefetcher
+{
+    public bool Prefetch(byte* address, nuint length) => false;
+}
+
+/// <summary>A native function by name, in the first of its libraries that loads.</summary>
+internal sealed record NativeExport(ImmutableArray<string> Libraries, string Name);
+
+internal interface INativeExportResolver
+{
+    // The export's address, or 0 when none of its libraries has it.
+    nint Resolve(NativeExport export);
+}
+
+internal sealed class NativeLibraryExportResolver : INativeExportResolver
+{
+    public nint Resolve(NativeExport export)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+        foreach (var library in export.Libraries)
         {
             if (NativeLibrary.TryLoad(library, out var handle) &&
-                NativeLibrary.TryGetExport(handle, export, out var function))
+                NativeLibrary.TryGetExport(handle, export.Name, out var function))
             {
                 return function;
             }
         }
         return 0;
     }
+}
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MemoryRange
-    {
-        public void* Address;
-        public nuint Size;
-    }
+internal interface IUnitMemoryPrefetcherFactory
+{
+    // The prefetcher for a platform: its OS call, when the OS has it.
+    IUnitMemoryPrefetcher Create(OSPlatform platform);
+}
+
+internal sealed class UnitMemoryPrefetcherFactory(INativeExportResolver exports) : IUnitMemoryPrefetcherFactory
+{
+    private readonly INativeExportResolver _exports = exports ?? throw new ArgumentNullException(nameof(exports));
+
+    // Each platform's call, and the prefetcher that makes it.
+    internal static readonly ImmutableDictionary<OSPlatform, (NativeExport Export, Func<nint, IUnitMemoryPrefetcher> Create)> Platforms =
+        ImmutableDictionary<OSPlatform, (NativeExport, Func<nint, IUnitMemoryPrefetcher>)>.Empty
+            .Add(OSPlatform.Linux, (new(["libc.so.6", "libc"], "madvise"), function => new AdvisingUnitMemoryPrefetcher(function)))
+            .Add(OSPlatform.OSX, (new(["/usr/lib/libSystem.B.dylib"], "madvise"), function => new AdvisingUnitMemoryPrefetcher(function)))
+            .Add(OSPlatform.Windows, (new(["kernel32.dll"], "PrefetchVirtualMemory"),
+                function => new VirtualMemoryUnitMemoryPrefetcher(function)));
+
+    // The platform this process runs on, or another when it is none of them.
+    public static OSPlatform Host() => Platforms.Keys.FirstOrDefault(RuntimeInformation.IsOSPlatform, OSPlatform.Create("OTHER"));
+
+    public IUnitMemoryPrefetcher Create(OSPlatform platform) =>
+        Platforms.TryGetValue(platform, out var call) && _exports.Resolve(call.Export) is var function and not 0
+            ? call.Create(function)
+            : new NoUnitMemoryPrefetcher();
 }
 
 /// <summary>
@@ -509,19 +557,6 @@ internal sealed class UnitStoreMemory
         var bytes = pinned ? GC.AllocateUninitializedArray<byte>(length, pinned: true) : new byte[length];
         reader.BaseStream.ReadExactly(bytes);
         return bytes;
-    }
-
-    internal IReadOnlyCollection<int> Sequences(string location)
-    {
-        lock (_gate)
-        {
-            var sequences = new List<int>();
-            foreach (var (key, _) in _segments)
-            {
-                if (key.Location == location) sequences.Add(key.Sequence);
-            }
-            return sequences;
-        }
     }
 
     internal void Apply(string location, UnitStoreChange change)

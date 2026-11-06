@@ -959,7 +959,7 @@ public sealed class WholeProgramAnalyzerDirectTests
             var instructions = CreateInstructions(target, field);
             if (EmptyInstructions)
             {
-                instructions = new([], [], [], [], [], [], [], [], [], []);
+                instructions = new([], [], [], [], [], [], [], [], [], [], []);
             }
             if (DescriptorOnly)
             {
@@ -980,7 +980,7 @@ public sealed class WholeProgramAnalyzerDirectTests
                     "Generic",
                     MethodSignatureModel.Create(parameter, methodArgument),
                     [methodArgument]);
-                instructions = new([], [], [], [], [], [], [], [], [], [])
+                instructions = new([], [], [], [], [], [], [], [], [], [], [])
                 {
                     MethodDescriptors =
                     [
@@ -1022,7 +1022,7 @@ public sealed class WholeProgramAnalyzerDirectTests
             }
             if (OnlyStaticCall)
             {
-                instructions = new([], [], [], [], [], [new(CilOperation.Call, target)], [], [], [], []);
+                instructions = new([], [], [], [], [], [new(CilOperation.Call, target)], [], [], [], [], []);
                 if (IncludeStaticField)
                 {
                     instructions = instructions with { Fields = [field with { DeclaringType = target.DeclaringType }] };
@@ -1369,7 +1369,7 @@ public sealed class WholeProgramAnalyzerDirectTests
                         new DispatchDeclaration("Fixtures.Target::Run", 4, target,
                             CilOperation.LoadVirtualFunction)),
                 ],
-                [target]);
+                [target], []);
         }
     }
 

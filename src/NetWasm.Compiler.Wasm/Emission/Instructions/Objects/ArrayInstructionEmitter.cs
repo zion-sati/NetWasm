@@ -328,7 +328,7 @@ internal sealed class ArrayInstructionEmitter(
                 layouts.Target,
                 0,
                 elementType,
-                elementSize);
+                elementSize, scratch: request.Context.VectorScratch);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,
@@ -430,7 +430,7 @@ internal sealed class ArrayInstructionEmitter(
                 layouts.Target,
                 0,
                 elementType,
-                elementSize);
+                elementSize, scratch: request.Context.VectorScratch);
         }
         request.Stack.RemoveRange(arraySlot, 3);
     }

@@ -112,6 +112,29 @@ public sealed class ControlFlowGraphBuilderTests
         Assert.IsAssignableFrom<IControlFlowGraphBuilder>(factory.Create());
     }
 
+    // A target before the body, inside an instruction, or the lower of two past the end is
+    // the one reported.
+    [Fact]
+    public void GraphRejectsTargetsThatAreNotInstructionBoundaries()
+    {
+        AssertDiagnostic(
+            () => ControlFlowGraphBuilder.Build(Body(CliValueKind.Void, 0, [],
+                I(0, CilOperation.Branch, new CilOperand.BranchTarget(-1)),
+                I(1, CilOperation.Return))),
+            "branch target is not an instruction boundary");
+        AssertDiagnostic(
+            () => ControlFlowGraphBuilder.Build(Body(CliValueKind.Void, 0, [],
+                new CilInstruction(0, 5, CilOperation.Nop, new CilOperand.None()),
+                new CilInstruction(5, 6, CilOperation.Branch, new CilOperand.BranchTarget(2)),
+                new CilInstruction(6, 7, CilOperation.Return, new CilOperand.None()))),
+            "branch target is not an instruction boundary");
+        var beyond = Assert.Throws<CompilerException>(() => ControlFlowGraphBuilder.Build(Body(CliValueKind.Void, 0, [],
+            I(0, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(100)),
+            I(1, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(50)),
+            I(2, CilOperation.Return))));
+        Assert.Equal(50, beyond.Diagnostic.IlOffset);
+    }
+
     [Fact]
     public void GraphRejectsEmptyInvalidTargetAndFallingOffEnd()
     {

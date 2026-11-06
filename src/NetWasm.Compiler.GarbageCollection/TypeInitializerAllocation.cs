@@ -12,8 +12,8 @@ internal static class TypeInitializerAllocation
         IMethodRepository methods,
         EntityKey typeDefinition,
         CliTypeIdentity? declaringType,
-        ISet<EntityKey> allocatingMethods,
-        ISet<string> allocatingConstructedMethods)
+        IMembership<EntityKey> allocatingMethods,
+        IMembership<string> allocatingConstructedMethods)
     {
         var initializer = types.GetTypeDefinition(typeDefinition)
             .Methods.Select(methods.GetMethod)

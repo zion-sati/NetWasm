@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Units;
 
@@ -38,30 +37,82 @@ public sealed class UnitFingerprintTests
         Assert.Equal(new UnitFingerprintBuilder().Finish(), new UnitFingerprintBuilder().Finish());
     }
 
+    // An instruction fingerprints by its operand's kind and value; every kind has a form, so
+    // no two instructions differing only in operand fingerprint alike.
     [Fact]
-    public void AMethodFingerprintsByItsInstructionsAndRootMap()
+    public void EveryOperandKindFingerprintsApart()
     {
         var program = new FakeProgram();
         var method = program.GetMethod(EmitterTestSupport.EntryKey);
-        StructuredMethod Returning(int value) => EmitterTestSupport.Structure(program, method,
-            EmitterTestSupport.I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(value)),
-            EmitterTestSupport.I(1, CilOperation.Return));
-        var map = new MethodRootMap(method.Key, ImmutableDictionary<RootSource, int>.Empty,
+        var type = CliTypeIdentity.Named(EmitterTestSupport.Assembly, "Test", "Type", isValueType: false);
+        var instance = new MethodInstanceModel(method, type, [], method.Signature);
+        var definition = new FieldDefinitionModel(new(EmitterTestSupport.Assembly, 0x04000001), method.Key, "Data", type, true)
+        {
+            InitialData = [1, 2, 3, 4],
+        };
+        var field = new FieldInstanceModel(definition, type, type);
+        CilOperand[] operands =
+        [
+            new CilOperand.None(), new CilOperand.ConstantI4(1), new CilOperand.ConstantI8(1), new CilOperand.ConstantF4(1),
+            new CilOperand.ConstantF8(1), new CilOperand.Index(1), new CilOperand.BranchTarget(1),
+            new CilOperand.SwitchTargets([1, 2]), new CilOperand.Entity(method.Key), new CilOperand.MethodInstance(instance),
+            new CilOperand.FieldInstance(field), new CilOperand.TypeIdentity(type), new CilOperand.ExactType(type),
+            new CilOperand.CallSite(method.Signature), new CilOperand.NumericConversion(32, false, true, false, false),
+            new CilOperand.UserString("text"), new CilOperand.ArrayInitializerData(field),
+            new CilOperand.ReadOnlySpanData(field, type, type, 4),
+        ];
+        var kinds = typeof(CilOperand).GetNestedTypes().Where(nested => nested.IsSubclassOf(typeof(CilOperand)));
+
+        Assert.Equal(kinds.Order(Comparer<Type>.Create((a, b) => string.CompareOrdinal(a.Name, b.Name))),
+            operands.Select(operand => operand.GetType()).Order(Comparer<Type>.Create((a, b) => string.CompareOrdinal(a.Name, b.Name))));
+        var fingerprints = operands.Select(operand => Of(new CilInstruction(0, 1, CilOperation.Nop, operand))).ToArray();
+        Assert.Equal(fingerprints.Length, fingerprints.Distinct().Count());
+        Assert.Equal(fingerprints[3], Of(new CilInstruction(0, 1, CilOperation.Nop, new CilOperand.ConstantF4(1))));
+    }
+
+    [Fact]
+    public void ARootMapFingerprintsByItsSlotsAndAnchors()
+    {
+        var method = new EntityKey(EmitterTestSupport.Assembly, 0x06000001);
+        var map = new MethodRootMap(method, ImmutableDictionary<RootSource, int>.Empty,
             ImmutableDictionary<int, SafepointRootMap>.Empty);
         var rooted = map with
         {
             Slots = ImmutableDictionary<RootSource, int>.Empty.Add(new(RootSourceKind.Local, 0), 0),
         };
+        var anchored = map with
+        {
+            AnchorPlan = new([new(new(StackStorageLocationKind.Local, 0), CliTypeIdentity.Primitive("i4", CliValueKind.I4))],
+                ImmutableDictionary<int, ImmutableArray<StackStorageAnchorAssignment>>.Empty.Add(4,
+                    [new StackStorageAnchorAssignment.Capture(0, 1)])),
+        };
 
-        Assert.Equal(Of(Returning(42), map), Of(Returning(42), map));
-        Assert.NotEqual(Of(Returning(42), map), Of(Returning(43), map));
-        Assert.NotEqual(Of(Returning(42), map), Of(Returning(42), rooted));
+        Assert.Equal(Of(map), Of(map with { }));
+        Assert.NotEqual(Of(map), Of(rooted));
+        Assert.NotEqual(Of(map), Of(anchored));
     }
 
-    private static UnitFingerprint Of(StructuredMethod method, MethodRootMap map)
+    [Fact]
+    public void ADefaultListFingerprintsApartFromAnEmptyOne()
+    {
+        var absent = new UnitFingerprintBuilder();
+        absent.Add(default(ImmutableArray<int>));
+        var empty = new UnitFingerprintBuilder();
+        empty.Add(ImmutableArray<int>.Empty);
+
+        Assert.NotEqual(absent.Finish(), empty.Finish());
+    }
+
+    private static UnitFingerprint Of(CilInstruction instruction)
     {
         var builder = new UnitFingerprintBuilder();
-        builder.Add(method);
+        builder.Add(instruction);
+        return builder.Finish();
+    }
+
+    private static UnitFingerprint Of(MethodRootMap map)
+    {
+        var builder = new UnitFingerprintBuilder();
         builder.Add(map);
         return builder.Finish();
     }

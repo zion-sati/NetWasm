@@ -53,6 +53,8 @@ public sealed class CompilationDiagnosticArtifactPlanner(
         };
     }
 
+    // The map of the planned types bound to the module; its callers ask for it only where the
+    // options want one.
     public DiagnosticArtifactBundle? Bind(
         byte[] applicationModule,
         System.Collections.Immutable.ImmutableArray<ReachableExceptionType> planned,
@@ -62,8 +64,6 @@ public sealed class CompilationDiagnosticArtifactPlanner(
         ArgumentNullException.ThrowIfNull(applicationModule);
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(options);
-        if (!options.EmitExceptionTypeMap)
-            return null;
         var buildId = identities.CalculateBuildId(
             semanticInputs.GetSemanticInputs(options, metadata, planned));
         var map = mapWriter.Write(planned, buildId);

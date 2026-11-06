@@ -41,7 +41,7 @@ public sealed class FinalizationPlanBuilderTests
         Assert.False(plan.RequiresRuntime);
         Assert.False(plan.UsesExplicitFinalizationApi);
         Assert.Empty(plan.FinalizableTypeIds);
-        Assert.False(plan.IsFinalizable(7));
+        Assert.False(plan.FinalizableTypeIds.Contains(7));
     }
 
     [Fact]
@@ -68,8 +68,8 @@ public sealed class FinalizationPlanBuilderTests
         Assert.True(plan.RequiresRuntime);
         Assert.False(plan.UsesExplicitFinalizationApi);
         Assert.Equal([7, 11], plan.FinalizableTypeIds.Order());
-        Assert.True(plan.IsFinalizable(7));
-        Assert.True(plan.IsFinalizable(11));
+        Assert.True(plan.FinalizableTypeIds.Contains(7));
+        Assert.True(plan.FinalizableTypeIds.Contains(11));
     }
 
     [Theory]

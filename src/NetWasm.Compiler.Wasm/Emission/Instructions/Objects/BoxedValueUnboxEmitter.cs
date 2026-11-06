@@ -68,7 +68,7 @@ internal sealed class BoxedValueUnboxEmitter(
                 layouts.Target,
                 0,
                 type,
-                value.Size);
+                value.Size, scratch: request.Context.VectorScratch);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)GetStackLocal(

@@ -59,7 +59,7 @@ internal sealed class ManagedMethodBodyEmitter(
             : (long?)null;
         ManagedMethodSequenceEmission? sequenceEmission = null;
         var stackTraceMethodId = stackTraceMethodIds.GetId(
-            target.StackTraceMethods,
+            target.StackTraceLookups,
             method,
             methodInstance);
         var scalarPromotions = _addressTakenScalarPromotions.Plan(new(
@@ -115,7 +115,7 @@ internal sealed class ManagedMethodBodyEmitter(
                     functionIndices),
             target.NativeImports,
             target.MemberExecution,
-            target.ManagedByRefEffects.Methods.TryGetValue(
+            target.ManagedByRefEffects.TryGetValue(
                 callerIdentity.CanonicalName,
                 out var byRefEffects)
                 ? byRefEffects

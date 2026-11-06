@@ -10,7 +10,7 @@ namespace NetWasm.Compiler.GarbageCollection;
 public sealed class CalleeArgumentRootingClassifier(
     ITypeRepository types,
     IMethodRepository methods,
-    IReadOnlyDictionary<string, DispatchCallSiteModel>? dispatchCallSites,
+    IEntryLookup<string, DispatchCallSiteModel>? dispatchCallSites,
     IRuntimeAllocationSafepointClassifier runtimeSafepoints,
     ITypeClassifier typeClassifier,
     IMethodInitializationTriggerClassifier initializationTriggers) :
@@ -20,8 +20,8 @@ public sealed class CalleeArgumentRootingClassifier(
         types ?? throw new ArgumentNullException(nameof(types));
     private readonly IMethodRepository _methods =
         methods ?? throw new ArgumentNullException(nameof(methods));
-    private readonly IReadOnlyDictionary<string, DispatchCallSiteModel> _dispatchCallSites =
-        dispatchCallSites ?? ImmutableDictionary<string, DispatchCallSiteModel>.Empty;
+    private readonly IEntryLookup<string, DispatchCallSiteModel> _dispatchCallSites =
+        dispatchCallSites ?? Lookups.NoEntries<string, DispatchCallSiteModel>();
     private readonly IRuntimeAllocationSafepointClassifier _runtimeSafepoints =
         runtimeSafepoints ?? throw new ArgumentNullException(nameof(runtimeSafepoints));
     private readonly ITypeClassifier _typeClassifier = typeClassifier ??

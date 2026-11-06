@@ -241,44 +241,27 @@ internal sealed class MetadataMethodReferenceResolver(
 
     // A resolution's inputs: the token's assembly and the generic context's arguments,
     // compared by reference (identities are shared, so equal arguments are usually the same).
-    private readonly struct ResolutionKey(
-        string assembly,
-        int token,
-        ImmutableArray<CliTypeIdentity> typeArguments,
-        ImmutableArray<CliTypeIdentity> methodArguments) : IEquatable<ResolutionKey>
+    internal readonly record struct ResolutionKey(
+        string Assembly,
+        int Token,
+        ImmutableArray<CliTypeIdentity> TypeArguments,
+        ImmutableArray<CliTypeIdentity> MethodArguments)
     {
-        private readonly string _assembly = assembly;
-        private readonly int _token = token;
-        private readonly ImmutableArray<CliTypeIdentity> _typeArguments = typeArguments;
-        private readonly ImmutableArray<CliTypeIdentity> _methodArguments = methodArguments;
-
         public bool Equals(ResolutionKey other) =>
-            _token == other._token &&
-            string.Equals(_assembly, other._assembly, StringComparison.Ordinal) &&
-            Same(_typeArguments, other._typeArguments) &&
-            Same(_methodArguments, other._methodArguments);
-
-        public override bool Equals(object? obj) => obj is ResolutionKey other && Equals(other);
+            Token == other.Token &&
+            string.Equals(Assembly, other.Assembly, StringComparison.Ordinal) &&
+            TypeArguments.AsSpan().SequenceEqual(other.TypeArguments.AsSpan(), ReferenceEqualityComparer.Instance) &&
+            MethodArguments.AsSpan().SequenceEqual(other.MethodArguments.AsSpan(), ReferenceEqualityComparer.Instance);
 
         public override int GetHashCode()
         {
             var hash = new HashCode();
-            hash.Add(_token);
-            hash.Add(_assembly, StringComparer.Ordinal);
-            foreach (var argument in _typeArguments) hash.Add(RuntimeHelpers.GetHashCode(argument));
+            hash.Add(Token);
+            hash.Add(Assembly, StringComparer.Ordinal);
+            foreach (var argument in TypeArguments) hash.Add(RuntimeHelpers.GetHashCode(argument));
             hash.Add(-1);
-            foreach (var argument in _methodArguments) hash.Add(RuntimeHelpers.GetHashCode(argument));
+            foreach (var argument in MethodArguments) hash.Add(RuntimeHelpers.GetHashCode(argument));
             return hash.ToHashCode();
-        }
-
-        private static bool Same(ImmutableArray<CliTypeIdentity> left, ImmutableArray<CliTypeIdentity> right)
-        {
-            if (left.Length != right.Length) return false;
-            for (var index = 0; index < left.Length; index++)
-            {
-                if (!ReferenceEquals(left[index], right[index])) return false;
-            }
-            return true;
         }
     }
 

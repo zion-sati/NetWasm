@@ -682,7 +682,7 @@ public sealed class ManagedByRefAggregatePromotionPlannerTests
                         null);
                 })
                 .ToImmutableDictionary(call => call.Key);
-            return new(method, Caller, calls, enabled);
+            return new(method, Caller, Lookups.Of(calls), enabled);
         }
 
         public ManagedByRefAggregatePromotionPlanner CreatePlanner() =>

@@ -120,7 +120,7 @@ public sealed class VirtualDispatchCallEmitterTests
             CreateInstructionModuleTarget(program) with
             {
                 DispatchCallSites =
-                    ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(site.Key, site),
+                    Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(site.Key, site)),
             });
         RegisterInstructionWriter(instruction, code);
         var indices = new FunctionIndexMap(
@@ -764,11 +764,11 @@ public sealed class VirtualDispatchCallEmitterTests
             targets);
         var target = CreateInstructionModuleTarget(program) with
         {
-            DispatchCallSites = includeSite
+            DispatchCallSites = Lookups.Of(includeSite
                 ? ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
                     site.Key,
                     site)
-                : ImmutableDictionary<string, DispatchCallSiteModel>.Empty,
+                : ImmutableDictionary<string, DispatchCallSiteModel>.Empty),
         };
         var values = stack.ToArray();
         var instruction = new InstructionEmissionRequest(

@@ -37,6 +37,7 @@ internal static class MethodEmissionServiceCollectionExtensions
             DirectValueLoadSelector>();
         services.AddSingleton<ITransientAggregatePromotionPlanner,
             TransientAggregatePromotionPlanner>();
+        services.AddSingleton<IValueFrameSlotAlignmentResolver, SimdValueFrameSlotAlignmentResolver>();
         services.AddSingleton<IValueFrameLayoutPlanner, ValueFrameLayoutPlanner>();
         services.AddSingleton<IValueFrameReferenceMapPlanner, ValueFrameReferenceMapPlanner>();
         services.AddSingleton<FilterEnvironmentLayoutPlanner>();

@@ -3,6 +3,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.ControlFlow.Structured;
@@ -155,6 +156,13 @@ internal static class UnitExceptionGroups
         return outline.StandIn(built.MoveToImmutable());
     }
 
+    // Whether two methods' groups are laid out alike, group by group and clause by clause;
+    // where the groups sit in the body may move.
+    internal static bool Same(ImmutableArray<UnitExceptionGroup> before, ImmutableArray<UnitExceptionGroup> now) =>
+        before.Length == now.Length && before.Zip(now).All(pair =>
+            pair.First.Id == pair.Second.Id && pair.First.Parent == pair.Second.Parent &&
+            pair.First.Regions.SequenceEqual(pair.Second.Regions));
+
     private static int RegionOf(
         StructuredExceptionGroup group, StructuredExceptionClause clause, ImmutableArray<CilExceptionRegion> regions)
     {
@@ -163,8 +171,8 @@ internal static class UnitExceptionGroups
             var region = regions[index];
             if (region.Kind == clause.Kind && region.TryOffset == group.TryOffset &&
                 region.TryLength == group.TryLength && region.HandlerOffset == clause.HandlerOffset &&
-                region.HandlerLength == clause.HandlerLength && region.CatchType == clause.CatchType &&
-                region.FilterOffset == clause.FilterOffset &&
+                region.HandlerLength == clause.HandlerLength && Nullable.Equals(region.CatchType, clause.CatchType) &&
+                Nullable.Equals(region.FilterOffset, clause.FilterOffset) &&
                 Equals(region.CatchTypeIdentity, clause.CatchTypeIdentity))
             {
                 return index;

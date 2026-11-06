@@ -1,7 +1,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -189,10 +188,11 @@ internal static class UnitRootMapFormat
             return roots.MoveToImmutable();
         }
 
+        // A name's length counts its UTF-16 characters, two bytes each.
         public string Text()
         {
-            var length = Count();
-            if (_at + length * 2L > _bytes.Length) throw new InvalidDataException("A unit's root map is corrupt.");
+            var length = Word();
+            if (length < 0 || _at + length * 2L > _bytes.Length) throw new InvalidDataException("A unit's root map is corrupt.");
             var text = System.Text.Encoding.Unicode.GetString(_bytes.Slice(_at, length * 2));
             _at += length * 2;
             return text;
@@ -216,27 +216,27 @@ internal sealed class UnitRootMapRecorder
     public UnitRootMapRecorder(
         CompiledUnitState state,
         IValueLayoutProvider values,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
-        ISet<EntityKey> allocatingMethods,
-        ISet<string> allocatingConstructedMethods,
+        IEntryLookup<string, DispatchCallSiteModel> dispatchCallSites,
+        IMembership<EntityKey> allocatingMethods,
+        IMembership<string> allocatingConstructedMethods,
         IFieldRepository fieldDefinitions)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _fieldDefinitions = fieldDefinitions ?? throw new ArgumentNullException(nameof(fieldDefinitions));
         Values = new RecordingValueLayoutProvider(values, _log);
-        DispatchCallSites = new RecordingDictionary<string, DispatchCallSiteModel>(
+        DispatchCallSites = new RecordingLookup<string, DispatchCallSiteModel>(
             dispatchCallSites, _log, UnitQueryKind.DispatchCallSite,
             static key => key, static (ref answer, site) => answer.Add(site));
-        AllocatingMethods = new RecordingMembershipSet<EntityKey>(
+        AllocatingMethods = new RecordingMembership<EntityKey>(
             allocatingMethods, _log, UnitQueryKind.AllocatingMethod, UnitQueryKeys.Of);
-        AllocatingConstructedMethods = new RecordingMembershipSet<string>(
+        AllocatingConstructedMethods = new RecordingMembership<string>(
             allocatingConstructedMethods, _log, UnitQueryKind.AllocatingConstructedMethod, static key => key);
     }
 
     public IValueLayoutProvider Values { get; }
-    public IReadOnlyDictionary<string, DispatchCallSiteModel> DispatchCallSites { get; }
-    public ISet<EntityKey> AllocatingMethods { get; }
-    public ISet<string> AllocatingConstructedMethods { get; }
+    public IEntryLookup<string, DispatchCallSiteModel> DispatchCallSites { get; }
+    public IMembership<EntityKey> AllocatingMethods { get; }
+    public IMembership<string> AllocatingConstructedMethods { get; }
 
     // The method's root map: its unit's where that holds, otherwise analysed with the facts
     // it reads recorded for its unit.
@@ -369,48 +369,4 @@ internal sealed class UnitRootMapRecorder
                 return false;
         }
     }
-}
-
-/// <summary>
-/// A set an analysis asks membership of, recording each item it asks about and the answer.
-/// Changing or enumerating it would make the analysis depend on the whole set, so that is
-/// refused.
-/// </summary>
-internal sealed class RecordingMembershipSet<T>(
-    ISet<T> inner,
-    IUnitDependencyRecorder recorder,
-    UnitQueryKind kind,
-    Func<T, string> keyText) : ISet<T>
-{
-    public bool Contains(T item)
-    {
-        var found = inner.Contains(item);
-        var answer = new UnitFingerprintBuilder();
-        answer.Add(found);
-        recorder.Record(kind, keyText(item), answer.Finish(), found);
-        return found;
-    }
-
-    public int Count => throw Unrecordable();
-    public bool IsReadOnly => true;
-    public bool Add(T item) => throw Unrecordable();
-    void ICollection<T>.Add(T item) => throw Unrecordable();
-    public void Clear() => throw Unrecordable();
-    public void CopyTo(T[] array, int arrayIndex) => throw Unrecordable();
-    public bool Remove(T item) => throw Unrecordable();
-    public void ExceptWith(IEnumerable<T> other) => throw Unrecordable();
-    public void IntersectWith(IEnumerable<T> other) => throw Unrecordable();
-    public bool IsProperSubsetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool IsProperSupersetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool IsSubsetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool IsSupersetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool Overlaps(IEnumerable<T> other) => throw Unrecordable();
-    public bool SetEquals(IEnumerable<T> other) => throw Unrecordable();
-    public void SymmetricExceptWith(IEnumerable<T> other) => throw Unrecordable();
-    public void UnionWith(IEnumerable<T> other) => throw Unrecordable();
-    public IEnumerator<T> GetEnumerator() => throw Unrecordable();
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-    private NotSupportedException Unrecordable() =>
-        new($"An analysis may only ask whether a {kind} set contains an item.");
 }

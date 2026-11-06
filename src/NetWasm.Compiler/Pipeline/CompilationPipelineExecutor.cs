@@ -211,16 +211,17 @@ internal sealed class CompilationPipelineExecutor(
 
                 stage = "root maps";
                 metrics?.Stages.Start(CompilerMetricStage.RootMaps);
-                // The last compile's units serve root maps and emission.
-                using var units = _unitStates.Create(options, metadata, inputs, analyzed.Program,
-                    prepared.OptimizationSettings.BranchPrefixDuplication,
-                    prepared.OptimizationSettings.DispatcherElimination);
                 // Verification proves the early cutoff too: where it applies, it patches the
                 // last compile's module, which this compile's must equal. It reads the last
                 // compile, so it runs before emission keeps this one.
                 var cutoff = options.VerifyCompiledUnits && inputs is not null
                     ? _earlyCutoff.Emit(new(options, metadata, prepared, inputs))
                     : declined;
+                // The last compile's units serve root maps and emission.
+                using var units = _unitStates.Create(options, metadata, inputs, analyzed.Program,
+                    prepared.OptimizationSettings.BranchPrefixDuplication,
+                    prepared.OptimizationSettings.DispatcherElimination,
+                    servedFrom: cutoff?.Module is not null ? cutoff.Kept : null);
                 var mappedProgram = _rootMaps.Analyze(
                     metadata,
                     compiledLayouts,

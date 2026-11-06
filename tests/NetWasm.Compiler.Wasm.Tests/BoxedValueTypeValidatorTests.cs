@@ -112,7 +112,6 @@ public sealed class BoxedValueTypeValidatorTests
 
     private sealed class TypeLayouts(bool primitiveLayoutReachable) : ITypeLayoutProvider
     {
-        public int ReferenceArrayTypeId => 30;
         public int StringTypeId => 31;
         public int TypeTypeId => 32;
 

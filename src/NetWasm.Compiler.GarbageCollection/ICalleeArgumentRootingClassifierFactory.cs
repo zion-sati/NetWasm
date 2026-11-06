@@ -8,6 +8,6 @@ public interface ICalleeArgumentRootingClassifierFactory
     ICalleeArgumentRootingClassifier Create(
         ITypeRepository types,
         IMethodRepository methods,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        IEntryLookup<string, DispatchCallSiteModel> dispatchCallSites,
         ITypeClassifier typeClassifier);
 }

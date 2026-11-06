@@ -240,11 +240,12 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
             // Vector128<T> and Vector<T> are 16 bytes that move as one Wasm v128
             // value; their instantiations take this kind from the definition.
             // So do System.Numerics' float vectors, as RyuJIT's SIMD types:
-            // Vector4, Quaternion and Plane fill the 16 bytes and Vector2 the
-            // low 8, its upper lanes undefined. Vector3's 12 bytes stay in memory.
+            // Vector4, Quaternion and Plane fill the 16 bytes, Vector3 the low
+            // 12 and Vector2 the low 8, the lanes above them undefined.
             "System.Runtime.Intrinsics.Vector128`1" or
             "System.Numerics.Vector`1" or
             "System.Numerics.Vector2" or
+            "System.Numerics.Vector3" or
             "System.Numerics.Vector4" or
             "System.Numerics.Quaternion" or
             "System.Numerics.Plane" => new(
@@ -366,13 +367,10 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
 
     // An instantiation by the identities it is made from (by reference): a variant of an
     // argument, such as one with another stack kind, is another key.
-    private readonly struct InstantiationKey(
-        CliTypeIdentity genericType,
-        ImmutableArray<CliTypeIdentity> typeArguments) : IEquatable<InstantiationKey>
+    private readonly record struct InstantiationKey(
+        CliTypeIdentity GenericType,
+        ImmutableArray<CliTypeIdentity> TypeArguments)
     {
-        public CliTypeIdentity GenericType { get; } = genericType;
-        public ImmutableArray<CliTypeIdentity> TypeArguments { get; } = typeArguments;
-
         public bool Equals(InstantiationKey other)
         {
             if (!ReferenceEquals(GenericType, other.GenericType) ||
@@ -386,8 +384,6 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
             }
             return true;
         }
-
-        public override bool Equals(object? obj) => obj is InstantiationKey other && Equals(other);
 
         public override int GetHashCode()
         {
@@ -732,12 +728,6 @@ public sealed record MethodSignatureModel
     public ImmutableArray<CliValueKind> ParameterTypes { get; init; }
     public CliTypeIdentity ReturnSignatureType { get; init; }
     public ImmutableArray<CliTypeIdentity> ParameterSignatureTypes { get; init; }
-
-    public void Deconstruct(out CliValueKind ReturnType, out ImmutableArray<CliValueKind> ParameterTypes)
-    {
-        ReturnType = this.ReturnType;
-        ParameterTypes = this.ParameterTypes;
-    }
 
     // The signature with generic parameters replaced; this signature when none occurs.
     public MethodSignatureModel Substitute(

@@ -144,8 +144,10 @@ internal sealed class RootMapInvariantValidator(
             types,
             fields,
             methods,
-            program.DispatchCallSites,
+            Lookups.Of(program.DispatchCallSites),
             typeClassifier);
+        var allocatingMethods = Lookups.Of(program.AllocatingMethods);
+        var allocatingConstructedMethods = Lookups.Of(program.ConstructedAllocatingMethods);
         var graph = method.ControlFlow.Graph;
         foreach (var block in graph.Blocks.Where(block => graph.ReachableBlocks.Contains(block.Index)))
         {
@@ -154,8 +156,8 @@ internal sealed class RootMapInvariantValidator(
                              method,
                              block.Index,
                              instruction,
-                             program.AllocatingMethods,
-                             program.ConstructedAllocatingMethods))))
+                             allocatingMethods,
+                             allocatingConstructedMethods))))
             {
                 if (!roots.Safepoints.ContainsKey(instruction.Offset))
                 {

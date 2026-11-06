@@ -10,7 +10,6 @@ internal enum UnitQueryKind
     ObjectLayout,
     ObjectLayoutLookup,
     ObjectLayoutOfDefinition,
-    ReferenceArrayTypeId,
     StringTypeId,
     TypeTypeId,
     ValueLayout,

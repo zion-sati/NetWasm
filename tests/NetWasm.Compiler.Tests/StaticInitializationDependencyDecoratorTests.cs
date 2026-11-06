@@ -64,7 +64,7 @@ public sealed class StaticInitializationDependencyDecoratorTests
 
     private sealed class RecordingInstructions : IReachabilityInstructionAnalyzer
     {
-        public ReachabilityInstructionAnalysis Result { get; } = new([], [], [], [], [], [], [], [], [], []);
+        public ReachabilityInstructionAnalysis Result { get; } = new([], [], [], [], [], [], [], [], [], [], []);
         public ReachabilityInstructionRequest? Request { get; private set; }
         public ReachabilityInstructionAnalysis Analyze(ReachabilityInstructionRequest request)
         {

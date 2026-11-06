@@ -27,8 +27,8 @@ public sealed class FilterFunctionAppenderTests
             {
                 MethodInvokers = [EmitterTestSupport.EntryKey],
             },
-            RootMaps = ImmutableDictionary<string, MethodRootMap>.Empty.Add(
-                ManagedMethodBodyKey.Resolve(filter.Method), new(EmitterTestSupport.EntryKey, [], [])),
+            RootMaps = Lookups.Of(ImmutableDictionary<string, MethodRootMap>.Empty.Add(
+                ManagedMethodBodyKey.Resolve(filter.Method), new(EmitterTestSupport.EntryKey, [], []))),
         };
         var functionIndices = new FixedFunctionIndexResolver();
         var emissions = new List<ManagedMethodEmissionRecord>();
@@ -56,7 +56,7 @@ public sealed class FilterFunctionAppenderTests
         Assert.Same(target, sequences.Target);
         Assert.Same(target.MemberExecution, filters.MemberExecution);
         Assert.Same(
-            target.RootMaps[ManagedMethodBodyKey.Resolve(filter.Method)],
+            target.RootMaps.Required(ManagedMethodBodyKey.Resolve(filter.Method)),
             filters.RootMap);
         Assert.Same(functionIndices, sequences.FunctionIndices);
         Assert.Same(filter.Method, merger.Method);

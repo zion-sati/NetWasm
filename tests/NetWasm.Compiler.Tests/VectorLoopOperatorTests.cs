@@ -25,6 +25,18 @@ public sealed class VectorLoopOperatorTests
         Assert.Equal(matches, new VectorLoopOperator("op_Multiply").Matches(method));
     }
 
+    // An operator is static: an instance method of the operator's name is not one.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AnOperatorIsStatic(bool isStatic)
+    {
+        var method = new MethodDefinitionModel(new(Core, 0x06000003), new(Core, 0x02000001), "op_Addition", isStatic,
+            MethodSignatureModel.Create(Vector, Vector, Vector), 1);
+
+        Assert.Equal(isStatic, new VectorLoopOperator("op_Addition").Matches(method));
+    }
+
     // A shift takes a vector and an int count.
     [Theory]
     [InlineData(true, true)]

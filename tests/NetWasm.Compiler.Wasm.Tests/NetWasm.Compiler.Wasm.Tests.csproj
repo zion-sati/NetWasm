@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Stand-in native functions for the OS calls the compiler makes. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="coverlet.msbuild" />

@@ -347,7 +347,7 @@ internal sealed class VirtualDispatchCallEmitter(
         if (initializationTriggers.Classify(target.Method.Definition))
         {
             initialization.Emit(new(target.Method.Definition.DeclaringType,
-                target.Method.DeclaringType, instruction.Target.ModuleData,
+                target.Method.DeclaringType, instruction.Target.StaticInitializerGuards,
                 IsMethodInvocation: true), code, functionIndices);
         }
         var intrinsic = intrinsics.TryGetIntrinsic(

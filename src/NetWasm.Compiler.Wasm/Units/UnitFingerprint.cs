@@ -4,7 +4,6 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
-using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 
@@ -74,6 +73,11 @@ internal ref struct UnitFingerprintBuilder
 
     public void Add(CliTypeIdentity? type) => Add(type?.CanonicalName);
 
+    // A member a fact may lack fingerprints as none, as a missing type does.
+    public void Add(MethodInstanceModel? method) => Add(method?.CanonicalName);
+
+    public void Add(FieldInstanceModel? field) => Add(field?.CanonicalName);
+
     public void Add(EntityKey key)
     {
         Add(key.Assembly.Name);
@@ -111,49 +115,6 @@ internal ref struct UnitFingerprintBuilder
         Add(layout.Address);
         Add(layout.Length);
         Add(layout.DataOffset);
-    }
-
-    public void Add(RectangularArrayLayout layout)
-    {
-        Add(layout.RankOffset);
-        Add(layout.ShapePointerOffset);
-        Add(layout.ObjectSize);
-        Add(layout.DimensionSize);
-        Add(layout.DimensionLengthOffset);
-    }
-
-    // A method's emission input: its CIL by resolved identity (never by metadata token,
-    // which shifts when the assembly gains a member), its locals and exception structure.
-    // Structuring is a function of these and the compile's policies.
-    public void Add(StructuredMethod method)
-    {
-        var header = method.Header;
-        Add(header.MethodInstance?.CanonicalName ?? header.Method.Key.ToString());
-        Add(header.MaxStack);
-        Add(header.Locals.Select(local => (int)local));
-        Add(header.LocalSignatureTypes.Length);
-        foreach (var type in header.LocalSignatureTypes) Add(type);
-        Add(header.Instructions.Length);
-        foreach (var instruction in header.Instructions) Add(instruction);
-        Add(header.ArrayBoundsProof is not null);
-        Add(header.IntegerCheckProof is not null);
-        Add(method.ExceptionGroups.Count);
-        foreach (var group in method.ExceptionGroups.Values.OrderBy(group => group.Id.Value))
-        {
-            Add(group.Id.Value);
-            Add(group.Parent?.Value ?? -1);
-            Add(group.TryOffset);
-            Add(group.TryLength);
-            Add(group.Clauses.Length);
-            foreach (var clause in group.Clauses)
-            {
-                Add((int)clause.Kind);
-                Add(clause.HandlerOffset);
-                Add(clause.HandlerLength);
-                Add(clause.FilterOffset ?? -1);
-                Add(clause.CatchTypeIdentity);
-            }
-        }
     }
 
     // A method's analysed body: its CIL by resolved identity (never by metadata token, which
@@ -255,18 +216,16 @@ internal ref struct UnitFingerprintBuilder
             case CilOperand.ArrayInitializerData data:
                 Add(16); Add(data.Field.CanonicalName); Add(data.Value.AsSpan());
                 break;
-            case CilOperand.ReadOnlySpanData data:
-                Add(17);
-                Add(data.Field.CanonicalName);
-                Add(data.SpanType);
-                Add(data.ElementType);
-                Add(data.ElementCount);
-                Add(data.Field.Definition.InitialData.AsSpan());
-                break;
+            // The last of the closed set of operands (UnitFingerprintOperandTests counts them).
             default:
-                // An operand kind added later must be fingerprinted before units can hold it.
-                throw new NotSupportedException(
-                    $"unit fingerprints have no form for {instruction.Operand.GetType().Name}");
+                var span = (CilOperand.ReadOnlySpanData)instruction.Operand;
+                Add(17);
+                Add(span.Field.CanonicalName);
+                Add(span.SpanType);
+                Add(span.ElementType);
+                Add(span.ElementCount);
+                Add(span.Field.Definition.InitialData.AsSpan());
+                break;
         }
     }
 

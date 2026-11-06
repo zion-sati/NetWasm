@@ -141,12 +141,10 @@ internal sealed class WholeProgramAnalyzerFactory(
         var methodAnalyzerWorkers =
             System.Collections.Immutable.ImmutableArray
                 .CreateBuilder<IReachableMethodAnalyzer>(concurrency.WorkerCount + 1);
-        // One analyzer per worker, and one for the closure's own thread. A reducing closure
-        // builds the program again after each reduction, so the analyzers share a memo and
-        // analyze again only the bodies a reduction rewrote.
-        var analyzerCount = concurrency.Synchronous ? 1 : concurrency.WorkerCount + 1;
+        // A reducing closure builds the program again after each reduction, so the analyzers
+        // share a memo and analyze again only the bodies a reduction rewrote.
         var memo = reducers.Count == 0 ? null : new ReachableMethodAnalysisMemo();
-        for (var workerIndex = 0; workerIndex < analyzerCount; workerIndex++)
+        for (var workerIndex = 0; workerIndex < concurrency.AnalyzerCount; workerIndex++)
             methodAnalyzerWorkers.Add(memo is null
                 ? parts.CreateAnalyzer()
                 : new MemoizingReachableMethodAnalyzer(parts.CreateAnalyzer(), memo));
@@ -270,7 +268,12 @@ internal sealed class WholeProgramAnalyzerFactory(
 
 internal readonly record struct AnalysisConcurrency(
     int WorkerCount,
-    bool Synchronous);
+    bool Synchronous)
+{
+    // One analyzer per worker and one for the closure's own thread; a synchronous closure
+    // analyzes on its own thread alone.
+    public int AnalyzerCount => Synchronous ? 1 : WorkerCount + 1;
+}
 
 internal sealed class DelegateJavaScriptAsyncBindingResolver(
     Func<MethodDefinitionModel, JavaScriptAsyncMethodBinding?> resolve) :

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Frozen;
 
 namespace NetWasm.Compiler.Wasm.Units;
@@ -16,5 +17,9 @@ internal sealed record WasmFunctionSymbols(
 {
     public static WasmFunctionSymbols Empty { get; } = new(
         FrozenDictionary<uint, string>.Empty,
-        FrozenDictionary<string, uint>.Empty);
+        FrozenDictionary.ToFrozenDictionary<string, uint>([], StringComparer.Ordinal));
+
+    // Symbols are compared ordinally, so a span of one looks it up without a copy.
+    public FrozenDictionary<string, uint>.AlternateLookup<ReadOnlySpan<char>> BySpan =>
+        BySymbol.GetAlternateLookup<ReadOnlySpan<char>>();
 }

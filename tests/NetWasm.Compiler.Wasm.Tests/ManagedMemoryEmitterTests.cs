@@ -39,8 +39,54 @@ public sealed class ManagedMemoryEmitterTests
             ],
             code.ToArray());
         Assert.Equal(WasmValueType.V128, ManagedMemoryEmitter.GetLoadValueType(narrow, 8));
-        Assert.Throws<CompilerException>(() => ManagedMemoryEmitter.EmitVectorLoad(code, 0, 12));
+        Assert.Throws<CompilerException>(() => ManagedMemoryEmitter.EmitVectorLoad(code, 0, 4));
         Assert.Throws<CompilerException>(() => ManagedMemoryEmitter.EmitVectorStore(code, 0, 4));
+    }
+
+    // Vector3 reads its 12 bytes into the three low lanes and writes only those
+    // back, as its low 8 bytes and its third lane, each at the address the
+    // scratch local keeps; a store keeps the value in the other scratch local.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void Vector3MovesItsLowEightBytesAndThirdLaneThroughScratchLocals(WasmTarget target)
+    {
+        var vector = CliTypeIdentity.Named(new AssemblyIdentity("NetWasm.CoreLib"), "System.Numerics", "Vector3", isValueType: true);
+        var layout = WasmTargetLayout.For(target);
+        var scratch = new VectorScratch(5, 6);
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        ManagedMemoryEmitter.EmitLoadByType(code, layout, 4, vector, 12, scratch);
+        ManagedMemoryEmitter.EmitStoreByType(code, layout, 200, vector, 12, scratch);
+
+        Assert.Equal(CliValueKind.V128, vector.StackKind);
+        Assert.Equal(
+            [
+                0x21, 0x05, 0x20, 0x05, 0x20, 0x05,
+                0xfd, 0x5d, 0x03, 0x04,
+                0xfd, 0x56, 0x02, 0x0c, 0x02,
+                0x21, 0x06, 0x21, 0x05, 0x20, 0x05, 0x20, 0x06,
+                0xfd, 0x5b, 0x03, 0xc8, 0x01, 0x00,
+                0x20, 0x05, 0x20, 0x06,
+                0xfd, 0x5a, 0x02, 0xd0, 0x01, 0x02,
+            ],
+            code.ToArray());
+    }
+
+    // Wasm has no dup, so a 12-byte access without scratch locals fails at once
+    // and writes nothing.
+    [Fact]
+    public void ATwelveByteVectorAccessWithoutScratchLocalsIsRejected()
+    {
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        var load = Assert.Throws<CompilerException>(() => ManagedMemoryEmitter.EmitVectorLoad(code, 0, 12));
+        var store = Assert.Throws<CompilerException>(() => ManagedMemoryEmitter.EmitVectorStore(code, 0, 12));
+
+        Assert.Equal(DiagnosticCode.RuntimeContract, load.Diagnostic.Code);
+        Assert.Contains("load", load.Diagnostic.Message);
+        Assert.Contains("store", store.Diagnostic.Message);
+        Assert.Empty(code.ToArray());
     }
 
     [Fact]

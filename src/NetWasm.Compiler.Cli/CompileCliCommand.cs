@@ -16,6 +16,15 @@ internal sealed class CompileCliCommand(
     ICompilerArtifactWriter artifacts,
     IManagedCompilerOptimizationOverridesParser optimizationOverrides) : ICompilerCliCommand
 {
+    // What each target compiles its entry point as.
+    internal static readonly FrozenDictionary<NwcTarget, CompilerEntryPointKind> EntryPointKinds =
+        new System.Collections.Generic.Dictionary<NwcTarget, CompilerEntryPointKind>
+        {
+            [NwcTarget.Exe] = CompilerEntryPointKind.ManagedExecutable,
+            [NwcTarget.Library] = CompilerEntryPointKind.Library,
+            [NwcTarget.Function] = CompilerEntryPointKind.RawFunction,
+        }.ToFrozenDictionary();
+
     private readonly INwcCompilerSessionFactory _sessions = sessions ??
         throw new ArgumentNullException(nameof(sessions));
     private readonly IManagedEntryPointReader _entryPoints = entryPoints ??
@@ -79,12 +88,7 @@ internal sealed class CompileCliCommand(
             options.Sources,
             EmitStackTrace: options.StackTraceSymbols is not null,
             EntryMethodToken: entryPoint?.MetadataToken,
-            EntryPointKind: options.Target switch
-            {
-                NwcTarget.Exe => CompilerEntryPointKind.ManagedExecutable,
-                NwcTarget.Library => CompilerEntryPointKind.Library,
-                _ => CompilerEntryPointKind.RawFunction,
-            },
+            EntryPointKind: EntryPointKinds[options.Target],
             IntermediateOutputPath: options.IntermediateDirectory,
             UseJavaScriptExportBoundary: options.UseJavaScriptExportBoundary,
             ProjectDirectory: options.ProjectDirectory,
@@ -94,20 +98,8 @@ internal sealed class CompileCliCommand(
             OptimizationOverrides: overrides)
         {
             ImportModules = options.ImportModules,
-            // Compiled units serve O0 compiles that have an intermediate directory. The
-            // environment overrides the switches for a process: 0 turns units off, 1 on, and
-            // verify on with every restored body emitted again and compared.
-            CompiledUnits = Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS") switch
-            {
-                "0" => false,
-                "1" or "verify" => true,
-                // Verifying units asks for them; otherwise they are on where builds compile for speed.
-                _ => options.CompiledUnits ?? (options.VerifyCompiledUnits ||
-                    options.Optimization is NetWasm.Compiler.ComponentModel.FinalWasmOptimization.O0 or
-                        NetWasm.Compiler.ComponentModel.FinalWasmOptimization.None),
-            },
-            VerifyCompiledUnits = Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS") == "verify" ||
-                options.VerifyCompiledUnits,
+            CompiledUnits = CompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),
+            VerifyCompiledUnits = VerifiesCompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),
         });
         // The recorded entry ABI describes the export the compiler produced, which hosts follow.
         compilation = compilation with
@@ -130,4 +122,21 @@ internal sealed class CompileCliCommand(
         });
         return 0;
     }
+
+    // Compiled units serve O0 compiles that have an intermediate directory. The environment
+    // overrides the switches for a process: 0 turns units off, 1 on, and verify on with every
+    // restored body emitted again and compared.
+    // Whether compiled units are verified: the environment asks for it, or the options do.
+    internal static bool VerifiesCompiledUnits(string? environment, CompileCliOptions options) =>
+        environment == "verify" || options.VerifyCompiledUnits;
+
+    internal static bool CompiledUnits(string? environment, CompileCliOptions options) => environment switch
+    {
+        "0" => false,
+        "1" or "verify" => true,
+        // Verifying units asks for them; otherwise they are on where builds compile for speed.
+        _ => options.CompiledUnits ?? (options.VerifyCompiledUnits ||
+            options.Optimization is NetWasm.Compiler.ComponentModel.FinalWasmOptimization.O0 or
+                NetWasm.Compiler.ComponentModel.FinalWasmOptimization.None),
+    };
 }

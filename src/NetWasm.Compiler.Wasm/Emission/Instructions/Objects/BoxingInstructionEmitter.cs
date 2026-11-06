@@ -91,7 +91,7 @@ internal sealed class BoxingInstructionEmitter(
                 layouts.Target,
                 0,
                 type,
-                value.Size);
+                value.Size, scratch: request.Context.VectorScratch);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(

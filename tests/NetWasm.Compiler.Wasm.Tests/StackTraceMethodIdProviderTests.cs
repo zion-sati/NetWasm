@@ -33,14 +33,14 @@ public sealed class StackTraceMethodIdProviderTests
             4,
             5);
 
-        Assert.Equal(7, provider.GetId(plan, method, null));
-        Assert.Equal(11, provider.GetId(plan, method, instance));
+        Assert.Equal(7, provider.GetId(StackTraceMethodLookups.Of(plan), method, null));
+        Assert.Equal(11, provider.GetId(StackTraceMethodLookups.Of(plan), method, instance));
         Assert.Equal(0, provider.GetId(
-            plan with { DirectMethodIds = ImmutableDictionary<EntityKey, int>.Empty },
+            StackTraceMethodLookups.Of(plan with { DirectMethodIds = ImmutableDictionary<EntityKey, int>.Empty }),
             method,
             null));
         Assert.Equal(0, provider.GetId(
-            plan with { ConstructedMethodIds = ImmutableDictionary<string, int>.Empty },
+            StackTraceMethodLookups.Of(plan with { ConstructedMethodIds = ImmutableDictionary<string, int>.Empty }),
             method,
             instance));
     }
@@ -53,7 +53,7 @@ public sealed class StackTraceMethodIdProviderTests
 
         Assert.Throws<ArgumentNullException>(() => provider.GetId(null!, method, null));
         Assert.Throws<ArgumentNullException>(() => provider.GetId(
-            StackTraceMethodPlan.Disabled,
+            StackTraceMethodLookups.None,
             null!,
             null));
     }

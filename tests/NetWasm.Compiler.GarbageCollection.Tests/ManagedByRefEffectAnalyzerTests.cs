@@ -765,3 +765,32 @@ public sealed class ManagedByRefEffectAnalyzerTests
         public MethodDefinitionModel GetMethod(EntityKey key) => Methods[key];
     }
 }
+
+// While one method is analysed alone, its effects are its own as they stand, every other
+// method's are as known, and a method of the program known for none has none; the view is
+// looked up by method.
+public sealed class KnownByRefEffectsTests
+{
+    [Fact]
+    public void TheAnalysedMethodsEffectsAreItsOwnAndOthersAreAsKnown()
+    {
+        var written = new ManagedByRefMethodEffects([0], [], []);
+        var effects = new ManagedByRefEffectAnalyzer.KnownEffects("Self", new HashSet<string> { "Self", "Known", "Quiet" },
+            new Dictionary<string, ManagedByRefMethodEffects> { ["Known"] = written })
+        {
+            Own = new([1], [], []),
+        };
+
+        Assert.Same(effects.Own, Known(effects, "Self"));
+        Assert.Same(written, Known(effects, "Known"));
+        Assert.Same(ManagedByRefMethodEffects.Empty, Known(effects, "Quiet"));
+        Assert.False(effects.TryGetValue("Outside", out var outside));
+        Assert.Null(outside);
+    }
+
+    private static ManagedByRefMethodEffects Known(ManagedByRefEffectAnalyzer.KnownEffects effects, string method)
+    {
+        Assert.True(effects.TryGetValue(method, out var known));
+        return known;
+    }
+}

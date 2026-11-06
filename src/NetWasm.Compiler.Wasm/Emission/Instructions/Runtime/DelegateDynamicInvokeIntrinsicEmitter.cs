@@ -275,7 +275,7 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
                 layouts.Target,
                 0,
                 signatureType,
-                layout.Size);
+                layout.Size, scratch: request.Instruction.Context.VectorScratch);
         }
     }
 
@@ -317,7 +317,7 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
             layouts.Target,
             0,
             resultType,
-            layout.Size);
+            layout.Size, scratch: request.Instruction.Context.VectorScratch);
     }
 
     private void EmitPostInvocationResult(
@@ -348,7 +348,8 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
             code,
             underlying,
             request.Instruction.Context.ObjectTemporary,
-            resultLocal, request.Instruction.Context.ManagedThrowFunction);
+            resultLocal, request.Instruction.Context.ManagedThrowFunction,
+            request.Instruction.Context.VectorScratch);
     }
 
     private void EmitReferenceValidation(

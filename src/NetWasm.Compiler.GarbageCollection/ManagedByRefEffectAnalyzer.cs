@@ -63,6 +63,8 @@ public sealed class ManagedByRefEffectAnalyzer(
         Dictionary<string, List<int>>? callers = null;
         var calleesByMethod = ImmutableDictionary.CreateBuilder<string, ImmutableArray<string>>(StringComparer.Ordinal);
         var round = Enumerable.Range(0, methods.Length).ToArray();
+        // Each round reads the effects as the rounds before it left them.
+        var known = Lookups.Of(effects);
         while (round.Length != 0)
         {
             var collectCallees = callers is null;
@@ -74,7 +76,7 @@ public sealed class ManagedByRefEffectAnalyzer(
                     method.Identity,
                     method.Body,
                     method.Candidates,
-                    effects,
+                    known,
                     identities,
                     directIdentities,
                     request.DispatchCallSites,
@@ -141,21 +143,10 @@ public sealed class ManagedByRefEffectAnalyzer(
 
     // Every method's effects as known, the analysed method's as they stand; a method of the
     // program with no known effects has none.
-    private sealed class KnownEffects(string identity, IReadOnlySet<string> methods,
-        IReadOnlyDictionary<string, ManagedByRefMethodEffects> known) : IReadOnlyDictionary<string, ManagedByRefMethodEffects>
+    internal sealed class KnownEffects(string identity, IReadOnlySet<string> methods,
+        IReadOnlyDictionary<string, ManagedByRefMethodEffects> known) : IEntryLookup<string, ManagedByRefMethodEffects>
     {
         public ManagedByRefMethodEffects Own { get; set; } = ManagedByRefMethodEffects.Empty;
-
-        public ManagedByRefMethodEffects this[string key] =>
-            TryGetValue(key, out var value) ? value : throw new KeyNotFoundException(key);
-
-        public IEnumerable<string> Keys => throw new NotSupportedException();
-
-        public IEnumerable<ManagedByRefMethodEffects> Values => throw new NotSupportedException();
-
-        public int Count => throw new NotSupportedException();
-
-        public bool ContainsKey(string key) => TryGetValue(key, out _);
 
         public bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out ManagedByRefMethodEffects value)
         {
@@ -163,17 +154,13 @@ public sealed class ManagedByRefEffectAnalyzer(
             else if (!known.TryGetValue(key, out value!) && methods.Contains(key)) value = ManagedByRefMethodEffects.Empty;
             return value is not null;
         }
-
-        public IEnumerator<KeyValuePair<string, ManagedByRefMethodEffects>> GetEnumerator() => throw new NotSupportedException();
-
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private ManagedByRefMethodEffects AnalyzeBody(
         string identity,
         ManagedMethodBody method,
         ImmutableHashSet<int> candidates,
-        IReadOnlyDictionary<string, ManagedByRefMethodEffects> effects,
+        IEntryLookup<string, ManagedByRefMethodEffects> effects,
         IReadOnlySet<string> bodies,
         IReadOnlyDictionary<EntityKey, string> directIdentities,
         IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
@@ -383,7 +370,7 @@ public sealed class ManagedByRefEffectAnalyzer(
         List<ImmutableHashSet<int>> stack,
         ImmutableHashSet<int>.Builder written,
         ImmutableHashSet<int>.Builder escaped,
-        IReadOnlyDictionary<string, ManagedByRefMethodEffects> effects,
+        IEntryLookup<string, ManagedByRefMethodEffects> effects,
         IReadOnlySet<string> bodies,
         IReadOnlyDictionary<EntityKey, string> directIdentities,
         IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,

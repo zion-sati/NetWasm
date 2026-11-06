@@ -14,7 +14,7 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed record DelegateInvokeTarget(
     ImmutableArray<ManagedDelegateBinding> Bindings,
-    ModuleDataPlan ModuleData,
+    IEntryLookup<string, StaticInitializerGuard> StaticInitializerGuards,
     bool InlineArrayData = false);
 
 internal sealed class DelegateInvokeFunctionEmitter(
@@ -378,7 +378,7 @@ internal sealed class DelegateInvokeFunctionEmitter(
         {
             EmitRootFrame(code, rootSources, initializationFrameLocal);
             initialization.Emit(new(target.Definition.DeclaringType,
-                target.DeclaringType, targetProgram.ModuleData, IsMethodInvocation: true),
+                target.DeclaringType, targetProgram.StaticInitializerGuards, IsMethodInvocation: true),
                 code, functionIndices);
             WriteLocalGet(code, initializationFrameLocal);
             WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.RootFrameLeave));

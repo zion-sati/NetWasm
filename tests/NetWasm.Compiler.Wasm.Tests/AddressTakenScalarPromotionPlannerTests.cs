@@ -318,8 +318,8 @@ public sealed class AddressTakenScalarPromotionPlannerTests
             Step(Fixture.Call(1, target), CliValueKind.ManagedAddress));
         var request = fixture.Request(method, target, ManagedByRefMethodEffects.Empty);
         request = scenario == 0
-            ? request with { CallSites = ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty }
-            : request with { ByRefEffects = ManagedByRefEffects.Empty };
+            ? request with { CallSites = Lookups.Of(ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty) }
+            : request with { ByRefEffects = Lookups.Of(ManagedByRefEffects.Empty.Methods) };
 
         Assert.Empty(new AddressTakenScalarPromotionPlanner().Plan(request)
             .PromotedLocals);
@@ -604,8 +604,8 @@ public sealed class AddressTakenScalarPromotionPlannerTests
             return new(
                 method,
                 Caller,
-                calls,
-                new(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty
+                Lookups.Of(calls),
+                Lookups.Of(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty
                     .Add(targetIdentity.CanonicalName, effects)),
                 enabled);
         }

@@ -31,7 +31,8 @@ internal sealed class NullableBoxEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
-        Emit(code, underlyingType, request.Context.ObjectTemporary, targetLocal, request.Context.ManagedThrowFunction);
+        Emit(code, underlyingType, request.Context.ObjectTemporary, targetLocal, request.Context.ManagedThrowFunction,
+            request.Context.VectorScratch);
         request.Stack[slot] = CliValueKind.ManagedReference;
     }
 
@@ -40,7 +41,8 @@ internal sealed class NullableBoxEmitter(
         CliTypeIdentity underlyingType,
         int sourceAddressLocal,
         int targetLocal,
-        OptionalFunctionIndex throwFunction)
+        OptionalFunctionIndex throwFunction,
+        VectorScratch scratch)
     {
         if (sourceAddressLocal == targetLocal)
         {
@@ -115,13 +117,13 @@ internal sealed class NullableBoxEmitter(
                 layouts.Target,
                 0,
                 underlyingType,
-                underlying.Size);
+                underlying.Size, scratch: scratch);
             ManagedMemoryEmitter.EmitStoreByType(
                 code,
                 layouts.Target,
                 0,
                 underlyingType,
-                underlying.Size);
+                underlying.Size, scratch: scratch);
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }

@@ -21,8 +21,6 @@ internal sealed class UnitModelWriter
     private readonly ArrayBufferWriter<byte> _bytes = new(256);
     private readonly Dictionary<CliTypeIdentity, int> _types = new(UnitTypeComparer.Instance);
 
-    internal ReadOnlySpan<byte> Written => _bytes.WrittenSpan;
-
     internal byte[] ToArray() => _bytes.WrittenSpan.ToArray();
 
     internal void Int(int value)
@@ -95,7 +93,7 @@ internal sealed class UnitModelWriter
                 String(type.CanonicalName["primitive:".Length..]);
                 break;
             case CliTypeShape.Named:
-                String(type.Assembly?.Name);
+                String(type.Assembly!.Value.Name);
                 String(type.FullName);
                 break;
             case CliTypeShape.SzArray:
@@ -131,8 +129,6 @@ internal sealed class UnitModelWriter
                 Type(type.CustomModifier);
                 Bool(type.IsRequiredModifier);
                 break;
-            default:
-                throw new NotSupportedException($"A type of shape {type.Shape} cannot be written.");
         }
         Bool(type.IsValueType);
         Byte((byte)type.StackKind);
@@ -258,7 +254,8 @@ internal sealed class UnitModelReader(ReadOnlyMemory<byte> bytes, IMethodReposit
                 }
             case CliTypeShape.Named:
                 {
-                    var assembly = String() ?? "";
+                    // A named type's assembly is always written, its name empty when it has none.
+                    var assembly = String() ?? throw new InvalidDataException("A named unit type has no assembly.");
                     var fullName = String() ?? throw new InvalidDataException("A named unit type has no name.");
                     // Namespaces never contain '+'; a nested type's name begins after its namespace.
                     var nested = fullName.IndexOf('+');

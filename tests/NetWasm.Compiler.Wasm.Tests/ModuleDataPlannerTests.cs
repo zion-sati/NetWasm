@@ -326,7 +326,6 @@ public sealed class ModuleDataPlannerTests
     private sealed class ClosedCatchLayouts(CliTypeIdentity first, CliTypeIdentity second) : ITypeLayoutProvider
     {
         internal int Calls;
-        public int ReferenceArrayTypeId => throw new NotSupportedException();
         public int StringTypeId => throw new NotSupportedException();
         public int TypeTypeId => throw new NotSupportedException();
         public ObjectLayout GetObjectLayout(EntityKey type) => throw new NotSupportedException();

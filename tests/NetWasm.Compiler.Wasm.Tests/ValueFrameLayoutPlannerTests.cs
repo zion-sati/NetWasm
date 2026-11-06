@@ -44,6 +44,102 @@ public sealed class ValueFrameLayoutPlannerTests
         Assert.Equal([0], frame.LocalOffsets.Keys.ToArray());
     }
 
+    // As RyuJIT places a SIMD local's stack home: Vector3 and Vector4 on 16
+    // bytes and Vector2 on 8, so no access to a vector slot straddles a cache
+    // line. Each v128 local's slot holds all 16 bytes of its value.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void VectorLocalsTakeTheirSimdAlignment(WasmTarget target)
+    {
+        var fixture = new PlannerFixture(target);
+        var single = CliTypeIdentity.FromStackKind(CliValueKind.F4);
+        var vector2 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector2", isValueType: true);
+        var vector3 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector3", isValueType: true);
+        var vector4 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector4", isValueType: true);
+        var body = new CilMethodBody(fixture.BodyMethod, 1,
+            [CliValueKind.F4, CliValueKind.V128, CliValueKind.F4, CliValueKind.V128, CliValueKind.F4, CliValueKind.V128],
+            [.. Enumerable.Range(0, 6).Select(local =>
+                I(local, CilOperation.LoadLocalAddress, new CilOperand.Index(local)))])
+        {
+            LocalSignatureTypes = [single, vector3, single, vector4, single, vector2],
+        };
+
+        var frame = ThroughContract(fixture.CreatePlanner()).Create(PlanningMethod(body));
+
+        Assert.Equal(CliValueKind.V128, vector3.StackKind);
+        Assert.Equal([0, 16, 32, 48, 64, 72], Enumerable.Range(0, 6).Select(local => frame.LocalOffsets[local]));
+        Assert.True(frame.Size >= 88);
+    }
+
+    [Fact]
+    public void ThePlannerNeedsItsSlotAlignmentStrategy()
+    {
+        var fixture = new PlannerFixture(WasmTarget.Wasm32);
+        var arguments = new IndexedArguments([], []);
+
+        var failure = Assert.Throws<ArgumentNullException>(() => new ValueFrameLayoutPlanner(fixture, fixture, fixture.Layouts,
+            new MemberValueLayouts(new ValueLayout(fixture.ValueType, 12, 4, [])), fixture.TypeOperands, fixture.TypeIdentities,
+            arguments, arguments, new DirectValueLoadSelector(), EmptyTransientAggregatePromotionPlanner.Instance, null!));
+
+        Assert.Equal("slotAlignments", failure.ParamName);
+    }
+
+    // The planner asks its slot-alignment strategy for each typed slot, with the
+    // alignment the type's storage asks for, and places the slot on the answer.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void TypedSlotsTakeTheAlignmentTheStrategyResolves(WasmTarget target)
+    {
+        var fixture = new PlannerFixture(target);
+        var single = CliTypeIdentity.FromStackKind(CliValueKind.F4);
+        var value = fixture.ValueType;
+        var layouts = new MemberValueLayouts(new ValueLayout(value, 12, 4, []));
+        var arguments = new IndexedArguments(
+            [CliValueKind.F4, CliValueKind.ValueType],
+            [single, value]);
+        var body = new CilMethodBody(fixture.BodyMethod, 1, [CliValueKind.F4, CliValueKind.ValueType],
+        [
+            I(0, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+            I(1, CilOperation.StoreArgument, new CilOperand.Index(1)),
+            I(2, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            I(3, CilOperation.LoadLocalAddress, new CilOperand.Index(1)),
+        ])
+        {
+            LocalSignatureTypes = [single, value],
+        };
+        var alignments = new RecordingSlotAlignments(value, 64);
+        var planner = new ValueFrameLayoutPlanner(fixture, fixture, fixture.Layouts, layouts,
+            fixture.TypeOperands, fixture.TypeIdentities, arguments, arguments,
+            new DirectValueLoadSelector(),
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            alignments);
+
+        var frame = ThroughContract(planner).Create(PlanningMethod(body));
+
+        Assert.Equal(0, frame.ArgumentOffsets[0]);
+        Assert.Equal(64, frame.ArgumentOffsets[1]);
+        Assert.Equal(76, frame.LocalOffsets[0]);
+        Assert.Equal(128, frame.LocalOffsets[1]);
+        Assert.Contains((single, 4), alignments.Requests);
+        Assert.Equal(2, alignments.Requests.Count(request => request == (value, 4)));
+    }
+
+    // Resolves the given type to the given alignment and every other type to
+    // the alignment its storage asks for, recording each request.
+    private sealed class RecordingSlotAlignments(CliTypeIdentity type, int alignment) :
+        IValueFrameSlotAlignmentResolver
+    {
+        public List<(CliTypeIdentity Type, int Alignment)> Requests { get; } = [];
+
+        public int Resolve(CliTypeIdentity requested, int natural)
+        {
+            Requests.Add((requested, natural));
+            return requested.Equals(type) ? alignment : natural;
+        }
+    }
+
     [Theory]
     [InlineData(-1)]
     [InlineData(0)]
@@ -88,7 +184,8 @@ public sealed class ValueFrameLayoutPlannerTests
         var planner = new ValueFrameLayoutPlanner(fixture, fixture, fixture.Layouts, layouts,
             fixture.TypeOperands, fixture.TypeIdentities, arguments, arguments,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance);
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
 
         var frame = ThroughContract(planner).Create(PlanningMethod(body, (2, 1)));
 
@@ -129,7 +226,8 @@ public sealed class ValueFrameLayoutPlannerTests
             arguments,
             arguments,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance);
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
         var effect = effectKind switch
         {
             1 => new ManagedByRefMethodEffects([0], [], []),
@@ -167,7 +265,8 @@ public sealed class ValueFrameLayoutPlannerTests
             arguments,
             arguments,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance);
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
 
         var frame = ThroughContract(planner).Create(
             PlanningMethod(body, (0, 1)),
@@ -237,7 +336,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture, fixture, layouts, values, fixture.TypeOperands, fixture.TypeIdentities,
             fixture.ArgumentTypes, fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance);
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
         var body = new CilMethodBody(fixture.BodyMethod, 1, [],
         [
             I(0, CilOperation.LocalAllocate),
@@ -290,7 +390,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture, fixture, fixture.Layouts, values, fixture.TypeOperands, fixture.TypeIdentities,
             fixture.ArgumentTypes, fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance);
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
 
         var frame = ThroughContract(planner).Create(PlanningMethod(body), memberExecution: plan);
 
@@ -313,7 +414,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture, fixture, fixture.Layouts, values, fixture.TypeOperands, fixture.TypeIdentities,
             fixture.ArgumentTypes, fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance);
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
 
         var error = Assert.Throws<CompilerException>(() => ThroughContract(planner).Create(
             PlanningMethod(body), memberExecution: MemberPlan(invoker, nullable)));
@@ -505,7 +607,8 @@ public sealed class ValueFrameLayoutPlannerTests
             CreateTypeOperands(program), CreateTypeIdentities(program),
             CreateArgumentTypes(program), CreateArgumentSignatureTypes(program),
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance));
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver()));
         var operation = rank == 0
             ? CilOperation.LoadArrayElement
             : CilOperation.LoadRectangularArrayElement;
@@ -1336,7 +1439,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture.ArgumentTypes,
             fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance));
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver()));
         Assert.Throws<ArgumentNullException>(() => new ValueFrameLayoutPlanner(
             fixture,
             null!,
@@ -1347,7 +1451,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture.ArgumentTypes,
             fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance));
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver()));
         Assert.Throws<ArgumentNullException>(() => new ValueFrameLayoutPlanner(
             fixture,
             fixture,
@@ -1358,7 +1463,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture.ArgumentTypes,
             fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance));
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver()));
         Assert.Throws<ArgumentNullException>(() => new ValueFrameLayoutPlanner(
             fixture,
             fixture,
@@ -1369,7 +1475,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture.ArgumentTypes,
             fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance));
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver()));
         Assert.Throws<ArgumentNullException>(() => new ValueFrameLayoutPlanner(
             fixture,
             fixture,
@@ -1380,7 +1487,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture.ArgumentTypes,
             fixture.ArgumentSignatures,
             null!,
-            EmptyTransientAggregatePromotionPlanner.Instance));
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver()));
         Assert.Throws<ArgumentNullException>(() => new ValueFrameLayoutPlanner(
             fixture,
             fixture,
@@ -1391,7 +1499,8 @@ public sealed class ValueFrameLayoutPlannerTests
             fixture.ArgumentTypes,
             fixture.ArgumentSignatures,
             new DirectValueLoadSelector(),
-            null!));
+            null!,
+            new SimdValueFrameSlotAlignmentResolver()));
     }
 
     private static void AssertPlannerFailure(
@@ -1649,7 +1758,8 @@ public sealed class ValueFrameLayoutPlannerTests
             ArgumentTypes,
             ArgumentSignatures,
             new DirectValueLoadSelector(),
-            promotions ?? EmptyTransientAggregatePromotionPlanner.Instance);
+            promotions ?? EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
 
         public FieldDefinitionModel GetField(EntityKey key) => _fields[key];
         public void AddMethod(MethodDefinitionModel method) => _methods.Add(method.Key, method);

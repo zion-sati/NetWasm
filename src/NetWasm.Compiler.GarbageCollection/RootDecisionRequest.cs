@@ -8,5 +8,5 @@ public sealed record RootDecisionRequest(
     ManagedMethodBody Method,
     int Block,
     CilInstruction Instruction,
-    ISet<EntityKey> AllocatingMethods,
-    ISet<string> AllocatingConstructedMethods);
+    IMembership<EntityKey> AllocatingMethods,
+    IMembership<string> AllocatingConstructedMethods);

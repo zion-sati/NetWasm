@@ -45,9 +45,9 @@ public sealed class CallIndirectEmitterTests
         {
             Target = CreateInstructionModuleTarget(program) with
             {
-                CallableMethods = ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(
+                CallableMethods = Lookups.Whole(ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(
                     callable.CanonicalName,
-                    callable),
+                    callable)),
             },
         };
 
@@ -105,8 +105,8 @@ public sealed class CallIndirectEmitterTests
         {
             Target = CreateInstructionModuleTarget(program) with
             {
-                CallableMethods = new[] { first, second, nonStatic, incompatible }
-                    .ToImmutableDictionary(method => method.CanonicalName),
+                CallableMethods = Lookups.Whole(new[] { first, second, nonStatic, incompatible }
+                    .ToImmutableDictionary(method => method.CanonicalName)),
             },
         };
 

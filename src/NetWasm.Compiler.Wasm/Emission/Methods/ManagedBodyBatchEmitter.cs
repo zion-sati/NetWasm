@@ -100,19 +100,22 @@ internal sealed class ManagedBodyBatchEmitter(
         {
             replay.Logger.EndMethod();
         }
-        var body = functions.Single().Body;
-        if (!body.AsSpan().SequenceEqual(emitted.Function.Body))
-        {
-            var at = body.AsSpan().CommonPrefixLength(emitted.Function.Body);
-            throw new InvalidOperationException(
-                $"Replaying {identity} against the last compile gave a body that differs from emission at byte {at}.");
-        }
+        RequireReplayedBody(identity, functions.Single().Body, emitted.Function.Body);
         unitReplay.Replayed();
+    }
+
+    // A replayed body must be the one emission wrote.
+    internal static void RequireReplayedBody(string identity, byte[] replayed, byte[] emitted)
+    {
+        if (replayed.AsSpan().SequenceEqual(emitted)) return;
+        var at = replayed.AsSpan().CommonPrefixLength(emitted);
+        throw new InvalidOperationException(
+            $"Replaying {identity} against the last compile gave a body that differs from emission at byte {at}.");
     }
 
     // A restored body must be the one emission writes; under verification both are made
     // and any difference fails the compile.
-    private static ManagedBodyEmission Verified(string identity, ManagedBodyEmission? restored,
+    internal static ManagedBodyEmission Verified(string identity, ManagedBodyEmission? restored,
         ManagedBodyEmission emitted)
     {
         if (restored is null)

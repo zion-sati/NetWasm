@@ -47,7 +47,7 @@ public sealed class ManagedMethodBodyEmitterTests
             HoistArrayNullChecks = true,
             LoopRotation = LoopRotationPolicy.Guarded,
             EliminateArrayStoreChecks = true,
-            ManagedByRefEffects = new(
+            ManagedByRefEffects = Lookups.Of(
                 ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty.Add(
                     "Tests.Caller",
                     byRefEffects)),

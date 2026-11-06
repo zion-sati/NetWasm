@@ -24,7 +24,7 @@ internal sealed class DirectCallEmitter(
         if (initializationTriggers.Classify(target))
         {
             initialization.Emit(new(target.DeclaringType, request.Method.DeclaringType,
-                instruction.Target.ModuleData, IsMethodInvocation: true), code, functionIndices);
+                instruction.Target.StaticInitializerGuards, IsMethodInvocation: true), code, functionIndices);
         }
         var constrainedReferenceReceiver = !target.IsStatic &&
             request.ConstrainedType is { IsValueType: false };
@@ -76,7 +76,7 @@ internal sealed class DirectCallEmitter(
                 layouts.Target,
                 0,
                 request.Method.DeclaringType,
-                values.GetValueLayout(request.Method.DeclaringType).Size);
+                values.GetValueLayout(request.Method.DeclaringType).Size, scratch: instruction.Context.VectorScratch);
         }
         for (var index = 0; index < request.Consumed; index++)
         {

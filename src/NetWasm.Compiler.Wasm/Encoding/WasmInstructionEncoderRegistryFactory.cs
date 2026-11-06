@@ -43,6 +43,9 @@ public static class WasmInstructionEncoderRegistryFactory
                 WasmInstructionOperandShape.PrefixedUnsignedLeb128Triple,
                 new PrefixedUnsignedLeb128TripleInstructionEncoder(unsigned)),
             new(
+                WasmInstructionOperandShape.PrefixedMemoryLane,
+                new PrefixedMemoryLaneInstructionEncoder(unsigned)),
+            new(
                 WasmInstructionOperandShape.TryTableCatch,
                 new TryTableCatchInstructionEncoder(unsigned)),
         ]);

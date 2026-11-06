@@ -62,7 +62,8 @@ internal sealed class TypeRelationshipKeyResolver(
         try
         {
             var reachable = new HashSet<string>(StringComparer.Ordinal) { own };
-            if (IsManagedReference(type))
+            // Of the shapes keyed, every reference type is an object.
+            if (!type.IsValueType)
             {
                 reachable.Add(ObjectKey);
             }
@@ -135,8 +136,4 @@ internal sealed class TypeRelationshipKeyResolver(
     private static string DefinitionKey(EntityKey key) =>
         $"definition:{key.Assembly.Name}#{key.MetadataToken:x8}";
 
-    private static bool IsManagedReference(CliTypeIdentity type) =>
-        !type.IsValueType &&
-        type.Shape is not (CliTypeShape.GenericTypeParameter or CliTypeShape.GenericMethodParameter or
-            CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer);
 }

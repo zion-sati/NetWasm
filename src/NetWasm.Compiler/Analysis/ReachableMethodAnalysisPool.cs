@@ -18,7 +18,8 @@ namespace NetWasm.Compiler.Analysis;
 internal sealed class ReachableMethodAnalysisPool : IDisposable
 {
     private readonly ConcurrentQueue<ReachableMethodAnalysisSlot> _queue = new();
-    private readonly ConcurrentStack<IReachableMethodAnalyzer> _idleAnalyzers;
+    private readonly Lock _idleGate = new();
+    private readonly Stack<IReachableMethodAnalyzer> _idleAnalyzers;
     private readonly IReachableMethodAnalyzer _closureAnalyzer;
     private readonly Dictionary<ReachableMethodRequest, ReachableMethodAnalysisSlot> _slots =
         new(ReferenceEqualityComparer.Instance);
@@ -41,7 +42,7 @@ internal sealed class ReachableMethodAnalysisPool : IDisposable
         {
             ArgumentNullException.ThrowIfNull(worker);
         }
-        _idleAnalyzers = new ConcurrentStack<IReachableMethodAnalyzer>(workers);
+        _idleAnalyzers = new Stack<IReachableMethodAnalyzer>(workers);
         _closureAnalyzer = closureAnalyzer ?? throw new ArgumentNullException(nameof(closureAnalyzer));
         WorkerCount = workers.Length;
     }
@@ -134,12 +135,9 @@ internal sealed class ReachableMethodAnalysisPool : IDisposable
                 continue;
             }
             // A worker returns its analyzer before it stops counting as active, so one is idle.
-            if (_idleAnalyzers.TryPop(out analyzer!))
-            {
-                return true;
-            }
-            Interlocked.Decrement(ref _activeWorkers);
-            break;
+            lock (_idleGate)
+                analyzer = _idleAnalyzers.Pop();
+            return true;
         }
         analyzer = null!;
         return false;
@@ -156,7 +154,8 @@ internal sealed class ReachableMethodAnalysisPool : IDisposable
                     Run(slot, analyzer);
                 }
             }
-            _idleAnalyzers.Push(analyzer);
+            lock (_idleGate)
+                _idleAnalyzers.Push(analyzer);
             Interlocked.Decrement(ref _activeWorkers);
             _progress.Set();
             // The closure queues before it counts active workers, and a worker counts itself out

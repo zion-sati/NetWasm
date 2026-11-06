@@ -107,6 +107,17 @@ public sealed class CompilerDependencyInjectionTests
         Assert.Same(options, executor.Options);
     }
 
+    // The facade asks for a full compile: an executor that served it from the last compile
+    // breaks its contract.
+    [Fact]
+    public void CompilationFacadeRefusesACompileServedFromTheLastOne()
+    {
+        var compiler = new NetWasmCompilationPipeline(new ServingPipelineExecutor());
+
+        Assert.Throws<InvalidOperationException>(() =>
+            compiler.Compile(new CompilerOptions("entry.dll", [], "Application", "Run", [])));
+    }
+
     [Fact]
     public void CompilationFacadeRejectsAMissingPipelineExecutor()
     {
@@ -134,6 +145,12 @@ public sealed class CompilerDependencyInjectionTests
     private sealed class StageReplacementObservedException(string entryAssemblyPath) : Exception
     {
         public string EntryAssemblyPath { get; } = entryAssemblyPath;
+    }
+
+    private sealed class ServingPipelineExecutor : ICompilationPipelineExecutor
+    {
+        public CompilationOutcome Execute(CompilerOptions options, bool serveFromLastCompile = false) =>
+            new(null, new ModuleCompilationResult([0x00, 0x61, 0x73, 0x6D], null!, 0));
     }
 
     private sealed class RecordingPipelineExecutor : ICompilationPipelineExecutor

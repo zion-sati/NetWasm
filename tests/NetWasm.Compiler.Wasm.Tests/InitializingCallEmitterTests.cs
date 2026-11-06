@@ -38,7 +38,7 @@ public sealed class InitializingCallEmitterTests
             Assert.NotNull(fixture.Initialization);
             Assert.Equal(method.DeclaringType, fixture.Initialization.TypeDefinition);
             Assert.Equal(request.Method.DeclaringType, fixture.Initialization.DeclaringType);
-            Assert.Same(instruction.Target.ModuleData, fixture.Initialization.ModuleData);
+            Assert.Same(instruction.Target.StaticInitializerGuards, fixture.Initialization.Guards);
             Assert.True(fixture.Initialization.IsMethodInvocation);
             Assert.Same(code, fixture.InitializationCode);
             Assert.Same(indices, fixture.InitializationIndices);

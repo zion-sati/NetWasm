@@ -103,14 +103,16 @@ internal sealed class FieldInstructionEmitter(
             layouts.Target,
             layout.Offset,
             fieldType,
-            layout.Size);
+            layout.Size, scratch: request.Context.VectorScratch);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(request.Context, slot, fieldType.StackKind)))));
         request.Stack[slot] = fieldType.StackKind;
     }
 
     // A field of a vector value, such as Vector128<T>'s Vector64 halves or
     // Vector<T>'s ulongs, is a lane of the v128 value. A value-type field goes to
-    // the load's temporary, whose address the stack then holds.
+    // the load's temporary, whose address the stack then holds. A vector field
+    // at the start, as Plane's Normal, is the value itself: its own lanes are
+    // the vector's low lanes, and the lanes above them are undefined.
     private void EmitVectorFieldLoad(
         InstructionEmissionRequest request,
         IWasmInstructionWriter code,
@@ -118,6 +120,15 @@ internal sealed class FieldInstructionEmitter(
         FieldLayout layout,
         CliTypeIdentity fieldType)
     {
+        if (fieldType.StackKind == CliValueKind.V128)
+        {
+            if (layout.Offset != 0)
+            {
+                throw new CompilerException(new CompilerDiagnostic(
+                    DiagnosticCode.UnsupportedCil, "a vector's vector field does not start the vector"));
+            }
+            return;
+        }
         var vector = GetStackLocal(request.Context, slot, CliValueKind.V128);
         var storage = fieldType.StackStorageType ?? fieldType;
         var floating = storage.StackKind is CliValueKind.F4 or CliValueKind.F8;
@@ -238,7 +249,7 @@ internal sealed class FieldInstructionEmitter(
             layouts.Target,
             layout.Offset,
             fieldType,
-            layout.Size);
+            layout.Size, scratch: request.Context.VectorScratch);
         request.Stack.RemoveRange(objectSlot, 2);
     }
 

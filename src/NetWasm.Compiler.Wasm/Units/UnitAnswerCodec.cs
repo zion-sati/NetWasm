@@ -38,7 +38,6 @@ internal static class UnitAnswerCodec
             case UnitQueryKind.FieldDescriptorAddress:
             case UnitQueryKind.MemberDescriptorOffsets:
             case UnitQueryKind.ExceptionObject:
-            case UnitQueryKind.ReferenceArrayTypeId:
             case UnitQueryKind.StringTypeId:
             case UnitQueryKind.TypeTypeId:
                 writer.Int((int)value);
@@ -299,7 +298,6 @@ internal static class UnitAnswerCodec
             case UnitQueryKind.FieldDescriptorAddress:
             case UnitQueryKind.MemberDescriptorOffsets:
             case UnitQueryKind.ExceptionObject:
-            case UnitQueryKind.ReferenceArrayTypeId:
             case UnitQueryKind.StringTypeId:
             case UnitQueryKind.TypeTypeId:
                 value = reader.Int();

@@ -14,7 +14,6 @@ internal sealed class TypeLayoutProvider(
     private readonly ManagedLayoutSnapshot _snapshot = snapshot ??
         throw new ArgumentNullException(nameof(snapshot));
 
-    public int ReferenceArrayTypeId => _snapshot.ReferenceArrayTypeId;
     public int StringTypeId => _snapshot.StringTypeId;
     public int TypeTypeId => _snapshot.TypeTypeId;
 

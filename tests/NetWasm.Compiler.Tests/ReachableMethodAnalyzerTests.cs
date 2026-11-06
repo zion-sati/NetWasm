@@ -175,7 +175,7 @@ public sealed class ReachableMethodAnalyzerTests
         public ReachabilityInstructionAnalysis Analyze(ReachabilityInstructionRequest request)
         {
             Called = true;
-            return new([], [], [], [], [], [], [], [], [], []);
+            return new([], [], [], [], [], [], [], [], [], [], []);
         }
     }
 

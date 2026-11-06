@@ -67,7 +67,7 @@ public sealed class DelegateFunctionAppenderTests
             Invoke = new(definition,
                 CliTypeIdentity.Named(EmitterTestSupport.Assembly, "Tests", "Callback",
                     isValueType: false), [], definition.Signature);
-            Target = new([], ModuleDataPlan.Empty);
+            Target = new([], Lookups.NoEntries<string, StaticInitializerGuard>());
             FunctionIndices = EmitterTestSupport.CreateFunctionIndexResolver(program);
             Appender = Assert.IsAssignableFrom<IDelegateFunctionAppender>(
                 new DelegateFunctionAppender(

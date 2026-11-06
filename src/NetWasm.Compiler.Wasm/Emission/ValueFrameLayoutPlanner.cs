@@ -59,7 +59,8 @@ internal sealed class ValueFrameLayoutPlanner(
     IArgumentTypeResolver argumentTypes,
     IArgumentSignatureTypeResolver argumentSignatureTypes,
     IDirectValueLoadSelector directValueLoads,
-    ITransientAggregatePromotionPlanner transientAggregatePromotions) : IValueFrameLayoutPlanner
+    ITransientAggregatePromotionPlanner transientAggregatePromotions,
+    IValueFrameSlotAlignmentResolver slotAlignments) : IValueFrameLayoutPlanner
 {
     private readonly IFieldRepository _fields =
         fields ?? throw new ArgumentNullException(nameof(fields));
@@ -79,6 +80,8 @@ internal sealed class ValueFrameLayoutPlanner(
     private readonly ITransientAggregatePromotionPlanner _transientAggregatePromotions =
         transientAggregatePromotions ??
         throw new ArgumentNullException(nameof(transientAggregatePromotions));
+    private readonly IValueFrameSlotAlignmentResolver _slotAlignments =
+        slotAlignments ?? throw new ArgumentNullException(nameof(slotAlignments));
 
     public ValueFrameLayout Create(StructuredMethod method, NativeImportPlan? nativeImports = null,
         MemberExecutionPlan? memberExecution = null,
@@ -128,7 +131,7 @@ internal sealed class ValueFrameLayoutPlanner(
             {
                 continue;
             }
-            var alignment = _layouts.Target.GetStorageAlignment(type);
+            var alignment = _slotAlignments.Resolve(type, _layouts.Target.GetStorageAlignment(type));
             size = Align(size, alignment);
             arguments.Add(index, size);
             size = checked(size + _layouts.Target.GetStorageSize(type));
@@ -147,7 +150,7 @@ internal sealed class ValueFrameLayoutPlanner(
         {
             var type = _argumentSignatureTypes.Resolve(header, index);
             var layout = _values.GetValueLayout(type);
-            size = Align(size, layout.Alignment);
+            size = Align(size, _slotAlignments.Resolve(type, layout.Alignment));
             arguments.Add(index, size);
             size = checked(size + layout.Size);
         }
@@ -180,9 +183,9 @@ internal sealed class ValueFrameLayoutPlanner(
             {
                 continue;
             }
-            var alignment = type.StackKind == CliValueKind.ValueType
+            var alignment = _slotAlignments.Resolve(type, type.StackKind == CliValueKind.ValueType
                 ? _values.GetValueLayout(type).Alignment
-                : _layouts.Target.GetStorageAlignment(type);
+                : _layouts.Target.GetStorageAlignment(type));
             var storageSize = type.StackKind == CliValueKind.ValueType
                 ? _values.GetValueLayout(type).Size
                 : _layouts.Target.GetStorageSize(type);
@@ -552,7 +555,7 @@ internal sealed class ValueFrameLayoutPlanner(
                     TransientStorageKind.CallReceiver,
                     0,
                     receiverLayout.Size,
-                    receiverLayout.Alignment);
+                    _slotAlignments.Resolve(receiverType, receiverLayout.Alignment));
             }
             if (callSignature.ReturnSignatureType.StackKind == CliValueKind.ValueType)
             {
@@ -568,7 +571,7 @@ internal sealed class ValueFrameLayoutPlanner(
         void ReserveUniqueResult(CliTypeIdentity type, int instructionOffset)
         {
             var layout = _values.GetValueLayout(type);
-            size = Align(size, layout.Alignment);
+            size = Align(size, _slotAlignments.Resolve(type, layout.Alignment));
             temporaries.Add(instructionOffset, size);
             size = checked(size + layout.Size);
         }
@@ -579,7 +582,7 @@ internal sealed class ValueFrameLayoutPlanner(
             CilOperation operation)
         {
             var layout = _values.GetValueLayout(type);
-            ReserveStackResult(instruction, operation, layout.Size, layout.Alignment);
+            ReserveStackResult(instruction, operation, layout.Size, _slotAlignments.Resolve(type, layout.Alignment));
         }
 
         void ReserveNativeArgument(
@@ -592,7 +595,7 @@ internal sealed class ValueFrameLayoutPlanner(
                 TransientStorageKind.NativeArgument,
                 parameter.LogicalIndex,
                 parameter.Value.Size,
-                parameter.Value.Alignment);
+                _slotAlignments.Resolve(parameter.Value.LogicalType, parameter.Value.Alignment));
         }
 
         void ReserveNativeResult(CilInstruction instruction, NativeAbiValuePlan value)
@@ -602,7 +605,7 @@ internal sealed class ValueFrameLayoutPlanner(
                 instruction,
                 instruction.Operation,
                 value.Size,
-                value.Alignment);
+                _slotAlignments.Resolve(value.LogicalType, value.Alignment));
         }
 
         void ValidateNativeStorage(NativeAbiValuePlan value)

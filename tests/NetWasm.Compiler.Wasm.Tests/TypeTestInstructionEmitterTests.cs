@@ -254,7 +254,6 @@ public sealed class TypeTestInstructionEmitterTests
 
         public ObjectLayout GetObjectLayout(EntityKey type) => throw new NotSupportedException();
 
-        public int ReferenceArrayTypeId => 0;
 
         public int StringTypeId => 0;
 
@@ -335,10 +334,10 @@ public sealed class TypeTestInstructionEmitterTests
             Header = request.Header with { MethodInstance = caller },
             Target = request.Target with
             {
-                TypeTestSites = new Dictionary<string, TypeTestSiteModel>
+                TypeTestSites = Lookups.Of(new Dictionary<string, TypeTestSiteModel>
                 {
                     [site.Key] = site,
-                },
+                }),
             },
         };
         RegisterInstructionWriter(updated, new RecordingInstructionWriter());

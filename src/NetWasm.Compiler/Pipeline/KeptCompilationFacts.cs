@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.IO.Hashing;
@@ -58,6 +59,7 @@ internal sealed record KeptCompilationFacts(
 }
 
 [JsonSerializable(typeof(KeptCompilationFacts))]
+[ExcludeFromCodeCoverage]
 internal sealed partial class KeptCompilationFactsJsonContext : JsonSerializerContext;
 
 /// <summary>

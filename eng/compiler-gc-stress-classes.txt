@@ -127,6 +127,7 @@ NetWasm.Compiler.Tests.Correctness.NullableMemberGcTests
 NetWasm.Compiler.Tests.Correctness.NumberFormattingCorpusTests
 NetWasm.Compiler.Tests.Correctness.NumericConversionEdgeTests
 NetWasm.Compiler.Tests.Correctness.NumericTransportEdgeTests
+NetWasm.Compiler.Tests.Correctness.NumericsVector3StorageCorpusTests
 NetWasm.Compiler.Tests.Correctness.NumericsVectorStorageCorpusTests
 NetWasm.Compiler.Tests.Correctness.NumericsVectorTypesCorpusTests
 NetWasm.Compiler.Tests.Correctness.ObjectModelCollectionCompatibilityCorpusTests

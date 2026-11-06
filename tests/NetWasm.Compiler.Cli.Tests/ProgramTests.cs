@@ -57,6 +57,31 @@ public sealed class ProgramTests
         Assert.StartsWith("                             NetWasm Compiler Options", output.ToString(), StringComparison.Ordinal);
     }
 
+    // NETWASM_GC_STATS=1 adds a line on the compile's garbage collection, for tuning.
+    [Fact]
+    public void MainReportsGarbageCollectionWhenAsked()
+    {
+        var (output, error) = (Console.Out, Console.Error);
+        using var console = new StringWriter();
+        using var report = new StringWriter();
+        Console.SetOut(console);
+        Console.SetError(report);
+        Environment.SetEnvironmentVariable("NETWASM_GC_STATS", "1");
+        try
+        {
+            Assert.Equal(0, Program.Main(["-nologo", "-help"]));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("NETWASM_GC_STATS", null);
+            Console.SetOut(output);
+            Console.SetError(error);
+        }
+
+        Assert.StartsWith("gc: gen0 ", report.ToString(), StringComparison.Ordinal);
+        Assert.Contains(" MB", report.ToString(), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("wasm32")]
     [InlineData("wasm64")]

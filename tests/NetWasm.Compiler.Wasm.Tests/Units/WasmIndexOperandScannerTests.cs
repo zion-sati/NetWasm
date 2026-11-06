@@ -99,6 +99,73 @@ public sealed class WasmIndexOperandScannerTests
             Body, operands, null!));
     }
 
+    // Every instruction the scanner decodes, each with the indices it encodes; one body of
+    // them all, with no locals, scans to their indices in order and rewrites to itself.
+    private static readonly (byte[] Bytes, (WasmIndexSpace Space, uint Index)[] Indices)[] Instructions =
+    [
+        ([0x00], []), ([0x01], []), ([0x05], []), ([0x0A], []), ([0x0B], []), ([0x0F], []), ([0x19], []),
+        ([0x1A], []), ([0x1B], []), ([0xD1], []), ([0xD3], []), ([0xD4], []),
+        ([0x02, 0x40], []), ([0x03, 0x7F], []), ([0x04, 0x05], [(WasmIndexSpace.Type, 5)]), ([0x06, 0x40], []),
+        ([0x07, 0x01], [(WasmIndexSpace.Tag, 1)]), ([0x08, 0x02], [(WasmIndexSpace.Tag, 2)]),
+        ([0x09, 0x00], []), ([0x0C, 0x01], []), ([0x0D, 0x00], []), ([0x18, 0x00], []), ([0xD5, 0x00], []),
+        ([0xD6, 0x00], []), ([0x0E, 0x01, 0x00, 0x01], []),
+        ([0x10, 0x03], [(WasmIndexSpace.Function, 3)]), ([0x12, 0x04], [(WasmIndexSpace.Function, 4)]),
+        ([0xD2, 0x05], [(WasmIndexSpace.Function, 5)]),
+        ([0x11, 0x02, 0x00], [(WasmIndexSpace.Type, 2), (WasmIndexSpace.Table, 0)]),
+        ([0x13, 0x03, 0x01], [(WasmIndexSpace.Type, 3), (WasmIndexSpace.Table, 1)]),
+        ([0x14, 0x04], [(WasmIndexSpace.Type, 4)]), ([0x15, 0x06], [(WasmIndexSpace.Type, 6)]),
+        ([0x1C, 0x02, 0x7F, 0x7E], []),
+        ([0x1F, 0x40, 0x04, 0x00, 0x01, 0x00, 0x01, 0x02, 0x00, 0x02, 0x00, 0x03, 0x01],
+            [(WasmIndexSpace.Tag, 1), (WasmIndexSpace.Tag, 2)]),
+        ([0x20, 0x00], []), ([0x21, 0x01], []), ([0x22, 0x02], []),
+        ([0x23, 0x05], [(WasmIndexSpace.Global, 5)]), ([0x24, 0x06], [(WasmIndexSpace.Global, 6)]),
+        ([0x25, 0x01], [(WasmIndexSpace.Table, 1)]), ([0x26, 0x02], [(WasmIndexSpace.Table, 2)]),
+        ([0x3F, 0x00], [(WasmIndexSpace.Memory, 0)]), ([0x40, 0x01], [(WasmIndexSpace.Memory, 1)]),
+        ([0x41, 0x7F], []), ([0x42, 0x80, 0x01], []), ([0x43, 1, 2, 3, 4], []), ([0x44, 1, 2, 3, 4, 5, 6, 7, 8], []),
+        ([0xD0, 0x70], []), ([0xD0, 0x07], [(WasmIndexSpace.Type, 7)]),
+        ([0x28, 0x02, 0x08], []), ([0x3E, 0x42, 0x01, 0x00], [(WasmIndexSpace.Memory, 1)]), ([0x6A], []),
+        ([0xFC, 0x00], []), ([0xFC, 0x08, 0x03, 0x00], [(WasmIndexSpace.Data, 3), (WasmIndexSpace.Memory, 0)]),
+        ([0xFC, 0x09, 0x04], [(WasmIndexSpace.Data, 4)]),
+        ([0xFC, 0x0A, 0x00, 0x01], [(WasmIndexSpace.Memory, 0), (WasmIndexSpace.Memory, 1)]),
+        ([0xFC, 0x0B, 0x00], [(WasmIndexSpace.Memory, 0)]),
+        ([0xFC, 0x0C, 0x01, 0x00], [(WasmIndexSpace.Element, 1), (WasmIndexSpace.Table, 0)]),
+        ([0xFC, 0x0D, 0x02], [(WasmIndexSpace.Element, 2)]),
+        ([0xFC, 0x0E, 0x00, 0x01], [(WasmIndexSpace.Table, 0), (WasmIndexSpace.Table, 1)]),
+        ([0xFC, 0x0F, 0x00], [(WasmIndexSpace.Table, 0)]), ([0xFC, 0x10, 0x01], [(WasmIndexSpace.Table, 1)]),
+        ([0xFC, 0x11, 0x02], [(WasmIndexSpace.Table, 2)]),
+        ([0xFD, 0x00, 0x04, 0x00], []), ([0xFD, 0x5C, 0x02, 0x00], []),
+        ([0xFD, 0x0D, .. Enumerable.Range(0, 16).Select(lane => (byte)lane)], []), ([0xFD, 0x15, 0x03], []),
+        ([0xFD, 0x54, 0x40, 0x01, 0x00, 0x01], [(WasmIndexSpace.Memory, 1)]), ([0xFD, 0x6E], []),
+        ([0xFE, 0x03, 0x00], []), ([0xFE, 0x10, 0x02, 0x00], []),
+    ];
+
+    [Fact]
+    public void ScanDecodesEveryInstructionItCovers()
+    {
+        byte[] body = [0x00, .. Instructions.SelectMany(instruction => instruction.Bytes)];
+
+        var operands = new WasmIndexOperandScanner().Scan(body);
+
+        Assert.Equal(Instructions.SelectMany(instruction => instruction.Indices),
+            operands.Select(operand => (operand.Space, operand.Index)));
+        Assert.Equal(body, new WasmIndexOperandRewriter().Rewrite(body, operands, new Shift(0)));
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0x00, 0x02, 0x63 })]
+    [InlineData(new byte[] { 0x00, 0x02, 0x64 })]
+    [InlineData(new byte[] { 0x00, 0xFD })]
+    [InlineData(new byte[] { 0x00, 0xFE, 0x03, 0x01 })]
+    [InlineData(new byte[] { 0x00, 0xFE, 0x4F })]
+    [InlineData(new byte[] { 0x00, 0x43, 0x00 })]
+    [InlineData(new byte[] { 0x00, 0x10, 0x80, 0x80, 0x80, 0x80, 0x10 })]
+    [InlineData(new byte[] { 0x00, 0x10, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80 })]
+    [InlineData(new byte[] { 0x00, 0x41, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80 })]
+    public void ScanRejectsMalformedAndUncoveredEncodings(byte[] body)
+    {
+        Assert.Throws<InvalidDataException>(() => new WasmIndexOperandScanner().Scan(body));
+    }
+
     private sealed class Shift(uint by) : IWasmIndexRemapping
     {
         public uint Remap(WasmIndexSpace space, uint index) => index + by;

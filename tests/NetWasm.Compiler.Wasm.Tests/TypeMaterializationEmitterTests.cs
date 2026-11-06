@@ -263,7 +263,7 @@ public sealed class TypeMaterializationEmitterTests
         {
             TypeFactsTableAddress = typeFacts ? 160 : 0,
             TypeFactsTableCount = typeFacts ? 16 : 0,
-            TypeObjectAddresses = typeObjects ?? ImmutableDictionary<string, int>.Empty,
+            TypeObjectAddresses = Lookups.Of(typeObjects ?? ImmutableDictionary<string, int>.Empty),
             TypeObjectCacheAddress = typeObjectCache,
         };
         var imports = WasmRuntimeImports.CreateCatalog();

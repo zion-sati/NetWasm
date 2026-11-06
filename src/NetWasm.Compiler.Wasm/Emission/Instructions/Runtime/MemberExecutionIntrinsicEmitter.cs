@@ -209,7 +209,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
                 _layouts.Target,
                 layout.Offset,
                 field.FieldType,
-                layout.Size);
+                layout.Size, scratch: request.Instruction.Context.VectorScratch);
             int valueLocal = PreserveResult(
                 request,
                 code,
@@ -273,7 +273,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         if (_initializationTriggers.Classify(method.Definition))
         {
             _initialization.Emit(new(method.Definition.DeclaringType,
-                method.DeclaringType, request.Instruction.Target.ModuleData,
+                method.DeclaringType, request.Instruction.Target.StaticInitializerGuards,
                 IsMethodInvocation: true), code, request.FunctionIndices);
         }
         var underlying = _nullableTypes.Resolve(resultType);
@@ -329,7 +329,8 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)source)));
         _nullableBoxes.Emit(code, underlying, source,
-            request.Local(0, CliValueKind.ManagedReference), request.Instruction.Context.ManagedThrowFunction);
+            request.Local(0, CliValueKind.ManagedReference), request.Instruction.Context.ManagedThrowFunction,
+            request.Instruction.Context.VectorScratch);
     }
 
     private void EmitArguments(
@@ -367,7 +368,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
                 _layouts.Target,
                 0,
                 parameter,
-                valueLayout.Size);
+                valueLayout.Size, scratch: request.Instruction.Context.VectorScratch);
         }
     }
 
@@ -511,7 +512,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
             _layouts.Target,
             0,
             resultType,
-            valueLayout.Size);
+            valueLayout.Size, scratch: request.Instruction.Context.VectorScratch);
     }
 
     private static int PreserveResult(

@@ -30,7 +30,10 @@ internal static class PipelineServiceCollectionExtensions
         // A compile that replays the last one resolves function indices from its kept plans.
         services.AddSingleton<NetWasm.Compiler.Wasm.Emission.Planning.IFunctionIndexResolverFactory,
             NetWasm.Compiler.Wasm.Emission.Planning.FunctionIndexResolverFactory>();
-        services.AddSingleton<IEarlyCutoffEmitter, EarlyCutoffEmitter>();
+        // A last compile that cannot answer declines the cutoff.
+        services.AddSingleton<EarlyCutoffEmitter>();
+        services.AddSingleton<IEarlyCutoffEmitter>(provider =>
+            new DecliningEarlyCutoffEmitter(provider.GetRequiredService<EarlyCutoffEmitter>()));
         services.AddSingleton<INetWasmModuleCompiler, NetWasmModuleCompilationPipeline>();
         services.AddSingleton<IManagedByRefMethodSummarizerFactory, ManagedByRefMethodSummarizerFactory>();
         services.AddSingleton<NetWasm.Compiler.Wasm.Units.IReplayMethodEmitterFactory,

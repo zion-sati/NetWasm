@@ -24,7 +24,7 @@ internal sealed class StaticInitializationEmitter(
         var key = request.DeclaringType?.Shape == CliTypeShape.GenericInstantiation
             ? $"{request.DeclaringType.CanonicalName}::0x{initializer.Key.MetadataToken:x8}"
             : StaticInitializerGuard.KeyFor(initializer.Key);
-        if (!request.ModuleData.StaticInitializerGuards.TryGetValue(key, out var guard)) return;
+        if (!request.Guards.TryGetValue(key, out var guard)) return;
 
         addresses.Emit(code, guard.Address);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, 0)));

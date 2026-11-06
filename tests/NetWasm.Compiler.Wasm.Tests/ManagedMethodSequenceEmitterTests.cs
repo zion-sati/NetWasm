@@ -99,11 +99,11 @@ public sealed class ManagedMethodSequenceEmitterTests
         var locations = new RecordingStackTraceFrameLocationEmitter();
         var target = CreateInstructionModuleTarget(program) with
         {
-            StackTraceMethods = StackTraceMethodPlan.Disabled with
+            StackTraceLookups = StackTraceMethodLookups.Of(StackTraceMethodPlan.Disabled with
             {
                 LocationSymbols = ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty
                     .Add(9, [new(0, 100), new(20, 101), new(70, 102)]),
-            },
+            }),
         };
 
         AsEmitter(CreateEmitter(blocks, locations: locations)).Emit(
@@ -621,7 +621,7 @@ public sealed class ManagedMethodSequenceEmitterTests
             StructuredMethod method,
             StructuredExceptionRegion region,
             MethodEmissionContext context,
-            ModuleDataPlan moduleData,
+            IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata,
             Action<StructuredSequence, MethodEmissionContext, int?, int?, int?> emitSequence,
             int? loopBreakDepth = null,
             int? loopContinueDepth = null,

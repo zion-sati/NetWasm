@@ -157,7 +157,9 @@ layouts,
         Assert.Equal(CliValueKind.I4, Declared(context.DispatcherProgramCounter));
         Assert.Equal(CliValueKind.I4, Declared(context.NumericTemporaryI4Second));
         Assert.Equal(CliValueKind.I4, Declared(context.InlineCatchFrame));
-        Assert.Equal(locals.Length + 1, context.InlineCatchFrame);
+        Assert.Equal(CliValueKind.ManagedAddress, Declared(context.VectorScratch.Address));
+        Assert.Equal(CliValueKind.V128, Declared(context.VectorScratch.Value));
+        Assert.Equal(locals.Length + 1, context.VectorScratch.Value);
         Assert.NotEqual(context.NumericTemporaryI4, context.DispatcherProgramCounter);
     }
 

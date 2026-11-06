@@ -11,6 +11,21 @@ namespace NetWasm.Compiler.Metadata.Tests;
 
 public sealed class MetadataMethodReferenceResolverTests
 {
+    // A resolution is kept by its key: the same token of another assembly, or with other
+    // type or method arguments, is another resolution.
+    [Fact]
+    public void AResolutionIsKeptByItsTokenAssemblyAndArguments()
+    {
+        var int32 = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var key = new MetadataMethodReferenceResolver.ResolutionKey("App", 0x0A000001, [int32], []);
+
+        Assert.True(key.Equals(new MetadataMethodReferenceResolver.ResolutionKey("App", 0x0A000001, [int32], [])));
+        Assert.False(key.Equals(new MetadataMethodReferenceResolver.ResolutionKey("Lib", 0x0A000001, [int32], [])));
+        Assert.False(key.Equals(new MetadataMethodReferenceResolver.ResolutionKey("App", 0x0A000002, [int32], [])));
+        Assert.False(key.Equals(new MetadataMethodReferenceResolver.ResolutionKey("App", 0x0A000001, [], [])));
+        Assert.False(key.Equals(new MetadataMethodReferenceResolver.ResolutionKey("App", 0x0A000001, [int32], [int32])));
+    }
+
     [Theory]
     [InlineData("inherited")]
     [InlineData("generic")]

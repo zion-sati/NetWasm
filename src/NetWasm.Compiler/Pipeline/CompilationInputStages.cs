@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Linq;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -58,6 +59,13 @@ internal sealed class CompilationInputDetector(
     ICompilationInputReader inputs,
     NetWasm.Compiler.Wasm.Units.IUnitInputsLoader loader) : ICompilationInputDetector
 {
+    // Whether managed optimizations analyse each method alone: at O0 or none, without overrides
+    // (overrides naming the defaults are none).
+    internal static bool AnalysesMethodsLocally(CompilerOptions options) =>
+        options.Optimization is FinalWasmOptimization.O0 or FinalWasmOptimization.None &&
+        (options.OptimizationOverrides is null ||
+         options.OptimizationOverrides == new NetWasm.Compiler.ComponentModel.Optimization.WasmOptimizationOverrides());
+
     public CompilationInputObservation? Detect(CompilerOptions options, MetadataCompilationSnapshot metadata)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -73,9 +81,7 @@ internal sealed class CompilationInputDetector(
         var elapsed = Stopwatch.GetElapsedTime(started);
         return new(directory, previous, current, changes)
         {
-            MethodLocalAnalysis = options.Optimization is FinalWasmOptimization.O0 or FinalWasmOptimization.None &&
-                (options.OptimizationOverrides is null ||
-                 options.OptimizationOverrides == new NetWasm.Compiler.ComponentModel.Optimization.WasmOptimizationOverrides()),
+            MethodLocalAnalysis = AnalysesMethodsLocally(options),
             Report = changes.Describe() + "read in " +
                 elapsed.TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture) + " ms\n",
         };
@@ -104,7 +110,7 @@ internal sealed class CompilationInputRecorder(
     }
 
     // The compile's inputs with what each analysed method contributed.
-    internal static CompilationInputs WithContributions(CompilationInputs current, ReachableProgram program)
+    private static CompilationInputs WithContributions(CompilationInputs current, ReachableProgram program)
     {
         var contributions = new Dictionary<string, MethodContributionRecord>(
             program.MethodContributions.Count, StringComparer.Ordinal);
@@ -145,59 +151,25 @@ internal sealed class CompilationInputRecorder(
         ArgumentNullException.ThrowIfNull(current);
         if (CutoffPreconditions(observation) is { } unmet)
             return (false, unmet);
-        var changes = observation.Changes;
-        var edited = new HashSet<(string Assembly, int Token)>();
-        foreach (var assembly in changes.Assemblies)
-        {
-            foreach (var token in assembly.ChangedBodies) edited.Add((assembly.Name, token));
-        }
+        var edited = EditedContributions.Bodies(observation.Changes);
         if (edited.Count == 0)
             return (true, "nothing changed");
-        var instances = 0;
-        foreach (var (name, contribution) in current.Contributions)
-        {
-            if (!edited.Contains((contribution.Assembly, contribution.Token))) continue;
-            instances++;
-            if (!observation.Previous.Contributions.TryGetValue(name, out var before) ||
-                before.Fingerprint != contribution.Fingerprint)
-            {
-                return (false, $"{name} changed what it adds to the program");
-            }
-        }
-        foreach (var (name, contribution) in observation.Previous.Contributions)
-        {
-            if (edited.Contains((contribution.Assembly, contribution.Token)) && !current.Contributions.ContainsKey(name))
-                return (false, $"{name} is no longer analysed");
-        }
-        return (true, $"{instances} analysed instances of {edited.Count} edited bodies keep their contributions");
+        var contributions = EditedContributions.Compare(edited, observation.Previous.Contributions, current.Contributions);
+        if (contributions.Obstacle is { } obstacle)
+            return (false, obstacle);
+        return (true, $"{contributions.Kept} analysed instances of {edited.Count} edited bodies keep their contributions");
     }
 
     // Whether every analysed instance of an edited method added what it added last time.
-    private static string DescribeContributions(
+    internal static string DescribeContributions(
         CompilationInputs previous, CompilationInputs current, CompilationInputChanges changes)
     {
-        var edited = new HashSet<(string Assembly, int Token)>();
-        foreach (var assembly in changes.Assemblies)
-        {
-            foreach (var token in assembly.ChangedBodies) edited.Add((assembly.Name, token));
-        }
+        var edited = EditedContributions.Bodies(changes);
         if (edited.Count == 0 || previous.Contributions.Count == 0)
             return "contributions: no edited methods to compare\n";
-        var kept = 0;
-        var changed = new List<string>();
-        foreach (var (name, contribution) in current.Contributions)
-        {
-            if (!edited.Contains((contribution.Assembly, contribution.Token))) continue;
-            if (previous.Contributions.TryGetValue(name, out var before) && before.Fingerprint == contribution.Fingerprint)
-                kept++;
-            else
-                changed.Add(name);
-        }
-        foreach (var (name, contribution) in previous.Contributions)
-        {
-            if (edited.Contains((contribution.Assembly, contribution.Token)) && !current.Contributions.ContainsKey(name))
-                changed.Add(name + " (no longer analysed)");
-        }
+        var contributions = EditedContributions.Compare(edited, previous.Contributions, current.Contributions);
+        var kept = contributions.Kept;
+        List<string> changed = [.. contributions.Changed, .. contributions.Gone.Select(name => name + " (no longer analysed)")];
         return $"contributions: {kept} kept, {changed.Count} changed" +
             (changed.Count == 0 ? "" : ": " + string.Join(", ", changed)) + "\n";
     }

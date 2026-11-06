@@ -6,5 +6,5 @@ namespace NetWasm.Compiler.GarbageCollection;
 
 public sealed record RootMapAnalysisRequest(
     ManagedMethodBody Method,
-    ISet<EntityKey> AllocatingMethods,
-    ISet<string> AllocatingConstructedMethods);
+    IMembership<EntityKey> AllocatingMethods,
+    IMembership<string> AllocatingConstructedMethods);

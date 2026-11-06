@@ -395,7 +395,8 @@ public sealed class IntegerDivRemCompilationTests
             new ArgumentTypeResolver(types),
             new ArgumentSignatureTypeResolver(identities),
             new DirectValueLoadSelector(),
-            promotionPlanner);
+            promotionPlanner,
+            new SimdValueFrameSlotAlignmentResolver());
         var baseline = CreateFramePlanner(EmptyPromotionPlanner.Instance).Create(
             div96,
             memberExecution: compilation.Program.MemberExecution,

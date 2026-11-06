@@ -251,11 +251,9 @@ internal sealed class ReachabilityClosureBuilder(
                     var method = methodInstance.Definition;
                     methodInstances.Add(methodInstance.CanonicalName, methodInstance);
                     types.Add(method.DeclaringType);
-                    if (!discoveredRequests.Remove(methodInstance.CanonicalName, out var discoveredMethod))
-                    {
-                        discoveredMethod = Discover(methodInstance);
-                    }
-                    discoveredMethod.Failure?.Throw();
+                    // Every method is discovered as it is queued.
+                    _ = discoveredRequests.Remove(methodInstance.CanonicalName, out var discoveredMethod);
+                    discoveredMethod!.Failure?.Throw();
                     var import = discoveredMethod.Import!;
                     ApplyImport(import);
                     if (import.IsHandled)
@@ -543,9 +541,7 @@ internal sealed class ReachabilityClosureBuilder(
                 AddRuntimeType(identity);
                 AddConstructedType(identity);
             }
-            state.Contributions[analysis.Method.CanonicalName] = new(
-                analysis.Method.Definition.Key,
-                analysis.Contribution ?? MethodContributionFingerprint.Of(analysis));
+            state.Contributions[analysis.Method.CanonicalName] = new(analysis.Method.Definition.Key, analysis.Contribution);
             if (analysis.Method.IsConstructed)
             {
                 state.ConstructedMethods.Add(analysis.Method.CanonicalName, analysis.Body);

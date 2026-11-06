@@ -16,7 +16,7 @@ public sealed class RootDecisionClassifierFactory(
         ITypeRepository types,
         IFieldRepository fields,
         IMethodRepository methods,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        IEntryLookup<string, DispatchCallSiteModel> dispatchCallSites,
         ITypeClassifier typeClassifier) =>
         new RootDecisionClassifier(
             types,

@@ -60,6 +60,9 @@ public sealed partial class BitCastFrameCompilationTests
                 Func<double, long> bits = BitConverter.DoubleToInt64Bits;
                 if (bits(d) != BitConverter.DoubleToInt64Bits(d)) return 15;
                 if (Unsafe.BitCast<short, ushort>((short)-1) != ushort.MaxValue) return 16;
+                // A Vector2 fills 8 of a Vector128's bytes and a Vector3 12: as upstream, their casts throw.
+                try { _ = Unsafe.BitCast<Vector2, Vector128<float>>(new Vector2(f, 2)); return 17; } catch (NotSupportedException) { }
+                try { _ = Unsafe.BitCast<Vector3, Vector128<float>>(new Vector3(f, 2, 3)); return 18; } catch (NotSupportedException) { }
                 return 0;
             }
 

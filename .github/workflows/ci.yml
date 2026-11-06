@@ -687,6 +687,30 @@ jobs:
           bash eng/qualify-sdk-consumers.sh \
             "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}" \
             --skip-tunit-consumer
+      # The compiler's OS calls (read-ahead of mapped units, deleting a held file), on the
+      # host they run on. After the consumers, which qualify on one SDK alone, the lane
+      # takes the SDKs the unit tests build and run on, as the test job does.
+      - name: Read pinned .NET 10 SDK for the OS call tests
+        if: matrix.sdk-major == 11
+        id: unit-sdk
+        shell: bash
+        run: |
+          python3 -c 'import json; print("sdk=" + json.load(open("eng/csharp15-toolchain.json"))["sdk10MinimumVersion"])' \
+            >> "$GITHUB_OUTPUT"
+      - name: Install the unit tests' .NET SDKs
+        if: matrix.sdk-major == 11
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+          dotnet-version: ${{ steps.unit-sdk.outputs.sdk }}
+      - name: Test the compiler's OS calls on this host
+        if: matrix.sdk-major == 11
+        shell: bash
+        run: |
+          dotnet test tests/NetWasm.Compiler.Wasm.Tests/NetWasm.Compiler.Wasm.Tests.csproj -c Release \
+            --filter "Category=HostInterop" | tee "$RUNNER_TEMP/host-interop.log"
+          # A filter that matches nothing passes; these tests must run.
+          grep -E "Passed!.*Passed: +[1-9]" "$RUNNER_TEMP/host-interop.log"
 
   # DoomSharp's render benchmark at every optimization preset with each
   # collector, built from the candidate packages: every build must render the

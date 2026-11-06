@@ -10,6 +10,6 @@ namespace NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 internal sealed record AddressTakenScalarPromotionRequest(
     StructuredMethod Method,
     ManagedMethodIdentity Caller,
-    IReadOnlyDictionary<ManagedCallSiteKey, ManagedCallSite> CallSites,
-    ManagedByRefEffects ByRefEffects,
+    IEntryLookup<ManagedCallSiteKey, ManagedCallSite> CallSites,
+    IEntryLookup<string, ManagedByRefMethodEffects> ByRefEffects,
     bool Enabled);

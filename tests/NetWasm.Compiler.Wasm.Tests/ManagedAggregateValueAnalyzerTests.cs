@@ -202,7 +202,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
         var request = fixture.Request(method, fixture.EmptyRootMap());
         request = request with
         {
-            ByRefEffects = new(request.ByRefEffects.Methods.ToImmutableDictionary().Remove(fixture.Target.CanonicalName)),
+            ByRefEffects = Lookups.Of(fixture.Effects().Remove(fixture.Target.CanonicalName)),
         };
 
         Assert.Same(ManagedAggregateValueAnalysis.Empty, fixture.Analyzer.Analyze(request));
@@ -521,7 +521,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
         var request = fixture.Request(method, fixture.EmptyRootMap());
         request = request with
         {
-            ByRefEffects = new(request.ByRefEffects.Methods.ToImmutableDictionary().SetItem(
+            ByRefEffects = Lookups.Of(fixture.Effects().SetItem(
                 fixture.MultiTarget.CanonicalName, new([1], [], []))),
         };
         var analysis = fixture.Analyzer.Analyze(request);
@@ -1008,10 +1008,10 @@ public sealed class ManagedAggregateValueAnalyzerTests
         request = missingFact switch
         {
             0 => request with { Method = method with { Header = method.Header with { MethodInstance = null } } },
-            1 => request with { ByRefEffects = new(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty) },
+            1 => request with { ByRefEffects = Lookups.Of(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty) },
             _ => request with
             {
-                ByRefEffects = new(request.ByRefEffects.Methods.ToImmutableDictionary().SetItem(
+                ByRefEffects = Lookups.Of(fixture.Effects().SetItem(
                     fixture.Body.CanonicalName, ManagedByRefMethodEffects.Empty)),
             },
         };
@@ -1248,16 +1248,21 @@ public sealed class ManagedAggregateValueAnalyzerTests
             bool enabled = true) => new(
             method,
             rootMap,
-            new(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty
-                .Add(Body.CanonicalName, new([0], [], []))
-                .Add(Target.CanonicalName, targetEffects ?? ManagedByRefMethodEffects.Empty)
-                .Add(AliasTarget.CanonicalName,
-                    targetEffects ?? ManagedByRefMethodEffects.Empty)
-                .Add(MultiTarget.CanonicalName, ManagedByRefMethodEffects.Empty)),
+            Lookups.Of(Effects(targetEffects)),
             enabled)
             {
                 References = References,
             };
+
+        // The program's by-ref effects a request looks its callees up in.
+        public ImmutableDictionary<string, ManagedByRefMethodEffects> Effects(
+            ManagedByRefMethodEffects? targetEffects = null) =>
+            ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty
+                .Add(Body.CanonicalName, new([0], [], []))
+                .Add(Target.CanonicalName, targetEffects ?? ManagedByRefMethodEffects.Empty)
+                .Add(AliasTarget.CanonicalName,
+                    targetEffects ?? ManagedByRefMethodEffects.Empty)
+                .Add(MultiTarget.CanonicalName, ManagedByRefMethodEffects.Empty);
 
         public MethodRootMap EmptyRootMap() => new(Body.Definition.Key, [], []);
 

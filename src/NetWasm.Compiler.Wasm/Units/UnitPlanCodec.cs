@@ -44,12 +44,7 @@ internal sealed record UnitProgramFacts(
     IReadOnlyDictionary<EntityKey, string> DirectMethods,
     ImmutableArray<string> ConstructedMethods,
     IReadOnlyDictionary<string, ManagedByRefMethodEffects> ByRefEffects,
-    IReadOnlyDictionary<string, ImmutableArray<string>> ByRefCallees)
-{
-    public static UnitProgramFacts Empty { get; } = new([], ImmutableDictionary<EntityKey, string>.Empty, [],
-        ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty,
-        ImmutableDictionary<string, ImmutableArray<string>>.Empty);
-}
+    IReadOnlyDictionary<string, ImmutableArray<string>> ByRefCallees);
 
 /// <summary>The runtime object offsets a compile laid out, as its plans keep them.</summary>
 internal sealed record UnitRuntimeObjectLayout(
@@ -191,12 +186,12 @@ internal static class UnitPlanCodec
         var promotion = reader.Bool();
         var target = new InstructionModuleTarget(
             functions, interop, data,
-            ImmutableDictionary<string, DispatchCallSiteModel>.Empty,
-            ImmutableDictionary<string, TypeTestSiteModel>.Empty,
-            ImmutableDictionary<string, MethodInstanceModel>.Empty,
-            [],
+            Lookups.NoEntries<string, DispatchCallSiteModel>(),
+            Lookups.NoEntries<string, TypeTestSiteModel>(),
+            Lookups.Whole<IReadOnlyDictionary<string, MethodInstanceModel>>(ImmutableDictionary<string, MethodInstanceModel>.Empty),
+            Lookups.Whole<IReadOnlyList<CliTypeIdentity>>([]),
             callbacks, async, stackTraces, runtime, finalization,
-            ImmutableDictionary<Core.IntermediateRepresentation.Calls.ManagedCallSiteKey, Core.IntermediateRepresentation.Calls.ManagedCallSite>.Empty,
+            Lookups.NoEntries<Core.IntermediateRepresentation.Calls.ManagedCallSiteKey, Core.IntermediateRepresentation.Calls.ManagedCallSite>(),
             adapters, members, metrics, promotion)
         {
             EnableBranchValueFramePlacement = reader.Bool(),

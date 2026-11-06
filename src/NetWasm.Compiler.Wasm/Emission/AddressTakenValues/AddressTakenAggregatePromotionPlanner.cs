@@ -579,7 +579,7 @@ internal sealed class AddressTakenAggregatePromotionPlanner(
         var consumedCount = target.Signature.ParameterTypes.Length +
             (target.Definition.IsStatic ? 0 : 1);
         if (consumedCount > origins.Count ||
-            !request.ByRefEffects.Methods.TryGetValue(
+            !request.ByRefEffects.TryGetValue(
                 callSite.TargetIdentity.CanonicalName,
                 out var effects))
         {

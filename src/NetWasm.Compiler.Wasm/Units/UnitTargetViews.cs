@@ -75,11 +75,8 @@ internal static class UnitTargetViews
     {
         CallableMethods = maps.Answer(target.CallableMethods, UnitQueryKind.CallableMethods, CallableMethodsAnswer),
         DelegateTypes = maps.Answer(target.DelegateTypes, UnitQueryKind.DelegateTypes, DelegateTypesAnswer),
-        Finalization = target.Finalization with
-        {
-            FinalizableTypeIds = maps.Answer(target.Finalization.FinalizableTypeIds,
-                UnitQueryKind.Finalizable, static id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-        },
+        FinalizableTypeIds = maps.Answer(target.FinalizableTypeIds, UnitQueryKind.Finalizable,
+            static id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
         ManagedCallSites = maps.Answer(target.ManagedCallSites, UnitQueryKind.ManagedCallSite,
             static key => $"{key.Caller.CanonicalName}@{key.InstructionOffset:x8}",
             static (ref answer, site) => answer.Add(site)),
@@ -87,17 +84,16 @@ internal static class UnitTargetViews
             static key => key, static (ref answer, site) => answer.Add(site)),
         TypeTestSites = maps.Answer(target.TypeTestSites, UnitQueryKind.TypeTestSite,
             static key => key, static (ref answer, site) => answer.Add(site)),
-        ManagedByRefEffects = new(maps.Answer(target.ManagedByRefEffects.Methods, UnitQueryKind.ByRefEffects,
-            static key => key, static (ref answer, effects) => answer.Add(effects))),
+        ManagedByRefEffects = maps.Answer(target.ManagedByRefEffects, UnitQueryKind.ByRefEffects,
+            static key => key, static (ref answer, effects) => answer.Add(effects)),
         RootMaps = maps.Answer(target.RootMaps, UnitQueryKind.RootMap,
             static key => key, static (ref answer, map) => answer.Add(map)),
-        StackTraceMethods = target.StackTraceMethods with
-        {
-            DirectMethodIds = maps.Answer(target.StackTraceMethods.DirectMethodIds, UnitQueryKind.StackTraceDirectMethodId,
+        StackTraceLookups = new(
+            maps.Answer(target.StackTraceLookups.DirectMethodIds, UnitQueryKind.StackTraceDirectMethodId,
                 UnitQueryKeys.Of, static (ref answer, id) => answer.Add(id)),
-            ConstructedMethodIds = maps.Answer(target.StackTraceMethods.ConstructedMethodIds,
-                UnitQueryKind.StackTraceConstructedMethodId, static key => key, static (ref answer, id) => answer.Add(id)),
-            LocationSymbols = maps.Answer(target.StackTraceMethods.LocationSymbols, UnitQueryKind.StackTraceLocationSymbols,
+            maps.Answer(target.StackTraceLookups.ConstructedMethodIds, UnitQueryKind.StackTraceConstructedMethodId,
+                static key => key, static (ref answer, id) => answer.Add(id)),
+            maps.Answer(target.StackTraceLookups.LocationSymbols, UnitQueryKind.StackTraceLocationSymbols,
                 static key => key.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 static (ref answer, symbols) =>
                 {
@@ -107,26 +103,22 @@ internal static class UnitTargetViews
                         answer.Add(symbol.Offset);
                         answer.Add(symbol.SymbolId);
                     }
-                }),
-        },
-        ModuleData = target.ModuleData with
-        {
-            StaticInitializerGuards = maps.Answer(target.ModuleData.StaticInitializerGuards,
-                UnitQueryKind.StaticInitializerGuard, static key => key, static (ref answer, guard) =>
-                {
-                    // The guard's function index is relocated by symbol like any call.
-                    answer.Add(guard.Address);
-                    answer.Add(guard.Direct is { } direct ? UnitQueryKeys.Of(direct) : null);
-                    answer.Add(guard.Constructed);
-                }),
-            ExceptionMetadata = maps.Answer(target.ModuleData.ExceptionMetadata, UnitQueryKind.ExceptionMetadata,
-                ExceptionGroupKeyText, static (ref answer, metadata) =>
-                {
-                    answer.Add(metadata.Address);
-                    answer.Add(metadata.ClauseCount);
-                    answer.Add(metadata.HasFilters);
-                }),
-        },
+                })),
+        StaticInitializerGuards = maps.Answer(target.StaticInitializerGuards, UnitQueryKind.StaticInitializerGuard,
+            static key => key, static (ref answer, guard) =>
+            {
+                // The guard's function index is relocated by symbol like any call.
+                answer.Add(guard.Address);
+                answer.Add(guard.Direct is { } direct ? UnitQueryKeys.Of(direct) : null);
+                answer.Add(guard.Constructed);
+            }),
+        ExceptionMetadata = maps.Answer(target.ExceptionMetadata, UnitQueryKind.ExceptionMetadata,
+            ExceptionGroupKeyText, static (ref answer, metadata) =>
+            {
+                answer.Add(metadata.Address);
+                answer.Add(metadata.ClauseCount);
+                answer.Add(metadata.HasFilters);
+            }),
     };
 
     // An exception group's key as text: method, instance name and group id, separated by a
@@ -178,95 +170,4 @@ internal sealed class RecordingFunctionIndexResolver(
             UnitTargetViews.FunctionAddressAnswer(true, index), new UnitLookup<int>(true, index));
         return index;
     }
-}
-
-/// <summary>
-/// A map a method's emission reads as a whole (enumerating it): any read records one query
-/// whose answer fingerprints every entry.
-/// </summary>
-internal sealed class WholeRecordingDictionary<TKey, TValue>(
-    IReadOnlyDictionary<TKey, TValue> inner,
-    IUnitDependencyRecorder recorder,
-    UnitQueryKind kind,
-    Func<IReadOnlyDictionary<TKey, TValue>, UnitFingerprint> answer) : IReadOnlyDictionary<TKey, TValue>
-    where TKey : notnull
-{
-    private IReadOnlyDictionary<TKey, TValue> Read()
-    {
-        recorder.Record(kind, "", answer(inner), inner);
-        return inner;
-    }
-
-    public TValue this[TKey key] => Read()[key];
-
-    public IEnumerable<TKey> Keys => Read().Keys;
-
-    public IEnumerable<TValue> Values => Read().Values;
-
-    public int Count => Read().Count;
-
-    public bool ContainsKey(TKey key) => Read().ContainsKey(key);
-
-    public bool TryGetValue(TKey key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TValue value) =>
-        Read().TryGetValue(key, out value);
-
-    public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator() => Read().GetEnumerator();
-
-    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-}
-
-/// <summary>A list a method's emission reads as a whole: any read records one query.</summary>
-internal sealed class WholeRecordingList<T>(
-    IReadOnlyList<T> inner,
-    IUnitDependencyRecorder recorder,
-    UnitQueryKind kind,
-    Func<IReadOnlyList<T>, UnitFingerprint> answer) : IReadOnlyList<T>
-{
-    private IReadOnlyList<T> Read()
-    {
-        recorder.Record(kind, "", answer(inner), inner);
-        return inner;
-    }
-
-    public T this[int index] => Read()[index];
-
-    public int Count => Read().Count;
-
-    public IEnumerator<T> GetEnumerator() => Read().GetEnumerator();
-
-    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-}
-
-/// <summary>
-/// A set a method's emission tests membership of, recording each member it asks about and
-/// whether it is there. Enumerating it would make the unit depend on every member, so that is
-/// refused.
-/// </summary>
-internal sealed class RecordingSet<T>(
-    IReadOnlySet<T> inner,
-    IUnitDependencyRecorder recorder,
-    UnitQueryKind kind,
-    Func<T, string> keyText) : IReadOnlySet<T>
-{
-    public bool Contains(T item)
-    {
-        var found = inner.Contains(item);
-        var answer = new UnitFingerprintBuilder();
-        answer.Add(found);
-        recorder.Record(kind, keyText(item), answer.Finish(), found);
-        return found;
-    }
-
-    public int Count => throw Unrecordable();
-    public IEnumerator<T> GetEnumerator() => throw Unrecordable();
-    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-    public bool IsProperSubsetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool IsProperSupersetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool IsSubsetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool IsSupersetOf(IEnumerable<T> other) => throw Unrecordable();
-    public bool Overlaps(IEnumerable<T> other) => throw Unrecordable();
-    public bool SetEquals(IEnumerable<T> other) => throw Unrecordable();
-
-    private NotSupportedException Unrecordable() =>
-        new($"A unit's emission may only test {kind} membership.");
 }

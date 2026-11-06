@@ -68,7 +68,7 @@ internal sealed class StaticFieldInstructionEmitter(
             layouts.Target,
             0,
             fieldType,
-            storage.Size);
+            storage.Size, scratch: request.Context.VectorScratch);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,
             request.Stack.Count,
@@ -103,7 +103,7 @@ internal sealed class StaticFieldInstructionEmitter(
             layouts.Target,
             0,
             fieldType,
-            storage.Size);
+            storage.Size, scratch: request.Context.VectorScratch);
         request.Stack.RemoveAt(slot);
     }
 
@@ -152,7 +152,7 @@ internal sealed class StaticFieldInstructionEmitter(
             return;
         }
         initialization.Emit(new(field.DeclaringType, declaringType,
-            request.Target.ModuleData), code, functionIndices);
+            request.Target.StaticInitializerGuards), code, functionIndices);
     }
 
     private int GetStackLocal(
