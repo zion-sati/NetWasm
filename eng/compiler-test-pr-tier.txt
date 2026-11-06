@@ -262,6 +262,7 @@ NetWasm.Compiler.Tests.Legality.SmallBlockLegalityTests
 NetWasm.Compiler.Tests.Legality.SpanLoopBoundsLegalityTests
 NetWasm.Compiler.Tests.Legality.StructSplitLegalityTests
 NetWasm.Compiler.Tests.Legality.WholeLocalBlockCopyLegalityTests
+NetWasm.Compiler.Tests.LocalAddressDereferenceFolderTests
 NetWasm.Compiler.Tests.LockCompilationTests
 NetWasm.Compiler.Tests.LoopContinuationAcrossExceptionRegionCompilationTests
 NetWasm.Compiler.Tests.LoopExitAcrossExceptionRegionCompilationTests
@@ -336,6 +337,7 @@ NetWasm.Compiler.Tests.Utf8DecimalParsingCompilationTests
 NetWasm.Compiler.Tests.ValueTaskCompilationTests
 NetWasm.Compiler.Tests.VectorMathFunctionCompilationTests
 NetWasm.Compiler.Tests.WeakReferenceCompatibilityCompilationTests
+NetWasm.Compiler.Tests.WholeLocalBlockCopyFolderBodyTests
 NetWasm.Compiler.Tests.WholeLocalBlockCopyFolderTests
 NetWasm.Compiler.Tests.WholeProgramAnalyzerDirectTests
 NetWasm.Compiler.Tests.WideValueStackCompilationTests

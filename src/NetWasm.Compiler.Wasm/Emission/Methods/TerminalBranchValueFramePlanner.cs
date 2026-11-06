@@ -191,33 +191,28 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
         };
     }
 
-    // A tail the arms can each carry: straight-line blocks in order, the last returning or throwing.
+    // A tail the arms can each carry: straight-line blocks in order, each entered with an empty
+    // stack and flowing or jumping into the next, the last returning or throwing. The tail holds
+    // at least the region after the leading if.
     private static bool IsTerminalStraightLine(StructuredMethod method, ImmutableArray<StructuredRegion> tail)
     {
-        for (var index = 0; index < tail.Length; index++)
+        if (!tail.All(region => region is StructuredCode code && method.Blocks[code.Occurrence.Block].EntryStack.IsEmpty))
         {
-            if (tail[index] is not StructuredCode code ||
-                !method.Blocks[code.Occurrence.Block].EntryStack.IsEmpty)
-            {
-                return false;
-            }
-            var exit = method.Blocks[code.Occurrence.Block].Exit;
-            if (index == tail.Length - 1)
-            {
-                return exit is StructuredTerminalExit
-                { Instruction.Operation: CilOperation.Return or CilOperation.Throw };
-            }
-            if (tail[index + 1] is not StructuredCode next || (exit switch
-            {
-                StructuredFallthroughExit flow => flow.Target != next.Occurrence.Block,
-                StructuredBranchExit jump => jump.Target != next.Occurrence.Block,
-                _ => true,
-            }))
-            {
-                return false;
-            }
+            return false;
         }
-        return false;
+        var blocks = tail.Select(static region => ((StructuredCode)region).Occurrence.Block).ToArray();
+        for (var index = 0; index + 1 < blocks.Length; index++)
+        {
+            var target = method.Blocks[blocks[index]].Exit switch
+            {
+                StructuredFallthroughExit flow => flow.Target,
+                StructuredBranchExit jump => jump.Target,
+                _ => (StructuredBlockId?)null,
+            };
+            if (target != blocks[index + 1]) return false;
+        }
+        return method.Blocks[blocks[^1]].Exit is StructuredTerminalExit
+        { Instruction.Operation: CilOperation.Return or CilOperation.Throw };
     }
 
     // Whether every path through the arm returns or throws: its last region does.

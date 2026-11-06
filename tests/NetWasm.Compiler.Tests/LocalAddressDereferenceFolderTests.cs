@@ -201,6 +201,69 @@ public sealed class LocalAddressDereferenceFolderTests
         Assert.Equal(folds ? CilOperation.StoreLocal : CilOperation.StoreObject, rewritten.Instructions[2].Operation);
     }
 
+    // x += 1 through a ref local: the address is duplicated for the load and the
+    // store, and both become the local's own.
+    [Fact]
+    public void BothUsesOfADuplicatedAddressBecomeTheLocals()
+    {
+        var body = Body([Int32], code => code.Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.Duplicate)
+            .Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(Int32)).Op(CilOperation.LoadInt32, 1).Op(CilOperation.Add)
+            .Op(CilOperation.StoreObject, new CilOperand.TypeIdentity(Int32)).Return());
+
+        var rewritten = Folder().Rewrite(body);
+
+        Assert.Equal(
+            [CilOperation.Nop, CilOperation.Nop, CilOperation.LoadLocal, CilOperation.LoadInt32, CilOperation.Add,
+                CilOperation.StoreLocal, CilOperation.Return],
+            rewritten.Instructions.Select(static instruction => instruction.Operation));
+        Assert.Equal(new CilOperand.Index(0), rewritten.Instructions[2].Operand);
+        Assert.Equal(new CilOperand.Index(0), rewritten.Instructions[5].Operand);
+    }
+
+    // A generic method's body is read through its instance's signature, where the
+    // argument is an int rather than a type parameter.
+    [Fact]
+    public void AnArgumentOfAGenericInstanceFoldsByTheInstancesSignature()
+    {
+        var definition = new MethodDefinitionModel(new(Assembly, 0x06000002), new(Assembly, 0x02000100), "Read", true,
+            new MethodSignatureModel(Int32, [CliTypeIdentity.GenericParameter(method: true, 0)]), 1);
+        var instance = new MethodInstanceModel(definition, CliTypeIdentity.Named(Assembly, "Fixture", "Program", isValueType: false),
+            [Int32], new MethodSignatureModel(Int32, [Int32]));
+        var body = ArgumentBody(definition, instance, code => code.Local(CilOperation.LoadArgumentAddress, 0)
+            .Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(Int32)).Return());
+
+        var rewritten = Folder().Rewrite(body);
+
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
+        Assert.Equal(CilOperation.LoadArgument, rewritten.Instructions[1].Operation);
+        Assert.Equal(new CilOperand.Index(0), rewritten.Instructions[1].Operand);
+    }
+
+    // An instance method's `this` is already an address, and a narrow argument holds
+    // what its caller passed: neither address folds.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ThisAndNarrowArgumentsKeepTheirAddresses(bool narrow)
+    {
+        var shortType = CliTypeIdentity.Primitive("i2", CliValueKind.I4);
+        var definition = narrow
+            ? new MethodDefinitionModel(new(Assembly, 0x06000003), new(Assembly, 0x02000100), "Read", true,
+                new MethodSignatureModel(Int32, [shortType]), 1)
+            : new MethodDefinitionModel(new(Assembly, 0x06000004), new(Assembly, 0x02000100), "Read", false,
+                new MethodSignatureModel(Int32, []), 1);
+        var body = ArgumentBody(definition, null, code => code.Local(CilOperation.LoadArgumentAddress, 0)
+            .Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(narrow ? shortType : Int32)).Return());
+
+        Assert.Same(body, Folder().Rewrite(body));
+    }
+
+    private static CilMethodBody ArgumentBody(
+        MethodDefinitionModel method,
+        MethodInstanceModel? instance,
+        Func<CilBuilder, CilBuilder> write) =>
+        new(method, 8, [], write(new CilBuilder()).Build()) { MethodInstance = instance };
+
     private static readonly EntityKey ValueFieldKey = new(Assembly, 0x04000001);
 
     private static CilOperand.FieldInstance ValueField(CliTypeIdentity owner, CliTypeIdentity type) =>
