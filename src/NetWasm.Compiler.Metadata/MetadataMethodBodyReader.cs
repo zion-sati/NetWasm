@@ -19,13 +19,8 @@ internal sealed class MetadataMethodBodyReader(
 
     // A body decodes for its method's instance, which the runtime-provided
     // bodies take too.
-    public CilMethodBody ReadMethodBody(MethodDefinitionModel method)
-    {
-        var assembly = assemblies.Resolve(method.Key.Assembly);
-        return method.HasBody || method.HasManagedBody
-            ? ReadMethodBody(methodReferences.Resolve(assembly.Metadata, method.Key.MetadataToken, symbols.Format(method), 0))
-            : decoders.Create().Decode(assembly, method);
-    }
+    public CilMethodBody ReadMethodBody(MethodDefinitionModel method) => ReadMethodBody(methodReferences.Resolve(
+        assemblies.Resolve(method.Key.Assembly).Metadata, method.Key.MetadataToken, symbols.Format(method), 0));
 
     public CilMethodBody ReadMethodBody(MethodInstanceModel method) => method.Definition switch
     {

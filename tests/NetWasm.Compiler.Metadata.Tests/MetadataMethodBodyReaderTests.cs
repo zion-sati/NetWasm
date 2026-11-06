@@ -24,15 +24,13 @@ public sealed class MetadataMethodBodyReaderTests
 
         var result = instance ? reader.ReadMethodBody(fixture.Method) : reader.ReadMethodBody(fixture.Method.Definition);
 
-        // A definition with a body decodes for its instance, as runtime-provided bodies are built.
-        var resolved = !instance && physical;
+        // A definition decodes for its instance, as runtime-provided bodies are built.
         Assert.Same(fixture.Body, result);
-        Assert.Equal(resolved ? 2 : 1, fixture.AssemblyReads);
+        Assert.Equal(instance ? 1 : 2, fixture.AssemblyReads);
         Assert.Equal(1, fixture.DecoderCreations);
-        Assert.Equal(instance || resolved ? 0 : 1, fixture.DefinitionDecodes);
-        Assert.Equal(instance || resolved ? 1 : 0, fixture.InstanceDecodes);
-        Assert.Equal(resolved ? 1 : 0, fixture.MethodResolutions);
-        Assert.Equal(instance || resolved ? 1 : 0, fixture.IntrinsicBuilds);
+        Assert.Equal(1, fixture.InstanceDecodes);
+        Assert.Equal(instance ? 0 : 1, fixture.MethodResolutions);
+        Assert.Equal(1, fixture.IntrinsicBuilds);
         Assert.Equal(0, fixture.AccessorCreations);
         Assert.Equal(0, fixture.Bindings);
         Assert.Equal(0, fixture.BodyBuilds);
@@ -76,7 +74,6 @@ public sealed class MetadataMethodBodyReaderTests
         Assert.Equal(2, fixture.Bindings);
         Assert.Equal(2, fixture.BodyBuilds);
         Assert.Equal(0, fixture.DecoderCreations);
-        Assert.Equal(0, fixture.DefinitionDecodes);
         Assert.Equal(0, fixture.InstanceDecodes);
     }
 
@@ -94,7 +91,6 @@ public sealed class MetadataMethodBodyReaderTests
         Assert.Equal(1, fixture.IntrinsicBuilds);
         Assert.Equal(instance ? 0 : 1, fixture.MethodResolutions);
         Assert.Equal(0, fixture.DecoderCreations);
-        Assert.Equal(0, fixture.DefinitionDecodes);
         Assert.Equal(0, fixture.InstanceDecodes);
     }
 
@@ -120,7 +116,7 @@ public sealed class MetadataMethodBodyReaderTests
         private readonly UnsafeAccessorBinding _binding;
         internal MethodInstanceModel Method { get; }
         internal CilMethodBody Body { get; }
-        internal int AssemblyReads, DecoderCreations, DefinitionDecodes, InstanceDecodes,
+        internal int AssemblyReads, DecoderCreations, InstanceDecodes,
             MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds, IntrinsicBuilds;
         internal Exception? BindingError { get; set; }
         // Whether the method is an Unsafe intrinsic, whose body the compiler builds.
@@ -151,13 +147,6 @@ public sealed class MetadataMethodBodyReaderTests
         public void Dispose() => _assembly.Dispose();
 
         ICilDecoder ICilDecoderFactory.Create() { DecoderCreations++; return this; }
-        public CilMethodBody Decode(ManagedAssembly source, MethodDefinitionModel method)
-        {
-            Assert.Same(_assembly, source);
-            Assert.Same(Method.Definition, method);
-            DefinitionDecodes++;
-            return Body;
-        }
         public CilMethodBody Decode(ManagedAssembly source, MethodInstanceModel method)
         {
             Assert.Same(_assembly, source);
