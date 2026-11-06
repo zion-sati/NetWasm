@@ -1,7 +1,7 @@
 <svg role="img" aria-labelledby="chart-title chart-description"
      xmlns="http://www.w3.org/2000/svg" width="960" height="548" viewBox="0 0 960 548">
   <title id="chart-title">AOT Wasm payload: NetWasm is about 390 times smaller</title>
-  <desc id="chart-description">Zero-based linear scale in mebibytes. NetWasm with Compact GC is 39,171 bytes, or 38.3 kibibytes. Blazor .NET 10 is 11.71 mebibytes. Blazor .NET 11 RC1 is 14.58 mebibytes. All measurements are uncompressed.</desc>
+  <desc id="chart-description">Zero-based linear scale in mebibytes. NetWasm with Compact GC is 39,230 bytes, or 38.3 kibibytes. Blazor .NET 10 is 11.71 mebibytes. Blazor .NET 11 RC1 is 14.58 mebibytes. All measurements are uncompressed.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="960" y2="548" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#080b10"/>
