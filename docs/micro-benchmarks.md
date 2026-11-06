@@ -28,6 +28,33 @@ to millions. NetWasm and desktop .NET do the work. They are left out of the
 NetWasm / Mono AOT means; counting them, the overall ratio is 0.37. They stay in
 the means against desktop .NET.
 
+## DoomSharp
+
+[DoomSharp](https://github.com/davidfowl/doomsharp), David Fowler's C# Doom
+engine, is timed on its own: it renders the paused opening view of E1M1 120
+times, from a WAD reduced to the lumps that render reads and compiled into the
+program. Each sample is a fresh process that renders two batches of 120 frames;
+the second batch is timed, and every batch's pixel checksum must match. The
+five builds ran in rotation, seven samples each, under the same Wasmtime and on
+the same host as the cases below. The engine source is DoomSharp at
+[`02a5e6f`](https://github.com/davidfowl/doomsharp/tree/02a5e6f5e1d865c257a7340fd671db872dbde9e0).
+Median render time of 120 frames, with the fastest and slowest sample:
+
+| Build | Median (ms) | Fastest–slowest (ms) | NetWasm (NetWasmGC) / this |
+| --- | ---: | ---: | ---: |
+| NetWasm 0.11.1, `O3`, NetWasmGC | 1,555 | 1,552–1,581 | 1.00 |
+| NetWasm 0.11.1, `O3`, Compact | 1,704 | 1,703–1,704 | 0.91 |
+| Mono AOT, .NET 11 RC3, Wasm SIMD | 2,311 | 2,306–2,322 | 0.67 |
+| Desktop .NET 11 RC3 JIT, default tiering | 1,018 | 1,007–1,028 | 1.53 |
+| Desktop .NET 11 RC3 NativeAOT | 1,147 | 1,145–1,152 | 1.36 |
+
+In a browser, DoomSharp's own NetWasm build
+([davidfowl/doomsharp#60](https://github.com/davidfowl/doomsharp/pull/60),
+NetWasm 0.11.1 at `O3` with NetWasmGC) renders 120 frames 1.28 times faster
+than its Blazor WebAssembly AOT build in headless Chromium: 1,750 ms against
+2,236 ms on the same Apple M1 Max, from 0.69 MiB of Brotli-compressed files
+against 3.67 MiB.
+
 ## NetWasm workloads
 
 | Case | NetWasm (ns) | Mono AOT (ns) | Desktop JIT (ns) | NetWasm / Mono AOT | NetWasm / desktop |
