@@ -18,5 +18,6 @@ internal interface INullableBoxEmitter
         CliTypeIdentity underlyingType,
         int sourceAddressLocal,
         int targetLocal,
-        OptionalFunctionIndex throwFunction);
+        OptionalFunctionIndex throwFunction,
+        VectorScratch scratch);
 }

@@ -81,10 +81,12 @@ internal sealed class BitCastCallRewriter(
             _ => null,
         };
 
-    // A vector value of 16 bytes; a Vector2 fills only 8, so its cast keeps
-    // the call, which throws as upstream's does for types of different sizes.
+    // A vector value of 16 bytes; a Vector2 fills only 8 and a Vector3 12, so
+    // their casts keep the call, which throws as upstream's does for types of
+    // different sizes.
     private static bool Whole(CliTypeIdentity type) =>
-        type.StackKind == CliValueKind.V128 && type.FullName != "System.Numerics.Vector2";
+        type.StackKind == CliValueKind.V128 &&
+        type.FullName is not ("System.Numerics.Vector2" or "System.Numerics.Vector3");
 
     // The static class whose As reinterprets a Vector128 or Vector instantiation.
     private static string? Vector(CliTypeIdentity type) =>

@@ -68,7 +68,7 @@ internal sealed class RectangularArrayElementLoadEmitter(
                 layouts.Target,
                 0,
                 elementType,
-                GetElementSize(elementType));
+                GetElementSize(elementType), scratch: request.Context.VectorScratch);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)GetStackLocal(

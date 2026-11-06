@@ -262,7 +262,8 @@ internal static class EmitterTestSupport
         CreateArgumentTypes(program),
         CreateArgumentSignatureTypes(program),
         new DirectValueLoadSelector(),
-            EmptyTransientAggregatePromotionPlanner.Instance);
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
 
     public static IValueFrameAddressEmitter CreateValueFrameAddresses(
         RecordingLayoutProvider layouts) => new ValueFrameAddressEmitter(layouts);

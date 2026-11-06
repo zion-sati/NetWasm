@@ -76,7 +76,7 @@ internal sealed class DirectCallEmitter(
                 layouts.Target,
                 0,
                 request.Method.DeclaringType,
-                values.GetValueLayout(request.Method.DeclaringType).Size);
+                values.GetValueLayout(request.Method.DeclaringType).Size, scratch: instruction.Context.VectorScratch);
         }
         for (var index = 0; index < request.Consumed; index++)
         {

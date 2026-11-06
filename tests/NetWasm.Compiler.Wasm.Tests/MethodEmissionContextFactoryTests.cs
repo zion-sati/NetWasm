@@ -57,8 +57,9 @@ public sealed class MethodEmissionContextFactoryTests
         Assert.Equal(31, context.DispatcherProgramCounter);
         Assert.Equal(32, context.NumericTemporaryI4Second);
         Assert.Equal(33, context.InlineCatchFrame);
+        Assert.Equal(new VectorScratch(34, 35), context.VectorScratch);
         // Includes the two address scratch locals for inline known-size copies.
-        Assert.Equal(34, result.LocalTypes.Length);
+        Assert.Equal(36, result.LocalTypes.Length);
         Assert.Equal(0, context.ExceptionRootSlots[group]);
         Assert.Equal(1, context.RootSlotCount);
     }

@@ -48,7 +48,7 @@ internal sealed class ExpressionIntrinsicEmissionFixture : INullableTypeResolver
 
     public void Emit(IWasmInstructionWriter code, CliTypeIdentity underlyingType,
         int sourceAddressLocal, int targetLocal,
-        OptionalFunctionIndex throwFunction) =>
+        OptionalFunctionIndex throwFunction, VectorScratch scratch) =>
         NullableBoxes.Add((underlyingType, sourceAddressLocal, targetLocal, Code.Length));
 
     public void Emit(InstructionEmissionRequest request, IWasmInstructionWriter code,

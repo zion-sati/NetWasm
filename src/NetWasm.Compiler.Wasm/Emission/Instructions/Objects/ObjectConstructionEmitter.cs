@@ -167,7 +167,7 @@ internal sealed class ObjectConstructionEmitter(
         var kind = declaringType.StackKind == CliValueKind.V128 ? CliValueKind.V128 : CliValueKind.ValueType;
         if (kind == CliValueKind.V128)
         {
-            ManagedMemoryEmitter.EmitVectorLoad(code, 0, value.Size);
+            ManagedMemoryEmitter.EmitVectorLoad(code, 0, value.Size, scratch: request.Context.VectorScratch);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,

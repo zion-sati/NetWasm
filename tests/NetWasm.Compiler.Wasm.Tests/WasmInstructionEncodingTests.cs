@@ -56,6 +56,10 @@ public sealed class WasmInstructionEncodingTests
             [0x0e, 0x0a, 0x00, 0x00]
         },
         {
+            WasmInstruction.WithOperand(0xfd, WasmInstructionOperand.PrefixedMemoryLane(0x56, 2, 200, 3)),
+            [0xfd, 0x56, 0x02, 0xc8, 0x01, 0x03]
+        },
+        {
             WasmInstruction.WithOperand(
                 0x0f,
                 WasmInstructionOperand.TryTableCatch(0x40, 3, 4)),

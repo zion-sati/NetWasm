@@ -209,7 +209,12 @@ internal sealed class LocalAddressDereferenceFolder(
 
     private static bool IsVector(CliTypeIdentity type) => type.StackKind == CliValueKind.V128;
 
-    private static int VectorWidth(CliTypeIdentity type) => type.FullName == "System.Numerics.Vector2" ? 8 : 16;
+    private static int VectorWidth(CliTypeIdentity type) => type.FullName switch
+    {
+        "System.Numerics.Vector2" => 8,
+        "System.Numerics.Vector3" => 12,
+        _ => 16,
+    };
 
     private static (CilOperation Operation, CilOperand Operand)? Zero(CliTypeIdentity type) =>
         IsVector(type) ? (CilOperation.DefaultValue, new CilOperand.TypeIdentity(type)) : Width(type) switch

@@ -20,6 +20,7 @@ public sealed class LocalAddressDereferenceFolderTests
     private static readonly CliTypeIdentity Single = CliTypeIdentity.Primitive("f4", CliValueKind.F4);
     private static readonly CliTypeIdentity Vector4 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector4", isValueType: true);
     private static readonly CliTypeIdentity Vector2 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector2", isValueType: true);
+    private static readonly CliTypeIdentity Vector3 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector3", isValueType: true);
 
     public static TheoryData<CliTypeIdentity, CilOperation> Zeros() => new()
     {
@@ -175,6 +176,28 @@ public sealed class LocalAddressDereferenceFolderTests
 
         var rewritten = Folder().Rewrite(body);
 
+        Assert.Equal(folds ? CilOperation.StoreLocal : CilOperation.StoreObject, rewritten.Instructions[2].Operation);
+    }
+
+    // A Vector3 local is 12 bytes wide: its own view folds, and a Vector3
+    // written into a Vector4's low 12 bytes, or a Vector4 over a Vector3,
+    // stays a store to memory.
+    [Theory]
+    [InlineData("Vector3", "Vector3", true)]
+    [InlineData("Vector4", "Vector3", false)]
+    [InlineData("Vector3", "Vector4", false)]
+    [InlineData("Vector3", "Vector2", false)]
+    public void Vector3ViewsFoldOnlyAtTwelveBytes(string local, string view, bool folds)
+    {
+        CliTypeIdentity Type(string name) => name switch { "Vector3" => Vector3, "Vector4" => Vector4, _ => Vector2 };
+        var type = Type(view);
+        var body = Body([Type(local)], code => code.Local(CilOperation.LoadLocalAddress, 0)
+            .Op(CilOperation.DefaultValue, new CilOperand.TypeIdentity(type))
+            .Op(CilOperation.StoreObject, new CilOperand.TypeIdentity(type)).Return());
+
+        var rewritten = Folder().Rewrite(body);
+
+        Assert.Equal(CliValueKind.V128, Vector3.StackKind);
         Assert.Equal(folds ? CilOperation.StoreLocal : CilOperation.StoreObject, rewritten.Instructions[2].Operation);
     }
 

@@ -20,5 +20,6 @@ public enum WasmInstructionOperandShape
     PrefixedUnsignedLeb128Triple = 14,
     BlockType = 15,
     BranchTable = 16,
+    PrefixedMemoryLane = 17,
 }
 #pragma warning restore CA1720

@@ -130,6 +130,20 @@ public sealed record WasmInstructionOperand
             offset: second,
             third: third);
 
+    // A SIMD lane load or store: its subopcode, the memory argument's alignment
+    // and offset, then the lane.
+    public static WasmInstructionOperand PrefixedMemoryLane(
+        uint subopcode,
+        uint alignment,
+        uint offset,
+        byte lane) =>
+        new(
+            WasmInstructionOperandShape.PrefixedMemoryLane,
+            byteValue: lane,
+            alignment: subopcode,
+            offset: alignment,
+            third: offset);
+
     public static WasmInstructionOperand TryTableCatch(
         byte blockType,
         uint tagIndex,

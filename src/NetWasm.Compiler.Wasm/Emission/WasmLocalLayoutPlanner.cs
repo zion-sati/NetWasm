@@ -44,8 +44,9 @@ internal static class WasmLocalLayoutPlanner
     // the order MethodEmissionContext numbers them from InteropDescriptor: the
     // interop descriptor, result and handle, the I4 and I8 numeric temporaries,
     // the dispatcher program counter, the second I4 temporary and the inline
-    // catch frame. Methods, filter funclets and generated bodies all declare
-    // this list, so no derived temporary is left undeclared or mistyped.
+    // catch frame, then the address and value a 12-byte vector access uses.
+    // Methods, filter funclets and generated bodies all declare this list, so
+    // no derived temporary is left undeclared or mistyped.
     public static ImmutableArray<CliValueKind> TemporaryLocals { get; } =
     [
         CliValueKind.ManagedAddress,
@@ -56,6 +57,8 @@ internal static class WasmLocalLayoutPlanner
         CliValueKind.I4,
         CliValueKind.I4,
         CliValueKind.I4,
+        CliValueKind.ManagedAddress,
+        CliValueKind.V128,
     ];
 
     public static EvaluationStackLocalLayout CreateEvaluationStack(

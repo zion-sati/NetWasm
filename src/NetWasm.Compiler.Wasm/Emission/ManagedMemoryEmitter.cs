@@ -104,12 +104,13 @@ internal static class ManagedMemoryEmitter
         WasmTargetLayout target,
         int offset,
         CliTypeIdentity type,
-        int size)
+        int size,
+        VectorScratch? scratch = null)
     {
         type = type.StackStorageType ?? type;
         if (type.StackKind == CliValueKind.V128)
         {
-            EmitVectorLoad(code, offset, size);
+            EmitVectorLoad(code, offset, size, scratch);
             return;
         }
         switch (type.CanonicalName)
@@ -148,12 +149,13 @@ internal static class ManagedMemoryEmitter
         WasmTargetLayout target,
         int offset,
         CliTypeIdentity type,
-        int size)
+        int size,
+        VectorScratch? scratch = null)
     {
         type = type.StackStorageType ?? type;
         if (type.StackKind == CliValueKind.V128)
         {
-            EmitVectorStore(code, offset, size);
+            EmitVectorStore(code, offset, size, scratch);
             return;
         }
         switch (type.CanonicalName)
@@ -281,13 +283,28 @@ internal static class ManagedMemoryEmitter
 
     // A v128 load or store, aligned to the vector's 8-byte halves.
     // A vector value fills a v128 whatever its storage: Vector2 reads its 8
-    // bytes into the low lanes and writes only those back.
-    public static void EmitVectorLoad(IWasmInstructionWriter code, int offset, int size)
+    // bytes into the low lanes and writes only those back, and Vector3 its 12
+    // into the three low lanes, as the 8 bytes and the third lane, the widths
+    // RyuJIT moves a TYP_SIMD12 with, so a load of bytes stored just before
+    // reads them from the store of the same width.
+    public static void EmitVectorLoad(
+        IWasmInstructionWriter code,
+        int offset,
+        int size,
+        VectorScratch? scratch = null)
     {
         switch (size)
         {
             case 16: WriteSimdMemory(code, WasmSimdOpcodes.V128Load, offset); break;
             case 8: WriteSimdMemory(code, WasmSimdOpcodes.V128Load64Zero, offset); break;
+            case 12:
+                var load = Require(scratch, "load");
+                WriteLocalSet(code, load.Address);
+                WriteLocalGet(code, load.Address);
+                WriteLocalGet(code, load.Address);
+                WriteSimdMemory(code, WasmSimdOpcodes.V128Load64Zero, offset);
+                WriteSimdLane(code, WasmSimdOpcodes.V128Load32Lane, 2, checked(offset + sizeof(long)), 2);
+                break;
             default:
                 throw new CompilerException(new CompilerDiagnostic(
                     DiagnosticCode.RuntimeContract,
@@ -295,11 +312,26 @@ internal static class ManagedMemoryEmitter
         }
     }
 
-    public static void EmitVectorStore(IWasmInstructionWriter code, int offset, int size)
+    public static void EmitVectorStore(
+        IWasmInstructionWriter code,
+        int offset,
+        int size,
+        VectorScratch? scratch = null)
     {
         switch (size)
         {
             case 16: WriteSimdMemory(code, WasmSimdOpcodes.V128Store, offset); break;
+            case 12:
+                var store = Require(scratch, "store");
+                WriteLocalSet(code, store.Value);
+                WriteLocalSet(code, store.Address);
+                WriteLocalGet(code, store.Address);
+                WriteLocalGet(code, store.Value);
+                WriteSimdLane(code, WasmSimdOpcodes.V128Store64Lane, 3, offset, 0);
+                WriteLocalGet(code, store.Address);
+                WriteLocalGet(code, store.Value);
+                WriteSimdLane(code, WasmSimdOpcodes.V128Store32Lane, 2, checked(offset + sizeof(long)), 2);
+                break;
             case 8:
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.SimdPrefixed,
@@ -311,6 +343,24 @@ internal static class ManagedMemoryEmitter
                     DiagnosticCode.RuntimeContract,
                     $"vector store has unsupported size {size}"));
         }
+    }
+
+    private static VectorScratch Require(VectorScratch? scratch, string access) =>
+        scratch ?? throw new CompilerException(new CompilerDiagnostic(
+            DiagnosticCode.RuntimeContract,
+            $"a 12-byte vector {access} has no scratch locals"));
+
+    private static void WriteSimdLane(
+        IWasmInstructionWriter code,
+        uint opcode,
+        uint alignment,
+        int offset,
+        byte lane)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.SimdPrefixed,
+            WasmInstructionOperand.PrefixedMemoryLane(opcode, alignment, (uint)offset, lane)));
     }
 
     private static void WriteSimdMemory(IWasmInstructionWriter code, uint opcode, int offset)

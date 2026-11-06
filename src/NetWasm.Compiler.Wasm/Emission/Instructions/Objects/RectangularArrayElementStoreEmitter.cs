@@ -53,7 +53,7 @@ internal sealed class RectangularArrayElementStoreEmitter(
                 layouts.Target,
                 0,
                 elementType,
-                GetElementSize(elementType));
+                GetElementSize(elementType), scratch: request.Context.VectorScratch);
         }
         request.Stack.RemoveRange(arraySlot, arrayType.ArrayRank + 2);
     }
