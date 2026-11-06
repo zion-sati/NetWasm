@@ -93,6 +93,11 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? IntegerCheckEliminationPolicy.Disabled
             : IntegerCheckEliminationPolicy.ProvenRanges;
 
+    private static LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? LoopInvariantExpressionHoistingPolicy.Disabled
+            : LoopInvariantExpressionHoistingPolicy.BranchingExpressions;
+
     private static bool WholeProgramDefault(FinalWasmOptimization preset) => preset switch
     {
         FinalWasmOptimization.None or FinalWasmOptimization.O0 or FinalWasmOptimization.O1 => false,
@@ -153,6 +158,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ? ManagedQuotientReuse.Enabled : ManagedQuotientReuse.Disabled));
             var integerChecks = resolver.Resolve(preset, new(IntegerCheckElimination: enabled
                 ? ManagedIntegerCheckElimination.Enabled : ManagedIntegerCheckElimination.Disabled));
+            var invariantExpressions = resolver.Resolve(preset, new(LoopInvariantExpressionHoisting: enabled
+                ? ManagedLoopInvariantExpressionHoisting.Enabled : ManagedLoopInvariantExpressionHoisting.Disabled));
             Assert.Equal(baseline with
             {
                 ConstantArgumentPropagation = enabled ? ConstantArgumentPropagationPolicy.Conservative : ConstantArgumentPropagationPolicy.Disabled,
@@ -256,6 +263,11 @@ public sealed class WasmOptimizationSettingsResolverTests
                 IntegerCheckElimination = enabled
                     ? IntegerCheckEliminationPolicy.ProvenRanges : IntegerCheckEliminationPolicy.Disabled,
             }, integerChecks);
+            Assert.Equal(baseline with
+            {
+                LoopInvariantExpressionHoisting = enabled
+                    ? LoopInvariantExpressionHoistingPolicy.BranchingExpressions : LoopInvariantExpressionHoistingPolicy.Disabled,
+            }, invariantExpressions);
         }
     }
 
@@ -307,6 +319,8 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(QuotientReuse: (ManagedQuotientReuse)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(IntegerCheckElimination: (ManagedIntegerCheckElimination)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(LoopInvariantExpressionHoisting: (ManagedLoopInvariantExpressionHoisting)255)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
@@ -352,6 +366,8 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(IntegerCheckElimination: ManagedIntegerCheckElimination.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(LoopInvariantExpressionHoisting: ManagedLoopInvariantExpressionHoisting.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopInvariantFieldHoisting: ManagedLoopInvariantFieldHoisting.NullChecks)));
         Assert.Equal(resolver.Resolve(FinalWasmOptimization.None), resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Disabled,
@@ -375,7 +391,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ConditionalStoreMerging: ManagedConditionalStoreMerging.Disabled,
                 InlineArrayData: ManagedInlineArrayData.Disabled,
                 QuotientReuse: ManagedQuotientReuse.Disabled,
-                IntegerCheckElimination: ManagedIntegerCheckElimination.Disabled)));
+                IntegerCheckElimination: ManagedIntegerCheckElimination.Disabled,
+                LoopInvariantExpressionHoisting: ManagedLoopInvariantExpressionHoisting.Disabled)));
     }
 
     [Theory]
@@ -459,7 +476,8 @@ public sealed class WasmOptimizationSettingsResolverTests
             ConditionalStoreMerging(preset),
             InlineArrayData(preset),
             QuotientReuse(preset),
-            IntegerCheckElimination(preset));
+            IntegerCheckElimination(preset),
+            LoopInvariantExpressionHoisting: LoopInvariantExpressionHoisting(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
@@ -566,7 +584,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                     ConditionalStoreMerging(preset),
                     InlineArrayData(preset),
                     QuotientReuse(preset),
-                    IntegerCheckElimination(preset)),
+                    IntegerCheckElimination(preset),
+                    LoopInvariantExpressionHoisting: LoopInvariantExpressionHoisting(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }

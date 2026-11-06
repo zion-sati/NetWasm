@@ -468,6 +468,18 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedIntegerCheckElimination.Enabled => IntegerCheckEliminationPolicy.ProvenRanges,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // Moving a branching computation out of its loop makes every iteration
+        // shorter and adds only the local that carries its value, so every
+        // optimizing preset takes it.
+        var invariantExpressionsOverride = options?.LoopInvariantExpressionHoisting ?? ManagedLoopInvariantExpressionHoisting.Auto;
+        var invariantExpressions = invariantExpressionsOverride switch
+        {
+            ManagedLoopInvariantExpressionHoisting.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? LoopInvariantExpressionHoistingPolicy.Disabled : LoopInvariantExpressionHoistingPolicy.BranchingExpressions,
+            ManagedLoopInvariantExpressionHoisting.Disabled => LoopInvariantExpressionHoistingPolicy.Disabled,
+            ManagedLoopInvariantExpressionHoisting.Enabled => LoopInvariantExpressionHoistingPolicy.BranchingExpressions,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
 
         if (preset == FinalWasmOptimization.None &&
             (hint != ManagedInliningHints.Auto ||
@@ -500,6 +512,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              arrayDataOverride == ManagedInlineArrayData.Enabled ||
              quotientsOverride == ManagedQuotientReuse.Enabled ||
              integerChecksOverride == ManagedIntegerCheckElimination.Enabled ||
+             invariantExpressionsOverride == ManagedLoopInvariantExpressionHoisting.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -550,6 +563,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             arrayData,
             quotients,
             integerChecks,
-            options?.Converge ?? false);
+            options?.Converge ?? false,
+            invariantExpressions);
     }
 }

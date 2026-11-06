@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel.Merging;
 using System;
 using System.IO;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -60,6 +61,7 @@ public sealed class RawModuleLinkExecution(
                 RuntimeInlineAnnotations = settings.RuntimeInlineAnnotations,
                 Exports = removedExports.IsEmpty ? null : new(null, removedExports),
                 Intermediates = new(sanitized, sanitizedRuntime, merged),
+                KeepNames = DiagnosticNames.Kept,
             });
             _optimizer.Optimize(
                 optimizerInput,

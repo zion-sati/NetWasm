@@ -139,6 +139,10 @@ internal sealed class ManagedMethodOptimizerFactory(
                 new StackValueConsumerFinder(new StackEffectResolver(calledMethods)),
                 settings.AllocationScalarReplacement == AllocationScalarReplacementPolicy.NonEscapingObjects),
             new WalkLoopUnroller(calledMethods, settings.LoopUnrolling == LoopUnrollingPolicy.Bounded),
-            new ConstantTripLoopUnroller(settings.LoopUnrolling == LoopUnrollingPolicy.Bounded));
+            new ConstantTripLoopUnroller(settings.LoopUnrolling == LoopUnrollingPolicy.Bounded),
+            new LoopInvariantExpressionHoister(calledMethods, intrinsics,
+                settings.LoopInvariantExpressionHoisting == LoopInvariantExpressionHoistingPolicy.BranchingExpressions),
+            new WholeLocalBlockCopyFolder(graphBuilder, stackValidator, calledMethods, typeDefinitions, fields,
+                settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled));
     }
 }

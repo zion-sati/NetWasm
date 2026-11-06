@@ -48,4 +48,5 @@ public sealed record WasmOptimizationSettings(
     QuotientReusePolicy QuotientReuse = QuotientReusePolicy.Disabled,
     IntegerCheckEliminationPolicy IntegerCheckElimination = IntegerCheckEliminationPolicy.Disabled,
     // Whether wasm-opt repeats the preset until the module stops shrinking (O1 and above).
-    bool Converge = false);
+    bool Converge = false,
+    LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting = LoopInvariantExpressionHoistingPolicy.Disabled);

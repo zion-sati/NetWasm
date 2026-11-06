@@ -12,14 +12,17 @@ internal sealed class MetadataMethodBodyReader(
     ISymbolFormatter symbols,
     IUnsafeAccessorTargetResolverFactory accessors,
     IUnsafeAccessorBodyBuilder accessorBodies,
-    IDelegateAsynchronousCallBodyBuilder delegateAsynchronousCalls) : IMethodBodyReader
+    IDelegateAsynchronousCallBodyBuilder delegateAsynchronousCalls,
+    IUnsafeIntrinsicBodyBuilder unsafeIntrinsics) : IMethodBodyReader
 {
     private readonly Lazy<IUnsafeAccessorTargetResolver> _accessors = new(accessors.Create);
 
+    // A body decodes for its method's instance, which the runtime-provided
+    // bodies take too.
     public CilMethodBody ReadMethodBody(MethodDefinitionModel method)
     {
         var assembly = assemblies.Resolve(method.Key.Assembly);
-        return !method.HasBody && method.HasManagedBody
+        return method.HasBody || method.HasManagedBody
             ? ReadMethodBody(methodReferences.Resolve(assembly.Metadata, method.Key.MetadataToken, symbols.Format(method), 0))
             : decoders.Create().Decode(assembly, method);
     }
@@ -28,6 +31,7 @@ internal sealed class MetadataMethodBodyReader(
     {
         { HasBody: false, UnsafeAccessor: not null } => accessorBodies.Build(method, _accessors.Value.Resolve(method)),
         { HasBody: false, IsDelegateAsynchronousCall: true } => delegateAsynchronousCalls.Build(method),
+        _ when unsafeIntrinsics.Build(method) is { } intrinsic => intrinsic,
         _ => decoders.Create().Decode(assemblies.Resolve(method.Definition.Key.Assembly), method),
     };
 }

@@ -363,33 +363,46 @@ public sealed class DelegateInvokeFunctionEmitterTests
             .Parameters
             .Length;
         var invocationListLocal = checked((uint)(parameterCount + 2));
+        var invocationCountLocal = checked((uint)(parameterCount + 3));
+        var invocationIndexLocal = checked((uint)(parameterCount + 4));
         var currentDelegateLocal = checked((uint)(parameterCount + 5));
-        var selectionIf = Assert.Single(Enumerable.Range(2, instructions.Length - 2), index =>
-            instructions[index].Opcode == WasmOpcodes.If &&
-            instructions[index - 1].Opcode == WasmOpcodes.I32EqualZero &&
-            instructions[index - 2] == WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned(invocationListLocal)));
-        var selectionElse = Enumerable.Range(
-                selectionIf + 1,
-                instructions.Length - selectionIf - 1)
-            .First(index => instructions[index].Opcode == WasmOpcodes.Else);
-        var selectionEnd = Enumerable.Range(
-                selectionElse + 1,
-                instructions.Length - selectionElse - 1)
-            .First(index => instructions[index].Opcode == WasmOpcodes.End);
         var storeCurrentDelegate = WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned(currentDelegateLocal));
-        var loadCurrentDelegate = WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned(currentDelegateLocal));
 
-        Assert.True(selectionElse > selectionIf);
-        Assert.True(selectionEnd > selectionElse);
-        Assert.Equal(storeCurrentDelegate, instructions[selectionElse - 1]);
-        Assert.Equal(storeCurrentDelegate, instructions[selectionEnd - 1]);
-        Assert.Equal(loadCurrentDelegate, instructions[selectionEnd + 1]);
+        // The first entry: the delegate itself without a list, else the list's first.
+        var entry = Assert.Single(Enumerable.Range(2, instructions.Length - 2), index =>
+            instructions[index].Opcode == WasmOpcodes.If &&
+            instructions[index - 1].Opcode == WasmOpcodes.I32EqualZero &&
+            instructions[index - 2] == WasmInstruction.WithOperand(
+                WasmOpcodes.LocalTee,
+                WasmInstructionOperand.Unsigned(invocationListLocal)));
+        var entryElse = Enumerable.Range(entry + 1, instructions.Length - entry - 1)
+            .First(index => instructions[index].Opcode == WasmOpcodes.Else);
+        var entryEnd = Enumerable.Range(entryElse + 1, instructions.Length - entryElse - 1)
+            .First(index => instructions[index].Opcode == WasmOpcodes.End);
+        Assert.Equal(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(0)),
+            instructions[entry + 1]);
+        Assert.Equal(storeCurrentDelegate, instructions[entry + 2]);
+        Assert.Equal(storeCurrentDelegate, instructions[entryEnd - 1]);
+
+        // Each entry after the first goes round only while the index is below the count, and
+        // reads the next entry from the list.
+        var next = Assert.Single(Enumerable.Range(0, instructions.Length - 4), index =>
+            instructions[index] == WasmInstruction.WithOperand(
+                WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned(invocationIndexLocal)) &&
+            instructions[index + 1] == WasmInstruction.WithOperand(
+                WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(invocationCountLocal)) &&
+            instructions[index + 2].Opcode == WasmOpcodes.I32GreaterThanOrEqualUnsigned &&
+            instructions[index + 3] == WasmInstruction.WithOperand(
+                WasmOpcodes.BranchIf, WasmInstructionOperand.Unsigned(1)));
+        var reload = Enumerable.Range(next + 4, instructions.Length - next - 4)
+            .First(index => instructions[index] == storeCurrentDelegate);
+        Assert.Equal(WasmInstruction.WithOperand(WasmOpcodes.Branch, WasmInstructionOperand.Unsigned(0)),
+            instructions[reload + 1]);
+        Assert.Contains(Enumerable.Range(next + 4, reload - next - 4), index =>
+            instructions[index] == WasmInstruction.WithOperand(
+                WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(invocationListLocal)));
     }
 
     private static DelegateInvokeFunctionEmitter CreateEmitter(

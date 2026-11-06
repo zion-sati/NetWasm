@@ -12,6 +12,7 @@ public sealed class ConstructorDependencyGuardTests
     [
         "NetWasm.Compiler.Analysis.AddressTakenValues.LocalAddressDereferenceFolder",
         "NetWasm.Compiler.Analysis.AddressTakenValues.StructLocalScalarReplacer",
+        "NetWasm.Compiler.Analysis.AddressTakenValues.WholeLocalBlockCopyFolder",
         "NetWasm.Compiler.Analysis.Allocations.NonEscapingAllocationReplacer",
         "NetWasm.Compiler.Analysis.Arrays.RepeatedArrayAccessEliminator",
         "NetWasm.Compiler.Analysis.BeforeFieldInitEntryInitializer",
@@ -32,6 +33,7 @@ public sealed class ConstructorDependencyGuardTests
         "NetWasm.Compiler.Analysis.Loops.ElementwiseLoopVectorizer",
         "NetWasm.Compiler.Analysis.Loops.IdempotentLoopCollapser",
         "NetWasm.Compiler.Analysis.Loops.LoopInvariantCallHoister",
+        "NetWasm.Compiler.Analysis.Loops.LoopInvariantExpressionHoister",
         "NetWasm.Compiler.Analysis.Loops.LoopStoreForwarder",
         "NetWasm.Compiler.Analysis.Loops.ReductionLoopRewriter",
         "NetWasm.Compiler.Analysis.ManagedByRefEffectAnalyzerFactory",

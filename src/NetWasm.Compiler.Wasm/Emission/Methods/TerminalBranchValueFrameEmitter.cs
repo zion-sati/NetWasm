@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.Methods;
@@ -9,7 +10,8 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 internal sealed class TerminalBranchValueFrameEmitter(
     ITargetLayout layouts,
     IStructuredConditionValueEmitter conditions,
-    IValueFrameEntryEmitter valueFrames) : ITerminalBranchValueFrameEmitter
+    IValueFrameEntryEmitter valueFrames,
+    IRuntimeImportResolver runtimeImports) : ITerminalBranchValueFrameEmitter
 {
     public void Emit(
         IWasmInstructionWriter code,
@@ -25,8 +27,10 @@ internal sealed class TerminalBranchValueFrameEmitter(
         ArgumentNullException.ThrowIfNull(placement);
         ArgumentNullException.ThrowIfNull(emitCondition);
         ArgumentNullException.ThrowIfNull(emitBody);
-        if (context.ValueLayout.Size != 0 || placement.FramedLayout.Size == 0 ||
+        var defersRoots = placement.Plan.DefersRootFrame;
+        if (context.ValueLayout.Size != 0 || (placement.FramedLayout.Size == 0 && !defersRoots) ||
             context.FilterEnvironment.Size != 0 || context.ExceptionRootSlots.Count != 0 ||
+            (defersRoots && (context.RootSlotCount != 0 || placement.FramedRootMap is null)) ||
             placement.Plan.IncomingScalarLocals.Any(index =>
                 !context.AddressTakenScalarPromotions.ShadowLocals.ContainsKey(index)))
         {
@@ -53,6 +57,15 @@ internal sealed class TerminalBranchValueFrameEmitter(
                 ValueLayout = placement.FramedLayout,
                 ValueFrameReferences = placement.FramedReferences,
             };
+            if (defersRoots)
+            {
+                framedContext = framedContext with
+                {
+                    RootMap = placement.FramedRootMap!,
+                    AuthoritativeRootSlots = placement.FramedAuthoritativeRootSlots,
+                };
+                EnterRootFrame(framedContext);
+            }
             valueFrames.Emit(code, header, framedContext);
             foreach (var index in placement.Plan.IncomingScalarLocals.Order())
             {
@@ -65,6 +78,29 @@ internal sealed class TerminalBranchValueFrameEmitter(
                     layouts.Target.GetStorageSize(type));
             }
             emitBody(sequence, framedContext);
+        }
+
+        // The root frame the prologue would have entered, entered where the arm begins: each
+        // authoritative slot takes its variable's value there, which the code before the arm may
+        // already have set.
+        void EnterRootFrame(MethodEmissionContext framed)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(framed.RootSlotCount)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.RootFrameEnter))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                WasmInstructionOperand.Unsigned((uint)framed.RootFrame)));
+            foreach (var (source, slot) in framed.AuthoritativeRootSlots.OrderBy(pair => pair.Value))
+            {
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                    WasmInstructionOperand.Unsigned((uint)framed.RootFrame)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                    WasmInstructionOperand.Unsigned((uint)(source.Index + (source.Kind == RootSourceKind.Argument
+                        ? framed.ParameterOffset : framed.LocalBase)))));
+                ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
+                    checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
+            }
         }
     }
 }

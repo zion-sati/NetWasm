@@ -11,7 +11,7 @@ using static EmitterTestSupport;
 public sealed class TerminalBranchValueFramePlannerTests
 {
     private readonly ITerminalBranchValueFramePlanner _planner =
-        new[] { new TerminalBranchValueFramePlanner() }
+        new[] { new TerminalBranchValueFramePlanner(CreateArgumentSignatureTypes(new FakeProgram())) }
             .Cast<ITerminalBranchValueFramePlanner>().Single();
     private readonly MethodRootMap _roots = new(EntryKey, [], []);
 
@@ -203,7 +203,6 @@ public sealed class TerminalBranchValueFramePlannerTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
@@ -216,7 +215,6 @@ public sealed class TerminalBranchValueFramePlannerTests
         layout = shape switch
         {
             0 => layout with { Size = 0 },
-            1 => layout with { ArgumentOffsets = ImmutableDictionary<int, int>.Empty.Add(0, 0) },
             2 => layout with { NativeArgumentOffsets = ImmutableDictionary<(int, int), int>.Empty.Add((10, 0), 0) },
             3 => layout with { MemberResultOffsets = ImmutableDictionary<int, int>.Empty.Add(10, 0) },
             4 => layout with { CallReceiverOffsets = ImmutableDictionary<int, int>.Empty.Add(10, 0) },
@@ -302,6 +300,63 @@ public sealed class TerminalBranchValueFramePlannerTests
         method = method with { Blocks = method.Blocks.SetItem(new(1), method.Blocks[new(1)] with { Instructions = [] }) };
         Assert.Null(_planner.Plan(method, Layout(), _roots));
     }
+
+    // An argument the frame holds is copied in where the framed arm begins; the other arm and the
+    // condition read the parameter, so neither may take the argument's address.
+    [Fact]
+    public void AnArgumentOnlyTheFramedArmAddressesIsCopiedInThere()
+    {
+        var plan = _planner.Plan(WithAddressedArgument(CliTypeIdentity.FromStackKind(CliValueKind.I8), 1),
+            WithArgument(Layout()), _roots);
+
+        Assert.True(Assert.IsType<TerminalBranchValueFramePlan>(plan).FramedWhenTrue);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void RejectsAnArgumentAddressedOutsideTheFramedArm(int block) =>
+        Assert.Null(_planner.Plan(WithAddressedArgument(CliTypeIdentity.FromStackKind(CliValueKind.I8), block),
+            WithArgument(Layout()), _roots));
+
+    // A value-type argument's parameter becomes the address of its frame copy, which the
+    // unframed arm would not have.
+    [Fact]
+    public void RejectsAValueTypeArgumentInTheFrame() =>
+        Assert.Null(_planner.Plan(WithAddressedArgument(CliTypeIdentity.Named(Assembly, "Test", "Pair", isValueType: true), 1),
+            WithArgument(Layout()), _roots));
+
+    private static StructuredMethod WithAddressedArgument(CliTypeIdentity type, int block)
+    {
+        var method = Method();
+        var original = method.Blocks[new(block)];
+        return method with
+        {
+            Header = method.Header with
+            {
+                Method = method.Header.Method with
+                {
+                    Signature = new(CliTypeIdentity.FromStackKind(CliValueKind.Void), [type]),
+                },
+            },
+            Blocks = method.Blocks.SetItem(new(block), original with
+            {
+                Instructions =
+                [
+                    .. original.Instructions,
+                    I(block * 10 + 5, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+                    I(block * 10 + 6, CilOperation.Pop),
+                ],
+            }),
+        };
+    }
+
+    private static ValueFrameLayout WithArgument(ValueFrameLayout layout) => layout with
+    {
+        Size = 24,
+        ArgumentOffsets = ImmutableDictionary<int, int>.Empty.Add(0, 16),
+    };
 
     private static ValueFrameLayout Layout() => new(16,
         ImmutableDictionary<int, int>.Empty.Add(0, 0), [], [], [0]);

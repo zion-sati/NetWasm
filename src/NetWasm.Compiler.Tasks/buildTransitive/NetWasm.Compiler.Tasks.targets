@@ -111,6 +111,7 @@
     <NetWasmManagedInlineArrayData Condition="'$(NetWasmManagedInlineArrayData)' == ''">Auto</NetWasmManagedInlineArrayData>
     <NetWasmManagedQuotientReuse Condition="'$(NetWasmManagedQuotientReuse)' == ''">Auto</NetWasmManagedQuotientReuse>
     <NetWasmManagedIntegerCheckElimination Condition="'$(NetWasmManagedIntegerCheckElimination)' == ''">Auto</NetWasmManagedIntegerCheckElimination>
+    <NetWasmManagedLoopInvariantExpressionHoisting Condition="'$(NetWasmManagedLoopInvariantExpressionHoisting)' == ''">Auto</NetWasmManagedLoopInvariantExpressionHoisting>
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
@@ -246,6 +247,7 @@
       <_NetWasmCompilationIdentityLine Include="managedInlineArrayData=$(NetWasmManagedInlineArrayData)" />
       <_NetWasmCompilationIdentityLine Include="managedQuotientReuse=$(NetWasmManagedQuotientReuse)" />
       <_NetWasmCompilationIdentityLine Include="managedIntegerCheckElimination=$(NetWasmManagedIntegerCheckElimination)" />
+      <_NetWasmCompilationIdentityLine Include="managedLoopInvariantExpressionHoisting=$(NetWasmManagedLoopInvariantExpressionHoisting)" />
       <_NetWasmCompilationIdentityLine Include="pathMap=$(PathMap)" />
       <!-- Modules the project's native archives may import from: each declared
            NetWasmImportModule and each registered JavaScript module. -->
@@ -368,6 +370,7 @@
                         ManagedInlineArrayData="$(NetWasmManagedInlineArrayData)"
                         ManagedQuotientReuse="$(NetWasmManagedQuotientReuse)"
                         ManagedIntegerCheckElimination="$(NetWasmManagedIntegerCheckElimination)"
+                        ManagedLoopInvariantExpressionHoisting="$(NetWasmManagedLoopInvariantExpressionHoisting)"
                         NoLogo="$(NoLogo)"
                         ExceptionTypeMapPath="$(NetWasmExceptionTypeMapPath)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)" />

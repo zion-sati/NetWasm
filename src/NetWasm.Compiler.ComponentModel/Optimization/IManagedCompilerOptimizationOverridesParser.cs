@@ -32,5 +32,6 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? conditionalStoreMerging = null,
         string? inlineArrayData = null,
         string? quotientReuse = null,
-        string? integerCheckElimination = null);
+        string? integerCheckElimination = null,
+        string? loopInvariantExpressionHoisting = null);
 }

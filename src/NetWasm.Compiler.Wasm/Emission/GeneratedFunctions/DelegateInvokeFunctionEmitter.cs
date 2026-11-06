@@ -145,7 +145,11 @@ internal sealed class DelegateInvokeFunctionEmitter(
         OptionalFunctionIndex throwFunction)
     {
         // A single-cast delegate reads nothing once its target runs, so only a
-        // multicast one roots itself and the arguments its later entries take.
+        // multicast one roots itself and the arguments its later entries take. The
+        // first entry is the delegate itself or its list's first; a list holds at
+        // least two, so only a multicast delegate goes round again.
+        WriteI32Constant(code, 0);
+        WriteLocalSet(code, invocationIndexLocal);
         WriteLocalGet(code, receiverParameter);
         EmitReferenceLoad(code, objects.DelegateInvocationListOffset);
         code.Write(WasmInstruction.WithOperand(
@@ -155,6 +159,8 @@ internal sealed class DelegateInvokeFunctionEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.If,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        WriteLocalGet(code, receiverParameter);
+        WriteLocalSet(code, currentDelegateLocal);
         WriteI32Constant(code, 1);
         WriteLocalSet(code, invocationCountLocal);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
@@ -162,42 +168,16 @@ internal sealed class DelegateInvokeFunctionEmitter(
         WriteLocalGet(code, receiverParameter);
         WriteLoad(code, WasmOpcodes.I32Load, 2, objects.DelegateInvocationCountOffset);
         WriteLocalSet(code, invocationCountLocal);
+        EmitInvocationListEntry(code, invocationListLocal, invocationIndexLocal, currentDelegateLocal,
+            targetProgram.InlineArrayData);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
 
-        WriteI32Constant(code, 0);
-        WriteLocalSet(code, invocationIndexLocal);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Loop,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        WriteLocalGet(code, invocationIndexLocal);
-        WriteLocalGet(code, invocationCountLocal);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.BranchIf,
-            WasmInstructionOperand.Unsigned(1)));
-
-        WriteLocalGet(code, invocationListLocal);
-        EmitReferenceEqualZero(code);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.If,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        WriteLocalGet(code, receiverParameter);
-        WriteLocalSet(code, currentDelegateLocal);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        ManagedMemoryEmitter.EmitArrayElementAddress(
-            code,
-            layouts.Target,
-            invocationListLocal,
-            invocationIndexLocal,
-            targetProgram.InlineArrayData,
-            layouts.Target.ObjectReferenceSize);
-        EmitReferenceLoad(code, 0);
-        WriteLocalSet(code, currentDelegateLocal);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-
         EmitLeafInvoke(
             code,
             invoke,
@@ -212,10 +192,35 @@ internal sealed class DelegateInvokeFunctionEmitter(
         WriteLocalGet(code, invocationIndexLocal);
         WriteI32Constant(code, 1);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Add));
-        WriteLocalSet(code, invocationIndexLocal);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalTee,
+            WasmInstructionOperand.Unsigned((uint)invocationIndexLocal)));
+        WriteLocalGet(code, invocationCountLocal);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.BranchIf,
+            WasmInstructionOperand.Unsigned(1)));
+        EmitInvocationListEntry(code, invocationListLocal, invocationIndexLocal, currentDelegateLocal,
+            targetProgram.InlineArrayData);
         WriteBranch(code, 0);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    // The list's entry at the index, which becomes the delegate invoked next.
+    private void EmitInvocationListEntry(
+        IWasmInstructionWriter code, int invocationListLocal, int invocationIndexLocal, int currentDelegateLocal,
+        bool inlineArrayData)
+    {
+        ManagedMemoryEmitter.EmitArrayElementAddress(
+            code,
+            layouts.Target,
+            invocationListLocal,
+            invocationIndexLocal,
+            inlineArrayData,
+            layouts.Target.ObjectReferenceSize);
+        EmitReferenceLoad(code, 0);
+        WriteLocalSet(code, currentDelegateLocal);
     }
 
     // The delegate holds its target's function index. A few targets are tested

@@ -24,12 +24,15 @@ public sealed class MetadataMethodBodyReaderTests
 
         var result = instance ? reader.ReadMethodBody(fixture.Method) : reader.ReadMethodBody(fixture.Method.Definition);
 
+        // A definition with a body decodes for its instance, as runtime-provided bodies are built.
+        var resolved = !instance && physical;
         Assert.Same(fixture.Body, result);
-        Assert.Equal(1, fixture.AssemblyReads);
+        Assert.Equal(resolved ? 2 : 1, fixture.AssemblyReads);
         Assert.Equal(1, fixture.DecoderCreations);
-        Assert.Equal(instance ? 0 : 1, fixture.DefinitionDecodes);
-        Assert.Equal(instance ? 1 : 0, fixture.InstanceDecodes);
-        Assert.Equal(0, fixture.MethodResolutions);
+        Assert.Equal(instance || resolved ? 0 : 1, fixture.DefinitionDecodes);
+        Assert.Equal(instance || resolved ? 1 : 0, fixture.InstanceDecodes);
+        Assert.Equal(resolved ? 1 : 0, fixture.MethodResolutions);
+        Assert.Equal(instance || resolved ? 1 : 0, fixture.IntrinsicBuilds);
         Assert.Equal(0, fixture.AccessorCreations);
         Assert.Equal(0, fixture.Bindings);
         Assert.Equal(0, fixture.BodyBuilds);
@@ -77,6 +80,24 @@ public sealed class MetadataMethodBodyReaderTests
         Assert.Equal(0, fixture.InstanceDecodes);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnsafeIntrinsicsUseTheCompilerProvidedBodyWithoutDecoding(bool instance)
+    {
+        using var fixture = new Fixture(physical: true, annotated: false) { IntrinsicBody = true };
+
+        var reader = fixture.CreateReader();
+        var result = instance ? reader.ReadMethodBody(fixture.Method) : reader.ReadMethodBody(fixture.Method.Definition);
+
+        Assert.Same(fixture.Body, result);
+        Assert.Equal(1, fixture.IntrinsicBuilds);
+        Assert.Equal(instance ? 0 : 1, fixture.MethodResolutions);
+        Assert.Equal(0, fixture.DecoderCreations);
+        Assert.Equal(0, fixture.DefinitionDecodes);
+        Assert.Equal(0, fixture.InstanceDecodes);
+    }
+
     [Fact]
     public void BindingFailurePropagatesWithoutDecodingOrBuildingABody()
     {
@@ -93,15 +114,17 @@ public sealed class MetadataMethodBodyReaderTests
     private sealed class Fixture : IDisposable, ICilDecoderFactory, ICilDecoder,
         IManagedAssemblyResolver, IMetadataMethodReferenceResolver, ISymbolFormatter,
         IUnsafeAccessorTargetResolverFactory, IUnsafeAccessorTargetResolver, IUnsafeAccessorBodyBuilder,
-        IDelegateAsynchronousCallBodyBuilder
+        IDelegateAsynchronousCallBodyBuilder, IUnsafeIntrinsicBodyBuilder
     {
         private readonly ManagedAssembly _assembly;
         private readonly UnsafeAccessorBinding _binding;
         internal MethodInstanceModel Method { get; }
         internal CilMethodBody Body { get; }
         internal int AssemblyReads, DecoderCreations, DefinitionDecodes, InstanceDecodes,
-            MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds;
+            MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds, IntrinsicBuilds;
         internal Exception? BindingError { get; set; }
+        // Whether the method is an Unsafe intrinsic, whose body the compiler builds.
+        internal bool IntrinsicBody { get; init; }
 
         internal Fixture(bool physical, bool annotated, bool delegateCall = false)
         {
@@ -124,7 +147,7 @@ public sealed class MetadataMethodBodyReaderTests
         }
 
         internal IMethodBodyReader CreateReader() => Assert.IsAssignableFrom<IMethodBodyReader>(
-            new MetadataMethodBodyReader(this, this, this, this, this, this, this));
+            new MetadataMethodBodyReader(this, this, this, this, this, this, this, this));
         public void Dispose() => _assembly.Dispose();
 
         ICilDecoder ICilDecoderFactory.Create() { DecoderCreations++; return this; }
@@ -185,6 +208,12 @@ public sealed class MetadataMethodBodyReaderTests
             Assert.Same(Method, method);
             DelegateCallBuilds++;
             return Body;
+        }
+        CilMethodBody? IUnsafeIntrinsicBodyBuilder.Build(MethodInstanceModel method)
+        {
+            Assert.Same(Method, method);
+            IntrinsicBuilds++;
+            return IntrinsicBody ? Body : null;
         }
     }
 }

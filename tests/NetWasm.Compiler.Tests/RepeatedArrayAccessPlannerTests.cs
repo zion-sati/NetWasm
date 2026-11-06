@@ -62,6 +62,54 @@ public sealed class RepeatedArrayAccessPlannerTests
         Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
     }
 
+    // A rectangular access skips the check of each dimension whose index an
+    // earlier access to the same array in the block checked against it, and its
+    // null check after any earlier access; the store of `grid[j, k] = ... +
+    // grid[j, k]` runs after the read it repeats.
+    [Theory]
+    [InlineData("result = grid[i, k] + grid[j, k];", 1, 1)]
+    [InlineData("result = grid[i, k] + grid[i, k];", 2, 1)]
+    [InlineData("result = grid[i, k]; grid[j, k] = result + grid[j, k];", 3, 2)]
+    [InlineData("result = grid[i, k] + other[i, k];", 0, 0)]
+    [InlineData("result = grid[i, k] + grid[k, i];", 0, 1)]
+    [InlineData("result = grid[i, k]; k++; result += grid[i, k];", 1, 1)]
+    [InlineData("result = grid[i, k]; grid = other; result += grid[i, k];", 0, 0)]
+    [InlineData("result = grid[i, k]; Touch(ref k); result += grid[i, k];", 1, 1)]
+    [InlineData("result = grid[i, k]; if (result > 0) result += grid[i, k];", 0, 1)]
+    [InlineData("result = cube[i, j, 0] + cube[i, 1, k] + cube[i, j, k];", 4, 2)]
+    public void ProvesRectangularDimensionsThatRepeatAnEarlierCheck(string statement, int dimensions, int nonNull)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("RectangularAccesses", $$"""
+            using System.Runtime.CompilerServices;
+
+            public static class EntryPoint
+            {
+                public static int Run(int count) =>
+                    Probe(new int[count + 4, count + 4], new int[count + 1, count + 1], new int[3, 3, 3], count % 3, 1, 2);
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static int Probe(int[,] grid, int[,] other, int[,,] cube, int i, int j, int k)
+                {
+                    var result = 0;
+                    {{statement}}
+                    return result;
+                }
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static void Touch<T>(ref T value) => value = default!;
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Optimization: FinalWasmOptimization.O3,
+            OptimizationOverrides: new(LoopUnrolling: ManagedLoopUnrolling.Disabled)));
+        var proof = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "Probe").Body.ArrayBoundsProof;
+
+        Assert.Equal(dimensions, proof?.CheckedDimensions.Count ?? 0);
+        Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
+    }
+
     // A field access proves its object non-null for the accesses after it in
     // the block, and for those its block dominates while the slot keeps one
     // reference; a field's own value is no slot, and `this` is argument 0.

@@ -34,7 +34,17 @@ internal sealed class RectangularArrayElementStoreEmitter(
             request.Context,
             valueSlot,
             elementType.StackKind);
-        EmitNullCheck(request, code, arraySlot);
+        // A loop-entry check or an earlier access to the same array may already have checked it.
+        var proof = request.Header.ArrayBoundsProof is { } candidate &&
+            candidate.Describes(request.Header.Instructions, request.Header.Locals, request.Header.LocalSignatureTypes) &&
+            candidate.Contains(request.Instruction)
+            ? candidate
+            : null;
+        if (!request.Context.ArrayMetadata.Plan.CheckedAccesses.Contains(request.Instruction.Offset) &&
+            proof?.ProvesNonNull(request.Instruction.Offset) != true)
+        {
+            EmitNullCheck(request, code, arraySlot);
+        }
         if (elementType.StackKind == CliValueKind.ManagedReference)
         {
             EmitReferenceTypeCheck(request, code, arraySlot, valueLocal);

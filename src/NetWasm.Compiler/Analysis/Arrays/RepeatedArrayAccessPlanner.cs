@@ -15,10 +15,14 @@ internal interface IRepeatedArrayAccessPlanner
 
 // Checked: the same array and index were accessed earlier in the block, so
 // both checks passed. NonNull: an earlier access to the same array, or to a
-// field of the same object, passed its null check.
+// field of the same object, passed its null check. CheckedDimensions: an
+// earlier access to the same rectangular array in the block checked the same
+// index against that dimension.
 internal sealed record RepeatedArrayAccessPlan(ImmutableHashSet<int> Checked, ImmutableHashSet<int> NonNull)
 {
     public static RepeatedArrayAccessPlan Empty { get; } = new([], []);
+
+    public ImmutableHashSet<(int Offset, int Dimension)> CheckedDimensions { get; init; } = [];
 }
 
 // An access whose array and index an earlier access already checked cannot
@@ -32,7 +36,10 @@ internal sealed record RepeatedArrayAccessPlan(ImmutableHashSet<int> Checked, Im
 // block nothing returns to and before any read of it, holds one value too, as
 // the locals field load reuse fills do. Field accesses take part as accesses
 // of their object: an instance method that reads several fields of `this`
-// checks it once.
+// checks it once. A rectangular array's dimensions share their bounds between
+// accesses, so within a block an access skips the check of each dimension
+// whose index an earlier access to the same array checked against it, as
+// `a[j, k] = a[i, k] + a[j, k]` checks k once and j once.
 internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer dominance) : IRepeatedArrayAccessPlanner
 {
     private readonly IControlFlowDominanceAnalyzer _dominance = dominance ??
@@ -47,6 +54,7 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
         var stable = StableSlots(graph, exposed);
         var checkedAccesses = ImmutableHashSet.CreateBuilder<int>();
         var nonNull = ImmutableHashSet.CreateBuilder<int>();
+        var dimensions = ImmutableHashSet.CreateBuilder<(int Offset, int Dimension)>();
         var unproven = new List<(int Block, int Offset, Slot Array)>();
         var accessedBlocks = new Dictionary<Slot, HashSet<int>>();
         var unprovenPairs = new List<(int Block, int Offset, Slot Array, Origin Index)>();
@@ -56,6 +64,7 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
             var origins = new List<Origin>();
             var checkedReferences = new HashSet<Slot>();
             var checkedPairs = new HashSet<(Slot Array, Origin Index)>();
+            var checkedDimensions = new HashSet<(Slot Array, int Dimension, Origin Index)>();
             foreach (var instruction in block.Instructions)
             {
                 if (!controlFlow.InstructionEntryStacks.TryGetValue(instruction.Offset, out var stack))
@@ -98,6 +107,28 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                     checkedReferences.Add(array);
                     if (index.Known) checkedPairs.Add((array, index));
                 }
+                // The array beneath one index for each dimension, and the value for a store.
+                if (Rank(instruction) is { } rank &&
+                    (instruction.Operation == CilOperation.StoreRectangularArrayElement ? rank + 2 : rank + 1) is var taken &&
+                    stack.Length >= taken && origins[^taken].Slot is { } rectangular && !exposed.Contains(rectangular))
+                {
+                    var first = stack.Length - taken + 1;
+                    var usable = new List<(int Dimension, Origin Index)>();
+                    for (var dimension = 0; dimension < rank; dimension++)
+                    {
+                        var position = origins[first + dimension];
+                        if (!position.Known || position.Slot is { } positionSlot && exposed.Contains(positionSlot) ||
+                            stack[first + dimension] != CliValueKind.I4)
+                        {
+                            continue;
+                        }
+                        if (checkedDimensions.Contains((rectangular, dimension, position))) dimensions.Add((instruction.Offset, dimension));
+                        usable.Add((dimension, position));
+                    }
+                    Dereference(rectangular, instruction.Offset, block.Index, checkedReferences.Contains(rectangular));
+                    checkedReferences.Add(rectangular);
+                    foreach (var (dimension, position) in usable) checkedDimensions.Add((rectangular, dimension, position));
+                }
                 // An object's field access, the object beneath the value for a store.
                 var receiver = instruction.Operation switch
                 {
@@ -115,6 +146,7 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                 {
                     checkedReferences.Remove(stored);
                     checkedPairs.RemoveWhere(pair => pair.Array == stored || Nullable.Equals(pair.Index.Slot, stored));
+                    checkedDimensions.RemoveWhere(entry => entry.Array == stored || Nullable.Equals(entry.Index.Slot, stored));
                 }
                 Track(instruction, origins);
             }
@@ -139,7 +171,7 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                 }
             }
         }
-        return new(checkedAccesses.ToImmutable(), nonNull.ToImmutable());
+        return new(checkedAccesses.ToImmutable(), nonNull.ToImmutable()) { CheckedDimensions = dimensions.ToImmutable() };
 
         // An access whose reference this block already checked skips its null
         // check; one of a stable slot may yet be dominated by another block's.
@@ -196,6 +228,17 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
         }
         return slots;
     }
+
+    // The rank of a rectangular access of two or more dimensions.
+    private static int? Rank(CilInstruction instruction) =>
+        instruction is
+        {
+            Operation: CilOperation.LoadRectangularArrayElement or CilOperation.StoreRectangularArrayElement or
+                CilOperation.LoadRectangularArrayElementAddress,
+            Operand: CilOperand.TypeIdentity { Value: { Shape: CliTypeShape.Array, ArrayRank: >= 2 and var rank } },
+        }
+            ? rank
+            : null;
 
     private static Slot? Loaded(CilInstruction instruction) => instruction switch
     {
@@ -260,6 +303,13 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                 return;
             case CilOperation.StoreArrayElement or CilOperation.StoreArrayElementReference:
                 Consume(origins, 3, false);
+                return;
+            case CilOperation.LoadRectangularArrayElement or CilOperation.LoadRectangularArrayElementAddress
+                when Rank(instruction) is { } loadedRank:
+                Consume(origins, loadedRank + 1, true);
+                return;
+            case CilOperation.StoreRectangularArrayElement when Rank(instruction) is { } storedRank:
+                Consume(origins, storedRank + 2, false);
                 return;
             case CilOperation.LoadArrayLength or CilOperation.LoadField or CilOperation.LoadFieldAddress or
                 CilOperation.LoadObject:

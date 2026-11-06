@@ -18,8 +18,9 @@ public interface IWasmCoreModuleMerger
 {
     // One module holding every input: each import that names another input's export becomes
     // that export's entity; every other import, and every definition, is kept, and every export
-    // the selection keeps (all of them without one).
-    byte[] Merge(IReadOnlyList<WasmMergeInput> inputs, WasmExportSelection? exports = null);
+    // the selection keeps (all of them without one). With keepNames, the inputs' function names
+    // name the merged functions, as wasm-merge -g keeps them.
+    byte[] Merge(IReadOnlyList<WasmMergeInput> inputs, WasmExportSelection? exports = null, bool keepNames = false);
 }
 
 /// <summary>
@@ -30,7 +31,7 @@ public interface IWasmCoreModuleMerger
 /// </summary>
 public sealed class WasmCoreModuleMerger : IWasmCoreModuleMerger
 {
-    public byte[] Merge(IReadOnlyList<WasmMergeInput> inputs, WasmExportSelection? exports = null)
+    public byte[] Merge(IReadOnlyList<WasmMergeInput> inputs, WasmExportSelection? exports = null, bool keepNames = false)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         if (inputs.Count == 0) throw new ArgumentException("A merge needs at least one module.", nameof(inputs));
@@ -44,7 +45,7 @@ public sealed class WasmCoreModuleMerger : IWasmCoreModuleMerger
                 throw WasmMergeRead.Invalid($"two modules to merge are both named '{input.Name}'");
             modules[index] = WasmMergeModule.Parse(input);
         }
-        return new WasmMergePlan(modules, names, filter).Write();
+        return new WasmMergePlan(modules, names, filter, keepNames).Write();
     }
 }
 
@@ -78,7 +79,7 @@ public sealed class WasmCoreModuleMergeRunner(
         if (request.ManagedExecutableAdapterModulePath is not null)
             inputs.Add(new("netwasm.command.v1", _reader.Read(request.ManagedExecutableAdapterModulePath)));
         // One pass selects the hints and the exports as it merges; no intermediate module is written.
-        _writer.Write(request.OutputPath, _merger.Merge(inputs, request.Exports));
+        _writer.Write(request.OutputPath, _merger.Merge(inputs, request.Exports, request.KeepNames));
     }
 }
 
@@ -106,10 +107,13 @@ internal sealed class WasmMergePlan
     private readonly WasmMergeSink _output;
     private readonly WasmMergeSink _section = new();
     private readonly WasmExportFilter? _exportFilter;
+    private readonly bool _keepNames;
 
-    public WasmMergePlan(WasmMergeModule[] modules, Dictionary<string, int> names, WasmExportFilter? exports)
+    public WasmMergePlan(WasmMergeModule[] modules, Dictionary<string, int> names, WasmExportFilter? exports,
+        bool keepNames = false)
     {
         _modules = modules;
+        _keepNames = keepNames;
         _names = names;
         _exportFilter = exports;
         _output = new(modules.Sum(module => module.Bytes.Length) + 1024);
@@ -218,7 +222,67 @@ internal sealed class WasmMergePlan
                 _output.Write(module.Bytes.AsSpan(custom.Start, custom.Length));
             }
         }
+        if (_keepNames) WriteNames();
         return _output.ToArray();
+    }
+
+    // The function names the inputs' name sections give, under their merged indices; an imported
+    // function that another input defines takes the name its definition has there.
+    private void WriteNames()
+    {
+        var names = new SortedDictionary<int, string>();
+        foreach (var definitions in new[] { true, false })
+        {
+            for (var index = 0; index < _modules.Length; index++)
+            {
+                var module = _modules[index];
+                if (module.NameSection is not { } range) continue;
+                var imported = module.ImportsOfKind[WasmMergeModule.FunctionKind].Count;
+                foreach (var (function, name) in FunctionNames(module.Bytes, range))
+                {
+                    if (function < imported == definitions) continue;
+                    names.TryAdd(WasmExpressionRemapper.Mapped(_indices[index].Functions!, function), name);
+                }
+            }
+        }
+        if (names.Count == 0) return;
+        var functions = new WasmMergeSink();
+        functions.Unsigned((uint)names.Count);
+        foreach (var (function, name) in names)
+        {
+            functions.Unsigned((uint)function);
+            functions.Name(name);
+        }
+        _section.Clear();
+        _section.Name("name");
+        _section.Byte(1);
+        _section.Unsigned((uint)functions.Length);
+        _section.Write(functions.Written);
+        _output.Section(0, _section);
+    }
+
+    // The function name subsection's entries; the module and local name subsections are not kept.
+    private static List<(uint Function, string Name)> FunctionNames(byte[] bytes, WasmMergeRange range)
+    {
+        var result = new List<(uint, string)>();
+        var at = range.Start;
+        var end = range.Start + range.Length;
+        while (at < end)
+        {
+            var id = WasmMergeRead.Byte(bytes, ref at);
+            var size = (int)WasmMergeRead.Unsigned(bytes, ref at);
+            var next = at + size;
+            if (id == 1)
+            {
+                for (var count = WasmMergeRead.Unsigned(bytes, ref at); count > 0; count--)
+                {
+                    var function = WasmMergeRead.Unsigned(bytes, ref at);
+                    result.Add((function, WasmMergeRead.Name(bytes, ref at)));
+                }
+            }
+            at = next;
+        }
+        return result;
     }
 
     private int Type(ReadOnlySpan<byte> type)

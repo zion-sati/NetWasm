@@ -87,6 +87,7 @@ public sealed class MetadataMethodBodyReaderFactory(
             symbols,
             new UnsafeAccessorTargetResolverFactory(materialized, typeDefinitions, types, methods, fields, stackTypes),
             new UnsafeAccessorBodyBuilder(),
-            new DelegateAsynchronousCallBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods));
+            new DelegateAsynchronousCallBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods),
+            new UnsafeIntrinsicBodyBuilder());
     }
 }

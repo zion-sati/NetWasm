@@ -963,6 +963,7 @@ public sealed class SdkRoutingTests
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedInlineArrayData"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedQuotientReuse"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedIntegerCheckElimination"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopInvariantExpressionHoisting"));
     }
 
     [Theory]
@@ -1001,6 +1002,7 @@ public sealed class SdkRoutingTests
     [InlineData("NetWasmManagedInlineArrayData")]
     [InlineData("NetWasmManagedQuotientReuse")]
     [InlineData("NetWasmManagedIntegerCheckElimination")]
+    [InlineData("NetWasmManagedLoopInvariantExpressionHoisting")]
     public void PreservesExplicitCompilerReductionSelections(string property)
     {
         using var project = EvaluationProject.Create(
@@ -1062,6 +1064,7 @@ public sealed class SdkRoutingTests
                      "$(NetWasmManagedInlineArrayData)",
                      "$(NetWasmManagedQuotientReuse)",
                      "$(NetWasmManagedIntegerCheckElimination)",
+                     "$(NetWasmManagedLoopInvariantExpressionHoisting)",
                  })
         {
             Assert.Contains(value, frontendIdentityContract, StringComparison.Ordinal);
@@ -1104,6 +1107,8 @@ public sealed class SdkRoutingTests
         Assert.Equal("$(NetWasmManagedInlineArrayData)", (string?)compilation.Attribute("ManagedInlineArrayData"));
         Assert.Equal("$(NetWasmManagedQuotientReuse)", (string?)compilation.Attribute("ManagedQuotientReuse"));
         Assert.Equal("$(NetWasmManagedIntegerCheckElimination)", (string?)compilation.Attribute("ManagedIntegerCheckElimination"));
+        Assert.Equal("$(NetWasmManagedLoopInvariantExpressionHoisting)",
+            (string?)compilation.Attribute("ManagedLoopInvariantExpressionHoisting"));
         foreach (var value in new[]
                  {
                      "$(_NetWasmCanonicalOptimization)",
@@ -1425,6 +1430,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedInlineArrayData=$(NetWasmManagedInlineArrayData)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedQuotientReuse=$(NetWasmManagedQuotientReuse)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedIntegerCheckElimination=$(NetWasmManagedIntegerCheckElimination)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopInvariantExpressionHoisting=$(NetWasmManagedLoopInvariantExpressionHoisting)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />
