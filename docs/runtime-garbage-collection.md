@@ -46,9 +46,9 @@ lower is better.
 
 | Collector | Full transaction | Retained object graph | UI-style object churn |
 | --- | ---: | ---: | ---: |
-| Bump | 25.44 ms | 4.41 ms | 9.61 ms |
-| NetWasmGC | 28.72 ms | 4.87 ms | 7.73 ms |
-| Compact | 42.40 ms | 12.48 ms | 21.16 ms |
+| Bump | 25.07 ms | 4.36 ms | 9.50 ms |
+| NetWasmGC | 28.37 ms | 4.84 ms | 7.77 ms |
+| Compact | 42.21 ms | 12.55 ms | 21.22 ms |
 
 The full transaction creates 100,000 transactions, normalizes their account
 strings and aggregates them into growing containers, with allocation and
@@ -71,8 +71,8 @@ the tradeoffs visible: Bump keeps growing because it never reclaims, and Compact
 trades throughput for the smallest tracing-collector artifact.
 
 The corresponding complete Console `42` components, published with the SDK at
-`Oz`, are 35,164 bytes for Bump (11,668 with Brotli quality 11), 39,230 for
-Compact (13,434) and 42,375 for NetWasmGC (14,777). See
+`Oz`, are 35,090 bytes for Bump (11,650 with Brotli quality 11), 39,151 for
+Compact (13,355) and 42,298 for NetWasmGC (14,778). See
 [Size and methodology](size-and-methodology.md#collector-selection-and-compression)
 for the exact size boundary. Timing and file size measure
 different things; neither table is a universal collector ranking.
