@@ -30,6 +30,9 @@ Two output changes are planned together.
 native async (async functions, streams and futures) lets C# `async` code map
 onto the Component Model directly instead of through NetWasm's own completion
 boundaries, and the set of WASI capabilities ordinary C# can use widens with it.
+WASI 0.3 is stable and current Wasmtime enables it by default, so components
+will target WASI 0.3 only, with no Preview 2 output alongside. Applications
+whose host runs only Preview 2 can stay on NetWasm 0.11.
 
 **Plain core modules.** Some hosts embed a WebAssembly engine without the
 Component Model, such as plugin systems in games and native applications, and
@@ -44,7 +47,7 @@ documented contract from its host.
 
 | Area | The v1.0 bar |
 | --- | --- |
-| Practical WASI Preview 2 | Ordinary C# can use files and directories, streams and polling, CLI arguments and environment, clocks, randomness, outgoing and incoming HTTP, and TCP/UDP/DNS where the host grants those capabilities. Browser and standalone adapters publish the capability pairs they support, with consistent lifetime/error semantics and clear failure for unavailable operations. WebSockets use an explicit versioned host contract because WASI P2 has no standard WebSocket interface. Internal completion-oriented boundaries keep a later P3 migration out of application APIs; v1.0 does not wait for P3. |
+| Practical WASI 0.3 | Components target WASI 0.3, and the Component Model's async functions, streams and futures are NetWasm's one async model. Ordinary C# can use files and directories, streams, CLI arguments and environment, clocks, randomness, outgoing and incoming HTTP, and TCP/UDP/DNS where the host grants those capabilities. Synchronous .NET APIs work on hosts that can suspend (in browsers, through JSPI) and fail clearly on hosts that cannot. Browser and standalone hosts publish the capabilities they support, with consistent lifetime and error semantics and clear failure for unavailable operations. `ws://` WebSockets run over WASI sockets, since WASI has no WebSocket interface; `wss://` waits for a standard WASI TLS interface. |
 | Static native interoperability | Applications can link compatible Wasm `.a` archives, use source-generated `LibraryImport` plus a bounded raw `DllImport` C ABI, and expose supported `UnmanagedCallersOnly` callbacks. Archive dependencies, relocations, memory ownership, callbacks, GC safety and failure diagnostics are deterministic and pay-as-you-use. Dynamic libraries, runtime symbol lookup, native threads and a direct C++ ABI remain outside the profile. |
 | Globalization and resources | Invariant, selected-culture and full-data modes provide documented culture-aware formatting and parsing, casing, comparison, Unicode normalization and properties, calendars, resource fallback and timezone behaviour. Versioned data stays optional so an invariant application does not carry it. Ordinary applications do not need native ICU installed on the build or deployment machine. |
 | Expression trees | Applications can construct and inspect `System.Linq.Expressions` trees without requiring general runtime reflection. `Expression.Compile()` has an interpreted implementation for trees created at runtime, with an optional build-time generated fast path for expressions known during compilation. Neither path depends on runtime IL generation or a JIT. |
