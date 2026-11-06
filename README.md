@@ -117,12 +117,12 @@ Built with NetWasm:
 
 - **[DoomSharp](https://github.com/davidfowl/doomsharp)** by David Fowler, a
   clean-room classic WAD game engine in C#, has a NetWasm browser build you can
-  [play](https://davidfowl.github.io/doomsharp/netwasm/). Built with the current
-  NetWasm at `O3` with NetWasmGC
+  [play](https://davidfowl.github.io/doomsharp/netwasm/). Built with NetWasm
+  0.11.1 at `O3` with NetWasmGC
   ([davidfowl/doomsharp#60](https://github.com/davidfowl/doomsharp/pull/60)), it
-  renders 120 frames 1.24 times faster than DoomSharp's Blazor AOT build in
-  headless Chromium (1,794 ms against 2,225 ms on an Apple M1 Max), from
-  0.68 MiB of Brotli-compressed files against 3.67 MiB.
+  renders 120 frames 1.28 times faster than DoomSharp's Blazor AOT build in
+  headless Chromium (1,750 ms against 2,236 ms on an Apple M1 Max), from
+  0.69 MiB of Brotli-compressed files against 3.67 MiB.
 - **[NetWasm.UI](https://github.com/matengo/NetWasm.UI)** by Mattias Engman,
   a signal-driven C# UI framework for the browser in the style of Solid and
   Svelte: components build their DOM once, and signals patch only the nodes
