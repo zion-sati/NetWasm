@@ -5,7 +5,7 @@ platform has a useful, documented boundary that applications can depend on.
 
 The [support inventory](support-status.md) is the source of truth for what is
 implemented today. Everything below is a release gate, not a current support
-claim.
+claim, unless it is marked done.
 
 ## In progress: .NET Standard 2.1 compatibility
 
@@ -49,7 +49,7 @@ documented contract from its host.
 | Globalization and resources | Invariant, selected-culture and full-data modes provide documented culture-aware formatting and parsing, casing, comparison, Unicode normalization and properties, calendars, resource fallback and timezone behaviour. Versioned data stays optional so an invariant application does not carry it. Ordinary applications do not need native ICU installed on the build or deployment machine. |
 | Expression trees | Applications can construct and inspect `System.Linq.Expressions` trees without requiring general runtime reflection. `Expression.Compile()` has an interpreted implementation for trees created at runtime, with an optional build-time generated fast path for expressions known during compilation. Neither path depends on runtime IL generation or a JIT. |
 | Compiler and runtime correctness | The supported CIL and library profile has no known correctness bugs. GC, generics, variance and casts, interface and virtual dispatch, exceptions, async continuations, static initialization, callbacks and interop are covered by retained regression and compatibility suites. Builds are deterministic, and CLI and browser pipelines produce the same bytes from the same inputs. |
-| Fast development loop | Unchanged and reverted inputs reuse persistent compiler, runtime-link and component artifacts. An ordinary method edit avoids replaying unaffected whole-program work. Release builds keep full optimization and validation without making every edit pay publish-time costs. |
+| Fast development loop | **Done in NetWasm 0.11.0.** Unchanged and reverted inputs reuse persistent compiler, runtime-link and component artifacts. An ordinary method edit avoids replaying unaffected whole-program work. Release builds keep full optimization and validation without making every edit pay publish-time costs. |
 | Stable platform contract | NetWasm 1.0 introduces the `netwasm1.0` target profile; `netwasm0.1` remains the 0.x profile instead of changing in place. The target profile, runtime ABI, host capability contracts, package compatibility rules and diagnostics have an explicit 1.x compatibility policy. Later target-profile versions change for platform-contract breaks, not merely because a package was released. Deprecations and unsupported operations fail clearly instead of silently changing behaviour. |
 | Diagnostics and production delivery | Managed stack traces, deterministic Debug output, trap/crash symbolization and actionable compiler/linker diagnostics cover supported deployments. Restore, build, test and publish work from packages on macOS ARM64, Linux ARM64/x64 and Windows ARM64/x64. Wasmtime plus Chromium, Firefox and WebKit release gates cover the portable component and browser paths. |
 | Ecosystem and supply chain | The reference pack and ported libraries publish a generated member-level support catalogue. Templates, TUnit/VSTest, WIT bindings and the supported libraries work as one qualified package graph. Toolchains are pinned, release artifacts are reproducible and attributable, and capability/resource boundaries have focused hostile-input tests. |
