@@ -205,7 +205,7 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
             if (index == tail.Length - 1)
             {
                 return exit is StructuredTerminalExit
-                    { Instruction.Operation: CilOperation.Return or CilOperation.Throw };
+                { Instruction.Operation: CilOperation.Return or CilOperation.Throw };
             }
             if (tail[index + 1] is not StructuredCode next || (exit switch
             {
@@ -224,7 +224,7 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
     private static bool Leaves(StructuredMethod method, StructuredRegion region) => region switch
     {
         StructuredCode code => method.Blocks[code.Occurrence.Block].Exit is StructuredTerminalExit
-            { Instruction.Operation: CilOperation.Return or CilOperation.Throw },
+        { Instruction.Operation: CilOperation.Return or CilOperation.Throw },
         StructuredSequence sequence => sequence.Regions.Length != 0 && Leaves(method, sequence.Regions[^1]),
         StructuredIf branch => Leaves(method, branch.WhenTrue) && Leaves(method, branch.WhenFalse),
         _ => false,

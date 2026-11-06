@@ -91,6 +91,6 @@ public sealed class WholeLocalBlockCopyFolderTests
         Assert.DoesNotContain(body.Instructions, static instruction =>
             instruction.Operation is CilOperation.CopyBlock or CilOperation.LoadLocalAddress);
         Assert.Single(body.Instructions, instruction => instruction is
-            { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } } && bigLocals.Contains(local));
+        { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } } && bigLocals.Contains(local));
     }
 }
