@@ -61,7 +61,7 @@ NuGet.org:
 ```sh
 python3 compiler-qualification/micro-benchmarks/run.py \
   --performance <performance> \
-  --feed <empty-directory> 0.11.1 --libraries 0.11.0 \
+  --feed <empty-directory> 0.11.2 --libraries 0.11.0 \
   --mono-aot <dotnet-root> <wasi-sdk-root> \
   --output <new-directory>
 ```

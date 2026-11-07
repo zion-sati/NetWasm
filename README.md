@@ -70,19 +70,19 @@ native code outside any Wasm sandbox:
 
 | Workload | NetWasm, NetWasmGC | Mono AOT, .NET 11 | Desktop .NET 11 JIT | Desktop .NET 11 NativeAOT |
 | --- | ---: | ---: | ---: | ---: |
-| Full transaction | **28.2 ms** | 56.9 ms | 50.2 ms | 32.6 ms |
-| Retained object graph | **4.8 ms** | 14.3 ms | 9.7 ms | 7.4 ms |
+| Full transaction | **28.2 ms** | 56.6 ms | 49.8 ms | 32.4 ms |
+| Retained object graph | **4.8 ms** | 14.4 ms | 9.8 ms | 7.6 ms |
 | UI churn | **7.7 ms** | 27.0 ms | 8.7 ms | 6.7 ms |
 
 These are medians of 15 runs on an Apple M1 Max, with every Wasm build under
 Wasmtime 49.0.3 and each run checked against desktop .NET's result. Mono AOT is
 Microsoft's `wasi-wasm` target on .NET 11 RC3 in Release, with Wasm SIMD.
-NetWasmGC takes 51% to 72% less time than Mono AOT and 11% to 51% less than the
+NetWasmGC takes 50% to 71% less time than Mono AOT and 11% to 51% less than the
 desktop JIT. It is also faster than desktop NativeAOT on the full transaction
 and the retained object graph; NativeAOT is still faster on UI churn.
 
 Without allocation in the timed region, NetWasm takes 41% less time than Mono AOT
-on the transaction's library work and 6% less on a quicksort, and matches it on
+on the transaction's library work and 7% less on a quicksort, and matches it on
 n-body and CRC-32 kernels. Desktop .NET is faster on the library work and the
 quicksort without allocation.
 

@@ -10,7 +10,7 @@ component, or **16,648 bytes with Brotli quality 11**. NetWasm is **13,418 bytes
 (25.5%) smaller raw** and **3,293 bytes (19.8%) smaller compressed**, including
 its linked runtime and reachable precise-GC support.
 
-These NetWasm figures were reproduced using the released 0.11.1 SDK and template
+These NetWasm figures were reproduced using the released 0.11.2 SDK and template
 packages from NuGet.org. All three collector variants execute and print `42`.
 The retained Rust reference uses
 the exact toolchain and Cargo profile documented below; it is not a claim about
@@ -32,7 +32,7 @@ The released-package reproduction ran on macOS arm64 under Wasmtime 49.0.3.
 The ordinary released-SDK reproduction is:
 
 ```sh
-dotnet new install NetWasm.Templates@0.11.1
+dotnet new install NetWasm.Templates@0.11.2
 dotnet new netwasm-app -n NetWasmApp
 cd NetWasmApp
 dotnet restore
