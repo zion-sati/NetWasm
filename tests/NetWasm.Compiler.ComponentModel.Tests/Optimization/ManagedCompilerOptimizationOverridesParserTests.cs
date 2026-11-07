@@ -10,7 +10,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
         get
         {
             var data = new TheoryData<int, string?>();
-            for (var feature = 0; feature < 25; feature++)
+            for (var feature = 0; feature < 26; feature++)
                 foreach (var value in new string?[] { null, "Auto", "Disabled", "Enabled", "enabled", "", "2" })
                     data.Add(feature, value);
             return data;
@@ -47,7 +47,8 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
             inlineArrayData: feature == 21 ? value : null,
             quotientReuse: feature == 22 ? value : null,
             integerCheckElimination: feature == 23 ? value : null,
-            loopInvariantExpressionHoisting: feature == 24 ? value : null);
+            loopInvariantExpressionHoisting: feature == 24 ? value : null,
+            multicastInlineDispatch: feature == 25 ? value : null);
         if (value is null or "Auto")
         {
             Assert.Null(Parse());
@@ -109,8 +110,10 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
                 ? ManagedQuotientReuse.Enabled : ManagedQuotientReuse.Disabled),
             23 => new WasmOptimizationOverrides(IntegerCheckElimination: enabled
                 ? ManagedIntegerCheckElimination.Enabled : ManagedIntegerCheckElimination.Disabled),
-            _ => new WasmOptimizationOverrides(LoopInvariantExpressionHoisting: enabled
+            24 => new WasmOptimizationOverrides(LoopInvariantExpressionHoisting: enabled
                 ? ManagedLoopInvariantExpressionHoisting.Enabled : ManagedLoopInvariantExpressionHoisting.Disabled),
+            _ => new WasmOptimizationOverrides(MulticastInlineDispatch: enabled
+                ? ManagedMulticastInlineDispatch.Enabled : ManagedMulticastInlineDispatch.Disabled),
         };
         Assert.Equal(expected, Parse());
     }

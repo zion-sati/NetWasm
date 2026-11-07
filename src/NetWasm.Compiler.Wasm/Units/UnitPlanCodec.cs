@@ -71,7 +71,7 @@ internal sealed record UnitRuntimeObjectLayout(
 internal static class UnitPlanCodec
 {
     private const uint Magic = 0x4C504E4E; // "NNPL"
-    private const int Version = 4;
+    private const int Version = 5;
 
     public static byte[] Encode(InstructionModuleTarget target, IRuntimeObjectLayout runtimeObjects, UnitProgramFacts program)
     {
@@ -300,6 +300,7 @@ internal static class UnitPlanCodec
         Optional(writer, map.ManagedThrowFunctionIndex);
         Optional(writer, map.ManagedRethrowFunctionIndex);
         Keyed(writer, map.JSImportForwarders);
+        Named(writer, map.DelegateMulticastHelpers.Select(pair => KeyValuePair.Create(pair.Key, pair.Value.Value)));
     }
 
     private static FunctionIndexMap Functions(UnitModelReader reader)
@@ -313,6 +314,8 @@ internal static class UnitPlanCodec
             ManagedThrowFunctionIndex = Optional(reader),
             ManagedRethrowFunctionIndex = Optional(reader),
             JSImportForwarders = Keyed(reader),
+            DelegateMulticastHelpers = Named(reader).ToImmutableDictionary(
+                pair => pair.Key, pair => new WasmFunctionIndex(pair.Value), StringComparer.Ordinal),
         };
     }
 

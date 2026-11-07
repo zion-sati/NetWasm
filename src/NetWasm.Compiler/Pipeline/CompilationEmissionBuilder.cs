@@ -237,6 +237,9 @@ internal sealed class CompilationEmissionBuilder(
             InlineArrayData =
                 preparation.OptimizationSettings.InlineArrayData ==
                 InlineArrayDataPolicy.Inline,
+            InlineMulticastDispatch =
+                preparation.OptimizationSettings.MulticastDispatch ==
+                MulticastDispatchPolicy.Inline,
             SourceLocations = _stackTraceSourceLocations.Read(metadata, options),
         };
         var emission = emitter.Emit(request);

@@ -30,6 +30,11 @@ internal sealed record FunctionIndexMap(
     public OptionalFunctionIndex ManagedRethrowFunctionIndex { get; init; } =
         OptionalFunctionIndex.Missing;
 
+    // Each delegate type's multicast function, which its invoke function calls for a
+    // delegate with an invocation list.
+    public ImmutableDictionary<string, WasmFunctionIndex> DelegateMulticastHelpers { get; init; } =
+        ImmutableDictionary<string, WasmFunctionIndex>.Empty;
+
     // Managed-ABI forwarders for JSImport methods that a delegate binds directly.
     public ImmutableDictionary<EntityKey, WasmFunctionIndex> JSImportForwarders { get; init; } =
         ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty;
@@ -47,4 +52,7 @@ internal sealed record FunctionIndexMap(
 
     public WasmFunctionIndex GetDelegateInvokeHelper(string delegateType) =>
         DelegateInvokeHelpers[delegateType];
+
+    public WasmFunctionIndex GetDelegateMulticastHelper(string delegateType) =>
+        DelegateMulticastHelpers[delegateType];
 }

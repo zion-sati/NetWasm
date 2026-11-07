@@ -65,7 +65,8 @@ public sealed class RepeatedArrayAccessPlannerTests
     // A rectangular access skips the check of each dimension whose index an
     // earlier access to the same array in the block checked against it, and its
     // null check after any earlier access; the store of `grid[j, k] = ... +
-    // grid[j, k]` runs after the read it repeats.
+    // grid[j, k]` runs after the read it repeats. A native int index reaches the
+    // access through a conversion to int32, whose result is no tracked index.
     [Theory]
     [InlineData("result = grid[i, k] + grid[j, k];", 1, 1)]
     [InlineData("result = grid[i, k] + grid[i, k];", 2, 1)]
@@ -77,6 +78,7 @@ public sealed class RepeatedArrayAccessPlannerTests
     [InlineData("result = grid[i, k]; Touch(ref k); result += grid[i, k];", 1, 1)]
     [InlineData("result = grid[i, k]; if (result > 0) result += grid[i, k];", 0, 1)]
     [InlineData("result = cube[i, j, 0] + cube[i, 1, k] + cube[i, j, k];", 4, 2)]
+    [InlineData("nint n = i; result = grid[n, k] + grid[n, k];", 1, 1)]
     public void ProvesRectangularDimensionsThatRepeatAnEarlierCheck(string statement, int dimensions, int nonNull)
     {
         using var assets = TestAssets.Create();

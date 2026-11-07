@@ -480,6 +480,18 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedLoopInvariantExpressionHoisting.Enabled => LoopInvariantExpressionHoistingPolicy.BranchingExpressions,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // A second copy of each delegate type's dispatch saves multicast entries a call,
+        // so only the speed presets take it.
+        var multicastOverride = options?.MulticastInlineDispatch ?? ManagedMulticastInlineDispatch.Auto;
+        var multicast = multicastOverride switch
+        {
+            ManagedMulticastInlineDispatch.Auto => preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or
+                FinalWasmOptimization.O3
+                ? MulticastDispatchPolicy.Inline : MulticastDispatchPolicy.Shared,
+            ManagedMulticastInlineDispatch.Disabled => MulticastDispatchPolicy.Shared,
+            ManagedMulticastInlineDispatch.Enabled => MulticastDispatchPolicy.Inline,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
 
         if (preset == FinalWasmOptimization.None &&
             (hint != ManagedInliningHints.Auto ||
@@ -513,6 +525,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              quotientsOverride == ManagedQuotientReuse.Enabled ||
              integerChecksOverride == ManagedIntegerCheckElimination.Enabled ||
              invariantExpressionsOverride == ManagedLoopInvariantExpressionHoisting.Enabled ||
+             multicastOverride == ManagedMulticastInlineDispatch.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -564,6 +577,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             quotients,
             integerChecks,
             options?.Converge ?? false,
-            invariantExpressions);
+            invariantExpressions,
+            multicast);
     }
 }

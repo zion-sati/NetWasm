@@ -34,6 +34,13 @@ internal interface IElementwiseLoopVectorizer
 // lanes, and the loop folds what is left. A fold reads only arrays the loop does
 // not write. A copy of an element into a local, as foreach makes, is that
 // element where the body reads it, and the vector loop leaves it the last one.
+// A span's element, as its inlined indexer reads it, is Unsafe.Add of the span's
+// reference at the counter plus a constant; the indexer's check that index,
+// unsigned, lies below a length the loop does not change, around a block that
+// only throws, holds for every iteration the vector loop runs when the counter
+// plus the constant is not negative there and lies below the length at end - 1,
+// which the entry check tests. A loop that reads a span stores nothing: a store
+// could reach memory the span covers.
 //
 // Roslyn's `do { x += p | 1; p = ref Unsafe.Add(ref p, 1); n--; } while (n != 0)`
 // walks a reference over n elements instead. Where the loop's only other entry
@@ -63,7 +70,22 @@ internal sealed class ElementwiseLoopVectorizer(
 
     // Array[counter + Offset], of the element type Type; or, ByReference, the
     // element Offset after the one the reference Array points to.
-    private sealed record Element(CilInstruction Array, int Offset, CliTypeIdentity Type, bool ByReference = false) : Node;
+    private sealed record Element(CilInstruction Array, int Offset, CliTypeIdentity Type, bool ByReference = false,
+        SpanIndexer? Span = null) : Node;
+
+    // How the body indexed a span's reference: Unsafe.Add, after the conversion of
+    // its index to a native integer, if any.
+    private sealed record SpanIndexer(CilInstruction Add, CilInstruction? Conversion);
+
+    // Unsafe.Add of a span's reference at the counter plus Offset, which only an
+    // element load may read.
+    private sealed record SpanAddress(CilInstruction Reference, int Offset, CliTypeIdentity Type, SpanIndexer Indexer) : Node;
+
+    // The counter plus Offset as a native integer, which only Unsafe.Add may take.
+    private sealed record NativeIndex(int Offset, CilInstruction Conversion) : Node;
+
+    // The check that the counter plus Offset, unsigned, lies below Length.
+    private sealed record Check(int Offset, CilInstruction Length);
 
     private sealed record Unary(CilOperation Operation, Node Operand) : Node;
 
@@ -90,7 +112,8 @@ internal sealed class ElementwiseLoopVectorizer(
         List<Fold> Folds,
         Dictionary<int, Linear> Aliases,
         Dictionary<int, Element> Copies,
-        CliValueKind Kind);
+        CliValueKind Kind,
+        List<Check> Checks);
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -198,7 +221,7 @@ internal sealed class ElementwiseLoopVectorizer(
         // A loop that only folds elements as they are is the reduction rewriter's,
         // which folds narrower elements and minimums and maximums too.
         if (End(bound, instructions[branch].Operation, writtenLocals) is not { } end ||
-            Parse(body, counter, writtenLocals) is not var (stores, folds, aliases, copies) ||
+            Parse(body, counter, writtenLocals) is not var (stores, folds, aliases, copies, checks) ||
             stores.Count + folds.Count == 0 ||
             stores.Count == 0 && folds.All(static fold => fold.Value is Element))
         {
@@ -225,10 +248,14 @@ internal sealed class ElementwiseLoopVectorizer(
         {
             return null;
         }
-        return Hazards(stores) is null ||
+        var spans = stores.SelectMany(static store => Elements(store.Value))
+            .Concat(folds.SelectMany(static fold => Elements(fold.Value)))
+            .Concat(copies.Values)
+            .Any(static element => element.Span is not null);
+        return Hazards(stores) is null || spans && stores.Count != 0 ||
             copies.Values.Any(copy => Lane(copy.Type) != kind || stores.Any(store => SameArray(store.Array, copy.Array)))
             ? null
-            : new Loop(counter, end, stores, folds, aliases, copies, kind);
+            : new Loop(counter, end, stores, folds, aliases, copies, kind, checks);
     }
 
     // A loop that walks Reference over Count elements: Advance moves the
@@ -254,7 +281,7 @@ internal sealed class ElementwiseLoopVectorizer(
                 : -1)
             .Where(static local => local >= 0)
             .ToHashSet();
-        if (Parse(body, -1, written, pointer) is not var (stores, folds, _, copies) || stores.Count != 0 || folds.Count == 0 ||
+        if (Parse(body, -1, written, pointer) is not var (stores, folds, _, copies, _) || stores.Count != 0 || folds.Count == 0 ||
             Lane(element) is var kind && kind is not (CliValueKind.I4 or CliValueKind.I8) ||
             folds.SelectMany(static fold => Elements(fold.Value)).Concat(copies.Values)
                 .Any(found => found.Type.CanonicalName != element.CanonicalName) ||
@@ -340,6 +367,8 @@ internal sealed class ElementwiseLoopVectorizer(
         {
             switch (instruction.Operation)
             {
+                case CilOperation.Nop:
+                    break;
                 case CilOperation.LoadInt32 or CilOperation.LoadArgument:
                     depth++;
                     break;
@@ -360,11 +389,13 @@ internal sealed class ElementwiseLoopVectorizer(
         return depth == 1 ? [.. bound.Select(Copy)] : null;
     }
 
-    // The element stores, folds, counter copies and element copies, from the
-    // body's instructions.
-    private (List<Store> Stores, List<Fold> Folds, Dictionary<int, Linear> Aliases, Dictionary<int, Element> Copies)? Parse(
+    // The element stores, folds, counter copies, element copies and span index
+    // checks, from the body's instructions.
+    private (List<Store> Stores, List<Fold> Folds, Dictionary<int, Linear> Aliases, Dictionary<int, Element> Copies,
+        List<Check> Checks)? Parse(
         CilInstruction[] body, int counter, HashSet<int> written, int reference = -1)
     {
+        var checks = new List<Check>();
         var stack = new List<Node>();
         var stores = new List<Store>();
         var folds = new List<Fold>();
@@ -378,11 +409,31 @@ internal sealed class ElementwiseLoopVectorizer(
             return node;
         }
 
-        foreach (var instruction in body)
+        for (var position = 0; position < body.Length; position++)
         {
+            var instruction = body[position];
             switch (instruction.Operation)
             {
                 case CilOperation.Nop:
+                    break;
+                // A span indexer's check of the counter plus a constant around its throw.
+                case CilOperation.BranchIfLessThanUnsigned when instruction.Operand is CilOperand.BranchTarget { Offset: var target }:
+                    {
+                        if (stack.Count < 2 || Pop() is not Invariant { Code: [var length] } ||
+                            Pop() is not Linear { Scale: 1, Offset: var offset })
+                        {
+                            return null;
+                        }
+                        var resume = position + 1;
+                        while (resume < body.Length && body[resume].Offset != target) resume++;
+                        if (resume == body.Length || !Throws(body.AsSpan(position + 1, resume - position - 1))) return null;
+                        checks.Add(new Check(offset, length));
+                        position = resume - 1;
+                        break;
+                    }
+                case CilOperation.ConvertNativeUInt or CilOperation.ConvertNativeInt:
+                    if (stack.Count < 1 || Pop() is not Linear { Scale: 1, Offset: var counterOffset }) return null;
+                    stack.Add(new NativeIndex(counterOffset, Copy(instruction)));
                     break;
                 case CilOperation.LoadLocal when instruction.Operand is CilOperand.Index { Value: var local }:
                     if (local == counter)
@@ -439,10 +490,20 @@ internal sealed class ElementwiseLoopVectorizer(
                         stack.Add(new Element(array, offset, loaded));
                         break;
                     }
-                // *p, where p walks the elements.
+                // *p, where p walks the elements, or a span's element.
                 case CilOperation.LoadObject when instruction.Operand is CilOperand.TypeIdentity { Value: var loaded }:
-                    if (stack.Count < 1 || Pop() is not Reference { Load: var load } || Lane(loaded) == CliValueKind.Unknown) return null;
-                    stack.Add(new Element(load, 0, loaded, ByReference: true));
+                    if (stack.Count < 1 || Lane(loaded) == CliValueKind.Unknown) return null;
+                    switch (Pop())
+                    {
+                        case Reference { Load: var load }:
+                            stack.Add(new Element(load, 0, loaded, ByReference: true));
+                            break;
+                        case SpanAddress address when address.Type.CanonicalName == loaded.CanonicalName:
+                            stack.Add(new Element(address.Reference, address.Offset, loaded, Span: address.Indexer));
+                            break;
+                        default:
+                            return null;
+                    }
                     break;
                 case CilOperation.StoreArrayElement when instruction.Operand is CilOperand.TypeIdentity { Value: var stored }:
                     {
@@ -537,6 +598,24 @@ internal sealed class ElementwiseLoopVectorizer(
                         }));
                         break;
                     }
+                // Unsafe.Add(ref reference, index), index the counter plus a constant.
+                case CilOperation.Call when _calledMethods.Resolve(instruction) is { } add && IsUnsafeAdd(add):
+                    {
+                        if (stack.Count < 2) return null;
+                        var (elementOffset, conversion) = Pop() switch
+                        {
+                            NativeIndex native when add.Signature.ParameterTypes[1] == CliValueKind.NativeInt =>
+                                ((int?)native.Offset, native.Conversion),
+                            Linear { Scale: 1 } linear when add.Signature.ParameterTypes[1] == CliValueKind.I4 => (linear.Offset, null),
+                            _ => (null, (CilInstruction?)null),
+                        };
+                        if (elementOffset is not { } offset || Pop() is not Invariant { Code: [var span] })
+                        {
+                            return null;
+                        }
+                        stack.Add(new SpanAddress(span, offset, add.MethodArguments[0], new SpanIndexer(Copy(instruction), conversion)));
+                        break;
+                    }
                 case CilOperation.Call:
                     {
                         if (_calledMethods.Resolve(instruction) is not { } target || !LoopInvariantCallHoister.IsPure(target)) return null;
@@ -560,9 +639,33 @@ internal sealed class ElementwiseLoopVectorizer(
         // reference nothing but element loads.
         return stack.Count == 0 && !stores.Any(static store => Accumulators(store.Value).Any()) &&
             !stores.Select(static store => store.Value).Concat(folds.Select(static fold => fold.Value)).Any(static value => References(value))
-            ? (stores, folds, aliases, copies)
+            ? (stores, folds, aliases, copies, checks)
             : null;
     }
+
+    // A block that only throws: a call that takes nothing, then optionally null, then throw.
+    private bool Throws(ReadOnlySpan<CilInstruction> block)
+    {
+        var index = 0;
+        while (index < block.Length && block[index].Operation == CilOperation.Nop) index++;
+        if (index == block.Length || block[index].Operation != CilOperation.Call ||
+            _calledMethods.Resolve(block[index]) is not { } thrower || thrower.Signature.ParameterTypes.Length != 0)
+        {
+            return false;
+        }
+        index++;
+        if (index < block.Length && block[index].Operation == CilOperation.LoadNull) index++;
+        return index == block.Length - 1 && block[index].Operation == CilOperation.Throw;
+    }
+
+    // Unsafe.Add<T>(ref T, int), (ref T, nint) or (ref T, nuint).
+    private static bool IsUnsafeAdd(MethodInstanceModel method) => method is
+    {
+        DeclaringType.FullName: "System.Runtime.CompilerServices.Unsafe",
+        Definition.Name: "Add",
+        MethodArguments: [_],
+        Signature.ParameterTypes: [CliValueKind.ManagedAddress, CliValueKind.I4 or CliValueKind.NativeInt],
+    };
 
     private static bool References(Node node) => node switch
     {
@@ -678,6 +781,7 @@ internal sealed class ElementwiseLoopVectorizer(
             .Concat(loop.Folds.SelectMany(static fold => Elements(fold.Value)).Select(static element => (element.Array, element.Offset)))
             .Concat(loop.Copies.Values.Select(static copy => (copy.Array, copy.Offset)))
             .DistinctBy(static access => (access.Array.Operation, access.Array.Operand, access.Offset))
+            .Where(access => !SpanReferences(loop).Any(span => SameArray(span, access.Array)))
             .ToArray();
         var arrays = accesses.Select(static access => access.Array)
             .DistinctBy(static array => (array.Operation, array.Operand))
@@ -706,6 +810,18 @@ internal sealed class ElementwiseLoopVectorizer(
             prefix.Add(Copy(array));
             code.Add(CilOperation.LoadArrayLength);
             code.Add(CilOperation.ConvertInt32);
+            code.Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, testTarget);
+        }
+        // Every span index check holds from i to end - 1.
+        foreach (var check in loop.Checks)
+        {
+            code.Counter(check.Offset);
+            code.Constant(0);
+            code.Add(CilOperation.BranchIfLessThanSigned, testTarget);
+            code.Emit(loop.End);
+            code.Constant(check.Offset - 1);
+            code.Add(CilOperation.Add);
+            prefix.Add(Copy(check.Length));
             code.Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, testTarget);
         }
         foreach (var (first, second) in Hazards(stores)!)
@@ -742,7 +858,16 @@ internal sealed class ElementwiseLoopVectorizer(
         {
             prefix.Add(Copy(copy.Array));
             code.Counter(copy.Offset + lanes - 1);
-            code.Add(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(copy.Type));
+            if (copy.Span is { } indexer)
+            {
+                if (indexer.Conversion is { } conversion) prefix.Add(Copy(conversion));
+                prefix.Add(Copy(indexer.Add));
+                code.Add(CilOperation.LoadObject, new CilOperand.TypeIdentity(copy.Type));
+            }
+            else
+            {
+                code.Add(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(copy.Type));
+            }
             code.Add(CilOperation.StoreLocal, new CilOperand.Index(local));
         }
         // A counter copy keeps the last iteration's value, as the loop leaves it.
@@ -772,6 +897,11 @@ internal sealed class ElementwiseLoopVectorizer(
         depth = Depth(loop.Stores, loop.Folds);
         return prefix;
     }
+
+    private static IEnumerable<CilInstruction> SpanReferences(Loop loop) =>
+        loop.Folds.SelectMany(static fold => Elements(fold.Value)).Concat(loop.Copies.Values)
+            .Where(static element => element.Span is not null)
+            .Select(static element => element.Array);
 
     private static int Depth(List<Store> stores, List<Fold> folds) =>
         stores.Select(static store => Depth(store.Value))
@@ -902,6 +1032,16 @@ internal sealed class ElementwiseLoopVectorizer(
                     Code.Add(Copy(element.Array));
                     Constant(element.Offset);
                     Add(CilOperation.ConvertNativeUInt);
+                    Call(_methods.Resolve(VectorLoopMethod.Load, Lane));
+                    break;
+                // Extended to a native int as the scalar index was: Unsafe.Add of an
+                // int sign-extends it.
+                case Element { Span: { } indexer } element:
+                    Code.Add(Copy(element.Array));
+                    Counter(element.Offset);
+                    Code.Add(indexer.Conversion is { } conversion
+                        ? Copy(conversion)
+                        : Instruction(CilOperation.ConvertNativeInt, new CilOperand.None()));
                     Call(_methods.Resolve(VectorLoopMethod.Load, Lane));
                     break;
                 case Element element:

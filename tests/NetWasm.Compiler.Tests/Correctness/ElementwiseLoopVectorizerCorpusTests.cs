@@ -21,7 +21,13 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // iteration at a time. Loops that walk a reference over
 // n elements, as StrengthReduction's strength-reduced loops do, fold as
 // vectors too, from an array's first element, its middle or a span, with an
-// element copy read after the loop.
+// element copy read after the loop. Folds of a span's elements, read through its
+// indexer, run as vectors under one entry check of the indexer's: a foreach, an
+// element and the next one, a slice and an element copy read after the loop, and
+// reads through Unsafe.Add of the counter as an int or a native int, including
+// below the reference; a loop past the span's end or from before its start
+// throws where desktop's does, and an array store of a span's element, which may
+// read what an earlier iteration stored, stays one iteration at a time.
 public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """
@@ -65,6 +71,15 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                         23 => WalkCopy(Ints(size, 9)),
                         24 => WalkFromMiddle(Ints(size + 3, 2)),
                         25 => WalkSpan(Ints(size, 7)),
+                        26 => SpanSum(Ints(size, 3)),
+                        27 => SpanNeighbours(Ints(size, 5)),
+                        28 => SpanSlice(Ints(size + 3, 7)),
+                        29 => SpanCopy(Ints(size, 9)),
+                        30 => SpanPastTheEnd(Ints(size, 2), size + size % 3 / 2),
+                        31 => SpanBeforeTheStart(Ints(size, 2), size % 2 - 1),
+                        32 => UnsafeInts(Ints(size + 3, 3)),
+                        33 => UnsafeNativeInts(Ints(size + 3, 5)),
+                        34 => SpanRecurrence(Ints(size, 3)),
                         _ => Offsets(Ints(size + 4, 9), Ints(size + 4, 2), size),
                     });
                 }
@@ -437,6 +452,102 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                 return result;
             }
 
+            // SumIntsSpan's shape.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int SpanSum(ReadOnlySpan<int> input)
+            {
+                var result = 0;
+                foreach (var value in input) result += value | 1;
+                return result;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int SpanNeighbours(ReadOnlySpan<int> input)
+            {
+                var result = 0;
+                for (var i = 0; i < input.Length - 1; i++) result ^= input[i] - (input[i + 1] << 1);
+                return result;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int SpanSlice(int[] input)
+            {
+                var span = input.AsSpan(3);
+                var result = 0;
+                for (var i = 0; i < span.Length; i++) result += span[i] & 0x7FFF;
+                return result;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int SpanCopy(ReadOnlySpan<int> input)
+            {
+                int result = 0, last = -1;
+                foreach (var value in input)
+                {
+                    last = value;
+                    result += value ^ 3;
+                }
+                return result * 31 + last;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int SpanPastTheEnd(ReadOnlySpan<int> input, int count)
+            {
+                var result = 0;
+                try
+                {
+                    for (var i = 0; i < count; i++) result += input[i] ^ 5;
+                    return result;
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    return -count;
+                }
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int SpanBeforeTheStart(ReadOnlySpan<int> input, int start)
+            {
+                var result = 0;
+                try
+                {
+                    for (var i = start; i < input.Length; i++) result += input[i] ^ 5;
+                    return result;
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    return -1000 - input.Length;
+                }
+            }
+
+            // From the third element, read two below it: the index is -2 at first.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int UnsafeInts(int[] input)
+            {
+                ref var third = ref input[2];
+                var result = 0;
+                for (var i = 0; i < input.Length - 2; i++) result += Unsafe.Add(ref third, i - 2) | 3;
+                return result;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int UnsafeNativeInts(int[] input)
+            {
+                ref var third = ref input[2];
+                var result = 0;
+                for (var i = 0; i < input.Length - 2; i++) result += Unsafe.Add(ref third, (nint)(i - 2)) ^ 3;
+                return result;
+            }
+
+            // Each store feeds the next iteration's read.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int SpanRecurrence(int[] values)
+            {
+                ReadOnlySpan<int> span = values;
+                for (var i = 0; i < values.Length - 1; i++) values[i + 1] = span[i] + 1;
+                return Sum(values);
+            }
+
             private static int Sum(int[] values)
             {
                 var total = 0;
@@ -498,7 +609,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
             "ElementwiseLoopVectorizerCorpus",
             "NetWasm.Correctness.ElementwiseLoops",
             Source,
-            [.. Enumerable.Range(0, 26)])
+            [.. Enumerable.Range(0, 35)])
         {
             Optimization = FinalWasmOptimization.O3,
             ExecuteWasm64 = true,
@@ -522,13 +633,14 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
         string[] loops =
         [
             "Bounded", "CopyAfterLoop", "Counters", "ElementCopy", "Floats", "FoldAndStore", "Folds", "InPlace", "Integers",
-            "Ints", "LateStart", "Longs", "NullArray", "Offsets", "PastTheEnd", "Shapes", "Stencil",
-            "StencilInto", "UInts", "Unsigned", "WalkCopy", "WalkFromMiddle", "WalkInts", "WalkLongs", "WalkSpan",
+            "Ints", "LateStart", "Longs", "NullArray", "Offsets", "PastTheEnd", "Shapes", "SpanBeforeTheStart", "SpanCopy",
+            "SpanNeighbours", "SpanPastTheEnd", "SpanSlice", "SpanSum", "Stencil", "StencilInto", "UInts", "UnsafeInts",
+            "UnsafeNativeInts", "Unsigned", "WalkCopy", "WalkFromMiddle", "WalkInts", "WalkLongs", "WalkSpan",
         ];
         var actual = string.Join(", ", Vectorized(vectorized));
         Assert.True(string.Join(", ", loops) == actual, "vectorized: " + actual);
         Assert.Empty(Vectorized(scalar));
-        foreach (var input in (int[])[0, 5, 6, 8, 14, 15, 18, 19, 21, 23, 25])
+        foreach (var input in (int[])[0, 5, 6, 8, 14, 15, 18, 19, 21, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34])
         {
             Assert.Equal(
                 CompilerTestSupport.ExecuteWithStandardWasiNode(scalar.ApplicationModule, assets.Directory, input, target, scalar.StaticDataEnd),

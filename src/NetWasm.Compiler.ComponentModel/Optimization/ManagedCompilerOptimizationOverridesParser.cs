@@ -235,6 +235,15 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedIntegerCheckElimination.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedMulticastInlineDispatch>
+        MulticastInlineDispatchValues =
+        new Dictionary<string, ManagedMulticastInlineDispatch>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedMulticastInlineDispatch.Auto,
+            ["Disabled"] = ManagedMulticastInlineDispatch.Disabled,
+            ["Enabled"] = ManagedMulticastInlineDispatch.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private static readonly FrozenDictionary<string, ManagedLoopInvariantExpressionHoisting>
         LoopInvariantExpressionHoistingValues =
         new Dictionary<string, ManagedLoopInvariantExpressionHoisting>(StringComparer.Ordinal)
@@ -311,7 +320,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? inlineArrayData = null,
         string? quotientReuse = null,
         string? integerCheckElimination = null,
-        string? loopInvariantExpressionHoisting = null)
+        string? loopInvariantExpressionHoisting = null,
+        string? multicastInlineDispatch = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -430,6 +440,11 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? invariantExpressionsParsed
             : throw ComponentException.Invalid(
                 "Managed loop-invariant expression hoisting must be Auto, Disabled or Enabled.");
+        var multicastValue = MulticastInlineDispatchValues.TryGetValue(
+            multicastInlineDispatch ?? "Auto", out var multicastParsed)
+            ? multicastParsed
+            : throw ComponentException.Invalid(
+                "Managed multicast inline dispatch must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -460,7 +475,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                arrayDataValue == ManagedInlineArrayData.Auto &&
                quotientsValue == ManagedQuotientReuse.Auto &&
                integerChecksValue == ManagedIntegerCheckElimination.Auto &&
-               invariantExpressionsValue == ManagedLoopInvariantExpressionHoisting.Auto
+               invariantExpressionsValue == ManagedLoopInvariantExpressionHoisting.Auto &&
+               multicastValue == ManagedMulticastInlineDispatch.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -493,7 +509,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 InlineArrayData: arrayDataValue,
                 QuotientReuse: quotientsValue,
                 IntegerCheckElimination: integerChecksValue,
-                LoopInvariantExpressionHoisting: invariantExpressionsValue);
+                LoopInvariantExpressionHoisting: invariantExpressionsValue,
+                MulticastInlineDispatch: multicastValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>

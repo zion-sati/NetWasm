@@ -42,7 +42,8 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
               "inlineArrayData":"Enabled",
               "quotientReuse":"Disabled",
               "integerCheckElimination":"Enabled",
-              "loopInvariantExpressionHoisting":"Disabled"
+              "loopInvariantExpressionHoisting":"Disabled",
+              "multicastInlineDispatch":"Enabled"
             }
             """);
         Assert.Equal(new WasmOptimizationOverrides(
@@ -77,7 +78,8 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
             ManagedInlineArrayData.Enabled,
             ManagedQuotientReuse.Disabled,
             ManagedIntegerCheckElimination.Enabled,
-            LoopInvariantExpressionHoisting: ManagedLoopInvariantExpressionHoisting.Disabled), result);
+            LoopInvariantExpressionHoisting: ManagedLoopInvariantExpressionHoisting.Disabled,
+            MulticastInlineDispatch: ManagedMulticastInlineDispatch.Enabled), result);
     }
 
     [Fact]

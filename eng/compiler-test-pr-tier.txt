@@ -203,6 +203,7 @@ NetWasm.Compiler.Tests.DelegateAsynchronousProgrammingModelCompilationTests
 NetWasm.Compiler.Tests.DelegateBindingConversionCompilationTests
 NetWasm.Compiler.Tests.DispatchAndDelegateCompilationTests
 NetWasm.Compiler.Tests.DispatchTargetResolverTests
+NetWasm.Compiler.Tests.ElementwiseLoopVectorizerTests
 NetWasm.Compiler.Tests.EmphasisRemovalCompilationTests
 NetWasm.Compiler.Tests.EncodingContractCompilationTests
 NetWasm.Compiler.Tests.EntryPointResolverTests
@@ -221,6 +222,7 @@ NetWasm.Compiler.Tests.ExpressionTreeCompilationTests
 NetWasm.Compiler.Tests.FaultExceptionRegionCompilationTests
 NetWasm.Compiler.Tests.FieldLoadReuseTests
 NetWasm.Compiler.Tests.FixedBufferCompilationTests
+NetWasm.Compiler.Tests.FoldedInvalidStackCompilationTests
 NetWasm.Compiler.Tests.GCCompatibilityCompilationTests
 NetWasm.Compiler.Tests.GCHandleCompatibilityCompilationTests
 NetWasm.Compiler.Tests.GcRuntimeTargetMatrixCompilationTests
@@ -230,6 +232,8 @@ NetWasm.Compiler.Tests.GenericMethodDispatchCompilationTests
 NetWasm.Compiler.Tests.HostInteropCompilationTests
 NetWasm.Compiler.Tests.IConvertibleTypeCodeCompilationTests
 NetWasm.Compiler.Tests.IdempotentLoopCollapseCompilationTests
+NetWasm.Compiler.Tests.ImplicitArgumentCoercionCompilationTests
+NetWasm.Compiler.Tests.ImplicitCoercionRewriterTests
 NetWasm.Compiler.Tests.InlineArrayDataCompilationTests
 NetWasm.Compiler.Tests.IntegerCheckCompilationTests
 NetWasm.Compiler.Tests.IntegerFoldsTests
@@ -247,6 +251,7 @@ NetWasm.Compiler.Tests.Legality.ConditionalStoreMergingLegalityTests
 NetWasm.Compiler.Tests.Legality.ConstantStaticFieldLegalityTests
 NetWasm.Compiler.Tests.Legality.ConstantTripLoopUnrollingLegalityTests
 NetWasm.Compiler.Tests.Legality.DeepInliningLegalityTests
+NetWasm.Compiler.Tests.Legality.DelegateInvokeLegalityTests
 NetWasm.Compiler.Tests.Legality.FieldLoadReuseLegalityTests
 NetWasm.Compiler.Tests.Legality.FrameShrinkWrappingLegalityTests
 NetWasm.Compiler.Tests.Legality.IntegerCheckLegalityTests
@@ -286,6 +291,7 @@ NetWasm.Compiler.Tests.MixedNativeArithmeticCompilationTests
 NetWasm.Compiler.Tests.ModernLanguageCompilationTests
 NetWasm.Compiler.Tests.ModuleInitializerCompilationTests
 NetWasm.Compiler.Tests.MultiExitScannerCompilationTests
+NetWasm.Compiler.Tests.MulticastDispatchCompilationTests
 NetWasm.Compiler.Tests.NativeMemoryCompilationTests
 NetWasm.Compiler.Tests.NonEscapingAllocationReplacerTests
 NetWasm.Compiler.Tests.NullableBoxingCompilationTests

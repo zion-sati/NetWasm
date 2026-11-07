@@ -11,10 +11,12 @@ namespace NetWasm.Compiler.Tests.Legality;
 // read in another block, half the
 // struct copied, the destination's address escaping, a loop copying a source
 // it changes, a loop repeating one copy, a struct without fields that declares
-// its size, and the ref form through Unsafe.As, unaligned.
+// its size, the ref form through Unsafe.As, unaligned, the source changed through
+// its address after the copy, and a copy between two types of one size.
 public sealed class WholeLocalBlockCopyLegalityTests
 {
     private const string Source = """
+
         using System;
         using System.Runtime.CompilerServices;
         using System.Runtime.InteropServices;
@@ -22,6 +24,16 @@ public sealed class WholeLocalBlockCopyLegalityTests
         public struct Big
         {
             public long A, B, C, D;
+        }
+
+        public struct Twin
+        {
+            public long X, Y;
+        }
+
+        public struct Pair
+        {
+            public double P, Q;
         }
 
         [StructLayout(LayoutKind.Explicit, Size = 64)]
@@ -37,6 +49,30 @@ public sealed class WholeLocalBlockCopyLegalityTests
 
             [MethodImpl(MethodImplOptions.NoInlining)]
             private static long Value(Big value) => value.A * 31 + value.B * 17 + value.C * 7 + value.D;
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static void Clobber(ref Big value) => value.A = -7777;
+
+            // The source's address goes to a call that changes it after the copy: the destination keeps the copy.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static long SourceByAddress(int input)
+            {
+                var source = Make(input);
+                Big destination;
+                Unsafe.CopyBlock(&destination, &source, (uint)sizeof(Big));
+                Clobber(ref source);
+                return Value(destination) * 3 + source.A;
+            }
+
+            // A copy between two types of one size moves bytes, not a value of either type.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static long OtherType(int input)
+            {
+                var source = new Twin { X = input * 1000003L, Y = -input };
+                Pair destination;
+                Unsafe.CopyBlock(&destination, &source, (uint)sizeof(Pair));
+                return BitConverter.DoubleToInt64Bits(destination.P) ^ BitConverter.DoubleToInt64Bits(destination.Q) * 3;
+            }
 
             // The destination read by value after the copy: it reads the source.
             [MethodImpl(MethodImplOptions.NoInlining)]
@@ -175,7 +211,7 @@ public sealed class WholeLocalBlockCopyLegalityTests
             {
                 long hash = 17;
                 foreach (var value in new[] { Whole(input), Propagated(input), SourceReassigned(input), SourceChanged(input), OtherBlock(input), Partial(input), Escapes(input),
-                             Changing(input), Repeated(input), Declared(input), Viewed(input) })
+                             Changing(input), Repeated(input), Declared(input), Viewed(input), SourceByAddress(input), OtherType(input) })
                 {
                     hash = hash * 31 + value;
                 }
@@ -187,7 +223,7 @@ public sealed class WholeLocalBlockCopyLegalityTests
 
     // As desktop .NET 11 computes them.
     private static readonly (int Input, int Expected)[] Cases =
-        [(0, -233726919), (1, 2103505442), (3, -1394366444), (7, -1544509345), (-4, -861454831)];
+        [(0, -1341803044), (1, -1653717233), (3, -112925535), (7, -832242584), (-4, 1400012887)];
 
     [Theory]
     [InlineData(ManagedAddressTakenValuePromotion.Auto)]

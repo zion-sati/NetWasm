@@ -398,6 +398,15 @@ public sealed class WasmModulePlannerTests
         Assert.Equal(jsIndex.Value + 1, witIndex.Value);
         Assert.Equal(witIndex, equivalentWitIndex);
         Assert.True(plan.FunctionIndices.ManagedThrowFunctionIndex.IsPresent);
+        // Each delegate type's invoke function follows the throw functions, then each one's
+        // multicast function, and the generated helpers after them.
+        var invokes = plan.FunctionIndices.ManagedThrowFunctionIndex.Value +
+            (plan.FunctionIndices.ManagedRethrowFunctionIndex.IsPresent ? 2 : 1);
+        Assert.Equal([invokes, invokes + 1], plan.DelegateInvokes.Select(invoke =>
+            plan.FunctionIndices.GetDelegateInvokeHelper(invoke.DeclaringType.CanonicalName).Value));
+        Assert.Equal([invokes + 2, invokes + 3], plan.DelegateInvokes.Select(invoke =>
+            plan.FunctionIndices.GetDelegateMulticastHelper(invoke.DeclaringType.CanonicalName).Value));
+        Assert.Equal(invokes + 4, plan.StaticInitializerFunctionBase);
     }
 
     [Fact]

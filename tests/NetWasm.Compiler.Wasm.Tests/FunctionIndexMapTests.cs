@@ -20,7 +20,11 @@ public sealed class FunctionIndexMapTests
             ImmutableDictionary<string, WasmFunctionIndex>.Empty.Add(
                 "delegate", new(32)),
             ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(
-                imported, new(33)));
+                imported, new(33)))
+        {
+            DelegateMulticastHelpers = ImmutableDictionary<string, WasmFunctionIndex>.Empty.Add(
+                "delegate", new(34)),
+        };
 
         Assert.True(map.TryGetMethod(EntryKey, out var direct));
         Assert.True(map.TryGetMethod(imported, out var jsImport));
@@ -28,6 +32,7 @@ public sealed class FunctionIndexMapTests
         Assert.Equal(30, direct.Value);
         Assert.Equal(31, constructed.Value);
         Assert.Equal(32, map.GetDelegateInvokeHelper("delegate").Value);
+        Assert.Equal(34, map.GetDelegateMulticastHelper("delegate").Value);
         Assert.Equal(33, jsImport.Value);
         Assert.False(map.TryGetMethod(ConstructorKey, out _));
         Assert.False(map.TryGetConstructedMethod("missing", out _));
@@ -64,6 +69,7 @@ public sealed class FunctionIndexMapTests
             []);
 
         Assert.Throws<KeyNotFoundException>(() => map.GetDelegateInvokeHelper("missing"));
+        Assert.Throws<KeyNotFoundException>(() => map.GetDelegateMulticastHelper("missing"));
     }
 
     [Fact]

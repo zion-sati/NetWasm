@@ -27,6 +27,8 @@ public sealed class WasmFunctionSymbolBuilderTests
             {
                 ManagedThrowFunctionIndex = OptionalFunctionIndex.At(6),
                 ManagedRethrowFunctionIndex = OptionalFunctionIndex.At(7),
+                DelegateMulticastHelpers = ImmutableDictionary<string, WasmFunctionIndex>.Empty
+                    .Add("Func<int>", new(10)),
             }),
             Data(new StaticInitializerGuard(64, Initializer, null)
             {
@@ -46,6 +48,7 @@ public sealed class WasmFunctionSymbolBuilderTests
             [7] = "managed-rethrow",
             [8] = "delegate-invoke:Func<int>",
             [9] = "static-initializer:Program::.cctor",
+            [10] = "delegate-multicast:Func<int>",
         }, symbols.ByIndex.OrderBy(pair => pair.Key).ToDictionary());
         Assert.Equal(3u, symbols.BySymbol["method:Program::Helper"]);
     }

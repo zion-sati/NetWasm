@@ -377,6 +377,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
 
         public IMethodSpecializer Create(
             ITypeDefinitionResolver typeDefinitions,
+            ITypeRepository typeRepository,
             IMethodRepository methods,
             IMethodInstanceResolver methodInstances,
             ISymbolFormatter symbols,
@@ -394,8 +395,10 @@ public sealed class WholeProgramAnalyzerCompositionTests
             Called = true;
             return new MethodSpecializerFactory(
                 new ControlFlowGraphBuilderFactory(),
-                new ControlFlowGraphAnalyzerFactory()).Create(
+                new ControlFlowGraphAnalyzerFactory(),
+                new TypedStackValidatorFactory(new StackTypeCompatibilityValidator())).Create(
                 typeDefinitions,
+                typeRepository,
                 methods,
                 methodInstances,
                 symbols,

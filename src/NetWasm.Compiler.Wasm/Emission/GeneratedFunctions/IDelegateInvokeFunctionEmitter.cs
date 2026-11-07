@@ -8,5 +8,6 @@ internal interface IDelegateInvokeFunctionEmitter
     byte[] Emit(
         MethodInstanceModel invoke,
         DelegateInvokeTarget targetProgram,
-        IFunctionIndexResolver functionIndices);
+        IFunctionIndexResolver functionIndices,
+        WasmFunctionIndex multicastFunction);
 }

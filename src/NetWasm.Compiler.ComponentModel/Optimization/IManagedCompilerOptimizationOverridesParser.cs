@@ -33,5 +33,6 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? inlineArrayData = null,
         string? quotientReuse = null,
         string? integerCheckElimination = null,
-        string? loopInvariantExpressionHoisting = null);
+        string? loopInvariantExpressionHoisting = null,
+        string? multicastInlineDispatch = null);
 }

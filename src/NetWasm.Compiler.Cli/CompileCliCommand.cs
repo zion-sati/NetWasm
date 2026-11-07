@@ -72,7 +72,8 @@ internal sealed class CompileCliCommand(
             options.ManagedInlineArrayData,
             options.ManagedQuotientReuse,
             options.ManagedIntegerCheckElimination,
-            options.ManagedLoopInvariantExpressionHoisting);
+            options.ManagedLoopInvariantExpressionHoisting,
+            options.ManagedMulticastInlineDispatch);
         var entryPoint = options.Target == NwcTarget.Exe ? _entryPoints.Read(options.Input) : null;
         using var session = _sessions.Create(options.WasmTools);
         var compilation = session.Compile(new CompilerOptions(

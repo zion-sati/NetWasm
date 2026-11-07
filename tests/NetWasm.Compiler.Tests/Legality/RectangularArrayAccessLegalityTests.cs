@@ -10,11 +10,14 @@ namespace NetWasm.Compiler.Tests.Legality;
 // changed between two reads, a second read whose row or column alone is new and
 // out of range, the array replaced by a smaller one or by null, the column
 // changed through its address, the same indices in swapped dimensions, and
-// another array with the same indices, and the column changed on a branch.
+// another array with the same indices, the column changed on a branch, the array
+// replaced through its address, through a ref to it or through a ref chosen at
+// run time, and a store after the array became null.
 // MDAddArray2's update and three dimensions keep desktop's results.
 public sealed class RectangularArrayAccessLegalityTests
 {
     private const string Source = """
+
         using System;
         using System.Runtime.CompilerServices;
 
@@ -63,6 +66,48 @@ public sealed class RectangularArrayAccessLegalityTests
                 var result = grid[i, k];
                 if (input % 2 == 1) grid = null!;
                 return result * 10 + grid[i, k];
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static void Shrink(ref int[,] grid, int[,] small) => grid = small;
+
+            // The array is replaced through its address between two reads of one element.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int ArrayByAddress(int[,] grid, int[,] small, int i, int k)
+            {
+                var result = grid[i, k];
+                Shrink(ref grid, small);
+                return result * 10 + grid[i, k];
+            }
+
+            // The array is replaced through a ref to it, with no call, between two reads of one element.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int ArrayByAlias(int[,] grid, int[,] small, int i, int k)
+            {
+                ref var alias = ref grid;
+                var result = grid[i, k];
+                alias = small;
+                return result * 10 + grid[i, k];
+            }
+
+            // The array is replaced through a ref chosen at run time, with no call, between two reads.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int ArrayByChosenRef(int[,] grid, int[,] other, int[,] small, int i, int k, bool pick)
+            {
+                ref var alias = ref pick ? ref grid : ref other;
+                var result = grid[i, k];
+                alias = small;
+                return result * 10 + grid[i, k];
+            }
+
+            // The array becomes null between two stores.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int StoreAfterNulled(int[,] grid, int i, int k, int input)
+            {
+                grid[i, k] = input;
+                if (input % 2 == 1) grid = null!;
+                grid[i, k] = input + 1;
+                return grid[i, k];
             }
 
             // The column is changed through its address between two reads.
@@ -137,6 +182,10 @@ public sealed class RectangularArrayAccessLegalityTests
                     8 => Guard(() => AddRows(Grid(4, 3), 4, input % 4)),
                     9 => Guard(() => ColumnOnBranch(grid, 2, 1, input)),
                     10 => Guard(() => Cube(cube, input % 4, 2, input % 3)),
+                    11 => Guard(() => ArrayByAddress(grid, small, input % 4, 1)),
+                    12 => Guard(() => StoreAfterNulled(Grid(4, 3), 1, 2, input)),
+                    13 => Guard(() => ArrayByAlias(grid, small, input % 4, 1)),
+                    14 => Guard(() => ArrayByChosenRef(grid, Grid(4, 3), small, input % 4, 1, input % 2 == 0)),
                     _ => -9,
                 };
             }
@@ -146,7 +195,7 @@ public sealed class RectangularArrayAccessLegalityTests
 
     // As desktop .NET 11 computes them; -1 and -2 are IndexOutOfRange and NullReference.
     private static readonly (int Input, int Expected)[] Cases =
-        [(0, 103), (1, 110), (2, 117), (3, 124), (4, -1), (100, 103), (101, 110), (102, 117), (103, 124), (104, -1), (200, 175), (201, 176), (202, 177), (203, -1), (204, -1), (300, 22), (301, 99), (302, -1), (303, -1), (304, 22), (400, 176), (401, -2), (402, 176), (403, -2), (404, 176), (500, 89), (501, 100), (502, -1), (503, 89), (504, 100), (600, 45), (601, 116), (602, 187), (603, -1), (604, -1), (700, 88), (701, 99), (702, -1), (703, 88), (704, 99), (800, -2098859058), (801, 674978920), (802, -122360631), (803, -1754340179), (804, -2098859058), (900, 175), (901, 176), (902, 177), (903, 176), (904, -1), (1000, 636), (1001, 1745), (1002, 2854), (1003, -1), (1004, 746)];
+        [(0, 103), (1, 110), (2, 117), (3, 124), (4, -1), (100, 103), (101, 110), (102, 117), (103, 124), (104, -1), (200, 175), (201, 176), (202, 177), (203, -1), (204, -1), (300, 22), (301, 99), (302, -1), (303, -1), (304, 22), (400, 176), (401, -2), (402, 176), (403, -2), (404, 176), (500, 89), (501, 100), (502, -1), (503, 89), (504, 100), (600, 45), (601, 116), (602, 187), (603, -1), (604, -1), (700, 88), (701, 99), (702, -1), (703, 88), (704, 99), (800, -2098859058), (801, 674978920), (802, -122360631), (803, -1754340179), (804, -2098859058), (900, 175), (901, 176), (902, 177), (903, 176), (904, -1), (1000, 636), (1001, 1745), (1002, 2854), (1003, -1), (1004, 746), (1100, 22), (1101, 99), (1102, -1), (1103, -1), (1104, 22), (1200, 1), (1201, -2), (1202, 3), (1203, -2), (1204, 5), (1300, 22), (1301, 99), (1302, -1), (1303, -1), (1304, 22), (1400, 22), (1401, 99), (1402, -1), (1403, 253), (1404, 22)];
 
     [Theory]
     [InlineData(ManagedArrayBoundsCheckElimination.Auto)]

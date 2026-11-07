@@ -203,7 +203,16 @@ internal sealed class WasmModulePlanner(
                 item => item.CanonicalName,
                 item => item.Index,
                 StringComparer.Ordinal);
-        var helperBase = managedThrowFunction + throwFunctionCount + delegateInvokes.Length;
+        var delegateMulticastHelperIndices = delegateInvokes
+            .Select((method, index) => (
+                method.DeclaringType.CanonicalName,
+                Index: new WasmFunctionIndex(
+                    managedThrowFunction + throwFunctionCount + delegateInvokes.Length + index)))
+            .ToImmutableDictionary(
+                item => item.CanonicalName,
+                item => item.Index,
+                StringComparer.Ordinal);
+        var helperBase = managedThrowFunction + throwFunctionCount + delegateInvokes.Length * 2;
         if (!request.JavaScriptConversions.IsEmpty)
         {
             interopImports = interopImports with
@@ -232,6 +241,7 @@ internal sealed class WasmModulePlanner(
                 ManagedRethrowFunctionIndex = hasManagedRethrowFunction
                     ? OptionalFunctionIndex.At(managedThrowFunction + 1)
                     : OptionalFunctionIndex.Missing,
+                DelegateMulticastHelpers = delegateMulticastHelperIndices,
             },
             interopImports)
         {

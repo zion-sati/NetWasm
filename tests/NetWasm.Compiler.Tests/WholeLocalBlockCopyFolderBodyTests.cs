@@ -10,7 +10,8 @@ namespace NetWasm.Compiler.Tests;
 // built here: addresses and lengths behind conversions, Unsafe's views, Unsafe.SizeOf
 // and a temporary, and sizes a primitive or a field-less struct declares. Values
 // that two paths produce, other calls, a temporary seen more than once, an
-// instantiation's constant and a struct with instance fields stay copies. A folded
+// instantiation's constant, a struct with instance fields, a volatile copy and a
+// copy between two types stay copies. A folded
 // copy's destination read later in its block reads the source, but not past a
 // branch target or after the source is stored.
 public sealed class WholeLocalBlockCopyFolderBodyTests
@@ -18,6 +19,7 @@ public sealed class WholeLocalBlockCopyFolderBodyTests
     private static readonly AssemblyIdentity Assembly = new("fixture");
     private static readonly CliTypeIdentity Int32 = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
     private static readonly CliTypeIdentity Int64 = CliTypeIdentity.Primitive("i8", CliValueKind.I8);
+    private static readonly CliTypeIdentity Float64 = CliTypeIdentity.Primitive("r8", CliValueKind.F8);
     private static readonly CliTypeIdentity Big = CliTypeIdentity.Named(Assembly, "Fixture", "Big", isValueType: true);
     private static readonly CliTypeIdentity Sized = CliTypeIdentity.Named(Assembly, "Fixture", "Sized", isValueType: true);
     private static readonly CliTypeIdentity Fielded = CliTypeIdentity.Named(Assembly, "Fixture", "Fielded", isValueType: true);
@@ -57,6 +59,8 @@ public sealed class WholeLocalBlockCopyFolderBodyTests
         { "constant for an instantiation", false },
         { "constant of a field-less struct's declared size", true },
         { "constant of a struct with an instance field", false },
+        { "volatile copy", false },
+        { "copy between two types", false },
     };
 
     [Theory]
@@ -114,6 +118,12 @@ public sealed class WholeLocalBlockCopyFolderBodyTests
         "constant through an unchecked conversion" => Body([Int64, Int64, Int32], code => Addresses(code)
             .Op(CilOperation.LoadInt32, 8).Op(CilOperation.ConvertNumeric, new CilOperand.NumericConversion(32, true, false, false, false))
             .Op(CilOperation.CopyBlock).Return()),
+        "volatile copy" => Body([Big, Big, Int32], code => code
+            .Local(CilOperation.LoadLocalAddress, 1).Local(CilOperation.LoadLocalAddress, 0)
+            .Op(CilOperation.SizeOf, new CilOperand.TypeIdentity(Big)).Op(CilOperation.Volatile).Op(CilOperation.CopyBlock).Return()),
+        // The destination (local 1) is a long, whose eight bytes the length covers; the source a double.
+        "copy between two types" => Body([Float64, Int64, Int32], code => Addresses(code)
+            .Op(CilOperation.LoadInt32, 8).Op(CilOperation.CopyBlock).Return()),
         "constant shorter than the local" => Body([Int64, Int64, Int32], code => Addresses(code)
             .Op(CilOperation.LoadInt32, 4).Op(CilOperation.CopyBlock).Return()),
         "destination from either branch" => Body([Big, Big, Int32], code => Either(code,

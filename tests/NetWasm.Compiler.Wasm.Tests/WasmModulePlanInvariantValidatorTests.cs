@@ -436,6 +436,39 @@ public sealed class WasmModulePlanInvariantValidatorTests
     [Fact]
     public void ValidatesDelegateInvokeHelperThroughContract()
     {
+        var (request, plan) = CreateDelegatePlan(multicastOffset: 1);
+
+        Validate(CreateValidator(), request, plan);
+    }
+
+    // A delegate type's multicast function follows every invoke function; one numbered
+    // anywhere else, or one the plan has no delegate type for, is rejected.
+    [Theory]
+    [InlineData(0, false, "delegate multicast helper function index")]
+    [InlineData(2, false, "delegate multicast helper function index")]
+    [InlineData(1, true, "unplanned entry")]
+    public void RejectsAMisnumberedOrUnplannedMulticastHelper(int multicastOffset, bool extra, string message)
+    {
+        var (request, plan) = CreateDelegatePlan(multicastOffset);
+        if (extra)
+        {
+            plan = plan with
+            {
+                FunctionIndices = plan.FunctionIndices with
+                {
+                    DelegateMulticastHelpers = plan.FunctionIndices.DelegateMulticastHelpers.Add("Test.Other", new(99)),
+                },
+            };
+        }
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            Validate(CreateValidator(), request, plan));
+
+        Assert.Contains(message, exception.Message);
+    }
+
+    private static (WasmEmissionRequest Request, WasmModulePlan Plan) CreateDelegatePlan(int multicastOffset)
+    {
         var program = new FakeProgram();
         var (request, plan) = CreatePlan();
         var method = program.GetMethod(EntryKey);
@@ -447,17 +480,17 @@ public sealed class WasmModulePlanInvariantValidatorTests
         // Delegate helpers follow the managed methods and the shared throw function.
         var helperIndex = plan.RuntimeImports.Length + plan.InteropImports.Imports.Length +
             plan.OrderedMethods.Length + plan.OrderedConstructedMethods.Length + 1;
-        var valid = plan with
+        return (request, plan with
         {
             DelegateInvokes = [invoke],
             FunctionIndices = plan.FunctionIndices with
             {
                 DelegateInvokeHelpers = ImmutableDictionary<string, WasmFunctionIndex>.Empty
                     .Add(invoke.DeclaringType.CanonicalName, new(helperIndex)),
+                DelegateMulticastHelpers = ImmutableDictionary<string, WasmFunctionIndex>.Empty
+                    .Add(invoke.DeclaringType.CanonicalName, new(helperIndex + multicastOffset)),
             },
-        };
-
-        Validate(CreateValidator(), request, valid);
+        });
     }
 
     private static void Validate(

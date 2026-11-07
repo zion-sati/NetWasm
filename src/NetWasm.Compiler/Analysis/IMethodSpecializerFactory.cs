@@ -8,6 +8,7 @@ internal interface IMethodSpecializerFactory
 {
     IMethodSpecializer Create(
         ITypeDefinitionResolver typeDefinitions,
+        ITypeRepository typeRepository,
         IMethodRepository methods,
         IMethodInstanceResolver methodInstances,
         ISymbolFormatter symbols,

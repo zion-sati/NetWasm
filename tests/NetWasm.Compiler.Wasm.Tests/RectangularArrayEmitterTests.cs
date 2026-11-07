@@ -17,10 +17,13 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 
 public sealed class RectangularArrayEmitterTests
 {
+    // A caller that has checked the array (a store, before reading its element type)
+    // leaves out only the null check.
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void AddressCapabilityChecksEveryIndexAndEmitsTargetWidthAddress(bool memory64)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void AddressCapabilityChecksEveryIndexAndEmitsTargetWidthAddress(bool memory64, bool arrayChecked)
     {
         var layouts = new RecordingLayoutProvider(
             memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32);
@@ -44,14 +47,16 @@ public sealed class RectangularArrayEmitterTests
             new CilOperand.TypeIdentity(arrayType),
             maxStack: 3);
 
-        emitter.Emit(new(request, 0), GetCodeWriter(request));
+        emitter.Emit(new(request, 0, arrayChecked), GetCodeWriter(request));
 
         Assert.Equal(
-            [
-                ManagedExceptionKind.NullReference,
-                ManagedExceptionKind.IndexOutOfRange,
-                ManagedExceptionKind.IndexOutOfRange,
-            ],
+            arrayChecked
+                ? [ManagedExceptionKind.IndexOutOfRange, ManagedExceptionKind.IndexOutOfRange]
+                : [
+                    ManagedExceptionKind.NullReference,
+                    ManagedExceptionKind.IndexOutOfRange,
+                    ManagedExceptionKind.IndexOutOfRange,
+                ],
             exceptions.Kinds);
         Assert.Equal(
             memory64,
@@ -304,6 +309,7 @@ public sealed class RectangularArrayEmitterTests
         Emit(emitter, request);
 
         Assert.Equal(0, addresses.Request?.ArraySlot);
+        Assert.False(addresses.Request?.ArrayChecked);
         Assert.Equal([expected], request.Stack);
     }
 
@@ -425,19 +431,23 @@ public sealed class RectangularArrayEmitterTests
             ],
             new CilOperand.TypeIdentity(arrayType),
             maxStack: 4);
+        var exceptions = new RecordingExceptionEmitter();
         IInstructionCommandProvider emitter = new RectangularArrayElementStoreEmitter(
             layouts,
             CreateAddressInstructions(layouts),
             layouts,
             layouts,
             WasmRuntimeImports.CreateCatalog(),
-            new RecordingExceptionEmitter(),
+            exceptions,
             addresses);
 
         Emit(emitter, request);
 
         Assert.Empty(request.Stack);
         Assert.Equal(0, addresses.Request?.ArraySlot);
+        // The store checks the array once and tells the address it is checked.
+        Assert.True(addresses.Request?.ArrayChecked);
+        Assert.Equal(1, exceptions.Kinds.Count(kind => kind == ManagedExceptionKind.NullReference));
         Assert.Contains(
             elementKind == CliValueKind.ValueType
                 ? WasmOpcodes.Prefixed
