@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Native AOT nwc collects with Satori (VSadov/Satori, MIT): on a DoomSharp compile it
+       peaks at 0.35 of Server GC's memory at O0 and 0.45 at O3, as fast at O0 and 5% slower
+       at O3 (2026-11-07). This SDK takes ILC and the NativeAOT runtime from its packages. -->
+  <Sdk Name="PublishWithSatoriGC" Version="11.0.0-satori.42242472725.1" />
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>nwc</AssemblyName>
@@ -12,11 +16,14 @@
     <IsPackable>false</IsPackable>
     <!-- The compiler reads no culture data, so a Native AOT nwc needs no ICU on the host. -->
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- The analysis and emission workers allocate concurrently; per-core heaps keep them
-         from stopping each other for every collection. A compilation is short, so its
-         heaps are sized for speed rather than adapted down to save memory. -->
+    <!-- On the .NET 10 runtime that runs nwc.dll: the analysis and emission workers allocate
+         concurrently, and per-core heaps keep them from stopping each other for every
+         collection. A compilation is short, so its heaps are sized for speed rather than
+         adapted down to save memory. -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <GarbageCollectionAdaptationMode>0</GarbageCollectionAdaptationMode>
+    <!-- Satori's packages are a .NET 11 runtime, so only the net11.0 nwc takes them. -->
+    <UseSatoriGC Condition="'$(TargetFramework)' != 'net11.0'">false</UseSatoriGC>
   </PropertyGroup>
   <!-- MSVC's linker stamps the time into each image unless /Brepro, which a
        repeatable Native AOT nwc needs. -->

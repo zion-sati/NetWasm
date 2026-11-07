@@ -142,10 +142,18 @@ internal sealed class WasmModulePlanInvariantValidator :
                 invoke.DeclaringType.CanonicalName);
             RequireIndex(index.Value, expected++, indices, "delegate invoke helper");
         }
+        foreach (var invoke in plan.DelegateInvokes)
+        {
+            var index = plan.FunctionIndices.GetDelegateMulticastHelper(
+                invoke.DeclaringType.CanonicalName);
+            RequireIndex(index.Value, expected++, indices, "delegate multicast helper");
+        }
         if (plan.FunctionIndices.DirectMethods.Count != plan.OrderedMethods.Length ||
             plan.FunctionIndices.ConstructedMethods.Count !=
                 plan.OrderedConstructedMethods.Length ||
             plan.FunctionIndices.DelegateInvokeHelpers.Count !=
+                plan.DelegateInvokes.Length ||
+            plan.FunctionIndices.DelegateMulticastHelpers.Count !=
                 plan.DelegateInvokes.Length ||
             plan.FunctionIndices.ImportedMethods.Count !=
                 request.JSImportMethods.Length + request.WitImportMethods.Length + plan.NativeImports.Methods.Length)

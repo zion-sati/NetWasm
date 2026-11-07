@@ -103,6 +103,7 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedQuotientReuse { get; set; } = "Auto";
     public string ManagedIntegerCheckElimination { get; set; } = "Auto";
     public string ManagedLoopInvariantExpressionHoisting { get; set; } = "Auto";
+    public string ManagedMulticastInlineDispatch { get; set; } = "Auto";
 
     protected override string ToolName => "nwc";
 
@@ -262,6 +263,7 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("quotientreuse", ManagedQuotientReuse),
                      ("integercheckelimination", ManagedIntegerCheckElimination),
                      ("loopinvariantexpressionhoisting", ManagedLoopInvariantExpressionHoisting),
+                     ("multicastinlinedispatch", ManagedMulticastInlineDispatch),
                  })
         {
             if (value is not ("" or "Auto"))

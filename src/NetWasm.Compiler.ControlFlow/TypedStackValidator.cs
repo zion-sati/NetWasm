@@ -13,7 +13,15 @@ public sealed record ValidatedControlFlowGraph(
 {
     // The deepest evaluation stack any instruction leaves.
     public int MaximumStackDepth { get; init; }
+
+    // Where a value met a slot of the other of int32 and native int, which ECMA-335 III.1.6 lets
+    // an argument, a store to a local, argument or field, or a return coerce implicitly.
+    public ImmutableArray<ImplicitCoercion> ImplicitCoercions { get; init; } = [];
 }
+
+// The value at a stack index (from the bottom of the instruction's entry stack) coerced from
+// one kind to the other as the instruction consumes it.
+public sealed record ImplicitCoercion(int Offset, int StackIndex, CliValueKind From, CliValueKind To);
 
 public sealed class TypedStackValidator(
     ITypeRepository types,
@@ -40,6 +48,7 @@ public sealed class TypedStackValidator(
         };
         var pending = new Queue<int>();
         var instructionEntryStacks = new Dictionary<int, ImmutableArray<CliValueKind>>();
+        var coercions = new List<ImplicitCoercion>();
         var maximumDepth = 0;
         pending.Enqueue(graph.Entry.Index);
         foreach (var region in graph.MethodBody.ExceptionRegions)
@@ -57,7 +66,7 @@ public sealed class TypedStackValidator(
             foreach (var instruction in block.Instructions)
             {
                 instructionEntryStacks.Add(instruction.Offset, [.. stack]);
-                Apply(graph.MethodBody, instruction, stack);
+                Apply(graph.MethodBody, instruction, stack, coercions);
                 maximumDepth = Math.Max(maximumDepth, stack.Count);
                 if (stack.Count > graph.MethodBody.MaxStack)
                 {
@@ -89,6 +98,7 @@ public sealed class TypedStackValidator(
             instructionEntryStacks.ToImmutableDictionary())
         {
             MaximumStackDepth = maximumDepth,
+            ImplicitCoercions = [.. coercions],
         };
 
         void Seed(int offset, ImmutableArray<CliValueKind> stack)
@@ -118,7 +128,8 @@ public sealed class TypedStackValidator(
     private void Apply(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
         switch (instruction.Operation)
         {
@@ -133,13 +144,13 @@ public sealed class TypedStackValidator(
                 stack.Add(CliValueKind.ManagedAddress);
                 return;
             case CilOperation.StoreArgument:
-                PopExpected(body, instruction, stack, GetArgumentType(body, instruction));
+                PopCoerced(body, instruction, stack, GetArgumentType(body, instruction), coercions);
                 return;
             case CilOperation.LoadLocal:
                 stack.Add(GetLocalType(body, instruction));
                 return;
             case CilOperation.StoreLocal:
-                PopExpected(body, instruction, stack, GetLocalType(body, instruction));
+                PopCoerced(body, instruction, stack, GetLocalType(body, instruction), coercions);
                 return;
             case CilOperation.LoadInt32:
             case CilOperation.LoadTypeToken:
@@ -234,7 +245,7 @@ public sealed class TypedStackValidator(
                 return;
             case CilOperation.StoreField:
                 {
-                    PopExpected(body, instruction, stack, GetFieldType(instruction));
+                    PopCoerced(body, instruction, stack, GetFieldType(instruction), coercions);
                     PopFieldReceiver(body, instruction, stack);
                     return;
                 }
@@ -245,11 +256,7 @@ public sealed class TypedStackValidator(
                 stack.Add(CliValueKind.ManagedAddress);
                 return;
             case CilOperation.StoreStaticField:
-                PopExpected(
-                    body,
-                    instruction,
-                    stack,
-                    GetFieldType(instruction));
+                PopCoerced(body, instruction, stack, GetFieldType(instruction), coercions);
                 return;
             case CilOperation.LoadObject:
                 PopAddress(body, instruction, stack);
@@ -433,13 +440,13 @@ public sealed class TypedStackValidator(
                 return;
             case CilOperation.Call:
             case CilOperation.CallVirtual:
-                ApplyCall(body, instruction, stack);
+                ApplyCall(body, instruction, stack, coercions);
                 return;
             case CilOperation.CallIndirect:
-                ApplyCallIndirect(body, instruction, stack);
+                ApplyCallIndirect(body, instruction, stack, coercions);
                 return;
             case CilOperation.NewObject:
-                ApplyNewObject(body, instruction, stack);
+                ApplyNewObject(body, instruction, stack, coercions);
                 return;
             case CilOperation.Box:
                 PopExpected(body, instruction, stack, GetSignatureType(instruction).StackKind);
@@ -549,7 +556,7 @@ public sealed class TypedStackValidator(
                 RequireEmpty(body, instruction, stack);
                 return;
             case CilOperation.Return:
-                ApplyReturn(body, instruction, stack);
+                ApplyReturn(body, instruction, stack, coercions);
                 return;
             default:
                 throw new InvalidOperationException(
@@ -560,7 +567,8 @@ public sealed class TypedStackValidator(
     private void ApplyCallIndirect(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
         var signature = instruction.Operand is CilOperand.CallSite callSite
             ? callSite.Signature
@@ -568,7 +576,7 @@ public sealed class TypedStackValidator(
         PopExpected(body, instruction, stack, CliValueKind.NativeInt);
         for (var index = signature.ParameterTypes.Length - 1; index >= 0; index--)
         {
-            PopExpected(body, instruction, stack, signature.ParameterTypes[index]);
+            PopCoerced(body, instruction, stack, signature.ParameterTypes[index], coercions);
         }
         if (signature.ReturnType != CliValueKind.Void)
         {
@@ -593,11 +601,12 @@ public sealed class TypedStackValidator(
     private void ApplyCall(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
         (var target, var signature) =
             GetMethodTarget(instruction);
-        PopParameters(body, instruction, stack, signature.ParameterTypes);
+        PopParameters(body, instruction, stack, signature.ParameterTypes, coercions);
         if (!target.IsStatic)
         {
             var receiver = IsConstrainedCall(body, instruction)
@@ -624,7 +633,8 @@ public sealed class TypedStackValidator(
     private void ApplyNewObject(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
         (var constructor, var signature) =
             GetMethodTarget(instruction);
@@ -632,19 +642,20 @@ public sealed class TypedStackValidator(
         {
             throw Invalid(body, instruction, "newobj does not target an instance constructor");
         }
-        PopParameters(body, instruction, stack, signature.ParameterTypes);
+        PopParameters(body, instruction, stack, signature.ParameterTypes, coercions);
         stack.Add(GetConstructedStackKind(instruction, constructor));
     }
 
     private void ApplyReturn(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
         var signature = body.MethodInstance?.Signature ?? body.Method.Signature;
         if (signature.ReturnType != CliValueKind.Void)
         {
-            PopExpected(body, instruction, stack, signature.ReturnType);
+            PopCoerced(body, instruction, stack, signature.ReturnType, coercions);
         }
         if (stack.Count != 0)
         {
@@ -864,11 +875,12 @@ public sealed class TypedStackValidator(
         CilMethodBody body,
         CilInstruction instruction,
         List<CliValueKind> stack,
-        ImmutableArray<CliValueKind> parameterTypes)
+        ImmutableArray<CliValueKind> parameterTypes,
+        List<ImplicitCoercion> coercions)
     {
         for (var index = parameterTypes.Length - 1; index >= 0; index--)
         {
-            PopExpected(body, instruction, stack, parameterTypes[index]);
+            PopCoerced(body, instruction, stack, parameterTypes[index], coercions);
         }
     }
 
@@ -1093,6 +1105,26 @@ public sealed class TypedStackValidator(
                 instruction,
                 $"{role} must be int32 or native integer");
         }
+    }
+
+    // A value an argument, a store to a local, argument or field, or a return takes: one of int32
+    // and native int coerces to the other (ECMA-335 III.1.6), which is recorded for the rewrite
+    // that makes it explicit.
+    private void PopCoerced(
+        CilMethodBody body,
+        CilInstruction instruction,
+        List<CliValueKind> stack,
+        CliValueKind expected,
+        List<ImplicitCoercion> coercions)
+    {
+        var actual = Peek(body, instruction, stack);
+        if ((expected, actual) is (CliValueKind.I4, CliValueKind.NativeInt) or (CliValueKind.NativeInt, CliValueKind.I4))
+        {
+            stack.RemoveAt(stack.Count - 1);
+            coercions.Add(new(instruction.Offset, stack.Count, actual, expected));
+            return;
+        }
+        PopExpected(body, instruction, stack, expected);
     }
 
     private void PopExpected(

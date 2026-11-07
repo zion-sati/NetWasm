@@ -37,7 +37,7 @@ internal sealed class RectangularArrayElementAddressEmitter(
             candidate.Contains(instruction.Instruction)
             ? candidate
             : null;
-        if (!metadata.Plan.CheckedAccesses.Contains(instruction.Instruction.Offset) &&
+        if (!request.ArrayChecked && !metadata.Plan.CheckedAccesses.Contains(instruction.Instruction.Offset) &&
             proof?.ProvesNonNull(instruction.Instruction.Offset) != true)
         {
             EmitNullCheck(code, arrayLocal, request.Instruction.Context.ManagedThrowFunction);

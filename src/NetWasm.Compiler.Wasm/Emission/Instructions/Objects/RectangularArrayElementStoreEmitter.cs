@@ -49,7 +49,8 @@ internal sealed class RectangularArrayElementStoreEmitter(
         {
             EmitReferenceTypeCheck(request, code, arraySlot, valueLocal);
         }
-        addresses.Emit(new(request, arraySlot), code);
+        // The array was checked above, before its element type was read.
+        addresses.Emit(new(request, arraySlot, ArrayChecked: true), code);
         Get(code, valueLocal);
         if (elementType.StackKind == CliValueKind.ValueType)
         {

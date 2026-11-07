@@ -117,8 +117,7 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                     for (var dimension = 0; dimension < rank; dimension++)
                     {
                         var position = origins[first + dimension];
-                        if (!position.Known || position.Slot is { } positionSlot && exposed.Contains(positionSlot) ||
-                            stack[first + dimension] != CliValueKind.I4)
+                        if (!position.Known || position.Slot is { } positionSlot && exposed.Contains(positionSlot))
                         {
                             continue;
                         }

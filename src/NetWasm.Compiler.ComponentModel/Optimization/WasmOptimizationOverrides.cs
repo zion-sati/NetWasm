@@ -57,4 +57,6 @@ public sealed record WasmOptimizationOverrides(
     // doubled the optimizer's time for 0.04-0.12% of size and no measured speed.
     bool Converge = false,
     ManagedLoopInvariantExpressionHoisting LoopInvariantExpressionHoisting =
-        ManagedLoopInvariantExpressionHoisting.Auto);
+        ManagedLoopInvariantExpressionHoisting.Auto,
+    ManagedMulticastInlineDispatch MulticastInlineDispatch =
+        ManagedMulticastInlineDispatch.Auto);

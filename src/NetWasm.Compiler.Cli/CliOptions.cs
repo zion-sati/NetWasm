@@ -44,6 +44,7 @@ internal sealed record CompileCliOptions(
         "managedidempotentloopcollapse", "managedloopstoreforwarding", "managedarrayloopidioms", "managedloopvectorization",
         "managedpurecallreuse", "managedfieldloadreuse", "managedconditionalstoremerging", "managedinlinearraydata",
         "managedquotientreuse", "managedintegercheckelimination", "managedloopinvariantexpressionhoisting",
+        "managedmulticastinlinedispatch",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
@@ -101,6 +102,7 @@ internal sealed record CompileCliOptions(
     public string? ManagedQuotientReuse { get; init; }
     public string? ManagedIntegerCheckElimination { get; init; }
     public string? ManagedLoopInvariantExpressionHoisting { get; init; }
+    public string? ManagedMulticastInlineDispatch { get; init; }
 
     public static CompileCliOptions Parse(NwcArguments arguments)
     {
@@ -192,6 +194,7 @@ internal sealed record CompileCliOptions(
             ManagedQuotientReuse = options.Single("managedquotientreuse"),
             ManagedIntegerCheckElimination = options.Single("managedintegercheckelimination"),
             ManagedLoopInvariantExpressionHoisting = options.Single("managedloopinvariantexpressionhoisting"),
+            ManagedMulticastInlineDispatch = options.Single("managedmulticastinlinedispatch"),
         };
     }
 

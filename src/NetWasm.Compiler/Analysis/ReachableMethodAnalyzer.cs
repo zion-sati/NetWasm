@@ -23,23 +23,14 @@ internal sealed class ReachableMethodAnalyzer(
     public ReachableMethodAnalysis Analyze(ReachableMethodRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var body = request.RewrittenBody ?? methodBodies.ReadMethodBody(request.Method) with
+        // The specializer's first rule validates the original method's stacks, so its folding
+        // cannot conceal invalid ones.
+        var body = request.RewrittenBody ?? specializer.Rewrite(methodBodies.ReadMethodBody(request.Method) with
         {
             MethodInstance = request.Method,
-        };
+        });
         var graph = graphBuilder.Build(body);
         var validated = stackValidators.Create(types, fields, methods).Validate(graph);
-        if (request.RewrittenBody is null)
-        {
-            // Folding must not conceal invalid stacks in the original method.
-            var specialized = specializer.Rewrite(body);
-            if (!ReferenceEquals(specialized, body))
-            {
-                body = specialized;
-                graph = graphBuilder.Build(body);
-                validated = stackValidators.Create(types, fields, methods).Validate(graph);
-            }
-        }
         var managed = new ManagedMethodBody(request.Method, validated);
         var optimized = request.RewrittenBody is null ? optimizer.Optimize(managed) : integerChecks.Rewrite(body);
         if (!ReferenceEquals(optimized, body))

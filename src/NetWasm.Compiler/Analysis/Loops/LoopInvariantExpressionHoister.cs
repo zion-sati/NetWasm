@@ -106,7 +106,7 @@ internal sealed class LoopInvariantExpressionHoister(
             for (var first = jump + 1; first < end;)
             {
                 if (claimed.Contains(first) || rare[first - jump - 1] ||
-                    Expression(body, targets, first, end, written, exposed, sources, boundaries) is not { } expression)
+                    Expression(body, targets, first, end, written, sources, boundaries) is not { } expression)
                 {
                     first++;
                     continue;
@@ -167,7 +167,6 @@ internal sealed class LoopInvariantExpressionHoister(
         int first,
         int limit,
         HashSet<(bool Argument, int Index)> written,
-        HashSet<(bool Argument, int Index)> exposed,
         Dictionary<int, List<int>> sources,
         HashSet<int> boundaries)
     {
@@ -197,7 +196,7 @@ internal sealed class LoopInvariantExpressionHoister(
             {
                 break;
             }
-            if (!Step(body, targets, first, index, state, pending, written, exposed, ref reachable, ref branches))
+            if (!Step(body, targets, first, index, state, pending, written, ref reachable, ref branches))
             {
                 break;
             }
@@ -217,7 +216,7 @@ internal sealed class LoopInvariantExpressionHoister(
         // The longest run whose temporaries nothing else touches.
         for (var candidate = candidates.Count - 1; candidate >= 0; candidate--)
         {
-            if (Temporaries(instructions, first, candidates[candidate].Last, exposed)) return candidates[candidate];
+            if (Temporaries(instructions, first, candidates[candidate].Last)) return candidates[candidate];
         }
         return null;
     }
@@ -243,7 +242,6 @@ internal sealed class LoopInvariantExpressionHoister(
         State state,
         Dictionary<int, State> pending,
         HashSet<(bool Argument, int Index)> written,
-        HashSet<(bool Argument, int Index)> exposed,
         ref bool reachable,
         ref int branches)
     {
@@ -277,7 +275,7 @@ internal sealed class LoopInvariantExpressionHoister(
                 stack.Add(kind);
                 return true;
             case CilOperation.StoreLocal when instruction.Operand is CilOperand.Index { Value: var local } &&
-                (uint)local < (uint)body.Locals.Length && !exposed.Contains((false, local)):
+                (uint)local < (uint)body.Locals.Length:
                 if (stack.Count == 0) return false;
                 stack.RemoveAt(stack.Count - 1);
                 state.Assigned.Add(local);
@@ -395,8 +393,7 @@ internal sealed class LoopInvariantExpressionHoister(
     private static bool Temporaries(
         ImmutableArray<CilInstruction> instructions,
         int first,
-        int last,
-        HashSet<(bool Argument, int Index)> exposed)
+        int last)
     {
         var temporaries = new HashSet<int>();
         for (var index = first; index < last; index++)
@@ -420,7 +417,7 @@ internal sealed class LoopInvariantExpressionHoister(
                 return false;
             }
         }
-        return !temporaries.Any(local => exposed.Contains((false, local)));
+        return true;
     }
 
     // Whether each instruction of the loop, from the entry jump's successor to

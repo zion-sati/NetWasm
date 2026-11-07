@@ -1,7 +1,9 @@
 # Runtime performance comparison
 
 `run.py` compares the code that two NetWasm package sets generate. It publishes
-each workload through the SDK for every selected optimization preset, runs the
+each workload through the SDK for every selected optimization preset, with
+wasm-opt repeating its passes until the module stops shrinking
+(`NetWasmOptimizerConverge=true`, as a CI release build would), runs the
 components under Wasmtime in interleaved samples (baseline, candidate, then
 candidate, baseline), and records median time, the candidate/baseline ratio and
 raw and Brotli-11 component sizes in `summary.json`.

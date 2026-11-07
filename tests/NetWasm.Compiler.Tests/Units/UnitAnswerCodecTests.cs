@@ -167,6 +167,8 @@ public sealed class UnitPlanCodecTests
             actual.ConstructedMethods.OrderBy(pair => pair.Key, StringComparer.Ordinal));
         Assert.Equal(expected.DelegateInvokeHelpers.OrderBy(pair => pair.Key, StringComparer.Ordinal),
             actual.DelegateInvokeHelpers.OrderBy(pair => pair.Key, StringComparer.Ordinal));
+        Assert.Equal(expected.DelegateMulticastHelpers.OrderBy(pair => pair.Key, StringComparer.Ordinal),
+            actual.DelegateMulticastHelpers.OrderBy(pair => pair.Key, StringComparer.Ordinal));
         Assert.Equal(expected.ImportedMethods.OrderBy(pair => pair.Key.ToString()), actual.ImportedMethods.OrderBy(pair => pair.Key.ToString()));
         Assert.Equal(expected.JSImportForwarders.OrderBy(pair => pair.Key.ToString()), actual.JSImportForwarders.OrderBy(pair => pair.Key.ToString()));
         Assert.Equal(expected.ManagedThrowFunctionIndex, actual.ManagedThrowFunctionIndex);

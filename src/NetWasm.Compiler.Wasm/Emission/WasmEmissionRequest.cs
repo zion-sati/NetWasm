@@ -100,6 +100,9 @@ public sealed record WasmEmissionRequest(
     public bool InlineSmallBlockOperations { get; init; }
     // One-dimensional array elements are addressed at their inline offset.
     public bool InlineArrayData { get; init; }
+    // Each delegate type's multicast function dispatches its entries itself rather than
+    // calling the type's invoke function.
+    public bool InlineMulticastDispatch { get; init; }
     // This compile's compiled units, opened by the pipeline; null leaves units off.
     internal NetWasm.Compiler.Wasm.Units.CompiledUnitState? CompiledUnits { get; init; }
 

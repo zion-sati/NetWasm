@@ -49,4 +49,5 @@ public sealed record WasmOptimizationSettings(
     IntegerCheckEliminationPolicy IntegerCheckElimination = IntegerCheckEliminationPolicy.Disabled,
     // Whether wasm-opt repeats the preset until the module stops shrinking (O1 and above).
     bool Converge = false,
-    LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting = LoopInvariantExpressionHoistingPolicy.Disabled);
+    LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting = LoopInvariantExpressionHoistingPolicy.Disabled,
+    MulticastDispatchPolicy MulticastDispatch = MulticastDispatchPolicy.Shared);

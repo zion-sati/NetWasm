@@ -8,8 +8,9 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class ReachableMethodAnalyzerTests
 {
+    // The specializer validates the original method itself, before folding anything.
     [Fact]
-    public void AnalyzerRejectsOriginalBodyBeforeSpecialization()
+    public void AnalyzerStopsAtAnInvalidSpecializedBody()
     {
         var managed = ValidationTestData.ManagedMethodBody();
         var failure = new CompilerException(new(DiagnosticCode.InvalidCil, "invalid original body"));
@@ -26,7 +27,7 @@ public sealed class ReachableMethodAnalyzerTests
         var exception = Assert.Throws<CompilerException>(() => analyzer.Analyze(new(managed.Method)));
 
         Assert.Same(failure, exception);
-        Assert.Null(specializer.ObservedMethod);
+        Assert.Same(managed.Method, specializer.ObservedMethod);
         Assert.Equal(0, optimizer.Calls);
         Assert.False(instructions.Called);
         Assert.Equal(1, graphs.Calls);
@@ -121,9 +122,10 @@ public sealed class ReachableMethodAnalyzerTests
             Assert.Null(integerChecks.Rewritten);
         }
         Assert.Same(graphBuilder.Graph, result.Body.ControlFlow.Graph);
-        var rewrites = rewritten ? 0 : (optimizerChanges ? 1 : 0) + (specializerChanges ? 1 : 0);
-        Assert.Equal(1 + rewrites, graphBuilder.Calls);
-        Assert.Equal(1 + rewrites, result.Body.Body.MaxStack);
+        // The specialized body is validated once; an optimized one again.
+        var optimized = !rewritten && optimizerChanges ? 1 : 0;
+        Assert.Equal(1 + optimized, graphBuilder.Calls);
+        Assert.Equal(1 + optimized + (!rewritten && specializerChanges ? 1 : 0), result.Body.Body.MaxStack);
         Assert.Contains(new EntityKey(assembly, 90), result.CatchTypes);
         Assert.True(instructionAnalyzer.Called);
     }

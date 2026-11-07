@@ -8,11 +8,18 @@ public sealed class MethodSpecializerFactoryTests
     [Fact]
     public void ConstructorRejectsMissingControlFlowCapabilities()
     {
+        var validators = new TypedStackValidatorFactory(new StackTypeCompatibilityValidator());
         Assert.Throws<ArgumentNullException>(() => new MethodSpecializerFactory(
             null!,
-            new ControlFlowGraphAnalyzerFactory()));
+            new ControlFlowGraphAnalyzerFactory(),
+            validators));
         Assert.Throws<ArgumentNullException>(() => new MethodSpecializerFactory(
             new ControlFlowGraphBuilderFactory(),
+            null!,
+            validators));
+        Assert.Throws<ArgumentNullException>(() => new MethodSpecializerFactory(
+            new ControlFlowGraphBuilderFactory(),
+            new ControlFlowGraphAnalyzerFactory(),
             null!));
     }
 }

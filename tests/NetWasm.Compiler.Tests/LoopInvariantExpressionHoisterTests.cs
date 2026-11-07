@@ -123,6 +123,27 @@ public sealed class LoopInvariantExpressionHoisterTests
         Assert.Equal(hoisted, !ReferenceEquals(body, rewritten));
     }
 
+    // A protected region that begins inside the run ends the expression there: here
+    // it begins at the choice's second arm, where the stack is empty, so the choice
+    // never comes together and nothing moves out of the loop.
+    [Fact]
+    public void AProtectedRegionBeginningInsideTheRunKeepsItInTheLoop()
+    {
+        var body = Shape("choice of arguments");
+        var length = body.Instructions.Length;
+        var arm = body.Instructions.Single(instruction => instruction.Operation == CilOperation.BranchIfGreaterThanSigned)
+            .Operand is CilOperand.BranchTarget { Offset: var target } ? target : -1;
+        Assert.NotSame(body, Hoister(enabled: true).Rewrite(body));
+        body = body with
+        {
+            Instructions = [.. body.Instructions, .. Enumerable.Range(length, 4)
+                .Select(offset => new CilInstruction(offset, offset + 1, CilOperation.Nop, new CilOperand.None()))],
+            ExceptionRegions = [new CilExceptionRegion(CilExceptionRegionKind.Catch, arm, 1, length + 2, 2, null, null)],
+        };
+
+        Assert.Same(body, Hoister(enabled: true).Rewrite(body));
+    }
+
     // Exception regions elsewhere in the method, a catch or a filtered one, leave
     // the loop's expression free to move; a handler that holds the loop does not.
     [Theory]

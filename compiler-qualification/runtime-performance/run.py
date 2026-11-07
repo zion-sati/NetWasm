@@ -83,7 +83,7 @@ def publish(side, feed, version, workload, optimization, root, sdk, environment=
     selection = [f'-p:NetWasmGarbageCollector={collector}'] if collector else []
     selection += [f'-p:{value}' for value in properties]
     run(['dotnet', 'publish', f'{name}.csproj', '-c', 'Release', f'-p:NetWasmOptimization={optimization}',
-         *selection, '-o', 'out', '--disable-build-servers', '--nologo'], cell, env, cell / 'publish.log')
+         '-p:NetWasmOptimizerConverge=true', *selection, '-o', 'out', '--disable-build-servers', '--nologo'], cell, env, cell / 'publish.log')
     return cell / 'out' / f'{name}.wasm'
 
 

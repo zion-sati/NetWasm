@@ -18,8 +18,12 @@ internal static class GeneratedFunctionServiceCollectionExtensions
             ManagedThrowFunctionAppender>();
         services.AddSingleton<IReferenceComparisonEmitter,
             ReferenceComparisonEmitter>();
+        services.AddSingleton<IDelegateArgumentRootEmitter, DelegateArgumentRootEmitter>();
+        services.AddSingleton<IDelegateDispatchEmitter, DelegateDispatchEmitter>();
         services.AddSingleton<IDelegateInvokeFunctionEmitter,
             DelegateInvokeFunctionEmitter>();
+        services.AddSingleton<IDelegateMulticastFunctionEmitter,
+            DelegateMulticastFunctionEmitter>();
         services.AddSingleton<IDelegateInvocationTargetSelector,
             DelegateInvocationTargetSelector>();
         services.AddSingleton<IDelegateFunctionAppender, DelegateFunctionAppender>();

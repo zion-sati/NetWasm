@@ -53,6 +53,8 @@ internal sealed class WasmFunctionSymbolBuilder : IWasmFunctionSymbolBuilder
             Add((uint)index.Value, "method:" + name);
         foreach (var (delegateType, index) in indices.DelegateInvokeHelpers)
             Add((uint)index.Value, "delegate-invoke:" + delegateType);
+        foreach (var (delegateType, index) in indices.DelegateMulticastHelpers)
+            Add((uint)index.Value, "delegate-multicast:" + delegateType);
         foreach (var forwarder in plan.JSImportForwarders)
         {
             if (indices.JSImportForwarders.TryGetValue(forwarder.Definition.Key, out var index))

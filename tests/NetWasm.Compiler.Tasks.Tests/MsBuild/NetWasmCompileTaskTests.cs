@@ -49,6 +49,7 @@ public sealed class NetWasmCompileTaskTests
         task.ManagedQuotientReuse = "Enabled";
         task.ManagedIntegerCheckElimination = "Enabled";
         task.ManagedLoopInvariantExpressionHoisting = "Disabled";
+        task.ManagedMulticastInlineDispatch = "Enabled";
 
         Assert.Equal(
             [
@@ -71,6 +72,7 @@ public sealed class NetWasmCompileTaskTests
                 "-managedquotientreuse:Enabled",
                 "-managedintegercheckelimination:Enabled",
                 "-managedloopinvariantexpressionhoisting:Disabled",
+                "-managedmulticastinlinedispatch:Enabled",
             ],
             Lines(task.ResponseFileCommands));
     }

@@ -12,15 +12,19 @@ namespace NetWasm.Compiler.Analysis;
 
 internal sealed class MethodSpecializerFactory(
     IControlFlowGraphBuilderFactory graphBuilders,
-    IControlFlowGraphAnalyzerFactory graphAnalyzers) : IMethodSpecializerFactory
+    IControlFlowGraphAnalyzerFactory graphAnalyzers,
+    ITypedStackValidatorFactory stackValidators) : IMethodSpecializerFactory
 {
     private readonly IControlFlowGraphBuilderFactory _graphBuilders = graphBuilders ??
         throw new ArgumentNullException(nameof(graphBuilders));
     private readonly IControlFlowGraphAnalyzerFactory _graphAnalyzers = graphAnalyzers ??
         throw new ArgumentNullException(nameof(graphAnalyzers));
+    private readonly ITypedStackValidatorFactory _stackValidators = stackValidators ??
+        throw new ArgumentNullException(nameof(stackValidators));
 
     public IMethodSpecializer Create(
         ITypeDefinitionResolver typeDefinitions,
+        ITypeRepository typeRepository,
         IMethodRepository methods,
         IMethodInstanceResolver methodInstances,
         ISymbolFormatter symbols,
@@ -43,6 +47,8 @@ internal sealed class MethodSpecializerFactory(
         var stackConsumers = new StackValueConsumerFinder(stackEffects);
         return new MethodSpecializer(
         [
+            // First, so every later rule sees an argument or store of the kind declared.
+            new ImplicitCoercionRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
             .. optimizationSettings.SwitchBitTests == SwitchBitTestPolicy.Conservative
                 ? [new SwitchBitTestRewriter()]
                 : Array.Empty<IMethodRewriteRule>(),

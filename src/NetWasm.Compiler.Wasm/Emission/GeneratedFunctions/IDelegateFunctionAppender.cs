@@ -10,5 +10,6 @@ internal interface IDelegateFunctionAppender
     void Append(IList<WasmFunctionDefinition> functions,
         ImmutableArray<MethodInstanceModel> invokes,
         DelegateInvokeTarget invokeTarget,
+        FunctionIndexMap indices,
         IFunctionIndexResolver functionIndices);
 }

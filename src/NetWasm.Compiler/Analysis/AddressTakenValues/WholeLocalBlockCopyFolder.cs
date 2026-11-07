@@ -57,13 +57,14 @@ internal sealed class WholeLocalBlockCopyFolder(
         for (var index = 0; index < instructions.Length; index++)
         {
             if (instructions[index].Operation != CilOperation.CopyBlock ||
-                index > 0 && instructions[index - 1].Operation == CilOperation.Volatile ||
                 !entryStacks.TryGetValue(instructions[index].Offset, out var stack) || stack.Length < 3)
             {
                 continue;
             }
-            // An unaligned. prefix has the copy's stack; its operands are found from it.
-            var consumer = index > 0 && instructions[index - 1].Operation == CilOperation.Unaligned ? index - 1 : index;
+            // A prefix has the copy's stack; its operands are found from it.
+            var consumer = index > 0 && instructions[index - 1].Operation is CilOperation.Unaligned or CilOperation.Volatile
+                ? index - 1
+                : index;
             var chain = new List<int>();
             if (Address(consumer, stack.Length - 3, producers, instructions, accesses, chain) is not { } destination ||
                 Address(consumer, stack.Length - 2, producers, instructions, accesses, chain) is not { } source ||
@@ -73,7 +74,9 @@ internal sealed class WholeLocalBlockCopyFolder(
                 body.LocalSignatureTypes[destination] is not { IsValueType: true } type ||
                 !type.Equals(body.LocalSignatureTypes[source]) ||
                 !Covers(length, type) ||
-                chain.Any(removed.Contains))
+                chain.Any(removed.Contains) ||
+                // A volatile copy stays one: it must not be merged with or moved past other accesses.
+                instructions[consumer].Operation == CilOperation.Volatile)
             {
                 continue;
             }

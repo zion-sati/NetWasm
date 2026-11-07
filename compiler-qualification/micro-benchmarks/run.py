@@ -161,7 +161,8 @@ def build_netwasm(output, performance, generated, feed, version, libraries, sdk,
         f'<add key="candidate" value="{escape(str(feed), {chr(34): "&quot;"})}"/>'
         '<add key="nuget.org" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>')
     run(['dotnet', 'build', 'Micro.csproj', '-c', 'Release', '-p:NetWasmOptimization=O3',
-         '-p:NetWasmGarbageCollector=NetWasm', f'-p:DotnetPerformanceSource={performance}',
+         '-p:NetWasmGarbageCollector=NetWasm', '-p:NetWasmOptimizerConverge=true',
+         f'-p:DotnetPerformanceSource={performance}',
          f'-p:MicroBenchmarkGenerated={generated}', '--nologo'], cell, env, cell / 'build.log')
     return cell / 'bin' / 'Release' / 'netwasm0.1' / 'Micro.wasm'
 

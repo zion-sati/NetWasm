@@ -125,7 +125,8 @@ public sealed class CompileCliCommandTests
             "-managedinlinearraydata:Disabled",
             "-managedquotientreuse:Disabled",
             "-managedintegercheckelimination:Disabled",
-            "-managedloopinvariantexpressionhoisting:Disabled");
+            "-managedloopinvariantexpressionhoisting:Disabled",
+            "-managedmulticastinlinedispatch:Enabled");
 
         Assert.Equal("node", harness.Sessions.WasmTools!.Executable);
         var options = harness.Sessions.Options!;
@@ -177,6 +178,7 @@ public sealed class CompileCliCommandTests
         Assert.Equal(ManagedQuotientReuse.Disabled, overrides.QuotientReuse);
         Assert.Equal(ManagedIntegerCheckElimination.Disabled, overrides.IntegerCheckElimination);
         Assert.Equal(ManagedLoopInvariantExpressionHoisting.Disabled, overrides.LoopInvariantExpressionHoisting);
+        Assert.Equal(ManagedMulticastInlineDispatch.Enabled, overrides.MulticastInlineDispatch);
         var request = harness.Artifacts.Request!;
         Assert.Equal("native/callbacks.o", request.CallbackObjectPath);
         Assert.Equal("layout.json", request.RuntimeLayoutPath);

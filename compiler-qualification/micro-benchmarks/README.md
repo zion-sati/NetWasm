@@ -6,7 +6,8 @@ benchmarks, and NetWasm's own workloads, on three runtimes:
 
 - desktop .NET 11's JIT, without tiering (`DOTNET_TieredCompilation=0`);
 - Mono AOT for `wasi-wasm` with Wasm SIMD, under Wasmtime;
-- NetWasm at `O3` with NetWasmGC, under Wasmtime.
+- NetWasm at `O3` with NetWasmGC, wasm-opt repeating its passes until the module
+  stops shrinking (`NetWasmOptimizerConverge=true`), under Wasmtime.
 
 It writes every case's time to `results.tsv` and the per-family table to
 `table.md`, in the form of the [micro-benchmark results](../../docs/micro-benchmarks.md).

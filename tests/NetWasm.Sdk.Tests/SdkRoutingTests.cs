@@ -964,6 +964,7 @@ public sealed class SdkRoutingTests
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedQuotientReuse"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedIntegerCheckElimination"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopInvariantExpressionHoisting"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedMulticastInlineDispatch"));
     }
 
     [Theory]
@@ -1003,6 +1004,7 @@ public sealed class SdkRoutingTests
     [InlineData("NetWasmManagedQuotientReuse")]
     [InlineData("NetWasmManagedIntegerCheckElimination")]
     [InlineData("NetWasmManagedLoopInvariantExpressionHoisting")]
+    [InlineData("NetWasmManagedMulticastInlineDispatch")]
     public void PreservesExplicitCompilerReductionSelections(string property)
     {
         using var project = EvaluationProject.Create(
@@ -1065,6 +1067,7 @@ public sealed class SdkRoutingTests
                      "$(NetWasmManagedQuotientReuse)",
                      "$(NetWasmManagedIntegerCheckElimination)",
                      "$(NetWasmManagedLoopInvariantExpressionHoisting)",
+                     "$(NetWasmManagedMulticastInlineDispatch)",
                  })
         {
             Assert.Contains(value, frontendIdentityContract, StringComparison.Ordinal);
@@ -1109,6 +1112,8 @@ public sealed class SdkRoutingTests
         Assert.Equal("$(NetWasmManagedIntegerCheckElimination)", (string?)compilation.Attribute("ManagedIntegerCheckElimination"));
         Assert.Equal("$(NetWasmManagedLoopInvariantExpressionHoisting)",
             (string?)compilation.Attribute("ManagedLoopInvariantExpressionHoisting"));
+        Assert.Equal("$(NetWasmManagedMulticastInlineDispatch)",
+            (string?)compilation.Attribute("ManagedMulticastInlineDispatch"));
         foreach (var value in new[]
                  {
                      "$(_NetWasmCanonicalOptimization)",
@@ -1431,6 +1436,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedQuotientReuse=$(NetWasmManagedQuotientReuse)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedIntegerCheckElimination=$(NetWasmManagedIntegerCheckElimination)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopInvariantExpressionHoisting=$(NetWasmManagedLoopInvariantExpressionHoisting)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedMulticastInlineDispatch=$(NetWasmManagedMulticastInlineDispatch)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />

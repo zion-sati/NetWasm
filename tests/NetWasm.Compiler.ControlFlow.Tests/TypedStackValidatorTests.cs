@@ -648,6 +648,102 @@ public sealed class TypedStackValidatorTests
             [CliValueKind.ManagedReference, CliValueKind.I4]));
         Assert.True(validated.InstructionEntryStacks[17].AsSpan().SequenceEqual(
             [CliValueKind.I4, CliValueKind.I4]));
+        Assert.Empty(validated.ImplicitCoercions);
+    }
+
+    // ECMA-335 III.1.6: an argument, a store to a local, argument or field, and a return
+    // take an int32 where a native int is declared and the reverse. The validator records
+    // each at its consumer and stack slot, for the rewrite that converts it.
+    [Theory]
+    [InlineData("local to native int")]
+    [InlineData("local to int32")]
+    [InlineData("argument")]
+    [InlineData("instance field")]
+    [InlineData("static field")]
+    [InlineData("call argument")]
+    [InlineData("constructor argument")]
+    [InlineData("calli argument")]
+    [InlineData("return")]
+    public void ValidatorRecordsTheInt32AndNativeIntCoercionsOfArgumentsStoresAndReturns(string position)
+    {
+        var argument = I(0, CilOperation.LoadArgument, new CilOperand.Index(0));
+        var widened = I(1, CilOperation.ConvertNativeInt);
+        (CliValueKind Result, CilInstruction[] Instructions, ImplicitCoercion Expected) shape = position switch
+        {
+            "local to native int" => (CliValueKind.Void,
+                [argument, I(1, CilOperation.StoreLocal, new CilOperand.Index(0)), I(2, CilOperation.Return)],
+                new(1, 0, CliValueKind.I4, CliValueKind.NativeInt)),
+            "local to int32" => (CliValueKind.Void,
+                [argument, widened, I(2, CilOperation.StoreLocal, new CilOperand.Index(1)), I(3, CilOperation.Return)],
+                new(2, 0, CliValueKind.NativeInt, CliValueKind.I4)),
+            "argument" => (CliValueKind.Void,
+                [argument, widened, I(2, CilOperation.StoreArgument, new CilOperand.Index(0)), I(3, CilOperation.Return)],
+                new(2, 0, CliValueKind.NativeInt, CliValueKind.I4)),
+            "instance field" => (CliValueKind.Void,
+                [
+                    I(0, CilOperation.LoadString, new CilOperand.UserString("x")),
+                    I(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                    I(2, CilOperation.ConvertNativeInt),
+                    I(3, CilOperation.StoreField, new CilOperand.Entity(InstanceFieldKey)),
+                    I(4, CilOperation.Return),
+                ],
+                new(3, 1, CliValueKind.NativeInt, CliValueKind.I4)),
+            "static field" => (CliValueKind.Void,
+                [argument, widened, I(2, CilOperation.StoreStaticField, new CilOperand.Entity(StaticFieldKey)),
+                    I(3, CilOperation.Return)],
+                new(2, 0, CliValueKind.NativeInt, CliValueKind.I4)),
+            "call argument" => (CliValueKind.Void,
+                [argument, I(1, CilOperation.Call, new CilOperand.Entity(NativeIntCallKey)), I(2, CilOperation.Return)],
+                new(1, 0, CliValueKind.I4, CliValueKind.NativeInt)),
+            "constructor argument" => (CliValueKind.Void,
+                [argument, widened, I(2, CilOperation.NewObject, new CilOperand.Entity(ConstructorKey)),
+                    I(3, CilOperation.Pop), I(4, CilOperation.Return)],
+                new(2, 0, CliValueKind.NativeInt, CliValueKind.I4)),
+            "calli argument" => (CliValueKind.Void,
+                [
+                    argument, widened,
+                    I(2, CilOperation.LoadFunction, new CilOperand.Entity(StaticCallKey)),
+                    I(3, CilOperation.CallIndirect, new CilOperand.CallSite(
+                        MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4))),
+                    I(4, CilOperation.Pop),
+                    I(5, CilOperation.Return),
+                ],
+                new(3, 0, CliValueKind.NativeInt, CliValueKind.I4)),
+            _ => (CliValueKind.I4, [argument, widened, I(2, CilOperation.Return)],
+                new(2, 0, CliValueKind.NativeInt, CliValueKind.I4)),
+        };
+
+        var validated = Validate(Body(shape.Result, 2, [CliValueKind.NativeInt, CliValueKind.I4], shape.Instructions));
+
+        Assert.Equal(shape.Expected, Assert.Single(validated.ImplicitCoercions));
+    }
+
+    // Only int32 and native int coerce, and only in those positions: an int64 stored in
+    // an int32 local stays invalid, as does a native int as initblk's fill value.
+    [Fact]
+    public void ValidatorRejectsOtherKindsAndInstructionOperandsOfTheOtherIntegerKind()
+    {
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                1,
+                [CliValueKind.I4],
+                I(0, CilOperation.LoadInt64, new CilOperand.ConstantI8(1)),
+                I(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
+                I(2, CilOperation.Return))),
+            "expected I4, found I8");
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                3,
+                [CliValueKind.I4],
+                I(0, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+                I(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                I(2, CilOperation.ConvertNativeInt),
+                I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(4)),
+                I(4, CilOperation.InitializeBlock),
+                I(5, CilOperation.Return))),
+            "expected I4, found NativeInt");
     }
 
     [Theory]

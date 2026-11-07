@@ -110,7 +110,8 @@ internal sealed class WasmModuleEmitter(
         var orderedConstructedMethods = plan.OrderedConstructedMethods;
         var delegateInvokes = plan.DelegateInvokes;
         var delegateInvokeTarget = new DelegateInvokeTarget(
-            request.DelegateBindings, target.Instructions.StaticInitializerGuards, request.InlineArrayData);
+            request.DelegateBindings, target.Instructions.StaticInitializerGuards, request.InlineArrayData,
+            request.InlineMulticastDispatch);
         var imports = _moduleImports.Collect(new(
             request,
             plan.RuntimeImports,
@@ -146,6 +147,7 @@ internal sealed class WasmModuleEmitter(
             functions,
             delegateInvokes,
             delegateInvokeTarget,
+            plan.FunctionIndices,
             functionIndices);
         jsImportForwarders.Append(
             functions,

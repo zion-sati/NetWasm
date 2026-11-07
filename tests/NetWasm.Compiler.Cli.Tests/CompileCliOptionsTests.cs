@@ -70,7 +70,8 @@ public sealed class CompileCliOptionsTests
             "-managedinlinearraydata:Disabled",
             "-managedquotientreuse:Disabled",
             "-managedintegercheckelimination:Disabled",
-            "-managedloopinvariantexpressionhoisting:Disabled");
+            "-managedloopinvariantexpressionhoisting:Disabled",
+            "-managedmulticastinlinedispatch:Enabled");
 
         Assert.Equal(NwcTarget.Function, options.Target);
         Assert.Equal("Example.Entry", options.EntryType);
@@ -135,6 +136,7 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("Disabled", options.ManagedQuotientReuse);
         Assert.Equal("Disabled", options.ManagedIntegerCheckElimination);
         Assert.Equal("Disabled", options.ManagedLoopInvariantExpressionHoisting);
+        Assert.Equal("Enabled", options.ManagedMulticastInlineDispatch);
     }
 
     [Theory]

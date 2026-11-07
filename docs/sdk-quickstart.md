@@ -98,7 +98,10 @@ Release builds optimize at `Oz` unless `NetWasmOptimization` names another level
 Binaryen's `wasm-opt` runs the level's passes once over the linked module. Set
 `NetWasmOptimizerConverge=true` to repeat them until the module stops shrinking:
 on DoomSharp that took the optimizer about twice as long for a module 0.04% (`Oz`)
-to 0.12% (`O3`) smaller, and rendered no faster.
+to 0.12% (`O3`) smaller, and rendered no faster. A later round can also remove
+calls to `NoInlining` methods that an earlier round found empty, which makes some
+micro-benchmarks up to three times faster. The published benchmarks build with
+it, as a CI release build can afford to.
 
 An application or runnable test project restores one host-tools package. A
 plain or dual-target library does not; its consumer selects the host package.
