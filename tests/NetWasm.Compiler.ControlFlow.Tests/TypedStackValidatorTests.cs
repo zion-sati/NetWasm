@@ -1558,6 +1558,14 @@ public sealed class TypedStackValidatorTests
                 CliValueKind.Void,
                 1,
                 [],
+                I(0, CilOperation.Pop),
+                I(1, CilOperation.Return))),
+            "evaluation stack underflow");
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                1,
+                [],
                 I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
                 I(1, CilOperation.Return))),
             "evaluation stack is not empty at return");
