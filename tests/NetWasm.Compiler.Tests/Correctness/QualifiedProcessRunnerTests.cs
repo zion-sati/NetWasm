@@ -69,7 +69,7 @@ public sealed class QualifiedProcessRunnerTests
         Assert.True(result.Elapsed >= timeout);
         var childId = int.Parse(File.ReadAllText(childPath),
             System.Globalization.CultureInfo.InvariantCulture);
-        Assert.False(IsRunning(childId));
+        Assert.True(Stops(childId));
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class QualifiedProcessRunnerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
         var childId = int.Parse(File.ReadAllText(childPath),
             System.Globalization.CultureInfo.InvariantCulture);
-        Assert.False(IsRunning(childId));
+        Assert.True(Stops(childId));
     }
 
     [Fact]
@@ -124,16 +124,44 @@ public sealed class QualifiedProcessRunnerTests
             ["-c", command],
             timeout ?? TimeSpan.FromSeconds(5)));
 
+    // The runner returns once the shell it started exits, but the kill reaches the
+    // shell's child asynchronously, and the child then stays listed, as a zombie,
+    // until its new parent reaps it. Checking it at once raced both (0.11.3 preview,
+    // full-suite shard 14), so the child is given a bounded time to stop, and a
+    // zombie has stopped.
+    private static bool Stops(int processId) =>
+        SpinWait.SpinUntil(() => !IsRunning(processId), TimeSpan.FromSeconds(10));
+
     private static bool IsRunning(int processId)
     {
         try
         {
             using var process = System.Diagnostics.Process.GetProcessById(processId);
-            return !process.HasExited;
+            return !process.HasExited && State(processId) is not (null or 'Z');
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (exception is ArgumentException or IOException)
         {
             return false;
         }
+    }
+
+    // The process's state letter: Linux gives it after the parenthesized command in
+    // /proc/<pid>/stat, macOS through ps; null once the process is gone.
+    private static char? State(int processId)
+    {
+        var id = processId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var stat = $"/proc/{id}/stat";
+        if (Directory.Exists("/proc/self"))
+        {
+            var text = File.ReadAllText(stat);
+            return text[text.LastIndexOf(')') + 2];
+        }
+        using var ps = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ps", ["-o", "stat=", "-p", id])
+        {
+            RedirectStandardOutput = true,
+        })!;
+        var state = ps.StandardOutput.ReadToEnd().Trim();
+        ps.WaitForExit();
+        return state.Length == 0 ? null : state[0];
     }
 }
