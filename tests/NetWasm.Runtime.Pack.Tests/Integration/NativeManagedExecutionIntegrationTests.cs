@@ -41,6 +41,17 @@ public sealed class NativeManagedExecutionIntegrationTests
     public void ExecutesOrdinaryManagedNativeCallsAgainstRealArchivesBeforeAndAfterOptimization(string target, bool lto)
         => Execute(target, lto, generated: false);
 
+    // An archive built with -msimd128, whose summing loops clang vectorizes, links,
+    // optimizes and runs as the scalar one does (NetWasm#200).
+    [Theory]
+    [InlineData("wasm32", false)]
+    [InlineData("wasm32", true)]
+    [InlineData("wasm64", false)]
+    [InlineData("wasm64", true)]
+    [Trait("Category", "NativeSimdIntegration")]
+    public void ExecutesManagedNativeCallsIntoArchivesThatUseSimd(string target, bool lto)
+        => Execute(target, lto, generated: false, simd: true);
+
     [Theory]
     [InlineData("wasm32", false)]
     [InlineData("wasm32", true)]
@@ -136,7 +147,8 @@ public sealed class NativeManagedExecutionIntegrationTests
         bool callbacks = false,
         bool namedCallbacks = false,
         bool callbackOnly = false,
-        bool callbackFailure = false)
+        bool callbackFailure = false,
+        bool simd = false)
     {
         var providerlessCallbacks = callbackOnly || callbackFailure;
         using var temporary = new TemporaryDirectory();
@@ -168,6 +180,10 @@ public sealed class NativeManagedExecutionIntegrationTests
         {
             cell += "-callback-failure";
         }
+        if (simd)
+        {
+            cell += "-simd";
+        }
         Assert.False(Directory.Exists(cell));
         Directory.CreateDirectory(cell);
         var hostTools = RequiredDirectory("NETWASM_NATIVE_INTEROP_HOST_TOOLS_ROOT");
@@ -192,8 +208,15 @@ public sealed class NativeManagedExecutionIntegrationTests
             var compile = ImmutableArray.Create("--target=" + target + "-unknown-emscripten", "-O2", "-ffreestanding",
                 "-ffunction-sections", "-fdata-sections", "-c", nativeSource!, "-o", objectPath);
             if (lto) compile = compile.Add("-flto");
+            if (simd) compile = compile.Add("-msimd128");
             commands.Invoke(new(Path.Combine(producerTools!, "clang" + suffix), compile, Path.Combine(cell, "produce.log")));
             commands.Invoke(new(Path.Combine(producerTools!, "llvm-ar" + suffix), ["rcs", archive, objectPath], Path.Combine(cell, "archive.log")));
+            if (simd && !lto)
+            {
+                var disassembly = Path.Combine(cell, "mule.disassembly.txt");
+                commands.Invoke(new(Path.Combine(producerTools!, "llvm-objdump" + suffix), ["-d", objectPath], disassembly));
+                Assert.Contains("v128.load", File.ReadAllText(disassembly), StringComparison.Ordinal);
+            }
         }
         var sourcePath = Path.Combine(AppContext.BaseDirectory, "IntegrationAssets",
             callbackFailure ? "CallbackFailureNativeMule.cs.txt" :

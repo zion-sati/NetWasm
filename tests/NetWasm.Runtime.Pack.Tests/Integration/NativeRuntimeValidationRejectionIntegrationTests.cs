@@ -47,7 +47,7 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
             extern int native_dependency(int);
             int native_probe(void) { return native_dependency(7); }
             """;
-        fixture.Produce(source, target, false, false);
+        fixture.Produce(source, target, false);
 
         var error = Assert.Throws<InvalidOperationException>(() => fixture.Materialize());
 
@@ -74,7 +74,37 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
     [Trait("Category", "NativeValidationRejectionIntegration")]
     public void RejectsUnsupportedInstructionsEvenWithoutTargetFeatureMetadata(string target, RuntimeWasmOptimization optimization)
     {
+        // Tail calls are outside the static-native profile; clang emits return_call for the sibling call.
         using var fixture = new Fixture(target, optimization, "unsupported-feature");
+        fixture.Produce("""
+            __attribute__((noinline)) int native_leaf(void) { return 42; }
+            int native_probe(void) { __attribute__((musttail)) return native_leaf(); }
+            """, target, false, "-mtail-call");
+
+        var error = Assert.Throws<InvalidOperationException>(() => fixture.Materialize());
+
+        Assert.StartsWith("Native library 'probe' uses WebAssembly beyond NetWasm's static native profile (mvp, ", error.Message,
+            StringComparison.Ordinal);
+        Assert.Contains("simd", error.Message, StringComparison.Ordinal);
+        Assert.Contains("tail calls support is not enabled", error.Message, StringComparison.Ordinal);
+        fixture.AssertUnpublished();
+        var run = Assert.Single(Directory.GetDirectories(fixture.Request.LogDirectory, "native-run-*"));
+        Assert.True(File.Exists(Path.Combine(run, "native-archive-features-0.log")));
+        Assert.False(File.Exists(Path.Combine(run, "native-final-link.log")));
+        fixture.WriteReceipt("feature-profile");
+    }
+
+    // The same archive the profile rejected for tail calls is accepted with Wasm SIMD,
+    // which the application module itself emits.
+    [Theory]
+    [InlineData("wasm32", RuntimeWasmOptimization.None)]
+    [InlineData("wasm32", RuntimeWasmOptimization.Oz)]
+    [InlineData("wasm64", RuntimeWasmOptimization.None)]
+    [InlineData("wasm64", RuntimeWasmOptimization.Oz)]
+    [Trait("Category", "NativeValidationRejectionIntegration")]
+    public void AcceptsSimdEvenWithoutTargetFeatureMetadata(string target, RuntimeWasmOptimization optimization)
+    {
+        using var fixture = new Fixture(target, optimization, "simd");
         fixture.Produce("""
             typedef unsigned vector4 __attribute__((vector_size(16)));
             volatile vector4 native_values;
@@ -83,16 +113,13 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
                 native_values = next;
                 return (int)next[0];
             }
-            """, target, false, true);
+            """, target, false, "-msimd128");
 
-        var error = Assert.Throws<InvalidOperationException>(() => fixture.Materialize());
+        var materialization = fixture.Materialize();
 
-        Assert.Contains("A NetWasm runtime tool failed", error.Message, StringComparison.Ordinal);
-        fixture.AssertUnpublished();
-        var run = Assert.Single(Directory.GetDirectories(fixture.Request.LogDirectory, "native-run-*"));
-        Assert.True(File.Exists(Path.Combine(run, "native-final-link.log")));
-        Assert.True(File.Exists(Path.Combine(run, optimization == RuntimeWasmOptimization.None ? "native-validate.log" : "native-optimize.log")));
-        fixture.WriteReceipt("feature-profile");
+        Assert.True(File.Exists(fixture.Request.OutputPath));
+        Assert.Equal(new Sha256ArtifactDigestCalculator().Calculate(fixture.Request.OutputPath), materialization.Sha256);
+        fixture.WriteReceipt("simd");
     }
 
     [Theory]
@@ -104,7 +131,7 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
     public void RejectsWrongWidthObjectAndLtoMembersDespiteDeclaredTargetMetadata(string target, bool lto)
     {
         using var fixture = new Fixture(target, RuntimeWasmOptimization.None, lto ? "wrong-width-lto" : "wrong-width-object");
-        fixture.Produce("int native_probe(void) { return 42; }", target == "wasm64" ? "wasm32" : "wasm64", lto, false);
+        fixture.Produce("int native_probe(void) { return 42; }", target == "wasm64" ? "wasm32" : "wasm64", lto);
 
         var error = Assert.Throws<InvalidOperationException>(() => fixture.Materialize());
 
@@ -167,7 +194,9 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
             }
         }
 
-        public void Produce(string contents, string actualTarget, bool lto, bool simd)
+        // feature, when given, is a clang flag for a Wasm feature; its target_features metadata is then removed, so
+        // only the instructions themselves can reveal it.
+        public void Produce(string contents, string actualTarget, bool lto, string? feature = null)
         {
             var source = Path.Combine(_cell, "probe.c");
             File.WriteAllText(source, contents);
@@ -175,9 +204,9 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
             var arguments = ImmutableArray.Create("--target=" + actualTarget + "-unknown-emscripten", "-O2", "-ffreestanding",
                 "-ffunction-sections", "-fdata-sections", "-c", source, "-o", objectPath);
             if (lto) arguments = arguments.Add("-flto");
-            if (simd) arguments = arguments.Add("-msimd128");
+            if (feature is not null) arguments = arguments.Add(feature);
             _commands.Invoke(new(Path.Combine(_producerTools, "clang" + _suffix), arguments, Path.Combine(_cell, "produce.log")));
-            if (simd)
+            if (feature is not null)
                 _commands.Invoke(new(Path.Combine(_producerTools, "llvm-objcopy" + _suffix), ["--remove-section=target_features", objectPath],
                     Path.Combine(_cell, "remove-feature-metadata.log")));
             _commands.Invoke(new(Path.Combine(_producerTools, "llvm-ar" + _suffix), ["rcs", Request.NativeLibraries[0].Path, objectPath],

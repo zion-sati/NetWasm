@@ -15,7 +15,7 @@
   ],
   "staticNative": {
     "version": 1,
-    "features": ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory"],
+    "features": ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory", "simd"],
     "imports": [
       { "module": "netwasm.application.v1", "name": "netwasm.filter", "parameters": ["i32", "ptr", "ptr"], "results": ["i32"], "required": true },
       { "module": "netwasm.application.v1", "name": "netwasm.finalize", "parameters": ["ptr", "i32"], "results": ["i32"], "required": false },

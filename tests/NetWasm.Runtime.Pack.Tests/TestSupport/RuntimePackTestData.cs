@@ -78,7 +78,7 @@ internal static class RuntimePackTestData
 
     public static RuntimeNativeValidationProfile NativeProfile(string target = "wasm32") => new(1,
         ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory",
-            .. target == "wasm64" ? ImmutableArray.Create("memory64") : []],
+            "simd", .. target == "wasm64" ? ImmutableArray.Create("memory64") : []],
         [new("env", "emscripten_notify_memory_growth", [target == "wasm64" ? (byte)0x7e : (byte)0x7f], [], true)]);
 
     public static RuntimePackAsset Asset(string path) => new(path, Digest);

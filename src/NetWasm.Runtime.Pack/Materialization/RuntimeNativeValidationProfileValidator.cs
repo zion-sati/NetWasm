@@ -10,7 +10,7 @@ internal sealed class RuntimeNativeValidationProfileValidator : IRuntimeNativeVa
     private static readonly FrozenSet<string> SupportedFeatures = new[]
     {
         "mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types",
-        "multi-value", "bulk-memory", "memory64",
+        "multi-value", "bulk-memory", "simd", "memory64",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public void Validate(RuntimeNativeValidationProfile profile, string target)

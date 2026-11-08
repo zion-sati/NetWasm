@@ -209,6 +209,29 @@ public sealed class RuntimeNativeModuleMaterializerTests
         Assert.True(fixture.Workspace.Disposed);
         Assert.True(fixture.Events.IndexOf("validate") < fixture.Events.IndexOf("cache-write"));
         Assert.True(fixture.Events.IndexOf("cache-write") < fixture.Events.IndexOf("publish"));
+        // The archive's members, linked on their own, are checked against the profile before any link.
+        var features = Assert.Single(fixture.ArchiveFeatureRequests);
+        Assert.Equal("mule", features.LibraryName);
+        Assert.Equal(request.Target.NativeValidation, features.Module.Profile);
+        Assert.Equal("/owned/native-link/archive-0.o", features.Module.Path);
+        Assert.Equal("/owned/native-logs/native-archive-features-0.log", features.Module.LogPath);
+        Assert.Equal(request.Consumer.NativeWasmToolsPath, features.Module.NativeWasmToolsPath);
+        Assert.True(fixture.Events.IndexOf("archive-features") < fixture.Events.IndexOf("calculate"));
+    }
+
+    [Fact]
+    public void AnArchiveBeyondTheProfileStopsBeforeLinkingOrPublication()
+    {
+        var fixture = new Fixture { ArchiveBeyondProfile = true };
+
+        var error = Assert.Throws<InvalidOperationException>(() => fixture.Create().Materialize(Request()));
+
+        Assert.Same(fixture.Failure, error);
+        Assert.Single(fixture.Commands); // the archive's own relocatable link
+        Assert.Single(fixture.LinkRequests); // the identity link only builds arguments
+        Assert.Equal(0, fixture.ModulesRead);
+        Assert.Null(fixture.PublishedBytes);
+        Assert.True(fixture.Workspace.Disposed);
     }
 
     [Fact]
@@ -479,7 +502,8 @@ public sealed class RuntimeNativeModuleMaterializerTests
         IRuntimeInlineIntentWriter, IRuntimeArtifactReader,
         IRuntimeNativeArchiveSnapshotter,
         ICommandInvoker, IRuntimeNativeLinkWorkspaceFactory
-        , IRuntimeLinkExportPlanBuilder, IRuntimeLinkedImportValidator, IRuntimeNativeModuleValidator, IRuntimeNativeValidationProfileValidator
+        , IRuntimeLinkExportPlanBuilder, IRuntimeLinkedImportValidator, IRuntimeNativeModuleValidator, IRuntimeNativeValidationProfileValidator,
+        IRuntimeNativeArchiveFeatureValidator
     {
         public RuntimeMemoryPlan Plan { get; } = new("wasm32", 4, 65_536, 16, 65_537, 65_552, 65_536, 2_147_483_648, 65_536);
         public RuntimeLinkedMemoryLayout Expected { get; } = new("wasm32", 65_552, 100_000, 100_000, 165_536, 165_536, 262_144, 2_147_483_648);
@@ -521,7 +545,15 @@ public sealed class RuntimeNativeModuleMaterializerTests
 
         public IRuntimeNativeModuleMaterializer Create() => Assert.IsAssignableFrom<IRuntimeNativeModuleMaterializer>(
             new RuntimeNativeModuleMaterializer(this, this, this, this,
-                this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this));
+                this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this));
+        public List<RuntimeNativeArchiveFeatureValidationRequest> ArchiveFeatureRequests { get; } = [];
+        public bool ArchiveBeyondProfile { get; set; }
+        public void Validate(RuntimeNativeArchiveFeatureValidationRequest request)
+        {
+            Events.Add("archive-features");
+            ArchiveFeatureRequests.Add(request);
+            if (ArchiveBeyondProfile) throw Failure;
+        }
         public void Validate(RuntimeNativeValidationProfile profile, string target)
         {
             if (InvalidProfile) throw Failure;

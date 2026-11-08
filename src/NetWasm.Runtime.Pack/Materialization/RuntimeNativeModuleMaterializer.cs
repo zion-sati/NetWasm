@@ -35,7 +35,8 @@ internal sealed class RuntimeNativeModuleMaterializer(
     IRuntimeLinkExportPlanBuilder exports,
     IRuntimeLinkedImportValidator imports,
     IRuntimeNativeModuleValidator validation,
-    IRuntimeNativeValidationProfileValidator profiles) : IRuntimeNativeModuleMaterializer
+    IRuntimeNativeValidationProfileValidator profiles,
+    IRuntimeNativeArchiveFeatureValidator archiveFeatures) : IRuntimeNativeModuleMaterializer
 {
     public RuntimeMaterialization Materialize(RuntimeNativeMaterializationRequest request)
     {
@@ -198,9 +199,16 @@ internal sealed class RuntimeNativeModuleMaterializer(
         for (var index = 0; index < ownedArchives.Length; index++)
         {
             var provider = ownedArchives[index];
+            var members = Path.Combine(workspace.DirectoryPath, $"archive-{index}.o");
             commands.Invoke(new(consumer.WasmLdPath,
-                archiveArguments.Build(new(consumer.Target, provider.SnapshotPath, Path.Combine(workspace.DirectoryPath, $"archive-{index}.o"))),
+                archiveArguments.Build(new(consumer.Target, provider.SnapshotPath, members)),
                 Path.Combine(workspace.LogDirectoryPath, $"native-archive-validation-{index}.log")));
+            archiveFeatures.Validate(new(provider.Provider.LibraryName, new(profile, consumer.Target, members,
+                consumer.WasmToolsNodePath, consumer.WasmToolsCommandPath, consumer.WasmToolsModulePath,
+                Path.Combine(workspace.LogDirectoryPath, $"native-archive-features-{index}.log"))
+            {
+                NativeWasmToolsPath = consumer.NativeWasmToolsPath,
+            }));
         }
         var link = identityLink with
         {
