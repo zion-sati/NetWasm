@@ -285,7 +285,8 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.11.2:** faster delegate calls and span loops, and a
+**New in NetWasm 0.11.3:** static native libraries can use Wasm SIMD.
+[Release notes](docs/releases/0.11.3.md). NetWasm 0.11.2 brought faster delegate calls and span loops, and a
 compiler that needs half the memory: a delegate call takes 38% less time, a
 multicast invoke 44% less, and a fold over a span runs as Wasm SIMD vectors.
 Compiling DoomSharp's browser build at `O3` peaks at 1.5 GB where 0.11.1 took 3.4 GB.

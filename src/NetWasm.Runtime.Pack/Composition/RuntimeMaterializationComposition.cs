@@ -58,6 +58,9 @@ internal static class RuntimeMaterializationComposition
             new RuntimeLinkExportPlanBuilder(),
             new RuntimeLinkedImportValidator(new RuntimeNativeValidationProfileValidator()),
             new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker()),
-            new RuntimeNativeValidationProfileValidator());
+            new RuntimeNativeValidationProfileValidator(),
+            new RuntimeNativeArchiveFeatureValidator(
+                new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker()),
+                new RuntimeArtifactReader()));
     }
 }

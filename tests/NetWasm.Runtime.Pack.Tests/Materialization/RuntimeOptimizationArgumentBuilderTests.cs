@@ -96,6 +96,49 @@ public sealed class RuntimeOptimizationArgumentBuilderTests
                 RuntimePackTestData.Target("wasm32"), "runtime.wasm",
                 (RuntimeWasmOptimization)42)));
 
+    // Binaryen enables what the pack's static-native profile allows, under its own names:
+    // SIMD archives optimize, and wasm64 adds memory64.
+    [Theory]
+    [InlineData("wasm32")]
+    [InlineData("wasm64")]
+    public void EnablesTheStaticNativeProfilesFeatures(string target)
+    {
+        var arguments = new RuntimeOptimizationArgumentBuilder(new RuntimeOptimizationPolicyResolver()).Build(new(
+            RuntimePackTestData.Target(target), "/runtime.wasm", RuntimeWasmOptimization.Oz));
+
+        List<string> expected =
+        [
+            "--mvp-features", "--enable-bulk-memory", "--enable-bulk-memory-opt", "--enable-call-indirect-overlong",
+            "--enable-multivalue", "--enable-mutable-globals", "--enable-nontrapping-float-to-int",
+            "--enable-reference-types", "--enable-sign-ext", "--enable-simd",
+        ];
+        if (target == "wasm64") expected.Insert(4, "--enable-memory64");
+        Assert.Equal(expected, arguments.SkipWhile(argument => argument != "--mvp-features"));
+    }
+
+    public static TheoryData<string, string[]?> UnusableProfiles => new()
+    {
+        { "no profile", null },
+        { "no features", [] },
+        { "mvp not first", ["simd", "mvp"] },
+        { "an unknown feature", ["mvp", "tail-call"] },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnusableProfiles))]
+    public void RejectsAProfileItCannotTranslate(string profile, string[]? features)
+    {
+        _ = profile;
+        var target = RuntimePackTestData.Target("wasm32") with
+        {
+            NativeValidation = features is null ? null : RuntimePackTestData.NativeProfile() with { Features = [.. features] },
+        };
+
+        Assert.Throws<InvalidOperationException>(() =>
+            new RuntimeOptimizationArgumentBuilder(new RuntimeOptimizationPolicyResolver()).Build(new(
+                target, "/runtime.wasm", RuntimeWasmOptimization.Oz)));
+    }
+
     [Fact]
     public void RejectsMissingRequest() =>
         Assert.Throws<ArgumentNullException>(() =>
