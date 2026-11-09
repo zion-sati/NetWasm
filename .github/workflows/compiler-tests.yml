@@ -138,6 +138,23 @@ jobs:
             --strip-components=1
           echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
 
+      - name: Install pinned Wasmtime
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/wasmtime-v50.0.1-x86_64-linux.tar.xz"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors \
+            --output "$archive" \
+            https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-x86_64-linux.tar.xz
+          printf '%s  %s\n' \
+            '685466455dd42a14774a86c36c8f2e45cbb9bd6d92a850139315df60a75498a5' \
+            "$archive" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/wasmtime"
+          tar --extract --xz --file "$archive" \
+            --directory "$RUNNER_TEMP/wasmtime" \
+            --strip-components=1
+          echo "$RUNNER_TEMP/wasmtime" >> "$GITHUB_PATH"
+
       - name: Prepare compiler qualification inputs
         shell: bash
         run: bash eng/prepare-compiler-qualification-inputs.sh "$RUNNER_TEMP/compiler-qualification"
