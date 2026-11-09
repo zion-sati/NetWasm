@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import sys
 from urllib.parse import quote
+import xml.etree.ElementTree as ElementTree
 
 
 TEST_NAMESPACE = "NetWasm.Compiler.Tests."
@@ -307,6 +308,15 @@ def filter_value(text: str) -> str:
     )
 
 
+def write_run_settings(path: Path, vstest_filter: str) -> None:
+    """Writes the filter as run settings: a shard's filter can pass Linux's 128 KiB limit on
+    one command-line argument, which a file does not have."""
+    settings = ElementTree.Element("RunSettings")
+    configuration = ElementTree.SubElement(settings, "RunConfiguration")
+    ElementTree.SubElement(configuration, "TestCaseFilter").text = vstest_filter
+    ElementTree.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+
+
 def write_plan(path: Path, items: list[ShardItem]) -> None:
     """Records what the shard selects, for check-compiler-test-shard.py."""
     path.write_text(
@@ -340,6 +350,8 @@ def main() -> int:
     parser.add_argument("--namespace", default=TEST_NAMESPACE)
     # The shard's selection, which the run's results are checked against.
     parser.add_argument("--plan-output", type=Path)
+    # Run settings that carry the filter, printed otherwise.
+    parser.add_argument("--settings-output", type=Path)
     parser.add_argument(
         "--split-threshold-seconds",
         type=float,
@@ -376,7 +388,11 @@ def main() -> int:
         selected_items = shards[args.shard_index]
         selected_cases = sum(item.cases for item in selected_items)
         selected_weight = sum(item.weight for item in selected_items)
-        print(create_vstest_filter(selected_items))
+        vstest_filter = create_vstest_filter(selected_items)
+        if args.settings_output is not None:
+            write_run_settings(args.settings_output, vstest_filter)
+        else:
+            print(vstest_filter)
         if args.plan_output is not None:
             write_plan(args.plan_output, selected_items)
         print(

@@ -199,6 +199,21 @@ class CompilerTestShardFilterTests(unittest.TestCase):
             plan["items"],
         )
 
+    def test_run_settings_carry_the_filter_without_a_length_limit(self):
+        items = [
+            SHARDS.ShardItem(f"NetWasm.Compiler.Tests.AlphaTests.Case{index}", None, 1, 1.0)
+            for index in range(4000)
+        ]
+        vstest_filter = SHARDS.create_vstest_filter(items) + "&Category!=Performance<x>"
+        self.assertGreater(len(vstest_filter.encode()), 131072)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "shard.runsettings"
+            SHARDS.write_run_settings(path, vstest_filter)
+            root = SHARDS.ElementTree.parse(path).getroot()
+
+        self.assertEqual("RunSettings", root.tag)
+        self.assertEqual(vstest_filter, root.findtext("RunConfiguration/TestCaseFilter"))
+
     def test_normal_and_unsafe_theories_remain_atomic(self):
         normal = "NetWasm.Compiler.Tests.NormalTests.Theory"
         unsafe = "NetWasm.Compiler.Tests.UnsafeTests.Theory"
