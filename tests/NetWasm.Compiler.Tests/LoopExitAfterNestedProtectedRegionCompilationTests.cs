@@ -32,23 +32,23 @@ public sealed class LoopExitAfterNestedProtectedRegionCompilationTests
         Assert.Equal(ExpectedSignatures.Length, shapes.Length);
         using var assets = TestAssets.Create();
         var name = $"LoopExitAfterNestedProtected{(optimize ? "Release" : "Debug")}{target}";
-        var source = CreateSource(shapes);
+        var (source, entryType) = AsyncObservationEntry.Append(
+            CreateSource(shapes), "LoopRegionAudit.EntryPoint", "Run", "Observe");
         var assembly = optimize ? assets.CompileOptimizedSource(name, source) : assets.CompileSource(name, source);
-        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "LoopRegionAudit.EntryPoint", "Run",
-            [
-                new("run", "LoopRegionAudit.EntryPoint", "Run"),
-                new("observe", "LoopRegionAudit.EntryPoint", "Observe"),
-            ],
+        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], entryType,
+            AsyncObservationEntry.MethodName,
+            [],
             Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform/async-platform@1.0.0"));
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
 
         var mismatches = new List<string>();
         for (var block = 0; block * BlockSize < shapes.Length; block++)
         {
             var observed = CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
-                assets.Directory, block, target, result.StaticDataEnd, drainReactor: true,
-                observeExportName: "observe");
+                assets.Directory, block, target, result.StaticDataEnd, callbackEntry: true,
+                inputArgument: true);
             if (observed == 42)
             {
                 continue;

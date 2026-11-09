@@ -59,4 +59,12 @@ public sealed record WasmOptimizationOverrides(
     ManagedLoopInvariantExpressionHoisting LoopInvariantExpressionHoisting =
         ManagedLoopInvariantExpressionHoisting.Auto,
     ManagedMulticastInlineDispatch MulticastInlineDispatch =
-        ManagedMulticastInlineDispatch.Auto);
+        ManagedMulticastInlineDispatch.Auto,
+    ManagedNewObjectNullCheckElimination NewObjectNullCheckElimination =
+        ManagedNewObjectNullCheckElimination.Auto,
+    ManagedLoopStrengthReduction LoopStrengthReduction =
+        ManagedLoopStrengthReduction.Auto,
+    ManagedRangeBranchFolding RangeBranchFolding =
+        ManagedRangeBranchFolding.Auto,
+    // Lets wasm-opt assume the first KiB of memory is unused; null keeps the preset's default.
+    bool? LowMemoryUnused = null);

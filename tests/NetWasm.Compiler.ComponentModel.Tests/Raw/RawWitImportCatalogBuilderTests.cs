@@ -113,6 +113,54 @@ public sealed class RawWitImportCatalogBuilderTests
     }
 
     [Fact]
+    public void DeclaresAsyncLoweringsAndPayloadBuiltInsByFullInterfaceName()
+    {
+        var send = new WitFunction("send", [new("body", new WitTypeReference.Defined(0))],
+            new WitTypeReference.Defined(1), new("async-freestanding"));
+        var tick = new WitFunction("tick", [], null, new("async-freestanding"));
+        var poll = new WitFunction("poll", [], new WitTypeReference.Defined(2), new("freestanding"));
+        var definition = new WitInterface(0, "io", "example:io@0.3.2", ImmutableDictionary<string, int>.Empty, [send]);
+        var world = new WitWorld(0, "main", "example:io@0.3.2",
+            [new("example:io/io@0.3.2", 0, null), new("tick", null, tick), new("poll", null, poll)], []);
+        var document = new WitDocument([], [definition], [world],
+            [Type(0, null, """{"stream":"u8"}"""), Type(1, null, """{"future":"u32"}"""), Type(2, null, """{"future":null}""")], "{}");
+        var builder = new RawWitImportCatalogBuilder(
+            new WitWorldValidator(), new RawCanonicalImportIdentityFormatter(),
+            new WitWorldSpecifierFormatter(), new WitInterfaceSpecifierFormatter());
+
+        var catalog = builder.Build(document, world, WasmTarget.Wasm32);
+
+        Assert.False(Assert.IsType<RawWitImportDeclaration.Callable>(catalog.Imports[new("cm32p2|example:io/io@0.3", "send")]).Asynchronous);
+        var lowered = Assert.IsType<RawWitImportDeclaration.Callable>(catalog.Imports[new("example:io/io@0.3.2", "[async-lower]send")]);
+        Assert.True(lowered.Asynchronous);
+        Assert.Same(send, lowered.Definition);
+        Assert.True(Assert.IsType<RawWitImportDeclaration.Callable>(catalog.Imports[new("$root", "[async-lower]tick")]).Asynchronous);
+        var expected = new (string Name, int Index, int Type, RawPayloadOperation Operation)[]
+        {
+            ("[stream-new-0]send", 0, 0, RawPayloadOperation.StreamNew),
+            ("[async-lower][stream-read-0]send", 0, 0, RawPayloadOperation.StreamRead),
+            ("[async-lower][stream-write-0]send", 0, 0, RawPayloadOperation.StreamWrite),
+            ("[stream-drop-readable-0]send", 0, 0, RawPayloadOperation.StreamDropReadable),
+            ("[stream-drop-writable-0]send", 0, 0, RawPayloadOperation.StreamDropWritable),
+            ("[future-new-1]send", 1, 1, RawPayloadOperation.FutureNew),
+            ("[async-lower][future-read-1]send", 1, 1, RawPayloadOperation.FutureRead),
+            ("[async-lower][future-write-1]send", 1, 1, RawPayloadOperation.FutureWrite),
+            ("[future-drop-readable-1]send", 1, 1, RawPayloadOperation.FutureDropReadable),
+            ("[future-drop-writable-1]send", 1, 1, RawPayloadOperation.FutureDropWritable),
+        };
+        foreach (var (name, index, type, operation) in expected)
+        {
+            var payload = Assert.IsType<RawWitImportDeclaration.Payload>(catalog.Imports[new("example:io/io@0.3.2", name)]);
+            Assert.Equal((index, type, operation), (payload.Index, payload.TypeId, payload.Operation));
+            Assert.Same(send, payload.Function);
+            Assert.Equal("example:io/io@0.3.2", payload.InterfaceName);
+        }
+        Assert.Equal(RawPayloadOperation.FutureNew,
+            Assert.IsType<RawWitImportDeclaration.Payload>(catalog.Imports[new("$root", "[future-new-0]poll")]).Operation);
+        Assert.Equal(1 + 1 + 1 + 1 + 1 + 10 + 5, catalog.Imports.Count);
+    }
+
+    [Fact]
     public void EmptyWorldHasNoInventedImports()
     {
         var dependencies = new RecordingDependencies();
@@ -220,7 +268,7 @@ public sealed class RawWitImportCatalogBuilderTests
             [Type(0, "file", "\"resource\""), Type(1, "alias", """{"type":0}"""), Type(2, "other", "\"unused\"")], "{}"), world);
     }
 
-    private static WitTypeDefinition Type(int id, string name, string json)
+    private static WitTypeDefinition Type(int id, string? name, string json)
     {
         using var document = JsonDocument.Parse(json);
         return new(id, name, document.RootElement.Clone(), 0);

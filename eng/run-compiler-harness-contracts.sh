@@ -173,11 +173,7 @@ else
   run_gate dotnet test tests/NetWasm.Compiler.GarbageCollection.Tests/NetWasm.Compiler.GarbageCollection.Tests.csproj -c Release \
     --filter 'FullyQualifiedName~RootMapTests' \
     --logger 'trx;LogFileName=root-map-contracts.trx' --results-directory "$artifact_dir"
-  run_gate node --test \
-    src/NetWasm.Hosting/JavaScript/pollable-reactor.test.mjs \
-    src/NetWasm.Hosting/JavaScript/execution-lifecycle.test.mjs \
-    tests/NetWasm.Runtime.Tests/timer-reactor-imports.test.mjs \
-    tests/NetWasm.Runtime.Tests/yield-reactor-imports.test.mjs
+  run_gate node --test tests/NetWasm.Runtime.Tests/monotonic-clock-imports.test.mjs
   run_gate env NETWASM_INSTANCE_LIFETIME_ARTIFACT_DIR="$artifact_dir/instance-lifetime" \
     bash tests/end-to-end/host-interop/instance-lifetime/run.sh
   run_gate env NETWASM_STRING_COMPONENT_ARTIFACT_DIR="$artifact_dir/string-component" \
@@ -186,6 +182,10 @@ else
     bash tests/end-to-end/component-model/run-canonical-matrix.sh
   run_gate env NETWASM_RESOURCE_COMPONENT_ARTIFACT_DIR="$artifact_dir/resource-component" \
     bash tests/end-to-end/component-model/run-resource-component.sh
+  run_gate env NETWASM_ASYNC_EXPORT_ARTIFACT_DIR="$artifact_dir/async-export" \
+    bash tests/end-to-end/component-model/run-async-export-component.sh
+  run_gate env NETWASM_HTTP_SERVICE_ARTIFACT_DIR="$artifact_dir/http-service" \
+    bash tests/end-to-end/component-model/run-http-service.sh
   run_gate env NETWASM_WASI_STREAM_ARTIFACT_DIR="$artifact_dir/wasi-stream" \
     bash tests/end-to-end/component-model/run-wasi-stream.sh
   run_gate env NETWASM_COMPONENT_MIXED_ARTIFACT_DIR="$artifact_dir/mixed-boundary" \

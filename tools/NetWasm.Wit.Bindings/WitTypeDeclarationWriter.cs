@@ -443,8 +443,10 @@ public sealed class WitTypeDeclarationWriter(
         writer.Line("}");
         if (!exported)
         {
-            writer.Line($"internal static {name} LiftExport(uint handle, bool ownsHandle) => throw new InvalidOperationException();");
-            writer.Line("internal uint LowerExport() => throw new InvalidOperationException();");
+            // An imported resource crossing an export, such as the request a wasi:http handler
+            // receives or the response it returns: its handle is the host's, as on an import.
+            writer.Line($"internal static {name} LiftExport(uint handle, bool ownsHandle) => new(handle, ownsHandle);");
+            writer.Line("internal uint LowerExport() => LowerImport(true);");
         }
         writer.Line("internal void Invalidate() { _alive = false; _handle = 0; _ownsHandle = false; _kind = 4; }");
         writer.Line();
@@ -528,6 +530,7 @@ public sealed class WitTypeDeclarationWriter(
             writer.Line("private static void DestroyExported(uint representation)");
             writer.Line("{");
             writer.Indent();
+            writer.Line("using var __synchronous = CanonicalAbi.EnterSynchronousExport();");
             writer.Line($"var resource = CanonicalAbi.GetResourceHandle(representation) as {name} ?? throw new InvalidOperationException();");
             writer.Line("CanonicalAbi.ReleaseResourceHandle(representation);");
             writer.Line("resource.DestroyState();");

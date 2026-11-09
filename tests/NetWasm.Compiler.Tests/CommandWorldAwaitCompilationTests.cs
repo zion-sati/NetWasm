@@ -8,12 +8,11 @@ using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
 
-// A command world has no host-driven reactor. As on Mono's single-threaded WASI runtime, a
-// synchronous program awaits completed work without the reactor interfaces and nothing pumps its
-// deferred work, while an asynchronous Main runs its own wasi:io/poll event loop to completion.
+// As on Mono's single-threaded WASI runtime, a synchronous program awaits completed work and
+// nothing pumps its deferred work, while an asynchronous Main is a callback-lifted wasi:cli/run
+// whose event loop runs in the host's callbacks until Main completes.
 public sealed class CommandWorldAwaitCompilationTests
 {
-    private const string ReactorHost = "netwasm:runtime/reactor-host@1.0.0";
 
     public static TheoryData<bool, WasmTarget> Configurations => new()
     {
@@ -25,7 +24,7 @@ public sealed class CommandWorldAwaitCompilationTests
 
     [Theory]
     [MemberData(nameof(Configurations))]
-    public void CommandWorldExportAwaitsWithoutTheReactor(bool optimize, WasmTarget target)
+    public void CommandWorldExportAwaitsCompletedWork(bool optimize, WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var assembly = Compile(assets, $"SyncAwaitExport_{target}_{optimize}", RunSource, optimize);
@@ -39,8 +38,6 @@ public sealed class CommandWorldAwaitCompilationTests
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
             WitWorld: "netwasm:platform/platform@1.0.0"));
 
-        Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport!.InterfaceName == ReactorHost);
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(
             result.ApplicationModule, assets.Directory, 41, target, result.StaticDataEnd));
@@ -48,7 +45,7 @@ public sealed class CommandWorldAwaitCompilationTests
 
     [Theory]
     [MemberData(nameof(Configurations))]
-    public void SynchronousMainAwaitsWithoutTheReactor(bool optimize, WasmTarget target)
+    public void SynchronousMainAwaitsCompletedWork(bool optimize, WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var assembly = Compile(assets, $"SyncAwaitMain_{target}_{optimize}", MainSource, optimize);
@@ -63,8 +60,6 @@ public sealed class CommandWorldAwaitCompilationTests
             WitWorld: "netwasm:platform/platform@1.0.0",
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
 
-        Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport!.InterfaceName == ReactorHost);
         Assert.DoesNotContain("wake", WasmModuleInspection.ReadExportNames(result.ApplicationModule));
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(0, CompilerTestSupport.ExecuteWithStandardWasiNode(
@@ -83,11 +78,12 @@ public sealed class CommandWorldAwaitCompilationTests
         using var assets = TestAssets.Create();
         var result = CompileAsynchronousMain(assets, $"AsyncMainLoop_{target}_{optimize}", AsyncMainSource, optimize, target);
 
-        Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport!.InterfaceName == ReactorHost);
+        // A delay is an async-lowered wait-for, and the host drives Main through its callback.
         Assert.Contains(result.Program.WitImportMethods, method =>
-            method.WitImport is { InterfaceName: "wasi:io/poll@0.2.11", FunctionName: "poll" });
-        Assert.DoesNotContain("wake", WasmModuleInspection.ReadExportNames(result.ApplicationModule));
+            method.WitImport is { InterfaceName: "wasi:clocks/monotonic-clock@0.3.2", FunctionName: "[async-lower]wait-for" });
+        var exports = WasmModuleInspection.ReadExportNames(result.ApplicationModule);
+        Assert.Contains("netwasm.entry.callback", exports);
+        Assert.Contains("netwasm.entry.exit_code", exports);
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(
             result.ApplicationModule,
@@ -95,6 +91,7 @@ public sealed class CommandWorldAwaitCompilationTests
             0,
             target,
             result.StaticDataEnd,
+            callbackEntry: true,
             entryExportName: "run"));
     }
 
@@ -112,10 +109,10 @@ public sealed class CommandWorldAwaitCompilationTests
 
         Assert.Equal(0, CompilerTestSupport.ExecuteWithStandardWasiNode(
             completed.ApplicationModule, assets.Directory, 0, WasmTarget.Wasm32, completed.StaticDataEnd,
-            entryExportName: "run"));
+            callbackEntry: true, entryExportName: "run"));
         var failure = Assert.ThrowsAny<Exception>(() => CompilerTestSupport.ExecuteWithStandardWasiNode(
             stalled.ApplicationModule, assets.Directory, 0, WasmTarget.Wasm32, stalled.StaticDataEnd,
-            entryExportName: "run"));
+            callbackEntry: true, entryExportName: "run"));
         Assert.Contains("\"kind\":\"exception\"", failure.Message);
     }
 
@@ -136,29 +133,6 @@ public sealed class CommandWorldAwaitCompilationTests
         Assert.Empty(result.Program.WitImportMethods);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(
             result.ApplicationModule, assets.Directory, 41, target, result.StaticDataEnd));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ReactorWorldKeepsTheHostDrivenReactor(bool optimize)
-    {
-        using var assets = TestAssets.Create();
-        var assembly = Compile(assets, $"SyncAwaitReactor_{optimize}", RunSource, optimize);
-        var result = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly,
-            [assets.CoreLib],
-            "SyncAwaitFixture.EntryPoint",
-            "Run",
-            [new("run", "SyncAwaitFixture.EntryPoint", "Run")],
-            WasmTarget.Wasm32,
-            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform/async-platform@1.0.0"));
-
-        Assert.Contains(result.Program.WitImportMethods, method =>
-            method.WitImport is { InterfaceName: ReactorHost, FunctionName: "watch" });
-        Assert.Contains(result.Program.WitImportMethods, method =>
-            method.WitImport is { InterfaceName: ReactorHost, FunctionName: "cancel" });
     }
 
     private static string Compile(TestAssets assets, string name, string source, bool optimize) =>

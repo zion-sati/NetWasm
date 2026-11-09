@@ -2,15 +2,26 @@ import { describeFailureCause } from "./execution-result.mjs";
 import { readEnvironmentOverride } from "./session-options.mjs";
 import { createWorkerSessionDispatcher } from "./worker-session-dispatcher.mjs";
 
-const optionKeys = ["openSession", "post", "terminate"];
+const optionKeys = ["files", "openSession", "post", "terminate"];
 const protocolVersion = 2;
+const filePrefix = "netwasm:files:";
 
+// files: the worker's in-memory file system (#142), whose mount, unmount and sync the page
+// reaches through reserved operations, or null for a worker without file APIs.
 export function createWorkerSessionHost(options) {
   assertExactDataObject(options, optionKeys, "worker session host options");
   if (typeof options.openSession !== "function" || typeof options.post !== "function"
       || typeof options.terminate !== "function") {
     throw new TypeError("worker session host actions are required");
   }
+  if (options.files !== null && ["mount", "unmount", "sync"].some(name => typeof options.files?.[name] !== "function")) {
+    throw new TypeError("worker session host files must be file mounts or null");
+  }
+  const fileOperations = options.files === null ? {} : {
+    [`${filePrefix}mount`]: options.files.mount,
+    [`${filePrefix}unmount`]: options.files.unmount,
+    [`${filePrefix}sync`]: options.files.sync,
+  };
   let state = "waiting";
   let generation = null;
   let dispatcher = null;
@@ -37,7 +48,7 @@ export function createWorkerSessionHost(options) {
           }
           dispatcher = createWorkerSessionDispatcher({
             close: session.close,
-            exports: session.exports,
+            exports: { ...session.exports, ...fileOperations },
             generation,
             onFailure: cause => {
               terminate(postTerminalFailure(cause, "delivery"));
@@ -52,7 +63,7 @@ export function createWorkerSessionHost(options) {
             protocolVersion,
             generation,
             kind: "ready",
-            operations: dispatcher.operations,
+            operations: dispatcher.operations.filter(operation => !operation.startsWith(filePrefix)),
           }));
           session.failure.then(cause => {
             if (cause !== null && state !== "terminated") {

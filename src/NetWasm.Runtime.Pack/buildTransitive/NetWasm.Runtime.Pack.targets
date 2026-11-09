@@ -4,6 +4,9 @@
        NetWasmIsolateBuildTasks=true: a process of their own for each task. -->
   <PropertyGroup>
     <_NetWasmBuildTaskFactory Condition="'$(MSBuildRuntimeType)' != 'Core' OR '$(NetWasmIsolateBuildTasks)' == 'true'">TaskHostFactory</_NetWasmBuildTaskFactory>
+    <!-- NetWasm.Sdk decides whether a project builds a module (it adds plain core modules); a
+         project importing these targets alone builds one as an executable or a worker. -->
+    <_NetWasmBuildsModule Condition="'$(_NetWasmBuildsModule)' == '' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">true</_NetWasmBuildsModule>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
@@ -45,7 +48,7 @@
 
   <Target Name="NetWasmRuntimePackWriteMaterializationIdentity"
           DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
     <WriteLinesToFile File="$(NetWasmRuntimePackMaterializationIdentityPath)"
                       Lines="target=$(NetWasmTarget);garbageCollector=$(NetWasmGarbageCollector);optimization=$(_NetWasmCanonicalOptimization);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);wasmOpt=$(NetWasmNativeBinaryenWasmOptPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath);sdk=$(NetWasmSdkVersion);compiler=$(NetWasmCompilerVersion);runtime=$(NetWasmRuntimeVersion);runtimePack=$(NetWasmRuntimePackPackageVersion);hostTools=$(NetWasmHostToolsPackageId)@$(NetWasmHostToolsPackageVersion);wasmLdVersion=$(NetWasmWasmLdVersion);wasmOptVersion=$(NetWasmNativeBinaryenWasmOptVersion);wasmToolsVersion=$(NetWasmWasmToolsVersion);nodeVersion=$(NetWasmNodeVersion)"
                       Overwrite="true"
@@ -56,7 +59,7 @@
           DependsOnTargets="NetWasmRuntimePackWriteMaterializationIdentity"
           AfterTargets="NetWasmCompileCoreModule"
           BeforeTargets="NetWasmSdkComponentize;NetWasmSdkValidateFinalArtifactForNoBuild"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(DesignTimeBuild)' != 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(DesignTimeBuild)' != 'true'">
     <!-- The materializer's content cache is authoritative. Timestamp-only target
          skipping cannot detect a replaced archive whose timestamp is preserved. -->
     <Error Code="NWPACK002"
@@ -68,7 +71,8 @@
     <ItemGroup>
       <_NetWasmRuntimePackMaterialization Remove="@(_NetWasmRuntimePackMaterialization)" />
     </ItemGroup>
-    <RuntimeMaterializationTask ManifestPath="$(NetWasmRuntimePackManifestPath)"
+    <RuntimeMaterializationTask PlainCoreModule="$(_NetWasmPlainCoreModule)"
+                                ManifestPath="$(NetWasmRuntimePackManifestPath)"
                                 RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
                                 AssetRoot="$(NetWasmRuntimePackRoot)"
                                 WasmLdPath="$(NetWasmWasmLdPath)"

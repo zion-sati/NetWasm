@@ -2,6 +2,7 @@ import { isAbsolute, resolve } from "node:path";
 
 import { assertExecutionResult, failedExecutionResult } from "./execution-result.mjs";
 import { createFailureDetailRedaction } from "./failure-detail-redaction.mjs";
+import { validateInputSource } from "./input-source.mjs";
 import { validateOutputSink } from "./output-sink-stream.mjs";
 
 const factoryKeys = [
@@ -18,6 +19,7 @@ const invocationKeys = [
   "launcherPath",
   "signal",
   "stderr",
+  "stdin",
   "stdout",
 ];
 const optionNames = new Set(["--descriptor", "--request", "--result"]);
@@ -45,6 +47,7 @@ export function createLocalLauncherCommand(options) {
     validateSignal(invocation.signal);
     validateOutputSink(invocation.stdout, "local launcher command stdout output sink");
     validateOutputSink(invocation.stderr, "local launcher command stderr output sink");
+    validateInputSource(invocation.stdin, "local launcher command stdin input source");
     const paths = readArguments(invocation.arguments);
     if (paths.descriptor === paths.result || paths.request !== "-"
         && (paths.request === paths.descriptor || paths.request === paths.result)) {
@@ -69,6 +72,8 @@ export function createLocalLauncherCommand(options) {
         requestText,
         signal: invocation.signal,
         stderr: invocation.stderr,
+        // A request read from standard input leaves the application none.
+        stdin: paths.request === "-" ? null : invocation.stdin,
         stdout: invocation.stdout,
       }));
       assertExecutionResult(result);

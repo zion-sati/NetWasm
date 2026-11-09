@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import {
-  commandComponentContract,
-  processComponentContract,
-} from "./canonical-component-binder.mjs";
+import { commandComponentContract } from "./canonical-component-binder.mjs";
 import { executeComponent } from "./component-executor.mjs";
 
 const loadCoreModule = async () => ({});
@@ -28,7 +25,6 @@ test("executes one exact command adapter and closes its caller scope", async () 
       assert.equal(request.loadCoreModule, loadCoreModule);
       assert.equal(request.instantiateCore, instantiateCore);
       assert.equal(request.imports["wasi:cli/environment"], imports["wasi:cli/environment"]);
-      assert.equal(request.imports["netwasm:runtime/reactor-host"], undefined);
       calls.push("instantiate");
       return { command: { run() { calls.push("run"); return 23; } } };
     }),
@@ -114,7 +110,7 @@ test("rejects adapter mismatch and pre-cancellation before instantiation", async
     const result = await executeComponent({
       contractKey: commandComponentContract,
       adapter: adapter(
-        expected[0] === "mismatch" ? processComponentContract : commandComponentContract,
+        expected[0] === "mismatch" ? "netwasm:runtime/process@1.0.0" : commandComponentContract,
         () => calls.push("instantiate")),
       imports: {},
       loadCoreModule,
@@ -164,7 +160,7 @@ test("validates every component dependency before adapter invocation", async () 
   for (const request of [null, 1, []]) {
     await assert.rejects(() => executeComponent(request), TypeError);
   }
-  for (const contractKey of [undefined, "", "wasi-command@0.2.10"]) {
+  for (const contractKey of [undefined, "", "wasi-command@0.2.11"]) {
     await assert.rejects(() => executeComponent({ ...valid, contractKey }), TypeError);
   }
   for (const value of [null, 1, [], {}, { contractKey: "x", instantiate() {}, extra: true },
@@ -184,8 +180,8 @@ test("validates every component dependency before adapter invocation", async () 
   const accessorImports = {};
   Object.defineProperty(accessorImports, "getter", { get: () => ({}), enumerable: true });
   await assert.rejects(() => executeComponent({ ...valid, imports: accessorImports }), TypeError);
-  for (const reserved of ["netwasm:runtime/reactor-host",
-    "netwasm:runtime/reactor-host@1.0.0"]) {
+  for (const reserved of ["netwasm:diagnostics/terminal",
+    "netwasm:diagnostics/terminal@1.0.0"]) {
     await assert.rejects(() => executeComponent({
       ...valid,
       imports: { [reserved]: {} },
@@ -196,201 +192,6 @@ test("validates every component dependency before adapter invocation", async () 
   await assert.rejects(() => executeComponent({ ...valid, signal: {} }), TypeError);
   await assert.rejects(() => executeComponent({ ...valid, releaseActions: null }), TypeError);
   assert.equal(instantiated, 0);
-});
-
-test("executes an immediately completed managed process", async () => {
-  const calls = [];
-  const result = await executeComponent({
-    contractKey: processComponentContract,
-    adapter: adapter(processComponentContract, ({ imports }) => {
-      assert.equal(Object.isFrozen(imports), true);
-      assert.equal(typeof imports["netwasm:runtime/reactor-host"].watch, "function");
-      calls.push("instantiate");
-      return {
-        process: {
-          start() { calls.push("start"); return 7; },
-          status(handle) { assert.equal(handle, 7); calls.push("status"); return 1; },
-          exitCode(handle) { assert.equal(handle, 7); calls.push("exit"); return -9; },
-          complete(handle) { assert.equal(handle, 7); calls.push("complete"); },
-        },
-        reactorGuest: { wake() { calls.push("wake"); } },
-      };
-    }),
-    imports: {},
-    loadCoreModule,
-    releaseActions: [release("host.output", () => calls.push("release"))],
-  });
-  assert.equal(result.completionKind, "normal");
-  assert.equal(result.exitCode, -9);
-  assert.deepEqual(calls, ["instantiate", "start", "status", "exit", "complete", "release"]);
-});
-
-test("delivers pollable readiness before managed process re-observation", async () => {
-  const calls = [];
-  const jobs = [];
-  let processStatus = 0;
-  let reactorHost;
-  const resultPromise = executeComponent({
-    contractKey: processComponentContract,
-    adapter: adapter(processComponentContract, ({ imports }) => {
-      reactorHost = imports["netwasm:runtime/reactor-host"];
-      return {
-        process: {
-          start() {
-            calls.push("start");
-            assert.equal(reactorHost.cancel(99), false);
-            reactorHost.watch({
-              block() { calls.push("block"); return Promise.resolve(); },
-              dispose() { calls.push("dispose"); },
-            }, 13);
-            return 5;
-          },
-          status() { calls.push("status"); return processStatus; },
-          exitCode() { calls.push("exit"); return 31; },
-          complete() { calls.push("complete"); },
-        },
-        reactorGuest: {
-          wake(token) {
-            assert.equal(token, 13);
-            calls.push("wake");
-            processStatus = 1;
-          },
-        },
-      };
-    }),
-    imports: {},
-    loadCoreModule,
-    schedule: callback => jobs.push(callback),
-    releaseActions: [release("host.output", () => calls.push("release"))],
-  });
-  await Promise.resolve();
-  assert.deepEqual(calls, ["start", "status"]);
-  jobs.shift()();
-  await Promise.resolve();
-  await Promise.resolve();
-  const result = await resultPromise;
-  assert.equal(result.exitCode, 31);
-  assert.deepEqual(calls, [
-    "start", "status", "block", "dispose", "wake", "status", "exit",
-    "complete", "release",
-  ]);
-});
-
-test("rejects reactor use during initialization even when the adapter catches it", async () => {
-  let started = false;
-  const result = await executeComponent({
-    contractKey: processComponentContract,
-    adapter: adapter(processComponentContract, ({ imports }) => {
-      assert.throws(() => imports["netwasm:runtime/reactor-host"].watch({
-        block() {},
-      }, 1), /before guest entry/);
-      return {
-        process: {
-          start() { started = true; return 1; },
-          status() { return 1; },
-          exitCode() { return 0; },
-          complete() {},
-        },
-        reactorGuest: { wake() {} },
-      };
-    }),
-    imports: {},
-    loadCoreModule,
-  });
-  assert.equal(result.completionKind, "contractFailure");
-  assert.equal(result.primaryFailure.code, "contract.reactor-initialization");
-  assert.equal(started, false);
-});
-
-test("turns a component pollable failure into safe process failure", async () => {
-  const jobs = [];
-  let completed = 0;
-  const resultPromise = executeComponent({
-    contractKey: processComponentContract,
-    adapter: adapter(processComponentContract, ({ imports }) => ({
-      process: {
-        start() {
-          imports["netwasm:runtime/reactor-host"].watch({
-            block: () => Promise.reject(new Error("private pollable detail")),
-            dispose() {},
-          }, 17);
-          return 4;
-        },
-        status() { return 0; },
-        exitCode() { return 0; },
-        complete() { completed++; },
-      },
-      reactorGuest: { wake() { throw new Error("must not wake"); } },
-    })),
-    imports: {},
-    loadCoreModule,
-    schedule: callback => jobs.push(callback),
-  });
-  await Promise.resolve();
-  jobs.shift()();
-  await Promise.resolve();
-  await Promise.resolve();
-  const result = await resultPromise;
-  assert.equal(result.completionKind, "hostFailure");
-  assert.equal(result.primaryFailure.code, "host.process-wake");
-  assert.equal(completed, 1);
-  assert.doesNotMatch(JSON.stringify(result), /private/);
-});
-
-test("classifies thrown early reactor use and ordinary process setup failures", async () => {
-  const cases = [
-    [({ imports }) => imports["netwasm:runtime/reactor-host"].cancel(1),
-      "contractFailure", "contract.reactor-initialization",
-      "Error: component reactor use is unavailable before guest entry"],
-    [() => { throw new Error("private instantiation detail"); },
-      "hostFailure", "host.component-instantiate", "Error: private instantiation detail"],
-    [() => ({}), "contractFailure", "contract.component-exports", /^TypeError: \S/u],
-  ];
-  for (const [instantiate, kind, code, detail] of cases) {
-    const result = await executeComponent({
-      contractKey: processComponentContract,
-      adapter: adapter(processComponentContract, instantiate),
-      imports: {},
-      loadCoreModule,
-    });
-    assert.equal(result.completionKind, kind);
-    assert.equal(result.primaryFailure.code, code);
-    assertDetail(result.primaryFailure, detail);
-  }
-});
-
-test("maps unexpected process observation errors and closes pending pollables first", async () => {
-  const calls = [];
-  let reactorHost;
-  const result = await executeComponent({
-    contractKey: processComponentContract,
-    adapter: adapter(processComponentContract, ({ imports }) => {
-      reactorHost = imports["netwasm:runtime/reactor-host"];
-      return {
-        process: {
-          start() {
-            reactorHost.watch({
-              block: () => new Promise(() => {}),
-              dispose() { calls.push("reactor-release"); },
-            }, 3);
-            return 9;
-          },
-          status() { throw new Error("private observation detail"); },
-          exitCode() { return 0; },
-          complete() { calls.push("complete"); },
-        },
-        reactorGuest: { wake() {} },
-      };
-    }),
-    imports: {},
-    loadCoreModule,
-    schedule: () => {},
-    releaseActions: [release("host.output", () => calls.push("caller-release"))],
-  });
-  assert.equal(result.completionKind, "hostFailure");
-  assert.equal(result.primaryFailure.code, "host.process-status");
-  assert.deepEqual(calls, ["complete", "reactor-release", "caller-release"]);
-  assert.equal(result.primaryFailure.detail, "Error: private observation detail");
 });
 
 test("prefers typed command completion and preserves reporting without custom imports", async () => {
@@ -423,7 +224,23 @@ test("prefers typed command completion and preserves reporting without custom im
   assert.equal(reports[0].stackTrace, null);
 });
 
-function assertDetail(failure, expected) {
-  if (expected instanceof RegExp) assert.match(failure.detail, expected);
-  else assert.equal(failure.detail, expected);
-}
+test("awaits an asynchronous run export before closing the caller scope", async () => {
+  const calls = [];
+  const result = await executeComponent({
+    contractKey: commandComponentContract,
+    adapter: adapter(commandComponentContract, () => ({
+      command: {
+        async run() {
+          await new Promise(resolve => setTimeout(resolve, 1));
+          calls.push("run");
+          return 4;
+        },
+      },
+    })),
+    imports: {},
+    loadCoreModule,
+    releaseActions: [release("host.output", () => calls.push("release"))],
+  });
+  assert.equal(result.exitCode, 4);
+  assert.deepEqual(calls, ["run", "release"]);
+});

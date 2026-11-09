@@ -50,9 +50,9 @@ public sealed record ModuleCompilationResult(
             StackTraceSymbols = result.StackTraceSymbols,
             DiagnosticArtifacts = result.DiagnosticArtifacts,
             EntryPointToken = entry?.Key.MetadataToken,
+            // An asynchronous Main is a callback-lifted wasi:cli/run.
             SynchronousEntry = entry is null ||
-                !result.Program.JavaScriptAsyncBindings.TryGetValue(entry.Key, out var binding) ||
-                binding.CommandEntryPoint is not null,
+                !result.Program.JavaScriptAsyncBindings.ContainsKey(entry.Key),
         };
     }
 }

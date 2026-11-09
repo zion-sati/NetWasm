@@ -90,7 +90,7 @@ run_logged wit wasm-tools component wit "$component"
 run_logged run wasmtime run "$component"
 
 if [[ "$(< "$evidence_root/logs/run.stdout.log")" != '42' ]] || \
-   ! rg -q 'export wasi:cli/run@0.2.11' "$evidence_root/logs/wit.stdout.log"; then
+   ! rg -q 'export wasi:cli/run@0.3.2' "$evidence_root/logs/wit.stdout.log"; then
     echo 'final component does not satisfy the Console42 command contract' >&2
     exit 4
 fi
@@ -126,7 +126,7 @@ if [[ "$compare_collectors" = 1 ]]; then
         exit 6
     fi
     if [[ "$(< "$evidence_root/logs/run-netwasm.stdout.log")" != '42' ]] || \
-       ! rg -q 'export wasi:cli/run@0.2.11' "$evidence_root/logs/wit-netwasm.stdout.log"; then
+       ! rg -q 'export wasi:cli/run@0.3.2' "$evidence_root/logs/wit-netwasm.stdout.log"; then
         echo 'candidate component does not satisfy the Console42 command contract' >&2
         exit 4
     fi

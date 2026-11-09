@@ -4,18 +4,23 @@ import { platformProviderCatalog as catalog } from "./platform-provider-catalog.
 import { createProviderMetadataValidator } from "./provider-metadata-validator.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
 
-test("binds the exact generated Preview 2 provider catalog", () => {
-  assert.equal(catalog.schema, 1);
-  assert.equal(catalog.world, "netwasm:hosting-platform/preview2@1.0.0");
+test("binds the exact generated WASI 0.3 provider catalog", () => {
+  assert.equal(catalog.schema, 2);
+  assert.equal(catalog.world, "netwasm:hosting-platform/wasi@1.0.0");
   assert.equal(catalog.witSha256,
-    "b5c451ab66d662b71c242cd83caeb586cfe5f29641c3d554ec62cf2b5358ef95");
-  assert.deepEqual(catalog.shim, {
-    package: "@bytecodealliance/preview2-shim",
-    version: "0.24.1",
-  });
-  assert.equal(catalog.providers.length, 27);
+    "4f122e65638086e633ab12a4b1248c3263ff26385bedf1ff1ef1d23f76a34f16");
+  assert.equal(Object.hasOwn(catalog, "shim"), false);
+  assert.equal(catalog.providers.length, 23);
   assert.equal(catalog.providers.reduce(
-    (count, provider) => count + provider.functions.length, 0), 175);
+    (count, provider) => count + provider.functions.length, 0), 125);
+  // Types-only interfaces are providers too: JavaScript bindings construct their resources.
+  assert.deepEqual(catalog.providers.filter(provider => provider.functions.length === 0)
+    .map(provider => provider.module), [
+    "wasi:cli/terminal-input@0.3.2",
+    "wasi:cli/terminal-output@0.3.2",
+    "wasi:cli/types@0.3.2",
+    "wasi:clocks/types@0.3.2",
+  ]);
   assert.deepEqual(catalog.providers.map(provider => provider.module),
     [...catalog.providers.map(provider => provider.module)].sort());
   assert.deepEqual([...new Set(catalog.providers.map(provider => provider.capability))].sort(), [
@@ -32,7 +37,6 @@ test("binds the exact generated Preview 2 provider catalog", () => {
 test("is deeply immutable and satisfies the runtime provider contract", () => {
   const validate = createProviderMetadataValidator({ selectProviderKind });
   assert.equal(Object.isFrozen(catalog), true);
-  assert.equal(Object.isFrozen(catalog.shim), true);
   assert.equal(Object.isFrozen(catalog.providers), true);
   for (const provider of catalog.providers) {
     assert.equal(Object.isFrozen(provider), true);

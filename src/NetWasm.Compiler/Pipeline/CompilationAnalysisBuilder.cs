@@ -1,5 +1,7 @@
 using System;
 using NetWasm.Compiler.Analysis;
+using NetWasm.Compiler.Analysis.NullChecks;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Metadata;
@@ -12,6 +14,7 @@ internal sealed class CompilationAnalysisBuilder(
     IRuntimeIntrinsicRegistryFactory intrinsics,
     IReachabilityInvariantValidator reachabilityInvariants,
     IComponentReachabilityValidator componentReachability,
+    IPlainCoreModuleValidator plainCoreModules,
     ITypeRepositoryFactory typeRepositories,
     IFieldRepositoryFactory fieldRepositories,
     IMethodRepositoryFactory methodRepositories,
@@ -25,7 +28,8 @@ internal sealed class CompilationAnalysisBuilder(
     IMethodInstanceResolverFactory methodInstances,
     IMethodImplementationResolverFactory methodImplementations,
     ISymbolFormatterFactory symbols,
-    IJavaScriptAsyncBindingResolverFactory asyncBindings) : ICompilationAnalysisBuilder
+    IJavaScriptAsyncBindingResolverFactory asyncBindings,
+    IConstructorReceiverProverFactory constructorReceivers) : ICompilationAnalysisBuilder
 {
     private readonly IWholeProgramAnalyzerFactory _analyzers = analyzers ??
         throw new ArgumentNullException(nameof(analyzers));
@@ -35,6 +39,8 @@ internal sealed class CompilationAnalysisBuilder(
         reachabilityInvariants ?? throw new ArgumentNullException(nameof(reachabilityInvariants));
     private readonly IComponentReachabilityValidator _componentReachability =
         componentReachability ?? throw new ArgumentNullException(nameof(componentReachability));
+    private readonly IPlainCoreModuleValidator _plainCoreModules =
+        plainCoreModules ?? throw new ArgumentNullException(nameof(plainCoreModules));
     private readonly ITypeRepositoryFactory _typeRepositories = typeRepositories ??
         throw new ArgumentNullException(nameof(typeRepositories));
     private readonly IFieldRepositoryFactory _fieldRepositories = fieldRepositories ??
@@ -63,6 +69,8 @@ internal sealed class CompilationAnalysisBuilder(
         throw new ArgumentNullException(nameof(symbols));
     private readonly IJavaScriptAsyncBindingResolverFactory _asyncBindings = asyncBindings ??
         throw new ArgumentNullException(nameof(asyncBindings));
+    private readonly IConstructorReceiverProverFactory _constructorReceivers = constructorReceivers ??
+        throw new ArgumentNullException(nameof(constructorReceivers));
 
     public CompilationAnalysis Analyze(
         MetadataCompilationSnapshot metadata,
@@ -84,7 +92,7 @@ internal sealed class CompilationAnalysisBuilder(
         var methodInstances = _methodInstances.Create(metadata);
         var methodImplementations = _methodImplementations.Create(metadata);
         var symbols = _symbols.Create(metadata);
-        var world = PlatformWorldCapabilities.From(preparation.ComponentContract);
+        var world = preparation.World;
         var asyncBindingResolver = _asyncBindings.Create(
             typeFinder,
             typeDefinitions,
@@ -92,8 +100,7 @@ internal sealed class CompilationAnalysisBuilder(
             fields,
             methods,
             methodInstances,
-            symbols,
-            world);
+            symbols);
 
         var runtimeIntrinsics = _intrinsics.Create(symbols, metadata.Methods);
         var program = _analyzers.Create(
@@ -122,12 +129,19 @@ internal sealed class CompilationAnalysisBuilder(
             typeClassifier,
             program,
             runtimeIntrinsics);
+        // A plain core module's own rules first: a WASI import it reaches is not the world's.
+        _plainCoreModules.Validate(program, preparation.Exports, world, methods, symbols);
         _componentReachability.Validate(
             program,
             preparation.Exports,
             preparation.ComponentContract,
             methods,
             symbols);
-        return new CompilationAnalysis(program);
+        // Whether a constructor's this can be null depends on every call of it, so
+        // its proof waits for the whole program.
+        var proven = _constructorReceivers.Create(types, fields, methods, methodInstances, symbols,
+            preparation.OptimizationSettings.NewObjectNullCheckElimination ==
+            NewObjectNullCheckEliminationPolicy.ConstructedObjects).Prove(program);
+        return new CompilationAnalysis(proven);
     }
 }

@@ -6,21 +6,23 @@ namespace NetWasm.Compiler.ComponentModel.Tests.Raw;
 public sealed class RawCallableImportLayoutBuilderTests
 {
     [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void ProjectsTheCallableAndWrapsTheExactFunctionLayout(WasmTarget target)
+    [InlineData(WasmTarget.Wasm32, false)]
+    [InlineData(WasmTarget.Wasm64, false)]
+    [InlineData(WasmTarget.Wasm32, true)]
+    public void ProjectsTheCallableAndWrapsTheExactFunctionLayout(WasmTarget target, bool asynchronous)
     {
         var functions = new RecordingFunctions();
         var declaration = new RawWitImportDeclaration.Callable("example:test/api@1.0.0", new("call", [], null, new("freestanding")))
         {
             CoreInterfaceName = "api-alias",
+            Asynchronous = asynchronous,
         };
         var document = new WitDocument([], [], [], [], "{}");
 
         var result = Assert.IsType<RawWitImportLayout.Callable>(Create(functions).Build(new(document, declaration, target)));
 
         Assert.Equal((document, declaration.InterfaceName, declaration.CoreInterfaceName,
-            declaration.Definition, target), functions.Request);
+            declaration.Definition, target, asynchronous), functions.Request);
         Assert.Same(functions.Layout, result.Function);
         Assert.Equal(functions.Layout.Layout.Target, result.Target);
         Assert.Equal(new RawCanonicalImportIdentity("physical", "member"), result.Identity);
@@ -54,7 +56,7 @@ public sealed class RawCallableImportLayoutBuilderTests
 
     private sealed class RecordingFunctions : IRawWitFunctionLayoutBuilder
     {
-        public (WitDocument, string, string, WitFunction, WasmTarget)? Request { get; private set; }
+        public (WitDocument, string, string, WitFunction, WasmTarget, bool)? Request { get; private set; }
         public InvalidOperationException? Failure { get; init; }
         public RawWitFunctionLayout Layout { get; } = new(new("returned", [], null, new("freestanding")),
             new(WasmTarget.Wasm32, new("", "returned", default, [], null), "physical", "member",
@@ -65,9 +67,10 @@ public sealed class RawCallableImportLayoutBuilderTests
             string interfaceName,
             string coreInterfaceName,
             WitFunction witFunction,
-            WasmTarget target)
+            WasmTarget target,
+            bool asynchronous = false)
         {
-            Request = (document, interfaceName, coreInterfaceName, witFunction, target);
+            Request = (document, interfaceName, coreInterfaceName, witFunction, target, asynchronous);
             if (Failure is not null) throw Failure;
             return Layout;
         }

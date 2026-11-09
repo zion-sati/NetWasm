@@ -44,7 +44,9 @@ public sealed class CanonicalAbiMemoryLayoutPlanner :
             CanonicalAbiTypeKind.S32 or CanonicalAbiTypeKind.U32 or
                 CanonicalAbiTypeKind.F32 or CanonicalAbiTypeKind.Character or
                 CanonicalAbiTypeKind.OwnedResource or
-                CanonicalAbiTypeKind.BorrowedResource => Scalar(4, 4),
+                CanonicalAbiTypeKind.BorrowedResource or
+                CanonicalAbiTypeKind.Stream or
+                CanonicalAbiTypeKind.Future => Scalar(4, 4),
             CanonicalAbiTypeKind.S64 or CanonicalAbiTypeKind.U64 or
                 CanonicalAbiTypeKind.F64 => Scalar(8, 8),
             CanonicalAbiTypeKind.Text or CanonicalAbiTypeKind.List =>

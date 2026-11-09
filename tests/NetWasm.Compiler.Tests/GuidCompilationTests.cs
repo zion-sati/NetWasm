@@ -198,11 +198,11 @@ public sealed class GuidCompilationTests
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:random/random@0.2.11",
+                InterfaceName: "wasi:random/random@0.3.2",
                 FunctionName: "get-random-bytes",
             });
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport?.InterfaceName == "wasi:random/random@0.2.11" &&
+            method.WitImport?.InterfaceName == "wasi:random/random@0.3.2" &&
             method.WitImport.FunctionName == "get-random-u64");
         Assert.Equal(255, ExecuteWithStandardWasiNode(
             result.ApplicationModule,
@@ -236,6 +236,6 @@ public sealed class GuidCompilationTests
             WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport?.InterfaceName == "wasi:random/random@0.2.11");
+            method.WitImport?.InterfaceName == "wasi:random/random@0.3.2");
     }
 }

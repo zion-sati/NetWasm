@@ -5,8 +5,8 @@ export function createDiagnosticCommandExport(invoke, report) {
   if (typeof invoke !== "function" || typeof report !== "function") {
     throw new TypeError("Command invocation and diagnostic reporting are required");
   }
-  return () => {
-    const completion = invoke();
+  return async () => {
+    const completion = await invoke();
     if (completion === null || typeof completion !== "object"
         || Array.isArray(completion)) {
       throw new TypeError("The diagnostic command completion is invalid");

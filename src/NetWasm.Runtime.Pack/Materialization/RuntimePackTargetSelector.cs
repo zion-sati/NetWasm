@@ -26,6 +26,7 @@ internal sealed class RuntimePackTargetSelector(IRuntimeOptimizationPolicyResolv
             RuntimeFootprintBytes = speed.RuntimeFootprintBytes,
             RuntimeArchive = speed.RuntimeArchive,
             CollectorArchive = speed.CollectorArchive,
+            PlatformArchives = speed.PlatformArchives,
         };
     }
 }

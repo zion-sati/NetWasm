@@ -19,7 +19,7 @@ done
 mkdir -p "$artifact_root/first" "$artifact_root/second"
 for repeat in first second; do
     npx jco transpile "$component" -o "$artifact_root/$repeat" \
-        --name scalar --instantiation async --strict --quiet
+        --name scalar --instantiation async --strict --quiet --bindgen-enable-wasm-exnref
 done
 for file in scalar.js scalar.d.ts scalar.core.wasm scalar.core2.wasm; do
     cmp "$artifact_root/first/$file" "$artifact_root/second/$file"

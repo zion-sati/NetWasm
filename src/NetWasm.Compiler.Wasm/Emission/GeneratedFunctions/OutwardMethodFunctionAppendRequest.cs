@@ -22,4 +22,7 @@ internal sealed record OutwardMethodFunctionAppendRequest(
     ICollection<ManagedBoundaryPlanEntry> BoundaryEntries,
     EntityKey? ArgumentFactory = null,
     InteropImportPlan? InteropImports = null,
-    MethodInstanceModel? EntryCompletion = null);
+    MethodInstanceModel? EntryCompletion = null,
+    EntityKey? LocalTimePreflight = null,
+    EntityKey? ProcessExit = null,
+    bool InitializesRuntime = true);

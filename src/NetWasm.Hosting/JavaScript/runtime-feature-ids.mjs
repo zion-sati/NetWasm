@@ -5,6 +5,8 @@ export const runtimeFeatureIds = Object.freeze([
   "ephemeron-handles",
   "finalization",
   "local-time",
+  "object-clone",
+  "random-seed",
   "structured-command-diagnostics",
   "weak-handles",
 ]);

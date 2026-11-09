@@ -3,7 +3,7 @@
 #include "runtime_process_exit.h"
 #include "wasi_import_attributes.h"
 
-NETWASM_WASI_IMPORT("wasi:cli/exit@0.2", "exit")
+NETWASM_WASI_IMPORT("wasi:cli/exit@0.3", "exit")
 void runtime_wasi_exit(uint32_t is_error);
 
 _Noreturn void runtime_exit_process(int status)

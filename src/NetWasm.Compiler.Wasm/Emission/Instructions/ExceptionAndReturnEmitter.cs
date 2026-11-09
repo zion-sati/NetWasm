@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Immutable;
@@ -105,6 +106,7 @@ internal sealed class ExceptionAndReturnEmitter(
                 0,
                 returnLayout.Size,
                 returnLayout.Alignment,
+                SmallBlockEmitter.WidestChunk(returnLayout),
                 writer => writer.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.LocalGet,
                     WasmInstructionOperand.Unsigned((uint)source))),

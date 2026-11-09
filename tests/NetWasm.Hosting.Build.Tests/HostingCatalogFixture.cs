@@ -6,11 +6,11 @@ internal static class HostingCatalogFixture
 {
     public static readonly string[] DefaultModules =
     [
-        "wasi:cli/environment@0.2.11",
-        "wasi:filesystem/types@0.2.11",
-        "wasi:http/outgoing-handler@0.2.11",
-        "wasi:io/streams@0.2.11",
-        "wasi:random/random@0.2.11",
+        "wasi:cli/environment@0.3.2",
+        "wasi:cli/stdout@0.3.2",
+        "wasi:filesystem/types@0.3.2",
+        "wasi:http/client@0.3.2",
+        "wasi:random/random@0.3.2",
     ];
 
     public static void Write(string hostingRoot, params string[] modules)
@@ -30,8 +30,8 @@ internal static class HostingCatalogFixture
             }
 
             export const platformProviderCatalog = deepFreeze({
-              "schema": 1,
-              "world": "netwasm:hosting-platform/preview2@1.0.0",
+              "schema": 2,
+              "world": "netwasm:hosting-platform/wasi@1.0.0",
               "providers": [
             {{providers}}
               ]

@@ -58,7 +58,7 @@ public sealed class RawWitImportCatalogBuilder(
         {
             if (item.Function is not null)
             {
-                AddFunction(imports, "", "", worldSpecifier, item.Function, target);
+                AddFunction(imports, document, "", "", worldSpecifier, item.Function, target);
                 continue;
             }
             var definition = document.Interfaces[item.InterfaceId!.Value];
@@ -67,7 +67,7 @@ public sealed class RawWitImportCatalogBuilder(
             var deploymentInterfaceName = item.Name;
             foreach (var function in definition.Functions)
             {
-                AddFunction(imports, interfaceName, coreInterfaceName,
+                AddFunction(imports, document, interfaceName, coreInterfaceName,
                     deploymentInterfaceName, function, target);
             }
             AddResources(imports, document, definition, interfaceName, coreInterfaceName,
@@ -91,6 +91,7 @@ public sealed class RawWitImportCatalogBuilder(
 
     private void AddFunction(
         ImmutableDictionary<RawCanonicalImportIdentity, RawWitImportDeclaration>.Builder imports,
+        WitDocument document,
         string interfaceName,
         string coreInterfaceName,
         string deploymentInterfaceName,
@@ -108,7 +109,66 @@ public sealed class RawWitImportCatalogBuilder(
         {
             CoreInterfaceName = coreInterfaceName,
         });
+
+        // The Component Model names an async-lowered call and a signature's stream and
+        // future built-ins by the function's full interface name ($root for a world's own).
+        var module = interfaceName.Length == 0 ? "$root" : interfaceName;
+        if (function.Kind.Name.StartsWith("async", StringComparison.Ordinal))
+        {
+            Add(imports, new(module, $"[async-lower]{function.Name}"),
+                new RawWitImportDeclaration.Callable(interfaceName, deploymentInterfaceName, function)
+                {
+                    CoreInterfaceName = coreInterfaceName,
+                    Asynchronous = true,
+                });
+        }
+        var payloads = WitPayloadTypes.Find(document, function);
+        for (var index = 0; index < payloads.Length; index++)
+        {
+            var stream = WitPayloadTypes.IsStream(document, payloads[index]);
+            foreach (var operation in stream ? StreamOperations : FutureOperations)
+            {
+                Add(imports, new(module, PayloadName(operation, index, function.Name)),
+                    new RawWitImportDeclaration.Payload(
+                        interfaceName, deploymentInterfaceName, function, index, payloads[index], operation)
+                    {
+                        CoreInterfaceName = coreInterfaceName,
+                    });
+            }
+        }
     }
+
+    private static readonly ImmutableArray<RawPayloadOperation> StreamOperations =
+    [
+        RawPayloadOperation.StreamNew,
+        RawPayloadOperation.StreamRead,
+        RawPayloadOperation.StreamWrite,
+        RawPayloadOperation.StreamDropReadable,
+        RawPayloadOperation.StreamDropWritable,
+    ];
+
+    private static readonly ImmutableArray<RawPayloadOperation> FutureOperations =
+    [
+        RawPayloadOperation.FutureNew,
+        RawPayloadOperation.FutureRead,
+        RawPayloadOperation.FutureWrite,
+        RawPayloadOperation.FutureDropReadable,
+        RawPayloadOperation.FutureDropWritable,
+    ];
+
+    private static string PayloadName(RawPayloadOperation operation, int index, string function) => operation switch
+    {
+        RawPayloadOperation.StreamNew => $"[stream-new-{index}]{function}",
+        RawPayloadOperation.StreamRead => $"[async-lower][stream-read-{index}]{function}",
+        RawPayloadOperation.StreamWrite => $"[async-lower][stream-write-{index}]{function}",
+        RawPayloadOperation.StreamDropReadable => $"[stream-drop-readable-{index}]{function}",
+        RawPayloadOperation.StreamDropWritable => $"[stream-drop-writable-{index}]{function}",
+        RawPayloadOperation.FutureNew => $"[future-new-{index}]{function}",
+        RawPayloadOperation.FutureRead => $"[async-lower][future-read-{index}]{function}",
+        RawPayloadOperation.FutureWrite => $"[async-lower][future-write-{index}]{function}",
+        RawPayloadOperation.FutureDropReadable => $"[future-drop-readable-{index}]{function}",
+        _ => $"[future-drop-writable-{index}]{function}",
+    };
 
     private void AddResources(
         ImmutableDictionary<RawCanonicalImportIdentity, RawWitImportDeclaration>.Builder imports,

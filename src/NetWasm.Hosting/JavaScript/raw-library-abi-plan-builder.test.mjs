@@ -67,6 +67,8 @@ const abi = (target = "wasm32", overrides = {}) => {
       memoryExport(`${prefix}_memory`),
       functionExport(`${prefix}_realloc`),
       functionExport(`${prefix}_initialize`),
+      functionExport("netwasm.events.run"),
+      functionExport("netwasm.events.callback"),
     ],
     ...overrides,
   };
@@ -119,11 +121,11 @@ test("plans immutable wasm32 and wasm64 library boundaries", () => {
       target,
       imports: source.imports,
       exports: source.exports,
-      reactorHostModule: `${prefix}|netwasm:runtime/reactor-host@1`,
-      reactorGuestExport: `${prefix}|netwasm:runtime/reactor-guest@1|wake`,
       canonicalMemoryExport: `${prefix}_memory`,
       canonicalReallocateExport: `${prefix}_realloc`,
       canonicalInitializeExport: `${prefix}_initialize`,
+      eventLoopRunExport: "netwasm.events.run",
+      eventLoopCallbackExport: "netwasm.events.callback",
       managedExportNames: ["add", "wait", "wait_status", "wait_complete", "wait_result",
         "listen_invoke", "fetch_resolve", "fetch_reject", "fetch_cancel"],
     });
@@ -198,6 +200,8 @@ test("rejects mismatched targets and missing canonical exports", () => {
     ["cm32p2_memory", functionExport("cm32p2_memory"), /memory export/],
     ["cm32p2_realloc", memoryExport("cm32p2_realloc"), /function export/],
     ["cm32p2_initialize", memoryExport("cm32p2_initialize"), /function export/],
+    ["netwasm.events.run", memoryExport("netwasm.events.run"), /function export/],
+    ["netwasm.events.callback", memoryExport("netwasm.events.callback"), /function export/],
   ]) {
     const exports = abi().exports.map(value => value.name === name ? replacement : value);
     assert.throws(() => buildRawLibraryAbiPlan({
@@ -249,8 +253,7 @@ test("rejects every missing or non-function manifest-owned export", () => {
 });
 
 test("rejects fabricated executable wrappers but allows a declared run export", () => {
-  for (const name of ["run", "netwasm.process.status", "netwasm.process.result",
-    "netwasm.process.complete"]) {
+  for (const name of ["run", "netwasm.entry.callback", "netwasm.entry.exit_code"]) {
     assert.throws(() => buildRawLibraryAbiPlan({
       abi: abi("wasm32", { exports: [...abi().exports, functionExport(name)] }),
       manifest: manifest(),

@@ -41,6 +41,15 @@ test("loads one strict digest-bound browser deployment manifest", async () => {
   assert.deepEqual(f.calls, [["fetch", manifestUrl, { signal: undefined }]]);
 });
 
+// A host that Node.js code imports reads its deployment from files.
+test("loads a file deployment manifest", async () => {
+  const f = fixture();
+  const fileUrl = "file:///opt/app/deployment.json";
+  const load = createBrowserDeploymentManifestLoader({ manifestUrl: fileUrl, platform: f.platform, snapshotManifest });
+  await load({ expectedSha256: createHash("sha256").update(f.bytes).digest("hex"), signal: null });
+  assert.deepEqual(f.calls, [["fetch", fileUrl, { signal: undefined }]]);
+});
+
 test("validates browser options, URL, and platform before fetching", () => {
   const valid = fixture().platform;
   for (const value of [null, 1, [], {}, { manifestUrl, platform: valid, snapshotManifest, extra: true },
@@ -124,7 +133,7 @@ function manifest() {
     artifacts: [{ mediaType: "application/wasm", relativePath: "app.wasm", role: "application", schemaVersion: null, sha256: digest }],
     buildFingerprint: digest,
     deploymentKind: "browser",
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     exports: [],
     featureSet: "default",
     profile: "netwasm0.1",

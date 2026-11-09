@@ -31,24 +31,12 @@ public sealed class ReadOnlyCollectionAsyncReducerCompilationTests
                     41,
                     [])
                 {
-                    DrainReactor = true,
-                    ObserveExportName = "observe",
+                    ObserveMethodName = "Observe",
                     WitPath = Path.Combine(
                         assets.Root,
                         "wit",
                         "netwasm-platform-1.0.0"),
-                    WitWorld = "netwasm:platform/async-platform@1.0.0",
-                    Exports =
-                    [
-                        new RequestedExport(
-                            "run",
-                            "ReadOnlyCollectionAsyncReducerFixture.EntryPoint",
-                            "Run"),
-                        new RequestedExport(
-                            "observe",
-                            "ReadOnlyCollectionAsyncReducerFixture.EntryPoint",
-                            "Observe"),
-                    ],
+                    WitWorld = "netwasm:platform/platform@1.0.0",
                 });
 
                 Assert.Equal(expected, observed);

@@ -31,6 +31,8 @@ public sealed partial class CommandRunModuleWriter : ICommandRunModuleWriter
         Validate(request);
         var source = new StringBuilder();
         source.Append("import { runNetWasm } from ").Append(Json("./" + request.BundleFileName)).AppendLine(";");
+        // The page's file mounts (#142): what the user picked, visible to the program's file APIs.
+        source.Append("export { mount, sync, unmount } from ").Append(Json("./" + request.BundleFileName)).AppendLine(";");
         source.AppendLine();
         source.AppendLine("const startup = Object.freeze({");
         source.Append("  buildFingerprint: ").Append(Json(request.BuildFingerprint)).AppendLine(",");
@@ -69,6 +71,13 @@ public sealed partial class CommandRunModuleWriter : ICommandRunModuleWriter
           readonly cleanupFailures: readonly NetWasmExecutionFailure[];
         }
         export declare function run(options?: NetWasmRunOptions): Promise<NetWasmExecutionResult>;
+        /** What the user picked: a File or Blob mounts read-only; a handle mounts read-write. */
+        export type NetWasmMountSource = Blob | FileSystemFileHandle | FileSystemDirectoryHandle;
+        /** Mounts a picked file or directory at an absolute path the program's File APIs see. */
+        export declare function mount(guestPath: string, source: NetWasmMountSource): Promise<void>;
+        export declare function unmount(guestPath: string): void;
+        /** Writes a handle mount's changes back to what the user picked. */
+        export declare function sync(guestPath: string): Promise<void>;
 
         """;
 

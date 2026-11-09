@@ -15,25 +15,31 @@ for (const target of ['wasm32', 'wasm64']) {
     assert.equal(reads, 0);
     const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
     const width = target === 'wasm64' ? 8 : 4;
-    imports[`${prefix}|wasi:cli/environment@0.2`]['get-environment'](
+    imports[`${prefix}|wasi:cli/environment@0.3`]['get-environment'](
       target === 'wasm64' ? 32n : 32);
     assert.equal(reads, 1);
     assert.deepEqual([...bytes.slice(32, 32 + width * 2)], Array(width * 2).fill(0));
     assert.equal(bytes[31], 0xa5);
     assert.equal(bytes[32 + width * 2], 0xa5);
     assert.equal(imports.env.emscripten_notify_memory_growth(), undefined);
-    assert.equal(imports[`${prefix}|wasi:random/random@0.2`]['get-random-u64'](),
+    assert.equal(imports[`${prefix}|wasi:random/random@0.3`]['get-random-u64'](),
       0x0123456789abcdefn);
     const guarded = [
       imports['netwasm.application.v1']['netwasm.filter'],
       imports['netwasm.application.v1']['netwasm.finalize'],
-      imports[`${prefix}|wasi:cli/stdout@0.2`]['get-stdout'],
-      imports[`${prefix}|wasi:cli/stderr@0.2`]['get-stderr'],
-      imports[`${prefix}|wasi:io/streams@0.2`]['[method]output-stream.blocking-write-and-flush'],
-      imports[`${prefix}|wasi:io/streams@0.2`]['output-stream_drop'],
-      imports[`${prefix}|wasi:io/error@0.2`].error_drop,
-      imports[`${prefix}|wasi:cli/exit@0.2`].exit,
+      imports[`${prefix}|wasi:cli/stdout@0.3`]['write-via-stream'],
+      imports[`${prefix}|wasi:cli/stderr@0.3`]['write-via-stream'],
+      ...['stdout', 'stderr'].flatMap(stream => Object.values(imports[`wasi:cli/${stream}@0.3.2`])),
+      imports[`${prefix}|wasi:cli/exit@0.3`].exit,
+      imports.$root['[waitable-set-wait]'],
     ];
+    assert.equal(Object.keys(imports['wasi:cli/stdout@0.3.2']).length, 5);
+    // Waitable sets and subtasks are bookkeeping only: nothing a contract runs waits.
+    assert.equal(imports.$root['[waitable-set-new]'](), 1);
+    assert.equal(imports.$root['[waitable-set-new]'](), 2);
+    assert.equal(imports.$root['[waitable-join]'](7, 1), undefined);
+    assert.equal(imports.$root['[subtask-drop]'](7), undefined);
+    assert.equal(imports.$root['[subtask-cancel]'](7), 4);
     for (const call of guarded) assert.throws(call, /Unexpected runtime service call/);
     assert.equal(reads, 1);
     assert.equal(Object.hasOwn(imports, 'wasi_snapshot_preview1'), false);
@@ -66,7 +72,7 @@ for (const target of ['wasm32', 'wasm64']) {
     };
     const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
     const random = createRuntimeContractImports(target, () => memory, () => exports)[
-      `${prefix}|wasi:random/random@0.2`];
+      `${prefix}|wasi:random/random@0.3`];
 
     random['get-random-bytes'](5n, address(64));
 
@@ -85,7 +91,7 @@ for (const target of ['wasm32', 'wasm64']) {
   test(`Random bytes need the guest's allocator: ${target}`, () => {
     const memory = new WebAssembly.Memory({ initial: 1 });
     const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
-    const random = createRuntimeContractImports(target, () => memory)[`${prefix}|wasi:random/random@0.2`];
+    const random = createRuntimeContractImports(target, () => memory)[`${prefix}|wasi:random/random@0.3`];
     assert.throws(() => random['get-random-bytes'](1n, 0), /Unexpected runtime service call/);
   });
 }

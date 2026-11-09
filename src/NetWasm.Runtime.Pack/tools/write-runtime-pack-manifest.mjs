@@ -62,12 +62,18 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
   const measured = JSON.parse(await readFile(join(runtimeRoot, target, collectorDirectory, "layout.json"), "utf8"));
   const runtimeArchive = await describeAsset(`${target}/${collectorDirectory}/libnetwasm-runtime.a`);
   const collectorArchive = await describeAsset(`${target}/${collectorDirectory}/libgc.a`);
+  // The runtime's WASI uses, and their replacements for a plain core module without WASI.
+  const platformArchives = async root => ({
+    wasi: await describeAsset(`${root}/libnetwasm-runtime-wasi.a`),
+    noWasi: await describeAsset(`${root}/libnetwasm-runtime-nowasi.a`),
+  });
   const speedMeasured = JSON.parse(await readFile(
     join(runtimeRoot, target, collectorDirectory, "speed", "layout.json"), "utf8"));
   const speed = {
     runtimeFootprintBytes: speedMeasured.runtimeFootprintBytes,
     runtimeArchive: await describeAsset(`${target}/${collectorDirectory}/speed/libnetwasm-runtime.a`),
     collectorArchive: await describeAsset(`${target}/${collectorDirectory}/speed/libgc.a`),
+    platformArchives: await platformArchives(`${target}/${collectorDirectory}/speed`),
   };
   targets.push({
     target,
@@ -81,6 +87,7 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
     maximumMemorySizeBytes: targetPolicy.maximumMemorySizeBytes,
     runtimeArchive,
     collectorArchive,
+    platformArchives: await platformArchives(`${target}/${collectorDirectory}`),
     speed,
     allowedUndefinedSymbols,
     nativeValidation: {

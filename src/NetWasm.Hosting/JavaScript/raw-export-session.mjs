@@ -1,10 +1,10 @@
-import { createGuestWakeNotifier } from "./guest-wake-notifier.mjs";
-import { createPollableReactor } from "./pollable-reactor.mjs";
 import {
   bindRawCanonicalImportInstance,
   closeRawCanonicalImportBinding,
   createRawCanonicalImportBinding,
+  readRawComponentModel,
 } from "./raw-canonical-import-binding.mjs";
+import { createRawEventPump } from "./raw-event-pump.mjs";
 import { createRawExportSessionOpener } from "./raw-export-session-opener.mjs";
 import { composeRawImports } from "./raw-import-composer.mjs";
 import { buildRawLibraryAbiPlan } from "./raw-library-abi-plan-builder.mjs";
@@ -16,7 +16,7 @@ export const openRawExportSession = createRawExportSessionOpener(Object.freeze({
   closeCanonicalBinding: closeRawCanonicalImportBinding,
   composeImports: composeRawImports,
   createCanonicalBinding: createRawCanonicalImportBinding,
-  createGuestNotifier: createGuestWakeNotifier,
-  createReactor: createPollableReactor,
+  createEventPump: createRawEventPump,
   createReleaseCommand: createScopeReleaseCommand,
+  readComponentModel: readRawComponentModel,
 })).open;

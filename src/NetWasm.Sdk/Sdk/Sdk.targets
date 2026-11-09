@@ -11,13 +11,35 @@
     <_NetWasmWorkerKind>jsexport</_NetWasmWorkerKind>
     <OutputType>Library</OutputType>
   </PropertyGroup>
+  <!-- A plain core module (OutputType CoreModule) is a library of a WIT world without WASI. It
+       publishes its module alone: its assembly, like any reference, is a compiler input. -->
+  <PropertyGroup Condition="'$(OutputType)' == 'CoreModule'">
+    <_NetWasmPlainCoreModule>true</_NetWasmPlainCoreModule>
+    <OutputType>Library</OutputType>
+    <CopyBuildOutputToPublishDirectory>false</CopyBuildOutputToPublishDirectory>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+  </PropertyGroup>
+  <!-- A component (OutputType Component) is a library of a WIT world with WASI, the WASI
+       counterpart of CoreModule. It publishes its component alone. -->
+  <PropertyGroup Condition="'$(OutputType)' == 'Component'">
+    <_NetWasmComponentLibrary>true</_NetWasmComponentLibrary>
+    <OutputType>Library</OutputType>
+    <CopyBuildOutputToPublishDirectory>false</CopyBuildOutputToPublishDirectory>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(OutputType)' == 'JsWebWorker'">
     <_NetWasmRemovedOutputType>JsWebWorker</_NetWasmRemovedOutputType>
     <OutputType>Library</OutputType>
   </PropertyGroup>
   <PropertyGroup>
-    <_NetWasmCompileAsLibrary Condition="'$(_NetWasmWorkerKind)' != ''">true</_NetWasmCompileAsLibrary>
+    <_NetWasmPlainCoreModule Condition="'$(_NetWasmPlainCoreModule)' == ''">false</_NetWasmPlainCoreModule>
+    <_NetWasmComponentLibrary Condition="'$(_NetWasmComponentLibrary)' == ''">false</_NetWasmComponentLibrary>
+    <_NetWasmCompileAsLibrary Condition="'$(_NetWasmWorkerKind)' != '' OR '$(_NetWasmPlainCoreModule)' == 'true' OR '$(_NetWasmComponentLibrary)' == 'true'">true</_NetWasmCompileAsLibrary>
     <_NetWasmCompileAsLibrary Condition="'$(_NetWasmCompileAsLibrary)' == ''">false</_NetWasmCompileAsLibrary>
+    <!-- Whether the project builds a WebAssembly module: an executable, a worker or JavaScript
+         module, a plain core module or a component. -->
+    <_NetWasmBuildsModule Condition="'$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '' OR '$(_NetWasmPlainCoreModule)' == 'true' OR '$(_NetWasmComponentLibrary)' == 'true'">true</_NetWasmBuildsModule>
+    <_NetWasmBuildsModule Condition="'$(_NetWasmBuildsModule)' == ''">false</_NetWasmBuildsModule>
     <NetWasmRawWasm Condition="'$(NetWasmRawWasm)' == '' AND '$(_NetWasmWorkerKind)' == 'jsexport'">true</NetWasmRawWasm>
   </PropertyGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
@@ -105,7 +127,7 @@
 
   <Target Name="NetWasmSdkValidateGarbageCollectorSelection"
           BeforeTargets="NetWasmCompileCoreModule;NetWasmRuntimePackMaterialize"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
     <Error Code="NWPACK007"
            Condition="'$(NetWasmGarbageCollector)' != '' AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Compact')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'NetWasm')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Bump'))"
            Text="NetWasmGarbageCollector must be exactly Compact, NetWasm or Bump, or unset to use the runtime pack default." />
@@ -158,6 +180,34 @@
            Text="OutputType JsWebWorker was replaced by JsModule. Set &lt;OutputType&gt;JsModule&lt;/OutputType&gt; and &lt;NetWasmJavaScriptHosts&gt;worker&lt;/NetWasmJavaScriptHosts&gt; to keep a Web Worker host." />
   </Target>
 
+  <Target Name="NetWasmSdkValidateCoreModuleOutput"
+          BeforeTargets="Restore;CoreCompile;Publish;NetWasmSdkResolveBuildEnvironment"
+          Condition="'$(_NetWasmPlainCoreModule)' == 'true'">
+    <Error Code="NWSDK097"
+           Condition="'$(OutputType)' != 'Library'"
+           Text="Declare CoreModule in the project file. A global OutputType override cannot be normalized for library compilation." />
+    <Error Code="NWSDK098"
+           Condition="'$(TargetFramework)' != '' AND '$(TargetFramework)' != 'netwasm0.1'"
+           Text="CoreModule output is supported only for netwasm0.1. Use Library for a desktop target." />
+    <Error Code="NWSDK099"
+           Condition="'$(NetWasmRawWasm)' == 'true'"
+           Text="A plain core module is built from its WIT world, not as raw WebAssembly. Remove NetWasmRawWasm." />
+  </Target>
+
+  <Target Name="NetWasmSdkValidateComponentOutput"
+          BeforeTargets="Restore;CoreCompile;Publish;NetWasmSdkResolveBuildEnvironment"
+          Condition="'$(_NetWasmComponentLibrary)' == 'true'">
+    <Error Code="NWSDK100"
+           Condition="'$(OutputType)' != 'Library'"
+           Text="Declare Component in the project file. A global OutputType override cannot be normalized for library compilation." />
+    <Error Code="NWSDK101"
+           Condition="'$(TargetFramework)' != '' AND '$(TargetFramework)' != 'netwasm0.1'"
+           Text="Component output is supported only for netwasm0.1. Use Library for a desktop target." />
+    <Error Code="NWSDK102"
+           Condition="'$(NetWasmRawWasm)' == 'true' OR '$(NetWasmWorld)' == ''"
+           Text="A component is built from the WIT world NetWasmWorld selects, not as raw WebAssembly. Set NetWasmWorld (with NetWasmWitPath for your own WIT) and remove NetWasmRawWasm." />
+  </Target>
+
   <Target Name="NetWasmSdkValidateWorkerOutput"
           BeforeTargets="Restore;CoreCompile;Publish;NetWasmSdkResolveBuildEnvironment"
           Condition="'$(_NetWasmWorkerKind)' != ''">
@@ -170,9 +220,6 @@
     <Error Code="NWSDK055"
            Condition="('$(_NetWasmWorkerKind)' == 'wit' AND '$(NetWasmRawWasm)' == 'true') OR ('$(_NetWasmWorkerKind)' == 'jsexport' AND '$(NetWasmRawWasm)' != 'true')"
            Text="WitWebWorker requires component output; JsModule requires raw WebAssembly output. Remove the conflicting NetWasmRawWasm setting." />
-    <Error Code="NWSDK056"
-           Condition="'$(NetWasmComponentContract)' != ''"
-           Text="JsModule and WitWebWorker outputs do not use command or async-command contracts. Remove NetWasmComponentContract and select the application NetWasmWitPath/NetWasmWorld for a WIT worker." />
   </Target>
 
   <Target Name="NetWasmSdkRequireReferenceContract"

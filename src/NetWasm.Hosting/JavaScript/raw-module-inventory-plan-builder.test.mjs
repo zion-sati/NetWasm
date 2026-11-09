@@ -42,8 +42,6 @@ test("snapshots immutable wasm32 and wasm64 module inventories", () => {
       zero,
       imports: source.imports,
       exports: source.exports,
-      reactorHostModule: `${prefix}|netwasm:runtime/reactor-host@1`,
-      reactorGuestExport: `${prefix}|netwasm:runtime/reactor-guest@1|wake`,
     });
     assert.equal(Object.isFrozen(plan), true);
     assert.equal(Object.isFrozen(plan.imports), true);

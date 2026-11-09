@@ -1,13 +1,44 @@
 namespace System.Runtime.InteropServices.TimeZones
 {
-    using System.Collections.Generic;
+    using System.Runtime.InteropServices.Streams;
+    using System.Runtime.InteropServices.Concurrency;
+    using System.Runtime.InteropServices.Output;
     using System.Runtime.InteropServices.WebAssembly;
 
-    internal sealed unsafe class WasiReadOnlyFileReader(
-        IWasiDescriptorReadInvoker invoker) : IReadOnlyFileReader
+    // Reads through read-via-stream with async-lowered copies, waiting when a
+    // copy is blocked. The host ends the stream at the end of the file and
+    // reports a read failure through the completion future.
+    internal sealed class WasiReadOnlyFileReader : IReadOnlyFileReader
     {
-        private readonly IWasiDescriptorReadInvoker _invoker =
-            invoker ?? throw new ArgumentNullException();
+        private const int Blocked = -1;
+        private const uint Completed = 0;
+        private const uint Dropped = 1;
+
+        private readonly IWasiFileStreamOpenInvoker _open;
+        private readonly IWasiByteStreamReadInvoker _read;
+        private readonly IWasiByteStreamReadableDropInvoker _dropReadable;
+        private readonly IWasiResultFutureReadInvoker _readResult;
+        private readonly IWasiResultFutureDropInvoker _dropResult;
+        private readonly IWaitableEventAwaiter _awaiter;
+        private readonly ICanonicalBufferAllocator _allocator;
+
+        internal WasiReadOnlyFileReader(
+            IWasiFileStreamOpenInvoker open,
+            IWasiByteStreamReadInvoker read,
+            IWasiByteStreamReadableDropInvoker dropReadable,
+            IWasiResultFutureReadInvoker readResult,
+            IWasiResultFutureDropInvoker dropResult,
+            IWaitableEventAwaiter awaiter,
+            ICanonicalBufferAllocator allocator)
+        {
+            _open = open ?? throw new ArgumentNullException();
+            _read = read ?? throw new ArgumentNullException();
+            _dropReadable = dropReadable ?? throw new ArgumentNullException();
+            _readResult = readResult ?? throw new ArgumentNullException();
+            _dropResult = dropResult ?? throw new ArgumentNullException();
+            _awaiter = awaiter ?? throw new ArgumentNullException();
+            _allocator = allocator ?? throw new ArgumentNullException();
+        }
 
         // Returns fewer than length bytes only at the end of the file.
         public byte[] Read(int handle, long offset, int length)
@@ -16,105 +47,73 @@ namespace System.Runtime.InteropServices.TimeZones
             {
                 throw new ArgumentOutOfRangeException();
             }
-            var chunks = new List<byte[]>();
+
+            if (length == 0)
+            {
+                return [];
+            }
+
+            var ends = _open.Open(handle, offset);
+            using var buffer = _allocator.Allocate(unchecked((nuint)length), 1);
             var count = 0;
+            var ended = false;
             while (count < length)
             {
-                var chunk = ReadChunk(handle, checked(offset + count), length - count);
-                if (chunk.Contents.Length == 0 && !chunk.EndOfFile)
+                var status = _read.Read(
+                    ends.Readable,
+                    buffer.Address + unchecked((nuint)count),
+                    unchecked((nuint)(length - count)));
+                var progress = status == Blocked
+                    ? _awaiter.Await(ends.Readable)
+                    : unchecked((uint)status);
+                count += unchecked((int)(progress >> 4));
+                var copy = progress & 0xF;
+                if (copy == Dropped)
                 {
-                    throw new PlatformNotSupportedException(
-                        "WASI filesystem made no progress while reading the timezone asset.");
-                }
-                chunks.Add(chunk.Contents);
-                count += chunk.Contents.Length;
-                if (chunk.EndOfFile)
-                {
+                    ended = true;
                     break;
                 }
+
+                if (copy != Completed)
+                {
+                    throw new PlatformNotSupportedException(
+                        "WASI filesystem cancelled a timezone asset read.");
+                }
             }
-            if (chunks.Count == 1)
+
+            _dropReadable.Drop(ends.Readable);
+            if (ended)
             {
-                return chunks[0];
+                ThrowOnFailure(ends.Completion);
             }
+
+            _dropResult.Drop(ends.Completion);
             var contents = new byte[count];
-            var position = 0;
-            foreach (var chunk in chunks)
+            for (var index = 0; index < count; index++)
             {
-                chunk.CopyTo(contents, position);
-                position += chunk.Length;
+                contents[index] = CanonicalAbi.ReadByte(buffer.Address, unchecked((nuint)index));
             }
+
             return contents;
         }
 
-        private ReadChunkResult ReadChunk(int handle, long offset, int length)
+        // result<_, error-code>: a discriminant byte, then at offset 4 the error-code
+        // variant's discriminant (its other(option<string>) case makes it 20 bytes).
+        private void ThrowOnFailure(int completion)
         {
-            var addressSize = unchecked((nuint)nuint.Size);
-            var payloadOffset = addressSize;
-            var result = CanonicalAbi.Allocate(addressSize * 3 + 1, addressSize);
-            try
+            using var result = _allocator.Allocate(WasiReadOnlyFileOpener.ErrorCodeResultSize, 4);
+            if (_readResult.Read(completion, result.Address) == Blocked)
             {
-                _invoker.Invoke(handle, length, offset, result);
-                var tag = CanonicalAbi.ReadByte(result, 0);
-                if (tag == 1)
-                {
-                    throw new PlatformNotSupportedException(
-                        "WASI filesystem could not read the timezone asset (error-code=" +
-                        CanonicalAbi.ReadInt32(result, payloadOffset) + ").");
-                }
-                if (tag != 0)
-                {
-                    throw new PlatformNotSupportedException(
-                        "WASI filesystem returned an invalid read result.");
-                }
-                var bytesAddress = CanonicalAbi.ReadAddress(result, payloadOffset);
-                var bytesLength = CanonicalAbi.ReadAddress(result, payloadOffset + addressSize);
-                try
-                {
-                    if (bytesLength > unchecked((nuint)length))
-                    {
-                        throw new PlatformNotSupportedException(
-                            "WASI filesystem returned an invalid read result.");
-                    }
-                    var bytes = new byte[(int)bytesLength];
-                    new ReadOnlySpan<byte>((void*)bytesAddress, bytes.Length).CopyTo(bytes);
-                    return new ReadChunkResult(
-                        bytes,
-                        ReadBoolean(result, payloadOffset + addressSize * 2));
-                }
-                finally
-                {
-                    if (bytesLength != 0)
-                    {
-                        CanonicalAbi.Free(bytesAddress);
-                    }
-                }
-            }
-            finally
-            {
-                CanonicalAbi.Free(result);
-            }
-        }
-
-        private static bool ReadBoolean(nuint address, nuint offset) =>
-            CanonicalAbi.ReadByte(address, offset) switch
-            {
-                0 => false,
-                1 => true,
-                _ => throw new PlatformNotSupportedException(
-                    "WASI filesystem returned an invalid end-of-file flag."),
-            };
-
-        private readonly struct ReadChunkResult
-        {
-            internal ReadChunkResult(byte[] contents, bool endOfFile)
-            {
-                Contents = contents;
-                EndOfFile = endOfFile;
+                _awaiter.Await(completion);
             }
 
-            internal byte[] Contents { get; }
-            internal bool EndOfFile { get; }
+            if (CanonicalAbi.ReadByte(result.Address, 0) != 0)
+            {
+                _dropResult.Drop(completion);
+                throw new PlatformNotSupportedException(
+                    "WASI filesystem could not read the timezone asset (error-code=" +
+                    CanonicalAbi.ReadByte(result.Address, 4) + ").");
+            }
         }
     }
 }

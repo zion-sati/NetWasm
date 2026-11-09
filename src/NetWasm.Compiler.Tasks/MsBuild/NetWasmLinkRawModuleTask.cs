@@ -68,6 +68,9 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
 
     // Repeats wasm-opt's preset until the module stops shrinking.
     public bool OptimizerConverge { get; set; }
+
+    // true or false overrides the preset's choice; empty keeps it.
+    public string OptimizerLowMemoryUnused { get; set; } = string.Empty;
     public string InternalRuntimeExports { get; set; } = string.Empty;
     public string InternalApplicationExports { get; set; } = string.Empty;
 
@@ -87,9 +90,8 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
                     "The NetWasm raw-module target must be wasm32 or wasm64."),
             };
             var optimization = ParseOptimization();
-            var optimizationOverrides = _inlineHints.Parse(ManagedInliningHints);
-            if (OptimizerConverge)
-                optimizationOverrides = (optimizationOverrides ?? new()) with { Converge = true };
+            var optimizationOverrides = OptimizerOverridesParser.Apply(
+                _inlineHints.Parse(ManagedInliningHints), OptimizerConverge, OptimizerLowMemoryUnused);
             var internalExports = _exports.Read(InternalRuntimeExports);
             var internalApplicationExports = _exports.Read(
                 InternalApplicationExports);

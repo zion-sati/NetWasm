@@ -238,10 +238,12 @@ public sealed class CompilationPipelineExecutorTests
                 [],
                 ReachabilityRoots.Empty,
                 null,
+                null,
                 new WasmOptimizationSettings(
                     FinalWasmOptimization.Oz,
                     WasmInlineAnnotationSelection.SizeAware,
-                    WasmInlineAnnotationSelection.SizeAware));
+                    WasmInlineAnnotationSelection.SizeAware),
+                new PlatformWorldCapabilities(false, false, false));
             var target = width == WasmTarget.Wasm32 ? WasmTargetLayout.Wasm32 : WasmTargetLayout.Wasm64;
             var types = new ManagedTypeLayouts([], [], [], [], new(), target, 0, 0, 0, 0);
             var data = new ManagedStaticData(96, [], [], [], [], [], [], [], [], []);

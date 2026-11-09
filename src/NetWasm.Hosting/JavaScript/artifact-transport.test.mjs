@@ -71,6 +71,21 @@ test("binds segment-encoded browser reads and Web Crypto hashing", async () => {
   assert.equal(await transport.hashBytes(bytes), createHash("sha256").update(bytes).digest("hex"));
 });
 
+// A host that Node.js code imports reads its deployment from files.
+test("binds browser reads to a file deployment", async () => {
+  const urls = [];
+  const transport = createBrowserArtifactTransport({
+    manifestUrl: "file:///opt/app/deployment.json",
+    async fetch(url) {
+      urls.push(url);
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+    },
+    digest: webcrypto.subtle.digest.bind(webcrypto.subtle),
+  });
+  await transport.readArtifact({ relativePath: "app.wasm" }, null);
+  assert.deepEqual(urls, ["file:///opt/app/app.wasm"]);
+});
+
 test("rejects invalid browser transport composition", () => {
   const valid = browserOptions();
   for (const options of [null, 1, [], {}, { ...valid, extra: true }, Object.create(valid)]) {
@@ -86,7 +101,7 @@ test("rejects invalid browser transport composition", () => {
       () => createBrowserArtifactTransport({ ...valid, [key]: null }),
       /requires fetch and digest/);
   }
-  for (const manifestUrl of [null, "", "relative.json", "file:///tmp/app.json",
+  for (const manifestUrl of [null, "", "relative.json", "ftp://example.test/app.json",
     "https://user@example.test/app.json", "https://user:secret@example.test/app.json",
     "https://example.test/app.json#fragment", "https://example.test/deploy/"]) {
     assert.throws(

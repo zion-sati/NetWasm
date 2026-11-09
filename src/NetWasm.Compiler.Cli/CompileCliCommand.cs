@@ -23,6 +23,7 @@ internal sealed class CompileCliCommand(
             [NwcTarget.Exe] = CompilerEntryPointKind.ManagedExecutable,
             [NwcTarget.Library] = CompilerEntryPointKind.Library,
             [NwcTarget.Function] = CompilerEntryPointKind.RawFunction,
+            [NwcTarget.CoreModule] = CompilerEntryPointKind.Library,
         }.ToFrozenDictionary();
 
     private readonly INwcCompilerSessionFactory _sessions = sessions ??
@@ -73,7 +74,10 @@ internal sealed class CompileCliCommand(
             options.ManagedQuotientReuse,
             options.ManagedIntegerCheckElimination,
             options.ManagedLoopInvariantExpressionHoisting,
-            options.ManagedMulticastInlineDispatch);
+            options.ManagedMulticastInlineDispatch,
+            options.ManagedNewObjectNullCheckElimination,
+            options.ManagedLoopStrengthReduction,
+            options.ManagedRangeBranchFolding);
         var entryPoint = options.Target == NwcTarget.Exe ? _entryPoints.Read(options.Input) : null;
         using var session = _sessions.Create(options.WasmTools);
         var compilation = session.Compile(new CompilerOptions(
@@ -100,6 +104,7 @@ internal sealed class CompileCliCommand(
             OptimizationOverrides: overrides)
         {
             ImportModules = options.ImportModules,
+            PlainCoreModule = options.Target == NwcTarget.CoreModule,
             CompiledUnits = CompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),
             VerifyCompiledUnits = VerifiesCompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),
         });

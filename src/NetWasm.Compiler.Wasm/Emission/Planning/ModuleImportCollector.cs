@@ -11,7 +11,8 @@ internal sealed class ModuleImportCollector(
     ISymbolFormatter symbols,
     ITargetLayout layouts,
     IJavaScriptImportParameterTypeResolver javaScriptParameterTypes,
-    ICanonicalAbiFunctionTypePlanner canonicalTypes) : IModuleImportCollector
+    ICanonicalAbiFunctionTypePlanner canonicalTypes,
+    IComponentBuiltInImportResolver builtIns) : IModuleImportCollector
 {
     public ImmutableArray<WasmFunctionImport> Collect(
         ModuleImportCollectionRequest request)
@@ -29,7 +30,12 @@ internal sealed class ModuleImportCollector(
             .DistinctBy(method => method.WitImport!.Identity)
             .Select(method =>
         {
-            if (!canonicalImports.TryGetValue(method.WitImport!.Identity, out var function))
+            if (method.WitImport!.IsCanonicalBuiltIn)
+            {
+                return builtIns.Resolve(method);
+            }
+
+            if (!canonicalImports.TryGetValue(method.WitImport.Identity, out var function))
             {
                 throw new CompilerException(new CompilerDiagnostic(
                     DiagnosticCode.ComponentContract,

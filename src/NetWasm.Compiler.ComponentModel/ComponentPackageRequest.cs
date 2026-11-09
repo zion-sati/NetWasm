@@ -15,4 +15,8 @@ public sealed record ComponentPackageRequest(
     bool StructuredDiagnostics = false)
 {
     public WasmOptimizationOverrides? OptimizationOverrides { get; init; }
+
+    // Write the linked core module itself (the program's world imports only, no WASI) rather
+    // than a component.
+    public bool PlainCoreModule { get; init; }
 }

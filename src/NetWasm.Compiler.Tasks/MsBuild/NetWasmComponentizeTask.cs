@@ -99,13 +99,20 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
 
     public string JcoVersion { get; set; } = string.Empty;
 
-    public string Preview2ShimVersion { get; set; } = string.Empty;
+    public string Preview3ShimVersion { get; set; } = string.Empty;
 
     public string Optimization { get; set; } = "Oz";
     public string ManagedInliningHints { get; set; } = "Auto";
 
     // Repeats wasm-opt's preset until the module stops shrinking.
     public bool OptimizerConverge { get; set; }
+
+    // A plain core module (OutputType CoreModule): the linked core module itself, without WASI,
+    // and no component manifest.
+    public bool PlainCoreModule { get; set; }
+
+    // true or false overrides the preset's choice; empty keeps it.
+    public string OptimizerLowMemoryUnused { get; set; } = string.Empty;
 
     public bool StructuredDiagnostics { get; set; }
 
@@ -133,14 +140,13 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
                     "The NetWasm component target must be wasm32 or wasm64."),
             };
             var optimization = ParseOptimization();
-            var optimizationOverrides = _inlineHints.Parse(ManagedInliningHints);
-            if (OptimizerConverge)
-                optimizationOverrides = (optimizationOverrides ?? new()) with { Converge = true };
+            var optimizationOverrides = OptimizerOverridesParser.Apply(
+                _inlineHints.Parse(ManagedInliningHints), OptimizerConverge, OptimizerLowMemoryUnused);
             var inputs = _manifestInputs.Read(new(
                 InteropManifestPath,
                 Target,
                 NullIfEmpty(JcoVersion),
-                NullIfEmpty(Preview2ShimVersion)));
+                NullIfEmpty(Preview3ShimVersion)));
             var wit = _witWorlds.Select(new(
                 WitPath,
                 NullIfEmpty(World),
@@ -163,8 +169,14 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
                 entryPoint?.Abi,
                 optimization,
                 StructuredDiagnostics)
-            { OptimizationOverrides = optimizationOverrides });
-            _manifests.Write(new(ComponentManifestPath, manifest));
+            {
+                OptimizationOverrides = optimizationOverrides,
+                PlainCoreModule = PlainCoreModule,
+            });
+            if (!PlainCoreModule)
+            {
+                _manifests.Write(new(ComponentManifestPath, manifest));
+            }
             Components = [CreateComponentItem(manifest)];
             return true;
         }
@@ -197,7 +209,7 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
     private TaskItem CreateComponentItem(ComponentManifest manifest)
     {
         var item = new TaskItem(Path.GetFullPath(OutputPath));
-        item.SetMetadata("Kind", "Component");
+        item.SetMetadata("Kind", PlainCoreModule ? "CoreModule" : "Component");
         item.SetMetadata("MediaType", "application/wasm");
         item.SetMetadata("WasmTarget", manifest.Target);
         item.SetMetadata("WasiVersion", manifest.WasiVersion);

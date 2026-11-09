@@ -8,7 +8,7 @@ classification of this boundary and the remaining work.
 | --- | --- | --- |
 | `compile` core module | Supported | Supported |
 | Raw core module + JavaScript manifest/adapter | Supported | Supported with checked `BigInt` address transport |
-| `componentize` Component output | Supported with WASI 0.2 | Rejected with `NW1010` |
+| `componentize` Component output | Supported with WASI 0.3 | Rejected with `NW1010` |
 
 `wasm32` uses 32-bit addresses and managed references. `wasm64` uses Memory64
 `i64` address/reference transport while semantic IDs and lengths retain their
@@ -58,19 +58,17 @@ Raw core output is the explicit JavaScript host path. The generated manifest
 and adapter describe consumer-supplied imports/exports; browser APIs are not
 implicit. This path supports both widths.
 
-Component packaging currently uses the wasm32 + WASI Preview 2 (`cm32p2`)
-toolchain. The CLI accepts the target spelling `wasm64`, but the capability
+Component packaging uses the wasm32 + WASI 0.3 (`cm32p2`) toolchain. The CLI accepts the target spelling `wasm64`, but the capability
 check fails before packaging with `NW1010` because the current stable external
 encoder/toolchain does not provide an end-to-end Memory64 Component path. The
 request is never silently downgraded to wasm32. Internal `cm64p2` names do not
 change that support boundary.
 
-WASI 0.3 is independent: a wasm32 transport evolution neither solves nor waits
-on the missing `cm64p2` Memory64 Component encoder, canonical ABI, runtime,
-and host chain. Current packaging remains WASI 0.2; a wasm32 transport
-evolution would not make wasm64 Component output available. User-defined WIT
-is synchronous in the current profile. Use wasm32 for Components and wasm64
-for a raw core module under its explicit host contract.
+WASI 0.3 is independent: it neither solves nor waits on the missing `cm64p2`
+Memory64 Component encoder, canonical ABI, runtime, and host chain. User-defined
+WIT functions may be `async func`, bound to `Task`. Use wasm32
+for Components and wasm64 for a raw core module under its explicit host
+contract.
 
 ## Contributor and qualification rule
 

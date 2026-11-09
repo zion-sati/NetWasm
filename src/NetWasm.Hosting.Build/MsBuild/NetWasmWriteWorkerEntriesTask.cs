@@ -107,7 +107,6 @@ public sealed class NetWasmWriteWitWorkerHostEntryTask : Microsoft.Build.Utiliti
     }
 
     [Required] public string HostingJavaScriptRoot { get; set; } = string.Empty;
-    [Required] public string Preview2ShimRoot { get; set; } = string.Empty;
     [Required] public string OutputPath { get; set; } = string.Empty;
     public ITaskItem[] Arguments { get; set; } = [];
     public ITaskItem[] ApplicationImports { get; set; } = [];
@@ -122,7 +121,6 @@ public sealed class NetWasmWriteWitWorkerHostEntryTask : Microsoft.Build.Utiliti
         {
             _writer.Write(new(
                 Path.GetFullPath(HostingJavaScriptRoot),
-                Path.GetFullPath(Preview2ShimRoot),
                 Path.GetFullPath(OutputPath),
                 [.. Arguments.Select(item => item.ItemSpec)],
                 [.. EnvironmentVariables.Select(item => new WorkerEnvironmentVariable(
@@ -201,6 +199,7 @@ public sealed class NetWasmWriteWorkerClientEntryTask : Microsoft.Build.Utilitie
     [Required] public string OutputPath { get; set; } = string.Empty;
     [Required] public string DeclarationPath { get; set; } = string.Empty;
     [Required] public ITaskItem[] Exports { get; set; } = [];
+    public ITaskItem[] RequiredImportModules { get; set; } = [];
 
     public override bool Execute()
     {
@@ -213,7 +212,12 @@ public sealed class NetWasmWriteWorkerClientEntryTask : Microsoft.Build.Utilitie
                 ManifestSha256,
                 Path.GetFullPath(OutputPath),
                 Path.GetFullPath(DeclarationPath),
-                exports));
+                exports)
+            {
+                // A worker that links a file system interface takes the page's file mounts (#142).
+                FileMounts = RequiredImportModules.Any(item =>
+                    item.ItemSpec.StartsWith("wasi:filesystem/", StringComparison.Ordinal)),
+            });
             return true;
         }
         catch (JavaScriptExportRealmException exception)

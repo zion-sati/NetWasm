@@ -23,6 +23,9 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddSingleton<INullableTypeResolver, NullableTypeResolver>();
         services.AddSingleton<ICalledMethodResolverFactory,
             CalledMethodResolverFactory>();
+        services.AddSingleton<PlatformServices.IPlatformServiceBindingResolverFactory,
+            PlatformServices.PlatformServiceBindingResolverFactory>();
+        services.AddSingleton<Metadata.IAssemblyAttributeDescriptorReaderFactory, Metadata.AssemblyAttributeDescriptorReaderFactory>();
         services.AddSingleton<IBaseTypeResolverFactory,
             BaseTypeResolverFactory>();
         services.AddSingleton<ITypeOperandResolverFactory,
@@ -30,6 +33,8 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddSingleton<IMethodSpecializerFactory, MethodSpecializerFactory>();
         services.AddSingleton<IManagedMethodOptimizerFactory,
             ManagedMethodOptimizerFactory>();
+        services.AddSingleton<NullChecks.IConstructorReceiverProverFactory,
+            NullChecks.ConstructorReceiverProverFactory>();
         services.AddSingleton<IDispatchTargetResolverFactory,
             DispatchTargetResolverFactory>();
         services.AddSingleton<ITypeRelationshipClassifierFactory,

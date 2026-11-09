@@ -100,12 +100,22 @@ public sealed class WitCanonicalTypeResolver : IWitCanonicalTypeResolver
                 FlagsCount = kind.Value.GetProperty("flags").GetArrayLength(),
             },
             "handle" => Handle(document, kind.Value),
-            "future" or "stream" => throw ComponentException.Invalid(
-                $"user-defined WIT {kind.Name} types are not supported"),
+            "stream" => new(CanonicalAbiTypeKind.Stream, Placeholder())
+            {
+                ElementType = Payload(document, kind.Value),
+            },
+            "future" => new(CanonicalAbiTypeKind.Future, Placeholder())
+            {
+                ElementType = Payload(document, kind.Value),
+            },
             _ => throw ComponentException.Invalid(
                 $"unsupported WIT type '{kind.Name}'"),
         };
     }
+
+    // A stream or future of no values (`stream`, `future`) has no payload.
+    private CanonicalAbiType? Payload(WitDocument document, JsonElement value) =>
+        value.ValueKind == JsonValueKind.Null ? null : Resolve(document, Reference(value));
 
     private CanonicalAbiType ResultArm(
         WitDocument document,

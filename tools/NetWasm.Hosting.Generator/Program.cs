@@ -20,9 +20,8 @@ internal static class Program
                 new WitWorldSpecifierFormatter(),
                 interfaceSpecifiers,
                 new WitTypeIdentityFormatter(interfaceSpecifiers)),
-            new Preview2ShimIdentityReader(),
             new HostingPlatformCatalogProjector(
-                new WasiPreview2CapabilityClassifier(),
+                new WasiCapabilityClassifier(),
                 new Sha256TextHasher()),
             new HostingPlatformCatalogJavaScriptWriter());
     }

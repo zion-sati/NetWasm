@@ -37,6 +37,28 @@ public sealed class NetWasmWritePageEntriesTaskTests
         Assert.Equal(["wall"], request.Clocks.ToArray());
         Assert.Equal("denyAll", request.Network);
         Assert.True(request.Randomness);
+        Assert.Equal(PageHostPlatform.Browser, request.Platform);
+    }
+
+    // Issue #178: the same host, for Node.js code to import.
+    [Theory]
+    [InlineData("node", true)]
+    [InlineData("deno", false)]
+    public void HostTaskSelectsItsPlatform(string platform, bool valid)
+    {
+        var writer = new RecordingWriter();
+        var task = new NetWasmWritePageHostEntryTask(writer)
+        {
+            BuildEngine = new RecordingBuildEngine(),
+            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
+            OutputPath = Path.GetFullPath("node-entry.mjs"),
+            Network = "allowAll",
+            Platform = platform,
+        };
+
+        Assert.Equal(valid, task.Execute());
+
+        Assert.Equal(valid ? PageHostPlatform.Node : null, writer.Host?.Platform);
     }
 
     // The final module calls an import module's functions, so bundling it is a use.
@@ -130,6 +152,12 @@ public sealed class NetWasmWritePageEntriesTaskTests
         Assert.Equal(["i32", "i32"], request.Exports[0].Parameters.ToArray());
         Assert.Null(request.Exports[0].AsyncReturn);
         Assert.Equal("task", request.Exports[1].AsyncReturn);
+        Assert.False(request.FileMounts);
+
+        // A page that links wasi:filesystem re-exports its file mounts.
+        task.RequiredImportModules = [Item("wasi:cli/stdout@0.3.2"), Item("wasi:filesystem/types@0.3.2")];
+        Assert.True(task.Execute());
+        Assert.True(Assert.IsType<PageModuleRequest>(writer.Module).FileMounts);
     }
 
     [Theory]

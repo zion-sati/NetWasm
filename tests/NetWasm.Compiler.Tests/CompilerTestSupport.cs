@@ -31,7 +31,7 @@ internal static class CompilerTestSupport
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform/async-platform@1.0.0");
+            WitWorld: "netwasm:platform/platform@1.0.0");
 
     internal static IManagedLayoutCompiler CreateManagedLayoutCompiler(
         IManagedTypeLayoutCompilerFactory types,
@@ -154,8 +154,6 @@ internal static class CompilerTestSupport
         int invocationCount = 1,
         string exportName = "run",
         int? expectedEnvironmentReadsBeforeRun = null,
-        bool drainReactor = false,
-        string? observeExportName = null,
         WasmTarget target = WasmTarget.Wasm32,
         bool inputIsInt64 = false,
         bool assertStaticRootsRegisterOnce = false)
@@ -169,10 +167,7 @@ internal static class CompilerTestSupport
             System.Globalization.CultureInfo.InvariantCulture);
         var expectedEnvironmentReadsText = expectedEnvironmentReadsBeforeRun?.ToString(
             System.Globalization.CultureInfo.InvariantCulture) ?? "null";
-        var drainReactorText = drainReactor ? "true" : "false";
         var assertStaticRootsRegisterOnceText = assertStaticRootsRegisterOnce ? "true" : "false";
-        var observeExportText = System.Text.Json.JsonSerializer.Serialize(
-            observeExportName ?? exportName);
         var memoryDescriptorText = target == WasmTarget.Wasm64
             ? "{initial:1n,address:'i64'}"
             : "{initial:1}";
@@ -185,7 +180,7 @@ internal static class CompilerTestSupport
             "let terminalExceptionType=0;let terminalExceptionMessage=null;" +
             "let departedExceptionFrame=null;" +
             "let filterSearchFloor=0;let application=null;" +
-            "let nextPollable=1,collectionCount=0,runtimeRandomState=0n;const watchedTokens=[];const weakHandles=[0];const gcHandles=[null];const canceledTokens=new Set();" +
+            "let nextPollable=1,collectionCount=0,runtimeRandomState=0n;const weakHandles=[0];const gcHandles=[null];" +
             "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),typeInterfaces=new Set(),valueTypeSizes=new Map(),valueTypePayloadOffsets=new Map(),typeReferences=new Map(),valueTypeReferences=new Map(),arrayElementReferences=new Map();const typeObjects=new Map();" +
             "const bitmapHasReferences=(bitmap,bits)=>{const v=new DataView(memory.buffer),b=Number(bitmap);for(let i=0;i<bits;i++)if((v.getUint8(b+(i>>3))>>(i&7))&1)return true;return false;};const exceptionFrames=[];" +
             "const z=()=>0;" +
@@ -224,9 +219,19 @@ internal static class CompilerTestSupport
             "new Uint8Array(memory.buffer,p,count).set(" +
             "new Uint8Array(memory.buffer,oldAddress,count));nativeSizes.delete(oldAddress);}" +
             "return p;};" +
+            "const allocatedSizes=new Map();" +
             "const allocate=(size,type)=>{if(!typeBases.has(type))" +
             "throw Error(`allocation used unregistered type ${type}`);const p=raw(size);" +
-            "new DataView(memory.buffer).setInt32(p,type,true);return p;};" +
+            "allocatedSizes.set(p,Number(size));new DataView(memory.buffer).setInt32(p,type,true);return p;};" +
+            // A shallow clone copies the allocation's bytes: fields, or an array's or string's
+            // inline elements.
+            "const objectClone=source=>{const address=Number(source);if(!address)return source;" +
+            "const type=new DataView(memory.buffer).getInt32(address,true);" +
+            "const size=allocatedSizes.get(address)??typeSizes.get(type);" +
+            "if(size===undefined)throw Error('object clone layout is missing');" +
+            "const clone=allocate(size,type);new Uint8Array(memory.buffer,clone,size).set(" +
+            "new Uint8Array(memory.buffer,address,size));" +
+            "return typeof source==='bigint'?BigInt(clone):clone;};" +
             "const allocateString=(value,length,type)=>{" +
             "if(length<0||length>0x7ffffffb)return 0;" +
             "const p=allocate(8+length*2,type);const v=new DataView(memory.buffer);" +
@@ -382,7 +387,7 @@ internal static class CompilerTestSupport
             "gc_metric_is_supported:metric=>metric!==4," +
             "gc_wait_for_pending_finalizers:()=>{}," +
             "object_identity_hash:value=>value|0," +
-            "boxed_value_clone:boxedValueClone," +
+            "object_clone:objectClone,boxed_value_clone:boxedValueClone," +
             "runtime_helpers_equals:runtimeHelpersEquals," +
             "random_seed:()=>runtimeRandomState=BigInt.asUintN(64,runtimeRandomState+0x9e3779b97f4a7c15n)," +
             "report_unobserved_task_exception:z,report_unhandled_exception:()=>process.stderr.write('unhandled exception hint\\n')," +
@@ -397,11 +402,14 @@ internal static class CompilerTestSupport
             "departedExceptionFrame=exceptionFrames.pop();}," +
             "exception_frame_target_clause:token=>{if(token!==exceptionFrames.length+1)throw Error('EH query');return departedExceptionFrame.targetClause;}," +
             "finalizer_safepoint:z,collect:()=>{collectionCount++;}};" +
-            "const wasiWallClock={now:result=>{const view=new DataView(memory.buffer);" +
-            "view.setBigUint64(result,0n,true);view.setUint32(result+8,123000000,true);}," +
-            "resolution:result=>{const view=new DataView(memory.buffer);" +
-            "view.setBigUint64(result,0n,true);view.setUint32(result+8,1,true);}};" +
-            "const wasiMonotonicClock={'subscribe-duration':()=>nextPollable++};" +
+            "const wasiSystemClock={now:result=>{const view=new DataView(memory.buffer);" +
+            "view.setBigUint64(result,0n,true);view.setUint32(result+8,123000000,true);}};" +
+            "let monotonicNow=0n;const wasiMonotonicClock={now:()=>monotonicNow+=1000n};" +
+            // WASI 0.3 delays are async-lowered wait-for subtasks; here they return at once.
+            "const wasiMonotonicBuiltIns={'[async-lower]wait-for':()=>2};" +
+            "let nextWaitableSet=1;const componentBuiltIns={'[waitable-set-new]':()=>nextWaitableSet++," +
+            "'[waitable-join]':z,'[waitable-set-wait]':()=>{throw Error('no waitable has an event');}," +
+            "'[subtask-drop]':z,'[subtask-cancel]':()=>4};" +
             "let randomByte=0;const wasiRandom={'get-random-bytes':(length,result)=>{" +
             "const count=Number(length),address=componentReallocate(0,0,1,count);" +
             "const bytes=new Uint8Array(memory.buffer,address,count);" +
@@ -410,8 +418,6 @@ internal static class CompilerTestSupport
             "if(wide){view.setBigUint64(base,BigInt(address),true);" +
             "view.setBigUint64(base+8,BigInt(count),true);}" +
             "else{view.setUint32(base,address,true);view.setUint32(base+4,count,true);}}};" +
-            "const reactorHost={watch:(pollable,token)=>watchedTokens.push(token)," +
-            "cancel:token=>canceledTokens.add(token)};" +
             "const wasiEnvironment={'get-environment':result=>{" +
             "environmentReads++;" +
             "const view=new DataView(memory.buffer);view.setUint32(result,0,true);" +
@@ -426,14 +432,16 @@ internal static class CompilerTestSupport
             "{get:(target,name)=>target[name]||z});" +
             "WebAssembly.instantiate(fs.readFileSync(process.argv[1]),{" +
             "'netwasm.runtime.v1':runtime,'netwasm.host.v1':host," +
-            "'cm32p2|wasi:clocks/wall-clock@0.2':wasiWallClock," +
-            "'cm32p2|wasi:clocks/monotonic-clock@0.2':wasiMonotonicClock," +
-            "'cm32p2|wasi:random/random@0.2':wasiRandom," +
-            "'cm64p2|wasi:random/random@0.2':wasiRandom," +
-            "'cm32p2|netwasm:runtime/reactor-host@1':reactorHost," +
-            "'cm32p2|wasi:cli/environment@0.2':wasiEnvironment," +
-            "'cm32p2|wasi:filesystem/preopens@0.2':unusedWasiFilesystem," +
-            "'cm32p2|wasi:filesystem/types@0.2':unusedWasiFilesystem})" +
+            "'cm32p2|wasi:clocks/system-clock@0.3':wasiSystemClock," +
+            "'cm32p2|wasi:clocks/monotonic-clock@0.3':wasiMonotonicClock," +
+            "'wasi:clocks/monotonic-clock@0.3.2':wasiMonotonicBuiltIns," +
+            "'$root':componentBuiltIns," +
+            "'cm32p2|wasi:random/random@0.3':wasiRandom," +
+            "'cm64p2|wasi:random/random@0.3':wasiRandom," +
+            "'cm32p2|wasi:cli/environment@0.3':wasiEnvironment," +
+            "'cm32p2|wasi:filesystem/preopens@0.3':unusedWasiFilesystem," +
+            "'cm32p2|wasi:filesystem/types@0.3':unusedWasiFilesystem," +
+            "'wasi:filesystem/types@0.3.2':unusedWasiFilesystem})" +
             ".then(x=>{application=x.instance;" +
             "const initialize=x.instance.exports.cm32p2_initialize;" +
             "if(typeof initialize==='function')initialize();" +
@@ -447,11 +455,6 @@ internal static class CompilerTestSupport
             "if(!(firstEntryStaticRoots>0))throw Error('no static roots were registered by the first entry');" +
             "if(staticRootRegistrations!==firstEntryStaticRoots)" +
             "throw Error(`static roots re-registered: ${firstEntryStaticRoots} after the first entry, ${staticRootRegistrations} in total`);}" +
-            "if(" + drainReactorText + "){" +
-            "const wake=x.instance.exports['cm32p2|netwasm:runtime/reactor-guest@1|wake'];" +
-            "while(watchedTokens.length){const token=watchedTokens.shift();" +
-            "if(!canceledTokens.has(token))wake(token);}" +
-            "result=x.instance.exports[" + observeExportText + "](" + inputText + ");}" +
             "process.stdout.write(String(result));})" +
             ".catch(e=>{const type=lastException?new DataView(memory.buffer).getInt32(lastException,true):0;" +
             "const terminalWasmTrap=e instanceof WebAssembly.RuntimeError;" +
@@ -480,10 +483,9 @@ internal static class CompilerTestSupport
         int input,
         WasmTarget target,
         int staticDataEnd,
-        bool drainReactor = false,
-        string? observeExportName = null,
+        bool callbackEntry = false,
         string? entryExportName = null,
-        bool observeAsyncProcess = false) =>
+        bool inputArgument = false) =>
         ExecuteWithStandardWasiNode(
             module,
             directory,
@@ -493,10 +495,9 @@ internal static class CompilerTestSupport
             ImmutableDictionary<string, string>.Empty,
             null,
             null,
-            drainReactor,
-            observeExportName,
+            callbackEntry,
             entryExportName,
-            observeAsyncProcess);
+            inputArgument: inputArgument);
 
     internal static int ExecuteWithStandardWasiNode(
         byte[] module,
@@ -507,13 +508,12 @@ internal static class CompilerTestSupport
         IReadOnlyDictionary<string, string> environment,
         string? timeZoneAssetPath,
         byte[]? stackTraceSymbols = null,
-        bool drainReactor = false,
-        string? observeExportName = null,
+        bool callbackEntry = false,
         string? entryExportName = null,
-        bool observeAsyncProcess = false,
         int expectedEnvironmentReads = 1,
         int expectedPreopenReads = 1,
-        int entryInvocationCount = 1) =>
+        int entryInvocationCount = 1,
+        bool inputArgument = false) =>
         ExecuteWithStandardWasiNodeCore(
             module,
             directory,
@@ -523,13 +523,12 @@ internal static class CompilerTestSupport
             environment,
             timeZoneAssetPath,
             stackTraceSymbols,
-            drainReactor,
-            observeExportName,
+            callbackEntry,
             entryExportName,
-            observeAsyncProcess,
             expectedEnvironmentReads,
             expectedPreopenReads,
-            entryInvocationCount).GetProperty("value").GetInt32();
+            entryInvocationCount,
+            inputArgument).GetProperty("value").GetInt32();
 
     internal static long ExecuteWithStandardWasiNode(
         byte[] module,
@@ -570,13 +569,12 @@ internal static class CompilerTestSupport
         IReadOnlyDictionary<string, string> environment,
         string? timeZoneAssetPath,
         byte[]? stackTraceSymbols = null,
-        bool drainReactor = false,
-        string? observeExportName = null,
+        bool callbackEntry = false,
         string? entryExportName = null,
-        bool observeAsyncProcess = false,
         int expectedEnvironmentReads = 1,
         int expectedPreopenReads = 1,
-        int entryInvocationCount = 1)
+        int entryInvocationCount = 1,
+        bool inputArgument = false)
     {
         var modulePath = Path.Combine(directory, $"application-{target}.wasm");
         var configurationPath = Path.Combine(directory, $"wasi-host-{target}.json");
@@ -593,11 +591,10 @@ internal static class CompilerTestSupport
             environment,
             timeZoneAssetPath,
             stackTraceSymbolsPath,
-            drainReactor,
-            observeExportName,
+            callbackEntry,
             entryExportName,
-            observeAsyncProcess,
             entryInvocationCount,
+            inputArgument,
         }));
         var oraclePath = Path.Combine(
             AppContext.BaseDirectory,

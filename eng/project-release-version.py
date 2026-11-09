@@ -80,6 +80,30 @@ def replace_sdk_reference(contents: bytes, source: bytes, target: bytes) -> tupl
     return pattern.subn(rb"\g<1>" + target + rb"\g<2>", contents)
 
 
+def minor_float(version: str) -> bytes:
+    """The NuGet floating range for the newest release in a version's minor.
+
+    A template references a NetWasm package released separately from the SDK
+    (such as NetWasm.System.Net.Http) by floating within the SDK's minor. A
+    stable float does not match prereleases, so a prerelease SDK floats to the
+    minor's prereleases too.
+    """
+    major, minor = version.split(".")[:2]
+    prerelease = "-" in version.split("+")[0]
+    return f"{major}.{minor}.*{'-*' if prerelease else ''}".encode("ascii")
+
+
+def replace_package_minor_floats(
+    contents: bytes, source: bytes, target: bytes
+) -> tuple[bytes, int]:
+    pattern = re.compile(
+        rb'(<PackageReference\s+Include="NetWasm\.[^"]+"\s+Version=")'
+        + re.escape(source)
+        + rb'(")'
+    )
+    return pattern.subn(rb"\g<1>" + target + rb"\g<2>", contents)
+
+
 def project_release_fields(
     source_root: Path,
     source_version: str,
@@ -140,8 +164,11 @@ def project_release_fields(
             raise ValueError(
                 f"The NetWasm.Sdk reference in {relative} does not match {source_version}."
             )
+        contents, floats = replace_package_minor_floats(
+            contents, minor_float(source_version), minor_float(target_version)
+        )
         path.write_bytes(contents)
-        changed_files.append({"path": relative.as_posix(), "replacements": count})
+        changed_files.append({"path": relative.as_posix(), "replacements": count + floats})
 
     for relative, path in sorted(tracked.items()):
         if (

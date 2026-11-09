@@ -19,37 +19,57 @@ public sealed class PlatformWorldCallRewriterTests
         1);
 
     [Theory]
-    [InlineData(true, 1)]
-    [InlineData(false, 0)]
-    public void ReplacesTheReactorHostSwitchWithTheWorldValue(bool reactorHost, int expected)
+    [InlineData("ImportsEventLoop", true, false, false, 1)]
+    [InlineData("ImportsEventLoop", false, true, true, 0)]
+    [InlineData("ImportsMonotonicClock", false, true, false, 1)]
+    [InlineData("ImportsMonotonicClock", true, false, true, 0)]
+    [InlineData("HasSynchronousExports", false, false, true, 1)]
+    [InlineData("HasSynchronousExports", true, true, false, 0)]
+    public void ReplacesEachSwitchWithTheWorldValue(
+        string name, bool eventLoop, bool clock, bool synchronousExports, int expected)
     {
         var body = Body(CilOperation.Call);
 
-        var rewritten = Rewriter(Switch(), reactorHost).Rewrite(body);
+        var rewritten = new PlatformWorldCallRewriter(
+            new FixedMethodResolver(Switch(name)),
+            new Symbols(),
+            new PlatformWorldCapabilities(eventLoop, clock, synchronousExports)).Rewrite(body);
 
-        Assert.NotSame(body, rewritten);
         Assert.Equal(CilOperation.LoadInt32, rewritten.Instructions[0].Operation);
         Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
-        Assert.Equal(body.Instructions[1], rewritten.Instructions[1]);
     }
 
     [Theory]
     [InlineData(true, 1)]
     [InlineData(false, 0)]
-    public void ReplacesTheEventLoopSwitchWithTheWorldValue(bool eventLoop, int expected)
+    public void ReplacesTheHostEventLoopSwitchWithWhetherAJavaScriptHostRunsTheModule(bool host, int expected)
     {
-        var body = Body(CilOperation.Call);
+        var rewritten = new PlatformWorldCallRewriter(
+            new FixedMethodResolver(Switch("HasHostEventLoop")),
+            new Symbols(),
+            new PlatformWorldCapabilities(true, true, true) { HostEventLoop = host }).Rewrite(Body(CilOperation.Call));
 
-        var rewritten = Rewriter(Switch("ImportsEventLoop"), reactorHost: !eventLoop, eventLoop).Rewrite(body);
-
-        Assert.Equal(CilOperation.LoadInt32, rewritten.Instructions[0].Operation);
         Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
+    }
+
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 0)]
+    public void ReplacesTheWasiSwitchWithWhetherTheProgramHasWasi(bool wasi, int expected)
+    {
+        var rewritten = new PlatformWorldCallRewriter(
+            new FixedMethodResolver(Switch("ProvidesWasi")),
+            new Symbols(),
+            new PlatformWorldCapabilities(true, true, true) { Wasi = wasi }).Rewrite(Body(CilOperation.Call));
+
+        Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
+        Assert.True(new PlatformWorldCapabilities(false, false, false).Wasi);
     }
 
     [Fact]
     public void RejectsNullBody()
     {
-        Assert.Throws<ArgumentNullException>(() => Rewriter(Switch(), reactorHost: true).Rewrite(null!));
+        Assert.Throws<ArgumentNullException>(() => Rewriter(Switch(), eventLoop: true).Rewrite(null!));
     }
 
     [Fact]
@@ -57,7 +77,7 @@ public sealed class PlatformWorldCallRewriterTests
     {
         var body = Body(CilOperation.Call);
 
-        Assert.Same(body, Rewriter(null, reactorHost: true).Rewrite(body));
+        Assert.Same(body, Rewriter(null, eventLoop: true).Rewrite(body));
     }
 
     [Fact]
@@ -65,7 +85,7 @@ public sealed class PlatformWorldCallRewriterTests
     {
         var body = Body(CilOperation.CallVirtual);
 
-        Assert.Same(body, Rewriter(Switch(), reactorHost: true).Rewrite(body));
+        Assert.Same(body, Rewriter(Switch(), eventLoop: true).Rewrite(body));
     }
 
     [Theory]
@@ -85,47 +105,54 @@ public sealed class PlatformWorldCallRewriterTests
         };
         var body = Body(CilOperation.Call);
 
-        Assert.Same(body, Rewriter(target, reactorHost: true).Rewrite(body));
+        Assert.Same(body, Rewriter(target, eventLoop: true).Rewrite(body));
     }
 
+    // Every component has an event loop on the Component Model's waitable sets; a core module
+    // has none. Delays need the monotonic clock's wait-for: a world declaring the clock has it,
+    // even when no reachable code binds its now.
     [Fact]
-    public void ReactorHostRequiresBothBoundImports()
+    public void EveryComponentHasAnEventLoopAndDelaysNeedTheClock()
     {
-        Assert.False(PlatformWorldCapabilities.None.ReactorHost);
-        Assert.False(PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty).ReactorHost);
-        Assert.False(PlatformWorldCapabilities.From(Contract(Import("watch"))).ReactorHost);
-        Assert.False(PlatformWorldCapabilities.From(Contract(Import("cancel"))).ReactorHost);
-        Assert.False(PlatformWorldCapabilities.From(
-            Contract(Import("watch"), Import("cancel") with { HasManagedBinding = false })).ReactorHost);
-        Assert.False(PlatformWorldCapabilities.From(
-            Contract(Import("watch"), Import("cancel", "netwasm:runtime/reactor-guest@1.0.0"))).ReactorHost);
-        Assert.True(PlatformWorldCapabilities.From(Contract(Import("watch"), Import("cancel"))).ReactorHost);
+        var now = Import("now", "wasi:clocks/monotonic-clock@0.3.2");
+        Assert.Equal(new PlatformWorldCapabilities(false, false, false), PlatformWorldCapabilities.None);
+        Assert.Equal(new PlatformWorldCapabilities(false, false, false),
+            PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty));
+        Assert.Equal(new PlatformWorldCapabilities(false, false, false),
+            PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty with { Imports = [now] }));
+        Assert.Equal(new PlatformWorldCapabilities(true, false, false), PlatformWorldCapabilities.From(Contract()));
+        Assert.Equal(new PlatformWorldCapabilities(true, true, false),
+            PlatformWorldCapabilities.From(Contract(now with { HasManagedBinding = false })));
+        Assert.Equal(new PlatformWorldCapabilities(true, false, false), PlatformWorldCapabilities.From(
+            Contract(Import("now", "wasi:clocks/monotonic-clock@0.2.11"))));
+        Assert.Equal(new PlatformWorldCapabilities(true, false, false), PlatformWorldCapabilities.From(
+            Contract(Import("wait-for", "wasi:clocks/monotonic-clock@0.3.2"))));
         Assert.Throws<ArgumentNullException>(() => PlatformWorldCapabilities.From(null!));
     }
 
+    // A synchronous export or an exported resource's destructor is where a blocking wait must
+    // throw; an async func's export is not in the contract, and a resource's other exports are
+    // the component's own built-ins.
     [Fact]
-    public void EventLoopRequiresPollAndTheMonotonicClock()
+    public void SynchronousExportsAreTheContractsFunctionsAndDestructors()
     {
-        var poll = Import("poll", "wasi:io/poll@0.2.11");
-        var subscribe = Import("subscribe-duration", "wasi:clocks/monotonic-clock@0.2.11");
-        Assert.False(PlatformWorldCapabilities.None.EventLoop);
-        Assert.False(PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty).EventLoop);
-        Assert.False(PlatformWorldCapabilities.From(Contract(poll)).EventLoop);
-        Assert.False(PlatformWorldCapabilities.From(Contract(subscribe)).EventLoop);
-        Assert.False(PlatformWorldCapabilities.From(
-            Contract(poll with { HasManagedBinding = false }, subscribe)).EventLoop);
-        Assert.False(PlatformWorldCapabilities.From(
-            Contract(Import("poll", "wasi:io/poll@0.2.0"), subscribe)).EventLoop);
-        var both = PlatformWorldCapabilities.From(Contract(poll, subscribe));
-        Assert.True(both.EventLoop);
-        Assert.False(both.ReactorHost);
+        static PlatformWorldCapabilities With(CanonicalAbiFunctionKind kind) =>
+            PlatformWorldCapabilities.From(Contract() with
+            {
+                Exports = [Import("run", "example:test/api@1.0.0") with { Kind = kind }],
+            });
+
+        Assert.False(PlatformWorldCapabilities.From(Contract()).SynchronousExports);
+        Assert.True(With(CanonicalAbiFunctionKind.Function).SynchronousExports);
+        Assert.True(With(CanonicalAbiFunctionKind.ExportedResourceDestructor).SynchronousExports);
+        Assert.False(With(CanonicalAbiFunctionKind.ExportedResourceRep).SynchronousExports);
     }
 
     private static PlatformWorldCallRewriter Rewriter(
-        MethodInstanceModel? target, bool reactorHost, bool eventLoop = false) => new(
+        MethodInstanceModel? target, bool eventLoop) => new(
         new FixedMethodResolver(target),
         new Symbols(),
-        new PlatformWorldCapabilities(reactorHost, eventLoop));
+        new PlatformWorldCapabilities(eventLoop, eventLoop, eventLoop));
 
     private static CilMethodBody Body(CilOperation callOperation) => new(
         Caller,
@@ -138,7 +165,7 @@ public sealed class PlatformWorldCallRewriterTests
             new(3, 4, CilOperation.Return, new CilOperand.None()),
         ]);
 
-    private static MethodInstanceModel Switch(string name = "ImportsReactorHost")
+    private static MethodInstanceModel Switch(string name = "ImportsEventLoop")
     {
         var signature = MethodSignatureModel.Create(CliValueKind.I4);
         var definition = new MethodDefinitionModel(
@@ -156,7 +183,7 @@ public sealed class PlatformWorldCallRewriterTests
     }
 
     private static ComponentBoundaryContract Contract(params CanonicalAbiFunction[] imports) =>
-        new("netwasm:platform@1.0.0", "async-platform", [.. imports], []);
+        new("netwasm:platform@1.0.0", "platform", [.. imports], []);
 
     private static CanonicalAbiFunction Import(
         string function,

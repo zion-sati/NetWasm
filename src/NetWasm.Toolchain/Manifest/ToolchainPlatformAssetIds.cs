@@ -26,7 +26,19 @@ public static class ToolchainPlatformAssetIds
     public const string BinaryenWasmShell = "binaryen.wasm-shell";
     public const string BinaryenWasm2Js = "binaryen.wasm2js";
     public const string JcoPackage = "jco.package";
-    public const string Preview2ShimPackage = "preview2-shim.package";
+    public const string Preview3ShimPackage = "preview3-shim.package";
+    public const string Preview3ShimLicense = "preview3-shim.license";
+    public const string Preview3ShimHttp = "preview3-shim.http";
+    public const string Preview3ShimHttpClient = "preview3-shim.http-client";
+    public const string Preview3ShimHttpError = "preview3-shim.http-error";
+    public const string Preview3ShimHttpFields = "preview3-shim.http-fields";
+    public const string Preview3ShimHttpRequest = "preview3-shim.http-request";
+    public const string Preview3ShimHttpResponse = "preview3-shim.http-response";
+    public const string Preview3ShimHttpServer = "preview3-shim.http-server";
+    public const string Preview3ShimFuture = "preview3-shim.future";
+    public const string Preview3ShimStream = "preview3-shim.stream";
+    public const string Preview3ShimHttpWorker = "preview3-shim.http-worker";
+    public const string Preview3ShimResourceWorker = "preview3-shim.resource-worker";
     public const string JcoEntryPoint = "jco.entrypoint";
     public const string JcoPackageLock = "jco.package-lock";
     public const string JcoClosureIntegrity = "jco.closure-integrity";
@@ -48,7 +60,7 @@ public static class ToolchainPlatformAssetIds
     public const string WasmToolsReadme = "wasm-tools.readme";
     public const string WitPackageManifest = "wit.package-manifest";
     public const string WitCommandPackage = "wit.command-package";
-    public const string WitAsyncCommandPackage = "wit.async-command-package";
+    public const string WitDiagnosticCommandPackage = "wit.diagnostic-command-package";
     public const string WitCompilerPackage = "wit.compiler-package";
     public const string TimeZoneClosureIntegrity = "timezones.closure-integrity";
 
@@ -80,13 +92,32 @@ public static class ToolchainPlatformAssetIds
     public static ImmutableArray<string> JcoClosure { get; } =
     [
         JcoPackage,
-        Preview2ShimPackage,
+        Preview3ShimPackage,
         JcoEntryPoint,
         JcoPackageLock,
         JcoClosureIntegrity,
         JcoNotices,
         JcoClosurePolicy,
         JcoBindgenPatch,
+    ];
+
+    // The Node.js wasi:http client a deployment that imports wasi:http carries: preview3-shim's
+    // HTTP entry point and, as its supporting files, its package description (which makes its
+    // .js files ES modules), license, and the modules and workers the entry point loads.
+    public static ImmutableArray<string> NodeHttpProviderFiles { get; } =
+    [
+        Preview3ShimPackage,
+        Preview3ShimLicense,
+        Preview3ShimHttpClient,
+        Preview3ShimHttpError,
+        Preview3ShimHttpFields,
+        Preview3ShimHttpRequest,
+        Preview3ShimHttpResponse,
+        Preview3ShimHttpServer,
+        Preview3ShimFuture,
+        Preview3ShimStream,
+        Preview3ShimHttpWorker,
+        Preview3ShimResourceWorker,
     ];
 
     public static ImmutableArray<string> HostingBundleClosure { get; } =
@@ -119,7 +150,7 @@ public static class ToolchainPlatformAssetIds
     [
         WitPackageManifest,
         WitCommandPackage,
-        WitAsyncCommandPackage,
+        WitDiagnosticCommandPackage,
         WitCompilerPackage,
     ];
 }

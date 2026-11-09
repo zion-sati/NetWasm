@@ -44,9 +44,16 @@ try {
     const getCoreModule = async path => WebAssembly.compile(
       await (await fetch(new URL(path, location.href))).arrayBuffer());
     const random = { getRandomU64: () => 0x0123_4567_89ab_cdefn };
+    // The NetWasm runtime reads its environment and reports through standard error.
+    const environment = { getEnvironment: () => [] };
+    const stderr = { writeViaStream: () => Promise.resolve() };
     const imports = {
       'wasi:random/random': random,
-      'wasi:random/random@0.2.11': random,
+      'wasi:random/random@0.3.2': random,
+      'wasi:cli/environment': environment,
+      'wasi:cli/environment@0.3.2': environment,
+      'wasi:cli/stderr': stderr,
+      'wasi:cli/stderr@0.3.2': stderr,
     };
     const first = await module.instantiate(getCoreModule, imports);
     const second = await module.instantiate(getCoreModule, imports);

@@ -43,11 +43,13 @@ internal sealed class RawAdapterValueType
             ["flags"] = CanonicalAbiTypeKind.Flags,
             ["owned-resource"] = CanonicalAbiTypeKind.OwnedResource,
             ["borrowed-resource"] = CanonicalAbiTypeKind.BorrowedResource,
+            ["stream"] = CanonicalAbiTypeKind.Stream,
+            ["future"] = CanonicalAbiTypeKind.Future,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public required CanonicalAbiTypeKind Kind { get; init; }
 
-    /// <summary>The aliased, listed or optional type.</summary>
+    /// <summary>The aliased, listed or optional type, or a stream's or future's payload, if any.</summary>
     public RawAdapterValueType? Element { get; init; }
 
     public ImmutableArray<RawAdapterValueField> Fields { get; init; } = [];
@@ -100,6 +102,7 @@ internal sealed class RawAdapterValueType
         CanonicalAbiTypeKind.Enum => $"Enum({string.Join(",", Cases.Select(item => item.Name))})",
         CanonicalAbiTypeKind.Flags => $"Flags({Count}:{string.Join(",", Flags)})",
         CanonicalAbiTypeKind.OwnedResource or CanonicalAbiTypeKind.BorrowedResource => $"{Kind}({ResourceType})",
+        CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future => $"{Kind}({Element?.Key ?? "_"})",
         _ => Kind.ToString(),
     };
 
@@ -146,6 +149,8 @@ internal sealed class RawAdapterValueType
                 Kind = kind,
                 ResourceType = value.GetProperty("resourceType").GetInt32(),
             },
+            CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future =>
+                new() { Kind = kind, Element = ReadOptional(value.GetProperty("element")) },
             _ => new() { Kind = kind },
         };
     }
@@ -190,7 +195,8 @@ internal sealed class RawAdapterValuePlanner(int addressSize)
         CanonicalAbiTypeKind.S16 or CanonicalAbiTypeKind.U16 => new(2, 2, []),
         CanonicalAbiTypeKind.S32 or CanonicalAbiTypeKind.U32 or CanonicalAbiTypeKind.F32
             or CanonicalAbiTypeKind.Character or CanonicalAbiTypeKind.OwnedResource
-            or CanonicalAbiTypeKind.BorrowedResource => new(4, 4, []),
+            or CanonicalAbiTypeKind.BorrowedResource or CanonicalAbiTypeKind.Stream
+            or CanonicalAbiTypeKind.Future => new(4, 4, []),
         CanonicalAbiTypeKind.S64 or CanonicalAbiTypeKind.U64 or CanonicalAbiTypeKind.F64 => new(8, 8, []),
         CanonicalAbiTypeKind.Text or CanonicalAbiTypeKind.List => new(checked(AddressSize * 2), AddressSize, []),
         CanonicalAbiTypeKind.Alias => Layout(type.Element!),

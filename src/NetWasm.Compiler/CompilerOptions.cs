@@ -55,6 +55,11 @@ public sealed record CompilerOptions(
     // Modules the project's native archives import from; the host supplies
     // them beside the modules [WasmImportLinkage] imports name.
     public ImmutableArray<string> ImportModules { get; init; } = [];
+
+    // A plain core module (a Library build of a WIT world): it imports only the world's
+    // functions, with no WASI and no Component Model event loop, for engines without the
+    // Component Model. Its platform services are the program's bindings or throw.
+    public bool PlainCoreModule { get; init; }
 }
 
 public sealed partial record CompilationResult(

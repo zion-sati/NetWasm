@@ -201,6 +201,25 @@ public sealed class RawCanonicalFunctionLayoutPlannerTests
         Assert.Empty(dependencies.Calls);
     }
 
+    [Theory]
+    [InlineData("sample:raw/io@1.2.3", "sample:raw/io@1.2.3")]
+    [InlineData("", "$root")]
+    public void AnAsyncLoweringIsNamedByItsFullInterfaceAndReturnsASubtaskStatus(string interfaceName, string module)
+    {
+        var function = Function([new("count", Type(CanonicalAbiTypeKind.U32))], Type(CanonicalAbiTypeKind.U64)) with
+        {
+            InterfaceName = interfaceName,
+        };
+
+        var layout = CreateRealPlanner().Plan(function, WasmTarget.Wasm32, asynchronous: true);
+
+        Assert.Equal(module, layout.Module);
+        Assert.Equal("[async-lower]read", layout.Name);
+        Assert.Equal([CliValueKind.I4, CliValueKind.ManagedAddress], layout.Signature.Parameters);
+        Assert.Equal(CliValueKind.I4, layout.Signature.Result);
+        Assert.True(layout.Signature.IndirectResult);
+    }
+
     private static IRawCanonicalFunctionLayoutPlanner CreatePlanner(RecordingPlanners dependencies) =>
         Assert.IsAssignableFrom<IRawCanonicalFunctionLayoutPlanner>(new RawCanonicalFunctionLayoutPlanner(dependencies, dependencies, dependencies));
 

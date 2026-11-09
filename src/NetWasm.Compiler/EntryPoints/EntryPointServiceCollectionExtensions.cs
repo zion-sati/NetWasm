@@ -19,12 +19,14 @@ internal static class EntryPointServiceCollectionExtensions
         services.AddSingleton<ICompilationExportResolver, WitExportResolver>();
         services.AddSingleton<ICompilationExportResolver,
             WitPostReturnExportResolver>();
+        services.AddSingleton<ICompilationExportResolver, HostEventLoopExportResolver>();
         services.AddSingleton<ICompilationExportNameValidator,
             CompilationExportNameValidator>();
         services.AddSingleton<ICompilationExportsResolver, CompilationExportResolver>();
         services.AddSingleton<ICompilationEntryResolver, CompilationEntryResolver>();
         services.AddSingleton<IManagedExecutableArgumentFactoryResolver,
             ManagedExecutableArgumentFactoryResolver>();
+        services.AddSingleton<IManagedExecutableExitResolver, ManagedExecutableExitResolver>();
         return services;
     }
 }

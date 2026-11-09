@@ -91,7 +91,7 @@ managed core module and materialized runtime module, but skips SDK-owned
 componentization so an external raw-module linker can consume the standard
 `NetWasmComponentInput` and `NetWasmComponentRuntime` contract. The default
 `false` value preserves executable component builds. Raw output is independent
-of the entry contract: `async-command` works with component or raw output.
+of the entry point: an asynchronous `Main` works with component or raw output.
 Reachable application-owned `[JSImport]` calls require raw output and an exact
 application provider. See the
 [entry-contract matrix](../../docs/sdk-quickstart.md#choose-the-entry-contract-and-output-kind).

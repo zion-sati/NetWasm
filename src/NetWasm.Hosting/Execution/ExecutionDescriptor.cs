@@ -1,8 +1,6 @@
-using System.Collections.Immutable;
-
 namespace NetWasm.Hosting.Execution;
 
-/// <summary>Local build output locating the tools and immutable deployment to execute.</summary>
+/// <summary>Local build output locating the host and immutable deployment to execute.</summary>
 /// <remarks>Contains machine-local paths. Never publish this descriptor with an application.</remarks>
 public sealed record ExecutionDescriptor(
     int SchemaVersion,
@@ -11,5 +9,4 @@ public sealed record ExecutionDescriptor(
     string DeploymentManifestSha256,
     string HostingVersion,
     string HostExecutablePath,
-    string LauncherPath,
-    ImmutableArray<ExecutionToolPackage> ToolPackages);
+    string LauncherPath);

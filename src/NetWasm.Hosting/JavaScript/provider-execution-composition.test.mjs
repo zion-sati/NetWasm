@@ -10,17 +10,15 @@ import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs"
 import { describeFailureCause } from "./execution-result.mjs";
 
 const digest = "1".repeat(64);
-const environmentModule = "wasi:cli/environment@0.2.11";
-const reactorModule = "netwasm:runtime/reactor-host@1.0.0";
+const environmentModule = "wasi:cli/environment@0.3.2";
 const environmentSource = Object.freeze({
   getArguments: () => ["application"],
   getEnvironment: () => [],
-  initialCwd: () => null,
+  getInitialCwd: () => undefined,
 });
-class OutputStream {}
-class Pollable {}
 const stdout = Object.freeze({ write() {} });
 const stderr = Object.freeze({ write() {} });
+const stdin = Object.freeze({ read() { return [][Symbol.iterator](); } });
 
 function manifest() {
   return {
@@ -33,17 +31,15 @@ function manifest() {
     }],
     buildFingerprint: digest,
     deploymentKind: "raw",
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     exports: [],
     featureSet: "default",
     profile: "netwasm0.1",
-    requiredImportModules: [environmentModule, reactorModule],
+    requiredImportModules: [environmentModule],
     requiredImports: [
       { interface: environmentModule, name: "get-arguments", parameters: [], results: ["list<string>"] },
       { interface: environmentModule, name: "get-environment", parameters: [], results: ["list<tuple<string,string>>"] },
-      { interface: environmentModule, name: "initial-cwd", parameters: [], results: ["option<string>"] },
-      { interface: reactorModule, name: "watch", parameters: ["u32", "s64"], results: [] },
-      { interface: reactorModule, name: "cancel", parameters: ["u32"], results: [] },
+      { interface: environmentModule, name: "get-initial-cwd", parameters: [], results: ["option<string>"] },
     ],
     runtimeFeatures: [],
     schemaVersion: 1,
@@ -63,7 +59,7 @@ function executionRequest() {
     deploymentManifestSha256: digest,
     environment: [],
     grants: {
-      clocks: [], environment: [], network: "denyAll", preopens: [], randomness: false,
+      clocks: [], environment: [], network: "denyAll", preopens: [], randomness: false, temporaryDirectory: false, workingDirectory: false,
     },
     schemaVersion: 1,
   };
@@ -72,18 +68,12 @@ function executionRequest() {
 function options(overrides = {}) {
   return {
     catalog: platformProviderCatalog,
-    createShim(config) {
-      assert.deepEqual(config.sandbox.args, ["application"]);
-      return {
-        getImportObject(request) {
-          assert.deepEqual(request, { asVersion: "0.2.11" });
-          return {
-            [environmentModule]: environmentSource,
-            "wasi:io/poll@0.2.11": Object.freeze({ Pollable }),
-            "wasi:io/streams@0.2.11": Object.freeze({ OutputStream }),
-          };
-        },
-      };
+    createImports(request) {
+      assert.deepEqual(request.arguments, ["application"]);
+      return Object.freeze({
+        imports: Object.freeze({ [environmentModule]: environmentSource }),
+        release: async () => {},
+      });
     },
     hashBytes() { assert.fail("no application provider should be hashed"); },
     importModule() { assert.fail("no application provider should be imported"); },
@@ -94,7 +84,7 @@ function options(overrides = {}) {
   };
 }
 
-test("wires the generated Preview 2 catalog into selected provider preparation", async () => {
+test("wires the generated WASI 0.3 catalog into selected provider preparation", async () => {
   const prepare = createProviderExecutionComposition(options());
   assert.equal(Object.isFrozen(prepare), true);
   const result = await prepare({
@@ -103,13 +93,16 @@ test("wires the generated Preview 2 catalog into selected provider preparation",
     request: executionRequest(),
     signal: null,
     stderr,
+    stdin,
     stdout,
   });
 
   assert.deepEqual(Object.keys(result.componentImports), ["wasi:cli/environment"]);
   assert.equal(result.componentImports["wasi:cli/environment"], environmentSource);
-  assert.deepEqual(Object.keys(result.rawProviders), ["wasi:cli/environment@0.2.11"]);
-  assert.equal(result.rawProviders["wasi:cli/environment@0.2.11"], environmentSource);
+  assert.deepEqual(Object.keys(result.rawProviders), [environmentModule]);
+  assert.equal(result.rawProviders[environmentModule], environmentSource);
+  assert.equal(typeof result.release, "function");
+  await result.release();
   assert.deepEqual(Object.keys(result.consumerModules), [environmentModule]);
   assert.equal(result.consumerModules[environmentModule], environmentSource);
   assert.deepEqual(result.binding.platformProviders.map(value => value.module), [environmentModule]);
@@ -128,18 +121,17 @@ test("rejects malformed composition dependencies before creating the catalog", (
   const symbolic = { ...valid, [Symbol("invalid")]: true };
   assert.throws(() => createProviderExecutionComposition(symbolic), TypeError);
   const accessor = { ...valid };
-  Object.defineProperty(accessor, "createShim", { enumerable: true, get: () => valid.createShim });
+  Object.defineProperty(accessor, "createImports", { enumerable: true, get: () => valid.createImports });
   assert.throws(() => createProviderExecutionComposition(accessor), TypeError);
 });
 
 test("keeps an ungranted platform capability as the contract failure cause", async () => {
-  const wallClockModule = "wasi:clocks/wall-clock@0.2.11";
-  const datetime = `${wallClockModule}#datetime`;
+  const wallClockModule = "wasi:clocks/system-clock@0.3.2";
+  const instant = `${wallClockModule}#instant`;
   const prepare = createProviderExecutionComposition(options({
-    createShim: () => ({
-      getImportObject: () => ({
-        [wallClockModule]: Object.freeze({ now() {}, resolution() {} }),
-      }),
+    createImports: () => Object.freeze({
+      imports: Object.freeze({ [wallClockModule]: Object.freeze({ now() {}, getResolution() {} }) }),
+      release: async () => {},
     }),
   }));
   const required = manifest();
@@ -147,15 +139,15 @@ test("keeps an ungranted platform capability as the contract failure cause", asy
     filesystem: null,
     manifest: {
       ...required,
-      requiredImportModules: [wallClockModule, reactorModule],
+      requiredImportModules: [wallClockModule],
       requiredImports: [
-        { interface: wallClockModule, name: "now", parameters: [], results: [datetime] },
-        ...required.requiredImports.filter(value => value.interface === reactorModule),
+        { interface: wallClockModule, name: "now", parameters: [], results: [instant] },
       ],
     },
     request: executionRequest(),
     signal: null,
     stderr,
+    stdin,
     stdout,
   }), error => isContractError(error)
     && describeFailureCause(error) === "TypeError: platform capability 'wallClock' was not granted");
@@ -169,6 +161,7 @@ test("brands public validation failures and keeps their cause", async () => {
     request: executionRequest(),
     signal: null,
     stderr,
+    stdin,
     stdout,
   }), error => isContractError(error)
     && !error.message.includes("private-invalid-profile")

@@ -6,7 +6,8 @@ public sealed partial class SdkToolchainContractTests
 {
     private static readonly string[] RuntimeTargets = ["wasm32", "wasm64"];
     private static readonly string[] RuntimeCollectors = ["compact", "netwasm", "bump"];
-    private static readonly string[] RuntimeVariantFiles = ["libnetwasm-runtime.a", "libgc.a", "layout.json"];
+    private static readonly string[] RuntimeVariantFiles =
+        ["libnetwasm-runtime.a", "libgc.a", "libnetwasm-runtime-wasi.a", "libnetwasm-runtime-nowasi.a", "layout.json"];
 
     [Fact]
     public void CompilerTaskCarriesPathMapIntoStackTraceIdentity()
@@ -176,7 +177,8 @@ public sealed partial class SdkToolchainContractTests
             .ToArray();
         var local = Assert.Single(runArguments, element => element.Value.Contains("NetWasmLocalLauncherPath", StringComparison.Ordinal));
 
-        Assert.Contains("--forward-command-result", local.Value, StringComparison.Ordinal);
+        // The internal channels follow the option that tells the launcher they are there.
+        Assert.Contains("\"$(NetWasmLocalLauncherPath)\" --netwasm-execution --forward-command-result", local.Value, StringComparison.Ordinal);
         Assert.Contains("--result", local.Value, StringComparison.Ordinal);
         Assert.Contains("--replace-result", local.Value, StringComparison.Ordinal);
         // Issue #140: a browser project serves the site its staged publish writes.
@@ -226,8 +228,10 @@ public sealed partial class SdkToolchainContractTests
             element => (string?)element.Attribute("Name") == targetName);
         Assert.Contains("NetWasmSdkResolveExecutionArguments",
             ((string?)target.Attribute("DependsOnTargets"))!.Split(';'));
-        var task = Assert.Single(target.Elements(ns + taskName));
-        Assert.Equal("@(_NetWasmExecutionArgument)", (string?)task.Attribute("Arguments"));
+        // A JsModule writes a page host for the browser and one for Node.js.
+        var tasks = target.Elements(ns + taskName).ToArray();
+        Assert.NotEmpty(tasks);
+        Assert.All(tasks, task => Assert.Equal("@(_NetWasmExecutionArgument)", (string?)task.Attribute("Arguments")));
     }
 
     // A distribution-built SDK reports its distribution's RID (arch-x64,
@@ -557,64 +561,28 @@ public sealed partial class SdkToolchainContractTests
             StringComparison.Ordinal);
     }
 
+    // A command's asynchronous Main needs no contract setting: the toolchain packages every
+    // command with its command world (netwasm:command, wasi:cli's command with wasi:http's
+    // client) and compiles it against the platform world, and NetWasmComponentContract fails
+    // with NWSDK025.
     [Fact]
-    public void ToolchainTargetProvidesAnExplicitAsyncCommandContract()
+    public void ToolchainTargetBuildsEveryCommandWithOneWorld()
     {
         var document = LoadSdkTarget("NetWasm.Toolchain.targets");
         var source = document.ToString(SaveOptions.DisableFormatting);
 
-        Assert.Contains("NetWasmComponentContract", source, StringComparison.Ordinal);
-        Assert.Contains("async-command", source, StringComparison.Ordinal);
         Assert.Contains("wit-packages", source, StringComparison.Ordinal);
         Assert.Contains("command.wit.wasm", source, StringComparison.Ordinal);
-        Assert.Contains("async-command.wit.wasm", source, StringComparison.Ordinal);
         Assert.Contains("compiler.wit.wasm", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("NetWasmToolchainWitRoot", source,
-            StringComparison.Ordinal);
-        Assert.Contains("netwasm:component@1.0.0/async-command", source, StringComparison.Ordinal);
-        Assert.Contains("netwasm:component@1.0.0/async-http-command", source,
-            StringComparison.Ordinal);
-        Assert.Contains("<ActivationInterfacePrefix>wasi:http/</ActivationInterfacePrefix>", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("async-command", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("async-http-command", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("async-platform", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("NetWasmToolchainWitRoot", source, StringComparison.Ordinal);
         var compilerWorlds = document.Descendants(XName.Get("NetWasmCompilerWitWorld",
             "http://schemas.microsoft.com/developer/msbuild/2003")).ToArray();
-        var asyncCommandCompilerWorld = Assert.Single(compilerWorlds, world =>
-            ((string?)world.Attribute("Condition"))?.Contains(
-                "'$(NetWasmComponentContract)' == 'async-command'",
-                StringComparison.Ordinal) == true);
-        Assert.Equal("netwasm:platform@1.0.0/async-platform", asyncCommandCompilerWorld.Value);
-        Assert.Contains("'$(NetWasmComponentContract)' == 'async-command'",
-            (string?)asyncCommandCompilerWorld.Attribute("Condition"), StringComparison.Ordinal);
-        Assert.Contains(compilerWorlds,
-            world => world.Value == "netwasm:platform@1.0.0/platform");
+        Assert.Contains(compilerWorlds, world => world.Value == "netwasm:platform@1.0.0/platform");
         Assert.Contains("NWSDK025", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AsyncCommandWorldExportsProcessObservationAndRetainsReactorSurface()
-    {
-        var repositoryRoot = FindRepositoryRoot();
-        var world = File.ReadAllText(
-            Path.Combine(repositoryRoot, "src/NetWasm.Toolchain/async-wit/world.wit"));
-
-        Assert.Contains("include wasi:cli/imports@0.2.11", world,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("include wasi:cli/command", world, StringComparison.Ordinal);
-        Assert.Contains("export netwasm:runtime/process@1.0.0", world, StringComparison.Ordinal);
-        Assert.Contains("world async-http-command", world, StringComparison.Ordinal);
-        Assert.Contains("import wasi:http/types@0.2.11", world,
-            StringComparison.Ordinal);
-        Assert.Contains("import wasi:http/outgoing-handler@0.2.11", world,
-            StringComparison.Ordinal);
-        Assert.Contains("import netwasm:runtime/reactor-host@1.0.0", world,
-            StringComparison.Ordinal);
-        Assert.Contains("export netwasm:runtime/reactor-guest@1.0.0", world,
-            StringComparison.Ordinal);
-        var process = File.ReadAllText(Path.Combine(repositoryRoot,
-            "wit/netwasm-runtime-1.0.0/process.wit"));
-        Assert.Contains("start: func() -> u32;", process, StringComparison.Ordinal);
-        Assert.Contains("status: func(operation: u32) -> u32;", process, StringComparison.Ordinal);
-        Assert.Contains("exit-code: func(operation: u32) -> s32;", process, StringComparison.Ordinal);
-        Assert.Contains("complete: func(operation: u32);", process, StringComparison.Ordinal);
+        Assert.Contains("NetWasmComponentContract is no longer used", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -625,8 +593,9 @@ public sealed partial class SdkToolchainContractTests
             repositoryRoot,
             "wit/netwasm-platform-1.0.0/world.wit"));
 
-        Assert.Equal(2, world.Split(
-            "import wasi:random/random@0.2.11;",
+        // One platform world, on WASI 0.3.2.
+        Assert.Equal(1, world.Split(
+            "import wasi:random/random@0.3.2;",
             StringSplitOptions.None).Length - 1);
         Assert.DoesNotContain("cryptographic-platform", world,
             StringComparison.Ordinal);
@@ -866,8 +835,7 @@ public sealed partial class SdkToolchainContractTests
         var validation = Assert.Single(document.Descendants(ns + "Target"), target =>
             (string?)target.Attribute("Name") == "NetWasmSdkValidateGarbageCollectorSelection");
         Assert.Equal("NetWasmCompileCoreModule;NetWasmRuntimePackMaterialize", (string?)validation.Attribute("BeforeTargets"));
-        Assert.Contains("$(_NetWasmWorkerKind)", (string?)validation.Attribute("Condition"), StringComparison.Ordinal);
-        Assert.Contains("$(OutputType)", (string?)validation.Attribute("Condition"), StringComparison.Ordinal);
+        Assert.Contains("$(_NetWasmBuildsModule)", (string?)validation.Attribute("Condition"), StringComparison.Ordinal);
         var errors = validation.Elements(ns + "Error").ToArray();
         Assert.Equal(2, errors.Length);
         Assert.Equal("NWPACK007", (string?)errors[0].Attribute("Code"));
@@ -903,6 +871,7 @@ public sealed partial class SdkToolchainContractTests
             new XElement(ns + "PropertyGroup",
                 new XElement(ns + "TargetFramework", "netwasm0.1"),
                 new XElement(ns + "OutputType", "Exe"),
+                new XElement(ns + "_NetWasmBuildsModule", "true"),
                 new XElement(ns + "NetWasmGarbageCollector", collector),
                 new XElement(ns + "NetWasmRuntimeModulePath",
                     overrideKind == "property" ? "custom.wasm" : "")),
@@ -952,7 +921,7 @@ public sealed partial class SdkToolchainContractTests
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "src/NetWasm.Toolchain/async-wit/world.wit")))
+               !File.Exists(Path.Combine(directory.FullName, "NetWasm.slnx")))
         {
             directory = directory.Parent;
         }

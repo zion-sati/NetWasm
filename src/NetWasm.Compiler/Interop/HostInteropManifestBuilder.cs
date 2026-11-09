@@ -65,6 +65,7 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
             .OrderBy(callback => callback.ExportName, StringComparer.Ordinal)
             .ToImmutableArray();
         var witImports = program.WitImportMethods
+            .Where(method => !method.WitImport!.IsCanonicalBuiltIn)
             .Select(method => method.WitImport!.Identity)
             .Distinct()
             .OrderBy(identity => identity.InterfaceName, StringComparer.Ordinal)

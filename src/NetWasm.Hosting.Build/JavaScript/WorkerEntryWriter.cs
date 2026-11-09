@@ -56,7 +56,11 @@ public sealed record WorkerClientEntryRequest(
     string ManifestSha256,
     string OutputPath,
     string DeclarationPath,
-    ImmutableArray<WorkerJavaScriptExport> Exports);
+    ImmutableArray<WorkerJavaScriptExport> Exports)
+{
+    /// <summary>Whether the worker has file mounts (#142) the client exports: it links wasi:filesystem.</summary>
+    public bool FileMounts { get; init; }
+}
 
 public interface IWorkerEntryWriter
 {
@@ -111,6 +115,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
             source.AppendLine("  }),");
         }
         source.AppendLine("}); }");
+        if (capabilities.LinksFilesystem) BrowserHostSource.AppendFileMounts(source, worker: true);
         source.AppendLine("const configuration = Object.freeze({");
         BrowserHostSource.AppendConfiguration(source, "  ", [], request.Arguments, request.Environment,
             request.Clocks, request.Network, request.Randomness);
@@ -129,6 +134,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         source.AppendLine("});");
         source.AppendLine("return openSession({ startup: request.startup }); }");
         source.AppendLine("const host = createWorkerSessionHost({");
+        AppendLine(source, $"  files: {(capabilities.LinksFilesystem ? "fileMounts" : "null")},");
         source.AppendLine("  openSession: open,");
         source.AppendLine("  post: (message, transfer = []) => globalThis.postMessage(message, transfer),");
         source.AppendLine("  terminate: cause => cause === null ? globalThis.close() : fatal(cause),");
@@ -144,9 +150,11 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         var exports = request.Exports.OrderBy(export => export.Name, StringComparer.Ordinal).ToArray();
         var operations = JsonSerializer.Serialize([.. exports.Select(export => export.Name)], HostingBuildJsonContext.Default.StringArray);
         var source = new StringBuilder();
-        AppendLine(source, $"import {{ createWorkerSessionClient }} from {JavaScriptRuntime.Quoted(JavaScriptRuntime.WorkerClient)};");
+        var clientImports = request.FileMounts ? "createWorkerFileMounts, createWorkerSessionClient" : "createWorkerSessionClient";
+        AppendLine(source, $"import {{ {clientImports} }} from {JavaScriptRuntime.Quoted(JavaScriptRuntime.WorkerClient)};");
         source.AppendLine();
         AppendLine(source, $"const operations = Object.freeze({operations});");
+        if (request.FileMounts) WorkerClientFileMounts.AppendModuleScope(source);
         source.AppendLine("export async function createWorker(options = {}) {");
         source.AppendLine("  const onNotification = options.onNotification ?? null;");
         source.AppendLine("  if (onNotification !== null && typeof onNotification !== \"function\") throw new TypeError(\"worker notification handler must be a function\");");
@@ -161,6 +169,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         source.AppendLine("    worker,");
         source.AppendLine("  });");
         source.AppendLine("  await session.ready;");
+        if (request.FileMounts) WorkerClientFileMounts.AppendAttach(source, "  ");
         source.AppendLine("  return Object.freeze({");
         foreach (var export in exports)
         {
@@ -171,15 +180,15 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
             AppendLine(source,
                 $"    {Json(export.Name)}: ({parameters}) => session.invoke({Json(export.Name)}, [{arguments}], options),");
         }
-        source.AppendLine("    dispose: () => session.dispose(),");
-        source.AppendLine("    terminate: () => session.terminate(),");
+        source.Append("    ").AppendLine(request.FileMounts ? WorkerClientFileMounts.Dispose : "dispose: () => session.dispose(),");
+        source.Append("    ").AppendLine(request.FileMounts ? WorkerClientFileMounts.Terminate : "terminate: () => session.terminate(),");
         source.AppendLine("  });");
         source.AppendLine("}");
         Write(request.OutputPath, source.ToString());
-        Write(request.DeclarationPath, Declaration(exports));
+        Write(request.DeclarationPath, Declaration(exports, request.FileMounts));
     }
 
-    private static string Declaration(IEnumerable<WorkerJavaScriptExport> exports)
+    private static string Declaration(IEnumerable<WorkerJavaScriptExport> exports, bool fileMounts)
     {
         var source = new StringBuilder();
         source.AppendLine("export interface NetWasmWorkerCallOptions {");
@@ -192,6 +201,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         source.AppendLine("}");
         source.AppendLine("export interface NetWasmWorkerStartupOptions { environment?: Record<string, string>; stdout?: (line: string) => void; stderr?: (line: string) => void; onNotification?: (value: { operation: string; arguments: unknown[] }) => void | Promise<void>; }");
         source.AppendLine("export declare function createWorker(options?: NetWasmWorkerStartupOptions): Promise<NetWasmWorkerClient>;");
+        if (fileMounts) WorkerClientFileMounts.AppendDeclarations(source);
         return source.ToString();
     }
 

@@ -262,6 +262,7 @@ public static class RuntimeAbi
     public const string RuntimeArrayGetLength = "array_get_length";
     public const string RuntimeArrayGetLowerBound = "array_get_lower_bound";
     public const string RuntimeArraySetValue = "array_set_value";
+    public const string RuntimeObjectClone = "object_clone";
     public const string RuntimeArrayGetValue = "array_get_value";
     public const string RuntimeArrayCopy = "array_copy";
     public const string RuntimeArrayClear = "array_clear";

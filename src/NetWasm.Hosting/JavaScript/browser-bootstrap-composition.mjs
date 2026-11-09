@@ -1,5 +1,5 @@
-const factoryKeys = ["manifestUrl", "preview2", "web"];
-const preview2Keys = ["createFilesystem", "createShim"];
+const factoryKeys = ["manifestUrl", "wasi", "web"];
+const wasiKeys = ["createFilesystem", "createImports"];
 const webKeys = [
   "compileCoreModule",
   "createModuleUrl",
@@ -11,14 +11,14 @@ const webKeys = [
 
 export function createBrowserBootstrapComposition(options, createExecution) {
   assertExactDataObject(options, factoryKeys, "browser bootstrap options");
-  assertExactDataObject(options.preview2, preview2Keys, "browser bootstrap Preview 2 platform");
+  assertExactDataObject(options.wasi, wasiKeys, "browser bootstrap WASI platform");
   assertExactDataObject(options.web, webKeys, "browser bootstrap Web platform");
   if (typeof createExecution !== "function") {
     throw new TypeError("browser bootstrap execution factory is required");
   }
-  for (const [name, value] of Object.entries(options.preview2)) {
+  for (const [name, value] of Object.entries(options.wasi)) {
     if (typeof value !== "function") {
-      throw new TypeError(`browser bootstrap Preview 2 '${name}' action is required`);
+      throw new TypeError(`browser bootstrap WASI '${name}' action is required`);
     }
   }
   for (const [name, value] of Object.entries(options.web)) {
@@ -30,9 +30,9 @@ export function createBrowserBootstrapComposition(options, createExecution) {
     manifestUrl: options.manifestUrl,
     platform: Object.freeze({
       compileCoreModule: options.web.compileCoreModule,
-      createFilesystem: options.preview2.createFilesystem,
+      createFilesystem: options.wasi.createFilesystem,
+      createImports: options.wasi.createImports,
       createModuleUrl: options.web.createModuleUrl,
-      createShim: options.preview2.createShim,
       digest: options.web.digest,
       fetch: options.web.fetch,
       importModule: options.web.importModule,

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createWasiFilesystem } from "./wasi-filesystem.mjs";
 import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 import {
@@ -24,7 +25,6 @@ const adapterSource = encoder.encode([
   "          double: value => root.mathAlias.double(value),",
   "          rootValue: value => root.rootValue(value),",
   "        }),",
-  "        guestWake: null,",
   "      });",
   "    },",
   "  });",
@@ -37,7 +37,7 @@ const invalidBoundaryAdapterSource = encoder.encode([
   "  return Object.freeze({",
   "    contractKey,",
   "    async instantiate() {",
-  "      return Object.freeze({ exports: Object.freeze({}), guestWake: null });",
+  "      return Object.freeze({ exports: Object.freeze({}) });",
   "    },",
   "  });",
   "}",
@@ -116,10 +116,6 @@ function fixture({
   const modules = new Map();
   let moduleId = 0;
   let filesystemDisposals = 0;
-  class Descriptor {
-    openAt() { return new Descriptor(); }
-    read() { return [new Uint8Array(), true]; }
-  }
   const output = Object.freeze({ write() {} });
   const options = {
     configuration: {
@@ -127,19 +123,20 @@ function fixture({
       arguments: [],
       environment: [],
       grants: {
-        clocks: [], environment: [], network: "denyAll", preopens: [], randomness: false,
+        clocks: [], environment: [], network: "denyAll", preopens: [], randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
       ...configuration,
     },
     manifestUrl,
     platform: {
       compileCoreModule: WebAssembly.compile.bind(WebAssembly),
-      createFilesystem() {
+      createFilesystem(preopens) {
+        const filesystem = createWasiFilesystem(Object.freeze({ hostFiles: null, preopens }));
         return {
-          types: { Descriptor },
-          preopens: { getDirectories: () => [] },
-          dispose() {
+          ...filesystem,
+          async dispose() {
             filesystemDisposals++;
+            await filesystem.dispose();
             if (filesystemDisposeError !== null) throw filesystemDisposeError;
           },
         };
@@ -149,7 +146,7 @@ function fixture({
         modules.set(url, new Uint8Array(bytes));
         return url;
       },
-      createShim() { throw new Error("shim should not be needed"); },
+      createImports() { throw new Error("imports should not be needed"); },
       digest: webcrypto.subtle.digest.bind(webcrypto.subtle),
       async fetch(url) {
         const bytes = files.get(url);
@@ -198,7 +195,7 @@ test("opens an independent persistent WIT browser worker session", async () => {
 });
 
 test("pins the WIT worker deployment identity and releases startup scopes", async () => {
-  const wrongContract = fixture({ executionContract: "wasi-command@0.2.11" });
+  const wrongContract = fixture({ executionContract: "wasi-command@0.3.2" });
   await assert.rejects(() => wrongContract.open({
     startup: {
       buildFingerprint,
@@ -221,7 +218,7 @@ test("retains timezone resources and transfers cleanup to the session", async ()
     configuration: {
       environment: [{ name: "TZ", value: "Australia/Melbourne" }],
       grants: {
-        clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false,
+        clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
     },
     timeZoneBytes: timeZoneContainer([["Australia/Melbourne", 1]]),
@@ -268,7 +265,7 @@ test("validates browser composition and startup requests", async () => {
         environment: [],
         network: "denyAll",
         preopens: [{ access: "readOnly", guestPath: "/data", hostPath: "/tmp/data" }],
-        randomness: false,
+        randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
     },
   });

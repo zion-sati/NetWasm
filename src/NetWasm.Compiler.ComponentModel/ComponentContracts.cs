@@ -122,6 +122,9 @@ public sealed record WitDocument(
                 string.Equals($"{world.Package}/{world.Name}", requestedWorld,
                     StringComparison.Ordinal) ||
                 string.Equals(FormatWorldSpecifier(world), requestedWorld,
+                    StringComparison.Ordinal) ||
+                // wasm-tools' form, with WIT keywords escaped.
+                string.Equals(EscapedSpecifiers.Format(world), requestedWorld,
                     StringComparison.Ordinal))
             .ToArray();
         return matches.Length == 1
@@ -129,6 +132,8 @@ public sealed record WitDocument(
             : throw ComponentException.Invalid(
                 $"WIT world '{requestedWorld}' was not found or is ambiguous");
     }
+
+    private static readonly Worlds.WitWorldSpecifierFormatter EscapedSpecifiers = new();
 
     private static string FormatWorldSpecifier(WitWorld world)
     {

@@ -146,11 +146,12 @@ dotnet run
 dotnet publish -c Release -o publish/local
 ```
 
-Run the published component with a compatible WASI Preview 2 host, such as
-[Wasmtime](https://wasmtime.dev/):
+Run the published folder with Node.js, or the component with a WASI 0.3 host
+such as [Wasmtime](https://wasmtime.dev/):
 
 ```sh
-wasmtime run publish/local/HelloNetWasm.wasm
+node publish/local/netwasm.host.mjs
+wasmtime run -Wcomponent-model-async -Sp3 publish/local/HelloNetWasm.wasm
 ```
 
 ```text
@@ -260,7 +261,7 @@ NetWasm is pre-1.0. Its supported profile is usable today and covered by
 published qualification, but source, package, target-profile and ABI contracts
 may change between minor releases.
 
-The normal portable output is a wasm32 WASI Preview 2 Component. Raw wasm32,
+The normal portable output is a wasm32 WASI 0.3 Component. Raw wasm32,
 raw wasm64 and JavaScript-host integration are advanced alternatives; wasm64
 Components remain blocked by upstream tooling.
 

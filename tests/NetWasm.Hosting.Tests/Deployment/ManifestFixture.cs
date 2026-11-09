@@ -35,8 +35,7 @@ internal static class ManifestFixture
         manifestSha256,
         manifest.Versions.Hosting,
         Path.GetFullPath("packages/toolchain/node"),
-        Path.GetFullPath("packages/hosting/launch.mjs"),
-        [new("NetWasm.Toolchain", "0.1.0-preview.1", Path.GetFullPath("packages/toolchain"), new string('e', 64))]);
+        Path.GetFullPath("packages/hosting/launch.mjs"));
 
     internal static void AssertFunctionsEqual(
         ImmutableArray<DeploymentFunction> expected,

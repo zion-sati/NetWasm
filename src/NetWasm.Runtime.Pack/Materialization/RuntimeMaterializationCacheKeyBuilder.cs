@@ -202,6 +202,11 @@ internal sealed class RuntimeMaterializationCacheKeyBuilder :
         Append(hash, "target.maximumMemory", target.MaximumMemorySizeBytes);
         AppendAsset(hash, "target.runtimeArchive", target.RuntimeArchive);
         AppendAsset(hash, "target.collectorArchive", target.CollectorArchive);
+        if (target.PlatformArchives is { } platform)
+        {
+            AppendAsset(hash, "target.platformArchives.wasi", platform.Wasi);
+            AppendAsset(hash, "target.platformArchives.noWasi", platform.NoWasi);
+        }
         AppendAsset(hash, "target.allowedUndefined", target.AllowedUndefinedSymbols);
         Append(hash, "target.systemLibraries.count", target.SystemLibraries.Assets.Length);
         for (var index = 0; index < target.SystemLibraries.Assets.Length; index++)

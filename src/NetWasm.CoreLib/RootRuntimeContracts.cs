@@ -6,6 +6,7 @@ namespace System
     public interface IAsyncResult
     {
         object? AsyncState { get; }
+        Threading.WaitHandle AsyncWaitHandle { get; }
         bool CompletedSynchronously { get; }
         bool IsCompleted { get; }
     }

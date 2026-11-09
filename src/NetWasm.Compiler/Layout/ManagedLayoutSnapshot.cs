@@ -12,7 +12,10 @@ public sealed class ManagedLayoutSnapshot :
     IEnumMetadataSource
 {
     public const int Wasm32ArrayLengthOffset = 4;
-    internal const int StaticDataStart = 16;
+    // Static data starts above the first KiB, which nothing then uses, so wasm-opt may assume
+    // it is unused (--low-memory-unused) and fold constant address adds into load and store
+    // offsets, as it does for Emscripten's default layout. 1024 is Binaryen's LowMemoryBound.
+    internal const int StaticDataStart = 1024;
 
     internal ManagedLayoutSnapshot(
         ManagedTypeLayouts types,

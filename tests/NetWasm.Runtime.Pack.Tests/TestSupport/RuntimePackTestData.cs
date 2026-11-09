@@ -51,6 +51,7 @@ internal static class RuntimePackTestData
             GarbageCollector = collector,
             NativeValidation = NativeProfile(target),
             Speed = SpeedAssets(target, collector, 114_352),
+            PlatformArchives = PlatformArchives($"{target}/{collector.ToLowerInvariant()}"),
         }
         : new(
             target,
@@ -69,12 +70,20 @@ internal static class RuntimePackTestData
             GarbageCollector = collector,
             NativeValidation = NativeProfile(target),
             Speed = SpeedAssets(target, collector, 91_968),
+            PlatformArchives = PlatformArchives($"{target}/{collector.ToLowerInvariant()}"),
         };
 
     public static RuntimePackSpeedAssets SpeedAssets(string target, string collector, long footprint) => new(
         footprint,
         Asset($"{target}/{collector.ToLowerInvariant()}/speed/libnetwasm-runtime.a"),
-        Asset($"{target}/{collector.ToLowerInvariant()}/speed/libgc.a"));
+        Asset($"{target}/{collector.ToLowerInvariant()}/speed/libgc.a"))
+    {
+        PlatformArchives = PlatformArchives($"{target}/{collector.ToLowerInvariant()}/speed"),
+    };
+
+    public static RuntimePackPlatformArchives PlatformArchives(string directory) => new(
+        Asset($"{directory}/libnetwasm-runtime-wasi.a"),
+        Asset($"{directory}/libnetwasm-runtime-nowasi.a"));
 
     public static RuntimeNativeValidationProfile NativeProfile(string target = "wasm32") => new(1,
         ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory",

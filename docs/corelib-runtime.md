@@ -16,8 +16,8 @@ delegates/value types, the bounded
 [expression-tree interpreter](expression-trees.md), closed generic
 specialization, exceptions and exact GC roots, browser-event-loop
 `Task`/`ValueTask` and cancellation, selected date and time types, direct
-JavaScript interop, WIT bindings, and selective WASI Preview 2
-clocks/readiness/streams.
+JavaScript interop, WIT bindings, and the WASI 0.3 services behind files,
+sockets, HTTP, clocks, randomness and streams.
 
 ### Binary floating-point to `decimal` policy
 

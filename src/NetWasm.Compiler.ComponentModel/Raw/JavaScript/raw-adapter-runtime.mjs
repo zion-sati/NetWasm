@@ -257,8 +257,12 @@ export function rcTagged(value, tags, payloads, label) {
       || actualNames.some((name, nameIndex) => name !== expectedNames[nameIndex])) {
     throw rcInvalid(label);
   }
-  if (hasValue !== payloads[index]) throw rcInvalid(label);
-  return { index, value: hasValue ? valueDescriptor.value : undefined };
+  // A case without a payload may still carry `val: undefined`, as JavaScript hosts write
+  // `{ tag: "ok", val: undefined }` for a result's empty case.
+  if (payloads[index] ? !hasValue : hasValue && valueDescriptor.value !== undefined) {
+    throw rcInvalid(label);
+  }
+  return { index, value: payloads[index] ? valueDescriptor.value : undefined };
 }
 
 export function rcEnumIndex(value, names) {
@@ -386,6 +390,37 @@ export function rcTaggedResult(tag, hasPayload, value) {
   result.tag = tag;
   if (hasPayload) result.val = value;
   return Object.freeze(result);
+}
+
+// A provider's value for a result: an object of exactly `tag` ("ok" or "err") and `val`
+// is the result itself; any other value is its ok payload. JavaScript Component Model
+// hosts read a provider's result this way, so one provider serves both.
+export function rcResultValue(value, hasOk) {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const keys = Object.keys(value);
+    if (keys.length === 2 && Object.hasOwn(value, "tag") && Object.hasOwn(value, "val")
+        && (value.tag === "ok" || value.tag === "err")) {
+      return value;
+    }
+  }
+  return rcTaggedResult("ok", hasOk, value);
+}
+
+// A result-returning provider called for an async import: its value, or the promise of
+// one, becomes the result; what it throws or rejects with becomes the error case.
+export function rcSettleResult(call, hasOk, hasError) {
+  const failed = error => rcTaggedResult("err", hasError, rcErrorPayload(error));
+  let value;
+  try {
+    value = call();
+  } catch (error) {
+    return failed(error);
+  }
+  if (value === null || typeof value !== "object" && typeof value !== "function"
+      || typeof value.then !== "function") {
+    return rcResultValue(value, hasOk);
+  }
+  return Promise.resolve(value).then(settled => rcResultValue(settled, hasOk), failed);
 }
 
 // A provider that throws reports a result's error case through its `payload`;

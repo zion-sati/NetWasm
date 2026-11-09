@@ -1,6 +1,7 @@
 namespace System.Runtime.InteropServices
 {
     using CommandLine;
+    using WebAssembly;
     using Threading.Tasks;
     using TimeZones;
 
@@ -18,25 +19,6 @@ namespace System.Runtime.InteropServices
 
         internal ulong Seconds { get; }
         internal uint Nanoseconds { get; }
-    }
-
-    // Compatibility aggregate retained because existing CoreLib component
-    // fixtures implement and inspect both clock readings through this type.
-    // Production consumers use IPlatformUtcClock or IPlatformMonotonicClock.
-    internal interface IPlatformClock :
-        IPlatformUtcClock,
-        IPlatformMonotonicClock
-    {
-    }
-
-    internal interface IPlatformUtcClock
-    {
-        PlatformTimestamp GetUtcTime();
-    }
-
-    internal interface IPlatformMonotonicClock
-    {
-        ulong GetMonotonicTime();
     }
 
     internal interface IPlatformUtcClockSource
@@ -58,100 +40,6 @@ namespace System.Runtime.InteropServices
         IPlatformSchedule Schedule(Action continuation, ulong delayNanoseconds);
     }
 
-    internal interface IPlatformPollableScheduler
-    {
-        IPlatformSchedule SchedulePollable(Action continuation, int pollable);
-    }
-
-    internal interface IPlatformPollableSubscription
-    {
-        int SubscribeDuration(long durationNanoseconds);
-    }
-
-    internal interface IPlatformReactorWatcher
-    {
-        void Watch(int pollable, uint token);
-    }
-
-    internal interface IPlatformReactorCancellation
-    {
-        void Cancel(uint token);
-    }
-
-    // Compatibility aggregate for the stream resource contract. The actual
-    // readiness and write actors use the one-action interfaces below.
-    internal interface IPlatformOutputStream :
-        IDisposable,
-        IPlatformOutputReadiness,
-        IPlatformOutputWriter,
-        IPlatformBlockingOutputWriter
-    {
-    }
-
-    internal interface IPlatformOutputReadiness
-    {
-        ulong CheckWrite();
-    }
-
-    internal interface IPlatformOutputWriter
-    {
-        void Write(byte[] contents);
-    }
-
-    internal interface IPlatformBlockingOutputWriter
-    {
-        void WriteBlocking(byte[] contents);
-    }
-
-    internal interface IPlatformOutputErrorThrower
-    {
-        void Throw(nuint result, nuint payloadOffset);
-    }
-
-    internal interface IPlatformOutputStreamFactory
-    {
-        IPlatformOutputStream Create(int handle);
-    }
-
-    internal interface IPlatformOutputStreamHandleSource
-    {
-        int GetStandardOutput();
-
-        int GetStandardError();
-    }
-
-    internal interface IPlatformOutputReadinessSource
-    {
-        ulong CheckWrite(int handle);
-    }
-
-    internal interface IPlatformOutputWriterSource
-    {
-        void Write(int handle, byte[] contents);
-    }
-
-    internal interface IPlatformBlockingOutputWriterSource
-    {
-        void WriteBlocking(int handle, byte[] contents);
-    }
-
-    internal interface IPlatformOutputResourceSource
-    {
-        void Drop(int handle);
-    }
-
-    internal interface IPlatformOutputErrorResource
-    {
-        void Drop(int handle);
-    }
-
-    internal interface IPlatformStreams
-    {
-        IPlatformOutputStream GetStandardOutput();
-
-        IPlatformOutputStream GetStandardError();
-    }
-
     internal static class WasiPlatformServicesComposition
     {
         internal static ILocalTimeOffsetResolver CreateLocalTimeOffsetResolver() =>
@@ -159,11 +47,23 @@ namespace System.Runtime.InteropServices
 
         internal static ILocalTimePreflightValidator CreateLocalTimePreflightValidator() =>
             new LocalTimePreflightValidator(
-                CreateEnvironmentVariableReader(),
+                new EnvironmentVariableReader(PlatformServices.ProcessEnvironment),
                 new TimeZoneAssetFileOpener(
                     new WasiPreopenedDirectorySource(new WasiPreopensInvoker()),
-                    new WasiReadOnlyFileOpener(new WasiDescriptorOpenInvoker()),
-                    new WasiReadOnlyFileReader(new WasiDescriptorReadInvoker())),
+                    new WasiReadOnlyFileOpener(new WasiDescriptorOpenInvoker(
+                        new WasiOpenAtInvoker(),
+                        new Concurrency.SubtaskReturnAwaiter(
+                            CreateWaitableEventAwaiter(),
+                            new Concurrency.WasiSubtaskDropInvoker()),
+                        new CanonicalBufferAllocator())),
+                    new WasiReadOnlyFileReader(
+                        new WasiFileStreamOpenInvoker(),
+                        new WasiFileStreamReadInvoker(),
+                        new WasiFileStreamReadableDropInvoker(),
+                        new WasiFileStreamResultReadInvoker(),
+                        new WasiFileStreamResultDropInvoker(),
+                        CreateWaitableEventAwaiter(),
+                        new CanonicalBufferAllocator())),
                 new TimeZoneAssetParser(),
                 new TimeZoneDefinitionResolverFactory(new TimeZoneTransitionTableReader()),
                 new LocalTimeOffsetResolverFactory(new TimeZoneTransitionResolver()),
@@ -171,60 +71,83 @@ namespace System.Runtime.InteropServices
                 new LocalTimeOffsetResolverInstaller(),
                 new TimeZoneCatalogSnapshotInstaller());
 
-        internal static IPlatformUtcClock CreateUtcClock() =>
-            new WasiUtcClock(new WasiUtcClockSource());
-
-        internal static ICommandLineArgumentSource CreateCommandLineArgumentSource() =>
-            new WasiCommandLineArgumentSource(new WasiCommandLineInvoker());
-
         internal static IManagedEntryPointArgumentSource
             CreateManagedEntryPointArgumentSource(
-                ICommandLineArgumentSource commandLineArguments) =>
-            new ManagedEntryPointArgumentSource(commandLineArguments);
-
-        internal static IEnvironmentVariableReader CreateEnvironmentVariableReader() =>
-            new EnvironmentVariableReader(new WasiEnvironmentVariableSource(
-                new WasiEnvironmentInvoker()));
-
-        internal static IEnvironmentVariableSource CreateInitialEnvironmentVariableSource() =>
-            new WasiEnvironmentVariableSource(new WasiEnvironmentInvoker());
-
-        internal static IPlatformMonotonicClock CreateMonotonicClock() =>
-            new WasiMonotonicClock(new WasiMonotonicClockSource());
-
-        internal static IPlatformClock CreateClock(
-            IPlatformUtcClock utcClock,
-            IPlatformMonotonicClock monotonicClock) =>
-            new WasiClockBackend(utcClock, monotonicClock);
-
-        internal static WasiPollableReactor CreatePollableReactor()
-        {
-            var reactor = new WasiPollableReactor(
-                new WasiPollableSubscription(),
-                new WasiReactorWatcher(),
-                new WasiReactorCancellation());
-            reactor.RegisterForHostWakeups();
-            return reactor;
-        }
+                IProcessEnvironment commandLine) =>
+            new ManagedEntryPointArgumentSource(commandLine);
 
         internal static CommandWorldScheduler CreateCommandWorldScheduler() =>
-            new(new WasiPollableSubscription(), new WasiPoller(), new WasiPollableRelease());
+            new(
+                PlatformWorld.ImportsMonotonicClock()
+                    ? new Concurrency.WasiMonotonicWaitInvoker()
+                    : new Concurrency.AbsentMonotonicWaitInvoker(),
+                new Concurrency.WasiWaitableSetCreateInvoker(),
+                new Concurrency.WasiWaitableJoinInvoker(),
+                new Concurrency.WasiSubtaskCancelInvoker(),
+                new Concurrency.WasiSubtaskDropInvoker())
+            {
+                HostCanComplete = PlatformWorld.HasHostEventLoop(),
+            };
 
         internal static IPlatformTimerFactory CreateTimerFactory(
             IPlatformScheduler scheduler) =>
             new PlatformTimerFactory(scheduler);
 
-        internal static IPlatformStreams CreateStreams() => new WasiStreamBackend(
-            new WasiOutputStreamHandleSource(),
-            new WasiOutputStreamFactory(
-                new WasiOutputReadinessSource(new WasiOutputErrorThrower(
-                    new WasiOutputErrorResource())),
-                new WasiOutputWriterSource(new WasiOutputErrorThrower(
-                    new WasiOutputErrorResource())),
-                new WasiBlockingOutputWriterSource(
-                    new WasiBlockingOutputInvoker(),
-                    new WasiOutputErrorThrower(new WasiOutputErrorResource())),
-                new WasiOutputResourceSource()));
+        internal static Concurrency.IWaitableEventAwaiter CreateWaitableEventAwaiter() =>
+            new Concurrency.WaitableEventAwaiter(
+                new Concurrency.WasiWaitableSetCreateInvoker(),
+                new Concurrency.WasiWaitableJoinInvoker(),
+                new Concurrency.WasiWaitableSetWaitInvoker());
+
+        // Each standard stream is composed on its own first use, so a program that writes only
+        // standard output reaches none of standard error's bindings.
+        internal static Output.WasiStreamBlockingOutputWriter CreateStandardOutput()
+        {
+            var awaiter = CreateWaitableEventAwaiter();
+            return new Output.WasiStreamBlockingOutputWriter(
+                new Output.WasiOutputStreamResource(
+                    new Output.WasiOutputStreamOpener(
+                        new Output.WasiStandardOutputStreamCreateInvoker(),
+                        new Output.WasiStandardOutputHandOffInvoker()),
+                    new Output.WasiOutputStreamCloser(
+                        new Output.WasiStandardOutputWritableDropInvoker(),
+                        new Output.WasiStandardOutputResultReadInvoker(),
+                        new Output.WasiStandardOutputResultDropInvoker(),
+                        awaiter,
+                        new CanonicalBufferAllocator()),
+                    new Output.WasiStandardOutputWritableDropInvoker()),
+                new Output.WasiStandardOutputWriteInvoker(),
+                awaiter);
+        }
+
+        internal static Input.WasiStandardInputReader CreateStandardInput() =>
+            new(
+                new Input.WasiStandardInputOpenInvoker(),
+                new Input.WasiStandardInputReadInvoker(),
+                new Input.WasiStandardInputReadableDropInvoker(),
+                new Input.WasiStandardInputResultReadInvoker(),
+                new Input.WasiStandardInputResultDropInvoker(),
+                CreateWaitableEventAwaiter(),
+                new CanonicalBufferAllocator());
+
+        internal static Output.WasiStreamBlockingOutputWriter CreateStandardError()
+        {
+            var awaiter = CreateWaitableEventAwaiter();
+            return new Output.WasiStreamBlockingOutputWriter(
+                new Output.WasiOutputStreamResource(
+                    new Output.WasiOutputStreamOpener(
+                        new Output.WasiStandardErrorStreamCreateInvoker(),
+                        new Output.WasiStandardErrorHandOffInvoker()),
+                    new Output.WasiOutputStreamCloser(
+                        new Output.WasiStandardErrorWritableDropInvoker(),
+                        new Output.WasiStandardErrorResultReadInvoker(),
+                        new Output.WasiStandardErrorResultDropInvoker(),
+                        awaiter,
+                        new CanonicalBufferAllocator()),
+                    new Output.WasiStandardErrorWritableDropInvoker()),
+                new Output.WasiStandardErrorWriteInvoker(),
+                awaiter);
+        }
     }
 
     // System APIs such as DateTime.UtcNow and Task.Delay are framework-mandated
@@ -233,59 +156,45 @@ namespace System.Runtime.InteropServices
     // resolves a service by type or name.
     internal static class PlatformServices
     {
-        private static IPlatformClock? _clock;
-        private static ICommandLineArgumentSource? _commandLineArguments;
+        private static NetWasmPlatform? _platform;
+        private static IStandardStreams? _standardStreams;
+        private static IClock? _clock;
+        private static IRandomSource? _random;
+        private static IProcessEnvironment? _processEnvironment;
+        private static IFileSystem? _fileSystem;
+        private static INetwork? _network;
         private static IManagedEntryPointArgumentSource? _managedEntryPointArguments;
-        private static IPlatformUtcClock? _utcClock;
-        private static IPlatformMonotonicClock? _monotonicClock;
-        private static IPlatformPollableScheduler? _pollableScheduler;
         private static CommandWorldScheduler? _commandScheduler;
         private static IPlatformScheduler? _scheduler;
         private static IPlatformTimerFactory? _timerFactory;
-        private static IPlatformStreams? _streams;
         private static ILocalTimeOffsetResolver? _localTimeOffsets;
         private static TimeZoneCatalogSnapshot? _timeZoneCatalogSnapshot;
         private static bool _localTimeReady;
 
-        // IPlatformClock is retained as a compatibility aggregate for existing
-        // CoreLib fixtures. New consumers should request the one-action view.
-        internal static IPlatformClock Clock =>
-            _clock ??= WasiPlatformServicesComposition.CreateClock(
-                UtcClock,
-                MonotonicClock);
+        // The program's platform (PlatformServiceBindings), created on first use; each facade is
+        // read from it once, when the program first uses that area.
+        internal static NetWasmPlatform Platform => _platform ??= PlatformServiceBindings.CreatePlatform();
 
-        internal static ICommandLineArgumentSource CommandLineArguments =>
-            _commandLineArguments ??=
-                WasiPlatformServicesComposition.CreateCommandLineArgumentSource();
+        internal static IStandardStreams StandardStreams => _standardStreams ??= Platform.StandardStreams;
 
-        internal static string[] ReadCommandLineArguments() =>
-            CommandLineArguments.Read();
+        internal static IClock Clock => _clock ??= Platform.Clock;
+
+        internal static IRandomSource Random => _random ??= Platform.Random;
+
+        internal static IProcessEnvironment ProcessEnvironment => _processEnvironment ??= Platform.ProcessEnvironment;
+
+        internal static IFileSystem FileSystem => _fileSystem ??= Platform.FileSystem;
+
+        internal static INetwork Network => _network ??= Platform.Network;
+
+        internal static string[] ReadCommandLineArguments() => ProcessEnvironment.GetArguments();
 
         internal static IManagedEntryPointArgumentSource ManagedEntryPointArguments =>
             _managedEntryPointArguments ??=
-                WasiPlatformServicesComposition.CreateManagedEntryPointArgumentSource(
-                    CommandLineArguments);
+                WasiPlatformServicesComposition.CreateManagedEntryPointArgumentSource(ProcessEnvironment);
 
         internal static string[] ReadManagedEntryPointArguments() =>
             ManagedEntryPointArguments.Read();
-
-        internal static IPlatformUtcClock UtcClock =>
-            _utcClock ??= WasiPlatformServicesComposition.CreateUtcClock();
-
-        internal static IPlatformMonotonicClock MonotonicClock =>
-            _monotonicClock ??= WasiPlatformServicesComposition.CreateMonotonicClock();
-
-        internal static IPlatformPollableScheduler PollableScheduler
-        {
-            get
-            {
-                if (_pollableScheduler == null)
-                {
-                    ComposeSchedulers();
-                }
-                return _pollableScheduler!;
-            }
-        }
 
         internal static IPlatformScheduler Scheduler
         {
@@ -302,9 +211,6 @@ namespace System.Runtime.InteropServices
         internal static IPlatformTimerFactory TimerFactory =>
             _timerFactory ??=
                 WasiPlatformServicesComposition.CreateTimerFactory(Scheduler);
-
-        internal static IPlatformStreams Streams =>
-            _streams ??= WasiPlatformServicesComposition.CreateStreams();
 
         internal static ILocalTimeOffsetResolver LocalTimeOffsets =>
             _localTimeOffsets ??=
@@ -326,58 +232,122 @@ namespace System.Runtime.InteropServices
             _timeZoneCatalogSnapshot = snapshot ?? throw new ArgumentNullException();
         }
 
-        internal static void PreflightLocalTime() =>
-            WasiPlatformServicesComposition.CreateLocalTimePreflightValidator()
-                .Validate();
+        // The local time zone comes from WASI's environment (TZ) and the time zone asset; a plain
+        // core module has neither, so its local time is UTC.
+        internal static void PreflightLocalTime()
+        {
+            if (PlatformWorld.ProvidesWasi())
+            {
+                WasiPlatformServicesComposition.CreateLocalTimePreflightValidator().Validate();
+            }
+        }
 
-        // The selected WIT world decides which scheduler a program can bind: a world whose host
-        // drives netwasm:runtime/reactor-host gets the pollable reactor, a world with wasi:io/poll
-        // runs its own event loop, and any other world defers work it cannot wait for. A command
-        // program never imports the reactor interfaces.
+        // A component runs its own event loop on the Component Model's waitable sets; a core
+        // module has none and defers work it cannot wait for.
         private static void ComposeSchedulers()
         {
-            if (PlatformWorld.ImportsReactorHost())
+            if (!PlatformWorld.ImportsEventLoop())
             {
-                var reactor = WasiPlatformServicesComposition.CreatePollableReactor();
-                _scheduler = reactor;
-                _pollableScheduler = reactor;
-            }
-            else if (!PlatformWorld.ImportsEventLoop())
-            {
-                var scheduler = new UnpumpedScheduler();
-                _scheduler = scheduler;
-                _pollableScheduler = scheduler;
+                // A plain core module runs its ready work itself and takes delays from the
+                // program's timer binding; a raw module without a world defers its work.
+                _scheduler = PlatformWorld.ProvidesWasi()
+                    ? new UnpumpedScheduler()
+                    : new CoreModuleScheduler(Platform.Timers);
             }
             else
             {
                 var scheduler = WasiPlatformServicesComposition.CreateCommandWorldScheduler();
                 _scheduler = scheduler;
-                _pollableScheduler = scheduler;
                 _commandScheduler = scheduler;
             }
         }
 
-        // AsyncEntryPoint calls this with Main's task: the program drives its own event loop until
-        // the task completes. Work only reaches the scheduler through an await, so a task that is
-        // still running has already composed it.
-        internal static void RunEntryPointToCompletion(Task task)
+        // A process entry calls this after Main returns: it ends the standard streams the
+        // process opened, as an operating system closes a process's descriptors at exit.
+        internal static void RunProcessExit() => Output.WasiOutputStreamResource.EndOpened();
+
+        private static ComponentExportTask? _exportTask;
+
+        internal static ComponentExportTask ExportTask => _exportTask ??= new ComponentExportTask(
+            CommandSchedulerForCallbacks,
+            static () => _commandScheduler?.AwaitPending() ?? 0,
+            new Concurrency.ComponentBackpressure());
+
+        // An async-lowered import's status: RETURNED is complete; otherwise its subtask joins the
+        // event loop's waitable set and the task completes when it returns, in a later callback.
+        internal static Task AwaitSubtask(int status)
+        {
+            if ((status & 0xF) == 2)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (Scheduler is not CommandWorldScheduler loop)
+            {
+                throw new PlatformNotSupportedException(
+                    "An asynchronous import needs the Component Model's event loop, which a core module does not have.");
+            }
+
+            var completion = new TaskCompletionSource();
+            loop.Track(completion.SetResult, status);
+            return completion.Task;
+        }
+
+        // A stream or future copy's status: BLOCKED (-1) completes with the result its event
+        // carries; any other status is already the copy's result.
+        internal static Task<int> AwaitCopy(int waitable, int status)
+        {
+            if (status != -1)
+            {
+                return Task.FromResult(status);
+            }
+
+            if (Scheduler is not CommandWorldScheduler loop)
+            {
+                throw new PlatformNotSupportedException(
+                    "An asynchronous stream or future needs the Component Model's event loop, which a core module does not have.");
+            }
+
+            var completion = new TaskCompletionSource<int>();
+            loop.TrackCopy(payload => completion.SetResult(unchecked((int)payload)), waitable);
+            return completion.Task;
+        }
+
+        // A callback-lifted entry's start and callbacks: the event loop runs in the host's callbacks
+        // instead of blocking. A world without the event loop can only complete a finished task.
+        internal static int StartEntryPoint(Task task)
         {
             if (task == null)
             {
                 throw new ArgumentNullException();
             }
 
-            // A reactor world's host drives the loop; there the await-semantics observation that
-            // follows throws PlatformNotSupportedException for an incomplete task, as on Mono.
-            if (task.IsCompleted || PlatformWorld.ImportsReactorHost())
+            return task.IsCompleted ? 0 : CommandSchedulerForCallbacks().Start(task);
+        }
+
+        internal static int DeliverEntryPointEvent(Task task, int eventCode, int waitable, uint payload) =>
+            CommandSchedulerForCallbacks().Deliver(task, eventCode, waitable, payload);
+
+        // A JavaScript module's event loop, which its host runs after each call into the module.
+        // A module that never scheduled anything has nothing to run.
+        internal static int RunHostEventLoop() => _commandScheduler?.RunHost() ?? 0;
+
+        internal static int DeliverHostEventLoopEvent(int eventCode, int waitable, uint payload)
+        {
+            if (_commandScheduler == null)
             {
-                return;
+                throw new InvalidOperationException("The event loop received an event for no scheduled work.");
             }
 
+            return _commandScheduler.DeliverHost(eventCode, waitable, payload);
+        }
+
+        private static CommandWorldScheduler CommandSchedulerForCallbacks()
+        {
             if (!PlatformWorld.ImportsEventLoop())
             {
                 throw new PlatformNotSupportedException(
-                    "The asynchronous entry point cannot complete: the selected world has no wasi:io/poll event loop.");
+                    "The asynchronous entry point cannot complete: a core module has no event loop.");
             }
 
             if (_commandScheduler == null)
@@ -386,7 +356,7 @@ namespace System.Runtime.InteropServices
                     "The asynchronous entry point cannot complete: no scheduled work or pending I/O remains.");
             }
 
-            _commandScheduler.RunUntilCompleted(task);
+            return _commandScheduler;
         }
 
         internal static void EnsureLocalTimeReady()

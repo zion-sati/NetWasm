@@ -10,6 +10,7 @@ namespace System
         internal const string Arg_AmbiguousMatchException_Attribute = "Multiple custom attributes of the same type '{0}' found.";
         internal const string Arg_AmbiguousMatchException_MemberInfo = "Ambiguous match found for '{0} {1}'.";
         internal const string Arg_ArrayPlusOffTooSmall = "Destination array is not long enough to copy all the items in the collection. Check array index and length.";
+        internal const string Arg_ArrayZeroError = "Array must not be of length zero.";
         internal const string Arg_BogusIComparer = "Unable to sort because the IComparer.Compare() method returns inconsistent results. Either a value does not compare equal to itself, or one value repeatedly compared to another value yields different results. IComparer: '{0}'.";
         internal const string Arg_BufferTooSmall = "Not enough space available in the buffer.";
         internal const string Arg_ByteArrayTooSmallForValue = "The array starting from the specified index is not long enough to read a value of the specified type.";
@@ -44,6 +45,7 @@ namespace System
         internal const string ArgumentOutOfRange_DayNumber = "Day number must be between 0 and DateOnly.MaxValue.DayNumber.";
         internal const string ArgumentOutOfRange_EndIndexStartIndex = "endIndex cannot be greater than startIndex.";
         internal const string ArgumentOutOfRange_Enum = "Enum value was out of legal range.";
+        internal const string ArgumentOutOfRange_FileLengthTooBig = "Specified file length was too large for the file system.";
         internal const string ArgumentOutOfRange_GetCharCountOverflow = "Too many bytes. The resulting number of chars is larger than what can be returned as an int.";
         internal const string ArgumentOutOfRange_HugeArrayNotSupported = "Arrays larger than 2GB are not supported.";
         internal const string ArgumentOutOfRange_IndexCount = "Index and count must refer to a location within the string.";
@@ -76,6 +78,7 @@ namespace System
         internal const string Argument_OverlapAlignmentMismatch = "Overlapping spans have mismatching alignment.";
         internal const string Argument_SearchValues_UnsupportedStringComparison = "SearchValues<string> supports only StringComparison.Ordinal and StringComparison.OrdinalIgnoreCase.";
         internal const string Argument_SpansMustHaveSameLength = "Length of items must be same as length of keys.";
+        internal const string Argument_StreamNotReadable = "Stream was not readable.";
         internal const string Argument_TypeContainsReferences = "The type '{0}' is not supported because it contains references.";
         internal const string Argument_UnexpectedStateForKnownCallback = "An unexpected state object was encountered. This is usually a sign of a bug in async method custom infrastructure, such as a custom awaiter or IValueTaskSource implementation.";
         internal const string AsyncMethodBuilder_InstanceNotInitialized = "The builder was not properly initialized.";
@@ -94,7 +97,18 @@ namespace System
         internal const string Format_NeedSingleChar = "String must be exactly one character long.";
         internal const string Format_UnclosedFormatItem = "Format item ends prematurely.";
         internal const string Format_UnexpectedClosingBrace = "Unexpected closing brace without a corresponding opening brace.";
+        internal const string IO_DiskFull_Path_AllocationSize = "Failed to create '{0}' with allocation size '{1}' because the disk was full.";
         internal const string IO_EOF_ReadBeyondEOF = "Unable to read beyond the end of the stream.";
+        internal const string IO_FileExists_Name = "The file '{0}' already exists.";
+        internal const string IO_FileNotFound = "Unable to find the specified file.";
+        internal const string IO_FileNotFound_FileName = "Could not find file '{0}'.";
+        internal const string IO_FileTooLarge_Path_AllocationSize = "Failed to create '{0}' with allocation size '{1}' because the file was too large.";
+        internal const string IO_PathNotFound_NoPathName = "Could not find a part of the path.";
+        internal const string IO_PathNotFound_Path = "Could not find a part of the path '{0}'.";
+        internal const string IO_PathTooLong = "The specified file name or path is too long, or a component of the specified path is too long.";
+        internal const string IO_PathTooLong_Path = "The path '{0}' is too long, or a component of the specified path is too long.";
+        internal const string IO_SharingViolation_File = "The process cannot access the file '{0}' because it is being used by another process.";
+        internal const string IO_SharingViolation_NoFileName = "The process cannot access the file because it is being used by another process.";
         internal const string InvalidOperation_ConcurrentOperationsNotSupported = "Operations that change non-concurrent collections must have exclusive access. A concurrent update was performed on this collection and corrupted its state. The collection's state is no longer correct.";
         internal const string InvalidOperation_EnumEnded = "Enumeration already finished.";
         internal const string InvalidOperation_EnumFailedVersion = "Collection was modified; enumeration operation may not execute.";
@@ -118,8 +132,11 @@ namespace System
         internal const string NotSupported_CannotCallEqualsOnSpan = "Equals() on Span and ReadOnlySpan is not supported. Use operator== instead.";
         internal const string NotSupported_CannotCallGetHashCodeOnSpan = "GetHashCode() on Span and ReadOnlySpan is not supported.";
         internal const string NotSupported_FixedSizeCollection = "Collection was of a fixed size.";
+        internal const string NotSupported_IntegerEnumOrPrimitiveTypeRequired = "The specified type must be an integer primitive type or an enum type.";
         internal const string NotSupported_KeyCollectionSet = "Mutating a key collection derived from a dictionary is not allowed.";
+        internal const string NotSupported_NYI = "This feature is not implemented.";
         internal const string NotSupported_ReadOnlyCollection = "Collection is read-only.";
+        internal const string NotSupported_ReferenceEnumOrPrimitiveTypeRequired = "The specified type must be a reference type, a primitive type, or an enum type.";
         internal const string NotSupported_StringComparison = "The string comparison type passed in is currently not supported.";
         internal const string NotSupported_UnreadableStream = "Stream does not support reading.";
         internal const string NotSupported_UnseekableStream = "Stream does not support seeking.";
@@ -154,5 +171,7 @@ namespace System
         internal const string Task_Start_TaskCompleted = "Start may not be called on a task that has completed.";
         internal const string Task_ThrowIfDisposed = "The task has been disposed.";
         internal const string Task_WaitMulti_NullTask = "The tasks array included at least one null element.";
+        internal const string UnauthorizedAccess_IODenied_NoPathName = "Access to the path is denied.";
+        internal const string UnauthorizedAccess_IODenied_Path = "Access to the path '{0}' is denied.";
     }
 }

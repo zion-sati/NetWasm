@@ -57,7 +57,11 @@ test("validates its exact factory and invocation inputs", async () => {
   for (const artifact of [null, 1, {}, { mediaType: null }, { mediaType: "" }]) {
     await assert.rejects(() => importer(bytes, artifact), /artifact/);
   }
-  for (const url of [null, "", "https://example.test/module.mjs", "Blob:wrong-case"]) {
+  const data = createBrowserVerifiedModuleImporter({
+    ...valid, createModuleUrl: () => "data:text/javascript;base64,", importModule: async url => url,
+  });
+  assert.equal(await data(bytes, { mediaType: "text/javascript" }), "data:text/javascript;base64,");
+  for (const url of [null, "", "https://example.test/module.mjs", "Blob:wrong-case", "file:///module.mjs"]) {
     const invalid = createBrowserVerifiedModuleImporter({ ...valid, createModuleUrl: () => url });
     await assert.rejects(() => invalid(bytes, { mediaType: "text/javascript" }), /URL factory/);
   }

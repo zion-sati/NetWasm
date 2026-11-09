@@ -5,7 +5,7 @@ import { createGuestEnvironmentImports } from './guest-environment-imports.mjs';
 for (const target of ['wasm32', 'wasm64']) {
   const width = target === 'wasm64' ? 8 : 4;
   const address = value => width === 8 ? BigInt(value) : value;
-  const namespace = `${width === 8 ? 'cm64p2' : 'cm32p2'}|wasi:cli/environment@0.2`;
+  const namespace = `${width === 8 ? 'cm64p2' : 'cm32p2'}|wasi:cli/environment@0.3`;
   test(`${target}: selected pairs survive allocation-time memory growth and repeated reads`, () => {
     const memory = new WebAssembly.Memory({ initial: 1 });
     const allocations = [];

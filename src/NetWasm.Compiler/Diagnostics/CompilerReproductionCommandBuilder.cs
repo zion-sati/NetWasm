@@ -27,7 +27,7 @@ internal sealed class CompilerReproductionCommandBuilder(
             "-target:" + options.EntryPointKind switch
             {
                 CompilerEntryPointKind.ManagedExecutable => "exe",
-                CompilerEntryPointKind.Library => "library",
+                CompilerEntryPointKind.Library => options.PlainCoreModule ? "coremodule" : "library",
                 _ => "function",
             },
         };

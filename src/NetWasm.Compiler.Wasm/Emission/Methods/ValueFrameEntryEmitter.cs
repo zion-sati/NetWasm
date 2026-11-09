@@ -2,6 +2,7 @@ using System;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Values;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.Methods;
@@ -84,6 +85,7 @@ internal sealed class ValueFrameEntryEmitter(
                 var argumentLocal = argumentIndex + context.ParameterOffset;
                 var layout = values.GetValueLayout(argumentType);
                 copies.Emit(code, context.ObjectTemporary, layout.Size, layout.Alignment,
+                    SmallBlockEmitter.WidestChunk(layout),
                     writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                         WasmInstructionOperand.Unsigned((uint)argumentLocal))),
                     context);

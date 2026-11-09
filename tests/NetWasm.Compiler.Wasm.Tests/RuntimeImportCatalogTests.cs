@@ -98,6 +98,7 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeObjectContainsReferences,
             RuntimeAbi.RuntimeArraySetValue,
             RuntimeAbi.RuntimeReportUnhandledException,
+            RuntimeAbi.RuntimeObjectClone,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));
@@ -210,6 +211,28 @@ public sealed class RuntimeImportCatalogTests
         Assert.Equal(
             RuntimeAbi.RuntimeReportUnhandledException,
             catalog.Resolve(enabled)[catalog.Resolve(RuntimeImportSymbol.ReportUnhandledException, enabled)].Name);
+    }
+
+    // MemberwiseClone's runtime copy is imported only by a program that clones.
+    [Theory]
+    [InlineData(WasmModuleProfile.CoreApplication)]
+    [InlineData(WasmModuleProfile.ComponentCoreModule)]
+    public void ObjectCloneImportIsIncludedOnlyWhenSelected(WasmModuleProfile profile)
+    {
+        var catalog = WasmRuntimeImports.CreateCatalog();
+        var disabled = new RuntimeImportSelection(
+            profile,
+            IncludeTerminalExceptionReporter: false);
+        var enabled = disabled with { IncludeObjectClone = true };
+
+        Assert.DoesNotContain(
+            catalog.Resolve(disabled),
+            import => import.Name == RuntimeAbi.RuntimeObjectClone);
+        Assert.Throws<InvalidOperationException>(() =>
+            catalog.Resolve(RuntimeImportSymbol.ObjectClone, disabled));
+        Assert.Equal(
+            RuntimeAbi.RuntimeObjectClone,
+            catalog.Resolve(enabled)[catalog.Resolve(RuntimeImportSymbol.ObjectClone, enabled)].Name);
     }
 
     [Theory]

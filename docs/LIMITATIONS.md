@@ -25,31 +25,45 @@ evidence of support.
 
 - The CoreLib profile remains incomplete and intentionally differs from desktop
   .NET.
-- The checked-in WASI 0.2.11 WIT closure and Hosting provider catalog are not a
+- The checked-in WASI 0.3.2 WIT closure and Hosting provider catalog are not a
   public .NET API inventory. They let the compiler and host describe exact
   interfaces; only reachable imports backed by an implemented managed contract
   are supported.
-- General filesystem APIs are missing. Abstract and in-memory streams are
-  available, and local-time support can consume one fixed read-only timezone
-  sidecar, but `System.IO.File`, `FileStream`, `Directory`, enumeration,
-  mutation, watching and arbitrary preopen access are not implemented. Public
-  file APIs are deferred until after the WASI 0.3 migration.
-- Raw networking APIs are missing. The selected `System.Net.Http` profile uses
-  WASI HTTP, but `System.Net.Sockets`, raw TCP/UDP, listeners and general DNS
-  APIs are not implemented as managed APIs, even if a host provider contains
-  the corresponding WASI interfaces.
+- Files reach only the directories the host grants. `System.IO.File`,
+  `FileStream`, `Directory` and their relatives work over WASI 0.3's
+  filesystem within the granted directories (`dotnet run` grants the working
+  directory and a private temporary directory; a published command takes
+  `--dir`); a browser page or worker mounts files with NetWasm's mount API.
+  Permissions, ownership, locking and watching are not available.
+- Networking is a WASI 0.3 subset. `System.Net.Sockets` (TCP, UDP, listeners),
+  `Dns`, `ws://` WebSockets and `HttpClient` work where the host grants the
+  network, but sockets cannot be made non-blocking, socket timeouts, `Poll` and
+  `Select`, Unix domain sockets, multicast and broadcast, binding a dual-mode
+  socket to the IPv6 wildcard, and reverse DNS are not available, and `wss://`
+  waits for WASI's TLS interface.
 - Process creation and discovery are missing. Selected CLI arguments,
   environment, output and exit plumbing do not provide
   `System.Diagnostics.Process`, subprocess creation, shell execution or process
   enumeration.
 - Concurrency remains single-reactor. `Task`, `ValueTask`, cancellation, timers
-  and readiness continuations are available; managed threads, shared-heap
-  workers, a thread pool, `Task.Run` parallelism, blocking waits and
-  shared-memory/atomic threading semantics are not.
-- User-defined WIT imports and exports are synchronous in the current profile.
+  and readiness continuations are available, and synchronous I/O APIs work over
+  WASI's asynchronous operations on hosts that can suspend (Wasmtime, Spin,
+  wasmCloud, NetWasm's Node.js launcher). In a JavaScript host that cannot
+  suspend the guest, such as a `JsModule`'s page or worker, a call that must
+  wait for I/O (`Console.ReadLine`, a synchronous socket call) throws
+  `PlatformNotSupportedException`; use the async API there. File APIs never wait in NetWasm's JavaScript hosts; managed threads,
+  shared-heap workers, a thread pool, `Task.Run` parallelism, blocking waits on
+  a task and shared-memory/atomic threading semantics are not.
+- User-defined WIT functions may be `async func`, bound to `Task`; `stream<T>`
+  and `future<T>` bind to streams, `IAsyncEnumerable<T>` and `Task<T>`.
   JavaScript Promise interop uses the explicit JavaScript boundary.
 - Component Model and WASI support is selective. A component must declare the
   WIT/WASI capabilities it consumes.
+- WASI needs an engine that implements the Component Model and WASI 0.3, or
+  NetWasm's own Node.js and browser hosts. NetWasm never uses WASI Preview 1.
+  An engine without the Component Model can load a plain core module, which
+  imports only its world's functions and has no WASI: .NET APIs that need a
+  system service throw `PlatformNotSupportedException` there.
 - NetWasm can emit and validate wasm64 **core modules**, but cannot currently
   package them as WebAssembly Components. The stable component encoder,
   validator, native runtime, and browser-tooling chain does not yet provide an

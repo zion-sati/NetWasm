@@ -279,11 +279,18 @@ public sealed record JavaScriptAsyncMethodBinding(
     public FieldInstanceModel StatusField { get; init; } = null!;
     public FieldInstanceModel? ResultField { get; init; }
     public MethodInstanceModel? GetVoidResult { get; init; }
-    // CoreLib's AsyncEntryPoint.Run for this task type, set only when the selected world has no
-    // host-driven reactor: an asynchronous Main is then entered synchronously and runs its own
-    // event loop to completion.
-    public MethodInstanceModel? CommandEntryPoint { get; init; }
+    public CommandEntryBinding? CommandEntry { get; init; }
 }
+
+/// <summary>
+/// CoreLib's <c>AsyncEntryPoint</c> for a callback-lifted <c>wasi:cli/run</c>: Start, which the
+/// entry calls with Main's task and returns the callback code of; Callback, which the host calls
+/// with each event until the task completes; and ExitCode, which the adapter's task.return reads.
+/// </summary>
+public sealed record CommandEntryBinding(
+    MethodInstanceModel Start,
+    MethodInstanceModel Callback,
+    MethodInstanceModel ExitCode);
 
 /// <summary>
 /// The CoreLib conversions (<c>JSMarshal</c>) a JavaScript boundary applies to the
@@ -384,11 +391,20 @@ public sealed record WitImportDeclaration(
     string FunctionName)
 {
     public WitFunctionIdentity Identity => new(InterfaceName, FunctionName);
+
+    // A Component Model built-in ([ComponentBuiltIn]): imported under its full
+    // core name with the extern's own core signature, not a world function.
+    public bool IsCanonicalBuiltIn { get; init; }
 }
 
 public sealed record WitExportDeclaration(
     string InterfaceName,
-    string FunctionName);
+    string FunctionName)
+{
+    // A [ComponentExport]: exported under its full canonical name (FunctionName, such as
+    // `[async-lift]iface#f`) with the method's own core signature, not a world function.
+    public bool IsComponentLift { get; init; }
+}
 
 public sealed record WitPostReturnDeclaration(
     string InterfaceName,
@@ -421,12 +437,19 @@ public enum CanonicalAbiTypeKind
     Flags,
     OwnedResource,
     BorrowedResource,
+    // A stream<T> or future<T> end: an i32 handle, with the payload, if any,
+    // as the element type.
+    Stream,
+    Future,
 }
 
 public enum CanonicalAbiDirection
 {
     LoweredImport,
     LiftedExport,
+    // An async func import lowered with `async`: it returns a subtask status, takes at most
+    // four flat parameters and writes any result through a pointer.
+    AsyncLoweredImport,
 }
 
 public enum CanonicalAbiFunctionKind

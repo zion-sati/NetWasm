@@ -22,6 +22,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<ArrayGetValueIntrinsicEmitter>();
         services.AddSingleton<ArrayElementTypeIntrinsicEmitter>();
         services.AddSingleton<ArraySetValueIntrinsicEmitter>();
+        services.AddSingleton<ObjectCloneIntrinsicEmitter>();
         services.AddSingleton<ArrayCopyIntrinsicEmitter>();
         services.AddSingleton<ArrayClearIntrinsicEmitter>();
         services.AddSingleton<ArrayCloneIntrinsicEmitter>();
@@ -63,6 +64,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<IValueTypeEqualsEmitter, ValueTypeEqualsEmitter>();
         services.AddSingleton<IValueTypeHashCodeEmitter, ValueTypeHashCodeEmitter>();
         services.AddSingleton<ValueTypeEqualsIntrinsicEmitter>();
+        services.AddSingleton<IValueTypeHashReceiverResolver, ValueTypeHashReceiverResolver>();
         services.AddSingleton<ValueTypeGetHashCodeIntrinsicEmitter>();
         services.AddSingleton<SuppressFinalizeIntrinsicEmitter>();
         services.AddSingleton<ReRegisterForFinalizeIntrinsicEmitter>();
@@ -71,6 +73,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<IsReferenceOrContainsReferencesIntrinsicEmitter>();
         services.AddSingleton<GetArrayDataReferenceIntrinsicEmitter>();
         services.AddSingleton<NativeIntegerSizeIntrinsicEmitter>();
+        services.AddSingleton<JavaScriptHostIntrinsicEmitter>();
         services.AddSingleton<ComponentReallocateIntrinsicEmitter>();
         services.AddSingleton<ComponentFreeIntrinsicEmitter>();
         services.AddSingleton<ComponentResourceHandleCreateIntrinsicEmitter>();
@@ -171,6 +174,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.ArrayGetLowerBound);
         AddRegistration<ArrayElementTypeIntrinsicEmitter>(services, RuntimeIntrinsic.ArrayElementType);
         AddRegistration<ArraySetValueIntrinsicEmitter>(services, RuntimeIntrinsic.ArraySetValue);
+        AddRegistration<ObjectCloneIntrinsicEmitter>(services, RuntimeIntrinsic.ObjectClone);
         AddRegistration<ArrayGetValueIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayGetValue);
         AddRegistration<ArrayCopyIntrinsicEmitter>(
@@ -261,6 +265,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.NullableGetUnderlyingType);
         AddRegistration<NativeIntegerSizeIntrinsicEmitter>(
             services, RuntimeIntrinsic.NativeIntegerSize);
+        AddRegistration<JavaScriptHostIntrinsicEmitter>(
+            services, RuntimeIntrinsic.JavaScriptHost);
         AddRegistration<ComponentReallocateIntrinsicEmitter>(
             services, RuntimeIntrinsic.ComponentReallocate);
         AddRegistration<ComponentFreeIntrinsicEmitter>(

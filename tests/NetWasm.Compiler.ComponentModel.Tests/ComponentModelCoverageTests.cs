@@ -250,11 +250,13 @@ public sealed class ComponentModelCoverageTests
             new WasmCoreModuleValidator(new NoopPackageOperations()),
             new NoopInlineAnnotations()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
-            null!, coreLinker, new SystemFileMover()));
+            null!, coreLinker, new SystemFileMover(), new PlainCoreModuleImportValidator()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
-            packageOperations, null!, new SystemFileMover()));
+            packageOperations, null!, new SystemFileMover(), new PlainCoreModuleImportValidator()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
-            packageOperations, coreLinker, null!));
+            packageOperations, coreLinker, null!, new PlainCoreModuleImportValidator()));
+        Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
+            packageOperations, coreLinker, new SystemFileMover(), null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageOperationRunner(null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackager(
             null!, packageFactory, packageExecution, capability));
@@ -284,10 +286,12 @@ public sealed class ComponentModelCoverageTests
             syntax, null!,
             new NetWasm.Wit.Bindings.Aliases.WitAliasValidator(new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier())),
                 new WitTypeDefinitionClassifier()));
+        var intrinsics = new WitBindingIntrinsicsSectionWriter(
+            new WitCanonicalTypeResolver(), new CanonicalAbiMemoryLayoutPlanner(), syntax, new CodeWriterFactory());
         Assert.Throws<ArgumentNullException>(() => new WitBindingMethodWriter(
-            null!, exportsSection));
+            null!, exportsSection, intrinsics));
         Assert.Throws<ArgumentNullException>(() => new WitBindingMethodWriter(
-            imports, null!));
+            imports, null!, intrinsics));
         var coreTypes = new WitCanonicalTypeResolver();
         var coreFlattener = new CanonicalAbiTypeFlattener();
         var coreSignatures = new CanonicalAbiSignaturePlanner(coreFlattener);
@@ -354,7 +358,7 @@ public sealed class ComponentModelCoverageTests
             validator, declarations, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
             syntax, new CodeWriterFactory(), null!));
 
-        var methodWriter = new WitBindingMethodWriter(imports, exportsSection);
+        var methodWriter = new WitBindingMethodWriter(imports, exportsSection, intrinsics);
         Assert.Throws<ArgumentNullException>(() => methodWriter.Generate(null!, new WitWorld(
             0, "world", "example:test@1.0.0", [], [])));
         Assert.Throws<ArgumentNullException>(() => methodWriter.Generate(
@@ -503,7 +507,8 @@ public sealed class ComponentModelCoverageTests
             string outputPath,
             ComponentTarget target,
             FinalWasmOptimization optimization,
-            bool converge)
+            bool converge,
+            bool lowMemoryUnused)
         {
         }
     }

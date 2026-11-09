@@ -16,43 +16,7 @@ public sealed class AsyncJSExportHelperAppenderTests
         var functions = new List<WasmFunctionDefinition>();
         Assert.ThrowsAny<ArgumentException>(() => CreateAppender().Append(functions, 0,
             new Dictionary<string, int>(), binding, ManagedAsyncBoundaryNames.ForExport(binding),
-            ManagedAsyncBoundaryKinds.Export, [], observer is null ? null! : new(observer.Value, 8, CliValueKind.I4)));
-        Assert.Empty(functions);
-    }
-
-    [Fact]
-    public void RejectsAnExportObserverForProcessCompletion()
-    {
-        var binding = CreateBinding(false);
-        var functions = new List<WasmFunctionDefinition>();
-        Assert.Throws<ArgumentException>(() => CreateAppender().Append(functions, 0,
-            new Dictionary<string, int>(), binding, ManagedAsyncBoundaryNames.ForProcess(binding),
-            ManagedAsyncBoundaryKinds.Process, [], new(1, 2, CliValueKind.I4)));
-        Assert.Empty(functions);
-    }
-
-    [Fact]
-    public void ProcessCompletionUsesTheFaultReportingEmitter()
-    {
-        var binding = CreateBinding(false);
-        var functions = new List<WasmFunctionDefinition>();
-        CreateAppender().Append(functions, 0, new Dictionary<string, int>(), binding,
-            ManagedAsyncBoundaryNames.ForProcess(binding), ManagedAsyncBoundaryKinds.Process, [], new(90, 91, CliValueKind.Void));
-        Assert.Equal(new byte[] { 4 }, functions[^1].Body);
-        Assert.Equal(CliValueKind.Void, functions[^1].Type.Result);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void RejectsMismatchedProcessCompletionBeforeAppending(bool process)
-    {
-        var binding = CreateBinding(false);
-        var functions = new List<WasmFunctionDefinition>();
-        Assert.Throws<ArgumentException>(() => CreateAppender().Append(functions, 0,
-            new Dictionary<string, int>(), binding, ManagedAsyncBoundaryNames.ForProcess(binding),
-            process ? ManagedAsyncBoundaryKinds.Process : ManagedAsyncBoundaryKinds.Export,
-            [], new(1, 2, process ? CliValueKind.I4 : CliValueKind.Void)));
+            ManagedAsyncBoundaryKinds.Export, [], observer is null ? null! : new(observer.Value, 8)));
         Assert.Empty(functions);
     }
 
@@ -86,7 +50,7 @@ public sealed class AsyncJSExportHelperAppenderTests
             ManagedAsyncBoundaryNames.ForExport(binding),
             ManagedAsyncBoundaryKinds.Export,
             boundaries,
-            new(7, 8, CliValueKind.I4));
+            new(7, 8));
 
         Assert.Equal(expectedCount, functions.Count);
         Assert.Equal(CliValueKind.I4, functions[^1].Type.Result);
@@ -111,7 +75,7 @@ public sealed class AsyncJSExportHelperAppenderTests
         var names = ManagedAsyncBoundaryNames.ForExport(binding);
         var kinds = ManagedAsyncBoundaryKinds.Export;
         var boundaries = new List<ManagedBoundaryPlanEntry>();
-        var completion = new AsyncTaskCompletionPlan(7, 8, CliValueKind.I4);
+        var completion = new AsyncTaskCompletionPlan(7, 8);
 
         Assert.Throws<ArgumentNullException>(() =>
             appender.Append(null!, 0, indices, binding, names, kinds, boundaries, completion));
@@ -145,7 +109,7 @@ public sealed class AsyncJSExportHelperAppenderTests
                 null,
                 JavaScriptAsyncAbiNames.ExportComplete(binding.Method)),
             ManagedAsyncBoundaryKinds.Export,
-            [], new(7, 8, CliValueKind.I4)));
+            [], new(7, 8)));
     }
 
     private static IAsyncJSExportHelperAppender CreateAppender() => new[]
@@ -204,7 +168,7 @@ public sealed class AsyncJSExportHelperAppenderTests
         {
             Assert.NotNull(binding);
             Assert.NotNull(plan);
-            return plan.ResultKind == CliValueKind.Void ? [4] : [3];
+            return [3];
         }
     }
 

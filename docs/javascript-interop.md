@@ -79,9 +79,24 @@ in a worker.
 | `page` (default) | Synchronous exports return values; `Task` exports return Promises. Import modules may use the DOM. | C# drives page UI, or calls are short. |
 | `worker` | Every export returns a Promise. Import modules run in the worker and reach the page through notifications. | Work is long enough to block the page. |
 | `page;worker` | Publishes both, sharing one runtime. | The page needs some calls of each kind. |
+| `node` | As `page`, from Node.js code. Import modules are passed to `open()`. | A server, CLI or serverless function calls C#. |
 
 The worker host publishes `browser/<AssemblyName>.worker-client.mjs`; see
-[C# Web Workers](web-workers.md). A `JSObject` stays in the realm that created
+[C# Web Workers](web-workers.md). The node host publishes
+`<AssemblyName>.node.mjs`, at the root of the publish directory when it is the
+only host and under `browser/` beside a page or worker:
+
+```js
+import { open } from "./publish/Functions.node.mjs";
+
+const app = await open({ modules: { probe: { report: console.log } } });
+console.log(await app.FetchTitle("https://example.com/"));
+await app.close();
+```
+
+A Node.js host loads the deployment from its files and makes HTTP requests
+with Node.js's `fetch`, so a serverless handler imports the module like any
+other dependency. A `JSObject` stays in the realm that created
 it, so the worker host rejects exports that pass one (NWSDK081).
 
 ## Declare imports and exports
@@ -160,7 +175,7 @@ For an ordinary browser application rather than a worker, reachable
 `[JSImport]` declarations require `<NetWasmRawWasm>true</NetWasmRawWasm>`.
 The same `NetWasmJavaScriptModule` item supplies page-owned modules; in
 that boundary the module runs in the page realm and may access the DOM. Follow
-the [entry-contract walkthrough](sdk-quickstart.md#choose-the-entry-contract-and-output-kind)
+the [output-kind walkthrough](sdk-quickstart.md#choose-the-output-kind)
 for the raw browser publish settings.
 
 A page starts the published application with the generated `run()` helper.
@@ -404,6 +419,11 @@ before the import returns, for example from an event the import dispatches.
 Such calls can nest up to 32 levels. A deeper call throws `NetWasmHostError`,
 which the managed caller observes as a `JSException`, and the session remains
 usable.
+
+A `JsModule` host does not suspend the guest, so a synchronous .NET call that
+must wait for I/O, such as `Console.ReadLine` or a synchronous socket call,
+throws `PlatformNotSupportedException`; await the async API instead. File APIs answer without waiting, so `File.ReadAllText`
+and the other synchronous file calls work.
 
 Calls in both directions run concurrently: while an asynchronous export awaits,
 page code can call it or another export again, in the page realm and in a

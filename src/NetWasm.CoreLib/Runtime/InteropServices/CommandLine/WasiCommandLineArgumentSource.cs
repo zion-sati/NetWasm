@@ -3,12 +3,12 @@ namespace System.Runtime.InteropServices.CommandLine
     using System.Runtime.InteropServices.WebAssembly;
 
     internal sealed class WasiCommandLineArgumentSource(
-        IWasiCommandLineInvoker invoker) : ICommandLineArgumentSource
+        IWasiCommandLineInvoker invoker) : ICommandLineSource
     {
         private readonly IWasiCommandLineInvoker _invoker =
             invoker ?? throw new ArgumentNullException();
 
-        public string[] Read()
+        public string[] GetArguments()
         {
             var addressSize = unchecked((nuint)nuint.Size);
             var result = CanonicalAbi.Allocate(addressSize * 2, addressSize);

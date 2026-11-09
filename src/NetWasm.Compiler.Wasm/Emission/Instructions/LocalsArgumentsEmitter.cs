@@ -75,6 +75,7 @@ internal sealed class LocalsArgumentsEmitter(
                 request.Context.ObjectTemporary,
                 layout.Size,
                 layout.Alignment,
+                SmallBlockEmitter.WidestChunk(layout),
                 writer => EmitValueArgumentSource(
                     request,
                     writer,
@@ -166,6 +167,7 @@ internal sealed class LocalsArgumentsEmitter(
                 request.Context.ObjectTemporary,
                 layout.Size,
                 layout.Alignment,
+                SmallBlockEmitter.WidestChunk(layout),
                 writer => EmitLocalGet(
                     writer, request.Context.LocalBase + index),
                 request.Context);
@@ -219,6 +221,7 @@ internal sealed class LocalsArgumentsEmitter(
                 destination,
                 layout.Size,
                 layout.Alignment,
+                SmallBlockEmitter.WidestChunk(layout),
                 writer => EmitLocalGet(
                     writer,
                     GetStackLocal(
@@ -276,6 +279,7 @@ internal sealed class LocalsArgumentsEmitter(
                 targetLocal,
                 layout.Size,
                 layout.Alignment,
+                SmallBlockEmitter.WidestChunk(layout),
                 writer => EmitLocalGet(
                     writer,
                     GetStackLocal(
@@ -419,6 +423,7 @@ internal sealed class LocalsArgumentsEmitter(
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
                 WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
             valueCopies.Emit(code, request.Context.ObjectTemporary, layout.Size, layout.Alignment,
+                SmallBlockEmitter.WidestChunk(layout),
                 writer => valueFrameAddresses.Emit(writer, request.Context, capture),
                 request.Context);
             EmitLocalGet(code, request.Context.ObjectTemporary);
@@ -462,6 +467,7 @@ internal sealed class LocalsArgumentsEmitter(
         if (capture.Type.StackKind == CliValueKind.ValueType)
         {
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, values.GetValueLayout(capture.Type).Size,
+                SmallBlockEmitter.WidestChunk(values.GetValueLayout(capture.Type)),
                 writer => EmitAddressConstant(writer, values.GetValueLayout(capture.Type).Size));
         }
         else

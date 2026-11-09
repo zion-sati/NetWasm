@@ -23,10 +23,8 @@ public static class HostingBuildComposition
 
     public static ILocalExecutionDescriptorBuildWriter CreateLocalExecutionDescriptorBuildWriter()
     {
-        var store = new BuildArtifactStore();
         return new LocalExecutionDescriptorBuildWriter(
-            store,
-            new Sha256ContentHasher(),
+            new BuildArtifactStore(),
             new ExecutionDescriptorWriter(new ExecutionDescriptorValidator()));
     }
 

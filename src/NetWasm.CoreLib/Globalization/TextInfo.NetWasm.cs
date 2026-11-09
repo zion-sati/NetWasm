@@ -16,16 +16,6 @@ namespace System.Globalization
         private unsafe void NlsChangeCase(char* pSource, int pSourceLen, char* pResult, int pResultLen, bool toUpper) =>
             throw new PlatformNotSupportedException();
 
-        // The profile leaves out object.MemberwiseClone, so Clone and ReadOnly copy field by field.
-        // ListSeparator's backing field copies through the property, which reads the same separator.
-        private TextInfo MemberwiseClone()
-        {
-            var copy = new TextInfo(_cultureData) { _isAsciiCasingSameAsInvariant = _isAsciiCasingSameAsInvariant, _sortHandle = _sortHandle };
-            copy.ListSeparator = ListSeparator;
-            copy._isReadOnly = _isReadOnly;
-            return copy;
-        }
-
         // Upstream's OrdinalCasing.Icu.cs, ICU's ordinal casing table.
         private static class OrdinalCasing
         {

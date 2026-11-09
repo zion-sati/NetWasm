@@ -1,80 +1,116 @@
 {
   "schemaVersion": "1",
-  "wasiVersion": "0.2.11",
+  "wasiVersion": "0.3.2",
   "package": "netwasm:platform@1.0.0",
   "world": "platform",
   "main": "world.wit",
   "provenance": {
     "sourceRepository": "https://github.com/WebAssembly/WASI",
-    "sourceRevision": "ed73919426173babd88ae145e31deca3d484bbd0",
-    "sourcePackage": "wasi:cli@0.2.11",
-    "closurePolicy": "closed-world NetWasm runtime imports with canonical WASI 0.2.11 identities"
+    "sourceRevision": "bdadbbb8cadd287cc5014c4b5a0bf76efc60291c",
+    "sourcePackage": "wasi:cli@0.3.2",
+    "closurePolicy": "closed-world NetWasm runtime imports with canonical WASI 0.3.2 identities"
   },
-  "aggregateSha256": "41b5894994b7d74eea83cc73857115166861a6d5e8acc8c4ca7d3c326f6b5a55",
+  "aggregateSha256": "bdd92191114898a64674fee9b40cc70ad27673e2a142978a79eb0a2965b5e39e",
   "files": [
     {
-      "path": "deps/netwasm-runtime/reactor.wit",
-      "sha256": "fb1f67e0f850e14f3ab1cc0afd457ccc26015fc52f83710fe0fe5f11cff7eb8a"
+      "path": "deps/wasi-cli/command.wit",
+      "sha256": "9d96fd15728ad86c905831355a3c035c47ebfd38976470f1c18e867fd557fd06"
     },
     {
       "path": "deps/wasi-cli/environment.wit",
-      "sha256": "5e58cd47b162e9f004bc9224a29c2ec3cf9e1a3d4c910154ce53742f828af91f"
+      "sha256": "03b47cab47b085b3c23fb1df0db2266fa7adffc02987ea6235a7b1fdc565aa11"
     },
     {
-      "path": "deps/wasi-cli/stderr.wit",
-      "sha256": "b4eddd32877fd30cc1741bc27c1d7dc25a7b3f975a8ed1d65e8524ea7ab0db9c"
+      "path": "deps/wasi-cli/exit.wit",
+      "sha256": "c25223757e4b23885b146a6873308a03ff43f8f2371fb4ff28709a796bf794e6"
     },
     {
-      "path": "deps/wasi-cli/stdout.wit",
-      "sha256": "9ff4c3d6d3cbc26cd8c68579f18befc80e7acc92ee3b4a568e6c97df6783c2d8"
+      "path": "deps/wasi-cli/imports.wit",
+      "sha256": "2b2ad3c2787fafa2d39f40f41db0daea552322960ddac7603e30795b126252ed"
+    },
+    {
+      "path": "deps/wasi-cli/run.wit",
+      "sha256": "84f1dd5711193cc51609165a8a671ec2fe45d72dd836737d5cdbb09acf0bc598"
+    },
+    {
+      "path": "deps/wasi-cli/stdio.wit",
+      "sha256": "63861e1439f4f7dadc30a7cbc54bc5aadc27cf255829e8e998e029fdac9c4df0"
+    },
+    {
+      "path": "deps/wasi-cli/terminal.wit",
+      "sha256": "7a56fa7fa5c255022ae9c74cf278690b944ac497be0fbd16740cfacd5ba4d2a5"
     },
     {
       "path": "deps/wasi-clocks/monotonic-clock.wit",
-      "sha256": "ea5a38524b4bf1012f6075c9215c7e553524e387f8c0bacee77162925c6b9e7c"
+      "sha256": "8cc89f166e40c80ff91250fe7c107e9bcb6c0b62ced542e980d5efd2e91e090e"
     },
     {
-      "path": "deps/wasi-clocks/wall-clock.wit",
-      "sha256": "f7837b00d88559b784c1cbbb14b20356e5bf72500da61fb8f4535d58b72e8940"
+      "path": "deps/wasi-clocks/system-clock.wit",
+      "sha256": "1ad10f7a0fe62470049058ce5ff019844a81756343a6bb4417e90fb9eaeb13d2"
     },
     {
-      "path": "deps/wasi-filesystem/filesystem.wit",
-      "sha256": "d9703b4c8612182ddc873e683adf336ce9ce783cb6f77d069c8d699c17ea9eae"
+      "path": "deps/wasi-clocks/timezone.wit",
+      "sha256": "89ab0baaae9962ca86b0b261704e13c9724b181c1f2e2055f1ee8321f625cff4"
     },
     {
-      "path": "deps/wasi-http/handler.wit",
-      "sha256": "1f66174b4058b102367e69ce8aa657b3e9dbc767f6ade960108faaa1731f0945"
+      "path": "deps/wasi-clocks/types.wit",
+      "sha256": "4d2c7be2e5b52202ddb9e638774cb75364f6b5ed18f7fcdf357e432fd10515f3"
     },
     {
-      "path": "deps/wasi-http/package.wit",
-      "sha256": "6d881c9a04a85c6ec014fa51eed515a0d3936bcefcafdbb20bf50b9bbe81d9cc"
+      "path": "deps/wasi-clocks/world.wit",
+      "sha256": "f2d3926be9dbecb8390adc8a74e03e73e1c97ec14868100b0c35aaf5a89e80d1"
+    },
+    {
+      "path": "deps/wasi-filesystem/preopens.wit",
+      "sha256": "ad8a4df7328c2e1342b15b02bc7b75ebc144dd486c0eb66d426bb14be341d692"
+    },
+    {
+      "path": "deps/wasi-filesystem/types.wit",
+      "sha256": "738e0cd75b77b484e33d2233d97be935db7864f19cfb13ee6f69e68c4b58fd70"
+    },
+    {
+      "path": "deps/wasi-filesystem/world.wit",
+      "sha256": "b0a1df2d6e93be273e868b80700d25803e5ae33eca2a8eb56d8d90716e09957f"
     },
     {
       "path": "deps/wasi-http/types.wit",
-      "sha256": "b985cbc5d74c4d79268c59daaf997ecc7aca0f6872af34a7363c0351e786077e"
+      "sha256": "dd4e97b4c206e1c351588bd0b37b5541189240e30ae9f886f7d46e20ea51225b"
     },
     {
-      "path": "deps/wasi-io/error.wit",
-      "sha256": "56375be07db1c68addffbea19e28fb47c969e14612cbcbb42c38dddde4acaf99"
+      "path": "deps/wasi-http/worlds.wit",
+      "sha256": "8e68ac0155bdb0226a75e0a017d5e32be6914a6e675d2471c98fd6df4be083cf"
     },
     {
-      "path": "deps/wasi-io/poll.wit",
-      "sha256": "f15c9baf8fd51308d1ab2862c52117fdb05d856183460dc4e0bfda11219b566a"
+      "path": "deps/wasi-random/insecure-seed.wit",
+      "sha256": "13d74165420def57eebb3be5db954f43437d6bfb3fac1326c428d307d35c0041"
     },
     {
-      "path": "deps/wasi-io/streams.wit",
-      "sha256": "e80b150ba7a1631745ed17cc5a12b71532beaf14a8c010101884ec809d471ae0"
-    },
-    {
-      "path": "deps/wasi-random/PROVENANCE.json",
-      "sha256": "3d94e265c324a79f2095cb2f3ee70226d58a41f923f6212da249e569d7575a24"
+      "path": "deps/wasi-random/insecure.wit",
+      "sha256": "ee86e9c373e86fa42a62dc342f9c7a761fe7caf690b3618fa959c83c97cbd44b"
     },
     {
       "path": "deps/wasi-random/random.wit",
-      "sha256": "2acf17a5d61e1e77a42dcc8b3e7897376bf958ba0690463729bcfd60b15ca0c0"
+      "sha256": "c55553f6df94f9cfa034f37f0fabd77014a50608876aff6350455cb64c29897c"
+    },
+    {
+      "path": "deps/wasi-random/world.wit",
+      "sha256": "1a2ea78c67e79dfca589a92c8c3bc7b9f31be12bbf60961d57d07c0904888ff0"
+    },
+    {
+      "path": "deps/wasi-sockets/ip-name-lookup.wit",
+      "sha256": "098db5047137340f31d0171343424898f3937437a53c86a1702189c596a21156"
+    },
+    {
+      "path": "deps/wasi-sockets/types.wit",
+      "sha256": "2805f1e16d3f307c37e00f3565af4574996e1b4070034aac57832d6ddb4086e6"
+    },
+    {
+      "path": "deps/wasi-sockets/world.wit",
+      "sha256": "af185d99df6d88976d359dca1b50afeeef2e76694ceda3b0878606c515b156b7"
     },
     {
       "path": "world.wit",
-      "sha256": "b4380f820f3ba3ec5d8d8272dd34dd96d1cdf5e19dc4f4264ec4753988dc7615"
+      "sha256": "d90214bdedbedc174a328047837a7aff998c593f93be8f1aa60e7f7ab6696b1f"
     }
   ]
 }

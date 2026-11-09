@@ -18,6 +18,7 @@ internal static class SmallBlockEmitter
 
     // Every preset zeroes a known size inline, so it stops sooner.
     private const int KnownSizeZeroLimit = 64;
+    private const int AlignedCopyChunkLimit = 4;
 
     public static void EmitCopy(
         IWasmInstructionWriter code,
@@ -202,20 +203,35 @@ internal static class SmallBlockEmitter
             WasmInstructionOperand.PrefixedPair(width == 8 ? WasmSimdOpcodes.I64x2ExtractLane : WasmSimdOpcodes.I32x4ExtractLane, 0)));
     }
 
+    // The widest chunk a known-size copy of the value reads. A value holding a
+    // managed byref (a span, or a ref struct around one) lives only in frames,
+    // where code stores its fields at their own widths and then copies it at
+    // once, as a span is built and then passed; a chunk wider than those fields
+    // would read two fresh stores at once, which the processor cannot forward to
+    // the load and waits out instead. So such a value's chunks are no wider than
+    // its alignment, the widest of its fields. Any other value, boxed, in an
+    // array or a static, or a vector that SIMD code stores whole, keeps the
+    // widest chunks.
+    public static int WidestChunk(ValueLayout value) =>
+        value.ByReferenceOffsets.IsEmpty ? 16 : value.Alignment;
+
     // Copies a value of a known size from the source address on the stack to
     // the destination address beneath it, as memory.copy does. Where the method
     // inlines small blocks the copy runs in exact chunks, widest first, through
-    // the context's address scratch; every chunk is loaded before any is
-    // stored, so overlapping addresses copy as memory.copy would.
+    // the context's address scratch; every chunk is loaded before any is stored,
+    // so overlapping addresses copy as memory.copy would. No chunk is wider than
+    // widestChunk where at most four such chunks cover the value: more chunks
+    // cost more than the wait they avoid.
     public static void EmitKnownSizeCopy(
         IWasmInstructionWriter code,
         MethodEmissionContext context,
         int size,
+        int widestChunk,
         Action<IWasmInstructionWriter> emitSize)
     {
         if (CanInlineKnownSizeCopy(context, size))
         {
-            EmitInlineKnownSizeCopy(code, context, size);
+            EmitInlineKnownSizeCopy(code, context, size, widestChunk);
             return;
         }
         emitSize(code);
@@ -229,14 +245,24 @@ internal static class SmallBlockEmitter
         context.CopySourceTemporary >= 0;
 
     // Expects the destination and then the source address on the stack.
-    public static void EmitInlineKnownSizeCopy(IWasmInstructionWriter code, MethodEmissionContext context, int size)
+    public static void EmitInlineKnownSizeCopy(
+        IWasmInstructionWriter code, MethodEmissionContext context, int size, int widestChunk)
     {
+        if (widestChunk < 1 || (widestChunk & (widestChunk - 1)) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(widestChunk), widestChunk, "A chunk width is a positive power of two.");
+        }
         Set(code, context.CopySourceTemporary);
         Set(code, context.CopyDestinationTemporary);
         var chunks = new List<(int Width, uint Offset)>();
         var offset = 0;
+        var widest = size <= AlignedCopyChunkLimit * widestChunk ? widestChunk : 16;
         foreach (var width in (ReadOnlySpan<int>)[16, 8, 4, 2, 1])
         {
+            if (width > widest)
+            {
+                continue;
+            }
             for (; size - offset >= width; offset += width)
             {
                 chunks.Add((width, (uint)offset));

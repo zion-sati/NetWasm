@@ -1,7 +1,4 @@
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 
 const planKeys = [
   "contractKey",
@@ -9,14 +6,16 @@ const planKeys = [
   "exports",
   "imports",
   "invocationArguments",
-  "reactorGuestExport",
-  "reactorHostModule",
   "target",
 ];
 
+// An asynchronous Main is callback-lifted: `run` starts it and returns a callback code, the
+// host's Component Model hands its callback the events it waits for until it exits, and the
+// exit-code export reads Main's result.
 export function bindRawExecutionInstance(request = {}) {
-  assertExactObject(request, ["instance", "plan"], "raw execution-instance binding request");
-  const { instance, plan } = request;
+  assertExactObject(request, ["componentModel", "instance", "plan"],
+    "raw execution-instance binding request");
+  const { componentModel, instance, plan } = request;
   validatePlan(plan);
   if (instance === null || typeof instance !== "object"
       || instance.exports === null || typeof instance.exports !== "object") {
@@ -24,7 +23,7 @@ export function bindRawExecutionInstance(request = {}) {
   }
   const run = requireInstanceFunction(instance.exports, "run");
   const invoke = () => run(...plan.invocationArguments);
-  if (plan.contractKey === commandExecutionContract) {
+  if (plan.entryPoint.completionShape === "synchronous") {
     return Object.freeze({
       contractKey: plan.contractKey,
       command: Object.freeze({
@@ -32,26 +31,28 @@ export function bindRawExecutionInstance(request = {}) {
       }),
     });
   }
-
-  const status = requireInstanceFunction(instance.exports, "netwasm.process.status");
-  const complete = requireInstanceFunction(instance.exports, "netwasm.process.complete");
-  const wake = requireInstanceFunction(instance.exports, plan.reactorGuestExport);
-  const result = plan.entryPoint.returnShape === "exitCode"
-    ? requireInstanceFunction(instance.exports, "netwasm.process.result")
-    : () => 0;
+  if (componentModel === null || typeof componentModel !== "object"
+      || typeof componentModel.drive !== "function") {
+    throw new TypeError("raw Component Model is required for an asynchronous entry point");
+  }
+  const callback = requireInstanceFunction(instance.exports, "netwasm.entry.callback");
+  const exitCode = requireInstanceFunction(instance.exports, "netwasm.entry.exit_code");
   return Object.freeze({
-    contractKey: processExecutionContract,
-    process: Object.freeze({ start: invoke, status, exitCode: result, complete }),
-    reactorGuest: Object.freeze({ wake }),
+    contractKey: plan.contractKey,
+    command: Object.freeze({
+      async run() {
+        await componentModel.drive(invoke(), callback);
+        return exitCode();
+      },
+    }),
   });
 }
 
 function validatePlan(plan) {
   assertExactObject(plan, planKeys, "raw ABI plan");
-  if (plan.contractKey !== commandExecutionContract && plan.contractKey !== processExecutionContract
+  if (plan.contractKey !== commandExecutionContract
       || plan.entryPoint === null || typeof plan.entryPoint !== "object"
-      || !Array.isArray(plan.invocationArguments)
-      || typeof plan.reactorGuestExport !== "string") {
+      || !Array.isArray(plan.invocationArguments)) {
     throw new TypeError("raw ABI plan is invalid");
   }
 }

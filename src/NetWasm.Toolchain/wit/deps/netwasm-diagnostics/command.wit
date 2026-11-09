@@ -12,5 +12,6 @@ interface command {
     failed(terminal-event),
   }
 
-  run: func() -> completion;
+  // Asynchronous like wasi:cli/run, so an asynchronous Main can be lifted with a callback.
+  run: async func() -> completion;
 }

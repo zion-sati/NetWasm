@@ -1,13 +1,9 @@
-import {
-  commandExecutionContract as commandComponentContract,
-  processExecutionContract as processComponentContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract as commandComponentContract } from "./execution-contracts.mjs";
 
-export { commandComponentContract, processComponentContract };
+export { commandComponentContract };
 
 const binders = new Map([
   [commandComponentContract, bindCommand],
-  [processComponentContract, bindProcess],
 ]);
 
 export function bindCanonicalComponent(request = {}) {
@@ -29,9 +25,6 @@ export function bindCanonicalComponent(request = {}) {
 }
 
 function bindCommand(instance) {
-  if (Object.hasOwn(instance, "process") || Object.hasOwn(instance, "reactorGuest")) {
-    throw new TypeError("canonical component mixes command and process contracts");
-  }
   const command = instance.command;
   if (command === null || typeof command !== "object" || typeof command.run !== "function") {
     throw new TypeError("canonical command component is incomplete");
@@ -47,35 +40,5 @@ function bindCommand(instance) {
     ...(diagnosticCommand === undefined ? {} : {
       diagnosticCommand: Object.freeze({ run: diagnosticCommand.run.bind(diagnosticCommand) }),
     }),
-  });
-}
-
-function bindProcess(instance) {
-  if (Object.hasOwn(instance, "command")) {
-    throw new TypeError("canonical component mixes process and command contracts");
-  }
-  const process = instance.process;
-  const reactorGuest = instance.reactorGuest;
-  if (process === null || typeof process !== "object"
-      || reactorGuest === null || typeof reactorGuest !== "object") {
-    throw new TypeError("canonical process component is incomplete");
-  }
-  for (const operation of ["start", "status", "exitCode", "complete"]) {
-    if (typeof process[operation] !== "function") {
-      throw new TypeError("canonical process component is incomplete");
-    }
-  }
-  if (typeof reactorGuest.wake !== "function") {
-    throw new TypeError("canonical process reactor guest is incomplete");
-  }
-  return Object.freeze({
-    contractKey: processComponentContract,
-    process: Object.freeze({
-      start: process.start.bind(process),
-      status: process.status.bind(process),
-      exitCode: process.exitCode.bind(process),
-      complete: process.complete.bind(process),
-    }),
-    reactorGuest: Object.freeze({ wake: reactorGuest.wake.bind(reactorGuest) }),
   });
 }

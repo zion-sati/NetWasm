@@ -13,6 +13,7 @@ internal interface IValueCopyEmitter
         int destinationLocal,
         int size,
         int alignment,
+        int widestChunk,
         Action<IWasmInstructionWriter> emitSource,
         MethodEmissionContext? inlineContext = null);
 }
@@ -24,11 +25,12 @@ internal sealed class BulkValueCopyEmitter(ITargetLayout layouts) : IValueCopyEm
         int destinationLocal,
         int size,
         int alignment,
+        int widestChunk,
         Action<IWasmInstructionWriter> emitSource,
         MethodEmissionContext? inlineContext = null)
     {
         ValueCopyContract.Validate(
-            code, destinationLocal, size, alignment, emitSource);
+            code, destinationLocal, size, alignment, widestChunk, emitSource);
         emitSource(code);
         ManagedMemoryEmitter.EmitAddressConstant(code, layouts.Target, size);
         code.Write(WasmInstruction.WithOperand(
@@ -48,11 +50,12 @@ internal sealed class SmallValueCopyEmitter(
         int destinationLocal,
         int size,
         int alignment,
+        int widestChunk,
         Action<IWasmInstructionWriter> emitSource,
         MethodEmissionContext? inlineContext = null)
     {
         ValueCopyContract.Validate(
-            code, destinationLocal, size, alignment, emitSource);
+            code, destinationLocal, size, alignment, widestChunk, emitSource);
         if (size != InlineSize)
         {
             // Where the method inlines small blocks, other sizes copy in exact
@@ -60,10 +63,10 @@ internal sealed class SmallValueCopyEmitter(
             if (inlineContext is not null && SmallBlockEmitter.CanInlineKnownSizeCopy(inlineContext, size))
             {
                 emitSource(code);
-                SmallBlockEmitter.EmitInlineKnownSizeCopy(code, inlineContext, size);
+                SmallBlockEmitter.EmitInlineKnownSizeCopy(code, inlineContext, size, widestChunk);
                 return;
             }
-            bulk.Emit(code, destinationLocal, size, alignment, emitSource);
+            bulk.Emit(code, destinationLocal, size, alignment, widestChunk, emitSource);
             return;
         }
 
@@ -99,16 +102,22 @@ internal static class ValueCopyContract
         int destinationLocal,
         int size,
         int alignment,
+        int widestChunk,
         Action<IWasmInstructionWriter> emitSource)
     {
         ArgumentNullException.ThrowIfNull(code);
         ArgumentOutOfRangeException.ThrowIfNegative(destinationLocal);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(size);
-        if (alignment <= 0 || alignment > 16 ||
-            (alignment & (alignment - 1)) != 0)
+        if (!IsChunkWidth(alignment))
         {
             throw new ArgumentOutOfRangeException(nameof(alignment));
         }
+        if (!IsChunkWidth(widestChunk))
+        {
+            throw new ArgumentOutOfRangeException(nameof(widestChunk));
+        }
         ArgumentNullException.ThrowIfNull(emitSource);
     }
+
+    private static bool IsChunkWidth(int width) => width is > 0 and <= 16 && (width & (width - 1)) == 0;
 }

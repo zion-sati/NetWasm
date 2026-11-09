@@ -12,7 +12,7 @@ const application = Buffer.from(
   "AGFzbQEAAAABDQJgAAF/YAR/f39/AX8CGwEPbmV0d2FzbS5ob3N0LnYxB3NlcnZpY2UAAAMDAgEABQMBAAEHMQQGbWVtb3J5AgANY20zMnAyX21lbW9yeQIADmNtMzJwMl9yZWFsbG9jAAEDcnVuAAIKCwIEAEEICwQAEAALAEkEbmFtZQEYAwAHc2VydmljZQEHcmVhbGxvYwIDcnVuBB0CAAxzZXJ2aWNlLXR5cGUBDHJlYWxsb2MtdHlwZQYJAQAGbWVtb3J5",
   "base64");
 const adapterSource = encoder.encode(`
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter(generatedModule) {
   return Object.freeze({ contractKey, instantiate: generatedModule.instantiate });
 }

@@ -4,9 +4,6 @@ import { createContractError } from "./contract-error.mjs";
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { isInternalImport } from "./internal-import-policy.mjs";
 import {
-  createPreview2PlatformProviderRegistry,
-} from "./preview2-platform-provider-registry.mjs";
-import {
   createProviderExecutionPreparation,
 } from "./provider-execution-preparation.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
@@ -15,10 +12,11 @@ import { createProviderMetadataValidator } from "./provider-metadata-validator.m
 import { projectProviderModuleIdentity } from "./provider-module-identity.mjs";
 import { createProviderModuleProjector } from "./provider-module-projector.mjs";
 import { createPlatformProviderLoader } from "./platform-provider-loader.mjs";
+import { createWasiPlatformProviderRegistry } from "./wasi-platform-provider-registry.mjs";
 
 const factoryKeys = [
   "catalog",
-  "createShim",
+  "createImports",
   "hashBytes",
   "importModule",
   "isAbsoluteHostPath",
@@ -38,12 +36,13 @@ export function createProviderExecutionComposition(options) {
   }
 
   const validateProviderMetadata = createProviderMetadataValidator({ selectProviderKind });
-  const registry = createPreview2PlatformProviderRegistry({
+  const registry = createWasiPlatformProviderRegistry({
     catalog: options.catalog,
-    createShim: options.createShim,
+    createImports: options.createImports,
     validateProviderMetadata,
   });
   const validateRequest = createExecutionRequestValidator({
+    hostDirectories: false,
     isAbsoluteHostPath: options.isAbsoluteHostPath,
     selectProviderKind,
   });
@@ -54,6 +53,7 @@ export function createProviderExecutionComposition(options) {
       readArtifact: options.readArtifact,
     }),
     loadPlatformProviders: createPlatformProviderLoader({
+      releasePlatformProviders: registry.release,
       resolvePlatformProvider: registry.resolve,
     }),
     projectProviderModules: createProviderModuleProjector({

@@ -125,6 +125,19 @@ public sealed class PureReferenceComparisonClassifierTests
     }
 
     [Fact]
+    public void BeforeFieldInitOwnersKeepComparisonProofs()
+    {
+        // System.Type gains field initializers but stays beforefieldinit, so typeof
+        // comparisons must still fold.
+        var facts = new MethodFacts { HasInitializer = true };
+        facts.Definition = facts.Definition with { IsBeforeFieldInit = true };
+        var method = Method();
+        facts.Bodies[method.Definition.Key] = ComparisonBody(method, CilOperation.CompareEqual, null, false);
+
+        Assert.Equal(ReferenceComparison.Equal, facts.Classifier().Classify(method));
+    }
+
+    [Fact]
     public void RejectsRecursiveForwarding()
     {
         var facts = new MethodFacts();

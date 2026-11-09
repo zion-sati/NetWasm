@@ -18,7 +18,6 @@ dotnet test "$repo_root/NetWasm.slnx" --no-restore --nologo --maxcpucount:1
 "$repo_root/tests/end-to-end/component-model/run-canonical-matrix.sh"
 "$repo_root/tests/end-to-end/component-model/run-jco-wasi-browser.sh"
 "$repo_root/tests/end-to-end/component-model/run-wasi-stream.sh"
-"$repo_root/tests/end-to-end/component-model/run-pollable-reactor.sh"
 "$repo_root/tests/end-to-end/component-model/run-async-js.sh"
 "$repo_root/tests/end-to-end/component-model/run-mixed-boundary.sh"
 "$repo_root/tests/end-to-end/component-model/run-trimming.sh"

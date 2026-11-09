@@ -1,11 +1,12 @@
 import { parseInteropManifest } from "./interop-manifest-reader.mjs";
 import { buildRawModuleInventoryPlan } from "./raw-module-inventory-plan-builder.mjs";
 
+const eventLoopRunExport = "netwasm.events.run";
+const eventLoopCallbackExport = "netwasm.events.callback";
 const executableExportNames = Object.freeze([
   "run",
-  "netwasm.process.status",
-  "netwasm.process.result",
-  "netwasm.process.complete",
+  "netwasm.entry.callback",
+  "netwasm.entry.exit_code",
 ]);
 
 export function buildRawLibraryAbiPlan(request = {}) {
@@ -26,6 +27,9 @@ export function buildRawLibraryAbiPlan(request = {}) {
   requireExport(inventory.exports, canonicalMemoryExport, "memory");
   requireExport(inventory.exports, canonicalReallocateExport, "function");
   requireExport(inventory.exports, canonicalInitializeExport, "function");
+  // The module's event loop, which its host runs after each call into the module.
+  requireExport(inventory.exports, eventLoopRunExport, "function");
+  requireExport(inventory.exports, eventLoopCallbackExport, "function");
 
   const applicationExportNames = new Set();
   const managedExportNames = [];
@@ -61,11 +65,11 @@ export function buildRawLibraryAbiPlan(request = {}) {
     target: inventory.target,
     imports: inventory.imports,
     exports: inventory.exports,
-    reactorHostModule: inventory.reactorHostModule,
-    reactorGuestExport: inventory.reactorGuestExport,
     canonicalMemoryExport,
     canonicalReallocateExport,
     canonicalInitializeExport,
+    eventLoopRunExport,
+    eventLoopCallbackExport,
     managedExportNames: Object.freeze(managedExportNames),
   });
 }

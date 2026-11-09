@@ -29,11 +29,19 @@ public sealed class NetWasmWritePageHostEntryTask : Microsoft.Build.Utilities.Ta
     public bool Randomness { get; set; }
     public ITaskItem[] RequiredImportModules { get; set; } = [];
     public bool ValidateDeploymentManifest { get; set; } = true;
+    // browser, or node for a host that Node.js code imports.
+    public string Platform { get; set; } = "browser";
 
     public override bool Execute()
     {
         try
         {
+            var platform = Platform switch
+            {
+                "browser" => PageHostPlatform.Browser,
+                "node" => PageHostPlatform.Node,
+                _ => throw new ArgumentException($"Page host platform '{Platform}' must be browser or node."),
+            };
             // A page may supply a required module to open() instead of bundling
             // it. A declared module that no import uses, such as one for a
             // feature trimming removed, is left out: the page pays for what it uses.
@@ -58,7 +66,8 @@ public sealed class NetWasmWritePageHostEntryTask : Microsoft.Build.Utilities.Ta
                 Network,
                 Randomness,
                 [.. RequiredImportModules.Select(item => item.ItemSpec)],
-                ValidateDeploymentManifest));
+                ValidateDeploymentManifest,
+                platform));
             return true;
         }
         catch (Exception exception)
@@ -86,6 +95,7 @@ public sealed class NetWasmWritePageModuleTask : Microsoft.Build.Utilities.Task
     [Required] public string OutputPath { get; set; } = string.Empty;
     [Required] public string DeclarationPath { get; set; } = string.Empty;
     [Required] public ITaskItem[] Exports { get; set; } = [];
+    public ITaskItem[] RequiredImportModules { get; set; } = [];
 
     public override bool Execute()
     {
@@ -97,7 +107,12 @@ public sealed class NetWasmWritePageModuleTask : Microsoft.Build.Utilities.Task
                 ManifestSha256,
                 Path.GetFullPath(OutputPath),
                 Path.GetFullPath(DeclarationPath),
-                JavaScriptExportItems.Read(Exports)));
+                JavaScriptExportItems.Read(Exports))
+            {
+                // A page that links a file system interface exports its file mounts (#142).
+                FileMounts = RequiredImportModules.Any(item =>
+                    item.ItemSpec.StartsWith("wasi:filesystem/", StringComparison.Ordinal)),
+            });
             return true;
         }
         catch (Exception exception)

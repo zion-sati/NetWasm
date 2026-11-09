@@ -24,6 +24,40 @@ namespace System.Runtime.InteropServices.WebAssembly
         public string FunctionName { get; }
     }
 
+    // A Component Model built-in such as waitable-set.wait or a stream's
+    // stream.write, which the canonical ABI defines rather than a WIT function.
+    // The module is `$root`, `[export]` and an interface, or the interface at its
+    // full version whose function the stream or future belongs to; the name is
+    // the built-in's bracketed core name. The extern's parameters and result are
+    // the built-in's core values.
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class ComponentBuiltInAttribute : Attribute
+    {
+        public ComponentBuiltInAttribute(string moduleName, string functionName)
+        {
+            ModuleName = moduleName;
+            FunctionName = functionName;
+        }
+
+        public string ModuleName { get; }
+        public string FunctionName { get; }
+    }
+
+    // A core export under its full canonical name, such as a callback-lifted
+    // export's `[async-lift]` start or its `[callback][async-lift]` callback,
+    // which wit-component's standard names cannot express. The method's
+    // parameters and result are the export's core values.
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class ComponentExportAttribute : Attribute
+    {
+        public ComponentExportAttribute(string name)
+        {
+            Name = name;
+        }
+
+        public string Name { get; }
+    }
+
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class WitExportAttribute : Attribute
     {

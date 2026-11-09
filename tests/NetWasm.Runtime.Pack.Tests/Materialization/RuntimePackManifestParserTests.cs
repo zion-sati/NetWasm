@@ -63,6 +63,38 @@ public sealed class RuntimePackManifestParserTests
         }
     }
 
+    // Each target and its speed variant name the WASI platform archive and its replacement for a
+    // plain core module, at their fixed paths.
+    [Theory]
+    [InlineData("wasm32", "Compact")]
+    [InlineData("wasm64", "Bump")]
+    public void ValidatesPlatformArchivesOfTheTargetAndItsSpeedVariant(string target, string collector)
+    {
+        var source = RuntimePackTestData.Manifest();
+        var index = source.Targets.IndexOf(source.TargetLookup[(target, collector)]);
+        var original = source.Targets[index];
+        var parsed = Create().Parse(JsonSerializer.Serialize(source));
+        Assert.Equal(original.PlatformArchives, parsed.TargetLookup[(target, collector)].PlatformArchives);
+        Assert.Equal(original.Speed!.PlatformArchives, parsed.TargetLookup[(target, collector)].Speed!.PlatformArchives);
+
+        var platform = original.PlatformArchives!;
+        RuntimePackTarget[] invalid =
+        [
+            original with { PlatformArchives = null },
+            original with { PlatformArchives = platform with { Wasi = platform.NoWasi } },
+            original with { PlatformArchives = platform with { NoWasi = platform.Wasi } },
+            original with { PlatformArchives = platform with { NoWasi = platform.NoWasi with { Sha256 = "bad" } } },
+            original with { Speed = original.Speed with { PlatformArchives = null } },
+            original with { Speed = original.Speed with { PlatformArchives = platform } },
+        ];
+        foreach (var malformed in invalid)
+        {
+            var manifest = source with { Targets = source.Targets.SetItem(index, malformed) };
+            var error = Record.Exception(() => Create().Parse(JsonSerializer.Serialize(manifest)));
+            Assert.True(error is InvalidOperationException or ArgumentNullException, error?.ToString());
+        }
+    }
+
     [Fact]
     public void ReadsGeneratedRuntimePackManifestShape()
     {

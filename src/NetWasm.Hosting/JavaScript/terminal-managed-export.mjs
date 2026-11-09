@@ -7,9 +7,9 @@ export function createTerminalManagedExport(name, invoke, consumeTerminalEvent, 
   if (typeof invoke !== "function" || typeof consumeTerminalEvent !== "function" ||
       typeof clearActiveException !== "function")
     throw new TypeError("Export invocation, terminal-event consumption and exception cleanup are required");
-  return (...args) => {
+  return async (...args) => {
     try {
-      return invoke(...args);
+      return await invoke(...args);
     } catch (cause) {
       if (!(cause instanceof WebAssembly.RuntimeError)) throw cause;
       const event = consumeTerminalEvent();

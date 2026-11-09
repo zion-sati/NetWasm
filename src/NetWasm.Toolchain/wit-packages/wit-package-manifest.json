@@ -8,30 +8,30 @@
   "products": [
     {
       "name": "command",
-      "package": "wasi:cli@0.2.11",
+      "package": "netwasm:command@1.0.0",
       "world": "command",
       "sourceManifest": "../wit/wit-manifest.json",
-      "sourceManifestSha256": "a650f4b54bfbb05c186a5f212810cc18aff250075be6ec7d6fb086d191779e8a",
+      "sourceManifestSha256": "ad893196af3c9b09fc25bae6d90fa2893baf37437d070a89ca43fd08ec0e6a9b",
       "file": "command.wit.wasm",
-      "sha256": "624c67b287c812050a207dfd28a401f798838adbff330d702df0ccc711743293"
+      "sha256": "967991ea81470f7c6f574974667f63d45b08933978af2bdd11a7810f446f424c"
     },
     {
-      "name": "async-command",
+      "name": "diagnostic-command",
       "package": "netwasm:component@1.0.0",
-      "world": "async-command",
-      "sourceManifest": "../async-wit/wit-manifest.json",
-      "sourceManifestSha256": "5ca16414bd88cea43f1f4d3a1d72aaaf81de99c0932f0d939d0576d49b3f9edf",
-      "file": "async-command.wit.wasm",
-      "sha256": "2d9f6e646bf37da0299cb3c9aa4988ee139300540dc4f14aea5d29d45f16fa37"
+      "world": "diagnostic-command",
+      "sourceManifest": "../diagnostic-wit/wit-manifest.json",
+      "sourceManifestSha256": "43d2648110a08ad088d63f7332d4355f18a8cd31b4b49816c7bf56786195abf3",
+      "file": "diagnostic-command.wit.wasm",
+      "sha256": "befd947ee6361cc16c4c0fc99fa9e09e6470913c2263b994c0b57090baf5553f"
     },
     {
       "name": "compiler",
       "package": "netwasm:platform@1.0.0",
       "world": "platform",
       "sourceManifest": "../compiler-wit/wit-manifest.json",
-      "sourceManifestSha256": "e628584a09fa232fc44d7a84f3c605bae0af0676b1eaedc346a4da3e3217eae0",
+      "sourceManifestSha256": "11867fdc30eaf8c9bea94eb118149ce46da20cfa6b93b8012546175c2224a014",
       "file": "compiler.wit.wasm",
-      "sha256": "fc1c2b66aa8e597775fdd0fe7c01eb436337e266d504b435986db823cd26f556"
+      "sha256": "9c5e5a5dba5467aa7170959a8a3794b09d3a448df84208d0f322e4d29f4353e0"
     }
   ]
 }

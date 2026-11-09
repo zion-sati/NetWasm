@@ -15,5 +15,5 @@ world application {
 
 world worker {
   include application;
-  include netwasm:platform/async-platform@1.0.0;
+  include netwasm:platform/platform@1.0.0;
 }

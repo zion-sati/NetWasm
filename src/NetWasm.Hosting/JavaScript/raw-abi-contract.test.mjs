@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  commandExecutionContract as commandComponentContract,
-  processExecutionContract as processComponentContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract as commandComponentContract } from "./execution-contracts.mjs";
 import { buildRawAbiPlan } from "./raw-abi-plan-builder.mjs";
 import { bindRawExecutionInstance } from "./raw-execution-instance-binder.mjs";
 import { composeRawImports } from "./raw-import-composer.mjs";
@@ -20,25 +17,16 @@ const commandAbi = (overrides = {}) => ({
   exports: [functionExport("run")],
   ...overrides,
 });
-const processAbi = ({ target = "wasm32", returnShape = "exitCode" } = {}) => {
-  const prefix = target === "wasm64" ? "cm64p2" : "cm32p2";
-  return {
-    target,
-    entryPoint: entryPoint("asynchronous", returnShape, "stringArray"),
-    imports: [
-      functionImport(),
-      functionImport(`${prefix}|netwasm:runtime/reactor-host@1`, "watch"),
-      functionImport(`${prefix}|netwasm:runtime/reactor-host@1`, "cancel"),
-    ],
-    exports: [
-      functionExport("run"),
-      functionExport("netwasm.process.status"),
-      ...(returnShape === "exitCode" ? [functionExport("netwasm.process.result")] : []),
-      functionExport("netwasm.process.complete"),
-      functionExport(`${prefix}|netwasm:runtime/reactor-guest@1|wake`),
-    ],
-  };
-};
+const asyncCommandAbi = ({ target = "wasm32", returnShape = "exitCode" } = {}) => ({
+  target,
+  entryPoint: entryPoint("asynchronous", returnShape, "stringArray"),
+  imports: [functionImport()],
+  exports: [
+    functionExport("run"),
+    functionExport("netwasm.entry.callback"),
+    functionExport("netwasm.entry.exit_code"),
+  ],
+});
 const providers = () => ({
   "wasi:cli/stdout@0.2.11": {
     "get-stdout"() { return "stdout"; },
@@ -46,19 +34,10 @@ const providers = () => ({
   },
   unused: { value: 1 },
 });
-const reactorHost = () => ({ watch() {}, cancel() {}, extra() {} });
-
-function prepareRawContract({ contractKey, abi, providers: physicalProviders, reactorHost: host }) {
+function prepareRawContract({ contractKey, abi, providers: physicalProviders }) {
   const plan = buildRawAbiPlan({ contractKey, abi });
-  const canonicalImports = Object.create(null);
-  if (host !== undefined && host !== null) {
-    canonicalImports[plan.reactorHostModule] = Object.freeze({
-      watch: host.watch,
-      cancel: host.cancel,
-    });
-  }
   const canonicalBinding = Object.freeze({
-    imports: Object.freeze(canonicalImports),
+    imports: Object.freeze(Object.create(null)),
     target: plan.target,
   });
   const imports = composeRawImports({
@@ -66,7 +45,6 @@ function prepareRawContract({ contractKey, abi, providers: physicalProviders, re
     inventory: Object.freeze({
       target: plan.target,
       imports: plan.imports,
-      reactorHostModule: plan.reactorHostModule,
     }),
     physicalProviders,
   });
@@ -74,7 +52,7 @@ function prepareRawContract({ contractKey, abi, providers: physicalProviders, re
     contractKey: plan.contractKey,
     target: plan.target,
     imports,
-    bind(instance) { return bindRawExecutionInstance({ instance, plan }); },
+    bind(instance, componentModel = null) { return bindRawExecutionInstance({ componentModel, instance, plan }); },
   });
 }
 
@@ -144,54 +122,35 @@ test("adapts void and target-width string-array command entry points", () => {
   }
 });
 
-test("binds exact wasm32 and wasm64 process boundaries", () => {
-  for (const target of ["wasm32", "wasm64"]) {
-    const prefix = target === "wasm64" ? "cm64p2" : "cm32p2";
+test("drives an asynchronous command entry through its callback and reads its exit code", async () => {
+  for (const [target, zero] of [["wasm32", 0], ["wasm64", 0n]]) {
     const calls = [];
     const plan = prepareRawContract({
-      contractKey: processComponentContract,
-      abi: processAbi({ target }),
+      contractKey: commandComponentContract,
+      abi: asyncCommandAbi({ target }),
       providers: providers(),
-      reactorHost: reactorHost(),
     });
-    assert.deepEqual(Object.keys(plan.imports[`${prefix}|netwasm:runtime/reactor-host@1`]),
-      ["watch", "cancel"]);
     const exports = {
       marker: target,
-      run(value) { calls.push([this.marker, "start", value]); return 7; },
-      "netwasm.process.status"(handle) { calls.push([this.marker, "status", handle]); return 1; },
-      "netwasm.process.result"(handle) { calls.push([this.marker, "result", handle]); return -23; },
-      "netwasm.process.complete"(handle) { calls.push([this.marker, "complete", handle]); },
-      [`${prefix}|netwasm:runtime/reactor-guest@1|wake`](token) {
-        calls.push([this.marker, "wake", token]);
+      run(value) { calls.push([this.marker, "start", value]); return 0x12; },
+      "netwasm.entry.callback"(...event) { calls.push([this.marker, "callback", ...event]); return 0; },
+      "netwasm.entry.exit_code"() { calls.push([this.marker, "exit"]); return -23; },
+    };
+    const componentModel = {
+      async drive(code, callback) {
+        calls.push([target, "drive", code]);
+        assert.equal(callback(1, 2, 3), 0);
       },
     };
-    const binding = plan.bind({ exports });
-    assert.equal(binding.process.start(), 7);
-    assert.equal(binding.process.status(7), 1);
-    assert.equal(binding.process.exitCode(7), -23);
-    binding.process.complete(7);
-    binding.reactorGuest.wake(11);
-    assert.deepEqual(calls.map(call => call[1]), ["start", "status", "result", "complete", "wake"]);
-    assert.equal(calls[0][2], target === "wasm64" ? 0n : 0);
-    assert.equal(calls.every(call => call[0] === target), true);
+    const binding = plan.bind({ exports }, componentModel);
+    assert.equal(await binding.command.run(), -23);
+    assert.deepEqual(calls, [
+      [target, "start", zero],
+      [target, "drive", 0x12],
+      [target, "callback", 1, 2, 3],
+      [target, "exit"],
+    ]);
   }
-});
-
-test("normalizes a void process result without requiring a result export", () => {
-  const plan = prepareRawContract({
-    contractKey: processComponentContract,
-    abi: processAbi({ returnShape: "void" }),
-    providers: providers(),
-    reactorHost: reactorHost(),
-  });
-  const binding = plan.bind({ exports: {
-    run: () => 3,
-    "netwasm.process.status": () => 1,
-    "netwasm.process.complete": () => {},
-    "cm32p2|netwasm:runtime/reactor-guest@1|wake": () => {},
-  } });
-  assert.equal(binding.process.exitCode(3), 0);
 });
 
 test("rejects malformed request, ABI and entry-point shapes", () => {
@@ -280,7 +239,7 @@ test("rejects Preview 1 and wrong-target imports", () => {
   }), /target/);
 });
 
-test("rejects malformed and mixed command/process ABI shapes", () => {
+test("rejects malformed command ABI shapes", () => {
   const bind = abi => prepareRawContract({
     contractKey: commandComponentContract,
     abi,
@@ -288,63 +247,12 @@ test("rejects malformed and mixed command/process ABI shapes", () => {
   });
   assert.throws(() => bind(commandAbi({ exports: [] })), /run/);
   assert.throws(() => bind(commandAbi({ exports: [{ name: "run", kind: "memory" }] })), /run/);
-  assert.throws(() => bind(commandAbi({ entryPoint: entryPoint("asynchronous") })), /synchronous/);
-  for (const name of [
-    ...["netwasm.process.status", "netwasm.process.result", "netwasm.process.complete"],
-    "cm32p2|netwasm:runtime/reactor-guest@1|wake",
-  ]) {
-    assert.throws(() => bind(commandAbi({ exports: [functionExport("run"), functionExport(name)] })), /mixes/);
-  }
-  assert.throws(() => bind(commandAbi({
-    imports: [functionImport("cm32p2|netwasm:runtime/reactor-host@1", "watch")],
-  })), /mixes/);
-});
-
-test("rejects malformed process ABI shapes", () => {
-  const bind = (abi, host = reactorHost()) => prepareRawContract({
-    contractKey: processComponentContract,
-    abi,
-    providers: providers(),
-    reactorHost: host,
-  });
-  assert.throws(() => bind(processAbi(), null), /unavailable/);
-  assert.throws(() => bind(processAbi(), {}), /canonical/);
-  assert.throws(() => bind(processAbi(), { watch() {}, cancel: 1 }), /canonical/);
-  const reserved = processAbi();
-  const reservedModule = "cm32p2|netwasm:runtime/reactor-host@1";
-  assert.throws(() => prepareRawContract({
-    contractKey: processComponentContract,
-    abi: reserved,
-    providers: { ...providers(), [reservedModule]: reactorHost() },
-    reactorHost: reactorHost(),
-  }), /reserved/);
-  assert.throws(() => bind({ ...processAbi(), entryPoint: entryPoint("synchronous") }), /asynchronous/);
-  for (const missing of ["netwasm.process.status", "netwasm.process.complete",
-    "cm32p2|netwasm:runtime/reactor-guest@1|wake"]) {
-    const abi = processAbi();
-    abi.exports = abi.exports.filter(descriptor => descriptor.name !== missing);
+  for (const name of ["netwasm.entry.callback", "netwasm.entry.exit_code"]) {
+    assert.throws(() => bind(commandAbi({ exports: [functionExport("run"), functionExport(name)] })),
+      /mixes asynchronous entry exports/);
+    const abi = asyncCommandAbi();
+    abi.exports = abi.exports.filter(descriptor => descriptor.name !== name);
     assert.throws(() => bind(abi), /required/);
-  }
-  const wrongKind = processAbi();
-  wrongKind.exports = wrongKind.exports.map(descriptor => descriptor.name === "netwasm.process.status"
-    ? { ...descriptor, kind: "memory" } : descriptor);
-  assert.throws(() => bind(wrongKind), /required/);
-  const extraResult = processAbi({ returnShape: "void" });
-  extraResult.exports.push(functionExport("netwasm.process.result"));
-  assert.throws(() => bind(extraResult), /result export/);
-  const missingResult = processAbi();
-  missingResult.exports = missingResult.exports.filter(descriptor => descriptor.name !== "netwasm.process.result");
-  assert.throws(() => bind(missingResult), /result export/);
-  const wrongWake = processAbi();
-  wrongWake.exports.push(functionExport("cm64p2|netwasm:runtime/reactor-guest@1|wake"));
-  assert.throws(() => bind(wrongWake), /wrong-target/);
-  for (const descriptor of [
-    { module: "cm32p2|netwasm:runtime/reactor-host@1", name: "watch", kind: "memory" },
-    functionImport("cm32p2|netwasm:runtime/reactor-host@1", "other"),
-  ]) {
-    const abi = processAbi();
-    abi.imports = [functionImport(), descriptor];
-    assert.throws(() => bind(abi), /reactor-host import/);
   }
 });
 
@@ -390,23 +298,24 @@ test("rejects malformed instantiated export boundaries", () => {
     { exports: Object.defineProperty({}, "run", { get() { return () => 0; }, enumerable: true }) }]) {
     assert.throws(() => command.bind(instance), /exports|function|data property/);
   }
-  const process = prepareRawContract({
-    contractKey: processComponentContract,
-    abi: processAbi(),
+  const asynchronous = prepareRawContract({
+    contractKey: commandComponentContract,
+    abi: asyncCommandAbi(),
     providers: providers(),
-    reactorHost: reactorHost(),
   });
   const complete = {
     run() { return 1; },
-    "netwasm.process.status"() { return 1; },
-    "netwasm.process.result"() { return 0; },
-    "netwasm.process.complete"() {},
-    "cm32p2|netwasm:runtime/reactor-guest@1|wake"() {},
+    "netwasm.entry.callback"() { return 0; },
+    "netwasm.entry.exit_code"() { return 0; },
   };
+  const componentModel = { drive: async () => {} };
   for (const missing of Object.keys(complete)) {
     const exports = { ...complete };
     delete exports[missing];
-    assert.throws(() => process.bind({ exports }), /unavailable/);
+    assert.throws(() => asynchronous.bind({ exports }, componentModel), /unavailable/);
+  }
+  for (const invalid of [null, {}, { drive: 1 }]) {
+    assert.throws(() => asynchronous.bind({ exports: complete }, invalid), /Component Model/);
   }
 });
 
@@ -416,7 +325,7 @@ test("rejects malformed execution-instance binding requests and plans", () => {
     abi: commandAbi({ imports: [] }),
   });
   const instance = { exports: { run() { return 0; } } };
-  for (const request of [null, [], {}, { instance, plan, extra: true }]) {
+  for (const request of [null, [], {}, { componentModel: null, instance, plan, extra: true }]) {
     assert.throws(() => bindRawExecutionInstance(request), /request/);
   }
   for (const candidate of [
@@ -427,8 +336,7 @@ test("rejects malformed execution-instance binding requests and plans", () => {
     { ...plan, contractKey: "other" },
     { ...plan, entryPoint: null },
     { ...plan, invocationArguments: null },
-    { ...plan, reactorGuestExport: null },
   ]) {
-    assert.throws(() => bindRawExecutionInstance({ instance, plan: candidate }), /plan/);
+    assert.throws(() => bindRawExecutionInstance({ componentModel: null, instance, plan: candidate }), /plan/);
   }
 });

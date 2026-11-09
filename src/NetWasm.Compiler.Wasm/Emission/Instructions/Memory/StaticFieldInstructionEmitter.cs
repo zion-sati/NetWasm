@@ -52,7 +52,7 @@ internal sealed class StaticFieldInstructionEmitter(
             }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             addresses.Emit(code, address);
-            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, storage.Size,
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, storage.Size, SmallBlockEmitter.WidestChunk(storage),
                 writer => addresses.Emit(writer, storage.Size));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
@@ -89,7 +89,7 @@ internal sealed class StaticFieldInstructionEmitter(
                 request.Context,
                 slot,
                 CliValueKind.ValueType)))));
-            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, storage.Size,
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, storage.Size, SmallBlockEmitter.WidestChunk(storage),
                 writer => addresses.Emit(writer, storage.Size));
             request.Stack.RemoveAt(slot);
             return;

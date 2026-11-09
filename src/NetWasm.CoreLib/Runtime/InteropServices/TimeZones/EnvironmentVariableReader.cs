@@ -1,9 +1,11 @@
 namespace System.Runtime.InteropServices.TimeZones
 {
+    using System.Runtime.InteropServices.WebAssembly;
+
     internal sealed class EnvironmentVariableReader(
-        IEnvironmentVariableSource source) : IEnvironmentVariableReader
+        IProcessEnvironment source) : IEnvironmentVariableReader
     {
-        private readonly IEnvironmentVariableSource _source =
+        private readonly IProcessEnvironment _source =
             source ?? throw new ArgumentNullException();
 
         public string? Read(string name)
@@ -13,9 +15,9 @@ namespace System.Runtime.InteropServices.TimeZones
                 throw new ArgumentNullException();
             }
             string? selected = null;
-            foreach (var variable in _source.Read())
+            foreach (var variable in _source.GetVariables())
             {
-                if (variable.Name != name)
+                if (variable.Key != name)
                 {
                     continue;
                 }

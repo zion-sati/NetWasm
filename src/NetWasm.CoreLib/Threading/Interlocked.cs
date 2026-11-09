@@ -6,6 +6,7 @@
 // barriers need no operation. Shared-memory managed threads would require
 // atomic lowering and real barriers before this support can be retained.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace System.Threading;
@@ -72,7 +73,8 @@ public static class Interlocked
         return previous;
     }
 
-    public static object? Exchange(ref object? location1, object? value)
+    [return: NotNullIfNotNull(nameof(location1))]
+    public static object? Exchange([NotNullIfNotNull(nameof(value))] ref object? location1, object? value)
     {
         ValidateLocation(ref location1);
         var previous = location1;
@@ -80,8 +82,10 @@ public static class Interlocked
         return previous;
     }
 
-    public static T Exchange<T>(ref T location1, T value) where T : class?
+    // T is a reference, enum or primitive type, as upstream requires.
+    public static T Exchange<T>(ref T location1, T value)
     {
+        RequireReferenceEnumOrPrimitive<T>();
         ValidateLocation(ref location1);
         var previous = location1;
         location1 = value;
@@ -147,6 +151,7 @@ public static class Interlocked
         return previous;
     }
 
+    [return: NotNullIfNotNull(nameof(location1))]
     public static object? CompareExchange(ref object? location1, object? value, object? comparand)
     {
         ValidateLocation(ref location1);
@@ -158,11 +163,13 @@ public static class Interlocked
         return previous;
     }
 
-    public static T CompareExchange<T>(ref T location1, T value, T comparand) where T : class?
+    [return: NotNullIfNotNull(nameof(location1))]
+    public static T CompareExchange<T>(ref T location1, T value, T comparand)
     {
+        RequireReferenceEnumOrPrimitive<T>();
         ValidateLocation(ref location1);
         var previous = location1;
-        if (ReferenceEquals(previous, comparand))
+        if (typeof(T).IsValueType ? BitwiseEquals(previous, comparand) : ReferenceEquals(previous, comparand))
         {
             location1 = value;
         }
@@ -246,6 +253,80 @@ public static class Interlocked
         location1 |= value;
         return previous;
     }
+    // The integer-primitive and integer-enum forms of dotnet/runtime 474ed963's generic And and Or,
+    // which System.Net.Http's header flags use. As the sized forms above, each combines in place.
+    public static T And<T>(ref T location1, T value) where T : struct
+    {
+        RequireIntegerOrEnum<T>();
+        ValidateLocation(ref location1);
+        T previous = location1;
+        if (Unsafe.SizeOf<T>() == 1)
+        {
+            Unsafe.As<T, byte>(ref location1) = (byte)(Unsafe.BitCast<T, byte>(previous) & Unsafe.BitCast<T, byte>(value));
+        }
+        else if (Unsafe.SizeOf<T>() == 2)
+        {
+            Unsafe.As<T, ushort>(ref location1) = (ushort)(Unsafe.BitCast<T, ushort>(previous) & Unsafe.BitCast<T, ushort>(value));
+        }
+        else if (Unsafe.SizeOf<T>() == 4)
+        {
+            Unsafe.As<T, uint>(ref location1) = Unsafe.BitCast<T, uint>(previous) & Unsafe.BitCast<T, uint>(value);
+        }
+        else
+        {
+            // As upstream: every integer primitive and integer enum left is eight bytes.
+            Unsafe.As<T, ulong>(ref location1) = Unsafe.BitCast<T, ulong>(previous) & Unsafe.BitCast<T, ulong>(value);
+        }
+
+        return previous;
+    }
+
+    public static T Or<T>(ref T location1, T value) where T : struct
+    {
+        RequireIntegerOrEnum<T>();
+        ValidateLocation(ref location1);
+        T previous = location1;
+        if (Unsafe.SizeOf<T>() == 1)
+        {
+            Unsafe.As<T, byte>(ref location1) = (byte)(Unsafe.BitCast<T, byte>(previous) | Unsafe.BitCast<T, byte>(value));
+        }
+        else if (Unsafe.SizeOf<T>() == 2)
+        {
+            Unsafe.As<T, ushort>(ref location1) = (ushort)(Unsafe.BitCast<T, ushort>(previous) | Unsafe.BitCast<T, ushort>(value));
+        }
+        else if (Unsafe.SizeOf<T>() == 4)
+        {
+            Unsafe.As<T, uint>(ref location1) = Unsafe.BitCast<T, uint>(previous) | Unsafe.BitCast<T, uint>(value);
+        }
+        else
+        {
+            // As upstream: every integer primitive and integer enum left is eight bytes.
+            Unsafe.As<T, ulong>(ref location1) = Unsafe.BitCast<T, ulong>(previous) | Unsafe.BitCast<T, ulong>(value);
+        }
+
+        return previous;
+    }
+
+    // As upstream: integer primitives and enums backed by them; floating point is not.
+    private static void RequireIntegerOrEnum<T>()
+    {
+        if ((!typeof(T).IsPrimitive && !typeof(T).IsEnum) ||
+            typeof(T) == typeof(float) || typeof(T) == typeof(double) ||
+            (typeof(T).IsEnum && (typeof(T).GetEnumUnderlyingType() == typeof(float) ||
+                typeof(T).GetEnumUnderlyingType() == typeof(double))))
+        {
+            throw new NotSupportedException(SR.NotSupported_IntegerEnumOrPrimitiveTypeRequired);
+        }
+    }
+
+    private static void RequireReferenceEnumOrPrimitive<T>()
+    {
+        if (typeof(T).IsValueType && !typeof(T).IsPrimitive && !typeof(T).IsEnum)
+        {
+            throw new NotSupportedException(SR.NotSupported_ReferenceEnumOrPrimitiveTypeRequired);
+        }
+    }
+
     private static void ValidateLocation<T>(ref T location)
     {
         // A managed null byref is address zero in Wasm memory, not a hardware
@@ -255,4 +336,13 @@ public static class Interlocked
             throw new NullReferenceException();
         }
     }
+
+    // An enum or primitive compares by its bits, as the atomic compare does.
+    private static bool BitwiseEquals<T>(T left, T right) => Unsafe.SizeOf<T>() switch
+    {
+        1 => Unsafe.As<T, byte>(ref left) == Unsafe.As<T, byte>(ref right),
+        2 => Unsafe.As<T, ushort>(ref left) == Unsafe.As<T, ushort>(ref right),
+        4 => Unsafe.As<T, uint>(ref left) == Unsafe.As<T, uint>(ref right),
+        _ => Unsafe.As<T, ulong>(ref left) == Unsafe.As<T, ulong>(ref right),
+    };
 }

@@ -17,7 +17,7 @@ function request(overrides = {}) {
       preopens: Object.freeze([]),
       network: "allowAll",
       clocks: Object.freeze(["wall", "monotonic"]),
-      randomness: true,
+      randomness: true, temporaryDirectory: false, workingDirectory: false,
     }),
     applicationImports: Object.freeze([]),
     ...overrides,

@@ -9,20 +9,13 @@ internal sealed class CorpusExportFactory : ICorpusExportFactory
             CorpusFixture fixture)
     {
         var exports = ImmutableArray.CreateBuilder<RequestedExport>();
-        if (fixture.RequiresReactor)
+        // A callback-lifted entry is the program's wasi:cli/run, not a requested export.
+        if (fixture.RequiresReactor && !fixture.CallbackEntry)
         {
             exports.Add(new RequestedExport(
                 "run",
                 fixture.EntryType,
                 fixture.WasmEntryMethod));
-        }
-
-        if (fixture.ReactorObserveMethod is not null)
-        {
-            exports.Add(new RequestedExport(
-                "observe",
-                fixture.EntryType,
-                fixture.ReactorObserveMethod));
         }
 
         if (fixture.ExposesLegacyTrace)

@@ -53,7 +53,7 @@ public sealed class WitWorkerHostEntryWriterTests
         WitWorkerHostEntryRequest[] invalid =
         [
             valid with { HostingJavaScriptRoot = "relative" },
-            valid with { Preview2ShimRoot = string.Empty },
+            valid with { HostingJavaScriptRoot = string.Empty },
             valid with { OutputPath = "relative" },
             valid with { Arguments = default },
             valid with { Environment = default },
@@ -81,7 +81,6 @@ public sealed class WitWorkerHostEntryWriterTests
 
     private static WitWorkerHostEntryRequest Valid(string root) => new(
         Path.Combine(root, "hosting"),
-        Path.Combine(root, "preview2-shim"),
         Path.Combine(root, "worker-entry.mjs"),
         ImmutableArray<string>.Empty,
         ImmutableArray<WorkerEnvironmentVariable>.Empty,

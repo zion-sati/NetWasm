@@ -34,8 +34,8 @@ public sealed class OutwardMethodFunctionAppenderTests
         Assert.Equal(1, helpers.Count);
         Assert.Same(ManagedAsyncBoundaryKinds.Export, helpers.Kinds);
         Assert.Equal(new AsyncTaskCompletionPlan(0,
-            WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.ManagedExceptionCapture, selection),
-            CliValueKind.I4), helpers.Completion);
+            WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.ManagedExceptionCapture, selection)),
+            helpers.Completion);
     }
 
     [Theory]
@@ -113,8 +113,10 @@ public sealed class OutwardMethodFunctionAppenderTests
         var binding = asynchronous ? CreateBinding(method) : null;
         var names = binding is null
             ? null
-            : ManagedAsyncBoundaryNames.ForProcess(binding);
-        var kinds = binding is null ? null : ManagedAsyncBoundaryKinds.Process;
+            : ManagedAsyncBoundaryNames.ForExport(binding);
+        var kinds = binding is null ? null : ManagedAsyncBoundaryKinds.Export;
+        var selection = new RuntimeImportSelection(WasmModuleProfile.CoreApplication, false,
+            IncludeExceptionCapture: true);
         var functions = new List<WasmFunctionDefinition>();
         var helperIndices = new Dictionary<string, int>();
         var boundaryEntries = new List<ManagedBoundaryPlanEntry>();
@@ -129,7 +131,7 @@ public sealed class OutwardMethodFunctionAppenderTests
             binding,
             names,
             kinds,
-            TestRuntimeInitialization.Create(64),
+            TestRuntimeInitialization.Create(64, selection),
             true,
             true,
             ManagedBoundaryKind.ProcessEntryPoint,
@@ -143,14 +145,15 @@ public sealed class OutwardMethodFunctionAppenderTests
         Assert.Equal(asynchronous ? 0 : 1, entries.Count);
         Assert.Equal(
             asynchronous
-                ? ManagedBoundaryKind.AsynchronousProcessStart
+                ? ManagedBoundaryKind.AsynchronousExportStart
                 : ManagedBoundaryKind.ProcessEntryPoint,
             Assert.Single(boundaryEntries).Kind);
         if (asynchronous)
         {
             Assert.Same(names, helpers.Names);
             Assert.Same(kinds, helpers.Kinds);
-            Assert.Equal(new AsyncTaskCompletionPlan(0, null, CliValueKind.Void),
+            Assert.Equal(new AsyncTaskCompletionPlan(0,
+                WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.ManagedExceptionCapture, selection)),
                 helpers.Completion);
             Assert.Equal(CliValueKind.I4, functions[0].Type.Result);
         }
@@ -209,21 +212,14 @@ public sealed class OutwardMethodFunctionAppenderTests
         {
             AsyncBinding = binding,
             AsyncNames = null,
-            AsyncKinds = ManagedAsyncBoundaryKinds.Process,
+            AsyncKinds = ManagedAsyncBoundaryKinds.Export,
         }));
         Assert.Throws<ArgumentException>(() => appender.Append(valid with
         {
             AsyncBinding = binding,
-            AsyncNames = ManagedAsyncBoundaryNames.ForProcess(binding),
+            AsyncNames = ManagedAsyncBoundaryNames.ForExport(binding),
             AsyncKinds = null,
         }));
-        Assert.Throws<InvalidOperationException>(() => appender.Append(valid with
-        {
-            AsyncBinding = binding with { GetVoidResult = null },
-            AsyncNames = ManagedAsyncBoundaryNames.ForProcess(binding),
-            AsyncKinds = ManagedAsyncBoundaryKinds.Process,
-        }));
-        Assert.Empty(valid.Functions);
         Assert.Throws<InvalidOperationException>(() => appender.Append(valid with
         {
             AsyncBinding = binding with { GetVoidResult = null },
@@ -231,6 +227,27 @@ public sealed class OutwardMethodFunctionAppenderTests
             AsyncKinds = ManagedAsyncBoundaryKinds.Export,
         }));
         Assert.Empty(valid.Functions);
+    }
+
+    // A callback-lifted entry's callback runs after its start initialized the runtime.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ASynchronousBoundaryInitializesTheRuntimeOnlyWhenAsked(bool initializesRuntime)
+    {
+        var entries = new RecordingEntryPointEmitter();
+        var appender = new OutwardMethodFunctionAppender(
+            new RecordingAsyncWrapperEmitter(),
+            new RecordingAsyncHelperAppender(),
+            entries,
+            new FixedFunctionTypeResolver(),
+            new RecordingBoundaryBuilder(),
+            WasmRuntimeImports.CreateCatalog());
+        var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
+
+        appender.Append(CreateRequest(method) with { InitializesRuntime = initializesRuntime });
+
+        Assert.Equal([initializesRuntime], entries.InitializesRuntime);
     }
 
     [Theory]
@@ -255,8 +272,10 @@ public sealed class OutwardMethodFunctionAppenderTests
             AsyncBinding = binding,
             AsyncNames = binding is null
                 ? null
-                : ManagedAsyncBoundaryNames.ForProcess(binding),
-            AsyncKinds = binding is null ? null : ManagedAsyncBoundaryKinds.Process,
+                : ManagedAsyncBoundaryNames.ForExport(binding),
+            AsyncKinds = binding is null ? null : ManagedAsyncBoundaryKinds.Export,
+            Initialization = TestRuntimeInitialization.Create(64, new RuntimeImportSelection(
+                WasmModuleProfile.CoreApplication, false, IncludeExceptionCapture: true)),
             ArgumentFactory = EmitterTestSupport.StringMethodKey,
         };
 
@@ -268,10 +287,8 @@ public sealed class OutwardMethodFunctionAppenderTests
             asynchronous ? wrappers.ArgumentFactory : entries.ArgumentFactory);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void OnlyAJavaScriptAsyncExportReceivesStringArgumentsAsHandles(bool javaScript)
+    [Fact]
+    public void AnAsyncExportReceivesStringArgumentsAsHandles()
     {
         var wrappers = new RecordingAsyncWrapperEmitter();
         var appender = new OutwardMethodFunctionAppender(
@@ -294,9 +311,7 @@ public sealed class OutwardMethodFunctionAppenderTests
         {
             AsyncBinding = binding,
             AsyncNames = ManagedAsyncBoundaryNames.ForExport(binding),
-            AsyncKinds = javaScript
-                ? ManagedAsyncBoundaryKinds.Export
-                : ManagedAsyncBoundaryKinds.Export with { Start = ManagedBoundaryKind.ComponentAdapter },
+            AsyncKinds = ManagedAsyncBoundaryKinds.Export,
             Initialization = TestRuntimeInitialization.Create(64, new RuntimeImportSelection(
                 WasmModuleProfile.CoreApplication, false, IncludeExceptionCapture: true)),
             InteropImports = interopImports,
@@ -305,9 +320,9 @@ public sealed class OutwardMethodFunctionAppenderTests
         appender.Append(request);
 
         Assert.Equal(
-            [javaScript ? CliValueKind.I4 : CliValueKind.ManagedReference, CliValueKind.F8],
+            [CliValueKind.I4, CliValueKind.F8],
             Assert.Single(request.Functions).Type.Parameters.ToArray());
-        Assert.Same(javaScript ? interopImports : null, wrappers.InteropImports);
+        Assert.Same(interopImports, wrappers.InteropImports);
     }
 
     private static OutwardMethodFunctionAppender CreateAppender() => new(
@@ -428,6 +443,7 @@ public sealed class OutwardMethodFunctionAppenderTests
     private sealed class RecordingEntryPointEmitter : IEntryPointEmitter
     {
         public int Count { get; private set; }
+        public List<bool> InitializesRuntime { get; } = [];
         public bool ReportTerminalExceptions { get; private set; }
         public EntityKey? ArgumentFactory { get; private set; }
 
@@ -438,9 +454,13 @@ public sealed class OutwardMethodFunctionAppenderTests
             IFunctionIndexResolver functionIndices,
             bool reportTerminalExceptions,
             EntityKey? argumentFactory,
-            MethodInstanceModel? completion)
+            MethodInstanceModel? completion,
+            EntityKey? localTimePreflight,
+            EntityKey? processExit,
+            bool initializesRuntime)
         {
             Count++;
+            InitializesRuntime.Add(initializesRuntime);
             ReportTerminalExceptions = reportTerminalExceptions;
             ArgumentFactory = argumentFactory;
             return [2];

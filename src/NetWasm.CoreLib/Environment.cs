@@ -5,7 +5,7 @@ namespace System
 {
     public static class Environment
     {
-        private static Runtime.InteropServices.TimeZones.EnvironmentVariable[]? s_environment;
+        private static Collections.Generic.KeyValuePair<string, string>[]? s_environment;
 
         public static int CurrentManagedThreadId => 1;
 
@@ -13,6 +13,39 @@ namespace System
 
         // NetWasm currently supports a single managed execution thread.
         public static int ProcessorCount => 1;
+
+        private static string? s_currentDirectory;
+
+        // Starts as the host's initial directory (wasi:cli's get-initial-cwd), or the root when it
+        // has none. Setting it resolves the path and requires a directory, as chdir does.
+        public static string CurrentDirectory
+        {
+            get => s_currentDirectory ??= InitialDirectory();
+            set
+            {
+                ArgumentException.ThrowIfNullOrEmpty(value);
+                var fullPath = IO.Path.GetFullPath(value);
+                if (Interop.Sys.Stat(fullPath, out var status) < 0)
+                {
+                    throw Interop.GetExceptionForIoErrno(Interop.Sys.GetLastErrorInfo(), value, isDirError: true);
+                }
+
+                if ((status.Mode & Interop.Sys.FileTypes.S_IFMT) != Interop.Sys.FileTypes.S_IFDIR)
+                {
+                    throw Interop.GetExceptionForIoErrno(Interop.Error.ENOTDIR.Info(), value, isDirError: true);
+                }
+
+                s_currentDirectory = IO.Path.TrimEndingDirectorySeparator(fullPath);
+            }
+        }
+
+        private static string InitialDirectory()
+        {
+            var directory = Runtime.InteropServices.PlatformServices.ProcessEnvironment.GetInitialDirectory();
+            return string.IsNullOrEmpty(directory) || directory[0] != '/'
+                ? "/"
+                : IO.Path.TrimEndingDirectorySeparator(directory);
+        }
 
         // Like .NET Core, NetWasm does not run finalizers during shutdown.
         public static bool HasShutdownStarted => false;
@@ -43,7 +76,7 @@ namespace System
             string? selected = null;
             foreach (var candidate in s_environment!)
             {
-                if (candidate.Name != variable)
+                if (candidate.Key != variable)
                 {
                     continue;
                 }
@@ -64,7 +97,7 @@ namespace System
             var result = new Collections.Hashtable();
             foreach (var variable in s_environment!)
             {
-                result.Add(variable.Name, variable.Value);
+                result.Add(variable.Key, variable.Value);
             }
             return result;
         }
@@ -79,7 +112,7 @@ namespace System
             var index = -1;
             for (var candidate = 0; candidate < variables.Length; candidate++)
             {
-                if (variables[candidate].Name == variable)
+                if (variables[candidate].Key == variable)
                 {
                     index = candidate;
                     break;
@@ -89,12 +122,12 @@ namespace System
             {
                 if (value != null)
                 {
-                    variables[index] = new Runtime.InteropServices.TimeZones.EnvironmentVariable(
+                    variables[index] = new Collections.Generic.KeyValuePair<string, string>(
                         variable,
                         TrimStringOnFirstZero(value));
                     return;
                 }
-                var reduced = new Runtime.InteropServices.TimeZones.EnvironmentVariable[
+                var reduced = new Collections.Generic.KeyValuePair<string, string>[
                     variables.Length - 1];
                 for (var source = 0; source < index; source++)
                 {
@@ -111,13 +144,13 @@ namespace System
             {
                 return;
             }
-            var expanded = new Runtime.InteropServices.TimeZones.EnvironmentVariable[
+            var expanded = new Collections.Generic.KeyValuePair<string, string>[
                 variables.Length + 1];
             for (var source = 0; source < variables.Length; source++)
             {
                 expanded[source] = variables[source];
             }
-            expanded[variables.Length] = new Runtime.InteropServices.TimeZones.EnvironmentVariable(
+            expanded[variables.Length] = new Collections.Generic.KeyValuePair<string, string>(
                 variable,
                 TrimStringOnFirstZero(value));
             s_environment = expanded;
@@ -177,9 +210,16 @@ namespace System
             {
                 return;
             }
-            var variables = Runtime.InteropServices.WasiPlatformServicesComposition
-                .CreateInitialEnvironmentVariableSource()
-                .Read();
+            var variables = Runtime.InteropServices.PlatformServices.ProcessEnvironment.GetVariables() ??
+                throw new InvalidOperationException("The environment service returned no variables.");
+            foreach (var variable in variables)
+            {
+                if (variable.Key is null || variable.Value is null)
+                {
+                    throw new InvalidOperationException(
+                        "The environment service returned a variable without a name or value.");
+                }
+            }
             s_environment = variables;
         }
 
@@ -190,10 +230,10 @@ namespace System
             {
                 for (var previous = 0; previous < current; previous++)
                 {
-                    if (variables[previous].Name == variables[current].Name)
+                    if (variables[previous].Key == variables[current].Key)
                     {
                         throw new PlatformNotSupportedException(
-                            "WASI environment contains duplicate '" + variables[current].Name + "' entries.");
+                            "WASI environment contains duplicate '" + variables[current].Key + "' entries.");
                     }
                 }
             }
@@ -234,8 +274,7 @@ namespace System
 
         public static int TickCount => unchecked((int)TickCount64);
 
-        public static long TickCount64 => unchecked((long)
-            Runtime.InteropServices.PlatformServices.MonotonicClock
-                .GetMonotonicTime() / 1_000_000);
+        public static long TickCount64 =>
+            Runtime.InteropServices.PlatformServices.Clock.GetTimestamp() / 1_000_000;
     }
 }

@@ -69,6 +69,8 @@ public sealed class NetWasmCompileTask : ToolTask
     public string? CompiledUnits { get; set; }
     public bool VerifyCompiledUnits { get; set; }
     public bool CompileAsLibrary { get; set; }
+    // A plain core module of the selected WIT world, without WASI (-target:coremodule).
+    public bool PlainCoreModule { get; set; }
     public bool UseJavaScriptExportBoundary { get; set; }
     public bool NoLogo { get; set; }
     public string Optimization { get; set; } = "Oz";
@@ -104,6 +106,9 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedIntegerCheckElimination { get; set; } = "Auto";
     public string ManagedLoopInvariantExpressionHoisting { get; set; } = "Auto";
     public string ManagedMulticastInlineDispatch { get; set; } = "Auto";
+    public string ManagedNewObjectNullCheckElimination { get; set; } = "Auto";
+    public string ManagedLoopStrengthReduction { get; set; } = "Auto";
+    public string ManagedRangeBranchFolding { get; set; } = "Auto";
 
     protected override string ToolName => "nwc";
 
@@ -177,7 +182,9 @@ public sealed class NetWasmCompileTask : ToolTask
             builder.AppendSwitch("-nologo");
         }
         builder.AppendFileNameIfNotNull(InputAssemblyPath);
-        builder.AppendSwitch(CompileAsLibrary ? "-target:library" : "-target:exe");
+        builder.AppendSwitch(PlainCoreModule
+            ? "-target:coremodule"
+            : CompileAsLibrary ? "-target:library" : "-target:exe");
         builder.AppendSwitchIfNotNull("-platform:", Target);
         builder.AppendSwitchIfNotNull("-optimize:", Optimization);
         builder.AppendSwitchIfNotNull("-out:", CoreModulePath);
@@ -264,6 +271,9 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("integercheckelimination", ManagedIntegerCheckElimination),
                      ("loopinvariantexpressionhoisting", ManagedLoopInvariantExpressionHoisting),
                      ("multicastinlinedispatch", ManagedMulticastInlineDispatch),
+                     ("newobjectnullcheckelimination", ManagedNewObjectNullCheckElimination),
+                     ("loopstrengthreduction", ManagedLoopStrengthReduction),
+                     ("rangebranchfolding", ManagedRangeBranchFolding),
                  })
         {
             if (value is not ("" or "Auto"))

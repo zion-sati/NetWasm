@@ -12,7 +12,6 @@ public sealed class BrowserBootstrapEntryWriterTests
         var output = Path.Combine(directory.Path, "generated", "browser-entry.mjs");
         var request = new BrowserBootstrapEntryRequest(
             Path.Combine(directory.Path, "hosting", "browser.mjs"),
-            Path.Combine(directory.Path, "preview2-shim"),
             output);
 
         new BrowserBootstrapEntryWriter().Write(request);
@@ -30,6 +29,11 @@ public sealed class BrowserBootstrapEntryWriterTests
         Assert.DoesNotContain("function executeNetWasm(", source, StringComparison.Ordinal);
         Assert.Contains("/hosting/browser-web-platform.mjs\";", source, StringComparison.Ordinal);
         Assert.Contains("  ...webPlatform,\n", source, StringComparison.Ordinal);
+        Assert.Contains("/hosting/wasi-platform.mjs\";", source, StringComparison.Ordinal);
+        Assert.Contains("/hosting/wasi-filesystem.mjs\";", source, StringComparison.Ordinal);
+        Assert.Contains("createImports: createWasiPlatform(Object.freeze({ initialDirectory: null, network: Object.freeze({ modules: createWasiHttpFetch(Object.freeze({ fetch: webPlatform.fetch })) }) })),", source, StringComparison.Ordinal);
+        Assert.Contains("  wasi,\n", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("preview2", source, StringComparison.OrdinalIgnoreCase);
         BrowserApiBindings.AssertNoneAtImport(source);
     }
 
@@ -38,7 +42,6 @@ public sealed class BrowserBootstrapEntryWriterTests
     {
         Assert.Throws<ArgumentException>(() => new BrowserBootstrapEntryWriter().Write(new(
             "browser.mjs",
-            Path.GetFullPath("shim"),
             Path.GetFullPath("entry.mjs"))));
     }
 
@@ -49,7 +52,7 @@ public sealed class BrowserBootstrapEntryWriterTests
         var output = Path.Combine(directory.Path, "generated", "browser-entry.mjs");
         var request = new BrowserBootstrapEntryRequest(
             Path.Combine(directory.Path, "hosting", "browser.mjs"),
-            Path.Combine(directory.Path, "preview2-shim"), output,
+            output,
             [new("netwasm:worker/Calculator", Path.Combine(directory.Path, "Calculator.mjs"))]);
 
         new BrowserBootstrapEntryWriter().Write(request);
@@ -66,7 +69,7 @@ public sealed class BrowserBootstrapEntryWriterTests
         var output = Path.Combine(directory.Path, "unwritten", "browser-entry.mjs");
         var request = new BrowserBootstrapEntryRequest(
             Path.Combine(directory.Path, "hosting", "browser.mjs"),
-            Path.Combine(directory.Path, "preview2-shim"), output);
+            output);
         foreach (var modules in new System.Collections.Immutable.ImmutableArray<BrowserJavaScriptModule>[]
         {
             [new("", Path.Combine(directory.Path, "module.mjs"))],

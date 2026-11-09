@@ -58,6 +58,10 @@ internal sealed class RuntimeNativeModuleMaterializer(
         var profile = request.Target.NativeValidation ??
             throw new InvalidOperationException("Static native calls require a runtime pack with an explicit native validation profile.");
         profiles.Validate(profile, request.Consumer.Target);
+        if (request.Consumer.PlainCoreModule)
+        {
+            profile = profile.WithoutWasi();
+        }
         var started = Stopwatch.GetTimestamp();
         var consumer = request.Consumer;
         var callbackObject = ReadCallbackObject(
@@ -100,6 +104,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
                 : consumer.NativeCallbackObjectPath,
             NativeCallbackAllowedUndefinedPath = identityCallbackAllowPath,
             NativeCallbackSupport = callbackSupport,
+            PlainCoreModule = consumer.PlainCoreModule,
         };
         var identityArguments = linkArguments.Build(identityLink);
         var identityOptimization = optimizationArguments.Build(new(

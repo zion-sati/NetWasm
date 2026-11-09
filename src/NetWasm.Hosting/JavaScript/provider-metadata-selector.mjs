@@ -39,6 +39,8 @@ export function createProviderMetadataSelector(options) {
 
     for (const entry of modules.values()) {
       if (entry.kind === "platform") {
+        // Every interface the platform catalog lists has a provider, a types-only one
+        // (wasi:cli/terminal-input) too: JavaScript bindings construct its resources.
         const registration = options.resolvePlatformProvider({ module: entry.module });
         platformProviders.push(readPlatformProvider(registration, entry.module));
       } else if (applicationBindings.has(entry.module)) {

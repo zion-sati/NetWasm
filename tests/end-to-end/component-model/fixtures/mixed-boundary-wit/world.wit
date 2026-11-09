@@ -10,9 +10,7 @@ interface acceptance {
 
 world mixed-boundary {
   import arithmetic;
-  import wasi:clocks/wall-clock@0.2.11;
-  import wasi:clocks/monotonic-clock@0.2.11;
-  import netwasm:runtime/reactor-host@1.0.0;
+  import wasi:clocks/system-clock@0.3.2;
+  import wasi:clocks/monotonic-clock@0.3.2;
   export acceptance;
-  export netwasm:runtime/reactor-guest@1.0.0;
 }

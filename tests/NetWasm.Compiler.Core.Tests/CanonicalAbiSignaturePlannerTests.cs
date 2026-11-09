@@ -95,6 +95,8 @@ public sealed class CanonicalAbiSignaturePlannerTests
             CanonicalAbiTypeKind.Enum,
             CanonicalAbiTypeKind.OwnedResource,
             CanonicalAbiTypeKind.BorrowedResource,
+            CanonicalAbiTypeKind.Stream,
+            CanonicalAbiTypeKind.Future,
         };
         Assert.Empty(Flatten(_flattener, Type(CanonicalAbiTypeKind.Unit)));
         foreach (var kind in i4Kinds)

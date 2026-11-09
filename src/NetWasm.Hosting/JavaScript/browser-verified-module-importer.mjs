@@ -16,8 +16,10 @@ export function createBrowserVerifiedModuleImporter(options) {
         || typeof artifact.mediaType !== "string" || artifact.mediaType.length === 0) {
       throw new TypeError("verified browser module artifact is required");
     }
+    // The URL holds the verified bytes themselves: a browser's blob: URL, or the data: URL a
+    // host that Node.js code imports uses, since Node.js cannot import a blob: URL.
     const url = options.createModuleUrl(bytes, artifact.mediaType);
-    if (typeof url !== "string" || !url.startsWith("blob:")) {
+    if (typeof url !== "string" || !url.startsWith("blob:") && !url.startsWith("data:")) {
       throw new TypeError("browser module URL factory returned an invalid URL");
     }
     try {

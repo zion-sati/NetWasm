@@ -12,7 +12,8 @@ public sealed record ArrayBoundsProof(
     public ImmutableDictionary<int, ArrayIndexOffset> IndexOffsets { get; init; } = [];
 
     // Array and field accesses whose array or object an earlier access already
-    // checked for null.
+    // checked for null, and field accesses and callvirts whose object newobj
+    // produced or that is the proven-non-null this of a constructor.
     public ImmutableHashSet<int> NonNullOffsets { get; init; } = [];
 
     // Dimensions of rectangular accesses whose index an earlier access of the

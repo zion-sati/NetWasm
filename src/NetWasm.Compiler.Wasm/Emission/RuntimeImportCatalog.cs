@@ -93,6 +93,7 @@ internal enum RuntimeImportSymbol
     ObjectContainsReferences,
     ArraySetValue,
     ReportUnhandledException,
+    ObjectClone,
 }
 
 internal readonly record struct RuntimeImportBinding(
@@ -175,5 +176,6 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
             IncludeFinalization: true,
             IncludeRandomSeed: true,
             IncludeArraySetValue: true,
-            IncludeUnhandledExceptionHint: true);
+            IncludeUnhandledExceptionHint: true,
+            IncludeObjectClone: true);
 }

@@ -14,8 +14,7 @@ internal interface IJavaScriptAsyncBindingResolverFactory
         IFieldRepository fields,
         IMethodRepository methodRepository,
         IMethodInstanceResolver methodInstances,
-        ISymbolFormatter symbols,
-        PlatformWorldCapabilities world);
+        ISymbolFormatter symbols);
 }
 
 internal sealed class JavaScriptAsyncBindingResolverFactory :
@@ -28,8 +27,7 @@ internal sealed class JavaScriptAsyncBindingResolverFactory :
         IFieldRepository fields,
         IMethodRepository methodRepository,
         IMethodInstanceResolver methodInstances,
-        ISymbolFormatter symbols,
-        PlatformWorldCapabilities world)
+        ISymbolFormatter symbols)
     {
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(typeDefinitions);
@@ -38,7 +36,6 @@ internal sealed class JavaScriptAsyncBindingResolverFactory :
         ArgumentNullException.ThrowIfNull(methodRepository);
         ArgumentNullException.ThrowIfNull(methodInstances);
         ArgumentNullException.ThrowIfNull(symbols);
-        ArgumentNullException.ThrowIfNull(world);
         return new JavaScriptAsyncBindingResolver(
             types,
             typeDefinitions,
@@ -46,7 +43,6 @@ internal sealed class JavaScriptAsyncBindingResolverFactory :
             fields,
             methodRepository,
             methodInstances,
-            symbols,
-            world);
+            symbols);
     }
 }

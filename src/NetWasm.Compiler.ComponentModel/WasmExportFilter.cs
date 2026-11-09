@@ -64,7 +64,11 @@ public sealed class WasmExportFilter
             throw ComponentException.Invalid("core module is missing a required internal export");
     }
 
+    // wit-component's standard names have no async lift, so a callback-lifted export and its
+    // callback keep their full names.
     private static bool IsComponentExport(string name, string prefix) =>
         name.StartsWith(prefix + "_", StringComparison.Ordinal) ||
-        name.StartsWith(prefix + "|", StringComparison.Ordinal);
+        name.StartsWith(prefix + "|", StringComparison.Ordinal) ||
+        name.StartsWith("[async-lift]", StringComparison.Ordinal) ||
+        name.StartsWith("[callback][async-lift]", StringComparison.Ordinal);
 }

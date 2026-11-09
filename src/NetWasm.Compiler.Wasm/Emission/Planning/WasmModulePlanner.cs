@@ -76,7 +76,8 @@ internal sealed class WasmModulePlanner(
             calledIntrinsics.Contains(RuntimeIntrinsic.RandomSeed),
             calledIntrinsics.Contains(RuntimeIntrinsic.ArraySetValue),
             // A process that reports no exceptions traps on an unhandled one after the hint.
-            request.EntryPointProfile == WasmEntryPointProfile.Process && !includeTerminalExceptionReporter);
+            request.EntryPointProfile == WasmEntryPointProfile.Process && !includeTerminalExceptionReporter,
+            calledIntrinsics.Contains(RuntimeIntrinsic.ObjectClone));
         var selectedRuntimeImports = runtimeImports.Resolve(runtimeImportSelection);
         var runtimeImportCount = selectedRuntimeImports.Length;
         var interopImports = interopImportPlanner.Build(request, runtimeImportCount);

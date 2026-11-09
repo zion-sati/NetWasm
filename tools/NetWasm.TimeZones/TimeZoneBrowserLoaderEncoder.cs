@@ -10,7 +10,7 @@ internal sealed class TimeZoneBrowserLoaderEncoder : ITimeZoneBrowserLoaderEncod
         ArgumentException.ThrowIfNullOrEmpty(assetFile);
         var literal = JsonSerializer.Serialize(assetFile, TimeZoneJsonContext.Default.String);
         return Encoding.UTF8.GetBytes(
-            "import { cli, filesystem } from \"@bytecodealliance/preview2-shim\";\n\n" +
+            "import { cli, filesystem } from \"@bytecodealliance/preview3-shim\";\n\n" +
             "export async function configureNetWasmTimeZone(options = {}) {\n" +
             "  const timeZone = options.timeZone;\n" +
             "  cli._setEnv(timeZone == null ? {} : { TZ: timeZone });\n" +

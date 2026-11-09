@@ -14,11 +14,10 @@ if command -v clang >/dev/null 2>&1; then
 fi
 
 node --test "$script_dir/runtime-contract-imports.test.mjs"
-node --test "$script_dir/yield-reactor-imports.test.mjs"
 node --test --experimental-test-coverage \
-  --test-coverage-include='**/timer-reactor-imports.mjs' \
+  --test-coverage-include='**/monotonic-clock-imports.mjs' \
   --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 \
-  "$script_dir/timer-reactor-imports.test.mjs"
+  "$script_dir/monotonic-clock-imports.test.mjs"
 node --test "$script_dir/runtime-build-additional-source.test.mjs"
 node --test --experimental-test-coverage \
   --test-coverage-include='**/output-stream-imports.mjs' \
@@ -168,6 +167,20 @@ echo "Array boxed-value storage and collector lifetime contract PASS"
 
 cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
   "${frame_linker_flags[@]}" -I"$workspace_dir/src/NetWasm.Runtime" \
+  -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "${netwasm_gc_sources[@]}" "$script_dir/object_clone_contract.c" \
+  -o "$output_dir/object_clone_contract"
+"$output_dir/object_clone_contract"
+cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -DCLONE_TEST_HOOKS "${frame_linker_flags[@]}" \
+  -I"$workspace_dir/src/NetWasm.Runtime" -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "${netwasm_gc_sources[@]}" "$script_dir/object_clone_contract.c" \
+  -o "$output_dir/object_clone_hooks_contract"
+"$output_dir/object_clone_hooks_contract"
+echo "Object shallow clone and collector lifetime contract PASS"
+
+cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  "${frame_linker_flags[@]}" -I"$workspace_dir/src/NetWasm.Runtime" \
   "$script_dir/frame_arena_contract.c" -o "$output_dir/frame_arena_contract"
 "$output_dir/frame_arena_contract"
 cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
@@ -310,10 +323,10 @@ cc -std=c11 -Wall -Wextra -Werror \
   "$workspace_dir/src/NetWasm.Runtime/runtime_standard_output.c" \
   "$script_dir/runtime_standard_output_contract.c" \
   -o "$output_dir/runtime_standard_output_contract"
-for output_case in normal validation failed-first failed-second failed-partial closed invalid-result invalid-error; do
+for output_case in normal validation dropped-first dropped-second dropped-partial invalid-result wrong-event; do
   "$output_dir/runtime_standard_output_contract" "$output_case"
 done
-echo "Runtime Preview 2 output contract PASS"
+echo "Runtime WASI 0.3 standard output contract PASS"
 
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$workspace_dir/src/NetWasm.Runtime" \

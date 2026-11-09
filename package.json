@@ -8,8 +8,8 @@
     "test:e2e-compiler-browsers": "node tests/end-to-end/compiler-pipeline/browser/run-playwright.mjs"
   },
   "devDependencies": {
-    "@bytecodealliance/jco": "1.28.1",
-    "@bytecodealliance/preview2-shim": "0.24.1",
+    "@bytecodealliance/jco": "1.41.0",
+    "@bytecodealliance/preview3-shim": "0.13.0",
     "playwright": "1.62.1"
   }
 }

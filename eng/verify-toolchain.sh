@@ -78,7 +78,7 @@ llvm_lld_version="$(read_manifest llvmLld.version)"
 wasm_tools_version="$(read_manifest wasmTools)"
 wasmtime_version="$(read_manifest wasmtime)"
 jco_version="$(read_manifest jco)"
-preview2_shim_version="$(read_manifest preview2Shim)"
+preview3_shim_version="$(read_manifest preview3Shim)"
 
 require_version() {
     local label="$1"
@@ -133,8 +133,8 @@ package_version() {
 }
 
 require_version package-jco "$(package_version @bytecodealliance/jco)" "$jco_version"
-require_version package-preview2-shim \
-    "$(package_version @bytecodealliance/preview2-shim)" "$preview2_shim_version"
+require_version package-preview3-shim \
+    "$(package_version @bytecodealliance/preview3-shim)" "$preview3_shim_version"
 
 actual_emscripten="$("$emsdk_root/upstream/emscripten/emcc" --version | \
     sed -n '1s/.*) \([0-9][0-9.]*\) .*/\1/p')"

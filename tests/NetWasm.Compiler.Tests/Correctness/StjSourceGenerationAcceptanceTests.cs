@@ -355,7 +355,9 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
                 "List<int>",
                 "Dictionary<string, int?>",
             ],
-            requiresReactor: true);
+            requiresReactor: true,
+            wasmEntryMethod: "RunAsync",
+            callbackEntry: true);
 
     public static SourceGenerationFixtureBuild CreateAsyncPipeRoundTrip(
         CompilerCorrectnessEnvironment environment,
@@ -377,8 +379,8 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
             ],
             requiresReactor: true,
             inputs: [10000, 10001],
-            wasmEntryMethod: "StartPipeRoundTrip",
-            reactorObserveMethod: "ObservePipeRoundTrip");
+            wasmEntryMethod: "RunPipeRoundTripAsync",
+            callbackEntry: true);
 
     public static SourceGenerationFixtureBuild CreateAsyncStreamRoundTrip(
         CompilerCorrectnessEnvironment environment,
@@ -388,7 +390,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
             processes,
             profile,
             "stream",
-            "StartStreamRoundTrip");
+            "RunStreamRoundTripAsync");
 
     public static SourceGenerationFixtureBuild CreateAsyncSequenceRoundTrip(
         CompilerCorrectnessEnvironment environment,
@@ -398,7 +400,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
             processes,
             profile,
             "sequence",
-            "StartSequenceRoundTrip");
+            "RunSequenceRoundTripAsync");
 
     public static SourceGenerationFixtureBuild CreateAsyncSequenceFailures(
         CompilerCorrectnessEnvironment environment,
@@ -408,7 +410,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
             processes,
             profile,
             "sequence-failures",
-            "StartSequenceFailures");
+            "RunSequenceFailuresAsync");
 
     private static SourceGenerationFixtureBuild CreateAsyncSlice(
         CompilerCorrectnessEnvironment environment,
@@ -433,7 +435,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
             requiresReactor: true,
             inputs: [2],
             wasmEntryMethod: entryMethod,
-            reactorObserveMethod: "ObserveSlice");
+            callbackEntry: true);
 
     private static SourceGenerationFixtureBuild Create(
         CompilerCorrectnessEnvironment environment,
@@ -449,7 +451,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
         bool requiresReactor,
         ImmutableArray<int> inputs = default,
         string? wasmEntryMethod = null,
-        string? reactorObserveMethod = null,
+        bool callbackEntry = false,
         bool usesStjDependencies = true,
         bool usesRegexDependencies = false)
     {
@@ -541,13 +543,10 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
                 usesStjDependencies,
                 usesRegexDependencies),
             RequiresReactor = requiresReactor,
-            DesktopEntryMethod = wasmEntryMethod is not null &&
-                wasmEntryMethod.StartsWith("Start", StringComparison.Ordinal)
-                ? "Run" + wasmEntryMethod["Start".Length..]
-                : "Run",
-            WasmEntryMethod = wasmEntryMethod ?? (requiresReactor ? "Start" : "Run"),
-            ReactorObserveMethod = reactorObserveMethod ??
-                (requiresReactor && wasmEntryMethod is null ? "Observe" : null),
+            // The desktop oracle runs the synchronous form of a callback-lifted entry.
+            DesktopEntryMethod = callbackEntry ? wasmEntryMethod![..^"Async".Length] : "Run",
+            WasmEntryMethod = wasmEntryMethod ?? "Run",
+            CallbackEntry = callbackEntry,
         };
         var artifact = new CorpusArtifact(
             assemblyPath,

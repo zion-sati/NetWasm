@@ -33,7 +33,7 @@ internal sealed class ComponentManifestInputsReader(
                     export.Parameters,
                     export.Result,
                     export.AsyncReturn))]),
-            new(request.JcoVersion, request.Preview2ShimVersion))
+            new(request.JcoVersion, request.Preview3ShimVersion))
         {
             WitImports = interop.WitImports.IsDefault ? [] : interop.WitImports,
         };

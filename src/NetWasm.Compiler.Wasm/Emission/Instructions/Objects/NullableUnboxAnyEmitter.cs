@@ -82,7 +82,7 @@ internal sealed class NullableUnboxAnyEmitter(
             layouts.Target.ObjectHeaderSize,
             underlying.Alignment));
         addresses.Emit(code, AddressOperation.Add);
-        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, underlying.Size,
+        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, underlying.Size, SmallBlockEmitter.WidestChunk(underlying),
             writer => addresses.Emit(writer, underlying.Size));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
 

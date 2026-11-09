@@ -97,6 +97,8 @@ public sealed class CanonicalAbiMemoryLayoutPlannerTests
             (CanonicalAbiTypeKind.Character, 4, 4),
             (CanonicalAbiTypeKind.OwnedResource, 4, 4),
             (CanonicalAbiTypeKind.BorrowedResource, 4, 4),
+            (CanonicalAbiTypeKind.Stream, 4, 4),
+            (CanonicalAbiTypeKind.Future, 4, 4),
             (CanonicalAbiTypeKind.S64, 8, 8),
             (CanonicalAbiTypeKind.U64, 8, 8),
             (CanonicalAbiTypeKind.F64, 8, 8),

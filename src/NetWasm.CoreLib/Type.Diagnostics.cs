@@ -1,6 +1,6 @@
 namespace System;
 
-public sealed partial class Type
+public partial class Type
 {
     public override string Name => GetRuntimeName();
 

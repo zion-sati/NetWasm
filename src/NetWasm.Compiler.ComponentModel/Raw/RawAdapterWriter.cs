@@ -29,7 +29,6 @@ public sealed class RawAdapterWriter(
 {
     // Version 2 emits each callable's canonical-ABI code instead of its plan.
     public const int CurrentAbiVersion = 2;
-    private const string ReactorHostInterface = "netwasm:runtime/reactor-host@1.0.0";
     private const string CanonicalCapability = "canonical";
 
     // The helpers the emitted bindings call, without their test-facing exports.
@@ -64,7 +63,9 @@ public sealed class RawAdapterWriter(
                 return $"const binding{index.ToString(CultureInfo.InvariantCulture)} = deepFreeze({serialized});";
             }
             using var document = JsonDocument.Parse(serialized);
-            return emitter.EmitCallable(index, document.RootElement);
+            return binding.Layout is RawWitImportLayout.Payload
+                ? emitter.EmitPayload(index, document.RootElement)
+                : emitter.EmitCallable(index, document.RootElement);
         }).ToArray();
         var capabilityNames = context.Bindings
             .Select(binding => Capability(binding.Layout))
@@ -221,6 +222,8 @@ public sealed class RawAdapterWriter(
                 && declaration is not RawWitImportDeclaration.Callable
             || layout is RawWitImportLayout.Resource
                 && declaration is not RawWitImportDeclaration.Resource
+            || layout is RawWitImportLayout.Payload
+                && declaration is not RawWitImportDeclaration.Payload
             || string.IsNullOrWhiteSpace(declaration.DeploymentInterfaceName))
         {
             throw Invalid(
@@ -229,25 +232,24 @@ public sealed class RawAdapterWriter(
         return declaration;
     }
 
-    private static string Capability(RawWitImportLayout layout)
+    // A resource intrinsic binds through the host's resource binder; callables and stream or
+    // future built-ins carry their own canonical-ABI code.
+    private static string Capability(RawWitImportLayout layout) =>
+        layout is RawWitImportLayout.Resource ? "bindResource" : CanonicalCapability;
+
+    // An async function's kind is its synchronous kind with an "async-" prefix; the provider
+    // member it calls is the same.
+    private static string BaseKind(WitFunction function)
     {
-        if (layout is RawWitImportLayout.Resource) return "bindResource";
-        var callable = (RawWitImportLayout.Callable)layout;
-        if (callable.Function.Layout.Function.InterfaceName != ReactorHostInterface)
-        {
-            return CanonicalCapability;
-        }
-        if (callable.Function.Declaration.Name is not ("watch" or "cancel"))
-        {
-            throw Invalid("raw adapter reactor-host function is unsupported");
-        }
-        return "bindReactor";
+        ArgumentNullException.ThrowIfNull(function.Kind);
+        var kind = function.Kind.Name;
+        return kind is not null && kind.StartsWith("async-", StringComparison.Ordinal) ? kind["async-".Length..] : kind!;
     }
 
     private static void ValidateFunctionKind(WitFunction function, WitDocument document)
     {
         ArgumentNullException.ThrowIfNull(function.Kind);
-        var kind = function.Kind.Name;
+        var kind = BaseKind(function);
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(function.Name);
         if (kind == "freestanding" && function.Kind.ResourceType is null && function.Name[0] != '[') return;
@@ -292,12 +294,18 @@ public sealed class RawAdapterWriter(
                 var function = callable.Function.Declaration;
                 ValidateFunctionKind(function, binding.Document);
                 var resource = function.Kind.ResourceType?.ToString(CultureInfo.InvariantCulture) ?? "";
+                // A guest may lower an async function both ways; both call one provider.
+                var asynchronous = ((RawWitImportDeclaration.Callable)binding.Declaration).Asynchronous;
                 var key = string.Join('\0', binding.Declaration.DeploymentInterfaceName,
-                    function.Kind.Name, resource, JavaScriptProviderName(function));
+                    BaseKind(function), resource, JavaScriptProviderName(function), asynchronous ? "async" : "");
                 if (!operations.Add(key))
                 {
                     throw Invalid("raw adapter provider operations have colliding JavaScript names");
                 }
+                continue;
+            }
+            if (layout is RawWitImportLayout.Payload)
+            {
                 continue;
             }
             var intrinsic = ((RawWitImportLayout.Resource)layout).Intrinsic;
@@ -353,7 +361,12 @@ public sealed class RawAdapterWriter(
     {
         var layout = binding.Layout;
         writer.WriteStartObject();
-        writer.WriteString("kind", layout is RawWitImportLayout.Callable ? "callable" : "resource");
+        writer.WriteString("kind", layout switch
+        {
+            RawWitImportLayout.Callable => "callable",
+            RawWitImportLayout.Payload => "payload",
+            _ => "resource",
+        });
         writer.WriteString("target", Target(context.Target));
         writer.WritePropertyName("physical");
         WriteIdentity(writer, layout.Identity);
@@ -368,6 +381,13 @@ public sealed class RawAdapterWriter(
                     binding.Declaration.DeploymentInterfaceName,
                     binding.Document,
                     context);
+                writer.WriteBoolean("asynchronous", ((RawWitImportDeclaration.Callable)binding.Declaration).Asynchronous);
+                break;
+            case RawWitImportLayout.Payload payload:
+                writer.WriteString("operation", PayloadOperation(payload.Declaration.Operation));
+                writer.WritePropertyName("type");
+                WriteType(writer, payload.Type, binding.Document,
+                    new WitTypeReference.Defined(payload.Declaration.TypeId), context);
                 break;
             case RawWitImportLayout.Resource resource:
                 WriteResource(
@@ -394,7 +414,7 @@ public sealed class RawAdapterWriter(
         writer.WriteString("interface", deploymentInterfaceName);
         writer.WriteString("function", canonical.FunctionName);
         writer.WriteString("javascriptName", JavaScriptProviderName(function.Declaration));
-        writer.WriteString("functionKind", function.Declaration.Kind.Name);
+        writer.WriteString("functionKind", BaseKind(function.Declaration));
         if (function.Declaration.Kind.ResourceType is { } resourceType)
         {
             writer.WriteNumber("resourceType", ResourceType(context, document, resourceType));
@@ -538,11 +558,27 @@ public sealed class RawAdapterWriter(
                     document,
                     type.ResourceTypeId));
                 break;
+            case CanonicalAbiTypeKind.Stream:
+            case CanonicalAbiTypeKind.Future:
+                writer.WritePropertyName("element");
+                var element = ReadDefinedObject(document, reference, TypeKind(type.Kind));
+                if (type.ElementType is null) writer.WriteNullValue();
+                else WriteType(writer, type.ElementType, document, ReadReference(element), context);
+                break;
             case CanonicalAbiTypeKind.Unit:
                 break;
         }
         writer.WriteEndObject();
     }
+
+    private static string PayloadOperation(RawPayloadOperation operation) => operation switch
+    {
+        RawPayloadOperation.StreamNew or RawPayloadOperation.FutureNew => "new",
+        RawPayloadOperation.StreamRead or RawPayloadOperation.FutureRead => "read",
+        RawPayloadOperation.StreamWrite or RawPayloadOperation.FutureWrite => "write",
+        RawPayloadOperation.StreamDropReadable or RawPayloadOperation.FutureDropReadable => "drop-readable",
+        _ => "drop-writable",
+    };
 
     private static void WriteFields(
         Utf8JsonWriter writer,
@@ -804,6 +840,8 @@ public sealed class RawAdapterWriter(
         CanonicalAbiTypeKind.Flags => "flags",
         CanonicalAbiTypeKind.OwnedResource => "owned-resource",
         CanonicalAbiTypeKind.BorrowedResource => "borrowed-resource",
+        CanonicalAbiTypeKind.Stream => "stream",
+        CanonicalAbiTypeKind.Future => "future",
         _ => throw Invalid("raw adapter contains an unsupported canonical type"),
     };
 
@@ -818,7 +856,7 @@ public sealed class RawAdapterWriter(
     private static string JavaScriptClassName(string witName) => Camel(witName, true);
 
     private static string JavaScriptProviderName(WitFunction function) =>
-        function.Kind.Name == "constructor"
+        BaseKind(function) == "constructor"
             ? JavaScriptClassName(function.Name[(function.Name.LastIndexOf(']') + 1)..])
             : JavaScriptName(function.Name);
 

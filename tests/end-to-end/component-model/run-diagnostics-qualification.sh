@@ -8,7 +8,7 @@ sdk_version="$(node -p 'require(process.argv[1]).dotnetSdk' "$toolchain")"
 wasm_tools_version="$(node -p 'require(process.argv[1]).wasmTools' "$toolchain")"
 wasmtime_version="$(node -p 'require(process.argv[1]).wasmtime' "$toolchain")"
 jco_version="$(node -p 'require(process.argv[1]).jco' "$toolchain")"
-shim_version="$(node -p 'require(process.argv[1]).preview2Shim' "$toolchain")"
+shim_version="$(node -p 'require(process.argv[1]).preview3Shim' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
 compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit="$repo_root/tests/end-to-end/component-model/fixtures/diagnostics-wasi-wit"
@@ -107,7 +107,7 @@ for configuration in debug release; do
             -optimize:none \
             -coremodule:"$prefix.core.wasm" -runtimemodule:"$prefix.runtime.wasm" \
             -wit:"$wit" -platform:"$target" -jcoversion:"$jco_version" \
-            -preview2shimversion:"$shim_version" \
+            -preview3shimversion:"$shim_version" \
             -out:"$prefix.component.wasm" -manifest:"$prefix.manifest.json" \
             > "$prefix.componentize.stdout" 2> "$prefix.componentize.stderr"; then
             if [[ "$target" = wasm64 ]] && grep -q '^error NW1010:' "$prefix.componentize.stdout"; then

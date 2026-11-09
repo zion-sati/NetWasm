@@ -58,25 +58,11 @@ public sealed class ToolchainPackagePathResolver : IToolchainPackagePathResolver
                 "The Toolchain time zone source must belong to one Toolchain package identity.");
         }
 
-        var preview2ShimRoot = Path.Combine(
-            root,
-            "tools",
-            "jco",
-            "node_modules",
-            "@bytecodealliance",
-            "preview2-shim");
-        if (!Directory.Exists(preview2ShimRoot))
-        {
-            throw new InvalidDataException(
-                "The Toolchain package is missing the Preview 2 shim closure.");
-        }
-
         return new(
             manifest.PackageId,
             manifest.PackageVersion,
             manifestPath,
             witPackages,
-            preview2ShimRoot,
             wasmTools,
             raw,
             jco,

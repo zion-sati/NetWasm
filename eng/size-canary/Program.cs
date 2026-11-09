@@ -56,15 +56,23 @@ if (args is ["compile", var repository, var input, var application, var layout,
 if (args is ["package", var appModule, var runtimeModule, var commandWit,
         var component, .. var packageOptions])
 {
-    var (returnShape, structuredDiagnostics) = packageOptions switch
+    // Options, in order: 'int' (an exit code), 'async' (a callback-lifted asynchronous Main),
+    // 'structured' (structured diagnostics).
+    string[] known = ["int", "async", "structured"];
+    if (packageOptions.Length > known.Length ||
+        packageOptions.Where((option, index) => Array.IndexOf(known, option) < 0 ||
+            (index > 0 && Array.IndexOf(known, option) <= Array.IndexOf(known, packageOptions[index - 1]))).Any())
     {
-        [] => (ManagedExecutableReturnShape.Void, false),
-        ["int"] => (ManagedExecutableReturnShape.ExitCode, false),
-        ["structured"] => (ManagedExecutableReturnShape.Void, true),
-        ["int", "structured"] => (ManagedExecutableReturnShape.ExitCode, true),
-        _ => throw new ArgumentException(
-            "Package accepts an optional 'int' result shape followed by optional 'structured' diagnostics."),
-    };
+        throw new ArgumentException(
+            "Package accepts optional 'int', 'async' and 'structured' options, in that order.");
+    }
+    var returnShape = packageOptions.Contains("int")
+        ? ManagedExecutableReturnShape.ExitCode
+        : ManagedExecutableReturnShape.Void;
+    var completionShape = packageOptions.Contains("async")
+        ? ManagedExecutableCompletionShape.Asynchronous
+        : ManagedExecutableCompletionShape.Synchronous;
+    var structuredDiagnostics = packageOptions.Contains("structured");
     using var services = new ServiceCollection()
         .AddNetWasmCompiler()
         .BuildServiceProvider();
@@ -80,7 +88,8 @@ if (args is ["package", var appModule, var runtimeModule, var commandWit,
             RuntimeModulePath: Path.GetFullPath(runtimeModule),
             ManagedExecutableEntryPoint: new ManagedExecutableEntryPointAbi(
                 ManagedExecutableParameterShape.None,
-                returnShape),
+                returnShape,
+                completionShape),
             Optimization: FinalWasmOptimization.Oz,
             StructuredDiagnostics: structuredDiagnostics));
     return;

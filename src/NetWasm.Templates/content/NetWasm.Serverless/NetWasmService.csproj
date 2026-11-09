@@ -1,0 +1,12 @@
+<Project Sdk="NetWasm.Sdk/0.4.2">
+  <PropertyGroup>
+    <OutputType>Component</OutputType>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <NetWasmWorld>service</NetWasmWorld>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NetWasm.System.Net.Http" Version="0.4.*" />
+  </ItemGroup>
+</Project>

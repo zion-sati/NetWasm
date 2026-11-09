@@ -291,8 +291,15 @@ exports to exactly one `[WitExport]` method, and its post-return cleanup to at
 most one `[WitPostReturn]` method, in any assembly of the application. When the
 application selects no world, a library's WIT exports are unused.
 
-Asynchronous WIT functions, `future`/`stream` types and `map` types are
-currently unsupported by the binding generator, as is one world placing an
+An `async func` binds to a method returning `Task` or `Task<T>`: an import is
+awaited, and an export is implemented by an async method. A component runs one
+call of its async exports at a time; the Component Model's backpressure makes
+the host hold further calls until the current one, including any stream or
+future it is still writing, has finished. A received `stream<u8>` is a
+readable `Stream` and a sent one is the `Stream` it copies; any other
+`stream<T>` is an `IAsyncEnumerable<T>`; a `future<T>` is a `Task<T>` both
+ways. A `stream` without an element type, a `future` without a value and `map`
+types are unsupported by the binding generator, as is one world placing an
 interface twice. WIT feature gates use their defaults: items behind
 `@unstable(feature = ...)` are excluded. WIT Web Worker application
 exports additionally reject resource-bearing contracts even though the general

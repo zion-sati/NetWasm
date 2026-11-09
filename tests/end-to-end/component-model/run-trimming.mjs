@@ -24,7 +24,7 @@ var isPublicImport = value =>
   value.module.startsWith("consumer.");
 var publicImports = WebAssembly.Module.imports(application).filter(isPublicImport);
 var expected = profile === "clock"
-  ? [`${canonicalPrefix}|wasi:clocks/wall-clock@0.2#now`]
+  ? [`${canonicalPrefix}|wasi:clocks/system-clock@0.3#now`]
   : [];
 var actual = publicImports.map(value => `${value.module}#${value.name}`).sort();
 if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -49,7 +49,7 @@ var instance = await WebAssembly.instantiate(module, {
       throw new Error(`unexpected managed terminal exception type ${typeId}`);
     },
   },
-  [`${canonicalPrefix}|wasi:clocks/wall-clock@0.2`]: {
+  [`${canonicalPrefix}|wasi:clocks/system-clock@0.3`]: {
     now(output) {
       var view = new DataView(activeMemory.buffer);
       var base = address(output);

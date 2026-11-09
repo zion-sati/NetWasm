@@ -2,15 +2,16 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-artifact_root="$repo_root/tests/end-to-end/component-model/artifacts/component-diagnostics"
+artifact_root="${NETWASM_COMPONENT_DIAGNOSTICS_ARTIFACT_DIR:-$repo_root/tests/end-to-end/component-model/artifacts/component-diagnostics}"
 compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
-wit_bindgen="$repo_root/tools/NetWasm.Wit.Bindings/bin/Release/net10.0/NetWasm.Wit.Bindings.dll"
-async_wit="$repo_root/tests/NetWasm.Compiler.Tests/Fixtures/async-component.wit"
+wit_bindgen="$artifact_root/wit-tool/bin/netwasm-wit-bindgen"
 scalar_wit="$repo_root/tests/NetWasm.Compiler.Tests/Fixtures/scalar-component.wit"
 
 mkdir -p "$artifact_root"
 dotnet build "$repo_root/NetWasm.slnx" -c Release --no-restore --nologo \
     > "$artifact_root/build.log"
+rm -rf "$artifact_root/wit-tool"
+bash "$repo_root/eng/prepare-wit-bindings-test-tool.sh" "$artifact_root/wit-tool"
 
 expect_failure() {
     local expected="$1"
@@ -18,7 +19,9 @@ expect_failure() {
     local executable="$3"
     shift 3
     rm -f "$output" "$output.manifest"
-    if dotnet "$executable" "$@" \
+    local launcher=(dotnet "$executable")
+    [[ "$executable" == *.dll ]] || launcher=("$executable")
+    if "${launcher[@]}" "$@" \
         > "$artifact_root/command.stdout" \
         2> "$artifact_root/command.stderr"; then
         echo "command unexpectedly succeeded" >&2
@@ -41,21 +44,24 @@ expect_failure() {
     }
 }
 
-bindings="$artifact_root/async-bindings.cs"
+# A world the WIT does not declare fails before any output is written, in the
+# bindings generator and before componentize reads its core module.
+missing_world="example:scalar/missing@1.0.0"
+bindings="$artifact_root/missing-world-bindings.cs"
 expect_failure \
-    "NW1009: user-defined asynchronous WIT function 'run' is not supported" \
+    "NW1009: WIT world '$missing_world' was not found or is ambiguous" \
     "$bindings" \
-    "$wit_bindgen" --wit "$async_wit" --output "$bindings"
+    "$wit_bindgen" --wit "$scalar_wit" --world "$missing_world" --output "$bindings"
 
-component="$artifact_root/async.component.wasm"
+component="$artifact_root/missing-world.component.wasm"
 expect_failure \
-    "NW1009: user-defined asynchronous WIT function 'run' is not supported" \
+    "NW1009: WIT world '$missing_world' was not found or is ambiguous" \
     "$component" \
     "$compiler" \
     componentize \
     -optimize:none \
     -coremodule:"$artifact_root/not-read-before-validation.wasm" \
-    -wit:"$async_wit" -platform:wasm32 \
+    -wit:"$scalar_wit" -world:"$missing_world" -platform:wasm32 \
     -out:"$component" -manifest:"$component.manifest"
 
 mismatched="$artifact_root/mismatched.component.wasm"

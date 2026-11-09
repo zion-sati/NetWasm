@@ -1,10 +1,17 @@
-package wasi:cli@0.2.11;
+package netwasm:command@1.0.0;
 
-@since(version = 0.2.0)
+/// The world a .NET command builds against: wasi:cli's command, with wasi:http's client, which
+/// HttpClient sends through. A component imports only what its program uses, so one that never
+/// sends a request is a plain wasi:cli command.
 world command {
-  @since(version = 0.2.0)
-  include imports;
+  include wasi:cli/command@0.3.2;
+  import wasi:http/client@0.3.2;
+}
 
-  @since(version = 0.2.0)
-  export run;
+/// The world a .NET HTTP service builds against: wasi:http's service, with the rest of the WASI
+/// imports a command has. A component imports only what its program uses, so one that only answers
+/// requests is a plain wasi:http service, which Spin, wasmCloud and `wasmtime serve` run.
+world service {
+  include wasi:cli/imports@0.3.2;
+  include wasi:http/service@0.3.2;
 }

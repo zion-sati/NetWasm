@@ -7,12 +7,12 @@ test("recognizes only exact runtime-owned modules", () => {
   for (const module of [
     "netwasm:diagnostics/terminal",
     "netwasm:diagnostics/terminal@1.0.0",
-    "netwasm:runtime/reactor-host",
-    "netwasm:runtime/reactor-host@1.0.0",
   ]) {
     assert.equal(isInternalImport({ module }), true);
   }
   for (const module of [
+    "netwasm:runtime/reactor-host",
+    "netwasm:runtime/reactor-host@1.0.0",
     "netwasm:runtime/reactor-host@1.0.1",
     "netwasm:runtime/reactor-host@1",
     "netwasm:runtime/reactor-hosted@1.0.0",
@@ -32,7 +32,7 @@ test("rejects missing import module identities", () => {
 
 test("rejects invalid policy request shapes without evaluating accessors", () => {
   const withSymbol = {
-    module: "netwasm:runtime/reactor-host@1.0.0",
+    module: "netwasm:diagnostics/terminal@1.0.0",
     [Symbol("hidden")]: true,
   };
   for (const value of [null, 1, [], withSymbol]) {
@@ -41,10 +41,10 @@ test("rejects invalid policy request shapes without evaluating accessors", () =>
 
   const inherited = Object.assign(
     Object.create({ inherited: true }),
-    { module: "netwasm:runtime/reactor-host@1.0.0" });
+    { module: "netwasm:diagnostics/terminal@1.0.0" });
   const nonEnumerable = {};
   Object.defineProperty(nonEnumerable, "module", {
-    value: "netwasm:runtime/reactor-host@1.0.0",
+    value: "netwasm:diagnostics/terminal@1.0.0",
     enumerable: false,
   });
   const accessor = {};
@@ -55,8 +55,8 @@ test("rejects invalid policy request shapes without evaluating accessors", () =>
   for (const value of [
     {},
     inherited,
-    { module: "netwasm:runtime/reactor-host@1.0.0", extra: true },
-    { other: "netwasm:runtime/reactor-host@1.0.0" },
+    { module: "netwasm:diagnostics/terminal@1.0.0", extra: true },
+    { other: "netwasm:diagnostics/terminal@1.0.0" },
     nonEnumerable,
     accessor,
   ]) {

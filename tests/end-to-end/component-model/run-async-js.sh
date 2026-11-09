@@ -7,7 +7,7 @@ toolchain="$repo_root/eng/toolchain.json"
 sdk_version="$(node -p 'require(process.argv[1]).dotnetSdk' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
 compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
-wit="$repo_root/tests/end-to-end/component-model/fixtures/async-js-wit"
+wit="$repo_root/wit/netwasm-platform-1.0.0"
 compatibility_host="$repo_root/src/NetWasm.Runtime/browser-host.mjs"
 
 mkdir -p "$artifact_root"
@@ -26,7 +26,7 @@ for target in wasm32 wasm64; do
             "$artifact_root/AsyncJavaScriptInterop.dll" \
             -r:"$corelib" \
             -target:function -entry:'NetWasm.Fixtures.JavaScriptInterop.EntryPoint::Run' \
-            -wit:"$wit" \
+            -wit:"$wit" -world:'netwasm:platform@1.0.0/platform' \
             -jsexportboundary+ \
             -platform:"$target" \
             -out:"$artifact_root/application.$target.$repeat.wasm" \

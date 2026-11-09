@@ -41,6 +41,34 @@ public sealed class NetWasmLinkRawModuleTaskTests
             sessions.Session.Request.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
     }
 
+    // Empty leaves the low-memory choice to the preset; true or false overrides it.
+    [Theory]
+    [InlineData("", null)]
+    [InlineData("true", true)]
+    [InlineData("False", false)]
+    public void PassesTheLowMemoryChoiceToTheLinkSession(string value, bool? expected)
+    {
+        var sessions = new RecordingSessionFactory();
+        var task = CreateTask(sessions);
+        task.OptimizerLowMemoryUnused = value;
+        Assert.True(task.Execute());
+        Assert.Equal(expected, sessions.Session.Request!.OptimizationOverrides?.LowMemoryUnused);
+    }
+
+    [Fact]
+    public void AnInvalidLowMemoryChoiceFailsBeforeCreatingSession()
+    {
+        var sessions = new RecordingSessionFactory();
+        var build = new RecordingBuildEngine();
+        var task = CreateTask(sessions);
+        task.OptimizerLowMemoryUnused = "sometimes";
+        task.BuildEngine = build;
+        Assert.False(task.Execute());
+        Assert.Null(sessions.WasmToolsCommand);
+        Assert.Empty(task.Modules);
+        Assert.Contains("NetWasmOptimizerLowMemoryUnused must be true, false or empty.", Assert.Single(build.Errors));
+    }
+
     [Fact]
     public void InvalidHintsFailBeforeCreatingSession()
     {

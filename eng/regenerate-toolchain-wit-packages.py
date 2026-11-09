@@ -44,23 +44,11 @@ def run_wasm_tools(
             f"wasm-tools failed with exit code {result.returncode}")
 
 
-def stage_async_source(repository: Path, destination: Path) -> None:
-    source = repository / "src/NetWasm.Toolchain/async-wit"
+def stage_diagnostic_source(repository: Path, destination: Path) -> None:
+    source = repository / "src/NetWasm.Toolchain/diagnostic-wit"
     shutil.copytree(source, destination)
     command = repository / "src/NetWasm.Toolchain/wit"
-    wasi_cli = destination / "deps/wasi-cli"
-    wasi_cli.mkdir(parents=True)
-    for path in sorted(command.glob("*.wit")):
-        shutil.copy2(path, wasi_cli / path.name)
     shutil.copytree(command / "deps", destination / "deps", dirs_exist_ok=True)
-    shutil.copytree(
-        repository / "wit/wasi-0.2.11/http",
-        destination / "deps/wasi-http",
-    )
-    runtime = destination / "deps/netwasm-runtime"
-    runtime.mkdir(parents=True)
-    for name in ("reactor.wit", "process.wit"):
-        shutil.copy2(repository / "wit/netwasm-runtime-1.0.0" / name, runtime / name)
 
 
 def generate_twice(
@@ -145,20 +133,20 @@ def main() -> None:
     output.mkdir(exist_ok=True)
     source_manifests = {
         "command": toolchain / "wit/wit-manifest.json",
-        "async-command": toolchain / "async-wit/wit-manifest.json",
+        "diagnostic-command": toolchain / "diagnostic-wit/wit-manifest.json",
         "compiler": repository / "wit/netwasm-platform-1.0.0/wit-manifest.json",
     }
     packaged_source_manifests = {
         "command": "../wit/wit-manifest.json",
-        "async-command": "../async-wit/wit-manifest.json",
+        "diagnostic-command": "../diagnostic-wit/wit-manifest.json",
         "compiler": "../compiler-wit/wit-manifest.json",
     }
     products = (
-        ("command", "wasi:cli@0.2.11", "command", toolchain / "wit"),
+        ("command", "netwasm:command@1.0.0", "command", toolchain / "wit"),
         (
-            "async-command",
+            "diagnostic-command",
             "netwasm:component@1.0.0",
-            "async-command",
+            "diagnostic-command",
             None,
         ),
         (
@@ -171,8 +159,8 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="netwasm-wit-packages-") as raw_temp:
         temporary = Path(raw_temp)
-        async_source = temporary / "async-source"
-        stage_async_source(repository, async_source)
+        diagnostic_source = temporary / "diagnostic-source"
+        stage_diagnostic_source(repository, diagnostic_source)
         descriptors = []
         for name, package, world, source in products:
             generated = temporary / f"{name}.wit.wasm"
@@ -180,7 +168,7 @@ def main() -> None:
                 node,
                 runner,
                 module,
-                async_source if source is None else source,
+                diagnostic_source if source is None else source,
                 generated,
             )
             descriptors.append(

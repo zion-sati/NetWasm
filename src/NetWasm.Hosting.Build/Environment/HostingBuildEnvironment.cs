@@ -21,7 +21,6 @@ public sealed record ToolchainPackagePaths(
     string PackageVersion,
     string ManifestPath,
     WitPackagePaths WitPackages,
-    string Preview2ShimRoot,
     WasmToolsToolchainPaths WasmTools,
     RawInspectionToolchainPaths RawInspection,
     JcoToolchainPaths Jco,

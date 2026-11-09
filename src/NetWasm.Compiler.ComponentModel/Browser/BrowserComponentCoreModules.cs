@@ -32,15 +32,11 @@ public static class BrowserComponentCoreModules
         var execution = new ComponentCoreModuleLinkExecution(
             new ComponentCoreModuleMergeRunner(tools, inline, new BrowserLinkExportCapture(recorder)),
             new EmscriptenEnvironmentShimWriter(modules),
-            new NetWasmHostComponentShimWriter(
-            [
-                new(ManagedExecutableCompletionShape.Synchronous, new PortableCommandHostComponentShimWriter(modules)),
-                new(ManagedExecutableCompletionShape.Asynchronous, new HostedNetWasmHostComponentShimWriter(modules)),
-            ]),
+            new PortableCommandHostComponentShimWriter(modules),
             new ManagedExecutableComponentAdapterWriter(
             [
                 new(ManagedExecutableCompletionShape.Synchronous, new SynchronousManagedExecutableComponentAdapterWriter(modules)),
-                new(ManagedExecutableCompletionShape.Asynchronous, new AsynchronousManagedExecutableComponentAdapterWriter(modules)),
+                new(ManagedExecutableCompletionShape.Asynchronous, new CallbackManagedExecutableComponentAdapterWriter(modules)),
             ]),
             new ComponentCoreModuleOptimizer(tools, new BrowserLinkCaptureFileExistence(state),
                 new WasmCoreModuleValidator(new BrowserLinkValidationCapture(recorder)), inline),

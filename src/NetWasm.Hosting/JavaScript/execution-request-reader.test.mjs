@@ -10,6 +10,7 @@ const digest = "a".repeat(64);
 
 test("execution request reader composes the strict public data boundary", () => {
   const validate = createExecutionRequestValidator({
+    hostDirectories: false,
     isAbsoluteHostPath: path => path.startsWith("/"),
     selectProviderKind,
   });
@@ -25,7 +26,7 @@ test("execution request reader composes the strict public data boundary", () => 
       preopens: [],
       network: "denyAll",
       clocks: [],
-      randomness: false,
+      randomness: false, temporaryDirectory: false, workingDirectory: false,
     },
     applicationImports: [],
   }));

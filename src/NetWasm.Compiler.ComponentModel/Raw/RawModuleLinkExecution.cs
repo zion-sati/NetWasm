@@ -68,7 +68,8 @@ public sealed class RawModuleLinkExecution(
                 workspace.LinkedModulePath,
                 request.Target,
                 settings.BackendPreset,
-                settings.Converge);
+                settings.Converge,
+                settings.LowMemoryUnused);
             _files.Move(workspace.LinkedModulePath, request.OutputPath);
         }
         finally

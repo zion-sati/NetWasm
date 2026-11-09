@@ -7,20 +7,16 @@ function deepFreeze(value) {
 }
 
 export const platformProviderCatalog = deepFreeze({
-  "schema": 1,
-  "world": "netwasm:hosting-platform/preview2@1.0.0",
-  "witSha256": "b5c451ab66d662b71c242cd83caeb586cfe5f29641c3d554ec62cf2b5358ef95",
-  "shim": {
-    "package": "@bytecodealliance/preview2-shim",
-    "version": "0.24.1"
-  },
+  "schema": 2,
+  "world": "netwasm:hosting-platform/wasi@1.0.0",
+  "witSha256": "4f122e65638086e633ab12a4b1248c3263ff26385bedf1ff1ef1d23f76a34f16",
   "providers": [
     {
-      "module": "wasi:cli/environment@0.2.11",
+      "module": "wasi:cli/environment@0.3.2",
       "capability": "environment",
       "functions": [
         {
-          "interface": "wasi:cli/environment@0.2.11",
+          "interface": "wasi:cli/environment@0.3.2",
           "name": "get-arguments",
           "parameters": [],
           "results": [
@@ -28,7 +24,7 @@ export const platformProviderCatalog = deepFreeze({
           ]
         },
         {
-          "interface": "wasi:cli/environment@0.2.11",
+          "interface": "wasi:cli/environment@0.3.2",
           "name": "get-environment",
           "parameters": [],
           "results": [
@@ -36,8 +32,8 @@ export const platformProviderCatalog = deepFreeze({
           ]
         },
         {
-          "interface": "wasi:cli/environment@0.2.11",
-          "name": "initial-cwd",
+          "interface": "wasi:cli/environment@0.3.2",
+          "name": "get-initial-cwd",
           "parameters": [],
           "results": [
             "option\u003Cstring\u003E"
@@ -46,1299 +42,899 @@ export const platformProviderCatalog = deepFreeze({
       ]
     },
     {
-      "module": "wasi:cli/exit@0.2.11",
+      "module": "wasi:cli/exit@0.3.2",
       "capability": "baseline",
       "functions": [
         {
-          "interface": "wasi:cli/exit@0.2.11",
+          "interface": "wasi:cli/exit@0.3.2",
           "name": "exit",
           "parameters": [
             "result\u003Cunit,unit\u003E"
           ],
           "results": []
+        },
+        {
+          "interface": "wasi:cli/exit@0.3.2",
+          "name": "exit-with-code",
+          "parameters": [
+            "u8"
+          ],
+          "results": []
         }
       ]
     },
     {
-      "module": "wasi:cli/stderr@0.2.11",
+      "module": "wasi:cli/stderr@0.3.2",
       "capability": "baseline",
       "functions": [
         {
-          "interface": "wasi:cli/stderr@0.2.11",
-          "name": "get-stderr",
-          "parameters": [],
+          "interface": "wasi:cli/stderr@0.3.2",
+          "name": "write-via-stream",
+          "parameters": [
+            "stream\u003Cu8\u003E"
+          ],
           "results": [
-            "own\u003Cwasi:io/streams@0.2.11#output-stream\u003E"
+            "future\u003Cresult\u003Cunit,wasi:cli/stderr@0.3.2#error-code\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:cli/stdin@0.2.11",
+      "module": "wasi:cli/stdin@0.3.2",
       "capability": "baseline",
       "functions": [
         {
-          "interface": "wasi:cli/stdin@0.2.11",
-          "name": "get-stdin",
+          "interface": "wasi:cli/stdin@0.3.2",
+          "name": "read-via-stream",
           "parameters": [],
           "results": [
-            "own\u003Cwasi:io/streams@0.2.11#input-stream\u003E"
+            "tuple\u003Cstream\u003Cu8\u003E,future\u003Cresult\u003Cunit,wasi:cli/stdin@0.3.2#error-code\u003E\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:cli/stdout@0.2.11",
+      "module": "wasi:cli/stdout@0.3.2",
       "capability": "baseline",
       "functions": [
         {
-          "interface": "wasi:cli/stdout@0.2.11",
-          "name": "get-stdout",
-          "parameters": [],
+          "interface": "wasi:cli/stdout@0.3.2",
+          "name": "write-via-stream",
+          "parameters": [
+            "stream\u003Cu8\u003E"
+          ],
           "results": [
-            "own\u003Cwasi:io/streams@0.2.11#output-stream\u003E"
+            "future\u003Cresult\u003Cunit,wasi:cli/stdout@0.3.2#error-code\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:cli/terminal-stderr@0.2.11",
+      "module": "wasi:cli/terminal-input@0.3.2",
+      "capability": "baseline",
+      "functions": []
+    },
+    {
+      "module": "wasi:cli/terminal-output@0.3.2",
+      "capability": "baseline",
+      "functions": []
+    },
+    {
+      "module": "wasi:cli/terminal-stderr@0.3.2",
       "capability": "baseline",
       "functions": [
         {
-          "interface": "wasi:cli/terminal-stderr@0.2.11",
+          "interface": "wasi:cli/terminal-stderr@0.3.2",
           "name": "get-terminal-stderr",
           "parameters": [],
           "results": [
-            "option\u003Cown\u003Cwasi:cli/terminal-output@0.2.11#terminal-output\u003E\u003E"
+            "option\u003Cown\u003Cwasi:cli/terminal-output@0.3.2#terminal-output\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:cli/terminal-stdin@0.2.11",
+      "module": "wasi:cli/terminal-stdin@0.3.2",
       "capability": "baseline",
       "functions": [
         {
-          "interface": "wasi:cli/terminal-stdin@0.2.11",
+          "interface": "wasi:cli/terminal-stdin@0.3.2",
           "name": "get-terminal-stdin",
           "parameters": [],
           "results": [
-            "option\u003Cown\u003Cwasi:cli/terminal-input@0.2.11#terminal-input\u003E\u003E"
+            "option\u003Cown\u003Cwasi:cli/terminal-input@0.3.2#terminal-input\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:cli/terminal-stdout@0.2.11",
+      "module": "wasi:cli/terminal-stdout@0.3.2",
       "capability": "baseline",
       "functions": [
         {
-          "interface": "wasi:cli/terminal-stdout@0.2.11",
+          "interface": "wasi:cli/terminal-stdout@0.3.2",
           "name": "get-terminal-stdout",
           "parameters": [],
           "results": [
-            "option\u003Cown\u003Cwasi:cli/terminal-output@0.2.11#terminal-output\u003E\u003E"
+            "option\u003Cown\u003Cwasi:cli/terminal-output@0.3.2#terminal-output\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:clocks/monotonic-clock@0.2.11",
+      "module": "wasi:cli/types@0.3.2",
+      "capability": "baseline",
+      "functions": []
+    },
+    {
+      "module": "wasi:clocks/monotonic-clock@0.3.2",
       "capability": "monotonicClock",
       "functions": [
         {
-          "interface": "wasi:clocks/monotonic-clock@0.2.11",
+          "interface": "wasi:clocks/monotonic-clock@0.3.2",
+          "name": "get-resolution",
+          "parameters": [],
+          "results": [
+            "wasi:clocks/monotonic-clock@0.3.2#duration"
+          ]
+        },
+        {
+          "interface": "wasi:clocks/monotonic-clock@0.3.2",
           "name": "now",
           "parameters": [],
           "results": [
-            "wasi:clocks/monotonic-clock@0.2.11#instant"
+            "wasi:clocks/monotonic-clock@0.3.2#mark"
           ]
         },
         {
-          "interface": "wasi:clocks/monotonic-clock@0.2.11",
-          "name": "resolution",
-          "parameters": [],
-          "results": [
-            "wasi:clocks/monotonic-clock@0.2.11#duration"
-          ]
-        },
-        {
-          "interface": "wasi:clocks/monotonic-clock@0.2.11",
-          "name": "subscribe-duration",
+          "interface": "wasi:clocks/monotonic-clock@0.3.2",
+          "name": "wait-for",
           "parameters": [
-            "wasi:clocks/monotonic-clock@0.2.11#duration"
+            "wasi:clocks/monotonic-clock@0.3.2#duration"
           ],
-          "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ]
+          "results": []
         },
         {
-          "interface": "wasi:clocks/monotonic-clock@0.2.11",
-          "name": "subscribe-instant",
+          "interface": "wasi:clocks/monotonic-clock@0.3.2",
+          "name": "wait-until",
           "parameters": [
-            "wasi:clocks/monotonic-clock@0.2.11#instant"
+            "wasi:clocks/monotonic-clock@0.3.2#mark"
           ],
-          "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ]
+          "results": []
         }
       ]
     },
     {
-      "module": "wasi:clocks/wall-clock@0.2.11",
+      "module": "wasi:clocks/system-clock@0.3.2",
       "capability": "wallClock",
       "functions": [
         {
-          "interface": "wasi:clocks/wall-clock@0.2.11",
+          "interface": "wasi:clocks/system-clock@0.3.2",
+          "name": "get-resolution",
+          "parameters": [],
+          "results": [
+            "wasi:clocks/system-clock@0.3.2#duration"
+          ]
+        },
+        {
+          "interface": "wasi:clocks/system-clock@0.3.2",
           "name": "now",
           "parameters": [],
           "results": [
-            "wasi:clocks/wall-clock@0.2.11#datetime"
-          ]
-        },
-        {
-          "interface": "wasi:clocks/wall-clock@0.2.11",
-          "name": "resolution",
-          "parameters": [],
-          "results": [
-            "wasi:clocks/wall-clock@0.2.11#datetime"
+            "wasi:clocks/system-clock@0.3.2#instant"
           ]
         }
       ]
     },
     {
-      "module": "wasi:filesystem/preopens@0.2.11",
+      "module": "wasi:clocks/types@0.3.2",
+      "capability": "baseline",
+      "functions": []
+    },
+    {
+      "module": "wasi:filesystem/preopens@0.3.2",
       "capability": "preopenedDirectories",
       "functions": [
         {
-          "interface": "wasi:filesystem/preopens@0.2.11",
+          "interface": "wasi:filesystem/preopens@0.3.2",
           "name": "get-directories",
           "parameters": [],
           "results": [
-            "list\u003Ctuple\u003Cown\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E,string\u003E\u003E"
+            "list\u003Ctuple\u003Cown\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E,string\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:filesystem/types@0.2.11",
+      "module": "wasi:filesystem/types@0.3.2",
       "capability": "preopenedDirectories",
       "functions": [
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.advise",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#filesize",
-            "wasi:filesystem/types@0.2.11#filesize",
-            "wasi:filesystem/types@0.2.11#advice"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#filesize",
+            "wasi:filesystem/types@0.3.2#filesize",
+            "wasi:filesystem/types@0.3.2#advice"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.append-via-stream",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "stream\u003Cu8\u003E"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:io/streams@0.2.11#output-stream\u003E,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "future\u003Cresult\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.create-directory-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.get-flags",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
-            "result\u003Cwasi:filesystem/types@0.2.11#descriptor-flags,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cwasi:filesystem/types@0.3.2#descriptor-flags,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.get-type",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
-            "result\u003Cwasi:filesystem/types@0.2.11#descriptor-type,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cwasi:filesystem/types@0.3.2#descriptor-type,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.is-same-object",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
             "bool"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.link-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#path-flags",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#path-flags",
             "string",
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.metadata-hash",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
-            "result\u003Cwasi:filesystem/types@0.2.11#metadata-hash-value,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cwasi:filesystem/types@0.3.2#metadata-hash-value,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.metadata-hash-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#path-flags",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#path-flags",
             "string"
           ],
           "results": [
-            "result\u003Cwasi:filesystem/types@0.2.11#metadata-hash-value,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cwasi:filesystem/types@0.3.2#metadata-hash-value,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.open-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#path-flags",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#path-flags",
             "string",
-            "wasi:filesystem/types@0.2.11#open-flags",
-            "wasi:filesystem/types@0.2.11#descriptor-flags"
+            "wasi:filesystem/types@0.3.2#open-flags",
+            "wasi:filesystem/types@0.3.2#descriptor-flags"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cown\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
-          "name": "[method]descriptor.read",
-          "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#filesize",
-            "wasi:filesystem/types@0.2.11#filesize"
-          ],
-          "results": [
-            "result\u003Ctuple\u003Clist\u003Cu8\u003E,bool\u003E,wasi:filesystem/types@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.read-directory",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:filesystem/types@0.2.11#directory-entry-stream\u003E,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "tuple\u003Cstream\u003Cwasi:filesystem/types@0.3.2#directory-entry\u003E,future\u003Cresult\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E\u003E\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.read-via-stream",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#filesize"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#filesize"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:io/streams@0.2.11#input-stream\u003E,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "tuple\u003Cstream\u003Cu8\u003E,future\u003Cresult\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E\u003E\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.readlink-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string"
           ],
           "results": [
-            "result\u003Cstring,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cstring,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.remove-directory-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.rename-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string",
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.set-size",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#filesize"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#filesize"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.set-times",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#new-timestamp",
-            "wasi:filesystem/types@0.2.11#new-timestamp"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#new-timestamp",
+            "wasi:filesystem/types@0.3.2#new-timestamp"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.set-times-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#path-flags",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#path-flags",
             "string",
-            "wasi:filesystem/types@0.2.11#new-timestamp",
-            "wasi:filesystem/types@0.2.11#new-timestamp"
+            "wasi:filesystem/types@0.3.2#new-timestamp",
+            "wasi:filesystem/types@0.3.2#new-timestamp"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.stat",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
-            "result\u003Cwasi:filesystem/types@0.2.11#descriptor-stat,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cwasi:filesystem/types@0.3.2#descriptor-stat,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.stat-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#path-flags",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "wasi:filesystem/types@0.3.2#path-flags",
             "string"
           ],
           "results": [
-            "result\u003Cwasi:filesystem/types@0.2.11#descriptor-stat,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cwasi:filesystem/types@0.3.2#descriptor-stat,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.symlink-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string",
             "string"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.sync",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.sync-data",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.unlink-file-at",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
             "string"
           ],
           "results": [
-            "result\u003Cunit,wasi:filesystem/types@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:filesystem/types@0.2.11",
-          "name": "[method]descriptor.write",
-          "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "list\u003Cu8\u003E",
-            "wasi:filesystem/types@0.2.11#filesize"
-          ],
-          "results": [
-            "result\u003Cwasi:filesystem/types@0.2.11#filesize,wasi:filesystem/types@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:filesystem/types@0.2.11",
+          "interface": "wasi:filesystem/types@0.3.2",
           "name": "[method]descriptor.write-via-stream",
           "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#descriptor\u003E",
-            "wasi:filesystem/types@0.2.11#filesize"
+            "borrow\u003Cwasi:filesystem/types@0.3.2#descriptor\u003E",
+            "stream\u003Cu8\u003E",
+            "wasi:filesystem/types@0.3.2#filesize"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:io/streams@0.2.11#output-stream\u003E,wasi:filesystem/types@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:filesystem/types@0.2.11",
-          "name": "[method]directory-entry-stream.read-directory-entry",
-          "parameters": [
-            "borrow\u003Cwasi:filesystem/types@0.2.11#directory-entry-stream\u003E"
-          ],
-          "results": [
-            "result\u003Coption\u003Cwasi:filesystem/types@0.2.11#directory-entry\u003E,wasi:filesystem/types@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:filesystem/types@0.2.11",
-          "name": "filesystem-error-code",
-          "parameters": [
-            "borrow\u003Cwasi:io/error@0.2.11#error\u003E"
-          ],
-          "results": [
-            "option\u003Cwasi:filesystem/types@0.2.11#error-code\u003E"
+            "future\u003Cresult\u003Cunit,wasi:filesystem/types@0.3.2#error-code\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:http/incoming-handler@0.2.11",
+      "module": "wasi:http/client@0.3.2",
       "capability": "network",
       "functions": [
         {
-          "interface": "wasi:http/incoming-handler@0.2.11",
-          "name": "handle",
+          "interface": "wasi:http/client@0.3.2",
+          "name": "send",
           "parameters": [
-            "own\u003Cwasi:http/types@0.2.11#incoming-request\u003E",
-            "own\u003Cwasi:http/types@0.2.11#response-outparam\u003E"
-          ],
-          "results": []
-        }
-      ]
-    },
-    {
-      "module": "wasi:http/outgoing-handler@0.2.11",
-      "capability": "network",
-      "functions": [
-        {
-          "interface": "wasi:http/outgoing-handler@0.2.11",
-          "name": "handle",
-          "parameters": [
-            "own\u003Cwasi:http/types@0.2.11#outgoing-request\u003E",
-            "option\u003Cown\u003Cwasi:http/types@0.2.11#request-options\u003E\u003E"
+            "own\u003Cwasi:http/types@0.3.2#request\u003E"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:http/types@0.2.11#future-incoming-response\u003E,wasi:http/outgoing-handler@0.2.11#error-code\u003E"
+            "result\u003Cown\u003Cwasi:http/types@0.3.2#response\u003E,wasi:http/client@0.3.2#error-code\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:http/types@0.2.11",
+      "module": "wasi:http/types@0.3.2",
       "capability": "network",
       "functions": [
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[constructor]fields",
           "parameters": [],
           "results": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
+            "own\u003Cwasi:http/types@0.3.2#fields\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[constructor]outgoing-request",
-          "parameters": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:http/types@0.2.11#outgoing-request\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[constructor]outgoing-response",
-          "parameters": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:http/types@0.2.11#outgoing-response\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[constructor]request-options",
           "parameters": [],
           "results": [
-            "own\u003Cwasi:http/types@0.2.11#request-options\u003E"
+            "own\u003Cwasi:http/types@0.3.2#request-options\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]fields.append",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#fields\u003E",
-            "wasi:http/types@0.2.11#field-name",
-            "wasi:http/types@0.2.11#field-value"
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "wasi:http/types@0.3.2#field-name",
+            "wasi:http/types@0.3.2#field-value"
           ],
           "results": [
-            "result\u003Cunit,wasi:http/types@0.2.11#header-error\u003E"
+            "result\u003Cunit,wasi:http/types@0.3.2#header-error\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]fields.clone",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#fields\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E"
           ],
           "results": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
+            "own\u003Cwasi:http/types@0.3.2#fields\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]fields.copy-all",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E"
+          ],
+          "results": [
+            "list\u003Ctuple\u003Cwasi:http/types@0.3.2#field-name,wasi:http/types@0.3.2#field-value\u003E\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]fields.delete",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#fields\u003E",
-            "wasi:http/types@0.2.11#field-name"
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "wasi:http/types@0.3.2#field-name"
           ],
           "results": [
-            "result\u003Cunit,wasi:http/types@0.2.11#header-error\u003E"
+            "result\u003Cunit,wasi:http/types@0.3.2#header-error\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]fields.entries",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#fields\u003E"
-          ],
-          "results": [
-            "list\u003Ctuple\u003Cwasi:http/types@0.2.11#field-name,wasi:http/types@0.2.11#field-value\u003E\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]fields.get",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#fields\u003E",
-            "wasi:http/types@0.2.11#field-name"
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "wasi:http/types@0.3.2#field-name"
           ],
           "results": [
-            "list\u003Cwasi:http/types@0.2.11#field-value\u003E"
+            "list\u003Cwasi:http/types@0.3.2#field-value\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]fields.get-and-delete",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "wasi:http/types@0.3.2#field-name"
+          ],
+          "results": [
+            "result\u003Clist\u003Cwasi:http/types@0.3.2#field-value\u003E,wasi:http/types@0.3.2#header-error\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]fields.has",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#fields\u003E",
-            "wasi:http/types@0.2.11#field-name"
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "wasi:http/types@0.3.2#field-name"
           ],
           "results": [
             "bool"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]fields.set",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#fields\u003E",
-            "wasi:http/types@0.2.11#field-name",
-            "list\u003Cwasi:http/types@0.2.11#field-value\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "wasi:http/types@0.3.2#field-name",
+            "list\u003Cwasi:http/types@0.3.2#field-value\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:http/types@0.2.11#header-error\u003E"
+            "result\u003Cunit,wasi:http/types@0.3.2#header-error\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]future-incoming-response.get",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request-options.clone",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#future-incoming-response\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#request-options\u003E"
           ],
           "results": [
-            "option\u003Cresult\u003Cresult\u003Cown\u003Cwasi:http/types@0.2.11#incoming-response\u003E,wasi:http/types@0.2.11#error-code\u003E,unit\u003E\u003E"
+            "own\u003Cwasi:http/types@0.3.2#request-options\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]future-incoming-response.subscribe",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request-options.get-between-bytes-timeout",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#future-incoming-response\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#request-options\u003E"
           ],
           "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
+            "option\u003Cwasi:http/types@0.3.2#duration\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]future-trailers.get",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request-options.get-connect-timeout",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#future-trailers\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#request-options\u003E"
           ],
           "results": [
-            "option\u003Cresult\u003Cresult\u003Coption\u003Cown\u003Cwasi:http/types@0.2.11#fields\u003E\u003E,wasi:http/types@0.2.11#error-code\u003E,unit\u003E\u003E"
+            "option\u003Cwasi:http/types@0.3.2#duration\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]future-trailers.subscribe",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request-options.get-first-byte-timeout",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#future-trailers\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#request-options\u003E"
           ],
           "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
+            "option\u003Cwasi:http/types@0.3.2#duration\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-body.stream",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-body\u003E"
-          ],
-          "results": [
-            "result\u003Cown\u003Cwasi:io/streams@0.2.11#input-stream\u003E,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-request.authority",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-request\u003E"
-          ],
-          "results": [
-            "option\u003Cstring\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-request.consume",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-request\u003E"
-          ],
-          "results": [
-            "result\u003Cown\u003Cwasi:http/types@0.2.11#incoming-body\u003E,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-request.headers",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-request\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-request.method",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-request\u003E"
-          ],
-          "results": [
-            "wasi:http/types@0.2.11#method"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-request.path-with-query",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-request\u003E"
-          ],
-          "results": [
-            "option\u003Cstring\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-request.scheme",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-request\u003E"
-          ],
-          "results": [
-            "option\u003Cwasi:http/types@0.2.11#scheme\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-response.consume",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-response\u003E"
-          ],
-          "results": [
-            "result\u003Cown\u003Cwasi:http/types@0.2.11#incoming-body\u003E,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-response.headers",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-response\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]incoming-response.status",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#incoming-response\u003E"
-          ],
-          "results": [
-            "wasi:http/types@0.2.11#status-code"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-body.write",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-body\u003E"
-          ],
-          "results": [
-            "result\u003Cown\u003Cwasi:io/streams@0.2.11#output-stream\u003E,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.authority",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E"
-          ],
-          "results": [
-            "option\u003Cstring\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.body",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E"
-          ],
-          "results": [
-            "result\u003Cown\u003Cwasi:http/types@0.2.11#outgoing-body\u003E,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.headers",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.method",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E"
-          ],
-          "results": [
-            "wasi:http/types@0.2.11#method"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.path-with-query",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E"
-          ],
-          "results": [
-            "option\u003Cstring\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.scheme",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E"
-          ],
-          "results": [
-            "option\u003Cwasi:http/types@0.2.11#scheme\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.set-authority",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E",
-            "option\u003Cstring\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.set-method",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E",
-            "wasi:http/types@0.2.11#method"
-          ],
-          "results": [
-            "result\u003Cunit,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.set-path-with-query",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E",
-            "option\u003Cstring\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-request.set-scheme",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-request\u003E",
-            "option\u003Cwasi:http/types@0.2.11#scheme\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-response.body",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-response\u003E"
-          ],
-          "results": [
-            "result\u003Cown\u003Cwasi:http/types@0.2.11#outgoing-body\u003E,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-response.headers",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-response\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:http/types@0.2.11#fields\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-response.set-status-code",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-response\u003E",
-            "wasi:http/types@0.2.11#status-code"
-          ],
-          "results": [
-            "result\u003Cunit,unit\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]outgoing-response.status-code",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#outgoing-response\u003E"
-          ],
-          "results": [
-            "wasi:http/types@0.2.11#status-code"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]request-options.between-bytes-timeout",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#request-options\u003E"
-          ],
-          "results": [
-            "option\u003Cwasi:http/types@0.2.11#duration\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]request-options.connect-timeout",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#request-options\u003E"
-          ],
-          "results": [
-            "option\u003Cwasi:http/types@0.2.11#duration\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[method]request-options.first-byte-timeout",
-          "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#request-options\u003E"
-          ],
-          "results": [
-            "option\u003Cwasi:http/types@0.2.11#duration\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]request-options.set-between-bytes-timeout",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#request-options\u003E",
-            "option\u003Cwasi:http/types@0.2.11#duration\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#request-options\u003E",
+            "option\u003Cwasi:http/types@0.3.2#duration\u003E"
           ],
           "results": [
-            "result\u003Cunit,unit\u003E"
+            "result\u003Cunit,wasi:http/types@0.3.2#request-options-error\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]request-options.set-connect-timeout",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#request-options\u003E",
-            "option\u003Cwasi:http/types@0.2.11#duration\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#request-options\u003E",
+            "option\u003Cwasi:http/types@0.3.2#duration\u003E"
           ],
           "results": [
-            "result\u003Cunit,unit\u003E"
+            "result\u003Cunit,wasi:http/types@0.3.2#request-options-error\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
           "name": "[method]request-options.set-first-byte-timeout",
           "parameters": [
-            "borrow\u003Cwasi:http/types@0.2.11#request-options\u003E",
-            "option\u003Cwasi:http/types@0.2.11#duration\u003E"
+            "borrow\u003Cwasi:http/types@0.3.2#request-options\u003E",
+            "option\u003Cwasi:http/types@0.3.2#duration\u003E"
+          ],
+          "results": [
+            "result\u003Cunit,wasi:http/types@0.3.2#request-options-error\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.get-authority",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E"
+          ],
+          "results": [
+            "option\u003Cstring\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.get-headers",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E"
+          ],
+          "results": [
+            "own\u003Cwasi:http/types@0.3.2#fields\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.get-method",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E"
+          ],
+          "results": [
+            "wasi:http/types@0.3.2#method"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.get-options",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E"
+          ],
+          "results": [
+            "option\u003Cown\u003Cwasi:http/types@0.3.2#request-options\u003E\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.get-path-with-query",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E"
+          ],
+          "results": [
+            "option\u003Cstring\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.get-scheme",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E"
+          ],
+          "results": [
+            "option\u003Cwasi:http/types@0.3.2#scheme\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.set-authority",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E",
+            "option\u003Cstring\u003E"
           ],
           "results": [
             "result\u003Cunit,unit\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.set-method",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E",
+            "wasi:http/types@0.3.2#method"
+          ],
+          "results": [
+            "result\u003Cunit,unit\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.set-path-with-query",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E",
+            "option\u003Cstring\u003E"
+          ],
+          "results": [
+            "result\u003Cunit,unit\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]request.set-scheme",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#request\u003E",
+            "option\u003Cwasi:http/types@0.3.2#scheme\u003E"
+          ],
+          "results": [
+            "result\u003Cunit,unit\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]response.get-headers",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#response\u003E"
+          ],
+          "results": [
+            "own\u003Cwasi:http/types@0.3.2#fields\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]response.get-status-code",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#response\u003E"
+          ],
+          "results": [
+            "wasi:http/types@0.3.2#status-code"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[method]response.set-status-code",
+          "parameters": [
+            "borrow\u003Cwasi:http/types@0.3.2#response\u003E",
+            "wasi:http/types@0.3.2#status-code"
+          ],
+          "results": [
+            "result\u003Cunit,unit\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
           "name": "[static]fields.from-list",
           "parameters": [
-            "list\u003Ctuple\u003Cwasi:http/types@0.2.11#field-name,wasi:http/types@0.2.11#field-value\u003E\u003E"
+            "list\u003Ctuple\u003Cwasi:http/types@0.3.2#field-name,wasi:http/types@0.3.2#field-value\u003E\u003E"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:http/types@0.2.11#fields\u003E,wasi:http/types@0.2.11#header-error\u003E"
+            "result\u003Cown\u003Cwasi:http/types@0.3.2#fields\u003E,wasi:http/types@0.3.2#header-error\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[static]incoming-body.finish",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[static]request.consume-body",
           "parameters": [
-            "own\u003Cwasi:http/types@0.2.11#incoming-body\u003E"
+            "own\u003Cwasi:http/types@0.3.2#request\u003E",
+            "future\u003Cresult\u003Cunit,wasi:http/types@0.3.2#error-code\u003E\u003E"
           ],
           "results": [
-            "own\u003Cwasi:http/types@0.2.11#future-trailers\u003E"
+            "tuple\u003Cstream\u003Cu8\u003E,future\u003Cresult\u003Coption\u003Cown\u003Cwasi:http/types@0.3.2#fields\u003E\u003E,wasi:http/types@0.3.2#error-code\u003E\u003E\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[static]outgoing-body.finish",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[static]request.new",
           "parameters": [
-            "own\u003Cwasi:http/types@0.2.11#outgoing-body\u003E",
-            "option\u003Cown\u003Cwasi:http/types@0.2.11#fields\u003E\u003E"
+            "own\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "option\u003Cstream\u003Cu8\u003E\u003E",
+            "future\u003Cresult\u003Coption\u003Cown\u003Cwasi:http/types@0.3.2#fields\u003E\u003E,wasi:http/types@0.3.2#error-code\u003E\u003E",
+            "option\u003Cown\u003Cwasi:http/types@0.3.2#request-options\u003E\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:http/types@0.2.11#error-code\u003E"
+            "tuple\u003Cown\u003Cwasi:http/types@0.3.2#request\u003E,future\u003Cresult\u003Cunit,wasi:http/types@0.3.2#error-code\u003E\u003E\u003E"
           ]
         },
         {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "[static]response-outparam.set",
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[static]response.consume-body",
           "parameters": [
-            "own\u003Cwasi:http/types@0.2.11#response-outparam\u003E",
-            "result\u003Cown\u003Cwasi:http/types@0.2.11#outgoing-response\u003E,wasi:http/types@0.2.11#error-code\u003E"
-          ],
-          "results": []
-        },
-        {
-          "interface": "wasi:http/types@0.2.11",
-          "name": "http-error-code",
-          "parameters": [
-            "borrow\u003Cwasi:io/error@0.2.11#error\u003E"
+            "own\u003Cwasi:http/types@0.3.2#response\u003E",
+            "future\u003Cresult\u003Cunit,wasi:http/types@0.3.2#error-code\u003E\u003E"
           ],
           "results": [
-            "option\u003Cwasi:http/types@0.2.11#error-code\u003E"
+            "tuple\u003Cstream\u003Cu8\u003E,future\u003Cresult\u003Coption\u003Cown\u003Cwasi:http/types@0.3.2#fields\u003E\u003E,wasi:http/types@0.3.2#error-code\u003E\u003E\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:http/types@0.3.2",
+          "name": "[static]response.new",
+          "parameters": [
+            "own\u003Cwasi:http/types@0.3.2#fields\u003E",
+            "option\u003Cstream\u003Cu8\u003E\u003E",
+            "future\u003Cresult\u003Coption\u003Cown\u003Cwasi:http/types@0.3.2#fields\u003E\u003E,wasi:http/types@0.3.2#error-code\u003E\u003E"
+          ],
+          "results": [
+            "tuple\u003Cown\u003Cwasi:http/types@0.3.2#response\u003E,future\u003Cresult\u003Cunit,wasi:http/types@0.3.2#error-code\u003E\u003E\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:io/error@0.2.11",
-      "capability": "baseline",
-      "functions": [
-        {
-          "interface": "wasi:io/error@0.2.11",
-          "name": "[method]error.to-debug-string",
-          "parameters": [
-            "borrow\u003Cwasi:io/error@0.2.11#error\u003E"
-          ],
-          "results": [
-            "string"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "wasi:io/poll@0.2.11",
-      "capability": "baseline",
-      "functions": [
-        {
-          "interface": "wasi:io/poll@0.2.11",
-          "name": "[method]pollable.block",
-          "parameters": [
-            "borrow\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ],
-          "results": []
-        },
-        {
-          "interface": "wasi:io/poll@0.2.11",
-          "name": "[method]pollable.ready",
-          "parameters": [
-            "borrow\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ],
-          "results": [
-            "bool"
-          ]
-        },
-        {
-          "interface": "wasi:io/poll@0.2.11",
-          "name": "poll",
-          "parameters": [
-            "list\u003Cborrow\u003Cwasi:io/poll@0.2.11#pollable\u003E\u003E"
-          ],
-          "results": [
-            "list\u003Cu32\u003E"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "wasi:io/streams@0.2.11",
-      "capability": "baseline",
-      "functions": [
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]input-stream.blocking-read",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#input-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Clist\u003Cu8\u003E,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]input-stream.blocking-skip",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#input-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Cu64,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]input-stream.read",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#input-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Clist\u003Cu8\u003E,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]input-stream.skip",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#input-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Cu64,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]input-stream.subscribe",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#input-stream\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.blocking-flush",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.blocking-splice",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E",
-            "borrow\u003Cwasi:io/streams@0.2.11#input-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Cu64,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.blocking-write-and-flush",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E",
-            "list\u003Cu8\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.blocking-write-zeroes-and-flush",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Cunit,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.check-write",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E"
-          ],
-          "results": [
-            "result\u003Cu64,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.flush",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.splice",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E",
-            "borrow\u003Cwasi:io/streams@0.2.11#input-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Cu64,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.subscribe",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.write",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E",
-            "list\u003Cu8\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:io/streams@0.2.11",
-          "name": "[method]output-stream.write-zeroes",
-          "parameters": [
-            "borrow\u003Cwasi:io/streams@0.2.11#output-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Cunit,wasi:io/streams@0.2.11#stream-error\u003E"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "wasi:random/insecure-seed@0.2.11",
+      "module": "wasi:random/insecure-seed@0.3.2",
       "capability": "randomness",
       "functions": [
         {
-          "interface": "wasi:random/insecure-seed@0.2.11",
-          "name": "insecure-seed",
+          "interface": "wasi:random/insecure-seed@0.3.2",
+          "name": "get-insecure-seed",
           "parameters": [],
           "results": [
             "tuple\u003Cu64,u64\u003E"
@@ -1347,11 +943,11 @@ export const platformProviderCatalog = deepFreeze({
       ]
     },
     {
-      "module": "wasi:random/insecure@0.2.11",
+      "module": "wasi:random/insecure@0.3.2",
       "capability": "randomness",
       "functions": [
         {
-          "interface": "wasi:random/insecure@0.2.11",
+          "interface": "wasi:random/insecure@0.3.2",
           "name": "get-insecure-random-bytes",
           "parameters": [
             "u64"
@@ -1361,7 +957,7 @@ export const platformProviderCatalog = deepFreeze({
           ]
         },
         {
-          "interface": "wasi:random/insecure@0.2.11",
+          "interface": "wasi:random/insecure@0.3.2",
           "name": "get-insecure-random-u64",
           "parameters": [],
           "results": [
@@ -1371,11 +967,11 @@ export const platformProviderCatalog = deepFreeze({
       ]
     },
     {
-      "module": "wasi:random/random@0.2.11",
+      "module": "wasi:random/random@0.3.2",
       "capability": "randomness",
       "functions": [
         {
-          "interface": "wasi:random/random@0.2.11",
+          "interface": "wasi:random/random@0.3.2",
           "name": "get-random-bytes",
           "parameters": [
             "u64"
@@ -1385,7 +981,7 @@ export const platformProviderCatalog = deepFreeze({
           ]
         },
         {
-          "interface": "wasi:random/random@0.2.11",
+          "interface": "wasi:random/random@0.3.2",
           "name": "get-random-u64",
           "parameters": [],
           "results": [
@@ -1395,577 +991,441 @@ export const platformProviderCatalog = deepFreeze({
       ]
     },
     {
-      "module": "wasi:sockets/instance-network@0.2.11",
+      "module": "wasi:sockets/ip-name-lookup@0.3.2",
       "capability": "network",
       "functions": [
         {
-          "interface": "wasi:sockets/instance-network@0.2.11",
-          "name": "instance-network",
-          "parameters": [],
-          "results": [
-            "own\u003Cwasi:sockets/network@0.2.11#network\u003E"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "wasi:sockets/ip-name-lookup@0.2.11",
-      "capability": "network",
-      "functions": [
-        {
-          "interface": "wasi:sockets/ip-name-lookup@0.2.11",
-          "name": "[method]resolve-address-stream.resolve-next-address",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/ip-name-lookup@0.2.11#resolve-address-stream\u003E"
-          ],
-          "results": [
-            "result\u003Coption\u003Cwasi:sockets/ip-name-lookup@0.2.11#ip-address\u003E,wasi:sockets/ip-name-lookup@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/ip-name-lookup@0.2.11",
-          "name": "[method]resolve-address-stream.subscribe",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/ip-name-lookup@0.2.11#resolve-address-stream\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/ip-name-lookup@0.2.11",
+          "interface": "wasi:sockets/ip-name-lookup@0.3.2",
           "name": "resolve-addresses",
           "parameters": [
-            "borrow\u003Cwasi:sockets/network@0.2.11#network\u003E",
             "string"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:sockets/ip-name-lookup@0.2.11#resolve-address-stream\u003E,wasi:sockets/ip-name-lookup@0.2.11#error-code\u003E"
+            "result\u003Clist\u003Cwasi:sockets/ip-name-lookup@0.3.2#ip-address\u003E,wasi:sockets/ip-name-lookup@0.3.2#error-code\u003E"
           ]
         }
       ]
     },
     {
-      "module": "wasi:sockets/tcp-create-socket@0.2.11",
+      "module": "wasi:sockets/types@0.3.2",
       "capability": "network",
       "functions": [
         {
-          "interface": "wasi:sockets/tcp-create-socket@0.2.11",
-          "name": "create-tcp-socket",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.bind",
           "parameters": [
-            "wasi:sockets/tcp-create-socket@0.2.11#ip-address-family"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
+            "wasi:sockets/types@0.3.2#ip-socket-address"
           ],
           "results": [
-            "result\u003Cown\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E,wasi:sockets/tcp-create-socket@0.2.11#error-code\u003E"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "wasi:sockets/tcp@0.2.11",
-      "capability": "network",
-      "functions": [
-        {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.accept",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Ctuple\u003Cown\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E,own\u003Cwasi:io/streams@0.2.11#input-stream\u003E,own\u003Cwasi:io/streams@0.2.11#output-stream\u003E\u003E,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.address-family",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.connect",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
+            "wasi:sockets/types@0.3.2#ip-socket-address"
           ],
           "results": [
-            "wasi:sockets/tcp@0.2.11#ip-address-family"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.finish-bind",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-address-family",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "wasi:sockets/types@0.3.2#ip-address-family"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.finish-connect",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-hop-limit",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Ctuple\u003Cown\u003Cwasi:io/streams@0.2.11#input-stream\u003E,own\u003Cwasi:io/streams@0.2.11#output-stream\u003E\u003E,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cu8,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.finish-listen",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-is-listening",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.hop-limit",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Cu8,wasi:sockets/tcp@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.is-listening",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
             "bool"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.keep-alive-count",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-keep-alive-count",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cu32,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cu32,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.keep-alive-enabled",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-keep-alive-enabled",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cbool,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cbool,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.keep-alive-idle-time",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-keep-alive-idle-time",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cwasi:sockets/tcp@0.2.11#duration,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cwasi:sockets/types@0.3.2#duration,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.keep-alive-interval",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-keep-alive-interval",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cwasi:sockets/tcp@0.2.11#duration,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cwasi:sockets/types@0.3.2#duration,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.local-address",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-local-address",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cwasi:sockets/tcp@0.2.11#ip-socket-address,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cwasi:sockets/types@0.3.2#ip-socket-address,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.receive-buffer-size",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-receive-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cu64,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cu64,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.remote-address",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-remote-address",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cwasi:sockets/tcp@0.2.11#ip-socket-address,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cwasi:sockets/types@0.3.2#ip-socket-address,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.send-buffer-size",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.get-send-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
           ],
           "results": [
-            "result\u003Cu64,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cu64,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.listen",
+          "parameters": [
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
+          ],
+          "results": [
+            "result\u003Cstream\u003Cown\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E\u003E,wasi:sockets/types@0.3.2#error-code\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.receive",
+          "parameters": [
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E"
+          ],
+          "results": [
+            "tuple\u003Cstream\u003Cu8\u003E,future\u003Cresult\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E\u003E\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]tcp-socket.send",
+          "parameters": [
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
+            "stream\u003Cu8\u003E"
+          ],
+          "results": [
+            "future\u003Cresult\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-hop-limit",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
             "u8"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-keep-alive-count",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
             "u32"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-keep-alive-enabled",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
             "bool"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-keep-alive-idle-time",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
-            "wasi:sockets/tcp@0.2.11#duration"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
+            "wasi:sockets/types@0.3.2#duration"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-keep-alive-interval",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
-            "wasi:sockets/tcp@0.2.11#duration"
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
+            "wasi:sockets/types@0.3.2#duration"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-listen-backlog-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
             "u64"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-receive-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
             "u64"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]tcp-socket.set-send-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E",
             "u64"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.shutdown",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.bind",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
-            "wasi:sockets/tcp@0.2.11#shutdown-type"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E",
+            "wasi:sockets/types@0.3.2#ip-socket-address"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.start-bind",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.connect",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
-            "borrow\u003Cwasi:sockets/network@0.2.11#network\u003E",
-            "wasi:sockets/tcp@0.2.11#ip-socket-address"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E",
+            "wasi:sockets/types@0.3.2#ip-socket-address"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.start-connect",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.disconnect",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E",
-            "borrow\u003Cwasi:sockets/network@0.2.11#network\u003E",
-            "wasi:sockets/tcp@0.2.11#ip-socket-address"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.start-listen",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.get-address-family",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/tcp@0.2.11#error-code\u003E"
+            "wasi:sockets/types@0.3.2#ip-address-family"
           ]
         },
         {
-          "interface": "wasi:sockets/tcp@0.2.11",
-          "name": "[method]tcp-socket.subscribe",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.get-local-address",
           "parameters": [
-            "borrow\u003Cwasi:sockets/tcp@0.2.11#tcp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "wasi:sockets/udp-create-socket@0.2.11",
-      "capability": "network",
-      "functions": [
-        {
-          "interface": "wasi:sockets/udp-create-socket@0.2.11",
-          "name": "create-udp-socket",
-          "parameters": [
-            "wasi:sockets/udp-create-socket@0.2.11#ip-address-family"
-          ],
-          "results": [
-            "result\u003Cown\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E,wasi:sockets/udp-create-socket@0.2.11#error-code\u003E"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "wasi:sockets/udp@0.2.11",
-      "capability": "network",
-      "functions": [
-        {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]incoming-datagram-stream.receive",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#incoming-datagram-stream\u003E",
-            "u64"
-          ],
-          "results": [
-            "result\u003Clist\u003Cwasi:sockets/udp@0.2.11#incoming-datagram\u003E,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cwasi:sockets/types@0.3.2#ip-socket-address,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]incoming-datagram-stream.subscribe",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.get-receive-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#incoming-datagram-stream\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
+            "result\u003Cu64,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]outgoing-datagram-stream.check-send",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.get-remote-address",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#outgoing-datagram-stream\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "result\u003Cu64,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cwasi:sockets/types@0.3.2#ip-socket-address,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]outgoing-datagram-stream.send",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.get-send-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#outgoing-datagram-stream\u003E",
-            "list\u003Cwasi:sockets/udp@0.2.11#outgoing-datagram\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "result\u003Cu64,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cu64,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]outgoing-datagram-stream.subscribe",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.get-unicast-hop-limit",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#outgoing-datagram-stream\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
+            "result\u003Cu8,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.address-family",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.receive",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E"
           ],
           "results": [
-            "wasi:sockets/udp@0.2.11#ip-address-family"
+            "result\u003Ctuple\u003Clist\u003Cu8\u003E,wasi:sockets/types@0.3.2#ip-socket-address\u003E,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.finish-bind",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[method]udp-socket.send",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E",
+            "list\u003Cu8\u003E",
+            "option\u003Cwasi:sockets/types@0.3.2#ip-socket-address\u003E"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.local-address",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Cwasi:sockets/udp@0.2.11#ip-socket-address,wasi:sockets/udp@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.receive-buffer-size",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Cu64,wasi:sockets/udp@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.remote-address",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Cwasi:sockets/udp@0.2.11#ip-socket-address,wasi:sockets/udp@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.send-buffer-size",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Cu64,wasi:sockets/udp@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/udp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]udp-socket.set-receive-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E",
             "u64"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]udp-socket.set-send-buffer-size",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E",
             "u64"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
+          "interface": "wasi:sockets/types@0.3.2",
           "name": "[method]udp-socket.set-unicast-hop-limit",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E",
+            "borrow\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E",
             "u8"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cunit,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.start-bind",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[static]tcp-socket.create",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E",
-            "borrow\u003Cwasi:sockets/network@0.2.11#network\u003E",
-            "wasi:sockets/udp@0.2.11#ip-socket-address"
+            "wasi:sockets/types@0.3.2#ip-address-family"
           ],
           "results": [
-            "result\u003Cunit,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cown\u003Cwasi:sockets/types@0.3.2#tcp-socket\u003E,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         },
         {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.stream",
+          "interface": "wasi:sockets/types@0.3.2",
+          "name": "[static]udp-socket.create",
           "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E",
-            "option\u003Cwasi:sockets/udp@0.2.11#ip-socket-address\u003E"
+            "wasi:sockets/types@0.3.2#ip-address-family"
           ],
           "results": [
-            "result\u003Ctuple\u003Cown\u003Cwasi:sockets/udp@0.2.11#incoming-datagram-stream\u003E,own\u003Cwasi:sockets/udp@0.2.11#outgoing-datagram-stream\u003E\u003E,wasi:sockets/udp@0.2.11#error-code\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.subscribe",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
-          ],
-          "results": [
-            "own\u003Cwasi:io/poll@0.2.11#pollable\u003E"
-          ]
-        },
-        {
-          "interface": "wasi:sockets/udp@0.2.11",
-          "name": "[method]udp-socket.unicast-hop-limit",
-          "parameters": [
-            "borrow\u003Cwasi:sockets/udp@0.2.11#udp-socket\u003E"
-          ],
-          "results": [
-            "result\u003Cu8,wasi:sockets/udp@0.2.11#error-code\u003E"
+            "result\u003Cown\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E,wasi:sockets/types@0.3.2#error-code\u003E"
           ]
         }
       ]

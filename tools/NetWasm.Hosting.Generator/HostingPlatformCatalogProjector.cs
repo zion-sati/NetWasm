@@ -7,26 +7,21 @@ namespace NetWasm.Hosting.Generator;
 
 internal interface IHostingPlatformCatalogProjector
 {
-    HostingPlatformCatalog Project(
-        WitInterfaceCatalog catalog,
-        Preview2ShimIdentity shim);
+    HostingPlatformCatalog Project(WitInterfaceCatalog catalog);
 }
 
 internal sealed class HostingPlatformCatalogProjector(
-    IWasiPreview2CapabilityClassifier capabilities,
+    IWasiCapabilityClassifier capabilities,
     ITextHasher hashes) : IHostingPlatformCatalogProjector
 {
-    private readonly IWasiPreview2CapabilityClassifier _capabilities = capabilities ??
+    private readonly IWasiCapabilityClassifier _capabilities = capabilities ??
         throw new ArgumentNullException(nameof(capabilities));
     private readonly ITextHasher _hashes = hashes ??
         throw new ArgumentNullException(nameof(hashes));
 
-    public HostingPlatformCatalog Project(
-        WitInterfaceCatalog catalog,
-        Preview2ShimIdentity shim)
+    public HostingPlatformCatalog Project(WitInterfaceCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(shim);
         if (catalog.Interfaces.IsDefaultOrEmpty
             || string.IsNullOrWhiteSpace(catalog.World)
             || string.IsNullOrWhiteSpace(catalog.NormalizedWitJson))
@@ -41,21 +36,18 @@ internal sealed class HostingPlatformCatalogProjector(
             {
                 throw new InvalidDataException("WIT interface contract is incomplete.");
             }
+            // An interface the world imports with no functions (wasi:cli/terminal-input) defines
+            // resources, which a JavaScript host supplies as classes: it is a provider too.
             var capability = _capabilities.Classify(contract.Module);
-            if (contract.Functions.IsEmpty)
-            {
-                continue;
-            }
             providers.Add(new(
                 contract.Module,
                 capability,
                 [.. contract.Functions.Select(ProjectFunction)]));
         }
         return new(
-            1,
+            2,
             catalog.World,
             _hashes.Hash(catalog.NormalizedWitJson),
-            shim,
             [.. providers]);
     }
 

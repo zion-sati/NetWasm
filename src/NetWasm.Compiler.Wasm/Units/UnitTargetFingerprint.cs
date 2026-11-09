@@ -51,6 +51,7 @@ internal static class UnitTargetFingerprint
         answer.Add(runtime.IncludeWeakHandles);
         answer.Add(runtime.IncludeRandomSeed);
         answer.Add(runtime.IncludeArraySetValue);
+        answer.Add(runtime.IncludeObjectClone);
         answer.Add(runtime.IncludeUnhandledExceptionHint);
         answer.Add(target.FunctionIndices.ManagedThrowFunctionIndex.IsPresent);
         answer.Add(target.FunctionIndices.ManagedRethrowFunctionIndex.IsPresent);
@@ -96,7 +97,9 @@ internal static class UnitTargetFingerprint
             answer.Add(binding.StatusField);
             answer.Add(binding.ResultField);
             answer.Add(binding.GetVoidResult);
-            answer.Add(binding.CommandEntryPoint);
+            answer.Add(binding.CommandEntry?.Start);
+            answer.Add(binding.CommandEntry?.Callback);
+            answer.Add(binding.CommandEntry?.ExitCode);
         }
         answer.Add(target.NativeImports.Methods.Length);
         foreach (var import in target.NativeImports.Methods)

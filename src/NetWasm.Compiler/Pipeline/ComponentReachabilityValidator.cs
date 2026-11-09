@@ -34,7 +34,7 @@ internal sealed class ComponentReachabilityValidator : IComponentReachabilityVal
         var reachableImports = program.WitImportMethods;
         var reachableExports = exports
             .Select(export => methods.GetMethod(export.Method))
-            .Where(method => method.WitExport is not null)
+            .Where(method => method.WitExport is { IsComponentLift: false })
             .Select(method => method.Key)
             .ToImmutableHashSet();
         if (reachableImports.Length == 0 && reachableExports.Count == 0)
@@ -58,7 +58,8 @@ internal sealed class ComponentReachabilityValidator : IComponentReachabilityVal
         var declaredExports = contract.Exports.Select(function => function.ManagedMethod)
             .ToImmutableHashSet();
         var missingImports = reachableImports
-            .Where(method => !declaredImports.Contains(method.WitImport!.Identity))
+            .Where(method => !method.WitImport!.IsCanonicalBuiltIn &&
+                !declaredImports.Contains(method.WitImport.Identity))
             .Select(method => method.Key)
             .ToArray();
         var missingExports = reachableExports.Except(declaredExports).ToArray();

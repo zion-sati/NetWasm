@@ -22,20 +22,7 @@ public sealed class ExecutionDescriptorWriterTests
         Assert.Equal(descriptor.DeploymentManifestPath, json.RootElement.GetProperty("deploymentManifestPath").GetString());
         var reader = Assert.IsAssignableFrom<IExecutionDescriptorReader>(new ExecutionDescriptorReader(new ExecutionDescriptorValidator()));
         var restored = reader.Read(bytes);
-        Assert.Equal(descriptor with { ToolPackages = restored.ToolPackages }, restored);
-        Assert.Equal<ExecutionToolPackage>(descriptor.ToolPackages, restored.ToolPackages);
-    }
-
-    [Fact]
-    public void CanonicalizesPackageOrderWithoutMutatingInput()
-    {
-        var descriptor = DescriptorFixture.Create();
-        var first = descriptor.ToolPackages[0] with { Id = "A.Tools" };
-        var last = descriptor.ToolPackages[0] with { Id = "Z.Tools" };
-        descriptor = descriptor with { ToolPackages = [last, first] };
-        var subject = Assert.IsAssignableFrom<IExecutionDescriptorWriter>(new ExecutionDescriptorWriter(new ExecutionDescriptorValidator()));
-        Assert.Equal(subject.Write(descriptor with { ToolPackages = [first, last] }), subject.Write(descriptor));
-        Assert.Same(last, descriptor.ToolPackages[0]);
+        Assert.Equal(descriptor, restored);
     }
 
     [Fact]

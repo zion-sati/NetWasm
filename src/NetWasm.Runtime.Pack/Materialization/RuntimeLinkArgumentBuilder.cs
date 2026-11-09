@@ -27,8 +27,11 @@ internal sealed class RuntimeLinkArgumentBuilder(IRuntimeLinkExportPlanBuilder e
         arguments.Add("-Bstatic");
         arguments.Add("--strip-debug");
         arguments.Add("--table-base=1");
+        var platform = request.Target.PlatformArchives ??
+            throw new InvalidOperationException("The NetWasm runtime platform archives are missing.");
         arguments.Add("--whole-archive");
         arguments.Add(ResolveAsset(request.AssetRoot, request.Target.RuntimeArchive.Path));
+        arguments.Add(ResolveAsset(request.AssetRoot, (request.PlainCoreModule ? platform.NoWasi : platform.Wasi).Path));
         arguments.Add("--no-whole-archive");
         arguments.Add(ResolveAsset(request.AssetRoot, request.Target.CollectorArchive.Path));
         if (hasCallbacks)

@@ -53,7 +53,7 @@ namespace System
         public virtual long TimestampFrequency => 1_000_000_000L;
 
         public virtual long GetTimestamp() =>
-            unchecked((long)PlatformServices.MonotonicClock.GetMonotonicTime());
+            PlatformServices.Clock.GetTimestamp();
 
         public TimeSpan GetElapsedTime(long startingTimestamp) =>
             GetElapsedTime(startingTimestamp, GetTimestamp());

@@ -11,6 +11,15 @@ public sealed class DateTimeFormatInfo : IFormatProvider
 
     public static DateTimeFormatInfo InvariantInfo => s_invariantInfo;
 
+    // NetWasm: the invariant format's calendar, which is upstream's invariant one, the
+    // Gregorian calendar. The invariant format is read-only, so setting a calendar throws, as
+    // upstream's read-only instances do.
+    public Calendar Calendar
+    {
+        get => GregorianCalendar.GetDefaultInstance();
+        set => throw new InvalidOperationException(SR.InvalidOperation_ReadOnly);
+    }
+
     public string ShortDatePattern => "MM/dd/yyyy";
 
     public string LongDatePattern => "dddd, dd MMMM yyyy";

@@ -30,6 +30,7 @@ public sealed class RawModuleLinkExecutionTests
         Assert.Equal(WasmInlineAnnotationSelection.SizeAware, stages.Merge.RuntimeInlineAnnotations);
         Assert.Equal(FinalWasmOptimization.O1, stages.Optimization!.Value.Item4);
         Assert.True(stages.Converge);
+        Assert.True(stages.LowMemoryUnused);
     }
 
     [Fact]
@@ -56,7 +57,8 @@ public sealed class RawModuleLinkExecutionTests
                 FinalWasmOptimization.O1,
                 WasmInlineAnnotationSelection.Preserve,
                 WasmInlineAnnotationSelection.SizeAware,
-                Converge: true);
+                Converge: true,
+                LowMemoryUnused: true);
         }
     }
 
@@ -195,6 +197,7 @@ public sealed class RawModuleLinkExecutionTests
         public ComponentCoreModuleMergeRequest? Merge { get; private set; }
         public (string, string, ComponentTarget, FinalWasmOptimization)? Optimization { get; private set; }
         public bool? Converge { get; private set; }
+        public bool? LowMemoryUnused { get; private set; }
         public (string, string)? Publication { get; private set; }
         public string? DeletedDirectory { get; private set; }
 
@@ -215,11 +218,13 @@ public sealed class RawModuleLinkExecutionTests
             string outputPath,
             ComponentTarget target,
             FinalWasmOptimization optimization,
-            bool converge)
+            bool converge,
+            bool lowMemoryUnused)
         {
             Enter("optimize");
             Optimization = (inputPath, outputPath, target, optimization);
             Converge = converge;
+            LowMemoryUnused = lowMemoryUnused;
         }
 
         public void Move(string sourcePath, string destinationPath)

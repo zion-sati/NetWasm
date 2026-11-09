@@ -69,7 +69,7 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
     [Output] public string ToolchainPackageId { get; private set; } = string.Empty;
     [Output] public string ToolchainPackageVersion { get; private set; } = string.Empty;
     [Output] public string CommandWitPackagePath { get; private set; } = string.Empty;
-    [Output] public string AsyncCommandWitPackagePath { get; private set; } = string.Empty;
+    [Output] public string DiagnosticCommandWitPackagePath { get; private set; } = string.Empty;
     [Output] public string CompilerWitPackagePath { get; private set; } = string.Empty;
     [Output] public string RawInspectionCommandPath { get; private set; } = string.Empty;
     [Output] public string BinaryenPath { get; private set; } = string.Empty;
@@ -81,8 +81,12 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
     [Output] public string BinaryenPortableVersion { get; private set; } = string.Empty;
     [Output] public string JcoPath { get; private set; } = string.Empty;
     [Output] public string JcoVersion { get; private set; } = string.Empty;
-    [Output] public string Preview2ShimVersion { get; private set; } = string.Empty;
-    [Output] public string Preview2ShimRoot { get; private set; } = string.Empty;
+    [Output] public string Preview3ShimVersion { get; private set; } = string.Empty;
+    // The Node.js wasi:http client a deployment that imports wasi:http carries: the directory
+    // its paths start from, its entry point, and its other files, separated by ';'.
+    [Output] public string NodeHttpProviderRoot { get; private set; } = string.Empty;
+    [Output] public string NodeHttpProviderEntryPath { get; private set; } = string.Empty;
+    [Output] public string NodeHttpProviderFiles { get; private set; } = string.Empty;
     [Output] public string TimeZoneSourceRoot { get; private set; } = string.Empty;
     [Output] public string TimeZoneDataVersion { get; private set; } = string.Empty;
     [Output] public string HostingBundleCommandPath { get; private set; } = string.Empty;
@@ -104,7 +108,7 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
         (nameof(ToolchainPackageId), task => task.ToolchainPackageId, (task, value) => task.ToolchainPackageId = value),
         (nameof(ToolchainPackageVersion), task => task.ToolchainPackageVersion, (task, value) => task.ToolchainPackageVersion = value),
         (nameof(CommandWitPackagePath), task => task.CommandWitPackagePath, (task, value) => task.CommandWitPackagePath = value),
-        (nameof(AsyncCommandWitPackagePath), task => task.AsyncCommandWitPackagePath, (task, value) => task.AsyncCommandWitPackagePath = value),
+        (nameof(DiagnosticCommandWitPackagePath), task => task.DiagnosticCommandWitPackagePath, (task, value) => task.DiagnosticCommandWitPackagePath = value),
         (nameof(CompilerWitPackagePath), task => task.CompilerWitPackagePath, (task, value) => task.CompilerWitPackagePath = value),
         (nameof(RawInspectionCommandPath), task => task.RawInspectionCommandPath, (task, value) => task.RawInspectionCommandPath = value),
         (nameof(BinaryenPath), task => task.BinaryenPath, (task, value) => task.BinaryenPath = value),
@@ -116,8 +120,10 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
         (nameof(BinaryenPortableVersion), task => task.BinaryenPortableVersion, (task, value) => task.BinaryenPortableVersion = value),
         (nameof(JcoPath), task => task.JcoPath, (task, value) => task.JcoPath = value),
         (nameof(JcoVersion), task => task.JcoVersion, (task, value) => task.JcoVersion = value),
-        (nameof(Preview2ShimVersion), task => task.Preview2ShimVersion, (task, value) => task.Preview2ShimVersion = value),
-        (nameof(Preview2ShimRoot), task => task.Preview2ShimRoot, (task, value) => task.Preview2ShimRoot = value),
+        (nameof(Preview3ShimVersion), task => task.Preview3ShimVersion, (task, value) => task.Preview3ShimVersion = value),
+        (nameof(NodeHttpProviderRoot), task => task.NodeHttpProviderRoot, (task, value) => task.NodeHttpProviderRoot = value),
+        (nameof(NodeHttpProviderEntryPath), task => task.NodeHttpProviderEntryPath, (task, value) => task.NodeHttpProviderEntryPath = value),
+        (nameof(NodeHttpProviderFiles), task => task.NodeHttpProviderFiles, (task, value) => task.NodeHttpProviderFiles = value),
         (nameof(TimeZoneSourceRoot), task => task.TimeZoneSourceRoot, (task, value) => task.TimeZoneSourceRoot = value),
         (nameof(TimeZoneDataVersion), task => task.TimeZoneDataVersion, (task, value) => task.TimeZoneDataVersion = value),
         (nameof(HostingBundleCommandPath), task => task.HostingBundleCommandPath, (task, value) => task.HostingBundleCommandPath = value),
@@ -166,7 +172,7 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
             ToolchainPackageId = result.Toolchain.PackageId;
             ToolchainPackageVersion = result.Toolchain.PackageVersion;
             CommandWitPackagePath = result.Toolchain.WitPackages.CommandPath;
-            AsyncCommandWitPackagePath = result.Toolchain.WitPackages.AsyncCommandPath;
+            DiagnosticCommandWitPackagePath = result.Toolchain.WitPackages.DiagnosticCommandPath;
             CompilerWitPackagePath = result.Toolchain.WitPackages.CompilerPath;
             RawInspectionCommandPath = result.Toolchain.RawInspection.InspectionCommandPath;
             BinaryenPath = result.Toolchain.RawInspection.BinaryenModulePath;
@@ -182,8 +188,10 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
                 : "native";
             JcoPath = result.Toolchain.Jco.EntryPointPath;
             JcoVersion = result.Toolchain.Jco.JcoVersion;
-            Preview2ShimVersion = result.Toolchain.Jco.Preview2ShimVersion;
-            Preview2ShimRoot = result.Toolchain.Preview2ShimRoot;
+            Preview3ShimVersion = result.Toolchain.Jco.Preview3ShimVersion;
+            NodeHttpProviderRoot = result.Toolchain.Jco.NodeHttpProvider.Root;
+            NodeHttpProviderEntryPath = result.Toolchain.Jco.NodeHttpProvider.EntryPointPath;
+            NodeHttpProviderFiles = string.Join(';', result.Toolchain.Jco.NodeHttpProvider.FilePaths);
             TimeZoneSourceRoot = result.Toolchain.TimeZones.SourceRoot;
             TimeZoneDataVersion = result.Toolchain.TimeZones.DataVersion;
             HostingBundleCommandPath = result.Toolchain.HostingBundle.CommandPath;

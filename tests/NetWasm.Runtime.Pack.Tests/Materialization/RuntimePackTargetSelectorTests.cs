@@ -33,6 +33,7 @@ public sealed class RuntimePackTargetSelectorTests
         Assert.Equal(preferSpeed ? speed.RuntimeArchive : original.RuntimeArchive, result.RuntimeArchive);
         Assert.Equal(preferSpeed ? speed.CollectorArchive : original.CollectorArchive, result.CollectorArchive);
         Assert.Equal(preferSpeed ? speed.RuntimeFootprintBytes : original.RuntimeFootprintBytes, result.RuntimeFootprintBytes);
+        Assert.Equal(preferSpeed ? speed.PlatformArchives : original.PlatformArchives, result.PlatformArchives);
         Assert.Equal(original.Target, result.Target);
         Assert.Equal(original.GarbageCollector, result.GarbageCollector);
         Assert.Same(original.SystemLibraries, result.SystemLibraries);

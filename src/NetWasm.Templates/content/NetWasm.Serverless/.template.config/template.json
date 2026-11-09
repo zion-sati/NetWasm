@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "NetWasm",
+  "classifications": [ "NetWasm", "Wasm", "WASI", "HTTP", "Serverless" ],
+  "identity": "NetWasm.Templates.Serverless",
+  "name": "NetWasm HTTP Service",
+  "shortName": "netwasm-serverless",
+  "sourceName": "NetWasmService",
+  "preferNameDirectory": true,
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  }
+}

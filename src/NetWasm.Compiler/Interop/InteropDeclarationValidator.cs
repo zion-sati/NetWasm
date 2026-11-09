@@ -89,6 +89,34 @@ internal sealed class InteropDeclarationValidator(
                 "WitImport must be a bodyless static method");
         }
         ValidateScalarSignature(symbols, method, "WitImport");
+        if (method.WitImport!.IsCanonicalBuiltIn)
+        {
+            ValidateComponentBuiltIn(symbols, method, method.WitImport);
+        }
+    }
+
+    // Built-ins are bracketed core names in `$root`, an `[export]` module, or an
+    // interface at its full version; anything else is a WIT function.
+    private static void ValidateComponentBuiltIn(
+        ISymbolFormatter symbols,
+        MethodDefinitionModel method,
+        WitImportDeclaration builtIn)
+    {
+        var module = builtIn.InterfaceName;
+        var interfaceName = module.StartsWith("[export]", StringComparison.Ordinal)
+            ? module["[export]".Length..]
+            : module;
+        // `[export]$root` is the module of a world function's task.return.
+        var moduleIsValid = interfaceName == "$root" ||
+            (interfaceName.Contains('/', StringComparison.Ordinal) &&
+                interfaceName.IndexOf('@', StringComparison.Ordinal) is var version and > 0 &&
+                interfaceName[(version + 1)..].Split('.').Length >= 3);
+        if (!moduleIsValid || !builtIn.FunctionName.StartsWith('['))
+        {
+            throw Invalid(symbols, method,
+                "ComponentBuiltIn must name '$root', '[export]' and the world or an interface, or an interface " +
+                "at its full version, and a bracketed built-in name");
+        }
     }
 
     private static void ValidateWitExport(

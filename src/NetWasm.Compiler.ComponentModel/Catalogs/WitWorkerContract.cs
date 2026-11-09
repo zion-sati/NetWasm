@@ -9,13 +9,7 @@ public sealed record WitWorkerContract(
     int SchemaVersion,
     string World,
     ImmutableArray<WitWorkerExport> Exports,
-    ImmutableArray<WitWorkerTypeDefinition> Types,
-    WitWorkerReactor? Reactor);
-
-public sealed record WitWorkerReactor(
-    string Interface,
-    string JavaScriptRoot,
-    string JavaScriptMember);
+    ImmutableArray<WitWorkerTypeDefinition> Types);
 
 public sealed record WitWorkerExport(
     string Operation,

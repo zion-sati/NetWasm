@@ -16,7 +16,6 @@ public sealed class WitParserConformanceTests
     private static readonly ImmutableDictionary<string, string> Unsupported =
         new Dictionary<string, string>
         {
-            ["async.wit test:async/y"] = "asynchronous WIT function 'x' in world 'y' is not supported",
             ["maps.wit foo:maps/maps-world"] = "unsupported named WIT type 'map'",
         }.ToImmutableDictionary();
 

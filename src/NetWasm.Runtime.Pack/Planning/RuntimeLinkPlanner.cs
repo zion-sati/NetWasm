@@ -94,12 +94,16 @@ public static class RuntimeLinkPlanner
             request.AssetRoot.TrimEnd('/') + "/" + target.RuntimeArchive.Path.Replace('\\', '/'),
             target.RuntimeArchive.Sha256);
         var collectorInput = ResolveInput(request.AssetRoot, target.CollectorArchive);
+        // A browser link is never a plain core module's: it takes the WASI platform functions.
+        var platformArchive = (target.PlatformArchives ??
+            throw new InvalidOperationException("The NetWasm runtime platform archives are missing.")).Wasi;
+        var platformInput = ResolveInput(request.AssetRoot, platformArchive);
         var allowedUndefinedInput = ResolveInput(
             request.AssetRoot, target.AllowedUndefinedSymbols);
         var nativeInputs = nativeBindings.Select(binding => binding.Provider)
             .DistinctBy(provider => provider.Path, StringComparer.Ordinal)
             .Select(provider => new RuntimeLinkPlanAsset(provider.Path, provider.Sha256));
-        var inputs = ImmutableArray.Create(runtimeInput, collectorInput, allowedUndefinedInput)
+        var inputs = ImmutableArray.Create(runtimeInput, collectorInput, allowedUndefinedInput, platformInput)
             .AddRange(nativeInputs)
             .AddRange(request.SystemLibraries);
         if (inputs.Any(asset => asset.Path == request.OutputPath))
@@ -114,6 +118,9 @@ public static class RuntimeLinkPlanner
         paths[Path.GetFullPath(Path.Combine(
             Path.GetFullPath(request.AssetRoot), target.CollectorArchive.Path))] =
             collectorInput.Path;
+        paths[Path.GetFullPath(Path.Combine(
+            Path.GetFullPath(request.AssetRoot), platformArchive.Path))] =
+            platformInput.Path;
         paths[Path.GetFullPath(Path.Combine(
             Path.GetFullPath(request.AssetRoot), target.AllowedUndefinedSymbols.Path))] =
             allowedUndefinedInput.Path;

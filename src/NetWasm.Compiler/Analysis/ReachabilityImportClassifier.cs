@@ -68,9 +68,11 @@ internal sealed class ReachabilityImportClassifier(
             constructedTypes.Add(asyncBinding.TaskType);
             allocatedTypes.Add(asyncBinding.TaskType);
             fields.Add(asyncBinding.StatusField);
-            if (request.IsProcessEntryPoint && asyncBinding.CommandEntryPoint is { } commandEntryPoint)
+            if (request.IsProcessEntryPoint && asyncBinding.CommandEntry is { } commandEntry)
             {
-                enqueuedMethods.Add(commandEntryPoint);
+                enqueuedMethods.Add(commandEntry.Start);
+                enqueuedMethods.Add(commandEntry.Callback);
+                enqueuedMethods.Add(commandEntry.ExitCode);
             }
             else if (request.IsProcessEntryPoint || isAsyncExportBoundary)
             {

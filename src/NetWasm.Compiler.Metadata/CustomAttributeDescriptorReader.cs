@@ -8,7 +8,7 @@ namespace NetWasm.Compiler.Metadata;
 internal sealed class CustomAttributeDescriptorReader(
     ImmutableDictionary<AssemblyIdentity, MetadataAssemblySnapshot> sources,
     ITypeDefinitionResolver definitions,
-    IMetadataSignatureTypeResolver signatures) : ICustomAttributeDescriptorReader
+    IMetadataSignatureTypeResolver signatures) : CustomAttributeDescriptions(signatures), ICustomAttributeDescriptorReader
 {
     public ImmutableArray<CustomAttributeDescriptor> Read(CliTypeIdentity type)
     {
@@ -16,9 +16,35 @@ internal sealed class CustomAttributeDescriptorReader(
         var source = sources[definition.Key.Assembly];
         var target = source.Reader.GetTypeDefinition(
             (TypeDefinitionHandle)MetadataTokens.Handle(definition.Key.MetadataToken));
-        var context = new CliGenericContext(type.TypeArguments, []);
+        return Describe(source, target.GetCustomAttributes(), new CliGenericContext(type.TypeArguments, []));
+    }
+}
+
+// The attributes an assembly declares on itself.
+internal sealed class AssemblyAttributeDescriptorReader(
+    ImmutableDictionary<AssemblyIdentity, MetadataAssemblySnapshot> sources,
+    IMetadataSignatureTypeResolver signatures) : CustomAttributeDescriptions(signatures), IAssemblyAttributeDescriptorReader
+{
+    public ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly)
+    {
+        var source = sources[assembly];
+        return Describe(
+            source,
+            source.Reader.GetAssemblyDefinition().GetCustomAttributes(),
+            new CliGenericContext([], []));
+    }
+}
+
+// Describes a handle collection's attributes: each one's owner, token, constructor and type.
+internal abstract class CustomAttributeDescriptions(IMetadataSignatureTypeResolver signatures)
+{
+    private protected ImmutableArray<CustomAttributeDescriptor> Describe(
+        MetadataAssemblySnapshot source,
+        CustomAttributeHandleCollection attributes,
+        CliGenericContext context)
+    {
         var results = ImmutableArray.CreateBuilder<CustomAttributeDescriptor>();
-        foreach (var handle in target.GetCustomAttributes())
+        foreach (var handle in attributes)
         {
             var attribute = source.Reader.GetCustomAttribute(handle);
             // SRM validates the CustomAttributeType coded index and exposes

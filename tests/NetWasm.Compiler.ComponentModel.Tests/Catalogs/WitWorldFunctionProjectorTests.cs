@@ -101,10 +101,9 @@ public sealed class WitWorldFunctionProjectorTests
         Assert.Empty(workerExport.Parameters);
         Assert.Null(workerExport.Result);
         Assert.Equal("freestanding", workerExport.Kind.Name);
-        Assert.Equal(2, projection.WorkerContract.SchemaVersion);
+        Assert.Equal(3, projection.WorkerContract.SchemaVersion);
         Assert.Equal("example:app/command@4.5.6", projection.WorkerContract.World);
         Assert.Empty(projection.WorkerContract.Types);
-        Assert.Null(projection.WorkerContract.Reactor);
     }
 
     [Fact]
@@ -185,88 +184,6 @@ public sealed class WitWorldFunctionProjectorTests
         Assert.Equal("point", type.Name);
         Assert.True(type.Kind.TryGetProperty("record", out _));
         Assert.Equal(new("interface", "example:worker/math-api@1.0.0"), type.Owner);
-        Assert.Null(contract.Reactor);
-    }
-
-    [Fact]
-    public void ProjectsOptionalReactorFromPackagedWorkerWorld()
-    {
-        var reactorHost = new WitInterface(
-            0,
-            "reactor-host",
-            "netwasm:runtime@1.0.0",
-            [],
-            [
-                Function("watch", [], null),
-                Function("cancel", [], null),
-            ]);
-        var reactorGuest = new WitInterface(
-            1,
-            "reactor-guest",
-            "netwasm:runtime@1.0.0",
-            [],
-            [Function(
-                "wake",
-                [new("token", new WitTypeReference.Primitive("u32"))],
-                null)]);
-        var application = new WitWorld(
-            0,
-            "application",
-            "example:worker@1.0.0",
-            [],
-            [new("value", null, Function("value", [], null))]);
-        var worker = new WitWorld(
-            1,
-            "worker",
-            "example:worker@1.0.0",
-            [new("netwasm:runtime/reactor-host@1.0.0", 0, null)],
-            [
-                new("value", null, Function("value", [], null)),
-                new("netwasm:runtime/reactor-guest@1.0.0", 1, null),
-            ]);
-        var document = new WitDocument(
-            [], [reactorHost, reactorGuest], [application, worker], [], "{}");
-
-        var projected = Create().Project(document, worker, application);
-
-        var reactor = Assert.IsType<WitWorkerReactor>(
-            projected.WorkerContract.Reactor);
-        Assert.Equal("netwasm:runtime/reactor-guest@1.0.0", reactor.Interface);
-        Assert.Equal("reactorGuest", reactor.JavaScriptRoot);
-        Assert.Equal("wake", reactor.JavaScriptMember);
-    }
-
-    [Fact]
-    public void ProjectsGuestOnlyReactorFromSynchronousPackagedWorkerWorld()
-    {
-        var reactorGuest = new WitInterface(
-            0,
-            "reactor-guest",
-            "netwasm:runtime@1.0.0",
-            [],
-            [Function(
-                "wake",
-                [new("token", new WitTypeReference.Primitive("u32"))],
-                null)]);
-        var world = new WitWorld(
-            0,
-            "worker",
-            "example:worker@1.0.0",
-            [],
-            [
-                new("value", null, Function("value", [], null)),
-                new("netwasm:runtime/reactor-guest@1.0.0", 0, null),
-            ]);
-        var document = new WitDocument([], [reactorGuest], [world], [], "{}");
-
-        var projected = Create().Project(document, world);
-
-        Assert.Equal(
-            new WitWorkerReactor(
-                "netwasm:runtime/reactor-guest@1.0.0",
-                "reactorGuest",
-                "wake"),
-            projected.WorkerContract.Reactor);
     }
 
     [Fact]
@@ -295,6 +212,7 @@ public sealed class WitWorldFunctionProjectorTests
                     "root-value",
                     [],
                     new WitTypeReference.Primitive("s32"))),
+                new("reset", null, Function("reset", [], null)),
             ]);
         var sourceWorker = application with { Id = 1, Name = "worker" };
         var source = new WitDocument(
@@ -316,6 +234,7 @@ public sealed class WitWorldFunctionProjectorTests
                     "root-value",
                     [],
                     new WitTypeReference.Primitive("s32"))),
+                new("reset", null, Function("reset", [], null)),
             ]);
         var packagedDocument = new WitDocument(
             [],
@@ -340,8 +259,11 @@ public sealed class WitWorldFunctionProjectorTests
         Assert.Collection(
             projected.Exports,
             export => Assert.Equal(
-                "example:worker/application@1.0.0",
-                export.Interface),
+                ("example:worker/application@1.0.0", "reset"),
+                (export.Interface, export.Name)),
+            export => Assert.Equal(
+                ("example:worker/application@1.0.0", "root-value"),
+                (export.Interface, export.Name)),
             export => Assert.Equal(
                 "example:worker/math-api@1.0.0",
                 export.Interface));
@@ -555,42 +477,21 @@ public sealed class WitWorldFunctionProjectorTests
     }
 
     [Fact]
-    public void RejectsUnpairedReactorHostAndGuestInterfaces()
+    public void RejectsAnInterfaceImportedTwice()
     {
-        var reactorHost = new WitInterface(
+        var host = new WitInterface(
             0,
-            "reactor-host",
-            "netwasm:runtime@1.0.0",
-            [],
-            [Function("watch", [], null), Function("cancel", [], null)]);
-        var world = new WitWorld(
-            0,
-            "worker",
+            "host",
             "example:worker@1.0.0",
-            [new("netwasm:runtime/reactor-host@1.0.0", 0, null)],
-            [new("value", null, Function("value", [], null))]);
-
-        AssertInvalid(
-            () => Create().Project(new([], [reactorHost], [world], [], "{}"), world),
-            "require exactly one reactor-guest export");
-    }
-
-    [Fact]
-    public void RejectsDuplicateReactorHostImports()
-    {
-        var reactorHost = new WitInterface(
-            0,
-            "reactor-host",
-            "netwasm:runtime@1.0.0",
             [],
             [Function("watch", [], null), Function("cancel", [], null)]);
-        var reactorGuest = new WitInterface(
+        var guest = new WitInterface(
             1,
-            "reactor-guest",
-            "netwasm:runtime@1.0.0",
+            "guest",
+            "example:worker@1.0.0",
             [],
             [Function(
-                "wake",
+                "notify",
                 [new("token", new WitTypeReference.Primitive("u32"))],
                 null)]);
         var world = new WitWorld(
@@ -598,25 +499,25 @@ public sealed class WitWorldFunctionProjectorTests
             "worker",
             "example:worker@1.0.0",
             [new("first", 0, null), new("second", 0, null)],
-            [new("netwasm:runtime/reactor-guest@1.0.0", 1, null)]);
+            [new("example:worker/guest@1.0.0", 1, null)]);
 
         AssertInvalid(
             () => Create().Project(
-                new([], [reactorHost, reactorGuest], [world], [], "{}"),
+                new([], [host, guest], [world], [], "{}"),
                 world),
             "is placed more than once");
     }
 
     [Fact]
-    public void RejectsDuplicateReactorGuestExports()
+    public void RejectsAnInterfaceExportedTwice()
     {
-        var reactorGuest = new WitInterface(
+        var guest = new WitInterface(
             0,
-            "reactor-guest",
-            "netwasm:runtime@1.0.0",
+            "guest",
+            "example:worker@1.0.0",
             [],
             [Function(
-                "wake",
+                "notify",
                 [new("token", new WitTypeReference.Primitive("u32"))],
                 null)]);
         var world = new WitWorld(
@@ -626,7 +527,7 @@ public sealed class WitWorldFunctionProjectorTests
             [],
             [new("first", 0, null), new("second", 0, null)]);
 
-        var packaged = new WitDocument([], [reactorGuest], [world], [], "{}");
+        var packaged = new WitDocument([], [guest], [world], [], "{}");
         var application = new WitWorld(
             0,
             "application",
@@ -745,26 +646,11 @@ public sealed class WitWorldFunctionProjectorTests
             CreateUnchecked().Project(Document(world), world));
     }
 
-    // One reactor wakes a worker, so a world exporting the guest interface twice
-    // is invalid, as are two deployment functions of one identity, which no
-    // validated world has.
+    // Two deployment functions of one identity, which no validated world has, are
+    // invalid.
     [Fact]
-    public void RejectsADuplicatedReactorOrDeploymentFunction()
+    public void RejectsADuplicatedDeploymentFunction()
     {
-        var reactorGuest = new WitInterface(
-            0,
-            "reactor-guest",
-            "netwasm:runtime@1.0.0",
-            [],
-            [Function("wake", [new("token", new WitTypeReference.Primitive("u32"))], null)]);
-        var twice = new WitWorld(0, "worker", "example:worker@1.0.0", [],
-        [
-            new("netwasm:runtime/reactor-guest@1.0.0", 0, null),
-            new("guest", 0, null),
-        ]);
-        AssertInvalid(() => CreateUnchecked().Project(new WitDocument([], [reactorGuest], [twice], [], "{}"), twice),
-            "reactor-guest export is duplicated");
-
         var duplicate = ExportWorld([
             new("run", null, Function("run", [], null)),
             new("run", null, Function("run", [], null)),
@@ -792,40 +678,6 @@ public sealed class WitWorldFunctionProjectorTests
             () => CreateUnchecked().Project(Document(blankParameter), blankParameter),
             "parameter is incomplete");
 
-    }
-
-    [Fact]
-    public void RejectsIncompletePackagedReactorGuest()
-    {
-        var guest = new WitInterface(
-            0,
-            "reactor-guest",
-            "netwasm:runtime@1.0.0",
-            [],
-            [Function("other", [], null)]);
-        var packagedWorld = new WitWorld(
-            0,
-            "worker",
-            "example:worker@1.0.0",
-            [],
-            [new("guest", 0, null)]);
-        var packaged = new WitDocument([], [guest], [packagedWorld], [], "{}");
-        var application = new WitWorld(
-            0,
-            "application",
-            "example:worker@1.0.0",
-            [],
-            []);
-        var source = new WitDocument([], [], [application], [], "{}");
-
-        AssertInvalid(
-            () => Create().Project(
-                packaged,
-                packagedWorld,
-                source,
-                application,
-                application),
-            "incomplete");
     }
 
     [Fact]

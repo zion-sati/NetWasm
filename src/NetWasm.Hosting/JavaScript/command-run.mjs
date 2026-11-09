@@ -35,6 +35,8 @@ export function createCommandRun(executeNetWasm) {
         },
         stdout: stdout.sink,
         stderr: stderr.sink,
+        // A run in a page or worker has no standard input.
+        stdin: null,
         signal: selected.signal ?? null,
       });
     } finally {

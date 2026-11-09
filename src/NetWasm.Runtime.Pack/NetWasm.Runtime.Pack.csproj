@@ -29,38 +29,38 @@
     <None Include="$(NetWasmRuntimePackAssetRoot)/LICENSE.txt"
           Pack="true"
           PackagePath="LICENSE.txt" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/compact/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/compact/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/layout.json"
           Pack="true"
           PackagePath="runtime/wasm32/compact/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/layout.json"
           Pack="true"
           PackagePath="runtime/wasm32/netwasm/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/bump/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/bump/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/layout.json"
           Pack="true"
           PackagePath="runtime/wasm32/bump/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/compact/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/compact/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/layout.json"
           Pack="true"
           PackagePath="runtime/wasm64/compact/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/layout.json"
           Pack="true"
           PackagePath="runtime/wasm64/netwasm/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/bump/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/bump/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/layout.json"
           Pack="true"
           PackagePath="runtime/wasm64/bump/" />
     <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/allowed-undefined-symbols.txt"
           Pack="true"
           PackagePath="runtime/wasm32/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/compact/speed/layout.json"
           Pack="true" PackagePath="runtime/wasm32/compact/speed/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/netwasm/speed/layout.json"
           Pack="true" PackagePath="runtime/wasm32/netwasm/speed/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm32/bump/speed/layout.json"
           Pack="true" PackagePath="runtime/wasm32/bump/speed/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/compact/speed/layout.json"
           Pack="true" PackagePath="runtime/wasm64/compact/speed/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/netwasm/speed/layout.json"
           Pack="true" PackagePath="runtime/wasm64/netwasm/speed/" />
-    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/layout.json"
+    <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/libnetwasm-runtime.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/libgc.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/libnetwasm-runtime-wasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/libnetwasm-runtime-nowasi.a;$(NetWasmRuntimePackAssetRoot)/wasm64/bump/speed/layout.json"
           Pack="true" PackagePath="runtime/wasm64/bump/speed/" />
     <None Include="$(NetWasmRuntimePackAssetRoot)/wasm64/allowed-undefined-symbols.txt"
           Pack="true"

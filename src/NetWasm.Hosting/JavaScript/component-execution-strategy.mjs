@@ -9,7 +9,6 @@ const requestKeys = new Set([
   "instantiateCore",
   "managedExceptionReporting",
   "releaseActions",
-  "schedule",
   "signal",
 ]);
 const requiredRequestKeys = Object.freeze(["artifacts", "contractKey", "imports"]);
@@ -29,7 +28,6 @@ export function createComponentExecutionStrategy(loadArtifacts) {
       managedExceptionReporting = {},
       signal = null,
       releaseActions = [],
-      schedule = globalThis.queueMicrotask?.bind(globalThis),
     } = request;
     const prepared = prepareComponentExecution({
       contractKey,
@@ -37,7 +35,6 @@ export function createComponentExecutionStrategy(loadArtifacts) {
       instantiateCore,
       signal,
       releaseActions,
-      schedule,
     });
     if (prepared.signal?.aborted) {
       return prepared.closeCallerScope(callerCancellation());
@@ -68,7 +65,6 @@ export function createComponentExecutionStrategy(loadArtifacts) {
         managedExceptionReporting,
         signal: prepared.signal,
         releaseActions: [],
-        schedule: prepared.schedule,
       });
     } catch (error) {
       outcome = componentExecutionFailure(error);

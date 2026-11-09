@@ -161,39 +161,6 @@ public sealed class RawAdapterWriterTests
             StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void EmitsSelectedRuntimeReactorCallsThroughTheirDedicatedCapability(WasmTarget target)
-    {
-        var fixture = Fixture.Create(target);
-        var watch = Fixture.ReactorLayout(fixture.Document, target, "watch");
-        var cancel = Fixture.ReactorLayout(fixture.Document, target, "cancel");
-
-        var source = Encoding.UTF8.GetString(_subject.Write(fixture.WithLayouts(watch, cancel)));
-
-        Assert.Contains("\"requiredCapabilities\":[\"bindReactor\"]", source, StringComparison.Ordinal);
-        Assert.Contains("bind(request.bindReactor, binding0)", source, StringComparison.Ordinal);
-        Assert.Contains("bind(request.bindReactor, binding1)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("request.canonical", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("request.bindResource", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void RejectsAnUnknownRuntimeReactorCallInsteadOfTreatingItAsAnApplicationProvider()
-    {
-        var fixture = Fixture.Create(WasmTarget.Wasm32);
-        var unknown = Fixture.ReactorLayout(fixture.Document, WasmTarget.Wasm32, "other");
-
-        var failure = Assert.Throws<CompilerException>(() =>
-            _subject.Write(fixture.WithLayouts(unknown)));
-
-        Assert.Contains("reactor-host function", failure.Diagnostic.Message, StringComparison.Ordinal);
-        var ordinary = Fixture.Create(WasmTarget.Wasm32, functionName: "watch");
-        Assert.Contains("bindCallable0(request.canonical)", Encoding.UTF8.GetString(_subject.Write(ordinary.Validated)),
-            StringComparison.Ordinal);
-    }
-
     [Fact]
     public void EmptyWitSelectionRequiresNoBinderCapability()
     {
@@ -733,8 +700,6 @@ public sealed class RawAdapterWriterTests
             interfaceName switch
             {
                 "sample:raw/api@1.0.0" => "sample:raw/api@1.0.0",
-                "netwasm:runtime/reactor-host@1.0.0" =>
-                    "netwasm:runtime/reactor-host@1.0.0",
                 _ => interfaceName,
             };
 
@@ -786,40 +751,6 @@ public sealed class RawAdapterWriterTests
                 new CanonicalAbiSignaturePlanner(new CanonicalAbiTypeFlattener()))
                 .Plan(document, declaration, target);
             return new(intrinsic);
-        }
-
-        internal static RawWitImportLayout.Callable ReactorLayout(
-            WitDocument document,
-            WasmTarget target,
-            string operation)
-        {
-            var references = operation == "watch"
-                ? ImmutableArray.Create<WitTypeReference>(
-                    new WitTypeReference.Defined(10),
-                    new WitTypeReference.Primitive("u32"))
-                : [new WitTypeReference.Primitive("u32")];
-            var resolver = new WitCanonicalTypeResolver();
-            var parameters = references.Select((reference, index) => new CanonicalAbiParameter(
-                operation == "watch" && index == 0 ? "ready" : "token",
-                resolver.Resolve(document, reference))).ToImmutableArray();
-            var canonical = new CanonicalAbiFunction(
-                "netwasm:runtime/reactor-host@1.0.0",
-                operation,
-                default,
-                parameters,
-                null);
-            var layout = new RawCanonicalFunctionLayoutPlanner(
-                new RawCanonicalImportIdentityFormatter(),
-                new CanonicalAbiSignaturePlanner(new CanonicalAbiTypeFlattener()),
-                new CanonicalAbiMemoryLayoutPlanner()).Plan(canonical, target);
-            var declaration = new WitFunction(
-                operation,
-                [.. references.Select((reference, index) => new WitParameter(
-                    operation == "watch" && index == 0 ? "ready" : "token",
-                    reference))],
-                null,
-                new("freestanding"));
-            return new(new(declaration, layout));
         }
 
         private static ImmutableArray<WitTypeReference> AllReferences()

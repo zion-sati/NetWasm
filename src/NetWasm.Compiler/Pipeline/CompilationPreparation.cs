@@ -14,7 +14,9 @@ internal sealed class CompilationPreparation(
     ImmutableArray<ProgramExport> exports,
     ReachabilityRoots reachabilityRoots,
     EntityKey? entryPointArgumentFactory,
-    WasmOptimizationSettings optimizationSettings)
+    EntityKey? entryPointExit,
+    WasmOptimizationSettings optimizationSettings,
+    PlatformWorldCapabilities world)
 {
     public ComponentBoundaryContract ComponentContract { get; } = componentContract ??
         throw new ArgumentNullException(nameof(componentContract));
@@ -28,7 +30,11 @@ internal sealed class CompilationPreparation(
         throw new ArgumentNullException(nameof(reachabilityRoots));
 
     public EntityKey? EntryPointArgumentFactory { get; } = entryPointArgumentFactory;
+    public EntityKey? EntryPointExit { get; } = entryPointExit;
 
     public WasmOptimizationSettings OptimizationSettings { get; } =
         optimizationSettings ?? throw new ArgumentNullException(nameof(optimizationSettings));
+
+    // What the selected world and host give CoreLib's world-dependent composition.
+    public PlatformWorldCapabilities World { get; } = world ?? throw new ArgumentNullException(nameof(world));
 }

@@ -19,6 +19,7 @@ try {
       applicationImports: [],
     },
     signal: null,
+    stdin: null,
     stdout: Object.freeze({ write() {} }),
     stderr: Object.freeze({ write(value) { errors.push(new TextDecoder().decode(value)); } }),
   });

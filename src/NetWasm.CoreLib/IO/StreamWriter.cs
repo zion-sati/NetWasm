@@ -95,6 +95,61 @@ namespace System.IO
             _closable = !leaveOpen;
         }
 
+        // Ported from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23: the path constructors.
+        public StreamWriter(string path)
+            : this(path, false, UTF8NoBOM, DefaultBufferSize)
+        {
+        }
+
+        public StreamWriter(string path, bool append)
+            : this(path, append, UTF8NoBOM, DefaultBufferSize)
+        {
+        }
+
+        public StreamWriter(string path, bool append, Encoding? encoding)
+            : this(path, append, encoding, DefaultBufferSize)
+        {
+        }
+
+        public StreamWriter(string path, bool append, Encoding? encoding, int bufferSize) :
+            this(ValidateArgsAndOpenPath(path, append, bufferSize), encoding, bufferSize, leaveOpen: false)
+        {
+        }
+
+        public StreamWriter(string path, FileStreamOptions options)
+            : this(path, UTF8NoBOM, options)
+        {
+        }
+
+        public StreamWriter(string path, Encoding? encoding, FileStreamOptions options)
+            : this(ValidateArgsAndOpenPath(path, options), encoding, DefaultBufferSize)
+        {
+        }
+
+        private static FileStream ValidateArgsAndOpenPath(string path, FileStreamOptions options)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(path);
+            ArgumentNullException.ThrowIfNull(options);
+            if ((options.Access & FileAccess.Write) == 0)
+            {
+                throw new ArgumentException(SR.Argument_StreamNotWritable, nameof(options));
+            }
+
+            return new FileStream(path, options);
+        }
+
+        private static FileStream ValidateArgsAndOpenPath(string path, bool append, int bufferSize)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(path);
+
+            if (bufferSize != -1)
+            {
+                ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferSize);
+            }
+
+            return new FileStream(path, append ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.Read, FileStream.DefaultBufferSize);
+        }
+
         public override void Close()
         {
             Dispose(true);

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Regenerate the deterministic Hosting Preview 2 provider catalog."""
+"""Regenerate the deterministic Hosting WASI 0.3 provider catalog."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 
 
-WASI_PACKAGES = ("cli", "clocks", "filesystem", "http", "io", "random", "sockets")
+WASI_PACKAGES = ("cli", "clocks", "filesystem", "http", "random", "sockets")
 
 
 def sha256(path: Path) -> str:
@@ -55,7 +55,7 @@ def select_asset(manifest: dict[str, object], asset_id: str) -> dict[str, object
 
 
 def stage_wit(repository: Path, destination: Path) -> None:
-    source = repository / "wit/wasi-0.2.11"
+    source = repository / "wit/wasi-0.3.2"
     dependencies = destination / "deps"
     dependencies.mkdir()
     for package in WASI_PACKAGES:
@@ -87,28 +87,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--node")
     parser.add_argument("--wasm-tools-module")
-    parser.add_argument("--preview2-shim-package-json")
     arguments = parser.parse_args()
 
     repository = Path(__file__).resolve().parent.parent
     toolchain = repository / "src/NetWasm.Toolchain"
     manifest = json.loads((toolchain / "toolchain-manifest.json").read_text())
     wasm_tools_asset = select_asset(manifest, "wasm-tools.module")
-    shim_asset = select_asset(manifest, "preview2-shim.package")
     module = Path(
         arguments.wasm_tools_module
         or os.environ.get("NETWASM_WASM_TOOLS_MODULE_PATH", "")
         or toolchain / "platform-assets/wasm-tools/wasm-tools.wasm"
     ).resolve()
-    shim_package_json = Path(
-        arguments.preview2_shim_package_json
-        or repository / "node_modules/@bytecodealliance/preview2-shim/package.json"
-    ).resolve()
-    if sha256(module) != wasm_tools_asset.get("sha256"):
-        raise RuntimeError("the wasm-tools module does not match the pinned Toolchain asset")
-    if sha256(shim_package_json) != shim_asset.get("sha256"):
-        raise RuntimeError("the Preview 2 shim package does not match the pinned Toolchain asset")
-
     node = resolve_node(arguments.node)
     runner = toolchain / "JavaScript/run-wasm-tools.mjs"
     generator = repository / "tools/NetWasm.Hosting.Generator/NetWasm.Hosting.Generator.csproj"
@@ -138,7 +127,6 @@ def main() -> None:
                 str(generator),
                 "--",
                 str(normalized),
-                str(shim_package_json),
                 str(candidate),
             ])
         if first_output.read_bytes() != second_output.read_bytes():

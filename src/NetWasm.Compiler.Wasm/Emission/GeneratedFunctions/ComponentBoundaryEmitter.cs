@@ -19,6 +19,7 @@ internal sealed class ComponentBoundaryEmitter(
     IRuntimeStateInitializer runtimeState,
     ICanonicalAbiFunctionTypePlanner canonicalTypes,
     ILocalTimePreflightCallEmitter localTimePreflight,
+    ILocalTimePreflightMethodSelector localTimeMethods,
     IGeneratedFunctionWriterFactory writers) : IComponentBoundaryEmitter
 {
     private readonly IRuntimeImportResolver _runtimeImports = runtimeImports;
@@ -142,7 +143,9 @@ internal sealed class ComponentBoundaryEmitter(
         var body = writers.Create();
         body.Bytes.Write([0]);
         _runtimeState.Initialize(body, initialization);
-        var usesLocalTime = _localTimePreflight.Emit(body, request, functionIndices);
+        var usesLocalTime = LocalTimePreflightPlacement.RunsInProcessEntry(request)
+            ? localTimeMethods.Select(request) is not null
+            : _localTimePreflight.Emit(body, request, functionIndices);
         body.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         return (body.Snapshots.Read(), usesLocalTime);
     }

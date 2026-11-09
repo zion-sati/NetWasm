@@ -4,25 +4,20 @@ using System.Text.Json.Nodes;
 namespace NetWasm.Hosting.Build.JavaScript;
 
 /// <summary>
-/// What a raw page or worker host bundles for one application: the Preview 2
-/// shim families and platform providers for the WASI interfaces its raw
-/// bindings require, and nothing else. A one-export page that links no
-/// filesystem, network or clock interface gets no shims or providers for them.
+/// What a raw page or worker host bundles for one application: the platform
+/// providers for the WASI interfaces its raw bindings require, the filesystem
+/// scope only when it links a filesystem interface, and HTTP over fetch only
+/// when it links wasi:http.
 /// </summary>
 internal sealed record RawBrowserHostCapabilities(
-    ImmutableArray<string> ShimFamilies,
+    bool LinksFilesystem,
     string ProviderCatalogJson)
 {
+    public bool LinksHttp { get; init; }
+
     private const string CatalogFileName = "platform-provider-catalog.generated.mjs";
     private const string CatalogPrefix = "export const platformProviderCatalog = deepFreeze(";
     private const string CatalogSuffix = ");\n";
-
-    // preview2-shim's browser families, keyed by WASI package name. cli and io
-    // are always present: NetWasm writes standard output through io's streams.
-    private static readonly ImmutableHashSet<string> KnownFamilies =
-        ["cli", "clocks", "filesystem", "http", "io", "random", "sockets"];
-
-    public bool LinksFilesystem => ShimFamilies.Contains("filesystem");
 
     public static RawBrowserHostCapabilities Select(
         string hostingJavaScriptRoot,
@@ -31,23 +26,12 @@ internal sealed record RawBrowserHostCapabilities(
         var modules = requiredImportModules
             .Where(module => module.StartsWith("wasi:", StringComparison.Ordinal))
             .ToImmutableSortedSet(StringComparer.Ordinal);
-        var families = new SortedSet<string>(StringComparer.Ordinal) { "cli", "io" };
-        foreach (var module in modules)
-        {
-            families.Add(Family(module));
-        }
         return new(
-            [.. families],
-            SelectProviders(Path.Combine(hostingJavaScriptRoot, CatalogFileName), modules));
-    }
-
-    private static string Family(string module)
-    {
-        var slash = module.IndexOf('/', StringComparison.Ordinal);
-        var family = slash < 0 ? string.Empty : module["wasi:".Length..slash];
-        return KnownFamilies.Contains(family)
-            ? family
-            : throw new ArgumentException($"WASI interface '{module}' has no browser shim.");
+            modules.Any(module => module.StartsWith("wasi:filesystem/", StringComparison.Ordinal)),
+            SelectProviders(Path.Combine(hostingJavaScriptRoot, CatalogFileName), modules))
+        {
+            LinksHttp = modules.Any(module => module.StartsWith("wasi:http/", StringComparison.Ordinal)),
+        };
     }
 
     // The shipped catalog module is the generator's JSON wrapped in deepFreeze,

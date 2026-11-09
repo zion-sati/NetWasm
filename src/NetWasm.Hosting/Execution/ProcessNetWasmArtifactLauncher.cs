@@ -29,8 +29,9 @@ internal sealed class ProcessNetWasmArtifactLauncher(
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(paths);
         await using var resultChannel = _resultChannels.Create();
-        var processArguments = ImmutableArray.CreateBuilder<string>(9 + arguments.Length);
+        var processArguments = ImmutableArray.CreateBuilder<string>(10 + arguments.Length);
         processArguments.Add(descriptor.LauncherPath);
+        processArguments.Add("--netwasm-execution");
         processArguments.Add("--descriptor");
         processArguments.Add(paths.DescriptorPath);
         processArguments.Add("--request");

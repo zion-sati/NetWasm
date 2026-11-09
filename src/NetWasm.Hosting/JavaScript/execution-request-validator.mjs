@@ -1,4 +1,4 @@
-const validatorKeys = ["isAbsoluteHostPath", "selectProviderKind"];
+const validatorKeys = ["hostDirectories", "isAbsoluteHostPath", "selectProviderKind"];
 const requestKeys = [
   "applicationImports",
   "arguments",
@@ -8,7 +8,9 @@ const requestKeys = [
   "grants",
   "schemaVersion",
 ];
-const grantKeys = ["clocks", "environment", "network", "preopens", "randomness"];
+const grantKeys = [
+  "clocks", "environment", "network", "preopens", "randomness", "temporaryDirectory", "workingDirectory",
+];
 const environmentKeys = ["name", "value"];
 const preopenKeys = ["access", "guestPath", "hostPath"];
 const applicationImportKeys = ["artifactPath", "module", "sha256"];
@@ -20,9 +22,10 @@ const versionedIdentifierPattern = /^[a-z0-9][a-z0-9.\-:/]*@[0-9]+\.[0-9]+\.[0-9
 
 export function createExecutionRequestValidator(options) {
   assertExactDataObject(options, validatorKeys, "execution request validator options");
-  const { isAbsoluteHostPath, selectProviderKind } = options;
-  if (typeof isAbsoluteHostPath !== "function" || typeof selectProviderKind !== "function") {
-    throw new TypeError("absolute host-path predicate and provider-kind selector are required");
+  const { hostDirectories, isAbsoluteHostPath, selectProviderKind } = options;
+  if (typeof isAbsoluteHostPath !== "function" || typeof selectProviderKind !== "function"
+      || typeof hostDirectories !== "boolean") {
+    throw new TypeError("absolute host-path predicate, provider-kind selector and host-directory support are required");
   }
 
   return Object.freeze(function validateExecutionRequest(request) {
@@ -33,7 +36,7 @@ export function createExecutionRequestValidator(options) {
     validateDigest(request.buildFingerprint, "build fingerprint");
     validateDigest(request.deploymentManifestSha256, "deployment manifest digest");
     const arguments_ = validateArguments(request.arguments);
-    const grants = validateGrants(request.grants, isAbsoluteHostPath);
+    const grants = validateGrants(request.grants, isAbsoluteHostPath, hostDirectories);
     const environment = validateEnvironment(request.environment, grants.environment);
     const applicationImports = validateApplicationImports(
       request.applicationImports,
@@ -62,13 +65,21 @@ function validateArguments(value) {
   }));
 }
 
-function validateGrants(value, isAbsoluteHostPath) {
+// The working and temporary directory grants are a local host's: it mounts the directory the
+// program starts in and a private temporary directory when it runs.
+function validateGrants(value, isAbsoluteHostPath, hostDirectories) {
   assertExactDataObject(value, grantKeys, "capability grants");
   if (!networkPolicies.has(value.network)) {
     throw new TypeError("network policy is unsupported");
   }
   if (typeof value.randomness !== "boolean") {
     throw new TypeError("randomness grant must be a Boolean");
+  }
+  if (typeof value.workingDirectory !== "boolean" || typeof value.temporaryDirectory !== "boolean") {
+    throw new TypeError("working and temporary directory grants must be Booleans");
+  }
+  if (!hostDirectories && (value.workingDirectory || value.temporaryDirectory)) {
+    throw new TypeError("this host cannot grant its working or temporary directory");
   }
   if (!Array.isArray(value.environment)
       || !Array.isArray(value.preopens)
@@ -108,6 +119,8 @@ function validateGrants(value, isAbsoluteHostPath) {
     network: value.network,
     clocks,
     randomness: value.randomness,
+    temporaryDirectory: value.temporaryDirectory,
+    workingDirectory: value.workingDirectory,
   });
 }
 

@@ -7,7 +7,7 @@ namespace NetWasm.Compiler.ComponentModel.Raw;
 
 public interface IRawCanonicalFunctionLayoutPlanner
 {
-    RawCanonicalFunctionLayout Plan(CanonicalAbiFunction abiFunction, WasmTarget target);
+    RawCanonicalFunctionLayout Plan(CanonicalAbiFunction abiFunction, WasmTarget target, bool asynchronous = false);
 }
 
 public sealed class RawCanonicalFunctionLayoutPlanner(
@@ -22,7 +22,7 @@ public sealed class RawCanonicalFunctionLayoutPlanner(
     private readonly ICanonicalAbiMemoryLayoutPlanner _memory = memory ??
         throw new ArgumentNullException(nameof(memory));
 
-    public RawCanonicalFunctionLayout Plan(CanonicalAbiFunction abiFunction, WasmTarget target)
+    public RawCanonicalFunctionLayout Plan(CanonicalAbiFunction abiFunction, WasmTarget target, bool asynchronous = false)
     {
         ArgumentNullException.ThrowIfNull(abiFunction);
         ArgumentNullException.ThrowIfNull(abiFunction.InterfaceName);
@@ -51,8 +51,16 @@ public sealed class RawCanonicalFunctionLayoutPlanner(
             fields.Add(new(parameter.Name, parameter.Type));
         }
 
-        var identity = _identities.Format(abiFunction, target);
-        var signature = _signatures.Plan(abiFunction, CanonicalAbiDirection.LoweredImport);
+        // An async func lowered with `async` is imported by its full interface name, as the
+        // Component Model names its built-ins, and returns a subtask status.
+        var identity = asynchronous
+            ? new RawCanonicalImportIdentity(
+                abiFunction.InterfaceName.Length == 0 ? "$root" : abiFunction.InterfaceName,
+                $"[async-lower]{abiFunction.FunctionName}")
+            : _identities.Format(abiFunction, target);
+        var signature = _signatures.Plan(
+            abiFunction,
+            asynchronous ? CanonicalAbiDirection.AsyncLoweredImport : CanonicalAbiDirection.LoweredImport);
         var parameterType = new CanonicalAbiType(
             CanonicalAbiTypeKind.Tuple, CliTypeIdentity.FromStackKind(CliValueKind.Unknown))
         {

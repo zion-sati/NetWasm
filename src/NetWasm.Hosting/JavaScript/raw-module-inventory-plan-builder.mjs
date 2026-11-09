@@ -22,8 +22,6 @@ export function buildRawModuleInventoryPlan({ abi }) {
     zero: target.zero,
     imports,
     exports,
-    reactorHostModule: `${target.prefix}|netwasm:runtime/reactor-host@1`,
-    reactorGuestExport: `${target.prefix}|netwasm:runtime/reactor-guest@1|wake`,
   });
 }
 

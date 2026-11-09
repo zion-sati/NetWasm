@@ -67,6 +67,7 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.ArrayGetLowerBound or
             RuntimeIntrinsic.StringCharacterAt => [NullReference, IndexOutOfRange],
 
+            RuntimeIntrinsic.ObjectClone or
             RuntimeIntrinsic.ArrayGetValue => [NullReference, OutOfMemory],
 
             RuntimeIntrinsic.MemberExecuteMethod =>

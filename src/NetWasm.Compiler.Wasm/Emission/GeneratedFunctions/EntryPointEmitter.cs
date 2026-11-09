@@ -19,7 +19,10 @@ internal sealed class EntryPointEmitter(
         IFunctionIndexResolver functionIndices,
         bool reportTerminalExceptions = true,
         EntityKey? argumentFactory = null,
-        MethodInstanceModel? completion = null)
+        MethodInstanceModel? completion = null,
+        EntityKey? localTimePreflight = null,
+        EntityKey? processExit = null,
+        bool initializesRuntime = true)
     {
         // A completion receives the entry point's result and returns the process result in its
         // place, as AsyncEntryPoint.Run does for an asynchronous Main's task.
@@ -65,7 +68,19 @@ internal sealed class EntryPointEmitter(
             layouts.Target);
         void EmitBody()
         {
-            runtimeInitialization.Initialize(code, initialization);
+            // A callback-lifted entry's callback runs after its start initialized the runtime.
+            if (initializesRuntime)
+            {
+                runtimeInitialization.Initialize(code, initialization);
+            }
+            // The local-time preflight may wait on wasi:filesystem, which only an
+            // async-typed call such as wasi:cli/run may do; initialization may not.
+            if (localTimePreflight is { } preflight)
+            {
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(preflight))));
+            }
             if (argumentFactory is { } factory)
             {
                 code.Instructions.Write(WasmInstruction.WithOperand(
@@ -94,6 +109,13 @@ internal sealed class EntryPointEmitter(
             {
                 code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
                     WasmInstructionOperand.Unsigned((uint)resultLocal)));
+            }
+            // The process is exiting: CoreLib ends the standard streams it opened.
+            if (processExit is { } exit)
+            {
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(exit))));
             }
             if (hasFinalizers)
             {

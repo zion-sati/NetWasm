@@ -37,7 +37,7 @@ internal sealed class DirectCallEmitter(
             ManagedMemoryEmitter.EmitReferenceLoad(code, layouts.Target, 0);
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(instruction.Context.ObjectTemporary))));
         }
-        if (instruction.Instruction.Operation == CilOperation.CallVirtual)
+        if (instruction.Instruction.Operation == CilOperation.CallVirtual && !ReceiverNullProof.Proves(instruction))
         {
             EmitNullCheck(
                 code,

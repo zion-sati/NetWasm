@@ -9,7 +9,6 @@ import { createExecutionRequestValidator } from "./execution-request-validator.m
 import { createNetWasmExecutionFacade } from "./netwasm-execution-facade.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
 import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
-import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
 import { executeWithTimeZoneResources } from "./timezone-execution.mjs";
@@ -19,8 +18,8 @@ const factoryKeys = ["manifestUrl", "platform"];
 const platformKeys = [
   "compileCoreModule",
   "createFilesystem",
+  "createImports",
   "createModuleUrl",
-  "createShim",
   "digest",
   "fetch",
   "importModule",
@@ -48,7 +47,7 @@ export function createBrowserExecutionComposition(
   });
   const prepareProviders = createProviderExecutionComposition({
     catalog: platformProviderCatalog,
-    createShim: options.platform.createShim,
+    createImports: options.platform.createImports,
     hashBytes: transport.hashBytes,
     importModule,
     isAbsoluteHostPath: rejectHostPath,
@@ -56,6 +55,7 @@ export function createBrowserExecutionComposition(
     snapshotManifest: validateDeploymentManifest,
   });
   const validateRequest = createExecutionRequestValidator({
+    hostDirectories: false,
     isAbsoluteHostPath: rejectHostPath,
     selectProviderKind,
   });
@@ -64,10 +64,7 @@ export function createBrowserExecutionComposition(
     throw new TypeError("browser NetWasm execution Strategy resolver is invalid");
   }
   const executeDeployment = createDeploymentExecution({
-    createFilesystem: preopens => createPreview2FilesystemScope({
-      createFilesystem: options.platform.createFilesystem,
-      preopens,
-    }),
+    createFilesystem: options.platform.createFilesystem,
     createOutputFinalization,
     createTimeZoneMaterializer: mountReadOnlyFile => createBrowserTimeZoneMaterializer({
       manifestUrl: options.manifestUrl,

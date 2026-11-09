@@ -1,9 +1,6 @@
 import { createExecutionScopeCloser } from "./execution-scope-closer.mjs";
 import { failedExecutionResult } from "./execution-result.mjs";
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 import { executeRaw } from "./raw-executor.mjs";
 
 const requestKeys = new Set([
@@ -13,7 +10,6 @@ const requestKeys = new Set([
   "prepareInterop",
   "providers",
   "releaseActions",
-  "schedule",
   "signal",
 ]);
 const requiredRequestKeys = Object.freeze([
@@ -29,10 +25,6 @@ const interopKeys = [
   "drainTerminalReports",
   "imports",
 ];
-const supportedContracts = new Set([
-  commandExecutionContract,
-  processExecutionContract,
-]);
 
 export function createRawExecutionStrategy(loadArtifacts) {
   if (typeof loadArtifacts !== "function") {
@@ -49,7 +41,6 @@ export function createRawExecutionStrategy(loadArtifacts) {
       instantiate = instantiateModule,
       signal = null,
       releaseActions = [],
-      schedule = globalThis.queueMicrotask?.bind(globalThis),
     } = request;
     if (typeof prepareInterop !== "function") {
       throw new TypeError("raw interop preparation action is required");
@@ -57,13 +48,10 @@ export function createRawExecutionStrategy(loadArtifacts) {
     if (typeof instantiate !== "function") {
       throw new TypeError("raw module instantiation action is required");
     }
-    if (!supportedContracts.has(contractKey)) {
+    if (contractKey !== commandExecutionContract) {
       throw new TypeError("raw execution contract is unsupported");
     }
     validateSignal(signal);
-    if (typeof schedule !== "function") {
-      throw new TypeError("raw execution scheduler is required");
-    }
     assertPlainDataObject(providers, "raw logical providers");
     const closeCallerScope = createExecutionScopeCloser(releaseActions);
     if (signal?.aborted) {
@@ -136,7 +124,6 @@ export function createRawExecutionStrategy(loadArtifacts) {
         signal,
         instanceReleaseActions: [interop.releaseAction],
         releaseActions: [],
-        schedule,
       });
     } catch (error) {
       outcome = await closeInteropScope(rawExecutionFailure(error));

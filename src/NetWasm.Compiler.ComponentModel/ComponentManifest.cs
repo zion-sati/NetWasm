@@ -50,7 +50,7 @@ public sealed record ComponentJavaScriptExport(
 
 public sealed record ComponentAdapterVersions(
     string? Jco,
-    string? Preview2Shim)
+    string? Preview3Shim)
 {
     public static ComponentAdapterVersions None { get; } = new(null, null);
 }

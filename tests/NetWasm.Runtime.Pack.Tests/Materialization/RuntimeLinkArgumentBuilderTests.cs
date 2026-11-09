@@ -49,6 +49,45 @@ public sealed class RuntimeLinkArgumentBuilderTests
         Assert.DoesNotContain("--allow-multiple-definition", arguments);
     }
 
+    // The runtime's platform functions: WASI's, or for a plain core module the ones without WASI,
+    // linked whole with the runtime archive.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LinksExactlyOnePlatformArchiveWithTheRuntime(bool plainCoreModule)
+    {
+        using var directory = new TemporaryDirectory();
+        var selected = RuntimePackTestData.Target("wasm32");
+        var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(new(
+            RuntimePackTestData.Manifest(),
+            selected,
+            RuntimePackTestData.LinkLimits(),
+            directory.Path,
+            [directory.PathTo("libc.a")],
+            directory.PathTo("runtime.wasm"))
+        {
+            PlainCoreModule = plainCoreModule,
+        });
+
+        var runtime = arguments.IndexOf(Path.GetFullPath(directory.PathTo(selected.RuntimeArchive.Path)));
+        var linked = plainCoreModule ? selected.PlatformArchives!.NoWasi : selected.PlatformArchives!.Wasi;
+        var other = plainCoreModule ? selected.PlatformArchives.Wasi : selected.PlatformArchives.NoWasi;
+        Assert.Equal("--whole-archive", arguments[runtime - 1]);
+        Assert.Equal(Path.GetFullPath(directory.PathTo(linked.Path)), arguments[runtime + 1]);
+        Assert.Equal("--no-whole-archive", arguments[runtime + 2]);
+        Assert.DoesNotContain(Path.GetFullPath(directory.PathTo(other.Path)), arguments);
+
+        var missing = Assert.Throws<InvalidOperationException>(() =>
+            new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(new(
+                RuntimePackTestData.Manifest(),
+                selected with { PlatformArchives = null },
+                RuntimePackTestData.LinkLimits(),
+                directory.Path,
+                [directory.PathTo("libc.a")],
+                directory.PathTo("runtime.wasm"))));
+        Assert.Contains("platform archives are missing", missing.Message);
+    }
+
     [Fact]
     public void RejectsAssetOutsidePackRoot()
     {

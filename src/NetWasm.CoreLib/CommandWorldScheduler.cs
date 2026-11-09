@@ -1,35 +1,51 @@
 namespace System.Runtime.InteropServices
 {
-    using Collections.Generic;
-    using Threading.Tasks;
-    using WebAssembly;
+    using System.Collections.Generic;
+    using System.Threading.Tasks;
+    using Concurrency;
 
-    // The event loop of a world without netwasm:runtime/reactor-host, after Mono's WasiEventLoop:
-    // the program drives it from its asynchronous entry point until that entry point's task
-    // completes. Zero-delay work runs in order from the ready queue; delays and pollables wait
-    // together in one wasi:io/poll call. As on Mono, nothing drives it from a synchronous Main, so
-    // work deferred there never runs and a blocking wait on it throws PlatformNotSupportedException.
-    internal sealed class CommandWorldScheduler :
-        IPlatformScheduler,
-        IPlatformPollableScheduler
+    // The event loop of a command. An asynchronous Main is a callback-lifted wasi:cli/run: its
+    // start and each callback run the ready work, then report EXIT once Main's task has completed
+    // or WAIT on the loop's waitable set, and the host delivers that set's events. A delay is an
+    // async-lowered wasi:clocks/monotonic-clock wait-for subtask; its work becomes ready when the
+    // subtask returns.
+    internal sealed class CommandWorldScheduler : IPlatformScheduler
     {
+        private const int Returned = 2;
+        private const int EventNone = 0;
+        private const int CallbackExit = 0;
+        private const int CallbackWait = 2;
+        private const int SubtaskEvent = 1;
+        private const int LastCopyEvent = 5;
+
         private readonly Queue<CommandWorldWork> _ready = new();
         private readonly List<CommandWorldWork> _waiting = new();
-        private readonly IPlatformPollableSubscription _clock;
-        private readonly IPlatformPoller _poller;
-        private readonly IPlatformPollableRelease _pollables;
+        private readonly IWasiMonotonicWaitInvoker _clock;
+        private readonly IWasiWaitableSetCreateInvoker _createSet;
+        private readonly IWasiWaitableJoinInvoker _join;
+        private readonly IWasiSubtaskCancelInvoker _cancel;
+        private readonly IWasiSubtaskDropInvoker _drop;
+        private int _set;
 
         internal CommandWorldScheduler(
-            IPlatformPollableSubscription clock,
-            IPlatformPoller poller,
-            IPlatformPollableRelease pollables)
+            IWasiMonotonicWaitInvoker clock,
+            IWasiWaitableSetCreateInvoker createSet,
+            IWasiWaitableJoinInvoker join,
+            IWasiSubtaskCancelInvoker cancel,
+            IWasiSubtaskDropInvoker drop)
         {
             _clock = clock ?? throw new ArgumentNullException();
-            _poller = poller ?? throw new ArgumentNullException();
-            _pollables = pollables ?? throw new ArgumentNullException();
+            _createSet = createSet ?? throw new ArgumentNullException();
+            _join = join ?? throw new ArgumentNullException();
+            _cancel = cancel ?? throw new ArgumentNullException();
+            _drop = drop ?? throw new ArgumentNullException();
         }
 
         internal int PendingCount => _ready.Count + _waiting.Count;
+
+        // Whether a JavaScript host runs the loop and can still complete a task through a
+        // JavaScript promise the program awaits, with no subtask or copy pending.
+        internal bool HostCanComplete { get; init; }
 
         public IPlatformSchedule Schedule(Action continuation, ulong delayNanoseconds)
         {
@@ -38,68 +54,148 @@ namespace System.Runtime.InteropServices
                 throw new ArgumentNullException();
             }
 
-            if (delayNanoseconds != 0)
-            {
-                return SchedulePollable(
-                    continuation,
-                    _clock.SubscribeDuration(unchecked((long)delayNanoseconds)));
-            }
-
-            var work = new CommandWorldWork(this, continuation, CommandWorldWork.NoPollable);
-            _ready.Enqueue(work);
-            return work;
+            return delayNanoseconds == 0
+                ? Track(continuation, Returned)
+                : Track(continuation, _clock.WaitFor(delayNanoseconds));
         }
 
-        // The scheduler owns the pollable from here and drops it once it fires or is cancelled.
-        public IPlatformSchedule SchedulePollable(Action continuation, int pollable)
+        // An async-lowered call's status: its work is ready once the subtask has returned; a
+        // subtask still starting or started joins the event loop's waitable set until it does.
+        internal IPlatformSchedule Track(Action continuation, int status)
         {
             if (continuation == null)
             {
                 throw new ArgumentNullException();
             }
 
-            if (pollable < 0)
+            if ((status & 0xF) != Returned)
             {
-                throw new ArgumentOutOfRangeException(nameof(pollable));
+                var waiting = new CommandWorldWork(this, continuation, status >> 4);
+                if (_set == 0)
+                {
+                    _set = _createSet.Create();
+                }
+
+                _join.Join(waiting.Waitable, _set);
+                _waiting.Add(waiting);
+                return waiting;
             }
 
-            var work = new CommandWorldWork(this, continuation, pollable);
-            _waiting.Add(work);
+            var work = new CommandWorldWork(this, continuation, CommandWorldWork.NoWaitable);
+            _ready.Enqueue(work);
             return work;
         }
 
-        internal void RunUntilCompleted(Task task)
+        // A stream or future end with a copy in progress: it joins the waitable set until the
+        // copy's event, whose payload (the count copied and how the copy ended) the continuation
+        // receives. The end stays open.
+        internal IPlatformSchedule TrackCopy(Action<uint> onCopied, int waitable)
+        {
+            if (onCopied == null)
+            {
+                throw new ArgumentNullException();
+            }
+
+            if (waitable == CommandWorldWork.NoWaitable)
+            {
+                throw new ArgumentOutOfRangeException();
+            }
+
+            CommandWorldWork? waiting = null;
+            waiting = new CommandWorldWork(this, () => onCopied(waiting!.Payload), waitable, copy: true);
+            if (_set == 0)
+            {
+                _set = _createSet.Create();
+            }
+
+            _join.Join(waitable, _set);
+            _waiting.Add(waiting);
+            return waiting;
+        }
+
+        // A callback-lifted export's start: runs the ready work, then reports EXIT once the task
+        // has completed or WAIT on the scheduler's waitable set while its work is pending.
+        internal int Start(Task task)
         {
             if (task == null)
             {
                 throw new ArgumentNullException();
             }
 
-            while (!task.IsCompleted)
+            RunReady();
+            return Report(task);
+        }
+
+        // A callback-lifted export's callback: the host delivers one event of the waitable set, or
+        // no event when it gives the loop a turn to run work a call into the program queued.
+        internal int Deliver(Task task, int eventCode, int waitable, uint payload)
+        {
+            if (task == null)
             {
-                if (!RunOnce())
+                throw new ArgumentNullException();
+            }
+
+            if (eventCode != EventNone)
+            {
+                Ready(eventCode, waitable, payload);
+            }
+
+            RunReady();
+            return Report(task);
+        }
+
+        // A JavaScript module's event loop, which its host runs after each call into the module:
+        // runs the ready work, then reports WAIT on the waitable set while work is pending, else
+        // EXIT.
+        internal int RunHost()
+        {
+            RunReady();
+            return AwaitPending();
+        }
+
+        internal int DeliverHost(int eventCode, int waitable, uint payload)
+        {
+            if (eventCode != EventNone)
+            {
+                Ready(eventCode, waitable, payload);
+            }
+
+            return RunHost();
+        }
+
+        // A task that has returned its result but still has copies or subtasks pending waits for
+        // them: WAIT on the waitable set while any is pending, else EXIT.
+        internal int AwaitPending() => _waiting.Count == 0 ? CallbackExit : CallbackWait | (_set << 4);
+
+        private int Report(Task task)
+        {
+            if (task.IsCompleted)
+            {
+                return CallbackExit;
+            }
+
+            if (_waiting.Count == 0)
+            {
+                if (!HostCanComplete)
                 {
                     throw new InvalidOperationException(
                         "The asynchronous entry point cannot complete: no scheduled work or pending I/O remains.");
                 }
+
+                if (_set == 0)
+                {
+                    _set = _createSet.Create();
+                }
             }
+
+            return CallbackWait | (_set << 4);
         }
 
-        // Runs the work that is ready now. When none is, waits once for any pollable and runs the
-        // work it released. Returns false when nothing is scheduled at all.
-        internal bool RunOnce()
+        // Runs every work item that is ready, including work that ready work schedules: a callback
+        // must not report WAIT while work is ready, since no event would wake it.
+        private void RunReady()
         {
-            if (_ready.Count == 0)
-            {
-                if (_waiting.Count == 0)
-                {
-                    return false;
-                }
-
-                Wait();
-            }
-
-            for (var count = _ready.Count; count > 0; count--)
+            while (_ready.Count != 0)
             {
                 var work = _ready.Dequeue();
                 if (work.TryStart())
@@ -107,75 +203,62 @@ namespace System.Runtime.InteropServices
                     work.Continuation();
                 }
             }
-
-            return true;
         }
 
+        // Cancelling a delay cancels and drops its subtask; cancelling a copy only stops waiting
+        // for it, since the stream or future's owner cancels or drops the copy.
         internal void Cancel(CommandWorldWork work)
         {
-            if (work.Pollable != CommandWorldWork.NoPollable && _waiting.Remove(work))
+            if (work.Waitable != CommandWorldWork.NoWaitable && _waiting.Remove(work))
             {
-                _pollables.Release(work.Pollable);
+                _join.Join(work.Waitable, 0);
+                if (!work.IsCopy)
+                {
+                    _cancel.Cancel(work.Waitable);
+                    _drop.Drop(work.Waitable);
+                }
             }
         }
 
-        private void Wait()
+        // Readies the work whose subtask returned (a subtask that has only started keeps waiting),
+        // or whose stream or future copy ended, with the copy's result as its payload.
+        private void Ready(int eventCode, int waitable, uint payload)
         {
-            var pollables = new int[_waiting.Count];
-            for (var index = 0; index < pollables.Length; index++)
+            var index = _waiting.FindIndex(work => work.Waitable == waitable);
+            if (index < 0 || eventCode < SubtaskEvent || eventCode > LastCopyEvent ||
+                _waiting[index].IsCopy != (eventCode != SubtaskEvent))
             {
-                pollables[index] = _waiting[index].Pollable;
+                throw new InvalidOperationException(
+                    "The event loop received an event for no scheduled work.");
             }
 
-            var fired = new bool[pollables.Length];
-            foreach (var index in _poller.Poll(pollables))
+            var work = _waiting[index];
+            if (!work.IsCopy && payload != Returned)
             {
-                if (index >= (uint)fired.Length)
-                {
-                    throw new InvalidOperationException();
-                }
-                fired[index] = true;
+                return;
             }
 
-            var kept = 0;
-            for (var index = 0; index < pollables.Length; index++)
+            _waiting.RemoveAt(index);
+            _join.Join(work.Waitable, 0);
+            if (work.IsCopy)
             {
-                var work = _waiting[index];
-                if (fired[index])
-                {
-                    _pollables.Release(work.Pollable);
-                    _ready.Enqueue(work);
-                }
-                else
-                {
-                    _waiting[kept++] = work;
-                }
+                work.Payload = payload;
             }
-            _waiting.RemoveRange(kept, pollables.Length - kept);
+            else
+            {
+                _drop.Drop(work.Waitable);
+            }
+
+            _ready.Enqueue(work);
         }
     }
 
-    // A world with neither a host-driven reactor nor wasi:io/poll cannot wait for anything. As on
-    // Mono's single-threaded WASI runtime with nothing pumping its loop, deferred work never runs;
-    // awaiting completed work still does, and the program imports nothing for it.
-    internal sealed class UnpumpedScheduler :
-        IPlatformScheduler,
-        IPlatformPollableScheduler
+    // A world without the monotonic clock cannot wait for anything. As on Mono's single-threaded
+    // WASI runtime with nothing pumping its loop, deferred work never runs; awaiting completed
+    // work still does, and the program imports nothing for it.
+    internal sealed class UnpumpedScheduler : IPlatformScheduler
     {
         public IPlatformSchedule Schedule(Action continuation, ulong delayNanoseconds) =>
-            Defer(continuation);
-
-        public IPlatformSchedule SchedulePollable(Action continuation, int pollable)
-        {
-            if (pollable < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(pollable));
-            }
-
-            return Defer(continuation);
-        }
-
-        private static IPlatformSchedule Defer(Action continuation) =>
             continuation == null ? throw new ArgumentNullException() : new UnpumpedWork();
 
         private sealed class UnpumpedWork : IPlatformSchedule
@@ -188,20 +271,31 @@ namespace System.Runtime.InteropServices
 
     internal sealed class CommandWorldWork : IPlatformSchedule
     {
-        internal const int NoPollable = -1;
+        internal const int NoWaitable = 0;
 
         private readonly CommandWorldScheduler _scheduler;
         private bool _active = true;
 
-        internal CommandWorldWork(CommandWorldScheduler scheduler, Action continuation, int pollable)
+        internal CommandWorldWork(
+            CommandWorldScheduler scheduler,
+            Action continuation,
+            int waitable,
+            bool copy = false)
         {
             _scheduler = scheduler ?? throw new ArgumentNullException();
             Continuation = continuation ?? throw new ArgumentNullException();
-            Pollable = pollable;
+            Waitable = waitable;
+            IsCopy = copy;
         }
 
         internal Action Continuation { get; }
-        internal int Pollable { get; }
+
+        internal int Waitable { get; }
+
+        // A stream or future end's copy, whose event carries the copy's result.
+        internal bool IsCopy { get; }
+
+        internal uint Payload { get; set; }
 
         // Work cancelled after it became ready stays queued but no longer runs.
         internal bool TryStart()
@@ -223,76 +317,5 @@ namespace System.Runtime.InteropServices
                 _scheduler.Cancel(this);
             }
         }
-    }
-
-    internal interface IPlatformPoller
-    {
-        // Blocks until at least one pollable is ready; returns the indexes of the ready ones.
-        uint[] Poll(int[] pollables);
-    }
-
-    internal interface IPlatformPollableRelease
-    {
-        void Release(int pollable);
-    }
-
-    internal sealed class WasiPoller : IPlatformPoller
-    {
-        public uint[] Poll(int[] pollables)
-        {
-            if (pollables == null)
-            {
-                throw new ArgumentNullException();
-            }
-
-            var count = unchecked((nuint)(uint)pollables.Length);
-            var addressSize = unchecked((nuint)nuint.Size);
-            var handles = CanonicalAbi.Allocate(count * sizeof(int), sizeof(int));
-            var result = CanonicalAbi.Allocate(addressSize * 2, addressSize);
-            try
-            {
-                for (var index = 0; index < pollables.Length; index++)
-                {
-                    CanonicalAbi.WriteInt32(
-                        handles, unchecked((nuint)(uint)index) * sizeof(int), pollables[index]);
-                }
-
-                WasiPollImports.Poll(handles, count, result);
-                var elements = CanonicalAbi.ReadAddress(result, 0);
-                var length = CanonicalAbi.ReadAddress(result, addressSize);
-                if (length > (nuint)(uint)pollables.Length)
-                {
-                    throw new InvalidOperationException();
-                }
-
-                try
-                {
-                    var ready = new uint[(int)length];
-                    for (var index = 0; index < ready.Length; index++)
-                    {
-                        ready[index] = unchecked((uint)CanonicalAbi.ReadInt32(
-                            elements, unchecked((nuint)(uint)index) * sizeof(int)));
-                    }
-                    return ready;
-                }
-                finally
-                {
-                    if (length != 0)
-                    {
-                        CanonicalAbi.Free(elements);
-                    }
-                }
-            }
-            finally
-            {
-                CanonicalAbi.Free(result);
-                CanonicalAbi.Free(handles);
-            }
-        }
-    }
-
-    internal sealed class WasiPollableRelease : IPlatformPollableRelease
-    {
-        public void Release(int pollable) => WasiPollImports.Drop(pollable);
     }
 }

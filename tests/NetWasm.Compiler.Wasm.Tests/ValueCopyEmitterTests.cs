@@ -19,7 +19,7 @@ public sealed class ValueCopyEmitterTests
         var sourceCalls = 0;
         Action<IWasmInstructionWriter> source = _ => sourceCalls++;
 
-        emitter.Emit(code, 7, size, 4, source);
+        emitter.Emit(code, 7, size, 4, 16, source);
 
         if (size == 16)
         {
@@ -34,6 +34,7 @@ public sealed class ValueCopyEmitterTests
             Assert.Equal(7, request.Destination);
             Assert.Equal(size, request.Size);
             Assert.Equal(4, request.Alignment);
+            Assert.Equal(16, request.WidestChunk);
             Assert.Same(source, request.Source);
             Assert.Equal(0, sourceCalls);
             Assert.Empty(code.ToInstructions());
@@ -59,7 +60,7 @@ public sealed class ValueCopyEmitterTests
         };
         WriteLocalGet(code, 7);
 
-        emitter.Emit(code, 7, 29, 1, writer => WriteLocalGet(writer, 8), context);
+        emitter.Emit(code, 7, 29, 16, 16, writer => WriteLocalGet(writer, 8), context);
 
         var instructions = code.ToInstructions();
         if (!inline)
@@ -74,6 +75,58 @@ public sealed class ValueCopyEmitterTests
             stores.Select(store => store.Opcode == WasmOpcodes.SimdPrefixed ? store.Operand.Third : store.Operand.Offset));
         Assert.Equal([WasmOpcodes.I32Store8, WasmOpcodes.I32Store, WasmOpcodes.I64Store, WasmOpcodes.SimdPrefixed],
             stores.Select(store => store.Opcode));
+    }
+
+    // The widest chunk caps the copy's chunks: a value holding a byref passes its
+    // alignment, so no load spans two fresh field stores; any other value passes 16.
+    [Theory]
+    [InlineData(4, "8:i32,4:i32,0:i32")]
+    [InlineData(16, "8:i32,0:i64")]
+    public void InlineCopiesReadNoChunkWiderThanTheWidestChunk(int widestChunk, string stores)
+    {
+        var layouts = new RecordingLayoutProvider();
+        var emitter = CreateSmall(layouts);
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+        var context = EmitterTestSupport.CreateMethodEmissionContext() with
+        {
+            InlineSmallBlocks = true,
+            CopyDestinationTemporary = 30,
+            CopySourceTemporary = 31,
+        };
+        WriteLocalGet(code, 7);
+
+        emitter.Emit(code, 7, 12, 4, widestChunk, writer => WriteLocalGet(writer, 8), context);
+
+        Assert.Equal(stores, string.Join(",", code.ToInstructions().Where(IsStore).Select(store =>
+            $"{store.Operand.Offset}:{(store.Opcode == WasmOpcodes.I64Store ? "i64" : "i32")}")));
+    }
+
+    // A 16-byte value copies whole even where the method inlines small blocks and
+    // the value is aligned to only 4: splitting a List<T>.Enumerator copy into four
+    // i32 chunks measured no faster (ForeachOverList100Elements 1.04-1.09).
+    [Theory]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(16)]
+    public void InlineSixteenByteCopiesStayOneVectorLoadAndStore(int alignment)
+    {
+        var layouts = new RecordingLayoutProvider();
+        var emitter = CreateSmall(layouts);
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+        var context = EmitterTestSupport.CreateMethodEmissionContext() with
+        {
+            InlineSmallBlocks = true,
+            CopyDestinationTemporary = 30,
+            CopySourceTemporary = 31,
+        };
+        WriteLocalGet(code, 7);
+
+        emitter.Emit(code, 7, 16, alignment, alignment, writer => WriteLocalGet(writer, 8), context);
+
+        var instructions = code.ToInstructions();
+        Assert.DoesNotContain(instructions, IsStore);
+        Assert.Single(instructions, instruction => IsVector(instruction, WasmSimdOpcodes.V128Load));
+        Assert.Single(instructions, instruction => IsVector(instruction, WasmSimdOpcodes.V128Store));
     }
 
     // One 16-byte load and store, so a vector value that SIMD code stored
@@ -94,7 +147,7 @@ public sealed class ValueCopyEmitterTests
         var sourceCalls = 0;
         WriteLocalGet(code, 7);
 
-        emitter.Emit(code, 7, 16, alignment, writer =>
+        emitter.Emit(code, 7, 16, alignment, alignment, writer =>
         {
             sourceCalls++;
             WriteLocalGet(writer, 8);
@@ -132,7 +185,7 @@ public sealed class ValueCopyEmitterTests
         var sourceCalls = 0;
         WriteLocalGet(code, 5);
 
-        emitter.Emit(code, 5, size, 1, writer =>
+        emitter.Emit(code, 5, size, 1, 1, writer =>
         {
             sourceCalls++;
             WriteLocalGet(writer, 6);
@@ -160,21 +213,27 @@ public sealed class ValueCopyEmitterTests
             _ => sourceCalls++;
 
         Assert.Throws<ArgumentNullException>(() =>
-            small.Emit(null!, 0, 1, 1, source));
+            small.Emit(null!, 0, 1, 1, 1, source));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            small.Emit(code, -1, 1, 1, source));
+            small.Emit(code, -1, 1, 1, 1, source));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            small.Emit(code, 0, 0, 1, source));
+            small.Emit(code, 0, 0, 1, 1, source));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            small.Emit(code, 0, 1, 0, source));
+            small.Emit(code, 0, 1, 0, 1, source));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            small.Emit(code, 0, 1, 32, source));
+            small.Emit(code, 0, 1, 32, 1, source));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            small.Emit(code, 0, 1, 3, source));
+            small.Emit(code, 0, 1, 3, 1, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            small.Emit(code, 0, 1, 1, 0, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            small.Emit(code, 0, 1, 1, 32, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            small.Emit(code, 0, 1, 1, 3, source));
         Assert.Throws<ArgumentNullException>(() =>
-            small.Emit(code, 0, 1, 1, null!));
+            small.Emit(code, 0, 1, 1, 1, null!));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            bulk.Emit(code, 0, 0, 1, source));
+            bulk.Emit(code, 0, 0, 1, 1, source));
 
         Assert.Equal(0, sourceCalls);
         Assert.Empty(code.ToInstructions());
@@ -210,7 +269,7 @@ public sealed class ValueCopyEmitterTests
     private sealed class RecordingCopyEmitter : IValueCopyEmitter
     {
         public List<(IWasmInstructionWriter Code, int Destination, int Size,
-            int Alignment, Action<IWasmInstructionWriter> Source)> Requests
+            int Alignment, int WidestChunk, Action<IWasmInstructionWriter> Source)> Requests
         { get; } = [];
 
         public void Emit(
@@ -218,8 +277,9 @@ public sealed class ValueCopyEmitterTests
             int destinationLocal,
             int size,
             int alignment,
+            int widestChunk,
             Action<IWasmInstructionWriter> emitSource,
             MethodEmissionContext? inlineContext = null) =>
-            Requests.Add((code, destinationLocal, size, alignment, emitSource));
+            Requests.Add((code, destinationLocal, size, alignment, widestChunk, emitSource));
     }
 }

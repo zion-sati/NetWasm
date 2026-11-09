@@ -135,7 +135,8 @@ public sealed class ComponentWorkflowContractTests
                 new ComponentPackageExecution(
                     new ComponentPackageOperationRunner(tools),
                     linker,
-                    new SystemFileMover()),
+                    new SystemFileMover(),
+                    new PlainCoreModuleImportValidator()),
                 capability)),
             new ComponentPackageRequest(
                 core,
@@ -150,6 +151,40 @@ public sealed class ComponentWorkflowContractTests
             ["component embed", "component new", "strip", "validate"],
             tools.Operations);
         Assert.Equal(0, linker.Calls);
+    }
+
+    [Fact]
+    public void PackagerWritesTheLinkedCoreModuleItselfForAPlainCoreModule()
+    {
+        using var files = new ComponentModelTestFiles();
+        var core = files.Create("core.wasm", 0);
+        var runtime = files.Create("runtime.wasm", 0);
+        var wit = files.Create("contract.wit", 0);
+        var output = files.PathFor("plugin.wasm");
+        var tools = new RecordingWasmTools();
+        var linker = new RecordingCoreModuleLinker();
+        var imports = new RecordingImportValidator();
+        InvokePackage(
+            AsPackager(new ComponentPackager(
+                new ComponentPackageInputValidator(
+                    new SystemFileExistence(), new SystemDirectoryExistence()),
+                new ComponentPackageWorkspaceFactory(
+                    new SystemDirectoryCreator(), new SystemDirectoryDeleter()),
+                new ComponentPackageExecution(
+                    new ComponentPackageOperationRunner(tools),
+                    linker,
+                    new SystemFileMover(),
+                    imports),
+                new RecordingCapability())),
+            new ComponentPackageRequest(core, wit, null, output, ComponentTarget.Wasm32Wasi02, runtime)
+            {
+                PlainCoreModule = true,
+            });
+
+        Assert.True(File.Exists(output));
+        Assert.Equal(1, linker.Calls);
+        Assert.Equal(["strip", "validate"], tools.Operations);
+        Assert.Equal(1, imports.Calls);
     }
 
     [Fact]
@@ -170,7 +205,8 @@ public sealed class ComponentWorkflowContractTests
                 new ComponentPackageExecution(
                     new ComponentPackageOperationRunner(new RecordingWasmTools()),
                     linker,
-                    new SystemFileMover()),
+                    new SystemFileMover(),
+                    new PlainCoreModuleImportValidator()),
                 new RecordingCapability())),
             new ComponentPackageRequest(
                 core,
@@ -224,6 +260,17 @@ public sealed class ComponentWorkflowContractTests
         }
     }
 
+    private sealed class RecordingImportValidator : IPlainCoreModuleImportValidator
+    {
+        public int Calls { get; private set; }
+
+        public void Validate(string modulePath)
+        {
+            Assert.True(File.Exists(modulePath));
+            Calls++;
+        }
+    }
+
     private sealed class RecordingWasmTools : IWasmTools
     {
         public List<string> Operations { get; } = [];
@@ -266,7 +313,8 @@ public sealed class ComponentWorkflowContractTests
             string outputPath,
             ComponentTarget target,
             FinalWasmOptimization optimization,
-            bool converge)
+            bool converge,
+            bool lowMemoryUnused)
         {
             Calls++;
             InputPath = inputPath;

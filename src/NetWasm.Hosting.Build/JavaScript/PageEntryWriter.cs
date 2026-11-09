@@ -16,7 +16,15 @@ public sealed record PageHostEntryRequest(
     string Network,
     bool Randomness,
     ImmutableArray<string> RequiredImportModules,
-    bool ValidateDeploymentManifest);
+    bool ValidateDeploymentManifest,
+    PageHostPlatform Platform = PageHostPlatform.Browser);
+
+/// <summary>Where a page host runs: a browser page, or Node.js code that imports it.</summary>
+public enum PageHostPlatform
+{
+    Browser,
+    Node,
+}
 
 public sealed record PageModuleRequest(
     string PageFileName,
@@ -24,7 +32,11 @@ public sealed record PageModuleRequest(
     string ManifestSha256,
     string OutputPath,
     string DeclarationPath,
-    ImmutableArray<WorkerJavaScriptExport> Exports);
+    ImmutableArray<WorkerJavaScriptExport> Exports)
+{
+    /// <summary>Whether the page host has file mounts (#142) to re-export: it links wasi:filesystem.</summary>
+    public bool FileMounts { get; init; }
+}
 
 public interface IPageEntryWriter
 {
@@ -43,10 +55,22 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         var modules = request.Modules.OrderBy(module => module.Module, StringComparer.Ordinal).ToArray();
         var capabilities = RawBrowserHostCapabilities.Select(request.HostingJavaScriptRoot, request.RequiredImportModules);
         var source = new StringBuilder();
-        source.Append("import { createPageSession } from ")
-            .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.Page)).AppendLine(";");
-        BrowserHostSource.AppendRawImports(source, JavaScriptRuntime.Page, capabilities);
-        BrowserHostSource.AppendManifestValidatorImport(source, request.ValidateDeploymentManifest);
+        if (request.Platform == PageHostPlatform.Node)
+        {
+            // A Node.js host is one self-contained bundle of the hosting sources.
+            source.Append("import { createPageSession } from ")
+                .Append(BrowserHostSource.ModuleSpecifier(
+                    Path.Combine(request.HostingJavaScriptRoot, "page-session-root.mjs"))).AppendLine(";");
+            BrowserHostSource.AppendNodeRawImports(source, request.HostingJavaScriptRoot, capabilities,
+                request.ValidateDeploymentManifest);
+        }
+        else
+        {
+            source.Append("import { createPageSession } from ")
+                .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.Page)).AppendLine(";");
+            BrowserHostSource.AppendRawImports(source, JavaScriptRuntime.Page, capabilities);
+            BrowserHostSource.AppendManifestValidatorImport(source, request.ValidateDeploymentManifest);
+        }
         for (var index = 0; index < modules.Length; index++)
         {
             source.Append("import * as consumer").Append(index).Append(" from ")
@@ -54,6 +78,7 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         }
         source.AppendLine();
         BrowserHostSource.AppendDeepFreeze(source);
+        if (capabilities.LinksFilesystem) BrowserHostSource.AppendFileMounts(source, worker: false);
         source.AppendLine("export const openPage = createPageSession({");
         source.AppendLine("  configuration: Object.freeze({");
         BrowserHostSource.AppendConfiguration(source, "    ", [], request.Arguments, request.Environment,
@@ -81,6 +106,10 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         var exports = request.Exports.OrderBy(export => export.Name, StringComparer.Ordinal).ToArray();
         var source = new StringBuilder();
         source.Append("import { openPage } from ").Append(Json("./" + request.PageFileName)).AppendLine(";");
+        if (request.FileMounts)
+        {
+            source.Append("export { mount, sync, unmount } from ").Append(Json("./" + request.PageFileName)).AppendLine(";");
+        }
         source.AppendLine();
         source.AppendLine("const startup = Object.freeze({");
         source.Append("  buildFingerprint: ").Append(Json(request.BuildFingerprint)).AppendLine(",");
@@ -92,10 +121,10 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         source.AppendLine("  return openPage(Object.freeze({ exports, options, startup }));");
         source.AppendLine("}");
         Write(request.OutputPath, source.ToString());
-        Write(request.DeclarationPath, Declaration(exports));
+        Write(request.DeclarationPath, Declaration(exports, request.FileMounts));
     }
 
-    private static string Declaration(IEnumerable<WorkerJavaScriptExport> exports)
+    private static string Declaration(IEnumerable<WorkerJavaScriptExport> exports, bool fileMounts)
     {
         var source = new StringBuilder();
         source.AppendLine("export interface NetWasmPagePlatformHooks {");
@@ -119,6 +148,16 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         source.AppendLine("  readonly failure: Promise<unknown>;");
         source.AppendLine("}");
         source.AppendLine("export declare function open(options?: NetWasmPageOpenOptions): Promise<NetWasmPageModule>;");
+        if (fileMounts)
+        {
+            source.AppendLine("/** What the user picked: a File or Blob mounts read-only; a handle mounts read-write. */");
+            source.AppendLine("export type NetWasmMountSource = Blob | FileSystemFileHandle | FileSystemDirectoryHandle;");
+            source.AppendLine("/** Mounts a picked file or directory at an absolute path the program's File APIs see. */");
+            source.AppendLine("export declare function mount(guestPath: string, source: NetWasmMountSource): Promise<void>;");
+            source.AppendLine("export declare function unmount(guestPath: string): void;");
+            source.AppendLine("/** Writes a handle mount's changes back to what the user picked. */");
+            source.AppendLine("export declare function sync(guestPath: string): Promise<void>;");
+        }
         return source.ToString();
     }
 

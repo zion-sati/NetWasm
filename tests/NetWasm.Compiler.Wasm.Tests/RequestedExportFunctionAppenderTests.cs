@@ -264,6 +264,7 @@ public sealed class RequestedExportFunctionAppenderTests
     private sealed class RecordingEntryPointEmitter : IEntryPointEmitter
     {
         public int Count { get; private set; }
+        public List<bool> InitializesRuntime { get; } = [];
         public bool ReportTerminalExceptions { get; private set; }
 
         public byte[] Emit(
@@ -273,9 +274,13 @@ public sealed class RequestedExportFunctionAppenderTests
             IFunctionIndexResolver functionIndices,
             bool reportTerminalExceptions,
             EntityKey? argumentFactory,
-            MethodInstanceModel? completion)
+            MethodInstanceModel? completion,
+            EntityKey? localTimePreflight,
+            EntityKey? processExit,
+            bool initializesRuntime)
         {
             Count++;
+            InitializesRuntime.Add(initializesRuntime);
             ReportTerminalExceptions = reportTerminalExceptions;
             return [2];
         }

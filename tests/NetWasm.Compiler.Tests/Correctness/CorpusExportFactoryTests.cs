@@ -47,7 +47,7 @@ public sealed class CorpusExportFactoryTests
     }
 
     [Fact]
-    public void CreateRequestsConfiguredReactorLifecycleExports()
+    public void CreateRequestsTheRunExportUnlessTheEntryIsCallbackLifted()
     {
         var factory = Assert.IsAssignableFrom<ICorpusExportFactory>(new CorpusExportFactory());
         var fixture = CreateFixture() with
@@ -55,15 +55,10 @@ public sealed class CorpusExportFactoryTests
             RequiresReactor = true,
             ExposesLegacyTrace = false,
             WasmEntryMethod = "Start",
-            ReactorObserveMethod = "Observe",
         };
 
-        var exports = factory.Create(fixture);
-
-        Assert.Collection(
-            exports,
-            export => Assert.Equal(new("run", fixture.EntryType, "Start"), export),
-            export => Assert.Equal(new("observe", fixture.EntryType, "Observe"), export));
+        Assert.Equal([new("run", fixture.EntryType, "Start")], factory.Create(fixture));
+        Assert.Empty(factory.Create(fixture with { CallbackEntry = true }));
     }
 
     [Fact]

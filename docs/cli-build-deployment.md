@@ -92,8 +92,8 @@ complete contract, type mappings, dependencies, and regeneration.
 
 `nwc componentize` accepts required `-coremodule`, `-wit`, `-out`, and
 `-manifest`, plus optional `-runtimemodule`, `-world`, `-platform`,
-`-interopmanifest`, `-jcoversion`, and `-preview2shimversion`. Current
-Component output is wasm32 + WASI 0.2; wasm64 fails with `NW1010` rather than
+`-interopmanifest`, `-jcoversion`, and `-preview3shimversion`. Component
+output is wasm32 + WASI 0.3; wasm64 fails with `NW1010` rather than
 downgrading. The SDK validates generated products with its packaged,
 integrity-checked wasm-tools module.
 

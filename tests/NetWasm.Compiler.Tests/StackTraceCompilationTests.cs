@@ -443,18 +443,12 @@ public sealed class StackTraceCompilationTests
             EmitPortablePdb = true,
             EmitStackTrace = true,
             LoadStackTraceSymbols = false,
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            ObserveMethodName = "Observe",
             WitPath = Path.Combine(
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            Exports =
-            [
-                new RequestedExport("run", "EntryPoint", "Run"),
-                new RequestedExport("observe", "EntryPoint", "Observe"),
-            ],
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
 
         Assert.Equal(0, result);
@@ -511,7 +505,7 @@ public sealed class StackTraceCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
+            WitWorld = "netwasm:platform/platform@1.0.0",
             Exports =
             [
                 new RequestedExport("run", "EntryPoint", "Run"),

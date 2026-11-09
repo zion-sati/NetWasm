@@ -1235,7 +1235,7 @@ public sealed class DateTimeCompilationTests
 
         var import = Assert.Single(result.Program.WitImportMethods);
         Assert.Equal(
-            "wasi:clocks/wall-clock@0.2.11",
+            "wasi:clocks/system-clock@0.3.2",
             import.WitImport!.InterfaceName);
         Assert.Equal("now", import.WitImport.FunctionName);
     }
@@ -1279,7 +1279,7 @@ public sealed class DateTimeCompilationTests
 
         Assert.Contains(result.Program.WitImportMethods,
             method => method.WitImport!.InterfaceName ==
-                "wasi:clocks/wall-clock@0.2.11" &&
+                "wasi:clocks/system-clock@0.3.2" &&
                 method.WitImport.FunctionName == "now");
         Assert.DoesNotContain(result.Program.WitImportMethods,
             method => method.WitImport!.InterfaceName.StartsWith(

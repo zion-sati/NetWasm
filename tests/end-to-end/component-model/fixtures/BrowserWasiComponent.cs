@@ -10,10 +10,10 @@ public static class BrowserWasiComponent
 
     public static int Run(int value) => value;
 
-    [WitImport("wasi:random/random@0.2.11", "get-random-u64")]
+    [WitImport("wasi:random/random@0.3.2", "get-random-u64")]
     private static extern long GetRandomU64Canonical();
 
-    [WitImport("wasi:random/random@0.2.11", "get-random-bytes")]
+    [WitImport("wasi:random/random@0.3.2", "get-random-bytes")]
     private static extern void GetRandomBytesCanonical(long length, nuint result);
 
     private static ulong GetRandomU64() => unchecked((ulong)GetRandomU64Canonical());

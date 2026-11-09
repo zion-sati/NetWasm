@@ -29,7 +29,7 @@ class StageJcoClosureTests(unittest.TestCase):
         optional = "node_modules/optional"
         records = {
             root: self._record("@bytecodealliance/jco", "1"),
-            shim: self._record("@bytecodealliance/preview2-shim", "1"),
+            shim: self._record("@bytecodealliance/preview3-shim", "1"),
             dependency: self._record("example", "1", optional_dependencies={"optional": "1"}),
             optional: self._record("optional", "1"),
         }
@@ -70,7 +70,7 @@ class StageJcoClosureTests(unittest.TestCase):
         peer = "node_modules/peer-runtime"
         records = {
             root: self._record("@bytecodealliance/jco", "1", peer_dependencies={"peer-runtime": "1"}),
-            shim: self._record("@bytecodealliance/preview2-shim", "1"),
+            shim: self._record("@bytecodealliance/preview3-shim", "1"),
             peer: self._record("peer-runtime", "1"),
         }
         lock = {"lockfileVersion": 3, "packages": records}
@@ -91,7 +91,7 @@ class StageJcoClosureTests(unittest.TestCase):
         dependency = "node_modules/example"
         records = {
             root: self._record("@bytecodealliance/jco", "1"),
-            shim: self._record("@bytecodealliance/preview2-shim", "1"),
+            shim: self._record("@bytecodealliance/preview3-shim", "1"),
             dependency: self._record("example", "1"),
         }
         records[root]["dependencies"] = {"example": 1}
@@ -395,7 +395,7 @@ class StageJcoClosureTests(unittest.TestCase):
                 "1",
                 peer_dependencies={"optional-peer": "*"},
             ),
-            shim: self._record("@bytecodealliance/preview2-shim", "1"),
+            shim: self._record("@bytecodealliance/preview3-shim", "1"),
             peer: self._record("optional-peer", "1"),
         }
         records[root]["peerDependenciesMeta"] = {"optional-peer": {"optional": True}}
@@ -413,7 +413,7 @@ class StageJcoClosureTests(unittest.TestCase):
 
         alias_records = {
             root: self._record("@bytecodealliance/jco", "1"),
-            shim: self._record("@bytecodealliance/preview2-shim", "1"),
+            shim: self._record("@bytecodealliance/preview3-shim", "1"),
             "node_modules/Foo": self._record("Foo", "1"),
             "node_modules/foo": self._record("foo", "1"),
         }
@@ -569,7 +569,7 @@ class StageJcoClosureTests(unittest.TestCase):
             self.assertEqual(3, count)
             canonical = fixture["canonical"]
             self.assertTrue(
-                (canonical / "node_modules/@bytecodealliance/jco/dist/jco.js").is_file()
+                (canonical / "node_modules/@bytecodealliance/jco/dist/api.js").is_file()
             )
             self.assertEqual(
                 fixture["lock"].read_bytes(),
@@ -664,11 +664,11 @@ class StageJcoClosureTests(unittest.TestCase):
         canonical = generation / stager.GENERATION_PAYLOAD_NAME
 
         package_paths = {
-            stager.ROOT_PACKAGES[0]: ("@bytecodealliance/jco", "1.28.1", True),
-            stager.ROOT_PACKAGES[1]: ("@bytecodealliance/preview2-shim", "0.24.1", False),
+            stager.ROOT_PACKAGES[0]: ("@bytecodealliance/jco", "1.41.0", True),
+            stager.ROOT_PACKAGES[1]: ("@bytecodealliance/preview3-shim", "0.13.0", False),
             "node_modules/@bytecodealliance/jco-transpile": (
                 "@bytecodealliance/jco-transpile",
-                "0.7.0",
+                "0.23.0",
                 False,
             ),
         }
@@ -677,11 +677,11 @@ class StageJcoClosureTests(unittest.TestCase):
             metadata = {"name": name, "version": version}
             if jco:
                 metadata["dependencies"] = {
-                    "@bytecodealliance/jco-transpile": "0.7.0",
+                    "@bytecodealliance/jco-transpile": "0.23.0",
                 }
             files = {"package.json": json.dumps(metadata)}
             if jco:
-                files["dist/jco.js"] = "#!/usr/bin/env node\n"
+                files["dist/api.js"] = "export {};\n"
                 files["LICENSE"] = "license\n"
             if name == "@bytecodealliance/jco-transpile":
                 files["vendor/js-component-bindgen-component.core.wasm"] = (
@@ -699,7 +699,7 @@ class StageJcoClosureTests(unittest.TestCase):
                 "integrity": integrity,
             }
         records[stager.ROOT_PACKAGES[0]]["dependencies"] = {
-            "@bytecodealliance/jco-transpile": "0.7.0",
+            "@bytecodealliance/jco-transpile": "0.23.0",
         }
 
         lock = {"name": "fixture", "lockfileVersion": 3, "packages": records}
@@ -756,9 +756,9 @@ class StageJcoClosureTests(unittest.TestCase):
             "upstream": {
                 "repository": "https://example.test/jco",
                 "revision": "fixture",
-                "tag": "jco-v1.28.1",
-                "jcoVersion": "1.28.1",
-                "jcoTranspileVersion": "0.7.0",
+                "tag": "jco-v1.41.0",
+                "jcoVersion": "1.41.0",
+                "jcoTranspileVersion": "0.23.0",
             },
         }
         path = root / "manifest.json"
@@ -788,7 +788,7 @@ class StageJcoClosureTests(unittest.TestCase):
                 "name": lock["name"],
                 "devDependencies": {
                     "@bytecodealliance/jco": packages[stager.ROOT_PACKAGES[0]]["version"],
-                    "@bytecodealliance/preview2-shim": packages[
+                    "@bytecodealliance/preview3-shim": packages[
                         stager.ROOT_PACKAGES[1]
                     ]["version"],
                 },
@@ -809,7 +809,7 @@ class StageJcoClosureTests(unittest.TestCase):
             "schemaVersion": "1",
             "contract": "jco-transpile-only",
             "roots": list(stager.ROOT_PACKAGES),
-            "entryPoint": f"{stager.ROOT_PACKAGES[0]}/dist/jco.js",
+            "entryPoint": f"{stager.ROOT_PACKAGES[0]}/dist/api.js",
             "requiredCommands": ["transpile"],
             "acceptedInvocation": list(stager.ACCEPTED_INVOCATION),
             "compilerClosure": [

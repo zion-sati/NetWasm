@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createWasiFilesystem } from "./wasi-filesystem.mjs";
 import { createHash, webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -28,7 +29,7 @@ const rawApplication = Buffer.from(
   "AGFzbQEAAAABDQJgBH9/f38Bf2AAAX8DAwIAAQUDAQABBzEEBm1lbW9yeQIADWNtMzJwMl9tZW1vcnkCAA5jbTMycDJfcmVhbGxvYwAAA3J1bgABCgsCBABBCAsEAEElCw==",
   "base64");
 const adapter = encoder.encode(`
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter(generated) {
   return Object.freeze({ contractKey, instantiate: generated.instantiate });
 }
@@ -73,7 +74,6 @@ const interopManifest = encoder.encode(JSON.stringify({
   exports: [],
   callbacks: [],
 }));
-class Descriptor { openAt() { return new Descriptor(); } read() { return [new Uint8Array(), true]; } }
 const sink = Object.freeze({ write() {} });
 
 test("executes a verified URL-backed browser deployment", async () => {
@@ -96,7 +96,7 @@ test("executes a verified URL-backed browser deployment", async () => {
     fixture.fetches.length = 0;
     const executeNetWasm = createExecution({ manifestUrl, platform: fixture.platform });
     const outcome = await executeNetWasm({
-      request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdout: sink,
+      request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdin: null, stdout: sink,
     });
     assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 41]);
     assert.deepEqual(fixture.fetches, [
@@ -126,7 +126,7 @@ test("executes a verified URL-backed raw deployment", async () => {
     fixture.fetches.length = 0;
     const executeNetWasm = createExecution({ manifestUrl, platform: fixture.platform });
     const outcome = await executeNetWasm({
-      request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdout: sink,
+      request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdin: null, stdout: sink,
     });
     assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 37]);
     assert.deepEqual(fixture.fetches, [
@@ -154,7 +154,7 @@ test("rejects host paths at the browser boundary before fetching", async () => {
       })]),
     }),
   });
-  const outcome = await executeNetWasm({ request: value, signal: null, stderr: sink, stdout: sink });
+  const outcome = await executeNetWasm({ request: value, signal: null, stderr: sink, stdin: null, stdout: sink });
   assert.equal(outcome.primaryFailure.code, "contract.invalid");
   assert.deepEqual(fixture.fetches, []);
 });
@@ -171,7 +171,7 @@ test("rejects local component deployments at the browser Strategy boundary", asy
     fixture.fetches.length = 0;
     const executeNetWasm = createExecution({ manifestUrl, platform: fixture.platform });
     const outcome = await executeNetWasm({
-      request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdout: sink,
+      request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdin: null, stdout: sink,
     });
     assert.equal(outcome.primaryFailure.code, "contract.invalid");
     assert.deepEqual(fixture.fetches, [manifestUrl]);
@@ -212,13 +212,13 @@ function browserPlatform(manifestBytes, artifacts) {
     fetches,
     platform: {
       compileCoreModule: WebAssembly.compile.bind(WebAssembly),
-      createFilesystem: () => ({ types: { Descriptor }, preopens: { getDirectories: () => [] } }),
+      createFilesystem: preopens => createWasiFilesystem(Object.freeze({ hostFiles: null, preopens })),
       createModuleUrl(bytes) {
         const url = `blob:netwasm-root/${++sequence}`;
         moduleSources.set(url, new Uint8Array(bytes));
         return url;
       },
-      createShim() { assert.fail("an empty WIT provider set must not create a shim"); },
+      createImports() { assert.fail("an empty WIT provider set must not create imports"); },
       digest: webcrypto.subtle.digest.bind(webcrypto.subtle),
       async fetch(url) {
         fetches.push(url);
@@ -244,7 +244,7 @@ function deployment(kind, artifacts) {
   return {
     schemaVersion: 1, semanticBuildId: digest, deploymentKind: kind,
     profile: "netwasm0.1", target: "wasm32", featureSet: "default",
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     versions: { compiler: "1", hosting: "1", runtime: "1", runtimeAbi: "1", sdk: "1", toolchain: "1" },
     buildFingerprint: digest, runtimeFeatures: [], artifacts,
     requiredImportModules: [], requiredImports: [], exports: [],
@@ -257,7 +257,7 @@ function executionRequest(deploymentManifestSha256) {
     arguments: Object.freeze([]), environment: Object.freeze([]),
     grants: Object.freeze({
       environment: Object.freeze([]), preopens: Object.freeze([]), network: "denyAll",
-      clocks: Object.freeze([]), randomness: false,
+      clocks: Object.freeze([]), randomness: false, temporaryDirectory: false, workingDirectory: false,
     }),
     applicationImports: Object.freeze([]),
   });
@@ -291,7 +291,7 @@ test("keeps generated application modules distinct from declared provider module
       { [duplicate ? module : "generated-worker-client"]: {} });
     const request = { ...executionRequest(sha256(manifestBytes)),
       applicationImports: [{ module, artifactPath: "provider.mjs", sha256: sha256(provider) }] };
-    const outcome = await execute({ request, signal: null, stderr: sink, stdout: sink });
+    const outcome = await execute({ request, signal: null, stderr: sink, stdin: null, stdout: sink });
     if (duplicate) assert.equal(outcome.primaryFailure.code, "host.interop-prepare");
     else assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 37]);
     assert.ok(fixture.fetches.includes("https://example.test/deploy/provider.mjs"));

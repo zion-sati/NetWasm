@@ -1374,19 +1374,19 @@ public sealed class EnumIntrinsicBranchTests
     }
 
     [Fact]
-    public void TypeCodeRejectsAnEmptyReachableStorageSet()
+    public void TypeCodeTrapsAfterTheNullCheckWithoutAReachableEnum()
     {
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            new EnumTypeCodeEmitter(
-                    new EmptyStorageResolver(),
-                    new NoOpNullCheckEmitter())
-                .EmitTypeCode(
-                    new RecordingInstructionWriter(),
-                    0,
-                    1,
-                    2, OptionalFunctionIndex.At(7)));
+        var withoutEnums = new RecordingInstructionWriter();
+        new EnumTypeCodeEmitter(new EmptyStorageResolver(), new NoOpNullCheckEmitter())
+            .EmitTypeCode(withoutEnums, 0, 1, 2, OptionalFunctionIndex.At(7));
 
-        Assert.Contains("reachable enum descriptor", exception.Message);
+        var expected = new RecordingInstructionWriter();
+        expected.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+        expected.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned(2)));
+        expected.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+        expected.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(2)));
+        expected.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned(1)));
+        Assert.Equal(expected.ToArray(), withoutEnums.ToArray());
     }
 
     [Fact]

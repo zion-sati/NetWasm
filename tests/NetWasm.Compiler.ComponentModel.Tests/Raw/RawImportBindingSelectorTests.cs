@@ -16,7 +16,7 @@ public sealed class RawImportBindingSelectorTests
         var earlierModule = new RawCanonicalImportIdentity("Wit", "z");
         var unused = new RawCanonicalImportIdentity("wit", "unused");
         var javascript = new RawCanonicalImportIdentity("app", "js");
-        var runtime = new RawCanonicalImportIdentity("netwasm:runtime/reactor-host", "watch");
+        var runtime = new RawCanonicalImportIdentity("$root", "[waitable-set-new]");
         var request = new RawImportBindingSelectionRequest(Catalog(target, [second, unused, first, earlierModule]),
             [runtime, second, javascript, first, earlierModule], [javascript], [runtime]);
 

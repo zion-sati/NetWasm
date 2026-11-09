@@ -239,17 +239,18 @@ test("merges open() environment values over the build's and grants each name", a
   assert.equal(state.calls[2][1].configuration, configured);
 });
 
-test("platform hooks replace the wall clock and every random source", async () => {
+test("platform hooks replace the system clock and every random source", async () => {
   const state = fixture();
-  const shimConfigurations = [];
+  const requests = [];
+  const release = async () => {};
   const original = {
-    "wasi:clocks/monotonic-clock@0.2.11": Object.freeze({ now: () => 5n }),
-    "wasi:clocks/wall-clock@0.2.11": Object.freeze({ now: () => assert.fail("real clock"), resolution: () => "ms" }),
-    "wasi:random/insecure-seed@0.2.11": Object.freeze({ insecureSeed: () => assert.fail("real seed") }),
-    "wasi:random/insecure@0.2.11": Object.freeze({
+    "wasi:clocks/monotonic-clock@0.3.2": Object.freeze({ now: () => 5n }),
+    "wasi:clocks/system-clock@0.3.2": Object.freeze({ now: () => assert.fail("real clock"), getResolution: () => 1000n }),
+    "wasi:random/insecure-seed@0.3.2": Object.freeze({ getInsecureSeed: () => assert.fail("real seed") }),
+    "wasi:random/insecure@0.3.2": Object.freeze({
       getInsecureRandomBytes: () => assert.fail("real bytes"), getInsecureRandomU64: () => assert.fail("real u64"),
     }),
-    "wasi:random/random@0.2.11": Object.freeze({
+    "wasi:random/random@0.3.2": Object.freeze({
       getRandomBytes: () => assert.fail("real bytes"), getRandomU64: () => assert.fail("real u64"),
     }),
   };
@@ -257,9 +258,9 @@ test("platform hooks replace the wall clock and every random source", async () =
     ...pageOptions(),
     platform: Object.freeze({
       fetch() {},
-      createShim(configuration) {
-        shimConfigurations.push(configuration);
-        return { getImportObject: request => (request.asVersion === "0.2.11" ? original : null) };
+      createImports(request) {
+        requests.push(request);
+        return Object.freeze({ imports: original, release });
       },
     }),
   });
@@ -271,39 +272,40 @@ test("platform hooks replace the wall clock and every random source", async () =
 
   const { platform: hooked } = state.calls[0][1];
   assert.equal(hooked.fetch, state.calls[0][1].platform.fetch);
-  const imports = hooked.createShim("config").getImportObject({ asVersion: "0.2.11" });
-  assert.deepEqual(shimConfigurations, ["config"]);
-  assert.deepEqual(imports["wasi:clocks/wall-clock@0.2.11"].now(), { seconds: 1_700_000_000n, nanoseconds: 123_500_000 });
-  assert.equal(imports["wasi:clocks/wall-clock@0.2.11"].resolution(), "ms");
-  assert.equal(imports["wasi:clocks/monotonic-clock@0.2.11"].now(), 5n);
-  assert.deepEqual([...imports["wasi:random/random@0.2.11"].getRandomBytes(3n)], [1, 2, 3]);
-  assert.equal(imports["wasi:random/random@0.2.11"].getRandomU64(), 0x0b0a090807060504n);
-  assert.deepEqual([...imports["wasi:random/insecure@0.2.11"].getInsecureRandomBytes(1n)], [12]);
-  assert.equal(typeof imports["wasi:random/insecure@0.2.11"].getInsecureRandomU64(), "bigint");
-  assert.equal(imports["wasi:random/insecure-seed@0.2.11"].insecureSeed().length, 2);
+  const importSet = hooked.createImports("request");
+  assert.deepEqual(requests, ["request"]);
+  assert.equal(importSet.release, release);
+  const { imports } = importSet;
+  assert.deepEqual(imports["wasi:clocks/system-clock@0.3.2"].now(), { seconds: 1_700_000_000n, nanoseconds: 123_500_000 });
+  assert.equal(imports["wasi:clocks/system-clock@0.3.2"].getResolution(), 1000n);
+  assert.equal(imports["wasi:clocks/monotonic-clock@0.3.2"].now(), 5n);
+  assert.deepEqual([...imports["wasi:random/random@0.3.2"].getRandomBytes(3n)], [1, 2, 3]);
+  assert.equal(imports["wasi:random/random@0.3.2"].getRandomU64(), 0x0b0a090807060504n);
+  assert.deepEqual([...imports["wasi:random/insecure@0.3.2"].getInsecureRandomBytes(1n)], [12]);
+  assert.equal(typeof imports["wasi:random/insecure@0.3.2"].getInsecureRandomU64(), "bigint");
+  assert.equal(imports["wasi:random/insecure-seed@0.3.2"].getInsecureSeed().length, 2);
 });
 
-test("platform hooks leave modules the shim does not supply and reject invalid clock values", async () => {
+test("platform hooks leave modules the platform does not supply and reject invalid clock values", async () => {
+  const importSet = imports => () => Object.freeze({ imports, release: async () => {} });
   const state = fixture();
   const openPage = state.factory({
     ...pageOptions(),
-    platform: Object.freeze({ createShim: () => ({ getImportObject: () => ({ "wasi:cli/environment@0.2.11": {} }) }) }),
+    platform: Object.freeze({ createImports: importSet({ "wasi:cli/environment@0.3.2": {} }) }),
   });
   await openPage({ exports: ["Add"], options: { platform: { now: () => 0, random: () => {} } }, startup });
-  const imports = state.calls[0][1].platform.createShim().getImportObject();
-  assert.deepEqual(Object.keys(imports), ["wasi:cli/environment@0.2.11"]);
+  const { imports } = state.calls[0][1].platform.createImports();
+  assert.deepEqual(Object.keys(imports), ["wasi:cli/environment@0.3.2"]);
 
   const clocks = fixture();
   const clockPage = clocks.factory({
     ...pageOptions(),
-    platform: Object.freeze({ createShim: () => ({ getImportObject: () => ({
-      "wasi:clocks/wall-clock@0.2.11": { now() {} },
-    }) }) }),
+    platform: Object.freeze({ createImports: importSet({ "wasi:clocks/system-clock@0.3.2": { now() {} } }) }),
   });
   for (const value of [-1, Number.NaN, "now"]) {
     await clockPage({ exports: ["Add"], options: { platform: { now: () => value } }, startup });
-    const wallClock = clocks.calls.at(-2)[1].platform.createShim().getImportObject()["wasi:clocks/wall-clock@0.2.11"];
-    assert.throws(() => wallClock.now(), /non-negative epoch milliseconds/);
+    const systemClock = clocks.calls.at(-2)[1].platform.createImports().imports["wasi:clocks/system-clock@0.3.2"];
+    assert.throws(() => systemClock.now(), /non-negative epoch milliseconds/);
   }
 });
 

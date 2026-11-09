@@ -16,7 +16,7 @@ async function start() {
       grants: { environment: [], preopens: [], network: "denyAll", clocks: ["monotonic"], randomness: true },
       applicationImports: [],
     },
-    stdout: sink, stderr: sink, signal: null,
+    stdout: sink, stderr: sink, stdin: null, signal: null,
   });
 }
 

@@ -10,6 +10,7 @@ import { executeWithTimeZoneResources } from "./timezone-execution.mjs";
 const digest = "1".repeat(64);
 const stdout = Object.freeze({ write() {} });
 const stderr = Object.freeze({ write() {} });
+const stdin = Object.freeze({ read() { return [][Symbol.iterator](); } });
 const componentImports = Object.freeze(Object.create(null));
 const consumerModules = Object.freeze(Object.create(null));
 const rawProviders = Object.freeze(Object.create(null));
@@ -29,13 +30,13 @@ function manifest(kind = "component") {
     artifacts: Object.freeze([]),
     buildFingerprint: digest,
     deploymentKind: kind,
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     runtimeFeatures: Object.freeze([]),
   });
 }
 
 function execution(overrides = {}) {
-  return { request: request(), signal: null, stderr, stdout, ...overrides };
+  return { request: request(), signal: null, stderr, stdin, stdout, ...overrides };
 }
 
 function fixture(overrides = {}) {
@@ -70,7 +71,13 @@ function fixture(overrides = {}) {
     },
     async prepareProviders(value) {
       calls.push(["providers", value]);
-      return Object.freeze({ binding, componentImports, consumerModules, rawProviders });
+      return Object.freeze({
+        binding,
+        componentImports,
+        consumerModules,
+        rawProviders,
+        release: async () => { calls.push(["providers-release"]); },
+      });
     },
     prepareRawInterop(value) {
       calls.push(["interop", value]);
@@ -101,7 +108,7 @@ test("executes a component through validated providers and owned resources", asy
   assert.equal(Object.isFrozen(f.execute), true);
   assert.deepEqual(f.calls.map(([name]) => name), [
     "request", "manifest", "timezone", "resolve", "filesystem", "materializer",
-    "materialize", "providers", "strategy", "filesystem-release",
+    "materialize", "providers", "strategy", "providers-release", "filesystem-release",
   ]);
   const manifestRequest = f.calls.find(([name]) => name === "manifest")[1];
   assert.deepEqual(manifestRequest, { expectedSha256: digest, signal: null });
@@ -109,6 +116,7 @@ test("executes a component through validated providers and owned resources", asy
   assert.equal(providerRequest.request, input.request);
   assert.equal(providerRequest.manifest.deploymentKind, "component");
   assert.notEqual(providerRequest.stdout, stdout);
+  assert.strictEqual(providerRequest.stdin, stdin);
   assert.notEqual(providerRequest.stderr, stderr);
   const strategyRequest = f.calls.find(([name]) => name === "strategy")[1];
   assert.deepEqual(Object.keys(strategyRequest).sort(), [
@@ -286,4 +294,21 @@ test("validates factory and public request shapes before execution", async () =>
     }
   }
   assert.deepEqual(f.calls, []);
+});
+
+test("releases the prepared providers when the strategy fails and rejects unreleasable providers", async () => {
+  const failing = fixture({ resolveStrategy: () => async () => { throw new Error("private strategy"); } });
+  const outcome = await failing.execute(execution());
+  assert.equal(outcome.completionKind, "hostFailure");
+  assert.equal(failing.calls.some(([name]) => name === "providers-release"), true);
+
+  const unreleasable = fixture({
+    prepareProviders: async () => Object.freeze({
+      binding, componentImports, consumerModules, rawProviders, release: null,
+    }),
+  });
+  const rejected = await unreleasable.execute(execution());
+  assert.deepEqual([rejected.completionKind, rejected.primaryFailure.code], [
+    "hostFailure", "host.provider-prepare",
+  ]);
 });

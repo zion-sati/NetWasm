@@ -18,8 +18,8 @@ var files = {
     new URL("./async-js-contract.mjs", import.meta.url))],
   "/NetWasm.Runtime.Tests/runtime-contract-imports.mjs": ["text/javascript", await readFile(
     new URL("../../NetWasm.Runtime.Tests/runtime-contract-imports.mjs", import.meta.url))],
-  "/NetWasm.Runtime.Tests/yield-reactor-imports.mjs": ["text/javascript", await readFile(
-    new URL("../../NetWasm.Runtime.Tests/yield-reactor-imports.mjs", import.meta.url))],
+  "/NetWasm.Runtime.Tests/monotonic-clock-imports.mjs": ["text/javascript", await readFile(
+    new URL("../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs", import.meta.url))],
   "/NetWasm.Runtime.Tests/output-stream-imports.mjs": ["text/javascript", await readFile(
     new URL("../../NetWasm.Runtime.Tests/output-stream-imports.mjs", import.meta.url))],
 };

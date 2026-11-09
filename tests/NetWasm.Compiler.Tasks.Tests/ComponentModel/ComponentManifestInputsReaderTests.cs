@@ -21,7 +21,7 @@ public sealed class ComponentManifestInputsReaderTests
         Assert.Equal("run", export.Name);
         Assert.Equal("value-task", export.AsyncReturn);
         Assert.Equal("1.28.1", result.Adapters.Jco);
-        Assert.Equal("0.20.1", result.Adapters.Preview2Shim);
+        Assert.Equal("0.20.1", result.Adapters.Preview3Shim);
         var witImport = Assert.Single(result.WitImports);
         Assert.Equal("wasi:http/outgoing-handler@0.2.11", witImport.Interface);
         Assert.Equal("handle", witImport.Function);

@@ -65,6 +65,43 @@ public sealed class ComponentCoreModuleOptimizerTests
     }
 
     [Theory]
+    [InlineData("wasm32")]
+    [InlineData("wasm64")]
+    public void WithLowMemoryUnusedTheOptimizerMayFoldAddedConstantsIntoOffsets(string width)
+    {
+        var stages = new RecordingStages();
+        var target = width == "wasm64" ? ComponentTarget.Wasm64Wasi02 : ComponentTarget.Wasm32Wasi02;
+
+        Create(stages).Optimize("input", "output", target, FinalWasmOptimization.Oz, lowMemoryUnused: true);
+
+        Assert.Equal(["--low-memory-unused", "--output", "output"], stages.Arguments.TakeLast(3));
+        Assert.Single(stages.Arguments, "--low-memory-unused");
+    }
+
+    [Fact]
+    public void WithoutLowMemoryUnusedTheOptimizerKeepsAddedConstants()
+    {
+        var stages = new RecordingStages();
+
+        Create(stages).Optimize("input", "output", ComponentTarget.Wasm32Wasi02, FinalWasmOptimization.O3);
+
+        Assert.DoesNotContain("--low-memory-unused", stages.Arguments);
+    }
+
+    [Theory]
+    [InlineData(FinalWasmOptimization.None)]
+    [InlineData(FinalWasmOptimization.O0)]
+    public void PresetsThatSkipTheOptimizerIgnoreLowMemoryUnused(FinalWasmOptimization optimization)
+    {
+        var stages = new RecordingStages();
+
+        Create(stages).Optimize("input", "output", ComponentTarget.Wasm32Wasi02, optimization, lowMemoryUnused: true);
+
+        Assert.Empty(stages.Arguments);
+        Assert.Equal(["exists", "validate", "cleanup"], stages.Calls);
+    }
+
+    [Theory]
     [InlineData("bad module\n", "bad module")]
     [InlineData("", "unknown error")]
     public void OptimizerFailureStopsValidationAndAnnotationCleanup(string error, string expected)

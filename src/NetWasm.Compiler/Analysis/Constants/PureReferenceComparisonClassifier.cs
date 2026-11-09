@@ -34,8 +34,10 @@ internal sealed class PureReferenceComparisonClassifier(
                 _intrinsics.TryGetIntrinsic(method.Definition.Key, out _) ||
                 method.Signature.ReturnType != CliValueKind.I4 ||
                 method.Signature.ParameterTypes is not [CliValueKind.ManagedReference, CliValueKind.ManagedReference] ||
-                _typeDefinitions.ResolveTypeIdentity(method.DeclaringType).Methods.Any(
-                    key => _methods.GetMethod(key).Name == ".cctor"))
+                // A beforefieldinit owner initializes on static field access, which the
+                // comparison grammar below excludes; calling the method does not trigger it.
+                _typeDefinitions.ResolveTypeIdentity(method.DeclaringType) is { IsBeforeFieldInit: false } owner &&
+                    owner.Methods.Any(key => _methods.GetMethod(key).Name == ".cctor"))
             {
                 return null;
             }

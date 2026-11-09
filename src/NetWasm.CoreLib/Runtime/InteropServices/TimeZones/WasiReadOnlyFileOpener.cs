@@ -6,6 +6,8 @@ namespace System.Runtime.InteropServices.TimeZones
     internal sealed class WasiReadOnlyFileOpener(
         IWasiDescriptorOpenInvoker invoker) : IReadOnlyFileOpener
     {
+        internal const nuint ErrorCodeResultSize = 20;
+
         private readonly IWasiDescriptorOpenInvoker _invoker =
             invoker ?? throw new ArgumentNullException();
 
@@ -16,14 +18,17 @@ namespace System.Runtime.InteropServices.TimeZones
                 throw new ArgumentNullException();
             }
             using var path = LowerString(relativePath);
-            var result = CanonicalAbi.Allocate(8, 4);
+            // result<descriptor, error-code>: a discriminant byte, then at offset 4 the
+            // descriptor or the error-code variant, whose other(option<string>) case makes
+            // the whole result 20 bytes.
+            var result = CanonicalAbi.Allocate(ErrorCodeResultSize, 4);
             try
             {
                 _invoker.Invoke(directoryHandle, path.Address, path.Length, result);
                 return CanonicalAbi.ReadByte(result, 0) switch
                 {
                     0 => CanonicalAbi.ReadInt32(result, 4),
-                    1 => throw Failure("open", CanonicalAbi.ReadInt32(result, 4)),
+                    1 => throw Failure("open", CanonicalAbi.ReadByte(result, 4)),
                     _ => throw new PlatformNotSupportedException(
                         "WASI filesystem returned an invalid open result."),
                 };

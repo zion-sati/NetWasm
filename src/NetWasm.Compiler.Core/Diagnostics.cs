@@ -20,6 +20,8 @@ public enum DiagnosticCode
     FunctionBodyLimit = 1013,
     // A host could not read or write a file, or failed unexpectedly.
     HostFailure = 1014,
+    // A program's NetWasmPlatformAttribute declaration is invalid.
+    PlatformService = 1015,
     GenericExpansion = 2001,
 }
 

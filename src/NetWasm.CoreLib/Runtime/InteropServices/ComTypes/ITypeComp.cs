@@ -1,0 +1,46 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// NetWasm adaptation: union fields drop upstream's preview 'safe' modifier, which CoreLib's language
+// version does not enable; each overlaps only unmanaged values, as its safety comment records.
+
+using System.ComponentModel;
+
+namespace System.Runtime.InteropServices.ComTypes
+{
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public enum DESCKIND
+    {
+        DESCKIND_NONE = 0,
+        DESCKIND_FUNCDESC = DESCKIND_NONE + 1,
+        DESCKIND_VARDESC = DESCKIND_FUNCDESC + 1,
+        DESCKIND_TYPECOMP = DESCKIND_VARDESC + 1,
+        DESCKIND_IMPLICITAPPOBJ = DESCKIND_TYPECOMP + 1,
+        DESCKIND_MAX = DESCKIND_IMPLICITAPPOBJ + 1
+    }
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    [StructLayout(LayoutKind.Explicit, CharSet = CharSet.Unicode)]
+    public struct BINDPTR
+    {
+        /// <safety>Overlaps only same-width IntPtr fields, so the union cannot forge a managed reference.</safety>
+        [FieldOffset(0)]
+        public IntPtr lpfuncdesc;
+        /// <safety>Overlaps only same-width IntPtr fields, so the union cannot forge a managed reference.</safety>
+        [FieldOffset(0)]
+        public IntPtr lpvardesc;
+        /// <safety>Overlaps only same-width IntPtr fields, so the union cannot forge a managed reference.</safety>
+        [FieldOffset(0)]
+        public IntPtr lptcomp;
+    }
+
+    [Guid("00020403-0000-0000-C000-000000000046")]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [ComImport]
+    public interface ITypeComp
+    {
+        void Bind([MarshalAs(UnmanagedType.LPWStr)] string szName, int lHashVal, short wFlags, out ITypeInfo ppTInfo, out DESCKIND pDescKind, out BINDPTR pBindPtr);
+        void BindType([MarshalAs(UnmanagedType.LPWStr)] string szName, int lHashVal, out ITypeInfo ppTInfo, out ITypeComp ppTComp);
+    }
+}

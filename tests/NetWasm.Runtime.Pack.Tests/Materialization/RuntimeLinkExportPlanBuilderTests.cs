@@ -52,7 +52,9 @@ public sealed class RuntimeLinkExportPlanBuilderTests
             "initialize_finalization",
             "reregister_for_finalize",
             "suppress_finalize",
-            "array_set_value");
+            "array_set_value",
+            "object_clone",
+            "random_seed");
 
         var ordinary = builder.Build(new(manifestExports, [])
         {
@@ -65,6 +67,8 @@ public sealed class RuntimeLinkExportPlanBuilderTests
         Assert.DoesNotContain(ordinary.Arguments,
             argument => argument.Contains("finaliz", StringComparison.Ordinal));
         Assert.DoesNotContain("--export=array_set_value", ordinary.Arguments);
+        Assert.DoesNotContain("--export=object_clone", ordinary.Arguments);
+        Assert.DoesNotContain("--export=random_seed", ordinary.Arguments);
 
         var ephemerons = builder.Build(new(manifestExports, [])
         {
@@ -104,11 +108,23 @@ public sealed class RuntimeLinkExportPlanBuilderTests
         Assert.DoesNotContain(boxedValues.Arguments,
             argument => argument.Contains("finaliz", StringComparison.Ordinal));
 
+        // MemberwiseClone's runtime copy and the hash seed, and the seed's wasi:random import,
+        // only where the program clones or seeds a hash.
+        var cloneAndSeed = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["object-clone", "random-seed"],
+        });
+        Assert.Contains("--export=object_clone", cloneAndSeed.Arguments);
+        Assert.Contains("--export=random_seed", cloneAndSeed.Arguments);
+        Assert.DoesNotContain("--export=array_set_value", cloneAndSeed.Arguments);
+
         var legacy = builder.Build(new(manifestExports, []));
         Assert.Contains("--export=ephemeron_handle_new", legacy.Arguments);
         Assert.Contains("--export=command_exception_capture", legacy.Arguments);
         Assert.Contains("--export=allocate_finalizable", legacy.Arguments);
         Assert.Contains("--export=array_set_value", legacy.Arguments);
+        Assert.Contains("--export=object_clone", legacy.Arguments);
+        Assert.Contains("--export=random_seed", legacy.Arguments);
     }
 
     [Fact]

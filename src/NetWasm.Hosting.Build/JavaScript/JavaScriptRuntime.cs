@@ -5,10 +5,10 @@ namespace NetWasm.Hosting.Build.JavaScript;
 
 /// <summary>
 /// The JavaScript runtime every raw browser host of a release shares: fixed
-/// facade modules over the hosting and Preview 2 shim sources. A project
-/// bundles all of them into content-hashed files that are the same in every
-/// project, so a page and its workers download one copy. An entry imports the
-/// modules it uses by their <c>netwasm:runtime/</c> specifiers.
+/// facade modules over the hosting sources. A project bundles all of them into
+/// content-hashed files that are the same in every project, so a page and its
+/// workers download one copy. An entry imports the modules it uses by their
+/// <c>netwasm:runtime/</c> specifiers.
 /// </summary>
 internal static class JavaScriptRuntime
 {
@@ -17,38 +17,26 @@ internal static class JavaScriptRuntime
     public const string WorkerClient = "worker-client";
     public const string ManifestValidator = "manifest-validator";
     public const string Filesystem = "filesystem";
+    public const string Http = "http";
 
     private const string SpecifierPrefix = "netwasm:runtime/";
-
-    // Every raw host links cli and io, so its own module carries them; each
-    // other family is a module of its own that only an application using it
-    // loads.
-    private static readonly string[] HostFamilies = ["cli", "io"];
-    private static readonly string[] OptionalFamilies = ["clocks", Filesystem, "http", "random", "sockets"];
 
     public static string Specifier(string module) => SpecifierPrefix + module;
 
     public static string Quoted(string module) => JsonSerializer.Serialize(Specifier(module), HostingBuildJsonContext.Default.String);
-
-    /// <summary>The runtime module a host imports a Preview 2 shim family from.</summary>
-    public static string FamilyModule(string family, string host) =>
-        HostFamilies.Contains(family, StringComparer.Ordinal) ? host : family;
 
     /// <summary>
     /// Writes the facades, replacing any other module in the directory. Their
     /// set never depends on the project: the bundler splits shared code by
     /// which facades use it, so a different set would change every file.
     /// </summary>
-    public static void WriteFacades(string directory, string hostingRoot, string preview2ShimRoot)
+    public static void WriteFacades(string directory, string hostingRoot)
     {
         string Hosting(string file) => BrowserHostSource.ModuleSpecifier(Path.Combine(hostingRoot, file));
-        string Shim(string family) =>
-            BrowserHostSource.ModuleSpecifier(Path.Combine(preview2ShimRoot, "dist", "browser", family + ".js"));
-        string[] HostShim() =>
+        string[] HostPlatform() =>
         [
-            $"export {{ createSelectedPreview2ShimFactory }} from {Hosting("preview2-selected-shim.mjs")};",
+            $"export {{ createWasiPlatform }} from {Hosting("wasi-platform.mjs")};",
             $"export {{ webPlatform }} from {Hosting("browser-web-platform.mjs")};",
-            .. HostFamilies.Select(family => $"export * as {family} from {Shim(family)};"),
         ];
 
         var facades = new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -56,7 +44,7 @@ internal static class JavaScriptRuntime
             [Page] =
             [
                 $"export {{ createPageSession }} from {Hosting("page-session-root.mjs")};",
-                .. HostShim(),
+                .. HostPlatform(),
             ],
             [Worker] =
             [
@@ -64,22 +52,22 @@ internal static class JavaScriptRuntime
                 $"export {{ createBrowserRawExportSession }} from {Hosting("browser-raw-export-session.mjs")};",
                 $"export {{ createWorkerSessionHost }} from {Hosting("worker-session-host.mjs")};",
                 $"export {{ mergeEnvironment }} from {Hosting("session-options.mjs")};",
-                .. HostShim(),
+                .. HostPlatform(),
             ],
-            [WorkerClient] = [$"export {{ createWorkerSessionClient }} from {Hosting("worker-session-client.mjs")};"],
+            [WorkerClient] =
+            [
+                $"export {{ createWorkerSessionClient }} from {Hosting("worker-session-client.mjs")};",
+                $"export {{ createWorkerFileMounts }} from {Hosting("worker-file-mounts.mjs")};",
+            ],
             [ManifestValidator] =
                 [$"export {{ validateDeploymentManifest }} from {Hosting("deployment-manifest-validator.mjs")};"],
+            [Filesystem] =
+            [
+                $"export {{ createWasiFilesystem }} from {Hosting("wasi-filesystem.mjs")};",
+                $"export {{ createBrowserFileMounts }} from {Hosting("browser-file-mounts.mjs")};",
+            ],
+            [Http] = [$"export {{ createWasiHttpFetch }} from {Hosting("wasi-http-fetch.mjs")};"],
         };
-        foreach (var family in OptionalFamilies)
-        {
-            facades[family] = family == Filesystem
-                ?
-                [
-                    $"export * as {family} from {Shim(family)};",
-                    $"export {{ createPreview2FilesystemScope }} from {Hosting("preview2-filesystem-scope.mjs")};",
-                ]
-                : [$"export * as {family} from {Shim(family)};"];
-        }
 
         Directory.CreateDirectory(directory);
         foreach (var stale in Directory.EnumerateFiles(directory, "*.mjs")

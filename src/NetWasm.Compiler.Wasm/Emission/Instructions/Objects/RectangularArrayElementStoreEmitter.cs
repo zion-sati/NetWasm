@@ -55,6 +55,7 @@ internal sealed class RectangularArrayElementStoreEmitter(
         if (elementType.StackKind == CliValueKind.ValueType)
         {
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, values.GetValueLayout(elementType).Size,
+                SmallBlockEmitter.WidestChunk(values.GetValueLayout(elementType)),
                 writer => EmitAddressConstant(writer, values.GetValueLayout(elementType).Size));
         }
         else

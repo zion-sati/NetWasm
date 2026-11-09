@@ -43,10 +43,17 @@ try {
     const module = await import('./scalar.js');
     const getCoreModule = async path => WebAssembly.compile(
       await (await fetch(new URL(path, location.href))).arrayBuffer());
+    // The NetWasm runtime reads its environment and reports through standard error.
+    const runtime = {
+      'wasi:cli/environment': { getEnvironment: () => [] },
+      'wasi:cli/stderr': { writeViaStream: () => Promise.resolve() },
+    };
     const first = await module.instantiate(getCoreModule, {
+      ...runtime,
       increment: { default: value => value + 1 },
     });
     const second = await module.instantiate(getCoreModule, {
+      ...runtime,
       increment: { default: value => value + 2 },
     });
     let denied = false;

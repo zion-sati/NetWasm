@@ -63,6 +63,39 @@ public sealed class WitTypeDeclarationWriterTests
         Assert.Contains(
             "internal static Counter LiftExport(uint handle, bool ownsHandle)",
             source);
+        // The host drops an exported resource synchronously: its destructor may not block.
+        Assert.Contains(
+            "using var __synchronous = CanonicalAbi.EnterSynchronousExport();",
+            source);
+    }
+
+    // An imported resource can cross an export, as the request a wasi:http handler receives and
+    // the response it returns do: its handle stays the host's, so lifting it at an export makes
+    // an imported handle and lowering it hands an owned one back.
+    [Fact]
+    public void ImportedResourceCrossesAnExportAsAnImportedHandle()
+    {
+        var resource = Type(0, "request", "\"resource\"");
+        var @interface = new WitInterface(
+            0,
+            "types",
+            "example:http@1.0.0",
+            ImmutableDictionary<string, int>.Empty.Add("request", 0),
+            []);
+        var world = new WitWorld(
+            0,
+            "service",
+            "example:http@1.0.0",
+            [new WitWorldItem("types", 0, null)],
+            []);
+        var document = new WitDocument([], [@interface], [world], [resource], "{}");
+
+        var source = new WitTypeDeclarationWriter(new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier()), new CodeWriterFactory(), new NetWasm.Wit.Bindings.Aliases.WitAliasValidator(new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier())), new WitTypeDefinitionClassifier())
+            .Generate(document, world);
+
+        Assert.Contains("internal static Request LiftExport(uint handle, bool ownsHandle) => new(handle, ownsHandle);", source);
+        Assert.Contains("internal uint LowerExport() => LowerImport(true);", source);
+        Assert.DoesNotContain("=> throw new InvalidOperationException();", source);
     }
 
     [Fact]

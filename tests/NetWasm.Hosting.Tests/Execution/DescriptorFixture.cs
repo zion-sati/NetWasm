@@ -11,8 +11,7 @@ internal static class DescriptorFixture
         new string('b', 64),
         "0.1.0-preview.1",
         Path.GetFullPath("packages/toolchain/node"),
-        Path.GetFullPath("packages/hosting/launch.mjs"),
-        [new("NetWasm.Toolchain", "0.1.0-preview.1", Path.GetFullPath("packages/toolchain"), new string('c', 64))]);
+        Path.GetFullPath("packages/hosting/launch.mjs"));
 }
 
 internal sealed class DescriptorValidationStub(Action<ExecutionDescriptor> validate) : IExecutionDescriptorValidator

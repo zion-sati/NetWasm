@@ -25,8 +25,8 @@ public sealed class WitPackagePathResolverTests
         Assert.Equal("0.1.0-preview.29", result.PackageVersion);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.WitCommandPackage),
             result.CommandPath);
-        Assert.Equal(AssetPath(ToolchainPlatformAssetIds.WitAsyncCommandPackage),
-            result.AsyncCommandPath);
+        Assert.Equal(AssetPath(ToolchainPlatformAssetIds.WitDiagnosticCommandPackage),
+            result.DiagnosticCommandPath);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.WitCompilerPackage),
             result.CompilerPath);
     }
@@ -75,8 +75,8 @@ public sealed class WitPackagePathResolverTests
                 "tools/wit-packages/wit-package-manifest.json",
             ToolchainPlatformAssetIds.WitCommandPackage =>
                 "tools/wit-packages/command.wit.wasm",
-            ToolchainPlatformAssetIds.WitAsyncCommandPackage =>
-                "tools/wit-packages/async-command.wit.wasm",
+            ToolchainPlatformAssetIds.WitDiagnosticCommandPackage =>
+                "tools/wit-packages/diagnostic-command.wit.wasm",
             ToolchainPlatformAssetIds.WitCompilerPackage =>
                 "tools/wit-packages/compiler.wit.wasm",
             _ => throw new ArgumentOutOfRangeException(nameof(id), id, null),

@@ -32,8 +32,11 @@ internal sealed class PlatformWorldCallRewriter(
             }
             var value = target.Definition.Name switch
             {
-                "ImportsReactorHost" => world.ReactorHost,
                 "ImportsEventLoop" => world.EventLoop,
+                "ImportsMonotonicClock" => world.MonotonicClock,
+                "HasSynchronousExports" => world.SynchronousExports,
+                "HasHostEventLoop" => world.HostEventLoop,
+                "ProvidesWasi" => world.Wasi,
                 _ => (bool?)null,
             };
             if (value is not { } known)

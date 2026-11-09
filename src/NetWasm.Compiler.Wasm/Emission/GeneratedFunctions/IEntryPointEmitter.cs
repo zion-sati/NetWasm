@@ -12,5 +12,8 @@ internal interface IEntryPointEmitter
         IFunctionIndexResolver functionIndices,
         bool reportTerminalExceptions = true,
         EntityKey? argumentFactory = null,
-        MethodInstanceModel? completion = null);
+        MethodInstanceModel? completion = null,
+        EntityKey? localTimePreflight = null,
+        EntityKey? processExit = null,
+        bool initializesRuntime = true);
 }

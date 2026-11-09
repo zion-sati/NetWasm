@@ -4,6 +4,7 @@
 NetWasm.Compiler.Tests.ArraySetValueLinkedCompilationTests
 NetWasm.Compiler.Tests.BoundedArrayCompilationTests
 NetWasm.Compiler.Tests.Correctness.AddressExposureCorpusTests
+NetWasm.Compiler.Tests.Correctness.AddressInductionCorpusTests
 NetWasm.Compiler.Tests.Correctness.AggregateReferenceLaneGcTests
 NetWasm.Compiler.Tests.Correctness.AggregateStackStorageGcTests
 NetWasm.Compiler.Tests.Correctness.AppContextCompatibilityCorpusTests
@@ -144,6 +145,7 @@ NetWasm.Compiler.Tests.Correctness.PropertyIndexPublicationReducerCompilationTes
 NetWasm.Compiler.Tests.Correctness.PureCallReuseCorpusTests
 NetWasm.Compiler.Tests.Correctness.QueueCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.RandomExceptionHandlingDifferentialTests
+NetWasm.Compiler.Tests.Correctness.RangeBranchCorpusTests
 NetWasm.Compiler.Tests.Correctness.ReadOnlyWrapperCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.ReductionConversionCorpusTests
 NetWasm.Compiler.Tests.Correctness.ReductionLoopCorpusTests

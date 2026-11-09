@@ -8,20 +8,26 @@ function importsFor(target) {
     ['netwasm.application.v1', 'netwasm.filter'],
     ['netwasm.application.v1', 'netwasm.finalize'],
     ['env', 'emscripten_notify_memory_growth'],
-    [`${prefix}|wasi:cli/environment@0.2`, 'get-environment'],
-    [`${prefix}|wasi:cli/stdout@0.2`, 'get-stdout'],
-    [`${prefix}|wasi:cli/stderr@0.2`, 'get-stderr'],
-    [`${prefix}|wasi:io/streams@0.2`, '[method]output-stream.blocking-write-and-flush'],
-    [`${prefix}|wasi:io/streams@0.2`, 'output-stream_drop'],
-    [`${prefix}|wasi:io/error@0.2`, 'error_drop'],
-    [`${prefix}|wasi:cli/exit@0.2`, 'exit'],
-    [`${prefix}|wasi:random/random@0.2`, 'get-random-u64'],
+    [`${prefix}|wasi:cli/environment@0.3`, 'get-environment'],
+    ...['stdout', 'stderr'].flatMap(stream => [
+      [`${prefix}|wasi:cli/${stream}@0.3`, 'write-via-stream'],
+      [`wasi:cli/${stream}@0.3.2`, '[stream-new-0]write-via-stream'],
+      [`wasi:cli/${stream}@0.3.2`, '[async-lower][stream-write-0]write-via-stream'],
+      [`wasi:cli/${stream}@0.3.2`, '[stream-drop-writable-0]write-via-stream'],
+      [`wasi:cli/${stream}@0.3.2`, '[async-lower][future-read-1]write-via-stream'],
+      [`wasi:cli/${stream}@0.3.2`, '[future-drop-readable-1]write-via-stream'],
+    ]),
+    ['$root', '[waitable-set-new]'],
+    ['$root', '[waitable-join]'],
+    ['$root', '[waitable-set-wait]'],
+    [`${prefix}|wasi:cli/exit@0.3`, 'exit'],
+    [`${prefix}|wasi:random/random@0.3`, 'get-random-u64'],
   ].map(([module, name]) => ({ module, name, kind: 'function' }));
 }
 
 for (const target of ['wasm32', 'wasm64']) {
   const allowed = importsFor(target);
-  test(`${target}: accepts the supported Preview 2 runtime interfaces`, () => {
+  test(`${target}: accepts the supported WASI 0.3 runtime interfaces`, () => {
     assert.doesNotThrow(() => validateRuntimeImports(allowed, target));
     for (const collector of ['compact', 'netwasm', 'bump']) {
       assert.doesNotThrow(() => validateRuntimeImports(allowed, target, collector));

@@ -45,24 +45,12 @@ public sealed class StaticProviderCatalogAsyncInterfaceCompilationTests
             0,
             [producer])
         {
-            Exports =
-            [
-                new RequestedExport(
-                    "run",
-                    "StaticProviderCatalog.AsyncConsumer.EntryPoint",
-                    "Run"),
-                new RequestedExport(
-                    "observe",
-                    "StaticProviderCatalog.AsyncConsumer.EntryPoint",
-                    "Observe"),
-            ],
             WitPath = Path.Combine(
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            ObserveMethodName = "Observe",
         });
 
         Assert.Equal(expected, observed);

@@ -22,26 +22,37 @@ unsupported native or host APIs and named-culture globalization remain outside
 the initial slice. Results attach to a package version, selected assets and
 the functionality an application actually uses.
 
-## Planned: WASI 0.3 and plain core modules
+## Done in 0.12: WASI 0.3 and plain core modules
 
-Two output changes are planned together.
-
-**WASI 0.3.** The WASI and Component Model integration moves to WASI 0.3, whose
+**WASI 0.3.** The WASI and Component Model integration is WASI 0.3, whose
 native async (async functions, streams and futures) lets C# `async` code map
 onto the Component Model directly instead of through NetWasm's own completion
-boundaries, and the set of WASI capabilities ordinary C# can use widens with it.
+boundaries. The set of WASI capabilities ordinary C# can use widens with it:
+files and directories, sockets and DNS, `ws://` WebSockets, `HttpClient`, and
+HTTP services written as `Task<HttpResponseMessage> Handle(HttpRequestMessage)`.
 WASI 0.3 is stable and current Wasmtime enables it by default, so components
-will target WASI 0.3 only, with no Preview 2 output alongside. Applications
-whose host runs only Preview 2 can stay on NetWasm 0.11.
+target WASI 0.3 only, with no Preview 2 output alongside. Applications whose
+host runs only Preview 2 can stay on NetWasm 0.11.
+
+**WASI needs the Component Model.** NetWasm's WASI support runs on engines that
+implement the Component Model and WASI 0.3, such as Wasmtime, or through
+NetWasm's own hosts for Node.js and browsers. NetWasm never uses WASI Preview 1.
+Preview 1 is frozen, and current WASI is defined on the Component Model, so an
+engine that runs current WASI programs implements it; for an engine that
+supports only core WebAssembly and Preview 1, adding that support is the
+engine vendor's job.
 
 **Plain core modules.** Some hosts embed a WebAssembly engine without the
 Component Model, such as plugin systems in games and native applications, and
-use WIT only to describe the interface. For them NetWasm will also produce a
-plain core module: a world's imports become core imports and its exports core
+use WIT only to describe the interface. For them NetWasm also produces a plain
+core module (`<OutputType>CoreModule</OutputType>`): a world's imports become core imports and its exports core
 exports, named and passed with the canonical ABI as wit-bindgen's core-module
 bindings do, so records, variants, enums and the other WIT types work on both
-sides. Beyond the world's own imports, such a module needs only a small,
-documented contract from its host.
+sides. Such a module imports nothing but its world's functions, and it has no
+WASI: .NET APIs that need a system service (the console, clocks and timers,
+random numbers, the environment, files, networking) throw
+`PlatformNotSupportedException`. A host that wants to offer one of those
+services provides it through the world.
 
 ## Release gates
 

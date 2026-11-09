@@ -19,6 +19,7 @@ internal static class PackagingServiceCollectionExtensions
             ComponentPackageWorkspaceFactory>();
         services.AddSingleton<IComponentPackageExecution,
             ComponentPackageExecution>();
+        services.AddSingleton<IPlainCoreModuleImportValidator, PlainCoreModuleImportValidator>();
         services.AddSingleton<IComponentPackagingCapability,
             ComponentPackagingCapability>();
         services.AddSingleton<IComponentPackager, ComponentPackager>();

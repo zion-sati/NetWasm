@@ -11,7 +11,8 @@ internal readonly record struct RuntimeImportSelection(
     bool IncludeWeakHandles = false,
     bool IncludeRandomSeed = false,
     bool IncludeArraySetValue = false,
-    bool IncludeUnhandledExceptionHint = false)
+    bool IncludeUnhandledExceptionHint = false,
+    bool IncludeObjectClone = false)
 {
     // Whether a module with this selection imports the runtime function.
     public bool Includes(RuntimeImportSymbol symbol) =>
@@ -38,6 +39,7 @@ internal readonly record struct RuntimeImportSelection(
              RuntimeImportSymbol.GcWaitForPendingFinalizers)) &&
         (IncludeRandomSeed || symbol != RuntimeImportSymbol.RandomSeed) &&
         (IncludeArraySetValue || symbol != RuntimeImportSymbol.ArraySetValue) &&
+        (IncludeObjectClone || symbol != RuntimeImportSymbol.ObjectClone) &&
         (IncludeUnhandledExceptionHint || symbol != RuntimeImportSymbol.ReportUnhandledException) &&
         (IncludeTerminalExceptionRaise ||
             symbol != RuntimeImportSymbol.ManagedTerminalExceptionRaise) &&

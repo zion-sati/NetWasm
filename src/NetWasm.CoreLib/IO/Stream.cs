@@ -10,10 +10,10 @@ using System.Threading.Tasks;
 namespace System.IO
 {
     // This synchronous surface is adapted from dotnet/runtime
-    // System.Private.CoreLib (commit 474ed963699fc29809015392738a15231aaae2de).
-    // MarshalByRefObject and legacy APM members are intentionally outside the
-    // NetWasm stream profile. Task/ValueTask I/O uses the platform scheduler.
-    public abstract partial class Stream : IDisposable, IAsyncDisposable
+    // System.Private.CoreLib (commit 811225a482702af7ecc35d817966bc70b88a3a23).
+    // Legacy APM operations expose deferred platform contracts.
+    // Task/ValueTask I/O uses the platform scheduler.
+    public abstract partial class Stream : MarshalByRefObject, IDisposable, IAsyncDisposable
     {
         public static readonly Stream Null = new NullStream();
 
@@ -23,6 +23,10 @@ namespace System.IO
             _asyncActiveSemaphore ??
             Interlocked.CompareExchange(ref _asyncActiveSemaphore, new SemaphoreSlim(1, 1), null) ??
             _asyncActiveSemaphore;
+
+        [Obsolete("CreateWaitHandle has been deprecated. Use the ManualResetEvent(false) constructor instead.")]
+        protected virtual WaitHandle CreateWaitHandle() =>
+            throw new PlatformNotSupportedException("Stream.CreateWaitHandle host wait handles are not available on this NetWasm platform.");
 
         public abstract bool CanRead { get; }
         public abstract bool CanWrite { get; }
@@ -184,6 +188,20 @@ namespace System.IO
         public abstract long Seek(long offset, SeekOrigin origin);
 
         public abstract void SetLength(long value);
+
+        // APM is a separate legacy capability. Keep the virtual contract so
+        // application-provided overrides work without changing Task-based I/O.
+        public virtual IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
+            throw new PlatformNotSupportedException("Stream.BeginRead legacy asynchronous I/O is not available on this NetWasm platform.");
+
+        public virtual int EndRead(IAsyncResult asyncResult) =>
+            throw new PlatformNotSupportedException("Stream.EndRead legacy asynchronous I/O is not available on this NetWasm platform.");
+
+        public virtual IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
+            throw new PlatformNotSupportedException("Stream.BeginWrite legacy asynchronous I/O is not available on this NetWasm platform.");
+
+        public virtual void EndWrite(IAsyncResult asyncResult) =>
+            throw new PlatformNotSupportedException("Stream.EndWrite legacy asynchronous I/O is not available on this NetWasm platform.");
 
         public abstract int Read(byte[] buffer, int offset, int count);
 

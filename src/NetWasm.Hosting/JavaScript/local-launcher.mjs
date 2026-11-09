@@ -1,17 +1,18 @@
 import { isAbsolute } from "node:path";
 
 import { failedExecutionResult } from "./execution-result.mjs";
+import { validateInputSource } from "./input-source.mjs";
 import { validateOutputSink } from "./output-sink-stream.mjs";
 
 const factoryKeys = [
   "appendArguments",
   "createExecution",
+  "grantDirectories",
   "loadPlatform",
   "overlayEnvironment",
   "readDescriptor",
   "readRequest",
   "realPath",
-  "verifyPackage",
 ];
 const invocationKeys = [
   "arguments",
@@ -22,9 +23,9 @@ const invocationKeys = [
   "requestText",
   "signal",
   "stderr",
+  "stdin",
   "stdout",
 ];
-const toolchainId = "NetWasm.Toolchain";
 
 export function createLocalLauncher(options) {
   assertExactDataObject(options, factoryKeys, "local launcher options");
@@ -51,6 +52,7 @@ async function launch(options, invocation) {
   validateSignal(invocation.signal);
   validateOutputSink(invocation.stdout, "local launcher stdout output sink");
   validateOutputSink(invocation.stderr, "local launcher stderr output sink");
+  validateInputSource(invocation.stdin, "local launcher stdin input source");
   if (invocation.signal?.aborted) return callerCancellation();
 
   let descriptor;
@@ -96,27 +98,37 @@ async function launch(options, invocation) {
   }
   if (invocation.signal?.aborted) return callerCancellation();
 
-  let toolchain;
-  let platform;
+  let directories;
   try {
-    const packages = new Map(descriptor.toolPackages.map(
-      package_ => [package_.id, package_]));
-    toolchain = packages.get(toolchainId);
-    if (toolchain === undefined) {
-      return hostFailure(
-        "host.toolchain",
-        "The execution descriptor does not select NetWasm.Toolchain.");
-    }
-    await options.verifyPackage(toolchain);
-    platform = await options.loadPlatform(toolchain);
+    directories = await options.grantDirectories(request);
   } catch (error) {
     return hostFailure(
-      "host.toolchain",
-      "The selected NetWasm.Toolchain package could not be verified.",
+      "host.directories",
+      "The working or temporary directory could not be granted.",
+      error);
+  }
+  try {
+    return await executeLaunch(options, invocation, descriptor, directories);
+  } finally {
+    await directories.release();
+  }
+}
+
+async function executeLaunch(options, invocation, descriptor, directories) {
+  if (invocation.signal?.aborted) return callerCancellation();
+  let platform;
+  try {
+    platform = await options.loadPlatform(Object.freeze({
+      initialDirectory: directories.initialDirectory,
+      manifestPath: descriptor.deploymentManifestPath,
+    }));
+  } catch (error) {
+    return hostFailure(
+      "host.platform",
+      "The deployment's host services could not be loaded.",
       error);
   }
   if (invocation.signal?.aborted) return callerCancellation();
-
   let execute;
   try {
     execute = options.createExecution(Object.freeze({
@@ -135,9 +147,10 @@ async function launch(options, invocation) {
 
   try {
     return await execute(Object.freeze({
-      request,
+      request: directories.request,
       signal: invocation.signal,
       stderr: invocation.stderr,
+      stdin: invocation.stdin,
       stdout: invocation.stdout,
     }));
   } catch (error) {

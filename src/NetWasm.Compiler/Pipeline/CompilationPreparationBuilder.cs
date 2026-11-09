@@ -29,7 +29,9 @@ internal sealed class CompilationPreparationBuilder(
     ISymbolFormatterFactory symbols,
     IStackTraceReachabilityRootProvider stackTraceRoots,
     IManagedExecutableArgumentFactoryResolver argumentFactories,
-    IWasmOptimizationSettingsResolver optimizationSettings) :
+    IManagedExecutableExitResolver exits,
+    IWasmOptimizationSettingsResolver optimizationSettings,
+    Analysis.PlatformServices.IPlatformServiceBindingResolverFactory platformServices) :
     ICompilationPreparationBuilder
 {
     private readonly IBaseTypeResolverFactory _baseTypes = baseTypes ??
@@ -66,8 +68,12 @@ internal sealed class CompilationPreparationBuilder(
         stackTraceRoots ?? throw new ArgumentNullException(nameof(stackTraceRoots));
     private readonly IManagedExecutableArgumentFactoryResolver _argumentFactories =
         argumentFactories ?? throw new ArgumentNullException(nameof(argumentFactories));
+    private readonly IManagedExecutableExitResolver _exits =
+        exits ?? throw new ArgumentNullException(nameof(exits));
     private readonly IWasmOptimizationSettingsResolver _optimizationSettings =
         optimizationSettings ?? throw new ArgumentNullException(nameof(optimizationSettings));
+    private readonly Analysis.PlatformServices.IPlatformServiceBindingResolverFactory _platformServices =
+        platformServices ?? throw new ArgumentNullException(nameof(platformServices));
 
     public CompilationPreparation Prepare(
         MetadataCompilationSnapshot metadata,
@@ -95,8 +101,7 @@ internal sealed class CompilationPreparationBuilder(
             fields,
             methods,
             methodInstances,
-            symbols,
-            PlatformWorldCapabilities.From(componentContract));
+            symbols);
         _interop.Validate(metadata, typeDefinitions, baseTypeResolver, methods, symbols);
         var entry = _entries.Resolve(metadata, methodFinder, symbols, options);
         var exports = _exports.Merge(
@@ -106,16 +111,22 @@ internal sealed class CompilationPreparationBuilder(
         var argumentFactory = entry.EntryPoint is { } entryPoint
             ? _argumentFactories.Resolve(options.EntryPointKind, entryPoint, types, methods)
             : null;
+        var exit = entry.EntryPoint is not null
+            ? _exits.Resolve(options.EntryPointKind, types, methods)
+            : null;
         var reachabilityRoots = _stackTraceRoots.Provide(
             options.EmitStackTrace,
             types,
             fields);
-        if (argumentFactory is { } method)
+        foreach (var root in new[] { argumentFactory, exit })
         {
-            reachabilityRoots = reachabilityRoots with
+            if (root is { } method)
             {
-                Methods = reachabilityRoots.Methods.Add(method),
-            };
+                reachabilityRoots = reachabilityRoots with
+                {
+                    Methods = reachabilityRoots.Methods.Add(method),
+                };
+            }
         }
         var namedCallbacks = metadata.Methods
             .Where(method => method.NativeCallback?.EntryPoint is not null)
@@ -129,14 +140,41 @@ internal sealed class CompilationPreparationBuilder(
                     .Distinct(),
             ],
         };
+        var world = PlatformWorldCapabilities.From(componentContract) with
+        {
+            HostEventLoop = options.UseJavaScriptExportBoundary,
+        };
+        if (options.PlainCoreModule)
+        {
+            if (componentContract.IsEmpty || options.EntryPointKind != CompilerEntryPointKind.Library)
+            {
+                throw new CompilerException(new CompilerDiagnostic(
+                    DiagnosticCode.ComponentContract,
+                    "a plain core module is a library build of a selected WIT world"));
+            }
+            world = world with
+            {
+                EventLoop = false,
+                MonotonicClock = false,
+                HostEventLoop = false,
+                Wasi = false,
+            };
+        }
         return new CompilationPreparation(
             componentContract,
             entry,
             exports,
             reachabilityRoots,
             argumentFactory,
+            exit,
             _optimizationSettings.Resolve(
                 options.Optimization,
-                options.OptimizationOverrides));
+                options.OptimizationOverrides),
+            world with
+            {
+                DeclaredPlatform = _platformServices
+                    .Create(types, typeDefinitions, identities, methods, methodInstances, symbols, baseTypeResolver)
+                    .Resolve(metadata, world.Wasi),
+            });
     }
 }

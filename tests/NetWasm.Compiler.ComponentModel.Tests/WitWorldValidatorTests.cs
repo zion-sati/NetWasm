@@ -27,61 +27,19 @@ public sealed class WitWorldValidatorTests
         new WitWorldValidator().Validate(document, document.Worlds[0]);
     }
 
+    // WASI 0.3 worlds declare asynchronous functions, streams and futures; a
+    // world is valid with them, and only a binding decides what NetWasm supports.
     [Theory]
-    [InlineData("async-freestanding")]
-    [InlineData("async-method")]
-    public void RejectsUserDefinedAsyncFunctions(string kind)
+    [InlineData("async-freestanding", "{\"stream\":\"u8\"}")]
+    [InlineData("async-method", "{\"future\":null}")]
+    [InlineData("freestanding", "{\"stream\":null}")]
+    public void AcceptsAsynchronousFunctionsStreamsAndFutures(string kind, string type)
     {
         var document = CreateDocument(
             new WitFunction("run", [], null, new WitFunctionKind(kind)),
-            Json("{\"list\":\"u8\"}"));
+            Json(type));
 
-        var exception = Assert.Throws<CompilerException>(() =>
-            new WitWorldValidator().Validate(document, document.Worlds[0]));
-
-        Assert.Equal("NW1009", exception.Diagnostic.Id);
-        Assert.Contains("asynchronous WIT function", exception.Diagnostic.Message);
-    }
-
-    [Theory]
-    [InlineData("future")]
-    [InlineData("stream")]
-    public void RejectsDeferredUserDefinedTypes(string kind)
-    {
-        var document = CreateDocument(
-            new WitFunction("run", [], null, new WitFunctionKind("freestanding")),
-            Json($"{{\"{kind}\":null}}"));
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            new WitWorldValidator().Validate(document, document.Worlds[0]));
-
-        Assert.Equal("NW1009", exception.Diagnostic.Id);
-        Assert.Contains("future and stream", exception.Diagnostic.Message);
-    }
-
-    // The message names the type by its owner: the interface or world that
-    // declares it, or where an anonymous one is used.
-    [Theory]
-    [InlineData(true, false, "type 'events' in interface 'example:test/api@1.0.0'")]
-    [InlineData(false, true, "type 'events' in world 'test'")]
-    [InlineData(false, false, "an anonymous type, future")]
-    public void NamesTheDeferredTypeByItsOwner(bool inInterface, bool inWorld, string description)
-    {
-        var document = CreateDocument(
-            new WitFunction("run", [], null, new WitFunctionKind("freestanding")),
-            Json("{\"future\":null}"));
-        var type = document.Types[0] with
-        {
-            Name = inInterface || inWorld ? "events" : null,
-            OwnerInterface = inInterface ? 0 : null,
-            OwnerWorld = inWorld ? 0 : null,
-        };
-        document = document with { Types = [type] };
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            new WitWorldValidator().Validate(document, document.Worlds[0]));
-
-        Assert.Contains(description, exception.Diagnostic.Message);
+        new WitWorldValidator().Validate(document, document.Worlds[0]);
     }
 
     [Fact]

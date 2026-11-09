@@ -143,6 +143,8 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             "ephemeron-handles",
             "finalization",
             "local-time",
+            "object-clone",
+            "random-seed",
             "structured-command-diagnostics",
             "weak-handles",
         ];

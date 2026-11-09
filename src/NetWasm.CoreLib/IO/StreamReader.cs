@@ -104,6 +104,66 @@ namespace System.IO
             _closable = !leaveOpen;
         }
 
+        // Ported from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23: the path constructors.
+        public StreamReader(string path)
+            : this(path, detectEncodingFromByteOrderMarks: true)
+        {
+        }
+
+        public StreamReader(string path, bool detectEncodingFromByteOrderMarks)
+            : this(path, Encoding.UTF8, detectEncodingFromByteOrderMarks, DefaultBufferSize)
+        {
+        }
+
+        public StreamReader(string path, Encoding? encoding)
+            : this(path, encoding, detectEncodingFromByteOrderMarks: true, DefaultBufferSize)
+        {
+        }
+
+        public StreamReader(string path, Encoding? encoding, bool detectEncodingFromByteOrderMarks)
+            : this(path, encoding, detectEncodingFromByteOrderMarks, DefaultBufferSize)
+        {
+        }
+
+        public StreamReader(string path, Encoding? encoding, bool detectEncodingFromByteOrderMarks, int bufferSize)
+            : this(ValidateArgsAndOpenPath(path, bufferSize), encoding, detectEncodingFromByteOrderMarks, bufferSize, leaveOpen: false)
+        {
+        }
+
+        public StreamReader(string path, FileStreamOptions options)
+            : this(path, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, options)
+        {
+        }
+
+        public StreamReader(string path, Encoding? encoding, bool detectEncodingFromByteOrderMarks, FileStreamOptions options)
+            : this(ValidateArgsAndOpenPath(path, options), encoding, detectEncodingFromByteOrderMarks, DefaultBufferSize)
+        {
+        }
+
+        private static FileStream ValidateArgsAndOpenPath(string path, FileStreamOptions options)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(path);
+            ArgumentNullException.ThrowIfNull(options);
+            if ((options.Access & FileAccess.Read) == 0)
+            {
+                throw new ArgumentException(SR.Argument_StreamNotReadable, nameof(options));
+            }
+
+            return new FileStream(path, options);
+        }
+
+        private static FileStream ValidateArgsAndOpenPath(string path, int bufferSize)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(path);
+
+            if (bufferSize != -1)
+            {
+                ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferSize);
+            }
+
+            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileStream.DefaultBufferSize);
+        }
+
         public override void Close() => Dispose(true);
 
         protected override void Dispose(bool disposing)

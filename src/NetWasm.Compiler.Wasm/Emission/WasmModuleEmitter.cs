@@ -33,6 +33,7 @@ internal sealed class WasmModuleEmitter(
     IAsyncJSImportSetAppender asyncJSImportFunctions,
     IFilterFunctionSetAppender filterFunctions,
     IRuntimeFunctionAppender runtimeFunctions,
+    GeneratedFunctions.LocalTime.ILocalTimePreflightMethodSelector localTimeMethods,
     IRequestedExportSetAppender requestedExports,
     IComponentFunctionAppender componentFunctions,
     IFunctionIndexResolverFactory functionIndexResolvers,
@@ -66,6 +67,8 @@ internal sealed class WasmModuleEmitter(
     private readonly IAsyncJSImportSetAppender _asyncJSImportFunctions =
         asyncJSImportFunctions;
     private readonly IRuntimeFunctionAppender _runtimeFunctions = runtimeFunctions;
+    private readonly GeneratedFunctions.LocalTime.ILocalTimePreflightMethodSelector _localTimeMethods =
+        localTimeMethods;
     private readonly IRequestedExportSetAppender _requestedExports = requestedExports;
     private readonly IComponentFunctionAppender _componentFunctions = componentFunctions;
     private readonly IFunctionIndexResolverFactory _functionIndexResolvers =
@@ -230,7 +233,11 @@ internal sealed class WasmModuleEmitter(
             asyncExportHelperIndices,
             functionIndices,
             boundaryEntries,
-            request.EntryPointArgumentFactory);
+            request.EntryPointArgumentFactory,
+            GeneratedFunctions.LocalTime.LocalTimePreflightPlacement.RunsInProcessEntry(request)
+                ? _localTimeMethods.Select(request)
+                : null,
+            request.EntryPointExit);
         var requestedExportIndices = ImmutableDictionary.CreateBuilder<string, int>(
             StringComparer.Ordinal);
         _requestedExports.Append(functions, imports.Length, requestedExportIndices,
@@ -277,6 +284,20 @@ internal sealed class WasmModuleEmitter(
         {
             runtimeFeatures = [.. runtimeFeatures
                 .Append(NetWasmRuntimeFeatureIds.WeakHandles)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (plan.RuntimeImportSelection.IncludeObjectClone)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.ObjectClone)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (plan.RuntimeImportSelection.IncludeRandomSeed)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.RandomSeed)
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)];
         }

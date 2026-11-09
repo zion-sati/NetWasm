@@ -312,6 +312,7 @@ internal sealed class ArrayInstructionEmitter(
                 indexLocal,
                 elementSize);
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, elementSize,
+                SmallBlockEmitter.WidestChunk(values.GetValueLayout(elementType)),
                 writer => addresses.Emit(writer, elementSize));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
         }
@@ -421,6 +422,7 @@ internal sealed class ArrayInstructionEmitter(
         if (elementType.StackKind == CliValueKind.ValueType)
         {
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, elementSize,
+                SmallBlockEmitter.WidestChunk(values.GetValueLayout(elementType)),
                 writer => addresses.Emit(writer, elementSize));
         }
         else

@@ -59,7 +59,7 @@ public sealed class SynchronousManagedExecutableComponentAdapterWriter(
     private static string CreateStandardModule(string result, string normalizeResult) =>
         "(module " +
         $"(import \"netwasm.application.v1\" \"run\" (func $application_run {result})) " +
-        "(func (export \"cm32p2|wasi:cli/run@0.2|run\") (result i32) " +
+        "(func (export \"cm32p2|wasi:cli/run@0.3|run\") (result i32) " +
         $"call $application_run {normalizeResult}))";
 
     private static string CreateStructuredModule(
@@ -78,7 +78,7 @@ public sealed class SynchronousManagedExecutableComponentAdapterWriter(
             "global.get $entered if unreachable end i32.const 1 global.set $entered " +
             "(block $failed (try_table (catch $terminal $failed) " +
             $"call $application_run {normalizeResult} return)) i32.const 2) " +
-            "(func (export \"cm32p2|wasi:cli/run@0.2|run\") (result i32) (local $status i32) " +
+            "(func (export \"cm32p2|wasi:cli/run@0.3|run\") (result i32) (local $status i32) " +
             "call $execute local.tee $status i32.const 2 i32.eq " +
             "if call $write i32.const 1 return end local.get $status) " +
             "(func (export \"cm32p2|netwasm:diagnostics/command@1|run\") " +

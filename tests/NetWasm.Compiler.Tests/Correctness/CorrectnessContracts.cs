@@ -118,7 +118,9 @@ internal sealed record CorpusFixture(
 
     public string WasmEntryMethod { get; init; } = "Run";
 
-    public string? ReactorObserveMethod { get; init; }
+    // The NetWasm entry is an asynchronous Main, run as a callback-lifted wasi:cli/run with the
+    // input as its one argument, so its awaits resume in the host's callbacks.
+    public bool CallbackEntry { get; init; }
 
     public ImmutableArray<string> NetWasmReferencePaths { get; init; } = [];
 

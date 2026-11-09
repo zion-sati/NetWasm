@@ -31,8 +31,7 @@ public sealed class AsyncValueTaskResumptionCompilationTests
             41,
             [])
         {
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            ObserveMethodName = "Observe",
             DiagnosticTracePath = System.IO.Path.Combine(
                 System.IO.Path.GetTempPath(),
                 $"netwasm-valuetask-resumption-{target}-{optimize}.jsonl"),
@@ -43,18 +42,7 @@ public sealed class AsyncValueTaskResumptionCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            Exports =
-            [
-                new RequestedExport(
-                    "run",
-                    "AsyncValueTaskResumptionFixture.EntryPoint",
-                    "Run"),
-                new RequestedExport(
-                    "observe",
-                    "AsyncValueTaskResumptionFixture.EntryPoint",
-                    "Observe"),
-            ],
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
 
         Assert.Equal(42, result);
@@ -95,15 +83,9 @@ public sealed class AsyncValueTaskResumptionCompilationTests
             "FilteredValueTaskFixture", FilteredSource, "FilteredValueTaskFixture.EntryPoint",
             optimize, target, mode, [])
         {
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            ObserveMethodName = "Observe",
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            Exports =
-            [
-                new RequestedExport("run", "FilteredValueTaskFixture.EntryPoint", "Run"),
-                new RequestedExport("observe", "FilteredValueTaskFixture.EntryPoint", "Observe"),
-            ],
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
         Assert.Equal(42, result);
     }

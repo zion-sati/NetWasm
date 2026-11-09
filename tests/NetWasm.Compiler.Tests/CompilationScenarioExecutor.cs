@@ -28,8 +28,9 @@ internal sealed record CompilationScenario(
     internal int ExpectedPreopenReads { get; init; } = 1;
     internal string? WitPath { get; init; }
     internal string? WitWorld { get; init; }
-    internal bool DrainReactor { get; init; }
-    internal string? ObserveExportName { get; init; }
+    // The method that reads the outcome of asynchronous work the entry starts. The fixture then
+    // runs as an asynchronous Main (AsyncObservationEntry) whose callbacks run that work.
+    internal string? ObserveMethodName { get; init; }
     internal bool EmitStackTrace { get; init; }
     internal bool EmitPortablePdb { get; init; }
     internal FinalWasmOptimization Optimization { get; init; } =
@@ -60,38 +61,41 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
         ArgumentNullException.ThrowIfNull(scenario);
 
         var references = scenario.ReferencePaths.ToArray();
+        var (source, entryTypeName, entryMethodName) = scenario.ObserveMethodName is { } observe
+            ? Observed(scenario, observe)
+            : (scenario.Source, scenario.EntryTypeName, scenario.EntryMethodName);
         var assembly = scenario.EmitPortablePdb
             ? _assets.CompileSourceWithPortablePdb(
                 scenario.AssemblyName,
-                scenario.Source,
+                source,
                 scenario.Optimize,
                 references)
             : (scenario.Optimize, scenario.AllowUnsafe) switch
             {
                 (true, true) => _assets.CompileOptimizedUnsafeSource(
                     scenario.AssemblyName,
-                    scenario.Source,
+                    source,
                     references),
                 (true, false) => _assets.CompileOptimizedSource(
                     scenario.AssemblyName,
-                    scenario.Source,
+                    source,
                     references),
                 (false, true) => _assets.CompileUnsafeSource(
                     scenario.AssemblyName,
-                    scenario.Source,
+                    source,
                     references),
                 (false, false) => _assets.CompileSource(
                     scenario.AssemblyName,
-                    scenario.Source,
+                    source,
                     references),
             };
         var compilerReferences = scenario.ReferencePaths.Add(_assets.CoreLib);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             compilerReferences,
-            scenario.EntryTypeName,
-            scenario.EntryMethodName,
-            scenario.Exports,
+            entryTypeName,
+            entryMethodName,
+            scenario.ObserveMethodName is null ? scenario.Exports : [],
             scenario.Target,
             DiagnosticTracePath: scenario.DiagnosticTracePath,
             DiagnosticLogPath: scenario.DiagnosticLogPath,
@@ -99,7 +103,10 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
             WitWorld: scenario.WitWorld,
             EmitStackTrace: scenario.EmitStackTrace,
             ProjectDirectory: _assets.Directory,
-            Optimization: scenario.Optimization));
+            Optimization: scenario.Optimization,
+            EntryPointKind: scenario.ObserveMethodName is null
+                ? CompilerEntryPointKind.RawFunction
+                : CompilerEntryPointKind.ManagedExecutable));
 
         CompilerTestSupport.ValidateWithNode(compilation.ApplicationModule, _assets.Directory);
 
@@ -114,10 +121,24 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
             scenario.LoadStackTraceSymbols
                 ? compilation.StackTraceSymbols?.Bytes
                 : null,
-            drainReactor: scenario.DrainReactor,
-            observeExportName: scenario.ObserveExportName,
+            callbackEntry: scenario.ObserveMethodName is not null,
             expectedEnvironmentReads: scenario.ExpectedEnvironmentReads,
             expectedPreopenReads: scenario.ExpectedPreopenReads,
-            entryInvocationCount: scenario.EntryInvocationCount);
+            entryInvocationCount: scenario.EntryInvocationCount,
+            inputArgument: scenario.ObserveMethodName is not null);
+    }
+
+    private static (string Source, string EntryTypeName, string EntryMethodName) Observed(
+        CompilationScenario scenario,
+        string observeMethodName)
+    {
+        if (!scenario.Exports.IsDefaultOrEmpty)
+        {
+            throw new ArgumentException(
+                "An observed scenario exports only its asynchronous Main.", nameof(scenario));
+        }
+        var (source, entryTypeName) = AsyncObservationEntry.Append(
+            scenario.Source, scenario.EntryTypeName, scenario.EntryMethodName, observeMethodName);
+        return (source, entryTypeName, AsyncObservationEntry.MethodName);
     }
 }

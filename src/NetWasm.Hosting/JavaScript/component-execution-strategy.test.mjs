@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createComponentExecutionStrategy } from "./component-execution-strategy.mjs";
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 
 const release = (code, action) => ({
   code,
@@ -47,52 +44,6 @@ test("loads and executes a command before closing the outer caller scope", async
   assert.equal(result.completionKind, "normal");
   assert.equal(result.exitCode, -17);
   assert.deepEqual(calls, ["load", "instantiate", "run", "caller-release"]);
-});
-
-test("closes the component reactor before the outer caller scope", async () => {
-  const calls = [];
-  const jobs = [];
-  let reactorHost;
-  let status = 0;
-  const execute = createComponentExecutionStrategy(async () => ({
-    adapter: {
-      contractKey: processExecutionContract,
-      instantiate({ imports }) {
-        reactorHost = imports["netwasm:runtime/reactor-host"];
-        return {
-          process: {
-            start() {
-              reactorHost.watch({
-                block: () => Promise.resolve(),
-                dispose: () => calls.push("reactor-release"),
-              }, 7);
-              return 1;
-            },
-            status() { return status; },
-            exitCode() { return 29; },
-            complete() { calls.push("complete"); },
-          },
-          reactorGuest: { wake() { status = 1; } },
-        };
-      },
-    },
-    loadCoreModule() {},
-  }));
-  const resultPromise = execute({
-    artifacts: [],
-    contractKey: processExecutionContract,
-    imports: {},
-    schedule: callback => jobs.push(callback),
-    releaseActions: [release("caller", () => calls.push("caller-release"))],
-  });
-  await Promise.resolve();
-  await Promise.resolve();
-  jobs.shift()();
-  await Promise.resolve();
-  await Promise.resolve();
-  const result = await resultPromise;
-  assert.equal(result.exitCode, 29);
-  assert.deepEqual(calls, ["reactor-release", "complete", "caller-release"]);
 });
 
 test("maps load failure with its cause and closes caller resources", async () => {
@@ -212,7 +163,7 @@ test("validates factory, request and common inputs before loading", async () => 
     { contractKey: "unsupported@1.0.0" },
     { imports: null },
     { instantiateCore: 1 },
-    { schedule: null },
+    { schedule: () => {} },
     { releaseActions: null },
     { signal: {} },
   ]) {

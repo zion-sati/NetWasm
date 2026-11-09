@@ -104,13 +104,49 @@ namespace System.Runtime.InteropServices
         public static void FreeCoTaskMem(IntPtr ptr) =>
             FreeHGlobal(ptr);
 
-        public static void ThrowExceptionForHR(int errorCode)
+        public static Exception? GetExceptionForHR(int errorCode) => GetExceptionForHR(errorCode, IntPtr.Zero);
+
+        public static Exception? GetExceptionForHR(int errorCode, IntPtr errorInfo)
         {
             if (errorCode >= 0)
             {
-                return;
+                return null;
             }
 
+            return GetExceptionForHRInternal(errorCode);
+        }
+
+        // There are no COM error objects here, so the interface context adds nothing.
+        public static Exception? GetExceptionForHR(int errorCode, in Guid iid, IntPtr pUnk) => GetExceptionForHR(errorCode, IntPtr.Zero);
+
+        public static void ThrowExceptionForHR(int errorCode)
+        {
+            if (errorCode < 0)
+            {
+                throw GetExceptionForHR(errorCode)!;
+            }
+        }
+
+        public static void ThrowExceptionForHR(int errorCode, IntPtr errorInfo)
+        {
+            if (errorCode < 0)
+            {
+                throw GetExceptionForHR(errorCode, errorInfo)!;
+            }
+        }
+
+        public static void ThrowExceptionForHR(int errorCode, in Guid iid, IntPtr pUnk)
+        {
+            if (errorCode < 0)
+            {
+                throw GetExceptionForHR(errorCode, in iid, pUnk)!;
+            }
+        }
+
+        // The managed mapping of upstream's non-CoreCLR GetExceptionForHRInternal, with CoreCLR's
+        // observable HResult on every mapped exception and its message for unknown codes.
+        private static Exception GetExceptionForHRInternal(int errorCode)
+        {
             Exception exception = errorCode switch
             {
                 ErrorAmbiguousMatch => new Reflection.AmbiguousMatchException(),
@@ -198,7 +234,7 @@ namespace System.Runtime.InteropServices
                     errorCode),
             };
             exception.HResult = errorCode;
-            throw exception;
+            return exception;
         }
 
         public static string? PtrToStringUTF8(IntPtr ptr)

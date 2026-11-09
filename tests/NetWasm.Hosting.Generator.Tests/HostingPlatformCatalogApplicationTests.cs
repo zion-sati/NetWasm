@@ -16,18 +16,17 @@ public sealed class HostingPlatformCatalogApplicationTests
         using var error = new StringWriter();
 
         var exitCode = fixture.Create().Run(
-            ["wit.json", "shim.json", "catalog.mjs"], output, error);
+            ["wit.json", "catalog.mjs"], output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Equal("generated", fixture.Files.Writes["catalog.mjs"]);
-        Assert.Equal(["wit.json", "shim.json"], fixture.Files.Reads);
+        Assert.Equal(["wit.json"], fixture.Files.Reads);
         Assert.Same(fixture.Document, fixture.Catalogs.Document);
         Assert.Same(fixture.World, fixture.Catalogs.World);
         Assert.Same(fixture.Catalog, fixture.Projector.Catalog);
-        Assert.Same(fixture.Shim, fixture.Projector.Shim);
         Assert.Same(fixture.Projected, fixture.Writer.Catalog);
         Assert.Equal(
-            "Generated 1 platform providers from 1 imported interfaces for netwasm:hosting-platform/preview2@1.0.0.\n",
+            "Generated 1 platform providers from 1 imported interfaces for netwasm:hosting-platform/wasi@1.0.0.\n",
             output.ToString());
         Assert.Equal(string.Empty, error.ToString());
     }
@@ -41,7 +40,7 @@ public sealed class HostingPlatformCatalogApplicationTests
         var application = fixture.Create();
 
         Assert.Equal(2, application.Run([], output, error));
-        Assert.Equal(2, application.Run(["wit", "shim", " "], output, error));
+        Assert.Equal(2, application.Run(["wit", " "], output, error));
         Assert.Empty(fixture.Files.Reads);
         Assert.Contains("usage:", error.ToString(), StringComparison.Ordinal);
     }
@@ -57,17 +56,15 @@ public sealed class HostingPlatformCatalogApplicationTests
         Assert.Throws<ArgumentNullException>(() => application.Run([], null!, writer));
         Assert.Throws<ArgumentNullException>(() => application.Run([], writer, null!));
         Assert.Throws<ArgumentNullException>(() => new HostingPlatformCatalogApplication(
-            null!, fixture.Documents, fixture.Catalogs, fixture.Shims, fixture.Projector, fixture.Writer));
+            null!, fixture.Documents, fixture.Catalogs, fixture.Projector, fixture.Writer));
         Assert.Throws<ArgumentNullException>(() => new HostingPlatformCatalogApplication(
-            fixture.Files, null!, fixture.Catalogs, fixture.Shims, fixture.Projector, fixture.Writer));
+            fixture.Files, null!, fixture.Catalogs, fixture.Projector, fixture.Writer));
         Assert.Throws<ArgumentNullException>(() => new HostingPlatformCatalogApplication(
-            fixture.Files, fixture.Documents, null!, fixture.Shims, fixture.Projector, fixture.Writer));
+            fixture.Files, fixture.Documents, null!, fixture.Projector, fixture.Writer));
         Assert.Throws<ArgumentNullException>(() => new HostingPlatformCatalogApplication(
-            fixture.Files, fixture.Documents, fixture.Catalogs, null!, fixture.Projector, fixture.Writer));
+            fixture.Files, fixture.Documents, fixture.Catalogs, null!, fixture.Writer));
         Assert.Throws<ArgumentNullException>(() => new HostingPlatformCatalogApplication(
-            fixture.Files, fixture.Documents, fixture.Catalogs, fixture.Shims, null!, fixture.Writer));
-        Assert.Throws<ArgumentNullException>(() => new HostingPlatformCatalogApplication(
-            fixture.Files, fixture.Documents, fixture.Catalogs, fixture.Shims, fixture.Projector, null!));
+            fixture.Files, fixture.Documents, fixture.Catalogs, fixture.Projector, null!));
     }
 
     [Fact]
@@ -90,7 +87,7 @@ public sealed class HostingPlatformCatalogApplicationTests
             using var error = new StringWriter();
 
             Assert.Equal(1, fixture.Create().Run(
-                ["wit", "shim", "output"], output, error));
+                ["wit", "output"], output, error));
             Assert.Equal(failure.Message + Environment.NewLine, error.ToString());
             Assert.DoesNotContain(failure.StackTrace ?? " at ", error.ToString());
             Assert.Empty(fixture.Files.Writes);
@@ -106,7 +103,7 @@ public sealed class HostingPlatformCatalogApplicationTests
         using var writer = new StringWriter();
 
         Assert.Same(failure, Assert.Throws<InvalidOperationException>(() =>
-            fixture.Create().Run(["wit", "shim", "output"], writer, writer)));
+            fixture.Create().Run(["wit", "output"], writer, writer)));
     }
 
     [Fact]
@@ -120,43 +117,37 @@ public sealed class HostingPlatformCatalogApplicationTests
     {
         public RecordingFiles Files { get; } = new();
         public WitWorld World { get; } = new(
-            0, "preview2", "netwasm:hosting-platform@1.0.0", [], []);
+            0, "wasi", "netwasm:hosting-platform@1.0.0", [], []);
         public WitDocument Document { get; }
         public WitInterfaceCatalog Catalog { get; } = new(
-            "netwasm:hosting-platform/preview2@1.0.0", "normalized",
-            [new("wasi:cli/environment@0.2.11", [])]);
-        public Preview2ShimIdentity Shim { get; } = new("shim", "version");
+            "netwasm:hosting-platform/wasi@1.0.0", "normalized",
+            [new("wasi:cli/environment@0.3.2", [])]);
         public HostingPlatformCatalog Projected { get; }
         public RecordingDocuments Documents { get; }
         public RecordingCatalogs Catalogs { get; }
-        public RecordingShims Shims { get; }
         public RecordingProjector Projector { get; }
         public RecordingWriter Writer { get; } = new();
 
         public Fixture()
         {
             Document = new([], [], [World], [], "normalized");
-            Projected = new(1, Catalog.World, "hash", Shim,
-                [new("wasi:cli/environment@0.2.11", NetWasmPlatformCapability.Environment, [])]);
+            Projected = new(2, Catalog.World, "hash",
+                [new("wasi:cli/environment@0.3.2", NetWasmPlatformCapability.Environment, [])]);
             Documents = new(Document);
             Catalogs = new(Catalog);
-            Shims = new(Shim);
             Projector = new(Projected);
             Files.Values["wit.json"] = "wit";
-            Files.Values["shim.json"] = "shim";
         }
 
         public HostingPlatformCatalogApplication Create(
             ITextFileStore? files = default,
             IWitDocumentJsonReader? documents = default,
             IWitInterfaceCatalogBuilder? catalogs = default,
-            IPreview2ShimIdentityReader? shims = default,
             IHostingPlatformCatalogProjector? projector = default,
             IHostingPlatformCatalogJavaScriptWriter? writer = default) => new(
                 files ?? Files,
                 documents ?? Documents,
                 catalogs ?? Catalogs,
-                shims ?? Shims,
                 projector ?? Projector,
                 writer ?? Writer);
     }
@@ -196,23 +187,14 @@ public sealed class HostingPlatformCatalogApplicationTests
         }
     }
 
-    private sealed class RecordingShims(Preview2ShimIdentity result) : IPreview2ShimIdentityReader
-    {
-        public Preview2ShimIdentity Read(string packageJson) => result;
-    }
-
     private sealed class RecordingProjector(HostingPlatformCatalog result) :
         IHostingPlatformCatalogProjector
     {
         public WitInterfaceCatalog? Catalog { get; private set; }
-        public Preview2ShimIdentity? Shim { get; private set; }
 
-        public HostingPlatformCatalog Project(
-            WitInterfaceCatalog catalog,
-            Preview2ShimIdentity shim)
+        public HostingPlatformCatalog Project(WitInterfaceCatalog catalog)
         {
             Catalog = catalog;
-            Shim = shim;
             return result;
         }
     }

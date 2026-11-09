@@ -40,10 +40,8 @@ public sealed partial class PageEntryWriterTests
         Assert.DoesNotContain("\r", source, StringComparison.Ordinal);
         // Issue #128: the page imports the shared runtime its workers load too.
         Assert.Contains("import { createPageSession } from \"netwasm:runtime/page\";", source, StringComparison.Ordinal);
-        Assert.Contains("import { createSelectedPreview2ShimFactory, webPlatform } from \"netwasm:runtime/page\";", source,
+        Assert.Contains("import { createWasiPlatform, webPlatform } from \"netwasm:runtime/page\";", source,
             StringComparison.Ordinal);
-        Assert.Contains("import { io as preview2Io } from \"netwasm:runtime/page\";", source, StringComparison.Ordinal);
-        Assert.Contains("import { random as preview2Random } from \"netwasm:runtime/random\";", source, StringComparison.Ordinal);
         Assert.DoesNotContain("file://", source.Split("consumer0")[0], StringComparison.Ordinal);
         Assert.Contains("export const openPage = createPageSession({", source, StringComparison.Ordinal);
         Assert.Contains("manifestUrl: new URL(\"./deployment.json\", import.meta.url).href,", source,
@@ -54,17 +52,19 @@ public sealed partial class PageEntryWriterTests
         Assert.Contains("Object.freeze({ name: \"MODE\", value: \"test\" })", source, StringComparison.Ordinal);
         Assert.Contains("clocks: Object.freeze([\"wall\",\"monotonic\"])", source, StringComparison.Ordinal);
         Assert.Contains("randomness: true,", source, StringComparison.Ordinal);
+        Assert.Contains("temporaryDirectory: false,", source, StringComparison.Ordinal);
+        Assert.Contains("workingDirectory: false,", source, StringComparison.Ordinal);
         Assert.Contains("    ...webPlatform,\n", source, StringComparison.Ordinal);
         BrowserApiBindings.AssertNoneAtImport(source);
-        // Issue #121: only the Preview 2 families and providers the application links.
-        Assert.Contains("createShim: createSelectedPreview2ShimFactory({ cli: preview2Cli, io: preview2Io, random: preview2Random }),",
+        // Issue #121: only the providers the application links.
+        Assert.Contains("createImports: createWasiPlatform(Object.freeze({ initialDirectory: null, network: null })),",
             source, StringComparison.Ordinal);
         Assert.Contains("createFilesystemScope: null,", source, StringComparison.Ordinal);
         Assert.Contains("platformProviderCatalog: deepFreeze(", source, StringComparison.Ordinal);
-        Assert.Contains("\"module\":\"wasi:cli/environment@0.2.11\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("wasi:http/outgoing-handler", source, StringComparison.Ordinal);
+        Assert.Contains("\"module\":\"wasi:cli/environment@0.3.2\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("wasi:http/client", source, StringComparison.Ordinal);
         Assert.DoesNotContain("wasi:filesystem/types", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("WASIShim", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("preview2", source, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("import { validateDeploymentManifest } from \"netwasm:runtime/manifest-validator\";", source,
             StringComparison.Ordinal);
         Assert.Contains("snapshotDeploymentManifest: validateDeploymentManifest,", source, StringComparison.Ordinal);
@@ -87,6 +87,51 @@ public sealed partial class PageEntryWriterTests
         Assert.DoesNotContain("validateDeploymentManifest", source, StringComparison.Ordinal);
         Assert.Contains("snapshotDeploymentManifest: deepFreeze,", source, StringComparison.Ordinal);
         Assert.Contains("function deepFreeze(value) {", source, StringComparison.Ordinal);
+    }
+
+    // Issue #178: Node.js code imports a host bundled from the hosting sources, which takes
+    // Node.js's web actions in place of a browser's.
+    [Fact]
+    public void WritesANodeHostEntryOverTheHostingSources()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "generated", "node-entry.mjs");
+        var hosting = Path.Combine(directory.Path, "hosting");
+        HostingCatalogFixture.Write(hosting);
+        string Import(string names, string file) =>
+            $"import {{ {names} }} from \"{new Uri(Path.Combine(hosting, file)).AbsoluteUri}\";";
+
+        new PageEntryWriter().WriteHost(HostRequest(directory.Path, output) with
+        {
+            RequiredImportModules = ["wasi:cli/environment@0.3.2", "wasi:cli/stdout@0.3.2",
+                "wasi:random/random@0.3.2", "wasi:http/client@0.3.2", "wasi:filesystem/types@0.3.2",
+                "app.host"],
+            Platform = PageHostPlatform.Node,
+        });
+
+        var source = File.ReadAllText(output);
+        Assert.DoesNotContain("netwasm:runtime/", source, StringComparison.Ordinal);
+        Assert.Contains(Import("createPageSession", "page-session-root.mjs"), source, StringComparison.Ordinal);
+        Assert.Contains(Import("createWasiPlatform", "wasi-platform.mjs"), source, StringComparison.Ordinal);
+        Assert.Contains(Import("nodePlatform as webPlatform", "node-web-platform.mjs"), source,
+            StringComparison.Ordinal);
+        Assert.Contains(Import("createWasiFilesystem", "wasi-filesystem.mjs"), source, StringComparison.Ordinal);
+        Assert.Contains(Import("createWasiHttpFetch", "wasi-http-fetch.mjs"), source, StringComparison.Ordinal);
+        Assert.Contains(Import("validateDeploymentManifest", "deployment-manifest-validator.mjs"), source,
+            StringComparison.Ordinal);
+        Assert.Contains("manifestUrl: new URL(\"./deployment.json\", import.meta.url).href,", source,
+            StringComparison.Ordinal);
+        Assert.Contains("fetch: webPlatform.fetch", source, StringComparison.Ordinal);
+        Assert.Contains("    ...webPlatform,\n", source, StringComparison.Ordinal);
+
+        new PageEntryWriter().WriteHost(HostRequest(directory.Path, output, validate: false) with
+        {
+            Platform = PageHostPlatform.Node,
+        });
+        var plain = File.ReadAllText(output);
+        Assert.DoesNotContain("createWasiFilesystem", plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("createWasiHttpFetch", plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("validateDeploymentManifest", plain, StringComparison.Ordinal);
     }
 
     // DateTime and DateTimeOffset cross as a JavaScript Date, and nullables as T | null.
@@ -112,6 +157,30 @@ public sealed partial class PageEntryWriterTests
         // An object is any value; an exception an Error; arrays hold their elements or null.
         Assert.Contains("  \"Values\"(argument0: unknown, argument1: Error | null, argument2: (string | null)[] | null, "
             + "argument3: (object | null)[] | null): unknown[] | null;", types, StringComparison.Ordinal);
+    }
+
+    // A page that links a file system interface re-exports its file mounts (#142); others carry none.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReExportsFileMountsOnlyForAPageThatUsesFiles(bool fileMounts)
+    {
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "Files.mjs");
+        var declaration = Path.Combine(directory.Path, "Files.d.mts");
+
+        new PageEntryWriter().WriteModule(new(
+            "netwasm.page.mjs", new string('1', 64), new string('2', 64), output, declaration,
+            [new("Run", [], "i32", null)])
+        {
+            FileMounts = fileMounts,
+        });
+
+        Assert.Equal(fileMounts, File.ReadAllText(output).Contains(
+            "export { mount, sync, unmount } from \"./netwasm.page.mjs\";", StringComparison.Ordinal));
+        Assert.Equal(fileMounts, File.ReadAllText(declaration).Contains(
+            "export declare function mount(guestPath: string, source: NetWasmMountSource): Promise<void>;",
+            StringComparison.Ordinal));
     }
 
     [Fact]
@@ -260,7 +329,7 @@ public sealed partial class PageEntryWriterTests
         ["wall", "monotonic"],
         "denyAll",
         true,
-        ["wasi:cli/environment@0.2.11", "wasi:io/streams@0.2.11", "wasi:random/random@0.2.11", "app.host"],
+        ["wasi:cli/environment@0.3.2", "wasi:cli/stdout@0.3.2", "wasi:random/random@0.3.2", "app.host"],
         validate);
 
     [GeneratedRegex("^  \"([^\"]+)\"\\(", RegexOptions.Multiline)]

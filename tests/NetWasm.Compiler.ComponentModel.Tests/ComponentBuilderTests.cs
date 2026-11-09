@@ -49,19 +49,16 @@ public sealed class ComponentBuilderTests
         Assert.Same(request.OptimizationOverrides, components.Request.OptimizationOverrides);
     }
 
-    // Only a world that exports netwasm:runtime/process lets a host observe an asynchronous Main;
-    // elsewhere the compiler enters it synchronously, so it links like a synchronous entry point.
+    // An asynchronous Main is a callback-lifted wasi:cli/run in every world, so the entry point
+    // links as the compiler recorded it.
     [Theory]
-    [InlineData("run", "wasi:cli@0.2.11", ManagedExecutableCompletionShape.Asynchronous, ManagedExecutableCompletionShape.Synchronous)]
-    [InlineData("process", "netwasm:runtime@1.0.0", ManagedExecutableCompletionShape.Asynchronous, ManagedExecutableCompletionShape.Asynchronous)]
-    [InlineData("process", "netwasm:runtime", ManagedExecutableCompletionShape.Asynchronous, ManagedExecutableCompletionShape.Asynchronous)]
-    [InlineData("process", "example:other@1.0.0", ManagedExecutableCompletionShape.Asynchronous, ManagedExecutableCompletionShape.Synchronous)]
-    [InlineData("run", "wasi:cli@0.2.11", ManagedExecutableCompletionShape.Synchronous, ManagedExecutableCompletionShape.Synchronous)]
-    public void LinksAnAsynchronousMainAsTheWorldsExportsRequire(
+    [InlineData("run", "wasi:cli@0.3.2", ManagedExecutableCompletionShape.Asynchronous)]
+    [InlineData("run", "wasi:cli@0.3.2", ManagedExecutableCompletionShape.Synchronous)]
+    [InlineData("command", "netwasm:diagnostics@1.0.0", ManagedExecutableCompletionShape.Asynchronous)]
+    public void LinksTheEntryPointAsTheCompilerRecordedIt(
         string exportedInterface,
         string package,
-        ManagedExecutableCompletionShape selected,
-        ManagedExecutableCompletionShape linked)
+        ManagedExecutableCompletionShape selected)
     {
         var exported = new WitInterface(0, exportedInterface, package, ImmutableDictionary<string, int>.Empty, []);
         var world = new WitWorld(0, "command", "netwasm:component@1.0.0", [], [new(exportedInterface, 0, null)]);
@@ -87,7 +84,7 @@ public sealed class ComponentBuilderTests
             new(ComponentJavaScriptBoundary.Empty, ComponentAdapterVersions.None),
             entryPoint));
 
-        Assert.Equal(entryPoint with { CompletionShape = linked }, components.Request!.ManagedExecutableEntryPoint);
+        Assert.Equal(entryPoint, components.Request!.ManagedExecutableEntryPoint);
     }
 
     [Fact]
@@ -107,9 +104,13 @@ public sealed class ComponentBuilderTests
             "command",
             "application.component.wasm",
             ComponentTarget.Wasm32Wasi02,
-            new(ComponentJavaScriptBoundary.Empty, ComponentAdapterVersions.None)));
+            new(ComponentJavaScriptBoundary.Empty, ComponentAdapterVersions.None))
+            {
+                PlainCoreModule = true,
+            });
 
         Assert.Null(components.Request!.ManagedExecutableEntryPoint);
+        Assert.True(components.Request.PlainCoreModule);
     }
 
     [Fact]

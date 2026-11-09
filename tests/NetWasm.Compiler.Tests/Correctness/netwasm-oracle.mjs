@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { readExceptionClause } from "./exception-metadata.mjs";
-import { createReactorOracleImports } from "./reactor-oracle-imports.mjs";
 import { createRefreshableDataView } from "./refreshable-data-view.mjs";
 import { createDeclaredOracleImports } from "./declared-oracle-imports.mjs";
 
@@ -57,9 +56,7 @@ var wasiEnvironmentResult = null;
 var wasiEnvironmentLength = null;
 var wasiOpenCalls = 0;
 var wasiReadCalls = 0;
-var watchedTokens = [];
-var canceledTokens = new Set();
-var reactorPhase = "initialization";
+var hostPhase = "initialization";
 var typeBases = new Map();
 var typeSizes = new Map();
 var typeAssignable = new Map();
@@ -179,18 +176,38 @@ var wasiEnvironment = {
     writeAddress(view, result, addressSize, entries.length);
     wasiEnvironmentLength = entries.length;
   },
+  // With inputArgument, a program's single argument (after its name) is the input it runs with.
+  "get-arguments"(result) {
+    var argumentList = inputArgument ? ["application", String(currentInput)] : [];
+    var addressSize = memory64 ? 8 : 4;
+    var stride = addressSize * 2;
+    var elements = argumentList.length === 0
+      ? asAddress(addressSize)
+      : raw(argumentList.length * stride);
+    var view = createRefreshableDataView(memory);
+    for (var index = 0; index < argumentList.length; index++) {
+      var element = plus(elements, index * stride);
+      var text = new TextEncoder().encode(argumentList[index]);
+      writeAddress(view, element, 0, lowerBytes(text));
+      writeAddress(view, element, addressSize, text.length);
+    }
+    writeAddress(view, result, 0, elements);
+    writeAddress(view, result, addressSize, argumentList.length);
+  },
 };
 var timeZoneAsset = hostConfiguration.timeZoneAssetPath
   ? await readFile(hostConfiguration.timeZoneAssetPath)
   : null;
-var drainReactor = hostConfiguration.drainReactor === true;
-var observeExportName = hostConfiguration.observeExportName ?? "run";
+// A callback-lifted entry (an asynchronous Main) returns a callback code; the oracle delivers its
+// waitable set's events until EXIT, then reads Main's exit code.
+var callbackEntry = hostConfiguration.callbackEntry === true;
+var inputArgument = hostConfiguration.inputArgument === true;
+var currentInput = null;
 var entryExportName = hostConfiguration.entryExportName ?? "run";
 var entryInvocationCount = hostConfiguration.entryInvocationCount ?? 1;
 if (!Number.isInteger(entryInvocationCount) || entryInvocationCount < 1) {
   throw new Error("entry invocation count must be a positive integer");
 }
-var observeAsyncProcess = hostConfiguration.observeAsyncProcess === true;
 var descriptors = new Map();
 var nextDescriptor = 2;
 var wasiPreopens = {
@@ -212,74 +229,119 @@ var wasiPreopens = {
     writeAddress(view, result, addressSize, 1);
   },
 };
-var wasiFilesystem = {
-  "[method]descriptor.open-at"(
-    directoryHandle,
-    pathFlags,
-    pathAddress,
-    pathLength,
-    openFlags,
-    descriptorFlags,
-    result) {
-    wasiOpenCalls++;
-    var path = new TextDecoder().decode(new Uint8Array(
-      memory.buffer,
-      asNumber(pathAddress),
-      Number(pathLength)));
-    var view = createRefreshableDataView(memory);
-    if (directoryHandle !== 1 || path !== "netwasm-timezones.nwtz" || !timeZoneAsset) {
-      view.setUint8(asNumber(result), 1);
-      view.setInt32(asNumber(plus(result, 4)), 44, true);
-      return;
-    }
-    var descriptor = nextDescriptor++;
-    descriptors.set(descriptor, timeZoneAsset);
-    view.setUint8(asNumber(result), 0);
-    view.setInt32(asNumber(plus(result, 4)), descriptor, true);
+// WASI 0.3 streams, futures, waitable sets and subtasks share one handle table.
+// The oracle completes every operation at once: a copy finishes immediately, a
+// subtask has returned when its async-lowered call does, and simulated time
+// makes every wait-for return at once, so no program ever needs to wait.
+var componentHandles = new Map();
+var nextComponentHandle = 1;
+var newComponentHandle = value => {
+  var handle = nextComponentHandle++;
+  componentHandles.set(handle, value);
+  return handle;
+};
+var componentBuiltIns = {
+  "[waitable-set-new]": () => newComponentHandle({ kind: "waitable-set" }),
+  "[waitable-join]"() {},
+  "[waitable-set-wait]"() {
+    throw new Error("the oracle completes every operation, so no waitable has an event");
   },
-  "[method]descriptor.read"(handle, length, offset, result) {
+  "[subtask-drop]"(handle) { componentHandles.delete(handle); forgetWait(handle); },
+  "[subtask-cancel]"(handle) { componentHandles.delete(handle); forgetWait(handle); return 4; },
+};
+var subtaskReturned = 2;
+var copyCompleted = 0;
+var copyDropped = 1;
+var wasiFilesystem = {
+  "[method]descriptor.read-via-stream"(handle, offset, result) {
     wasiReadCalls++;
-    var addressSize = memory64 ? 8 : 4;
-    var payloadOffset = addressSize;
+    var bytes = descriptors.get(handle) ?? new Uint8Array(0);
     var view = createRefreshableDataView(memory);
-    var bytes = descriptors.get(handle);
-    if (!bytes) {
-      view.setUint8(asNumber(result), 1);
-      view.setInt32(asNumber(plus(result, payloadOffset)), 8, true);
-      return;
-    }
-    var start = Number(offset);
-    var count = Math.min(Number(length), Math.max(0, bytes.length - start));
-    var chunk = bytes.subarray(start, start + count);
-    view.setUint8(asNumber(result), 0);
-    writeAddress(view, result, payloadOffset, lowerBytes(chunk));
-    writeAddress(view, result, payloadOffset + addressSize, chunk.length);
-    view.setUint8(
-      asNumber(plus(result, payloadOffset + addressSize * 2)),
-      start + count >= bytes.length ? 1 : 0);
+    view.setInt32(asNumber(result), newComponentHandle({ bytes, position: Number(offset) }), true);
+    view.setInt32(asNumber(plus(result, 4)), newComponentHandle({ kind: "future" }), true);
   },
   "[resource-drop]descriptor"(handle) {
     descriptors.delete(handle);
   },
 };
-wasiFilesystem.descriptor_open_at =
-  wasiFilesystem["[method]descriptor.open-at"];
-wasiFilesystem.descriptor_read =
-  wasiFilesystem["[method]descriptor.read"];
-wasiFilesystem.descriptor_drop =
-  wasiFilesystem["[resource-drop]descriptor"];
-var wasiWallClock = {
+var wasiFilesystemBuiltIns = {
+  // open-at's parameters: descriptor, path-flags, path (address, length),
+  // open-flags and descriptor-flags in a 20-byte record.
+  "[async-lower][method]descriptor.open-at"(parameters, result) {
+    wasiOpenCalls++;
+    var view = createRefreshableDataView(memory);
+    var directoryHandle = view.getInt32(asNumber(parameters), true);
+    var pathAddress = view.getUint32(asNumber(plus(parameters, 8)), true);
+    var pathLength = view.getUint32(asNumber(plus(parameters, 12)), true);
+    var path = new TextDecoder().decode(new Uint8Array(memory.buffer, pathAddress, pathLength));
+    if (directoryHandle !== 1 || path !== "netwasm-timezones.nwtz" || !timeZoneAsset) {
+      view.setUint8(asNumber(result), 1);
+      view.setInt32(asNumber(plus(result, 4)), 44, true);
+      return subtaskReturned;
+    }
+    var descriptor = nextDescriptor++;
+    descriptors.set(descriptor, timeZoneAsset);
+    view.setUint8(asNumber(result), 0);
+    view.setInt32(asNumber(plus(result, 4)), descriptor, true);
+    return subtaskReturned;
+  },
+  "[async-lower][stream-read-0][method]descriptor.read-via-stream"(readable, buffer, length) {
+    var stream = componentHandles.get(readable);
+    var count = Math.min(Number(length), stream.bytes.length - stream.position);
+    if (count <= 0) return copyDropped;
+    new Uint8Array(memory.buffer, asNumber(buffer), count)
+      .set(stream.bytes.subarray(stream.position, stream.position + count));
+    stream.position += count;
+    return count * 16 + copyCompleted;
+  },
+  "[stream-drop-readable-0][method]descriptor.read-via-stream"(readable) {
+    componentHandles.delete(readable);
+  },
+  "[async-lower][future-read-1][method]descriptor.read-via-stream"(_future, result) {
+    createRefreshableDataView(memory).setUint8(asNumber(result), 0);
+    return copyCompleted;
+  },
+  "[future-drop-readable-1][method]descriptor.read-via-stream"(future) {
+    componentHandles.delete(future);
+  },
+};
+var wasiSystemClock = {
   now(result) {
     var view = createRefreshableDataView(memory);
     view.setBigUint64(asNumber(result), 0n, true);
     view.setUint32(asNumber(plus(result, 8)), 123000000, true);
   },
-  resolution(result) {
-    var view = createRefreshableDataView(memory);
-    view.setBigUint64(asNumber(result), 0n, true);
-    view.setUint32(asNumber(plus(result, 8)), 1, true);
+};
+// Simulated time: a wait-for subtask starts and is due after its duration. A callback-lifted
+// entry receives due subtasks in due order, and delivering one moves the monotonic clock to it,
+// so no program waits in real time.
+var clockOffset = 0n;
+var pendingWaits = [];
+var subtaskStarted = 1;
+var wasiMonotonicClock = { now: () => process.hrtime.bigint() + clockOffset };
+var wasiMonotonicClockBuiltIns = {
+  "[async-lower]wait-for"(duration) {
+    var handle = newComponentHandle({ kind: "subtask" });
+    pendingWaits.push({ handle, due: wasiMonotonicClock.now() + BigInt(duration) });
+    return handle * 16 + subtaskStarted;
   },
 };
+var forgetWait = handle => {
+  pendingWaits = pendingWaits.filter(wait => wait.handle !== handle);
+};
+var takeDueWait = () => {
+  if (pendingWaits.length === 0) {
+    throw new Error("the callback-lifted entry waits, but nothing it waits for is pending");
+  }
+  var next = pendingWaits.reduce((earliest, wait) => wait.due < earliest.due ? wait : earliest);
+  forgetWait(next.handle);
+  var now = wasiMonotonicClock.now();
+  if (next.due > now) clockOffset += next.due - now;
+  return next.handle;
+};
+var callbackExit = 0;
+var callbackWait = 2;
+var subtaskEvent = 1;
 var nativeSizes = new Map();
 var nativeAlloc = size => {
   var count = Math.max(1, Number(size));
@@ -318,6 +380,8 @@ var nativeAlignedRealloc = (oldAddress, size, alignment) => {
   }
   return pointer;
 };
+const cloneArrayTypes = new Set();
+const cloneStringTypes = new Set();
 var allocate = (size, type) => {
   if (!typeBases.has(type)) {
     throw new Error(`allocation used unregistered type ${type}`);
@@ -327,6 +391,7 @@ var allocate = (size, type) => {
   return pointer;
 };
 var allocateString = (value, length, type) => {
+  cloneStringTypes.add(type);
   if (length < 0 || length > 0x7ffffffb) return zeroAddress();
   var header = memory64 ? 12 : 8;
   var pointer = allocate(header + length * 2, type);
@@ -376,6 +441,7 @@ var allocateArray = (
   type,
   elementType,
   size = memory64 ? 8 : 4) => {
+  cloneArrayTypes.add(type);
   arrayElementReferences.set(type,
     !valueTypeSizes.has(elementType) || valueTypeReferences.get(elementType) === true);
   // The elements follow the array's fields, as the runtime keeps them, so
@@ -415,6 +481,7 @@ var allocateRectangularArray = (rank, dimensions, type, element, size, reference
   const elements = total === 0
     ? zeroAddress()
     : raw(total * (references ? (memory64 ? 8 : 4) : size));
+  cloneArrayTypes.add(type);
   const array = allocate(memory64 ? 40 : 24, type);
   const output = createRefreshableDataView(memory);
   for (let dimension = rank - 1; dimension >= 0; dimension--) {
@@ -926,6 +993,24 @@ var runtimeValues = {
   gc_metric_is_supported(metric) { return metric !== 4; },
   gc_wait_for_pending_finalizers: zero,
   object_identity_hash(value) { return Number(value) | 0; },
+  object_clone(source) {
+    const view = createRefreshableDataView(memory);
+    const type = view.getInt32(asNumber(source), true);
+    if (cloneArrayTypes.has(type)) return cloneArray(source, 0, -1);
+    if (cloneStringTypes.has(type)) {
+      const length = view.getInt32(asNumber(plus(source, memory64 ? 8 : 4)), true);
+      const clone = allocateString(0, length, type);
+      const offset = memory64 ? 12 : 8;
+      new Uint8Array(memory.buffer, asNumber(plus(clone, offset)), length * 2).set(
+        new Uint8Array(memory.buffer, asNumber(plus(source, offset)), length * 2));
+      return clone;
+    }
+    const size = typeSizes.get(type);
+    const clone = allocate(size, type);
+    new Uint8Array(memory.buffer, asNumber(clone), size).set(
+      new Uint8Array(memory.buffer, asNumber(source), size));
+    return clone;
+  },
   boxed_value_clone(source) {
     const view = createRefreshableDataView(memory);
     const type = view.getInt32(asNumber(source), true);
@@ -1029,90 +1114,52 @@ try {
             ? BigInt(inputDescriptor.i64)
             : inputDescriptor;
     resetRuntimeState();
+    currentInput = input;
     try {
-      const reactorImports = createReactorOracleImports(target, {
-        watch: (_pollable, token) => watchedTokens.push(token),
-        cancel: token => canceledTokens.add(token),
-        // Simulated time: every pollable a command world waits on is ready at once, so its event
-        // loop runs each wait in order without sleeping.
-        poll(_pollables, count, result) {
-          var ready = Number(count);
-          var address = componentReallocate(0, 0, 4, ready * 4);
-          var view = createRefreshableDataView(memory);
-          for (var index = 0; index < ready; index++) {
-            view.setUint32(asNumber(address) + index * 4, index, true);
-          }
-          writeAddress(view, result, 0, address);
-          writeAddress(view, result, memory64 ? 8 : 4, ready);
-        },
-        drop() {},
-      });
+      var canonicalPrefix = memory64 ? "cm64p2" : "cm32p2";
       var instantiated = await WebAssembly.instantiate(bytes, {
         "netwasm.runtime.v1": runtime,
         "netwasm.host.v1": host,
-        ...reactorImports,
-        [`${memory64 ? "cm64p2" : "cm32p2"}|wasi:cli/environment@0.2`]:
-          wasiEnvironment,
-        [`${memory64 ? "cm64p2" : "cm32p2"}|wasi:filesystem/preopens@0.2`]:
-          wasiPreopens,
-        [`${memory64 ? "cm64p2" : "cm32p2"}|wasi:filesystem/types@0.2`]:
-          wasiFilesystem,
-        [`${memory64 ? "cm64p2" : "cm32p2"}|wasi:clocks/wall-clock@0.2`]:
-          wasiWallClock,
-        [`${memory64 ? "cm64p2" : "cm32p2"}|wasi:random/random@0.2`]:
-          wasiRandom,
+        "$root": componentBuiltIns,
+        [`${canonicalPrefix}|wasi:cli/environment@0.3`]: wasiEnvironment,
+        [`${canonicalPrefix}|wasi:filesystem/preopens@0.3`]: wasiPreopens,
+        [`${canonicalPrefix}|wasi:filesystem/types@0.3`]: wasiFilesystem,
+        "wasi:filesystem/types@0.3.2": wasiFilesystemBuiltIns,
+        [`${canonicalPrefix}|wasi:clocks/system-clock@0.3`]: wasiSystemClock,
+        [`${canonicalPrefix}|wasi:clocks/monotonic-clock@0.3`]: wasiMonotonicClock,
+        "wasi:clocks/monotonic-clock@0.3.2": wasiMonotonicClockBuiltIns,
+        [`${canonicalPrefix}|wasi:random/random@0.3`]: wasiRandom,
         });
       application = instantiated.instance;
       var initialize = application.exports[
         memory64 ? "cm64p2_initialize" : "cm32p2_initialize"];
-      reactorPhase = "initialization";
+      hostPhase = "initialization";
       if (typeof initialize === "function") initialize();
-      reactorPhase = "entry";
+      hostPhase = "entry";
       var value;
       for (var invocationIndex = 0;
            invocationIndex < entryInvocationCount;
            invocationIndex++) {
         value = application.exports[entryExportName](input);
       }
-      if (drainReactor) {
-        var canonicalPrefix = memory64 ? "cm64p2" : "cm32p2";
-        var wake = application.exports[
-          `${canonicalPrefix}|netwasm:runtime/reactor-guest@1|wake`];
-        if (typeof wake !== "function") {
-          throw new Error("reactor drain requested but wake export is missing");
+      if (callbackEntry) {
+        var callback = application.exports["netwasm.entry.callback"];
+        var exitCode = application.exports["netwasm.entry.exit_code"];
+        if (typeof callback !== "function" || typeof exitCode !== "function") {
+          throw new Error("the callback-lifted entry's exports are missing");
         }
-        while (watchedTokens.length) {
-          var token = watchedTokens.shift();
-          if (!canceledTokens.has(token)) {
-            reactorPhase = "wake";
-            wake(token);
-          }
+        var code = value;
+        while ((code & 15) === callbackWait) {
+          hostPhase = "callback";
+          code = callback(subtaskEvent, takeDueWait(), subtaskReturned);
         }
-        reactorPhase = "observe";
-        if (observeAsyncProcess) {
-          var status = application.exports["netwasm.process.status"];
-          var result = application.exports["netwasm.process.result"];
-          var complete = application.exports["netwasm.process.complete"];
-          if (typeof status !== "function" || typeof result !== "function" ||
-              typeof complete !== "function") {
-            throw new Error("asynchronous process observation exports are missing");
-          }
-          var handle = value;
-          if (status(handle) !== 1) {
-            throw new Error("asynchronous process did not complete successfully");
-          }
-          value = result(handle);
-          complete(handle);
-        } else {
-          var observe = application.exports[observeExportName];
-          if (typeof observe !== "function") {
-            throw new Error(
-              `reactor drain requested but ${observeExportName} export is missing`);
-          }
-          value = observe(input);
+        if (code !== callbackExit) {
+          throw new Error(`the callback-lifted entry returned callback code ${code}`);
         }
+        hostPhase = "exit";
+        value = exitCode();
       }
-      reactorPhase = "completed";
+      hostPhase = "completed";
       observations.push({
         kind: "value",
         value: typeof value === "bigint" ? { i64: value.toString() } : value,
@@ -1175,9 +1222,8 @@ function resetRuntimeState() {
   randomByte = 0;
   wasiOpenCalls = 0;
   wasiReadCalls = 0;
-  watchedTokens = [];
-  canceledTokens = new Set();
-  reactorPhase = "initialization";
+  pendingWaits = [];
+  hostPhase = "initialization";
 }
 
 function readTrace() {
@@ -1212,7 +1258,7 @@ function createException(error) {
     trace: readTrace(),
     traceRecords: readTraceRecords(),
     detail: (error instanceof Error ? `${error.name}: ${error.message}` : String(error)) +
-      `; reactorPhase=${reactorPhase}`,
+      `; hostPhase=${hostPhase}`,
     wasiEnvironmentReads,
     wasiPreopenReads,
     wasiOpenCalls,

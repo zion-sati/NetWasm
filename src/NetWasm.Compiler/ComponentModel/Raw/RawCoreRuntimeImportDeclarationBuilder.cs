@@ -23,6 +23,7 @@ public sealed class RawCoreRuntimeImportDeclarationBuilder(
     IRawWitBindingPlanBuilder plans,
     IRawCliCoreSignatureProjector signatures) : IRawCoreRuntimeImportDeclarationBuilder
 {
+    private const string ComponentModelRootModule = "$root";
     private readonly IRawWitBindingPlanBuilder _plans = plans ?? throw new ArgumentNullException(nameof(plans));
     private readonly IRawCliCoreSignatureProjector _signatures = signatures ?? throw new ArgumentNullException(nameof(signatures));
 
@@ -120,8 +121,12 @@ public sealed class RawCoreRuntimeImportDeclarationBuilder(
             .Where(import => request.CompilerDeclarations.ImportModules.Contains(import.Identity.Module)
                 && !request.RuntimeCatalog.Imports.ContainsKey(import.Identity)
                 && !request.ApplicationCatalog.Imports.ContainsKey(import.Identity));
+        // The runtime's Component Model built-ins, such as waitable sets, come from the host's
+        // Component Model, whatever the program imports itself.
+        var builtIns = request.RuntimeImports.Where(import => import.Identity.Module == ComponentModelRootModule);
         return runtime.Where(pair => !request.ApplicationCatalog.Imports.ContainsKey(pair.Key))
             .Concat(external.Select(import => KeyValuePair.Create(import.Identity, import)))
+            .Concat(builtIns.Select(import => KeyValuePair.Create(import.Identity, import)))
             .ToImmutableDictionary();
     }
 

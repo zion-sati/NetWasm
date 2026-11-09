@@ -19,7 +19,7 @@ test("deployment manifest reader composes the strict public data boundary", () =
     profile: "netwasm0.1",
     target: "wasm64",
     featureSet: "mvp",
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     versions: {
       sdk: "0.1.0",
       compiler: "0.1.0",

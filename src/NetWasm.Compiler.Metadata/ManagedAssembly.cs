@@ -566,6 +566,30 @@ public sealed class ManagedAssembly : IDisposable
                 }
                 witImport = ReadWitImport(attribute, methodKey);
             }
+            else if (attributeType == "System.Runtime.InteropServices.WebAssembly.ComponentBuiltInAttribute")
+            {
+                if (witImport is not null)
+                {
+                    throw InvalidInteropDeclaration(methodKey,
+                        "multiple WitImport or ComponentBuiltIn attributes are not supported");
+                }
+                var (moduleName, functionName) = ReadWitNames(
+                    attribute, methodKey, "ComponentBuiltIn");
+                witImport = new WitImportDeclaration(moduleName, functionName)
+                {
+                    IsCanonicalBuiltIn = true,
+                };
+            }
+            else if (attributeType == "System.Runtime.InteropServices.WebAssembly.ComponentExportAttribute")
+            {
+                if (witExport is not null)
+                {
+                    throw InvalidInteropDeclaration(methodKey,
+                        "multiple WitExport or ComponentExport attributes are not supported");
+                }
+                var (_, name) = ReadWitNames(attribute, methodKey, "ComponentExport");
+                witExport = new WitExportDeclaration(string.Empty, name) { IsComponentLift = true };
+            }
             else if (attributeType == "System.Runtime.InteropServices.WebAssembly.WitExportAttribute")
             {
                 if (witExport is not null)

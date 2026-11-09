@@ -44,21 +44,20 @@ public sealed class AsyncCompilationTests
         Assert.DoesNotContain("System.Exception::get_StackTrace", module, StringComparison.Ordinal);
     }
 
-    // Issue #128: the reactor keys pending pollables by slot, not in a hash
-    // table, and the always-exported wake reaches its state only through a
-    // constructed reactor, so a program that never awaits keeps none of it.
+    // Issue #128: the event loop's state is constructed only by a program that awaits, so one
+    // that never does keeps none of it.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ReactorStateFollowsAsynchronousCode(bool awaits)
+    public void EventLoopStateFollowsAsynchronousCode(bool awaits)
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource(
-            "ReactorStateFixture",
+            "EventLoopStateFixture",
             $$"""
             using System.Threading.Tasks;
 
-            namespace ReactorStateFixture;
+            namespace EventLoopStateFixture;
 
             public static class EntryPoint
             {
@@ -79,14 +78,11 @@ public sealed class AsyncCompilationTests
         var result = NetWasmCompiler.Compile(CreateAsyncOptions(
             assets,
             assembly,
-            "ReactorStateFixture.EntryPoint",
+            "EventLoopStateFixture.EntryPoint",
             "Run"));
 
         var module = System.Text.Encoding.UTF8.GetString(result.ApplicationModule);
-        Assert.Contains("netwasm:runtime/reactor-guest@1|wake", module, StringComparison.Ordinal);
-        Assert.Equal(awaits, module.Contains("WasiPollableReactor::WakeInstance", StringComparison.Ordinal));
-        Assert.DoesNotContain("Dictionary`2<primitive:u4,[NetWasm.CoreLib]System.Runtime.InteropServices.WasiPollableReactor",
-            module, StringComparison.Ordinal);
+        Assert.Equal(awaits, module.Contains("CommandWorldScheduler::Schedule", StringComparison.Ordinal));
     }
 
     // Issue #128: the unobserved-exception event's arguments exist only for an
@@ -387,23 +383,17 @@ public sealed class AsyncCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform/async-platform@1.0.0"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.NotEmpty(result.ApplicationModule);
         Assert.Contains(result.Program.MethodInstances.Values,
             method => method.Definition.Name == "AwaitUnsafeOnCompleted");
+        // A delay is an async-lowered wait-for whose subtask joins the event loop's waitable set.
         Assert.Contains(result.Program.WitImportMethods,
-            method => method.WitImport?.InterfaceName ==
-                    "wasi:clocks/monotonic-clock@0.2.11" &&
-                method.WitImport.FunctionName == "subscribe-duration");
+            method => method.WitImport is
+            { InterfaceName: "wasi:clocks/monotonic-clock@0.3.2", FunctionName: "[async-lower]wait-for" });
         Assert.Contains(result.Program.WitImportMethods,
-            method => method.WitImport?.InterfaceName ==
-                    "netwasm:runtime/reactor-host@1.0.0" &&
-                method.WitImport.FunctionName == "watch");
-        Assert.Contains(
-            "cm32p2|netwasm:runtime/reactor-guest@1|wake",
-            System.Text.Encoding.UTF8.GetString(result.ApplicationModule),
-            StringComparison.Ordinal);
+            method => method.WitImport is { InterfaceName: "$root", FunctionName: "[waitable-join]" });
     }
 
     [Theory]
@@ -931,6 +921,6 @@ public sealed class AsyncCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform/async-platform@1.0.0",
+            WitWorld: "netwasm:platform/platform@1.0.0",
             Target: target);
 }

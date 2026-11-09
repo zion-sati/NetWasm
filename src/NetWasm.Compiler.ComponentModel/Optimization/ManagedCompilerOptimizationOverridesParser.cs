@@ -235,6 +235,15 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedIntegerCheckElimination.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedNewObjectNullCheckElimination>
+        NewObjectNullCheckEliminationValues =
+        new Dictionary<string, ManagedNewObjectNullCheckElimination>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedNewObjectNullCheckElimination.Auto,
+            ["Disabled"] = ManagedNewObjectNullCheckElimination.Disabled,
+            ["Enabled"] = ManagedNewObjectNullCheckElimination.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private static readonly FrozenDictionary<string, ManagedMulticastInlineDispatch>
         MulticastInlineDispatchValues =
         new Dictionary<string, ManagedMulticastInlineDispatch>(StringComparer.Ordinal)
@@ -242,6 +251,24 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Auto"] = ManagedMulticastInlineDispatch.Auto,
             ["Disabled"] = ManagedMulticastInlineDispatch.Disabled,
             ["Enabled"] = ManagedMulticastInlineDispatch.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedLoopStrengthReduction>
+        LoopStrengthReductionValues =
+        new Dictionary<string, ManagedLoopStrengthReduction>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedLoopStrengthReduction.Auto,
+            ["Disabled"] = ManagedLoopStrengthReduction.Disabled,
+            ["Enabled"] = ManagedLoopStrengthReduction.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedRangeBranchFolding>
+        RangeBranchFoldingValues =
+        new Dictionary<string, ManagedRangeBranchFolding>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedRangeBranchFolding.Auto,
+            ["Disabled"] = ManagedRangeBranchFolding.Disabled,
+            ["Enabled"] = ManagedRangeBranchFolding.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     private static readonly FrozenDictionary<string, ManagedLoopInvariantExpressionHoisting>
@@ -321,7 +348,10 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? quotientReuse = null,
         string? integerCheckElimination = null,
         string? loopInvariantExpressionHoisting = null,
-        string? multicastInlineDispatch = null)
+        string? multicastInlineDispatch = null,
+        string? newObjectNullCheckElimination = null,
+        string? loopStrengthReduction = null,
+        string? rangeBranchFolding = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -440,11 +470,26 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? invariantExpressionsParsed
             : throw ComponentException.Invalid(
                 "Managed loop-invariant expression hoisting must be Auto, Disabled or Enabled.");
+        var newObjectsValue = NewObjectNullCheckEliminationValues.TryGetValue(
+            newObjectNullCheckElimination ?? "Auto", out var newObjectsParsed)
+            ? newObjectsParsed
+            : throw ComponentException.Invalid(
+                "Managed newobj null check elimination must be Auto, Disabled or Enabled.");
         var multicastValue = MulticastInlineDispatchValues.TryGetValue(
             multicastInlineDispatch ?? "Auto", out var multicastParsed)
             ? multicastParsed
             : throw ComponentException.Invalid(
                 "Managed multicast inline dispatch must be Auto, Disabled or Enabled.");
+        var strengthReductionValue = LoopStrengthReductionValues.TryGetValue(
+            loopStrengthReduction ?? "Auto", out var strengthReductionParsed)
+            ? strengthReductionParsed
+            : throw ComponentException.Invalid(
+                "Managed loop strength reduction must be Auto, Disabled or Enabled.");
+        var rangeBranchesValue = RangeBranchFoldingValues.TryGetValue(
+            rangeBranchFolding ?? "Auto", out var rangeBranchesParsed)
+            ? rangeBranchesParsed
+            : throw ComponentException.Invalid(
+                "Managed range branch folding must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -476,7 +521,10 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                quotientsValue == ManagedQuotientReuse.Auto &&
                integerChecksValue == ManagedIntegerCheckElimination.Auto &&
                invariantExpressionsValue == ManagedLoopInvariantExpressionHoisting.Auto &&
-               multicastValue == ManagedMulticastInlineDispatch.Auto
+               multicastValue == ManagedMulticastInlineDispatch.Auto &&
+               newObjectsValue == ManagedNewObjectNullCheckElimination.Auto &&
+               strengthReductionValue == ManagedLoopStrengthReduction.Auto &&
+               rangeBranchesValue == ManagedRangeBranchFolding.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -510,7 +558,10 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 QuotientReuse: quotientsValue,
                 IntegerCheckElimination: integerChecksValue,
                 LoopInvariantExpressionHoisting: invariantExpressionsValue,
-                MulticastInlineDispatch: multicastValue);
+                MulticastInlineDispatch: multicastValue,
+                NewObjectNullCheckElimination: newObjectsValue,
+                LoopStrengthReduction: strengthReductionValue,
+                RangeBranchFolding: rangeBranchesValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>

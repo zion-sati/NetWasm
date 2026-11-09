@@ -126,6 +126,7 @@ internal sealed class RuntimePackManifestParser : IRuntimePackManifestParser
         {
             throw new InvalidOperationException("The NetWasm runtime target asset path is invalid.");
         }
+        ValidatePlatformArchives(target.PlatformArchives, $"{target.Target}/{target.GarbageCollector.ToLowerInvariant()}/");
         ValidateSpeedAssets(target);
         if (target.SystemLibraries is null ||
             target.SystemLibraries.Names.IsDefaultOrEmpty ||
@@ -165,6 +166,22 @@ internal sealed class RuntimePackManifestParser : IRuntimePackManifestParser
             !string.Equals(speed.CollectorArchive.Path, prefix + "libgc.a", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The NetWasm runtime speed asset path is invalid.");
+        }
+        ValidatePlatformArchives(speed.PlatformArchives, prefix);
+    }
+
+    private static void ValidatePlatformArchives(RuntimePackPlatformArchives? archives, string prefix)
+    {
+        if (archives is null)
+        {
+            throw new InvalidOperationException("The NetWasm runtime platform archives are missing.");
+        }
+        ValidateAsset(archives.Wasi);
+        ValidateAsset(archives.NoWasi);
+        if (!string.Equals(archives.Wasi.Path, prefix + "libnetwasm-runtime-wasi.a", StringComparison.Ordinal) ||
+            !string.Equals(archives.NoWasi.Path, prefix + "libnetwasm-runtime-nowasi.a", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The NetWasm runtime platform archive path is invalid.");
         }
     }
 

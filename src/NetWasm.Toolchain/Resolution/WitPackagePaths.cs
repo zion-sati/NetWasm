@@ -4,7 +4,7 @@ public sealed record WitPackagePaths(
     string PackageId,
     string PackageVersion,
     string CommandPath,
-    string AsyncCommandPath,
+    string DiagnosticCommandPath,
     string CompilerPath);
 
 public interface IWitPackagePathResolver

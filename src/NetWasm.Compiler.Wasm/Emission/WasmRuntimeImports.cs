@@ -179,6 +179,10 @@ internal static class WasmRuntimeImports
         new(RuntimeImportSymbol.ReportUnhandledException, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule, RuntimeAbi.RuntimeReportUnhandledException,
             WasmFunctionType.Create(CliValueKind.Void))),
+        new(RuntimeImportSymbol.ObjectClone, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeObjectClone,
+            WasmFunctionType.Create(CliValueKind.ManagedReference, CliValueKind.ManagedReference))),
     ];
 
     private static RuntimeImportBinding[] CreateLegacyBindings() =>
