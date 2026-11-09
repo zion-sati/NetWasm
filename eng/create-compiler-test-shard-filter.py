@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from dataclasses import dataclass
+from typing import Callable
 import json
 import math
 from pathlib import Path
@@ -275,7 +276,9 @@ def create_execution_shards(
 NORMAL_RUN_EXCLUSION = "Category!=Performance"
 
 
-def create_vstest_filter(items: list[str | ShardItem]) -> str:
+def create_vstest_filter(
+    items: list[str | ShardItem], escape: Callable[[str], str] | None = None
+) -> str:
     if not items:
         raise ValueError("The selected shard contains no test methods.")
 
@@ -290,7 +293,7 @@ def create_vstest_filter(items: list[str | ShardItem]) -> str:
             raise ValueError(f"Cannot select discovered test case exactly: {item.display_name}")
         clauses.append(
             f"(FullyQualifiedName={item.method_name}"
-            f"&DisplayName~{filter_value(arguments)})"
+            f"&DisplayName~{(escape or filter_value)(arguments)})"
         )
     return f"({'|'.join(sorted(clauses))})&{NORMAL_RUN_EXCLUSION}"
 
@@ -308,12 +311,16 @@ def filter_value(text: str) -> str:
     )
 
 
-def write_run_settings(path: Path, vstest_filter: str) -> None:
-    """Writes the filter as run settings: a shard's filter can pass Linux's 128 KiB limit on
-    one command-line argument, which a file does not have."""
+def write_run_settings(path: Path, items: list[str | ShardItem]) -> None:
+    """Writes the shard's filter as run settings: it can pass Linux's 128 KiB limit on one
+    command-line argument, which a file does not have. VSTest reads it as written, so case
+    arguments stay as they are; the percent-encoding filter_value adds is for MSBuild, which
+    decodes the command line's filter, and a case whose arguments VSTest would need
+    escaped is never split out (case_filter_arguments)."""
     settings = ElementTree.Element("RunSettings")
     configuration = ElementTree.SubElement(settings, "RunConfiguration")
-    ElementTree.SubElement(configuration, "TestCaseFilter").text = vstest_filter
+    ElementTree.SubElement(configuration, "TestCaseFilter").text = create_vstest_filter(
+        items, lambda arguments: arguments)
     ElementTree.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
 
 
@@ -388,11 +395,10 @@ def main() -> int:
         selected_items = shards[args.shard_index]
         selected_cases = sum(item.cases for item in selected_items)
         selected_weight = sum(item.weight for item in selected_items)
-        vstest_filter = create_vstest_filter(selected_items)
         if args.settings_output is not None:
-            write_run_settings(args.settings_output, vstest_filter)
+            write_run_settings(args.settings_output, selected_items)
         else:
-            print(vstest_filter)
+            print(create_vstest_filter(selected_items))
         if args.plan_output is not None:
             write_plan(args.plan_output, selected_items)
         print(

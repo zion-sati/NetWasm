@@ -204,15 +204,22 @@ class CompilerTestShardFilterTests(unittest.TestCase):
             SHARDS.ShardItem(f"NetWasm.Compiler.Tests.AlphaTests.Case{index}", None, 1, 1.0)
             for index in range(4000)
         ]
-        vstest_filter = SHARDS.create_vstest_filter(items) + "&Category!=Performance<x>"
-        self.assertGreater(len(vstest_filter.encode()), 131072)
+        method = "NetWasm.Compiler.Tests.BetaTests.Theory"
+        items.append(SHARDS.ShardItem(method, f'{method}(caseId: "a<b>", cell: "Debug-Wasm32")', 1, 1.0))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "shard.runsettings"
-            SHARDS.write_run_settings(path, vstest_filter)
+            SHARDS.write_run_settings(path, items)
             root = SHARDS.ElementTree.parse(path).getroot()
 
+        written = root.findtext("RunConfiguration/TestCaseFilter")
         self.assertEqual("RunSettings", root.tag)
-        self.assertEqual(vstest_filter, root.findtext("RunConfiguration/TestCaseFilter"))
+        self.assertGreater(len(written.encode()), 131072)
+        # VSTest reads run settings as written: the case's arguments are not percent-encoded,
+        # as the command line's filter is for MSBuild.
+        self.assertIn(f'(FullyQualifiedName={method}&DisplayName~caseId: "a<b>", cell: "Debug-Wasm32")', written)
+        self.assertEqual(
+            SHARDS.create_vstest_filter(items, lambda arguments: arguments), written)
+        self.assertNotEqual(SHARDS.create_vstest_filter(items), written)
 
     def test_normal_and_unsafe_theories_remain_atomic(self):
         normal = "NetWasm.Compiler.Tests.NormalTests.Theory"
