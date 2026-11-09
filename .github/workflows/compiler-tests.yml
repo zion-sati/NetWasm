@@ -244,19 +244,19 @@ jobs:
           if [[ -n "$TEST_CLASSES" ]]; then
             selection=(--classes "$TEST_CLASSES")
           fi
-          filter="$(
-            python3 eng/create-compiler-test-shard-filter.py "$listing" \
-              --shard-count '${{ strategy.job-total }}' \
-              --shard-index '${{ strategy.job-index }}' \
-              --timings '${{ inputs.timings }}' --plan-output "$plan" "${selection[@]}"
-          )"
+          settings="$RUNNER_TEMP/compiler-test-shard.runsettings"
+          python3 eng/create-compiler-test-shard-filter.py "$listing" \
+            --shard-count '${{ strategy.job-total }}' \
+            --shard-index '${{ strategy.job-index }}' \
+            --timings '${{ inputs.timings }}' --plan-output "$plan" \
+            --settings-output "$settings" "${selection[@]}"
           collection=()
           if [[ "$COVERAGE" == true ]]; then
             collection=(--collect "XPlat Code Coverage" --
               DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=json)
           fi
           dotnet test "$project" -c Release --no-build --no-restore \
-            --disable-build-servers --nologo --filter "$filter" \
+            --disable-build-servers --nologo --settings "$settings" \
             --results-directory "$RUNNER_TEMP/compiler-test-results" \
             --logger "trx;LogFileName=compiler-${{ strategy.job-index }}.trx" "${collection[@]}"
           python3 eng/check-compiler-test-shard.py "$plan" \
