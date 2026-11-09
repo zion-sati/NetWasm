@@ -21,20 +21,19 @@ public sealed class AsyncTaskCompletionEmitterTests
         var emitter = Assert.IsAssignableFrom<IAsyncTaskCompletionEmitter>(new AsyncTaskCompletionEmitter(
             layouts, layouts, imports, state, writers));
         var binding = Binding();
-        var plan = new AsyncTaskCompletionPlan(900, 901, CliValueKind.Void);
+        var plan = new AsyncTaskCompletionPlan(900, 901);
 
         emitter.Emit(binding, plan);
 
         var instructions = writers.Instructions.ToInstructions().ToList();
-        // Captured from the qualified process emitter once observation gained the
-        // exception frame that rewinds a fault's frames, and again when the
-        // value_frame_leave_mapped import moved the later imports' indices. All
-        // encoded instructions, including operands and exception handlers, must
-        // remain unchanged.
+        // Captured from the export completion when the process completion it shared
+        // the emitter with was removed; the export path's instructions did not
+        // change. All encoded instructions, including operands and exception
+        // handlers, must remain unchanged.
         var snapshot = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(instructions);
         Assert.Equal(target == WasmTarget.Wasm32
-                ? "c4ad8c27ec9a2ca56f9b7595bbeea2f03b7ed42c1047ee10ecda4a543b0edd23"
-                : "2972c749ede19a94c565057fd64b2329ef826e5d874d0fb6f064905688022066",
+                ? "df632d19079505660b88dd62d066a95b4731a22484e9883e5b3006439245121b"
+                : "6990bfa135aa36cd927c766fa06876f51d943e3d72a013d8500159f50254831f",
             Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(snapshot)));
         int CallIndex(int index) => instructions.FindIndex(i =>
             i.Opcode == WasmOpcodes.Call && i.Operand.UnsignedValue == index);
@@ -43,12 +42,14 @@ public sealed class AsyncTaskCompletionEmitterTests
         var root = CallIndex(imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
         var releaseHandle = CallIndex(imports.Resolve(RuntimeImportSymbol.HandleRelease));
         var endCatch = CallIndex(imports.Resolve(RuntimeImportSymbol.EndCatch));
-        var report = CallIndex(plan.DeliverFunctionIndex!.Value);
+        var report = CallIndex(plan.CaptureFunctionIndex);
         Assert.Equal(WasmOpcodes.LocalGet, instructions[handleGet - 1].Opcode);
         Assert.Equal(WasmOpcodes.LocalTee, instructions[handleGet + 1].Opcode);
         Assert.Equal(target == WasmTarget.Wasm64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero,
             instructions[handleGet + 2].Opcode);
-        Assert.Equal(WasmOpcodes.Return, instructions[handleGet + 4].Opcode);
+        // A missing handle completes with no payload.
+        Assert.Equal(WasmOpcodes.I32Constant, instructions[handleGet + 4].Opcode);
+        Assert.Equal(WasmOpcodes.Return, instructions[handleGet + 5].Opcode);
         var statusLoad = instructions.FindIndex(i => i.Opcode == WasmOpcodes.I32Load);
         Assert.Equal((uint)layouts.GetFieldLayout(binding.StatusField).Offset, instructions[statusLoad].Operand.Offset);
         Assert.Equal(2, instructions[statusLoad + 1].Operand.SignedValue);
@@ -95,43 +96,11 @@ public sealed class AsyncTaskCompletionEmitterTests
         var emitter = Assert.IsAssignableFrom<IAsyncTaskCompletionEmitter>(new AsyncTaskCompletionEmitter(
             layouts, layouts, WasmRuntimeImports.CreateCatalog(), new RecordingExceptionState(), writers));
         var binding = Binding();
-        Assert.Throws<ArgumentNullException>(() => emitter.Emit(null!, new(0, 0, CliValueKind.Void)));
+        Assert.Throws<ArgumentNullException>(() => emitter.Emit(null!, new(0, 0)));
         Assert.Throws<ArgumentNullException>(() => emitter.Emit(binding, null!));
-        Assert.Throws<ArgumentOutOfRangeException>(() => emitter.Emit(binding, new(-1, 0, CliValueKind.Void)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => emitter.Emit(binding, new(0, -1, CliValueKind.Void)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => emitter.Emit(binding, new(0, 0, CliValueKind.I8)));
-        Assert.Throws<ArgumentException>(() => emitter.Emit(binding, new(0, null, CliValueKind.I4)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emitter.Emit(binding, new(-1, 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emitter.Emit(binding, new(0, -1)));
         Assert.Equal(0, writers.Calls);
-    }
-
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void LeanProcessCompletionReleasesStateAndTrapsWithoutReadingExceptionData(
-        WasmTarget target)
-    {
-        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
-        var imports = WasmRuntimeImports.CreateCatalog();
-        var writers = new RecordingWriters();
-        var state = new RecordingExceptionState();
-        var emitter = new AsyncTaskCompletionEmitter(
-            layouts, layouts, imports, state, writers);
-
-        emitter.Emit(Binding(), new(900, null, CliValueKind.Void));
-
-        var instructions = writers.Instructions.ToInstructions().ToList();
-        Assert.Null(state.Writer);
-        var endCatch = instructions.FindIndex(i => i.Opcode == WasmOpcodes.Call &&
-            i.Operand.UnsignedValue == imports.Resolve(RuntimeImportSymbol.EndCatch));
-        var releaseHandle = instructions.FindIndex(endCatch + 1, i => i.Opcode == WasmOpcodes.Call &&
-            i.Operand.UnsignedValue == imports.Resolve(RuntimeImportSymbol.HandleRelease));
-        Assert.True(endCatch >= 0);
-        Assert.True(releaseHandle > endCatch);
-        Assert.Equal(WasmOpcodes.Unreachable, instructions[releaseHandle + 1].Opcode);
-        Assert.Equal(WasmOpcodes.End, instructions[^1].Opcode);
-        Assert.Equal(WasmOpcodes.End, instructions[^2].Opcode);
-        Assert.DoesNotContain(instructions, i => i.Opcode == WasmOpcodes.Call &&
-            i.Operand.UnsignedValue == imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
     }
 
     [Theory]
@@ -143,7 +112,7 @@ public sealed class AsyncTaskCompletionEmitterTests
         var imports = WasmRuntimeImports.CreateCatalog();
         var writers = new RecordingWriters();
         var emitter = new AsyncTaskCompletionEmitter(layouts, layouts, imports, new RecordingExceptionState(), writers);
-        emitter.Emit(Binding(), new(900, 901, CliValueKind.I4));
+        emitter.Emit(Binding(), new(900, 901));
         var instructions = writers.Instructions.ToInstructions().ToList();
         var missingReturn = instructions.FindIndex(i => i.Opcode == WasmOpcodes.Return);
         Assert.Equal(WasmOpcodes.I32Constant, instructions[missingReturn - 1].Opcode);

@@ -52,7 +52,7 @@ function manifest() {
     artifacts: [{ mediaType: "application/wasm", relativePath: "app.wasm", role: "application", schemaVersion: null, sha256: digest }],
     buildFingerprint: digest,
     deploymentKind: "raw",
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     exports: [],
     featureSet: "default",
     profile: "netwasm0.1",

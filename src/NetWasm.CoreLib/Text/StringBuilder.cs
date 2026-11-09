@@ -134,8 +134,14 @@ namespace System.Text
 
         public char this[int index]
         {
+            // As in .NET, reading outside the text throws IndexOutOfRangeException and
+            // writing there ArgumentOutOfRangeException.
             get
             {
+                if ((uint)index >= (uint)Length)
+                {
+                    throw new IndexOutOfRangeException();
+                }
                 var chunk = FindChunkForIndex(index);
                 return chunk.m_ChunkChars[index - chunk.m_ChunkOffset];
             }

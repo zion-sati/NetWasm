@@ -86,6 +86,25 @@ internal static class EmitterTestSupport
             : throw new InvalidOperationException(
                 "Instruction test requests must use the recording instruction writer.");
 
+    // The request with a proof, over its own one-instruction body, that its object
+    // reference is non-null, writing to the same recorder; a stale proof describes
+    // another snapshot of the body.
+    internal static InstructionEmissionRequest WithNonNullProof(InstructionEmissionRequest request, bool stale)
+    {
+        var header = request.Header with { Instructions = [request.Instruction] };
+        header = header with
+        {
+            ArrayBoundsProof = new(header.Instructions, header.Locals, header.LocalSignatureTypes, [])
+            {
+                NonNullOffsets = [request.Instruction.Offset],
+            },
+        };
+        if (stale) header = header with { Instructions = [request.Instruction with { OriginalOffset = 123 }] };
+        var proven = request with { Header = header };
+        RegisterInstructionWriter(proven, (RecordingInstructionWriter)GetCodeWriter(request));
+        return proven;
+    }
+
     internal static void RegisterInstructionWriter(
         InstructionEmissionRequest request,
         RecordingInstructionWriter writer)
@@ -688,6 +707,19 @@ internal static class EmitterTestSupport
                     RuntimeImportSelection = instruction.Target.RuntimeImportSelection with
                     {
                         IncludeArraySetValue = true,
+                    },
+                },
+            };
+        }
+        else if (intrinsic == RuntimeIntrinsic.ObjectClone)
+        {
+            instruction = instruction with
+            {
+                Target = instruction.Target with
+                {
+                    RuntimeImportSelection = instruction.Target.RuntimeImportSelection with
+                    {
+                        IncludeObjectClone = true,
                     },
                 },
             };

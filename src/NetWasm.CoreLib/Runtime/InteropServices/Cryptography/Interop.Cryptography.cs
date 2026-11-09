@@ -1,13 +1,10 @@
 namespace System
 {
-    using Runtime.InteropServices.Cryptography;
-
-    internal static unsafe class Interop
+    internal static unsafe partial class Interop
     {
         internal static void GetCryptographicallySecureRandomBytes(
             byte* buffer,
-            int length) => CryptographicRandomServices.Filler.Fill(
-                unchecked((nuint)buffer),
-                length);
+            int length) => Runtime.InteropServices.PlatformServices.Random.Fill(
+                new Span<byte>(buffer, length));
     }
 }

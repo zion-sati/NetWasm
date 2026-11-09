@@ -1,7 +1,4 @@
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 import { createExecutionScopeCloser } from "./execution-scope-closer.mjs";
 
 const requestKeys = new Set([
@@ -9,16 +6,9 @@ const requestKeys = new Set([
   "imports",
   "instantiateCore",
   "releaseActions",
-  "schedule",
   "signal",
 ]);
 const requiredRequestKeys = Object.freeze(["contractKey", "imports"]);
-const supportedContracts = new Set([
-  commandExecutionContract,
-  processExecutionContract,
-]);
-const reactorHostModule = "netwasm:runtime/reactor-host";
-const versionedReactorHostModule = `${reactorHostModule}@1.0.0`;
 const diagnosticsModule = "netwasm:diagnostics/terminal";
 const versionedDiagnosticsModule = `${diagnosticsModule}@1.0.0`;
 
@@ -30,18 +20,14 @@ export function prepareComponentExecution(request = {}) {
     instantiateCore,
     signal = null,
     releaseActions = [],
-    schedule = globalThis.queueMicrotask?.bind(globalThis),
   } = request;
-  if (!supportedContracts.has(contractKey)) {
+  if (contractKey !== commandExecutionContract) {
     throw new TypeError("component execution contract is unsupported");
   }
   if (instantiateCore !== undefined && typeof instantiateCore !== "function") {
     throw new TypeError("component core-module instantiator is invalid");
   }
   validateSignal(signal);
-  if (typeof schedule !== "function") {
-    throw new TypeError("component execution scheduler is required");
-  }
   const projectedImports = projectImports(imports);
   const closeCallerScope = createExecutionScopeCloser(releaseActions);
 
@@ -50,7 +36,6 @@ export function prepareComponentExecution(request = {}) {
     imports: projectedImports,
     instantiateCore,
     signal,
-    schedule,
     closeCallerScope,
   });
 }
@@ -75,8 +60,7 @@ function projectImports(imports) {
         || typeof descriptor.value !== "object") {
       throw new TypeError("projected component import is invalid");
     }
-    if (name === reactorHostModule || name === versionedReactorHostModule
-        || name === diagnosticsModule || name === versionedDiagnosticsModule) {
+    if (name === diagnosticsModule || name === versionedDiagnosticsModule) {
       throw new TypeError("component internal host module is a reserved import");
     }
     projection[name] = descriptor.value;

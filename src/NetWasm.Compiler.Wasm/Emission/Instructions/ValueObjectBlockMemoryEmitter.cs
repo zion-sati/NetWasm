@@ -174,7 +174,7 @@ internal sealed class ValueObjectBlockMemoryEmitter(
                 request.Context,
                 slot,
                 request.Stack[slot])))));
-            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size, SmallBlockEmitter.WidestChunk(layout),
                 writer => EmitAddressConstant(writer, layout.Size));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
@@ -217,7 +217,7 @@ internal sealed class ValueObjectBlockMemoryEmitter(
             type.StackKind)))));
         if (type.StackKind == CliValueKind.ValueType)
         {
-            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size, SmallBlockEmitter.WidestChunk(layout),
                 writer => EmitAddressConstant(writer, layout.Size));
         }
         else
@@ -244,7 +244,7 @@ internal sealed class ValueObjectBlockMemoryEmitter(
             request.Context,
             destination + 1,
             request.Stack[destination + 1])))));
-        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size, SmallBlockEmitter.WidestChunk(layout),
             writer => EmitAddressConstant(writer, layout.Size));
         request.Stack.RemoveRange(destination, 2);
     }

@@ -70,8 +70,7 @@ public sealed class WitTypeIdentityFormatter(
                 "enum" => FormatNames("enum", kind.Value, "cases"),
                 "flags" => FormatNames("flags", kind.Value, "flags"),
                 "handle" => FormatHandle(document, kind.Value),
-                "future" or "stream" => throw ComponentException.Invalid(
-                    $"user-defined WIT {kind.Name} types are not supported"),
+                "future" or "stream" => FormatAsync(document, kind.Name, kind.Value, path),
                 _ => throw ComponentException.Invalid(
                     $"unsupported WIT type '{kind.Name}'"),
             };
@@ -194,6 +193,15 @@ public sealed class WitTypeIdentityFormatter(
             path.Remove(id);
         }
     }
+
+    // A stream or future names its payload; one without a payload only signals.
+    private string FormatAsync(
+        WitDocument document,
+        string name,
+        JsonElement value,
+        HashSet<int> path) => value.ValueKind == JsonValueKind.Null
+        ? name
+        : $"{name}<{FormatReference(document, ReadReference(value), path)}>";
 
     private string FormatOptionalReference(
         WitDocument document,

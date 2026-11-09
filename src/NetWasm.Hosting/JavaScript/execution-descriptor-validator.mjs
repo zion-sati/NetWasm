@@ -7,9 +7,7 @@ const descriptorKeys = [
   "hostingVersion",
   "launcherPath",
   "schemaVersion",
-  "toolPackages",
 ];
-const packageKeys = ["id", "rootPath", "sha256", "version"];
 const digestPattern = /^[0-9a-f]{64}$/u;
 
 export function createExecutionDescriptorValidator(options) {
@@ -41,32 +39,6 @@ export function createExecutionDescriptorValidator(options) {
       options.isAbsoluteHostPath,
       "execution launcher path");
 
-    if (!Array.isArray(descriptor.toolPackages) || descriptor.toolPackages.length === 0) {
-      throw new TypeError("execution tool packages must be a non-empty array");
-    }
-    const identities = new Set();
-    const toolPackages = Object.freeze(descriptor.toolPackages.map(package_ => {
-      assertExactDataObject(package_, packageKeys, "execution tool package");
-      validateText(package_.id, "execution tool package ID");
-      validateText(package_.version, "execution tool package version");
-      validatePath(
-        package_.rootPath,
-        options.isAbsoluteHostPath,
-        "execution tool package root");
-      validateDigest(package_.sha256, "execution tool package digest");
-      const identity = package_.id.toUpperCase();
-      if (identities.has(identity)) {
-        throw new TypeError(`execution tool package '${package_.id}' is duplicated`);
-      }
-      identities.add(identity);
-      return Object.freeze({
-        id: package_.id,
-        version: package_.version,
-        rootPath: package_.rootPath,
-        sha256: package_.sha256,
-      });
-    }));
-
     return Object.freeze({
       schemaVersion: descriptor.schemaVersion,
       buildFingerprint: descriptor.buildFingerprint,
@@ -75,7 +47,6 @@ export function createExecutionDescriptorValidator(options) {
       hostingVersion: descriptor.hostingVersion,
       hostExecutablePath: descriptor.hostExecutablePath,
       launcherPath: descriptor.launcherPath,
-      toolPackages,
     });
   });
 }

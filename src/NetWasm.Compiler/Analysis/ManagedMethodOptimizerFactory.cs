@@ -142,7 +142,16 @@ internal sealed class ManagedMethodOptimizerFactory(
             new ConstantTripLoopUnroller(settings.LoopUnrolling == LoopUnrollingPolicy.Bounded),
             new LoopInvariantExpressionHoister(calledMethods, intrinsics,
                 settings.LoopInvariantExpressionHoisting == LoopInvariantExpressionHoistingPolicy.BranchingExpressions),
+            new AddressInductionRewriter(calledMethods, intrinsics,
+                settings.LoopStrengthReduction == LoopStrengthReductionPolicy.AddressInduction),
             new WholeLocalBlockCopyFolder(graphBuilder, stackValidator, calledMethods, typeDefinitions, fields,
-                settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled));
+                settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled),
+            new NullChecks.ConstructedObjectNullCheckEliminator(graphBuilder, stackValidator,
+                new NullChecks.ConstructedReceiverPlanner(dominance, new StackEffectResolver(calledMethods), calledMethods),
+                settings.NewObjectNullCheckElimination != NewObjectNullCheckEliminationPolicy.Disabled),
+            new RangeBranchRewriter(graphBuilder, stackValidator,
+                new IntegerRangeAnalysis(new StackEffectResolver(calledMethods)),
+                Constants.ConstantBranchFoldingFactory.Create(graphBuilder),
+                settings.RangeBranchFolding == RangeBranchFoldingPolicy.ProvenRanges));
     }
 }

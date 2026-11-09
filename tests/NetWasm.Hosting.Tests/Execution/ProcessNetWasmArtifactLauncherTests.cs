@@ -44,6 +44,7 @@ public sealed class ProcessNetWasmArtifactLauncherTests
         Assert.Equal<string>(
             [
                 descriptor.LauncherPath,
+                "--netwasm-execution",
                 "--descriptor", paths.DescriptorPath,
                 "--request", paths.RequestPath,
                 "--result", channel.Path,

@@ -51,6 +51,7 @@ internal sealed class RawCanonicalBindingEmitter
         var indirectResult = result is not null && signature.GetProperty("indirectResult").GetBoolean();
         var flatParameters = signature.GetProperty("flatParameters").EnumerateArray()
             .Select(value => value.GetString()!).ToImmutableArray();
+        var asynchronous = binding.TryGetProperty("asynchronous", out var lowering) && lowering.GetBoolean();
         var arguments = Enumerable.Range(0, arity).Select(argument => $"a{Int(argument)}").ToArray();
 
         var source = new StringBuilder();
@@ -77,7 +78,7 @@ internal sealed class RawCanonicalBindingEmitter
             var layout = _planner.Layout(tuple);
             source.Append("    const parameters = ").Append(Reader(tuple))
                 .Append("(memory, rcIndex(memory, a0, ").Append(Int(layout.Alignment)).Append(", ")
-                .Append(Int(layout.Size)).AppendLine("), lift);");
+                .Append(Int(layout.Size)).AppendLine("), lift, host);");
             names.AddRange(parameters.Select((_, parameter) => $"parameters[{Int(parameter)}]"));
         }
         else
@@ -99,7 +100,26 @@ internal sealed class RawCanonicalBindingEmitter
         if (lifted) source.AppendLine("    lift.commit();");
 
         var call = $"invoke({string.Join(", ", names)})";
-        if (result is null)
+        if (asynchronous)
+        {
+            // The provider's value, or the promise of one, reaches the guest's return area
+            // now or when the subtask returns.
+            var start = result?.Kind == CanonicalAbiTypeKind.Result
+                ? $"rcSettleResult(() => {call}, {Bool(result.Ok is not null)}, {Bool(result.Error is not null)})"
+                : call;
+            source.Append("    return host.componentModel.callAsync(() => ").Append(start).Append(", ");
+            if (result is null)
+            {
+                source.AppendLine("() => undefined);");
+            }
+            else
+            {
+                source.AppendLine("value => {");
+                EmitLowering(source, result, true);
+                source.AppendLine("    });");
+            }
+        }
+        else if (result is null)
         {
             source.Append("    ").Append(call).AppendLine(";");
             source.AppendLine("    return undefined;");
@@ -108,10 +128,10 @@ internal sealed class RawCanonicalBindingEmitter
         {
             if (result.Kind == CanonicalAbiTypeKind.Result)
             {
-                // A provider returns a result's ok payload and throws its error.
+                // A provider returns a result, or its ok payload, and throws its error.
                 source.AppendLine("    let value;");
-                source.Append("    try { value = rcTaggedResult(\"ok\", ").Append(Bool(result.Ok is not null))
-                    .Append(", ").Append(call).AppendLine("); }");
+                source.Append("    try { value = rcResultValue(").Append(call).Append(", ")
+                    .Append(Bool(result.Ok is not null)).AppendLine("); }");
                 source.Append("    catch (error) { value = rcTaggedResult(\"err\", ").Append(Bool(result.Error is not null))
                     .AppendLine(", rcErrorPayload(error)); }");
             }
@@ -124,6 +144,80 @@ internal sealed class RawCanonicalBindingEmitter
         source.AppendLine("  };");
         source.AppendLine("}");
         return source.ToString();
+    }
+
+    /// <summary>
+    /// Emits <c>function bindCallable{index}(host)</c> for a stream or future built-in: the
+    /// host's Component Model performs it with the element codec of the binding's type.
+    /// </summary>
+    public string EmitPayload(int index, JsonElement binding)
+    {
+        var type = RawAdapterValueType.Read(binding.GetProperty("type"));
+        var family = type.Kind switch
+        {
+            CanonicalAbiTypeKind.Stream => "stream",
+            CanonicalAbiTypeKind.Future => "future",
+            _ => throw new InvalidOperationException("raw adapter payload built-in needs a stream or future type"),
+        };
+        var (parameters, operation) = (binding.GetProperty("operation").GetString(), family) switch
+        {
+            ("new", _) => ("", "new(codec)"),
+            ("read", "stream") => ("a0, a1, a2", "read(codec, a0, a1, a2)"),
+            ("write", "stream") => ("a0, a1, a2", "write(codec, a0, a1, a2)"),
+            ("read", _) => ("a0, a1", "read(codec, a0, a1)"),
+            ("write", _) => ("a0, a1", "write(codec, a0, a1)"),
+            ("drop-readable", _) => ("a0", "dropReadable(a0)"),
+            ("drop-writable", _) => ("a0", "dropWritable(a0)"),
+            var (name, _) => throw new InvalidOperationException($"raw adapter payload operation '{name}' is unsupported"),
+        };
+        var source = new StringBuilder();
+        source.Append("function bindCallable").Append(Int(index)).AppendLine("(host) {");
+        source.Append("  const codec = ").Append(Codec(type.Element)).AppendLine("(host);");
+        source.Append("  const operations = host.componentModel.").Append(family).AppendLine(";");
+        source.Append("  return function (").Append(parameters).Append(") { return operations.")
+            .Append(operation).AppendLine("; };");
+        source.AppendLine("}");
+        return source.ToString();
+    }
+
+    // codecN(host): how a stream's or future's elements of one type move through memory.
+    private string Codec(RawAdapterValueType? element)
+    {
+        var type = element ?? new RawAdapterValueType { Kind = CanonicalAbiTypeKind.Unit };
+        return Shared("codec", type, name =>
+        {
+            var layout = _planner.Layout(type);
+            var bytes = type.Underlying.Kind == CanonicalAbiTypeKind.U8;
+            var body = new StringBuilder();
+            body.Append("function ").Append(name).AppendLine("(host) {");
+            body.Append("  return Object.freeze({ size: ").Append(Int(layout.Size)).Append(", align: ")
+                .Append(Int(layout.Alignment)).Append(", bytes: ").Append(Bool(bytes)).AppendLine(",");
+            body.AppendLine("    lift: (memory, index) => {");
+            if (HoldsResource(type))
+            {
+                body.AppendLine("      const lift = rcLiftTransaction(host, host.store());");
+                body.Append("      const value = ").Append(Read(type, "index")).AppendLine(";");
+                body.AppendLine("      lift.commit();");
+                body.AppendLine("      return value;");
+            }
+            else
+            {
+                body.AppendLine("      const lift = undefined;");
+                body.Append("      return ").Append(Read(type, "index")).AppendLine(";");
+            }
+            body.AppendLine("    },");
+            body.AppendLine("    lower: (memory, index, value) => {");
+            var lowering = new StringBuilder();
+            lowering.AppendLine("    const store = host.store();");
+            lowering.AppendLine("    const out = index;");
+            EmitLowering(lowering, type, true);
+            body.Append(lowering.ToString().Replace("\n    ", "\n      ", StringComparison.Ordinal)
+                .Insert(0, "  "));
+            body.AppendLine("    },");
+            body.AppendLine("  });");
+            body.AppendLine("}");
+            return body.ToString();
+        });
     }
 
     private void EmitLowering(StringBuilder source, RawAdapterValueType result, bool indirect)
@@ -217,7 +311,7 @@ internal sealed class RawCanonicalBindingEmitter
             case CanonicalAbiTypeKind.List:
                 return type.Element!.Underlying.Kind == CanonicalAbiTypeKind.U8
                     ? $"rcReadBytes(memory, {slots.Dequeue().Name}, {slots.Dequeue().Name})"
-                    : $"{ListReader(type)}(memory, {slots.Dequeue().Name}, {slots.Dequeue().Name}, lift)";
+                    : $"{ListReader(type)}(memory, {slots.Dequeue().Name}, {slots.Dequeue().Name}, lift, host)";
             case CanonicalAbiTypeKind.Record:
                 return "{ " + string.Join(", ", type.Fields.Select(field =>
                     $"{Json(field.JavaScriptName!)}: {LiftFlat(field.Type, slots)}")) + " }";
@@ -227,7 +321,7 @@ internal sealed class RawCanonicalBindingEmitter
                 {
                     var count = 1 + _planner.JoinedSlots(type.SelectionTypes).Length;
                     var values = Enumerable.Range(0, count).Select(_ => slots.Dequeue().Name);
-                    return $"{FlatVariantLifter(type)}(memory, lift, {string.Join(", ", values)})";
+                    return $"{FlatVariantLifter(type)}(memory, lift, host, {string.Join(", ", values)})";
                 }
             case CanonicalAbiTypeKind.Enum: return $"rcEnumCase({Names(type.Cases.Select(item => item.Name))}, {slots.Dequeue().Name} >>> 0)";
             case CanonicalAbiTypeKind.Flags:
@@ -236,6 +330,8 @@ internal sealed class RawCanonicalBindingEmitter
                     return $"rcFlags({Names(type.Flags)}, [{string.Join(", ", words)}])";
                 }
             case CanonicalAbiTypeKind.OwnedResource: return $"lift.own({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)";
+            case CanonicalAbiTypeKind.Stream: return $"host.componentModel.liftStream({slots.Dequeue().Name} >>> 0)";
+            case CanonicalAbiTypeKind.Future: return $"host.componentModel.liftFuture({slots.Dequeue().Name} >>> 0)";
             default: return $"lift.borrow({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)"; // A borrowed resource.
         }
     }
@@ -247,7 +343,7 @@ internal sealed class RawCanonicalBindingEmitter
         var joined = _planner.JoinedSlots(caseTypes);
         var slotNames = joined.Select((_, slot) => $"s{Int(slot)}").ToArray();
         var body = new StringBuilder();
-        body.Append("function ").Append(name).Append("(memory, lift, d")
+        body.Append("function ").Append(name).Append("(memory, lift, host, d")
             .Append(string.Concat(slotNames.Select(slot => ", " + slot))).AppendLine(") {");
         body.AppendLine("  switch (d >>> 0) {");
         for (var index = 0; index < caseTypes.Length; index++)
@@ -315,14 +411,16 @@ internal sealed class RawCanonicalBindingEmitter
         CanonicalAbiTypeKind.Alias => Read(type.Element!, index),
         CanonicalAbiTypeKind.OwnedResource => $"lift.own({Int(type.ResourceType)}, rcView(memory).getUint32({index}, true))",
         CanonicalAbiTypeKind.BorrowedResource => $"lift.borrow({Int(type.ResourceType)}, rcView(memory).getUint32({index}, true))",
-        _ => $"{Reader(type)}(memory, {index}, lift)",
+        CanonicalAbiTypeKind.Stream => $"host.componentModel.liftStream(rcView(memory).getUint32({index}, true))",
+        CanonicalAbiTypeKind.Future => $"host.componentModel.liftFuture(rcView(memory).getUint32({index}, true))",
+        _ => $"{Reader(type)}(memory, {index}, lift, host)",
     };
 
     // readN(memory, index, lift) for a value that is not a scalar.
     private string Reader(RawAdapterValueType type) => Shared("read", type, name =>
     {
         var body = new StringBuilder();
-        body.Append("function ").Append(name).AppendLine("(memory, index, lift) {");
+        body.Append("function ").Append(name).AppendLine("(memory, index, lift, host) {");
         var layout = _planner.Layout(type);
         switch (type.Kind)
         {
@@ -336,7 +434,7 @@ internal sealed class RawCanonicalBindingEmitter
                 break;
             case CanonicalAbiTypeKind.List:
                 body.Append("  return ").Append(ListReader(type)).Append("(memory, ").Append(PointerRead("index"))
-                    .Append(", ").Append(PointerRead($"index + {Int(_planner.AddressSize)}")).AppendLine(", lift);");
+                    .Append(", ").Append(PointerRead($"index + {Int(_planner.AddressSize)}")).AppendLine(", lift, host);");
                 break;
             case CanonicalAbiTypeKind.Record:
                 body.Append("  return { ").Append(string.Join(", ", type.Fields.Select((field, item) =>
@@ -390,7 +488,7 @@ internal sealed class RawCanonicalBindingEmitter
     {
         var element = _planner.Layout(type.Element!);
         var body = new StringBuilder();
-        body.Append("function ").Append(name).AppendLine("(memory, address, rawLength, lift) {");
+        body.Append("function ").Append(name).AppendLine("(memory, address, rawLength, lift, host) {");
         body.AppendLine("  const length = rcSequenceLength(rawLength, \"list\");");
         body.Append("  const byteLength = rcListByteLength(").Append(Int(element.Size)).AppendLine(", length);");
         body.Append("  const base = rcIndex(memory, address, ").Append(Int(element.Alignment)).AppendLine(", byteLength);");
@@ -425,14 +523,16 @@ internal sealed class RawCanonicalBindingEmitter
         CanonicalAbiTypeKind.Flags => $"rcFlagWords({value}, {Names(type.Flags)}, {Int(_planner.Flatten(type).Length)})",
         CanonicalAbiTypeKind.OwnedResource => $"tx.acquire({Int(type.ResourceType)}, {value})",
         CanonicalAbiTypeKind.BorrowedResource => "rcBorrowedResult()",
-        _ => $"{Planner(type)}({value}, tx)",
+        CanonicalAbiTypeKind.Stream => $"host.componentModel.lowerStream({value}, {Codec(type.Element)}(host))",
+        CanonicalAbiTypeKind.Future => $"host.componentModel.lowerFuture({value}, {Codec(type.Element)}(host))",
+        _ => $"{Planner(type)}({value}, tx, host)",
     };
 
     // planN(value, tx) for a list, record, tuple, option, result or variant.
     private string Planner(RawAdapterValueType type) => Shared("plan", type, name =>
     {
         var body = new StringBuilder();
-        body.Append("function ").Append(name).AppendLine("(value, tx) {");
+        body.Append("function ").Append(name).AppendLine("(value, tx, host) {");
         switch (type.Kind)
         {
             case CanonicalAbiTypeKind.List:
@@ -460,7 +560,8 @@ internal sealed class RawCanonicalBindingEmitter
                     Plan(field.Type, $"values[{Int(item)}]")))).AppendLine("];");
                 break;
             case CanonicalAbiTypeKind.Option when type.Element!.Underlying.Kind != CanonicalAbiTypeKind.Option:
-                body.Append("  return value === undefined ? { index: 0 } : { index: 1, payload: ")
+                // As JavaScript Component Model hosts read an option, undefined or null is none.
+                body.Append("  return value === undefined || value === null ? { index: 0 } : { index: 1, payload: ")
                     .Append(Plan(type.Element!, "value")).AppendLine(" };");
                 break;
             default:
@@ -568,6 +669,7 @@ internal sealed class RawCanonicalBindingEmitter
         CanonicalAbiTypeKind.Alias => Write(type.Element!, index, plan),
         CanonicalAbiTypeKind.Enum => $"{DiscriminantWrite(_planner.Layout(type).Size, index, plan)};",
         CanonicalAbiTypeKind.OwnedResource => $"rcView(memory).setUint32({index}, {plan}.handle, true);",
+        CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future => $"rcView(memory).setUint32({index}, {plan}, true);",
         // Planning a borrowed handle as a result already threw.
         CanonicalAbiTypeKind.BorrowedResource => ";",
         _ => $"{Writer(type)}(memory, {index}, {plan});",
@@ -624,7 +726,8 @@ internal sealed class RawCanonicalBindingEmitter
     // The single core value of a flat result's lowering plan.
     private string FlatResult(RawAdapterValueType type, string plan) => type.Kind switch
     {
-        CanonicalAbiTypeKind.Bool or CanonicalAbiTypeKind.S8 or CanonicalAbiTypeKind.U8 or CanonicalAbiTypeKind.S16 or CanonicalAbiTypeKind.U16 or CanonicalAbiTypeKind.S32 or CanonicalAbiTypeKind.U32 or CanonicalAbiTypeKind.Character => $"{plan} | 0",
+        CanonicalAbiTypeKind.Bool or CanonicalAbiTypeKind.S8 or CanonicalAbiTypeKind.U8 or CanonicalAbiTypeKind.S16 or CanonicalAbiTypeKind.U16 or CanonicalAbiTypeKind.S32 or CanonicalAbiTypeKind.U32 or CanonicalAbiTypeKind.Character
+            or CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future => $"{plan} | 0",
         CanonicalAbiTypeKind.S64 or CanonicalAbiTypeKind.U64 => $"BigInt.asIntN(64, {plan})",
         CanonicalAbiTypeKind.F32 or CanonicalAbiTypeKind.F64 or CanonicalAbiTypeKind.Enum => plan,
         CanonicalAbiTypeKind.Flags => $"{plan}[0] | 0",

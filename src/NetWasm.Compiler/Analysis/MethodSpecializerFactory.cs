@@ -68,6 +68,7 @@ internal sealed class MethodSpecializerFactory(
             new RectangularArrayCallRewriter(),
             new IntrinsicCallRewriter(calledMethods, symbols),
             new PlatformWorldCallRewriter(calledMethods, symbols, world),
+            new PlatformServices.PlatformServiceBindingRewriter(calledMethods, symbols, world),
             new ClosedTypeIsValueTypeCallRewriter(calledMethods, symbols),
             new ClosedTypeContainsReferencesCallRewriter(calledMethods, symbols, typeDefinitions, fields),
             new InterlockedCallRewriter(calledMethods, symbols),

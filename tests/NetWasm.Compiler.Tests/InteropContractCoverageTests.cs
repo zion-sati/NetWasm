@@ -253,44 +253,54 @@ public sealed class InteropContractCoverageTests
             Options() with { WitPath = "fixture.wit" });
         Assert.False(Assert.Single(unbound.Imports).HasManagedBinding);
 
-        var asyncResolver = new ComponentContractResolver(
-            new FixedDocuments(Document(new WitWorld(
-                0,
-                "world",
-                "pkg",
-                [new WitWorldItem(
-                    "run",
-                    null,
-                    function with { Kind = new WitFunctionKind("async") })],
-                []))),
-            new FixedSignatures(),
-            new FixedCanonicalTypes(),
-            new FixedBindings());
-        var unsupported = Assert.Throws<CompilerException>(() => asyncResolver.Resolve(
-            metadata,
-            symbols,
-            Options() with { WitPath = "fixture.wit" }));
-        Assert.Contains("asynchronous", unsupported.Message);
-
-        var interfaceResolver = new ComponentContractResolver(
+        // A WASI 0.3 world declares asynchronous functions a program may never
+        // reach: an unbound import of one is left out of the contract, while a
+        // managed binding of one, or an export, is rejected.
+        var asynchronous = function with { Kind = new WitFunctionKind("async") };
+        ComponentContractResolver AsyncResolver(WitWorld world, WitInterface[] interfaces) => new(
             new FixedDocuments(new WitDocument(
                 [new WitPackage(
                     0,
                     "pkg",
                     ImmutableDictionary<string, int>.Empty.Add("iface", 0),
                     ImmutableDictionary<string, int>.Empty.Add("world", 0))],
-                [new WitInterface(0, "iface", "pkg", [], [function with { Kind = new WitFunctionKind("async") }])],
-                [new WitWorld(0, "world", "pkg", [new WitWorldItem("iface", 0, null)], [])],
+                [.. interfaces],
+                [world],
                 [],
                 "{}")),
             new FixedSignatures(),
             new FixedCanonicalTypes(),
             new FixedBindings());
-        var unsupportedInInterface = Assert.Throws<CompilerException>(() => interfaceResolver.Resolve(
-            metadata,
-            symbols,
-            Options() with { WitPath = "fixture.wit" }));
-        Assert.Contains("asynchronous WIT function 'run' in interface 'iface'", unsupportedInInterface.Message);
+        var asyncInterface = new WitInterface(0, "iface", "pkg", [], [asynchronous]);
+        Assert.Empty(AsyncResolver(
+                new WitWorld(0, "world", "pkg", [new WitWorldItem("run", null, asynchronous)], []), [])
+            .Resolve(metadata, symbols, Options() with { WitPath = "fixture.wit" }).Imports);
+        Assert.Empty(AsyncResolver(
+                new WitWorld(0, "world", "pkg", [new WitWorldItem("iface", 0, null)], []), [asyncInterface])
+            .Resolve(metadata, symbols, Options() with { WitPath = "fixture.wit" }).Imports);
+
+        var boundMethod = Method(
+            "run",
+            1,
+            new MethodSignatureModel(CliTypeIdentity.Primitive("void", CliValueKind.Void), [])) with
+        {
+            WitImport = new WitImportDeclaration("iface", "run"),
+        };
+        var bound = Assert.Throws<CompilerException>(() => AsyncResolver(
+                new WitWorld(0, "world", "pkg", [new WitWorldItem("iface", 0, null)], []), [asyncInterface])
+            .Resolve(Snapshot([boundMethod]), symbols, Options() with { WitPath = "fixture.wit" }));
+        Assert.Contains("asynchronous WIT function 'run' in interface 'iface' cannot have a synchronous WitImport",
+            bound.Message);
+        // An async export binds through its [ComponentExport] lifts, which wit-component checks.
+        Assert.Empty(AsyncResolver(
+                new WitWorld(0, "world", "pkg", [], [new WitWorldItem("run", null, asynchronous)]), [])
+            .Resolve(metadata, symbols, Options() with { WitPath = "fixture.wit" }).Exports);
+        var exportedMethod = boundMethod with { WitImport = null, WitExport = new WitExportDeclaration("", "run") };
+        var exported = Assert.Throws<CompilerException>(() => AsyncResolver(
+                new WitWorld(0, "world", "pkg", [], [new WitWorldItem("run", null, asynchronous)]), [])
+            .Resolve(Snapshot([exportedMethod]), symbols, Options() with { WitPath = "fixture.wit" }));
+        Assert.Contains("asynchronous WIT function 'run' in the world cannot have a synchronous WitExport",
+            exported.Message);
 
         var exportDocument = Document(new WitWorld(
             0,
@@ -660,6 +670,14 @@ public sealed class InteropContractCoverageTests
         Assert.Empty(wasm32.Exports);
         Assert.Empty(wasm32.Callbacks);
         Assert.Empty(wasm32.WitImports);
+
+        // Built-ins are canonical ABI imports, not WIT imports a host binds.
+        var builtIn = program.EntryPoint! with
+        {
+            WitImport = new WitImportDeclaration("$root", "[waitable-set-new]") { IsCanonicalBuiltIn = true },
+        };
+        Assert.Empty(builder.Build(
+            program with { WitImportMethods = [builtIn] }, exports, SnapshotLayout(WasmTarget.Wasm32), []).WitImports);
     }
 
     [Fact]
@@ -916,6 +934,29 @@ public sealed class InteropContractCoverageTests
                 JSImport = new InteropImportDeclaration("run", "module"),
             }],
             "bodyless static");
+
+        // A Component Model built-in names $root, an [export] module or an
+        // interface at its full version, and a bracketed built-in name.
+        MethodDefinitionModel BuiltIn(string module, string name, int token) =>
+            Method($"built-in-{token}", token, validSignature) with
+            {
+                RelativeVirtualAddress = 0,
+                WitImport = new WitImportDeclaration(module, name) { IsCanonicalBuiltIn = true },
+            };
+        ValidateDeclaration(
+            [
+                BuiltIn("$root", "[waitable-set-new]", 70),
+                BuiltIn("[export]wasi:cli/run@0.3.2", "[task-cancel]", 71),
+                BuiltIn("[export]$root", "[task-return]run", 77),
+                BuiltIn("wasi:cli/stdout@0.3.2", "[stream-new-0]write-via-stream", 72),
+            ],
+            null,
+            null,
+            null);
+        AssertInvalidDeclaration([BuiltIn("wasi:cli/stdout@0.3", "[stream-new-0]write-via-stream", 73)], "ComponentBuiltIn");
+        AssertInvalidDeclaration([BuiltIn("wasi:cli/stdout", "[stream-new-0]write-via-stream", 74)], "ComponentBuiltIn");
+        AssertInvalidDeclaration([BuiltIn("stdout@0.3.2", "[stream-new-0]write-via-stream", 75)], "ComponentBuiltIn");
+        AssertInvalidDeclaration([BuiltIn("$root", "waitable-set-new", 76)], "ComponentBuiltIn");
 
         var instanceImport = Method("js-import-instance", 66, validSignature) with
         {
@@ -1213,28 +1254,25 @@ public sealed class InteropContractCoverageTests
         var fixture = AsyncFixture.Create();
         Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
             null!, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
             fixture.Types, null!, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
             fixture.Types, fixture.TypeDefinitions, null!, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, null!,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            null!, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            null!, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, null!, fixture.Symbols, ReactorWorld));
+            fixture.Methods, null!, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, null!, ReactorWorld));
-        Assert.Throws<ArgumentNullException>(() => new JavaScriptAsyncBindingResolver(
-            fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, null!));
+            fixture.Methods, fixture.MethodInstances, null!));
 
         var resolver = fixture.Resolver;
         Assert.Null(resolver.Resolve(fixture.SynchronousMethod));
@@ -1247,7 +1285,10 @@ public sealed class InteropContractCoverageTests
         Assert.NotNull(taskBinding.StatusField);
         Assert.Null(taskBinding.ResultField);
         Assert.Equal(new EntityKey(Assembly, 0x0600001a), taskBinding.GetVoidResult!.Definition.Key);
-        Assert.Null(taskBinding.CommandEntryPoint);
+        // A Task-returning entry point is a callback-lifted run through AsyncEntryPoint.
+        Assert.Equal(new EntityKey(Assembly, 0x0600001c), taskBinding.CommandEntry!.Start.Definition.Key);
+        Assert.Equal(new EntityKey(Assembly, 0x0600001d), taskBinding.CommandEntry.Callback.Definition.Key);
+        Assert.Equal(new EntityKey(Assembly, 0x0600001e), taskBinding.CommandEntry.ExitCode.Definition.Key);
         Assert.Empty(taskBinding.GetVoidResult.Signature.ParameterSignatureTypes);
 
         var genericTaskBinding = resolver.Resolve(fixture.GenericTaskMethod);
@@ -1274,28 +1315,25 @@ public sealed class InteropContractCoverageTests
         var factory = new JavaScriptAsyncBindingResolverFactory();
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             null!, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             fixture.Types, null!, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             fixture.Types, fixture.TypeDefinitions, null!, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, null!,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            fixture.Methods, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            null!, fixture.MethodInstances, fixture.Symbols, ReactorWorld));
+            null!, fixture.MethodInstances, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, null!, fixture.Symbols, ReactorWorld));
+            fixture.Methods, null!, fixture.Symbols));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, null!, ReactorWorld));
-        Assert.Throws<ArgumentNullException>(() => factory.Create(
-            fixture.Types, fixture.TypeDefinitions, fixture.Identities, fixture.Fields,
-            fixture.Methods, fixture.MethodInstances, fixture.Symbols, null!));
+            fixture.Methods, fixture.MethodInstances, null!));
         Assert.NotNull(factory.Create(
             fixture.Types,
             fixture.TypeDefinitions,
@@ -1303,7 +1341,7 @@ public sealed class InteropContractCoverageTests
             fixture.Fields,
             fixture.Methods,
             fixture.MethodInstances,
-            fixture.Symbols, ReactorWorld));
+            fixture.Symbols));
     }
 
     private static CompilerOptions Options() => new(
@@ -1521,7 +1559,6 @@ public sealed class InteropContractCoverageTests
     }
 
     // A host-driven reactor keeps the asynchronous process boundary, so no command entry is resolved.
-    private static readonly PlatformWorldCapabilities ReactorWorld = new(ReactorHost: true, EventLoop: true);
 
     private sealed class AsyncFixture
     {
@@ -1593,7 +1630,14 @@ public sealed class InteropContractCoverageTests
             };
             var definitions = new FixedTypeDefinitions(taskDefinition, valueTaskDefinition);
             var sync = Method("Sync", 1, MethodSignatureModel.Create(CliValueKind.I4));
-            var types = new FixedTypeFinder(taskDefinition, genericTaskDefinition);
+            var asyncEntryPointDefinition = new TypeDefinitionModel(
+                new EntityKey(Assembly, 0x02000004),
+                "System.Runtime.InteropServices",
+                "AsyncEntryPoint",
+                false,
+                [],
+                [new EntityKey(Assembly, 28), new EntityKey(Assembly, 29), new EntityKey(Assembly, 30)]);
+            var types = new FixedTypeFinder(taskDefinition, genericTaskDefinition, asyncEntryPointDefinition);
             var identities = new FixedIdentities();
             var fieldDefinitions = ImmutableDictionary<EntityKey, FieldDefinitionModel>.Empty
                 .Add(new EntityKey(Assembly, 10), new FieldDefinitionModel(
@@ -1628,7 +1672,13 @@ public sealed class InteropContractCoverageTests
                 .Add(new EntityKey(Assembly, 24), Method(
                     "AsTask", 24, MethodSignatureModel.Create(CliValueKind.Void)))
                 .Add(new EntityKey(Assembly, 25), Method(
-                    "AsTask", 25, MethodSignatureModel.Create(CliValueKind.Void)));
+                    "AsTask", 25, MethodSignatureModel.Create(CliValueKind.Void)))
+                .Add(new EntityKey(Assembly, 28), Method(
+                    "Start", 28, MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.ManagedReference)))
+                .Add(new EntityKey(Assembly, 29), Method("Callback", 29, MethodSignatureModel.Create(
+                    CliValueKind.I4, CliValueKind.I4, CliValueKind.I4, CliValueKind.I4)))
+                .Add(new EntityKey(Assembly, 30), Method(
+                    "ExitCode", 30, MethodSignatureModel.Create(CliValueKind.I4)));
             var methods = new FixedMethods(methodDefinitions);
             var instances = new FixedMethodInstances();
             var symbols = new Symbols();
@@ -1642,7 +1692,7 @@ public sealed class InteropContractCoverageTests
                 MethodInstances = instances,
                 Symbols = symbols,
                 Resolver = new JavaScriptAsyncBindingResolver(
-                    types, definitions, identities, fields, methods, instances, symbols, ReactorWorld),
+                    types, definitions, identities, fields, methods, instances, symbols),
                 SynchronousMethod = sync,
                 GenericTaskMethod = Method(
                     "GenericTask",
@@ -1656,12 +1706,15 @@ public sealed class InteropContractCoverageTests
 
     private sealed class FixedTypeFinder(
         TypeDefinitionModel task,
-        TypeDefinitionModel genericTask) : ITypeFinder
+        TypeDefinitionModel genericTask,
+        TypeDefinitionModel asyncEntryPoint) : ITypeFinder
     {
         public TypeDefinitionModel FindType(string fullName) =>
-            fullName.EndsWith("`1", StringComparison.Ordinal)
-                ? genericTask
-                : task;
+            fullName == "System.Runtime.InteropServices.AsyncEntryPoint"
+                ? asyncEntryPoint
+                : fullName.EndsWith("`1", StringComparison.Ordinal)
+                    ? genericTask
+                    : task;
     }
 
     private sealed class FixedTypeDefinitions(

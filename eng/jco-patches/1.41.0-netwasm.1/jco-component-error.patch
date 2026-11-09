@@ -1,0 +1,39 @@
+diff --git a/crates/js-component-bindgen/src/intrinsics/mod.rs b/crates/js-component-bindgen/src/intrinsics/mod.rs
+index 44f3a5e..862353a 100644
+--- a/crates/js-component-bindgen/src/intrinsics/mod.rs
++++ b/crates/js-component-bindgen/src/intrinsics/mod.rs
+@@ -409,6 +409,7 @@ impl Intrinsic {
+                         const enumerable = typeof value !== 'string';
+                         super(enumerable ? `${String(value)} (see error.payload)` : value);
+                         Object.defineProperty(this, 'payload', { value, enumerable });
++                        componentErrorInstances.add(this);
+                     }
+                 }
+             ",
+diff --git a/crates/js-component-bindgen/src/transpile_bindgen.rs b/crates/js-component-bindgen/src/transpile_bindgen.rs
+index 5a2dd91..4f66a45 100644
+--- a/crates/js-component-bindgen/src/transpile_bindgen.rs
++++ b/crates/js-component-bindgen/src/transpile_bindgen.rs
+@@ -955,11 +955,22 @@ impl JsBindgen<'_> {
+             "".into()
+         };
+ 
++        // A declared WIT error reaches the host as a thrown ComponentError. Hosts tell one from
++        // any other exception by module-private identity rather than by its properties.
++        let maybe_component_error_predicate =
++            if self.all_intrinsics.contains(&Intrinsic::ComponentError) {
++                uwriteln!(output, "\nconst componentErrorInstances = new WeakSet();");
++                "isComponentError: value => componentErrorInstances.has(value),"
++            } else {
++                ""
++            };
++
+         uwriteln!(
+             output,
+             r#"
+               export const _util = {{
+                   {maybe_ext_future_class}
++                  {maybe_component_error_predicate}
+               }}
+             "#,
+         );

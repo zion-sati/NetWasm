@@ -69,4 +69,4 @@ if wasmtime run --invoke 'run(41)' "$artifact_root/component.first.wasm" \
     exit 1
 fi
 
-printf 'Component Model scalar Preview 2 component acceptance PASS\n'
+printf 'Component Model scalar component acceptance PASS\n'

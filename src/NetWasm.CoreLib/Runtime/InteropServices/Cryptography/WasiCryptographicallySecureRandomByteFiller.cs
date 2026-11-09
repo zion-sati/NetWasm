@@ -4,22 +4,14 @@ namespace System.Runtime.InteropServices.Cryptography
     using System.Security.Cryptography;
 
     internal sealed class WasiCryptographicallySecureRandomByteFiller(
-        IWasiRandomBytesInvoker invoker) : ICryptographicallySecureRandomByteFiller
+        IWasiRandomBytesInvoker invoker) : IRandomSource
     {
         private readonly IWasiRandomBytesInvoker _invoker =
             invoker ?? throw new ArgumentNullException();
 
-        public void Fill(nuint destination, int length)
+        public void Fill(Span<byte> destination)
         {
-            if (length < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(length));
-            }
-            if (length != 0 && destination == 0)
-            {
-                throw new ArgumentNullException(nameof(destination));
-            }
-
+            var length = destination.Length;
             var addressSize = unchecked((nuint)nuint.Size);
             var result = CanonicalAbi.Allocate(addressSize * 2, addressSize);
             try
@@ -37,10 +29,7 @@ namespace System.Runtime.InteropServices.Cryptography
                     }
                     for (var index = 0; index < length; index++)
                     {
-                        CanonicalAbi.WriteByte(
-                            destination,
-                            unchecked((nuint)index),
-                            CanonicalAbi.ReadByte(bytes, unchecked((nuint)index)));
+                        destination[index] = CanonicalAbi.ReadByte(bytes, unchecked((nuint)index));
                     }
                 }
                 finally

@@ -28,7 +28,9 @@ public sealed class CanonicalAbiTypeFlattener : ICanonicalAbiTypeFlattener
                 CanonicalAbiTypeKind.Character or
                 CanonicalAbiTypeKind.Enum or
                 CanonicalAbiTypeKind.OwnedResource or
-                CanonicalAbiTypeKind.BorrowedResource => [CliValueKind.I4],
+                CanonicalAbiTypeKind.BorrowedResource or
+                CanonicalAbiTypeKind.Stream or
+                CanonicalAbiTypeKind.Future => [CliValueKind.I4],
             CanonicalAbiTypeKind.S64 or CanonicalAbiTypeKind.U64 => [CliValueKind.I8],
             CanonicalAbiTypeKind.F32 => [CliValueKind.F4],
             CanonicalAbiTypeKind.F64 => [CliValueKind.F8],

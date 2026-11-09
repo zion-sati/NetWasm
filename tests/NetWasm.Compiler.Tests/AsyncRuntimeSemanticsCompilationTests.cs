@@ -1159,24 +1159,12 @@ public sealed class AsyncRuntimeSemanticsCompilationTests
             41,
             [])
         {
-            Exports =
-            [
-                new RequestedExport(
-                    "run",
-                    "AsyncRuntimeSemanticsFixture.EntryPoint",
-                    "Run"),
-                new RequestedExport(
-                    "observe",
-                    "AsyncRuntimeSemanticsFixture.EntryPoint",
-                    "Observe"),
-            ],
             WitPath = Path.Combine(
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            ObserveMethodName = "Observe",
         });
 
         Assert.Equal(42, observed);

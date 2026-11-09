@@ -8,6 +8,7 @@ using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Cli.Tests;
 
+[Collection(ProcessConsoleTests.Name)]
 public sealed class ProgramTests
 {
     private const string World = "netwasm:platform@1.0.0/platform";

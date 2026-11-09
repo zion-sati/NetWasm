@@ -34,7 +34,7 @@ function data() {
         preopens: [],
         network: "allowAll",
         clocks: ["wall", "monotonic"],
-        randomness: true,
+        randomness: true, temporaryDirectory: false, workingDirectory: false,
       },
       applicationImports: [{ module: applicationModule, artifactPath: "imports/logger.mjs", sha256: digest("c") }],
     },
@@ -110,26 +110,32 @@ test("capability binding validator accepts and snapshots every granted capabilit
   assert.equal(createValidator()(netwasmPlatform).platformProviders[0].module, netwasmModule);
 });
 
-test("capability binding validator requires type-only provider modules", () => {
+test("capability binding validator requires a provider for a type-only platform interface", () => {
   const value = data();
   value.manifest.requiredImportModules = [platformModule];
   value.manifest.requiredImports = [];
   value.request.applicationImports = [];
-  value.platformProviders[0].functions = [];
   value.applicationProviders = [];
-  assert.equal(createValidator()(value).platformProviders[0].module, platformModule);
-
   value.platformProviders = [];
   expectInvalid(value, /every required import module/i);
+
+  value.platformProviders = [{ ...data().platformProviders[0], functions: [] }];
+  assert.deepEqual(createValidator()(value).platformProviders[0].functions, []);
+
+  const application = data();
+  application.manifest.requiredImportModules = [applicationModule];
+  application.manifest.requiredImports = [];
+  application.request.applicationImports = [];
+  application.platformProviders = [];
+  application.applicationProviders = [];
+  expectInvalid(application, /every required import module/i);
 });
 
-test("capability binding validator leaves runtime-owned reactor imports to the executor", () => {
+test("capability binding validator leaves runtime-owned diagnostic imports to the executor", () => {
   const value = data();
-  const reactorModule = "netwasm:runtime/reactor-host@1.0.0";
-  value.manifest.requiredImportModules.push(reactorModule);
-  value.manifest.requiredImports.push(
-    func(reactorModule, "watch", ["u32", "s64"]),
-    func(reactorModule, "cancel", ["u32"]));
+  const diagnosticModule = "netwasm:diagnostics/terminal@1.0.0";
+  value.manifest.requiredImportModules.push(diagnosticModule);
+  value.manifest.requiredImports.push(func(diagnosticModule, "report", ["u32"]));
 
   const result = createValidator()(value);
 
@@ -267,7 +273,7 @@ test("capability binding validator enforces platform provider structure and auth
     ["network", { network: "denyAll" }],
     ["wallClock", { clocks: ["monotonic"] }],
     ["monotonicClock", { clocks: ["wall"] }],
-    ["randomness", { randomness: false }],
+    ["randomness", { randomness: false, temporaryDirectory: false, workingDirectory: false }],
   ]) {
     const value = data();
     value.platformProviders[0].capability = capability;

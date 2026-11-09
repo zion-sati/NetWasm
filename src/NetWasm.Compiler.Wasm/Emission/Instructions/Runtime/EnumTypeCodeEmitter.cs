@@ -55,8 +55,9 @@ internal sealed class EnumTypeCodeEmitter(
 
         if (enumStorages.Length == 0)
         {
-            throw new InvalidOperationException(
-                "enum type-code dispatch was retained without a reachable enum descriptor");
+            // No enum type is reachable, so no boxed enum exists: only the null receiver an
+            // optimized constant leaves can arrive here, and the null check throws for it.
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
         }
 
         foreach (var storage in enumStorages)

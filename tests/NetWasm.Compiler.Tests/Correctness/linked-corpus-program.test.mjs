@@ -24,9 +24,9 @@ function fixture(overrides = {}) {
     async compileModule(bytes) { calls.push(["compile", bytes]); return { compiled: true }; },
     listImports(module) { calls.push(["imports", module]); return []; },
     hash(bytes) { return bytes[0] === 1 ? digest("a") : digest("b"); },
-    createRuntimeImports(target, getMemory, wake) {
+    createRuntimeImports(target, getMemory, getExports) {
       calls.push(["runtime", target]);
-      return { target, getMemory, wake };
+      return { target, getMemory, getExports };
     },
     async instantiate(options) {
       calls.push(["instantiate", options]);
@@ -35,13 +35,9 @@ function fixture(overrides = {}) {
         memory: { id: "memory" },
         run(input) {
           assert.equal(options.runtimeModules.getMemory(), exports.memory);
-          options.runtimeModules.wake(input);
-          assert.equal(inputState.woken, input);
-          return input;
-        },
-        [`${options.runtimeModules.target === "wasm64" ? "cm64p2" : "cm32p2"}|netwasm:runtime/reactor-guest@1|wake`](token) {
+          assert.equal(options.runtimeModules.getExports(), exports);
           assert.equal(inputState.disposed, false);
-          inputState.woken = token;
+          return input;
         },
         trace() { return -7; },
         trace_count() { return 1; },

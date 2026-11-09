@@ -26,7 +26,7 @@ for target in wasm32 wasm64; do
             "$artifact_root/MixedBoundaryComponent.dll" \
             -r:"$corelib" \
             -target:function -entry:'NetWasm.Fixtures.ComponentModel.MixedBoundaryComponent::Run' \
-            -wit:"$wit" -platform:"$target" \
+            -wit:"$wit" -platform:"$target" -jsexportboundary+ \
             -out:"$artifact_root/application.$target.$repeat.wasm" \
             -interopmanifest:"$artifact_root/interop.$target.$repeat.json" \
             -runtimelayout:"$artifact_root/runtime-layout.$target.$repeat.json"
@@ -44,8 +44,9 @@ for target in wasm32 wasm64; do
         --target "$target" --configuration release \
         --output "$artifact_root/runtime.$target.wasm"
     merge_features=(
-        --enable-exception-handling --enable-bulk-memory --enable-multimemory
-        --enable-nontrapping-float-to-int --enable-simd -g)
+        # An async export's catch_all_ref cleanup carries an exnref, as the SDK's merge allows.
+        --enable-exception-handling --enable-reference-types
+        --enable-bulk-memory --enable-multimemory --enable-nontrapping-float-to-int --enable-simd -g)
     [[ "$target" = wasm64 ]] && merge_features+=(--enable-memory64)
     wasm-merge \
         "$artifact_root/application.$target.first.wasm" netwasm.application.v1 \

@@ -6,9 +6,10 @@ import { createPlatformProviderRegistry } from "./platform-provider-registry.mjs
 import { selectProviderKind } from "./provider-kind-selector.mjs";
 import { createProviderMetadataValidator } from "./provider-metadata-validator.mjs";
 
-const modules = ["wasi:cli/environment@0.2.11", "wasi:cli/exit@0.2.11"];
+const modules = ["wasi:cli/environment@0.3.2", "wasi:cli/exit@0.3.2"];
 const stdout = Object.freeze({ write() {} });
 const stderr = Object.freeze({ write() {} });
+const stdin = Object.freeze({ read() { return [][Symbol.iterator](); } });
 
 function func(module, name, parameters = [], results = []) {
   return { interface: module, name, parameters, results };
@@ -52,7 +53,7 @@ function executionRequest() {
       preopens: Object.freeze([]),
       network: "denyAll",
       clocks: Object.freeze([]),
-      randomness: false,
+      randomness: false, temporaryDirectory: false, workingDirectory: false,
     }),
     applicationImports: Object.freeze([]),
   });
@@ -73,13 +74,17 @@ function loadRequest(registry, overrides = {}) {
     filesystem: null,
     signal: null,
     stderr,
+    stdin,
     stdout,
     ...overrides,
   };
 }
 
+const releases = [];
+
 function createLoader(registry, overrides = {}) {
   return createPlatformProviderLoader({
+    releasePlatformProviders: async request => { releases.push(request); },
     resolvePlatformProvider: request => registry.resolve(request),
     ...overrides,
   });
@@ -103,6 +108,7 @@ test("loads selected providers in order from one immutable explicit request", as
     assert.strictEqual(request.signal, signal);
     assert.strictEqual(request.stderr, stderr);
     assert.strictEqual(request.stdout, stdout);
+    assert.strictEqual(request.stdin, stdin);
     return value;
   }));
   let resolves = 0;
@@ -114,7 +120,9 @@ test("loads selected providers in order from one immutable explicit request", as
     },
   });
   assert.equal(Object.isFrozen(load), true);
-  const sources = await load({ binding: binding(registry), filesystem, signal, stderr, stdout });
+  const loaded = await load({ binding: binding(registry), filesystem, signal, stderr, stdin, stdout });
+  assert.equal(Object.isFrozen(loaded), true);
+  const { sources } = loaded;
   assert.deepEqual(calls, [
     `resolve:${modules[0]}`,
     "source:0",
@@ -127,6 +135,9 @@ test("loads selected providers in order from one immutable explicit request", as
   assert.deepEqual(sources.map(source => source.module), modules);
   assert.strictEqual(sources[0].value, values[0]);
   assert.strictEqual(sources[1].value, values[1]);
+  releases.length = 0;
+  await loaded.release();
+  assert.deepEqual(releases, [expectedRequest]);
 });
 
 test("does not resolve or invoke unselected platform providers", async () => {
@@ -140,9 +151,10 @@ test("does not resolve or invoke unselected platform providers", async () => {
     filesystem: null,
     signal: null,
     stderr,
+    stdin,
     stdout,
   });
-  assert.deepEqual(selected.map(source => source.module), [modules[0]]);
+  assert.deepEqual(selected.sources.map(source => source.module), [modules[0]]);
   assert.deepEqual(calls, ["selected"]);
 
   let resolves = 0;
@@ -153,22 +165,26 @@ test("does not resolve or invoke unselected platform providers", async () => {
     filesystem: null,
     signal: null,
     stderr,
+    stdin,
     stdout,
   });
-  assert.deepEqual(empty, []);
+  assert.deepEqual(empty.sources, []);
   assert.equal(resolves, 0);
 });
 
-test("validates its exact resolver dependency", () => {
-  const valid = { resolvePlatformProvider() {} };
+test("validates its exact resolver and release dependencies", () => {
+  const valid = { releasePlatformProviders() {}, resolvePlatformProvider() {} };
   for (const value of invalidObjects(valid)) {
     assert.throws(
       () => createPlatformProviderLoader(value.value),
       value.shape ? /options shape/i : /options is invalid/i);
   }
-  assert.throws(
-    () => createPlatformProviderLoader({ resolvePlatformProvider: null }),
-    /resolver is required/i);
+  for (const value of [
+    { releasePlatformProviders() {}, resolvePlatformProvider: null },
+    { releasePlatformProviders: null, resolvePlatformProvider() {} },
+  ]) {
+    assert.throws(() => createPlatformProviderLoader(value), /resolver and release action are required/i);
+  }
 });
 
 test("validates exact load requests, signals and optional filesystems before resolution", async () => {
@@ -202,7 +218,7 @@ test("rejects malformed or mutable capability-binding products before resolution
   const base = binding(registry);
   for (const value of invalidObjects(base)) {
     await assert.rejects(
-      createLoader(registry)({ binding: value.value, filesystem: null, signal: null, stderr, stdout }),
+      createLoader(registry)({ binding: value.value, filesystem: null, signal: null, stderr, stdin, stdout }),
       value.shape ? /capability binding shape/i : /capability binding is invalid/i);
   }
   for (const product of [
@@ -211,7 +227,7 @@ test("rejects malformed or mutable capability-binding products before resolution
     Object.freeze({ ...base, platformProviders: [...base.platformProviders] }),
   ]) {
     await assert.rejects(
-      createLoader(registry)({ binding: product, filesystem: null, signal: null, stderr, stdout }),
+      createLoader(registry)({ binding: product, filesystem: null, signal: null, stderr, stdin, stdout }),
       /capability binding is incomplete/i);
   }
 });
@@ -224,6 +240,7 @@ test("rejects malformed or mutable execution-request products before resolution"
     filesystem: null,
     signal: null,
     stderr,
+    stdin,
     stdout,
   });
   for (const value of invalidObjects(base.request)) {
@@ -252,6 +269,7 @@ test("rejects duplicate, malformed and mutable selected metadata before resoluti
     filesystem: null,
     signal: null,
     stderr,
+    stdin,
     stdout,
   });
   await assert.rejects(
@@ -354,7 +372,8 @@ test("rejects malformed registry products and metadata drift before source creat
     /metadata function is incomplete/i);
 });
 
-test("preserves factory failures and rejects invalid runtime sources", async () => {
+test("preserves factory failures, rejects invalid runtime sources and releases the request", async () => {
+  releases.length = 0;
   const failure = new Error("factory failed");
   const failing = createRegistry([async () => { throw failure; }, () => ({})]);
   await assert.rejects(
@@ -363,6 +382,7 @@ test("preserves factory failures and rejects invalid runtime sources", async () 
       filesystem: null,
       signal: null,
       stderr,
+      stdin,
       stdout,
     }),
     error => error === failure);
@@ -375,10 +395,12 @@ test("preserves factory failures and rejects invalid runtime sources", async () 
         filesystem: null,
         signal: null,
         stderr,
+        stdin,
         stdout,
       }),
       /returned an invalid source/i);
   }
+  assert.equal(releases.length, 5);
 });
 
 test("observes cancellation before resolution, before factories and between factories", async () => {
@@ -392,6 +414,7 @@ test("observes cancellation before resolution, before factories and between fact
       filesystem: null,
       signal: before.signal,
       stderr,
+      stdin,
       stdout,
     }),
     /loading was cancelled/i);
@@ -410,6 +433,7 @@ test("observes cancellation before resolution, before factories and between fact
       filesystem: null,
       signal: afterResolve.signal,
       stderr,
+      stdin,
       stdout,
     }),
     /loading was cancelled/i);
@@ -426,6 +450,7 @@ test("observes cancellation before resolution, before factories and between fact
       filesystem: null,
       signal: afterSource.signal,
       stderr,
+      stdin,
       stdout,
     }),
     /loading was cancelled/i);

@@ -20,7 +20,7 @@ Validation, control-flow structurization, reachability and layout
                 v
 Wasm planning and binary emission
                 |
-                +--> Component Model packaging through WIT and WASI Preview 2
+                +--> Component Model packaging through WIT and WASI 0.3
                 |
                 `--> raw core Wasm with a generated interop manifest
 ```
@@ -41,7 +41,7 @@ current command-line entry point.
 `NetWasm.CoreLib` is the managed platform library compiled with an application.
 `NetWasm.Runtime` provides the native runtime support used by both output
 forms. The current documented application flow packages a component with WIT
-and WASI Preview 2. A component declares the capabilities it consumes; it does
+and WASI 0.3. A component declares the capabilities it consumes; it does
 not receive implicit platform access.
 
 Raw-core output remains available for explicit host-specific JavaScript

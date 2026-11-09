@@ -23,8 +23,8 @@ const configurationKeys = ["applicationImports", "arguments", "environment", "gr
 const platformKeys = [
   "compileCoreModule",
   "createFilesystemScope",
+  "createImports",
   "createModuleUrl",
-  "createShim",
   "digest",
   "fetch",
   "importModule",
@@ -80,7 +80,7 @@ export function createBrowserRawExportSession(options) {
   // The generated entry selects the providers the application links.
   const prepareProviders = createProviderExecutionComposition({
     catalog: options.platformProviderCatalog,
-    createShim: options.platform.createShim,
+    createImports: options.platform.createImports,
     hashBytes: transport.hashBytes,
     importModule,
     isAbsoluteHostPath: rejectHostPath,
@@ -88,6 +88,7 @@ export function createBrowserRawExportSession(options) {
     snapshotManifest: options.snapshotDeploymentManifest,
   });
   const validateRequest = createExecutionRequestValidator({
+    hostDirectories: false,
     isAbsoluteHostPath: rejectHostPath,
     selectProviderKind,
   });
@@ -152,8 +153,11 @@ export function createBrowserRawExportSession(options) {
         request: hostRequest,
         signal: null,
         stderr: output.stderr,
+        // An export session's calls have no standard input.
+        stdin: null,
         stdout: output.stdout,
       }));
+      releaseActions.push(providers.release);
       const ownedReleaseActions = releaseActions;
       releaseActions = null;
       return await openRawExportSession({

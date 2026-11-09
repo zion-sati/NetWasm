@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRawExecutionStrategy } from "./raw-execution-strategy.mjs";
-import { commandExecutionContract, processExecutionContract } from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 
 const application = Buffer.from(
   "AGFzbQEAAAABDQJgAAF/YAR/f39/AX8CGwEPbmV0d2FzbS5ob3N0LnYxB3NlcnZpY2UAAAMDAgEABQMBAAEHMQQGbWVtb3J5AgANY20zMnAyX21lbW9yeQIADmNtMzJwMl9yZWFsbG9jAAEDcnVuAAIKCwIEAEEICwQAEAALAEkEbmFtZQEYAwAHc2VydmljZQEHcmVhbGxvYwIDcnVuBB0CAAxzZXJ2aWNlLXR5cGUBDHJlYWxsb2MtdHlwZQYJAQAGbWVtb3J5",
@@ -380,7 +380,6 @@ test("validates the factory and exact request before loading", async () => {
     { signal: {} },
     { signal: { aborted: false } },
     { signal: { aborted: false, addEventListener() {} } },
-    { schedule: null },
     { providers: null },
     { providers: [] },
     { providers: new Date() },
@@ -397,11 +396,10 @@ test("validates the factory and exact request before loading", async () => {
   assert.equal(loads, 0);
 });
 
-test("observes an asynchronous process and closes delivery before interop teardown", async () => {
-  const module = await WebAssembly.compile(Buffer.from("AGFzbQEAAAABFARgBH9/f38Bf2AAAX9gAABgAX8AAwcGAAEBAQIDBQMBAAEHrAEIBm1lbW9yeQIADWNtMzJwMl9tZW1vcnkCAA5jbTMycDJfcmVhbGxvYwAAA3J1bgABFm5ldHdhc20ucHJvY2Vzcy5zdGF0dXMAAhZuZXR3YXNtLnByb2Nlc3MucmVzdWx0AAMYbmV0d2FzbS5wcm9jZXNzLmNvbXBsZXRlAAQrY20zMnAyfG5ldHdhc206cnVudGltZS9yZWFjdG9yLWd1ZXN0QDF8d2FrZQAFChsGBABBCAsEAEEHCwQAQQELBABBKgsCAAsCAAs=", "base64"));
-  const metadata = { ...emptyAdapter().rawAdapterMetadata, requiredCapabilities: ["bindReactor"] };
-  const adapter = { rawAdapterMetadata: metadata, createAdapter: () => ({ metadata, imports: {} }) };
-  const loaded = { module, adapter, interopManifest: manifest,
+test("drives an asynchronous Main and closes delivery before interop teardown", async () => {
+  // run waits on a new waitable set; the callback exits; the exit code is 42.
+  const module = await WebAssembly.compile(Buffer.from("AGFzbQEAAAABFANgAAF/YAR/f39/AX9gA39/fwF/AhwBBSRyb290Elt3YWl0YWJsZS1zZXQtbmV3XQAAAwUEAQACAAUDAQABB2QGBm1lbW9yeQIADWNtMzJwMl9tZW1vcnkCAA5jbTMycDJfcmVhbGxvYwABA3J1bgACFm5ldHdhc20uZW50cnkuY2FsbGJhY2sAAxduZXR3YXNtLmVudHJ5LmV4aXRfY29kZQAEChsEBABBCAsKABAAQQR0QQJyCwQAQQALBABBKgsADQRuYW1lAQYBAANuZXc=", "base64"));
+  const loaded = { module, adapter: emptyAdapter(), interopManifest: manifest,
     abi: { target: "wasm32", entryPoint: { parameterShape: "none", returnShape: "exitCode", completionShape: "asynchronous" }, imports: WebAssembly.Module.imports(module), exports: WebAssembly.Module.exports(module) } };
   let delivery;
   let closed = false;
@@ -409,9 +407,14 @@ test("observes an asynchronous process and closes delivery before interop teardo
     delivery = value;
     value.assertAsyncDeliveryAvailable();
     value.observeAsyncCompletion();
-    return { ...terminalActions, imports: {}, bindInstance() { value.assertAsyncDeliveryAvailable(); value.observeAsyncCompletion(); },
+    return { ...terminalActions, imports: {},
+      bindInstance() {
+        value.assertAsyncDeliveryAvailable();
+        // A JavaScript completion after Main starts gives its event loop a turn.
+        setTimeout(() => value.observeAsyncCompletion(), 0);
+      },
       close() { assert.throws(() => value.assertAsyncDeliveryAvailable(), /unavailable/); value.observeAsyncCompletion(); closed = true; } };
-  }, { contractKey: processExecutionContract }));
+  }));
   assert.equal(result.completionKind, "normal", result.primaryFailure?.code);
   assert.equal(result.exitCode, 42);
   assert.equal(closed, true);

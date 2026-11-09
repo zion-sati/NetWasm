@@ -1,0 +1,11 @@
+package netwasm:component@1.0.0;
+
+// A command built with structured diagnostics: it exports
+// netwasm:diagnostics/command beside wasi:cli/run, so NetWasm's hosts can report
+// a failure's type, message and stack trace.
+world diagnostic-command {
+    include wasi:cli/imports@0.3.2;
+    import wasi:http/client@0.3.2;
+    export wasi:cli/run@0.3.2;
+    export netwasm:diagnostics/command@1.0.0;
+}

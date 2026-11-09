@@ -774,15 +774,15 @@ EOF
   done
 fi
 
-# A command program has no host-driven reactor, so an asynchronous Main runs its
-# own wasi:io/poll event loop to completion on both targets.
+# A command program's asynchronous Main runs its own event loop, on the Component
+# Model's waitable sets, to completion on both targets.
 cat > "$app_root/Program.cs" <<'EOF'
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-// A command program runs an asynchronous Main on its own wasi:io/poll event loop.
+// A command program runs an asynchronous Main on its own event loop.
 internal static class Program
 {
     public static async Task<int> Main()

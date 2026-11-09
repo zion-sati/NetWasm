@@ -111,22 +111,10 @@
           Pack="true"
           PackagePath="tools/timezones/" />
     <None Include="wit/**/*" Pack="true" PackagePath="tools/wit/%(RecursiveDir)%(Filename)%(Extension)" />
-    <None Include="async-wit/**/*" Pack="true" PackagePath="tools/async-wit/%(RecursiveDir)%(Filename)%(Extension)" />
-    <None Include="wit/*.wit"
-          Pack="true"
-          PackagePath="tools/async-wit/deps/wasi-cli/%(Filename)%(Extension)" />
+    <None Include="diagnostic-wit/**/*" Pack="true" PackagePath="tools/diagnostic-wit/%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="wit/deps/**/*"
           Pack="true"
-          PackagePath="tools/async-wit/deps/%(RecursiveDir)%(Filename)%(Extension)" />
-    <None Include="../../wit/netwasm-runtime-1.0.0/reactor.wit"
-          Pack="true"
-          PackagePath="tools/async-wit/deps/netwasm-runtime/%(Filename)%(Extension)" />
-    <None Include="../../wit/netwasm-runtime-1.0.0/process.wit"
-          Pack="true"
-          PackagePath="tools/async-wit/deps/netwasm-runtime/%(Filename)%(Extension)" />
-    <None Include="../../wit/wasi-0.2.11/http/*.wit"
-          Pack="true"
-          PackagePath="tools/async-wit/deps/wasi-http/%(Filename)%(Extension)" />
+          PackagePath="tools/diagnostic-wit/deps/%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="../../wit/netwasm-platform-1.0.0/**/*"
           Exclude="../../wit/netwasm-platform-1.0.0/.DS_Store;../../wit/netwasm-platform-1.0.0/deps/.DS_Store"
           Pack="true"
@@ -146,10 +134,10 @@
            Text="NetWasm.Toolchain is missing the pinned Binaryen wasm-merge program." />
     <Error Condition="!Exists('$(NetWasmToolchainJcoAssetRoot)')"
            Text="NetWasm.Toolchain requires an explicit staged jco closure root." />
-    <Error Condition="Exists('$(NetWasmToolchainJcoAssetRoot)') AND !Exists('$(NetWasmToolchainJcoAssetRoot)/node_modules/@bytecodealliance/jco/dist/jco.js')"
+    <Error Condition="Exists('$(NetWasmToolchainJcoAssetRoot)') AND !Exists('$(NetWasmToolchainJcoAssetRoot)/node_modules/@bytecodealliance/jco/dist/api.js')"
            Text="NetWasm.Toolchain is missing the pinned jco transpile entry point." />
-    <Error Condition="Exists('$(NetWasmToolchainJcoAssetRoot)') AND !Exists('$(NetWasmToolchainJcoAssetRoot)/node_modules/@bytecodealliance/preview2-shim/package.json')"
-           Text="NetWasm.Toolchain is missing the pinned Preview 2 shim package." />
+    <Error Condition="Exists('$(NetWasmToolchainJcoAssetRoot)') AND !Exists('$(NetWasmToolchainJcoAssetRoot)/node_modules/@bytecodealliance/preview3-shim/package.json')"
+           Text="NetWasm.Toolchain is missing the pinned WASI 0.3 shim package." />
     <Error Condition="!Exists('$(NetWasmToolchainJcoPackageLockPath)')"
            Text="NetWasm.Toolchain requires the pinned jco package-lock.json." />
     <Error Condition="!Exists('$(NetWasmToolchainJcoAssetRoot)/closure-integrity.json')"
@@ -183,12 +171,12 @@
     <Error Condition="!Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-APACHE') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-Apache-2.0_WITH_LLVM-exception') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-MIT') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/README.md')"
            Text="NetWasm.Toolchain is missing wasm-tools distribution notices." />
     <Error Condition="!Exists('wit/command.wit') OR !Exists('wit/wit-manifest.json')"
-           Text="NetWasm.Toolchain is missing the pinned WASI 0.2.11 command WIT closure." />
-    <Error Condition="!Exists('async-wit/world.wit') OR !Exists('async-wit/wit-manifest.json')"
-           Text="NetWasm.Toolchain is missing the async command WIT closure." />
+           Text="NetWasm.Toolchain is missing the pinned WASI 0.3.2 command WIT closure." />
+    <Error Condition="!Exists('diagnostic-wit/world.wit') OR !Exists('diagnostic-wit/wit-manifest.json')"
+           Text="NetWasm.Toolchain is missing the diagnostic command WIT closure." />
     <Error Condition="!Exists('../../wit/netwasm-platform-1.0.0/world.wit') OR !Exists('../../wit/netwasm-platform-1.0.0/wit-manifest.json')"
            Text="NetWasm.Toolchain is missing the closed-world compiler WIT closure." />
-    <Error Condition="!Exists('wit-packages/wit-package-manifest.json') OR !Exists('wit-packages/command.wit.wasm') OR !Exists('wit-packages/async-command.wit.wasm') OR !Exists('wit-packages/compiler.wit.wasm')"
+    <Error Condition="!Exists('wit-packages/wit-package-manifest.json') OR !Exists('wit-packages/command.wit.wasm') OR !Exists('wit-packages/diagnostic-command.wit.wasm') OR !Exists('wit-packages/compiler.wit.wasm')"
            Text="NetWasm.Toolchain is missing its compiled WIT package products." />
   </Target>
 

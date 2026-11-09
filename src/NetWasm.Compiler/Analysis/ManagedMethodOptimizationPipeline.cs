@@ -5,6 +5,7 @@ using NetWasm.Compiler.Analysis.Inlining;
 using NetWasm.Compiler.Analysis.Arrays;
 using NetWasm.Compiler.Analysis.Devirtualization;
 using NetWasm.Compiler.Analysis.Loops;
+using NetWasm.Compiler.Analysis.NullChecks;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 
@@ -42,7 +43,10 @@ internal sealed class ManagedMethodOptimizationPipeline(
     IWalkLoopUnroller walks,
     IConstantTripLoopUnroller constantTrips,
     ILoopInvariantExpressionHoister invariantExpressions,
-    IWholeLocalBlockCopyFolder blockCopies) : IManagedMethodOptimizer
+    IAddressInductionRewriter addressInduction,
+    IWholeLocalBlockCopyFolder blockCopies,
+    IConstructedObjectNullCheckEliminator constructedObjects,
+    IRangeBranchRewriter rangeBranches) : IManagedMethodOptimizer
 {
     private readonly IManagedMethodOptimizer _staticDataViews = staticDataViews ??
         throw new ArgumentNullException(nameof(staticDataViews));
@@ -82,7 +86,12 @@ internal sealed class ManagedMethodOptimizationPipeline(
     private readonly ILoopStoreForwarder _loopStores = loopStores ?? throw new ArgumentNullException(nameof(loopStores));
     private readonly ILoopInvariantExpressionHoister _invariantExpressions = invariantExpressions ??
         throw new ArgumentNullException(nameof(invariantExpressions));
+    private readonly IAddressInductionRewriter _addressInduction = addressInduction ??
+        throw new ArgumentNullException(nameof(addressInduction));
     private readonly IWholeLocalBlockCopyFolder _blockCopies = blockCopies ?? throw new ArgumentNullException(nameof(blockCopies));
+    private readonly IConstructedObjectNullCheckEliminator _constructedObjects = constructedObjects ??
+        throw new ArgumentNullException(nameof(constructedObjects));
+    private readonly IRangeBranchRewriter _rangeBranches = rangeBranches ?? throw new ArgumentNullException(nameof(rangeBranches));
     private readonly IConditionalStoreMerger _storeMerging = storeMerging ?? throw new ArgumentNullException(nameof(storeMerging));
     private readonly IFieldLoadReuser _fieldLoads = fieldLoads ?? throw new ArgumentNullException(nameof(fieldLoads));
     private readonly IQuotientReuser _quotients = quotients ?? throw new ArgumentNullException(nameof(quotients));
@@ -167,19 +176,22 @@ internal sealed class ManagedMethodOptimizationPipeline(
         // Inlined callees leave receivers and allocations that nothing reads,
         // objects reached only for their fields, finally handlers with nothing
         // to run, struct locals used field by field, reads and writes through a
-        // local's address, counted loops that only repeat their first iteration,
+        // local's address, branches the ranges of their operands settle, which
+        // leave the loop rules none of the code they cut off, counted loops that
+        // only repeat their first iteration,
         // block copies of a whole local into another, array fill and copy loops whose iterations run in bulk first, element
         // loops whose iterations run as vectors first, walks over n elements that
         // run four at a time first, for loops over a few constant values that
         // run once per value in a row, branching computations of values a loop
-        // does not change, which the unrolled values leave, loop reloads of an element
-        // the loop itself stores, stores to one field on both arms of an if,
+        // does not change, which the unrolled values leave, reads of a reference plus
+        // a loop's counter, loop reloads of an element the loop itself stores, stores to one field on both arms of an if,
         // field reads of values an earlier read found, remainders of values a
         // division divided, and span reads that RVA data answers. The entry
         // checks go in before the array passes, whose proofs then describe the
-        // final instructions, as the integer check proof does.
-        return _integerChecks.Rewrite(_repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
-            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_invariantExpressions.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_blockCopies.Rewrite(_idempotentLoops.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
-                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))))))));
+        // final instructions, as the integer check proof does, and so does the
+        // proof that objects newobj produced are not null.
+        return _integerChecks.Rewrite(_constructedObjects.Rewrite(_repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
+            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_addressInduction.Rewrite(_invariantExpressions.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_blockCopies.Rewrite(_idempotentLoops.Rewrite(_rangeBranches.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
+                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized))))))))))))))))))))))))));
     }
 }

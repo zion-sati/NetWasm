@@ -22,6 +22,14 @@ public interface ICustomAttributeProvider
 
 public abstract class MemberInfo : ICustomAttributeProvider
 {
+    public virtual MemberTypes MemberType => throw Unsupported();
+
+    public virtual System.Collections.Generic.IEnumerable<CustomAttributeData> CustomAttributes =>
+        GetCustomAttributesData();
+
+    public virtual System.Collections.Generic.IList<CustomAttributeData> GetCustomAttributesData() =>
+        throw new PlatformNotSupportedException("Runtime custom attribute metadata is not deployed on NetWasm.");
+
     public override bool Equals(object? value) => base.Equals(value);
 
     public override int GetHashCode() => base.GetHashCode();
@@ -42,6 +50,14 @@ public abstract class MemberInfo : ICustomAttributeProvider
 
     public virtual Type? DeclaringType => throw Unsupported();
 
+    public virtual Type? ReflectedType => throw Unsupported();
+
+    public virtual Module Module => throw Unsupported();
+
+    public virtual int MetadataToken => throw Unsupported();
+
+    public virtual bool HasSameMetadataDefinitionAs(MemberInfo other) => throw Unsupported();
+
     public virtual object[] GetCustomAttributes(bool inherit) =>
         throw Unsupported();
 
@@ -55,11 +71,11 @@ public abstract class MemberInfo : ICustomAttributeProvider
         "Runtime member metadata is unavailable because reflection metadata is not deployed.");
 }
 
-public abstract class MethodBase : MemberInfo
+public abstract partial class MethodBase : MemberInfo
 {
-    public virtual bool IsStatic => throw UnsupportedMetadata();
+    public virtual bool IsStatic => (Attributes & MethodAttributes.Static) != 0;
 
-    public virtual bool IsPublic => throw UnsupportedMetadata();
+    public virtual bool IsPublic => (Attributes & MethodAttributes.MemberAccessMask) == MethodAttributes.Public;
 
     public virtual ParameterInfo[] GetParameters() => throw UnsupportedMetadata();
 
@@ -88,15 +104,39 @@ public abstract class MethodBase : MemberInfo
     }
 }
 
-public abstract class MethodInfo : MethodBase
+public abstract partial class MethodInfo : MethodBase
 {
+    // Equality declarations retained from upstream MethodInfo for standard DLL binding.
+    public override bool Equals(object? obj) => base.Equals(obj);
+    public override int GetHashCode() => base.GetHashCode();
+
+    public static bool operator ==(MethodInfo? left, MethodInfo? right)
+    {
+        // Test "right" first to allow branch elimination when inlined for null checks (== null)
+        // so it can become a simple test
+        if (right is null)
+        {
+            return left is null;
+        }
+
+        // Try fast reference equality and opposite null check prior to calling the slower virtual Equals
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        return left is not null && left.Equals(right);
+    }
+
+    public static bool operator !=(MethodInfo? left, MethodInfo? right) => !(left == right);
+
     public virtual Type ReturnType => throw UnsupportedMetadata();
 
-    public virtual bool IsGenericMethod => false;
+    public override bool IsGenericMethod => false;
 
-    public virtual bool IsGenericMethodDefinition => false;
+    public override bool IsGenericMethodDefinition => false;
 
-    public virtual bool ContainsGenericParameters => false;
+    public override bool ContainsGenericParameters => false;
 
     internal virtual PropertyInfo? AssociatedProperty => null;
 
@@ -106,17 +146,17 @@ public abstract class MethodInfo : MethodBase
         "Runtime method metadata is unavailable because its compiler descriptor was not deployed.");
 }
 
-public abstract class ConstructorInfo : MethodBase;
+public abstract partial class ConstructorInfo : MethodBase;
 
-public abstract class FieldInfo : MemberInfo
+public abstract partial class FieldInfo : MemberInfo
 {
     public virtual Type FieldType => throw UnsupportedMetadata();
 
-    public virtual bool IsStatic => throw UnsupportedMetadata();
+    public virtual bool IsStatic => (Attributes & FieldAttributes.Static) != 0;
 
-    public virtual bool IsInitOnly => throw UnsupportedMetadata();
+    public virtual bool IsInitOnly => (Attributes & FieldAttributes.InitOnly) != 0;
 
-    public virtual bool IsLiteral => throw UnsupportedMetadata();
+    public virtual bool IsLiteral => (Attributes & FieldAttributes.Literal) != 0;
 
     public static FieldInfo GetFieldFromHandle(RuntimeFieldHandle handle) =>
         throw Unsupported();
@@ -132,7 +172,7 @@ public abstract class FieldInfo : MemberInfo
         "Runtime field metadata is unavailable because its compiler descriptor was not deployed.");
 }
 
-public abstract class PropertyInfo : MemberInfo
+public abstract partial class PropertyInfo : MemberInfo
 {
     public virtual Type PropertyType => throw UnsupportedMetadata();
 
@@ -150,10 +190,16 @@ public abstract class PropertyInfo : MemberInfo
         "Runtime property metadata is unavailable because its compiler descriptor was not deployed.");
 }
 
-public abstract class ParameterInfo
+public partial class ParameterInfo
 {
-    public virtual Type ParameterType => throw new PlatformNotSupportedException(
-        "Runtime parameter metadata is unavailable because its compiler descriptor was not deployed.");
+    protected ParameterInfo() { }
+    public virtual System.Collections.Generic.IEnumerable<CustomAttributeData> CustomAttributes =>
+        GetCustomAttributesData();
+
+    public virtual System.Collections.Generic.IList<CustomAttributeData> GetCustomAttributesData() =>
+        throw new PlatformNotSupportedException("Runtime custom attribute metadata is not deployed on NetWasm.");
+
+    public virtual Type ParameterType => ClassImpl!;
 }
 
 internal static class RuntimeMemberFlags
@@ -170,6 +216,9 @@ internal static class RuntimeMemberFlags
 
 internal sealed class RuntimeMethodInfo : MethodInfo
 {
+    public override CallingConventions CallingConvention => throw new PlatformNotSupportedException(
+        "Runtime method calling-convention metadata is not recorded by this NetWasm descriptor.");
+
     internal int DeclaringTypeId;
     internal int RequiresDeclaringType;
     internal int Flags;
@@ -278,6 +327,11 @@ internal sealed class RuntimeFieldInfo : FieldInfo
 
 internal sealed class RuntimePropertyInfo : PropertyInfo
 {
+    public override Type[] GetOptionalCustomModifiers() => throw MissingModifiers();
+    public override Type[] GetRequiredCustomModifiers() => throw MissingModifiers();
+    private static PlatformNotSupportedException MissingModifiers() => new(
+        "Runtime property custom-modifier metadata is not recorded by this NetWasm descriptor.");
+
     internal int DeclaringTypeId;
     internal int PropertyTypeId;
     internal string? MetadataName;
@@ -311,13 +365,25 @@ internal sealed class RuntimeParameterInfo(int parameterTypeId) : ParameterInfo
     internal int ParameterTypeId = parameterTypeId;
 
     public override Type ParameterType => Type.GetTypeFromSemanticId(ParameterTypeId);
-}
+    public override ParameterAttributes Attributes => throw MissingMetadata();
+    public override MemberInfo Member => throw MissingMetadata();
+    public override string? Name => throw MissingMetadata();
+    public override int Position => throw MissingMetadata();
+    public override int MetadataToken => throw MissingMetadata();
+    public override bool IsDefined(Type attributeType, bool inherit)
+    {
+        ArgumentNullException.ThrowIfNull(attributeType);
+        throw MissingMetadata();
+    }
+    public override object[] GetCustomAttributes(bool inherit) => throw MissingMetadata();
+    public override object[] GetCustomAttributes(Type attributeType, bool inherit)
+    {
+        ArgumentNullException.ThrowIfNull(attributeType);
+        throw MissingMetadata();
+    }
+    public override Type[] GetOptionalCustomModifiers() => throw MissingMetadata();
+    public override Type[] GetRequiredCustomModifiers() => throw MissingMetadata();
 
-public abstract class Binder;
-
-public readonly struct ParameterModifier
-{
-    public ParameterModifier(int parameterCount) =>
-        throw new PlatformNotSupportedException(
-            "Runtime parameter metadata is unavailable because reflection metadata is not deployed.");
+    private static PlatformNotSupportedException MissingMetadata() => new(
+        "Requested runtime parameter metadata is not recorded by this NetWasm descriptor.");
 }

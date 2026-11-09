@@ -18,6 +18,7 @@ public sealed class RawCallableImportLayoutBuilder(IRawWitFunctionLayoutBuilder 
             callable.InterfaceName,
             callable.CoreInterfaceName,
             callable.Definition,
-            request.Target));
+            request.Target,
+            callable.Asynchronous));
     }
 }

@@ -82,6 +82,8 @@ public sealed class WitCanonicalTypeReachabilityResolver :
                     AddNullable(document, reachable, item.GetProperty("type"));
                 }
             },
+            ["stream"] = () => AddNullable(document, reachable, kind.Value),
+            ["future"] = () => AddNullable(document, reachable, kind.Value),
             ["enum"] = static () => { },
             ["flags"] = static () => { },
             ["handle"] = () => Add(document, reachable, new WitTypeReference.Defined(

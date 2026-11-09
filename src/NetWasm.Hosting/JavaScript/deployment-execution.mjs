@@ -1,5 +1,6 @@
 import { createContractError, isContractError } from "./contract-error.mjs";
 import { assertExecutionResult, failedExecutionResult } from "./execution-result.mjs";
+import { validateInputSource } from "./input-source.mjs";
 import { validateOutputSink } from "./output-sink-stream.mjs";
 import { createManagedExceptionOutput } from "./managed-exception-output.mjs";
 
@@ -15,9 +16,9 @@ const factoryKeys = [
   "selectTimeZone",
   "validateRequest",
 ];
-const executionKeys = ["request", "signal", "stderr", "stdout"];
+const executionKeys = ["request", "signal", "stderr", "stdin", "stdout"];
 const outputKeys = ["releaseActions", "stderr", "stdout"];
-const providerKeys = ["binding", "componentImports", "consumerModules", "rawProviders"];
+const providerKeys = ["binding", "componentImports", "consumerModules", "rawProviders", "release"];
 
 export function createDeploymentExecution(options) {
   assertExactDataObject(options, factoryKeys, "deployment execution options");
@@ -33,6 +34,7 @@ export function createDeploymentExecution(options) {
     validateSignal(input.signal);
     validateOutputSink(input.stdout, "NetWasm stdout output sink");
     validateOutputSink(input.stderr, "NetWasm stderr output sink");
+    validateInputSource(input.stdin, "NetWasm stdin input source");
     if (input.signal?.aborted) return callerCancellation("validation");
 
     let request;
@@ -96,9 +98,13 @@ export function createDeploymentExecution(options) {
               request,
               signal,
               stderr: output.stderr,
+              stdin: input.stdin,
               stdout: output.stdout,
             }));
             assertExactDataObject(providers, providerKeys, "prepared execution providers");
+            if (typeof providers.release !== "function") {
+              throw new TypeError("prepared execution providers must be releasable");
+            }
           } catch (error) {
             if (signal?.aborted) return callerCancellation("instantiation");
             return isContractError(error)
@@ -108,30 +114,10 @@ export function createDeploymentExecution(options) {
           }
 
           let result;
-          if (manifest.deploymentKind === "raw") {
-            if (typeof options.prepareRawInterop !== "function") {
-              return hostFailure("instantiation", "host.interop-prepare",
-                "The execution host could not prepare managed interop.");
-            }
-            result = await executeStrategy(Object.freeze({
-              artifacts: manifest.artifacts,
-              contractKey: manifest.executionContract,
-              prepareInterop: interop => options.prepareRawInterop(Object.freeze({
-                ...interop,
-                consumerModules: providers.consumerModules,
-                stderr: output.stderr,
-              })),
-              providers: providers.rawProviders,
-              signal,
-            }));
-          } else {
-            result = await executeStrategy(Object.freeze({
-              artifacts: manifest.artifacts,
-              contractKey: manifest.executionContract,
-              imports: providers.componentImports,
-              managedExceptionReporting: createManagedExceptionOutput(output.stderr),
-              signal,
-            }));
+          try {
+            result = await executeWithProviders(providers, signal);
+          } finally {
+            await providers.release();
           }
           assertExecutionResult(result);
           return result;
@@ -147,6 +133,34 @@ export function createDeploymentExecution(options) {
       return outcome;
     } catch (error) {
       return hostFailure("execution", "host.execution", "The execution host failed.", error);
+    }
+
+    // The executeStrategy that suits the deployment kind, over the prepared providers.
+    function executeWithProviders(providers, signal) {
+      if (manifest.deploymentKind !== "raw") {
+        return executeStrategy(Object.freeze({
+          artifacts: manifest.artifacts,
+          contractKey: manifest.executionContract,
+          imports: providers.componentImports,
+          managedExceptionReporting: createManagedExceptionOutput(output.stderr),
+          signal,
+        }));
+      }
+      if (typeof options.prepareRawInterop !== "function") {
+        return hostFailure("instantiation", "host.interop-prepare",
+          "The execution host could not prepare managed interop.");
+      }
+      return executeStrategy(Object.freeze({
+        artifacts: manifest.artifacts,
+        contractKey: manifest.executionContract,
+        prepareInterop: interop => options.prepareRawInterop(Object.freeze({
+          ...interop,
+          consumerModules: providers.consumerModules,
+          stderr: output.stderr,
+        })),
+        providers: providers.rawProviders,
+        signal,
+      }));
     }
   });
 }

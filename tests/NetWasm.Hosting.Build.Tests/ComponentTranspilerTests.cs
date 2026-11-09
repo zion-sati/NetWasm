@@ -21,6 +21,8 @@ public sealed class ComponentTranspilerTests
             File.WriteAllText(Path.Combine(interfaces, "api.d.ts"), "export {};");
             File.WriteAllBytes(Path.Combine(temporary, "program-component.core.wasm"), [0]);
             File.WriteAllBytes(Path.Combine(temporary, "program-component.core2.wasm"), [1]);
+            File.WriteAllBytes(Path.Combine(temporary,
+                "program-component.conditional-suspending-2-i32-to-i32.wasm"), [2]);
             File.WriteAllText(request.Arguments[4], """
                 {"schemaVersion":1,"exports":[
                   {"name":"rootValue","kind":"function"},
@@ -33,7 +35,7 @@ public sealed class ComponentTranspilerTests
 
         var result = subject.Transpile(new(
             Path.Combine(directory.Path, "node"),
-            Path.Combine(directory.Path, "jco.js"),
+            Path.Combine(directory.Path, "api.js"),
             Path.Combine(directory.Path, "program.wasm"),
             output,
             "program-component"));
@@ -50,6 +52,7 @@ public sealed class ComponentTranspilerTests
         Assert.Equal(Path.Combine(output, "program-component.js"), result.JavaScriptPath);
         Assert.Equal<string>(
             [
+                Path.Combine(output, "program-component.conditional-suspending-2-i32-to-i32.wasm"),
                 Path.Combine(output, "program-component.core.wasm"),
                 Path.Combine(output, "program-component.core2.wasm"),
             ],
@@ -81,7 +84,7 @@ public sealed class ComponentTranspilerTests
 
         Assert.Throws<InvalidOperationException>(() => subject.Transpile(new(
             Path.Combine(directory.Path, "node"),
-            Path.Combine(directory.Path, "jco.js"),
+            Path.Combine(directory.Path, "api.js"),
             Path.Combine(directory.Path, "program.wasm"),
             output,
             "program-component")));
@@ -121,7 +124,7 @@ public sealed class ComponentTranspilerTests
 
             Assert.Throws<InvalidOperationException>(() => subject.Transpile(new(
                 Path.Combine(directory.Path, "node"),
-                Path.Combine(directory.Path, "jco.js"),
+                Path.Combine(directory.Path, "api.js"),
                 Path.Combine(directory.Path, "program.wasm"),
                 output,
                 "program")));
@@ -143,7 +146,7 @@ public sealed class ComponentTranspilerTests
         Assert.Throws<ArgumentNullException>(() => subject.Transpile(null!));
         var valid = new ComponentTranspileRequest(
             Path.Combine(directory.Path, "node"),
-            Path.Combine(directory.Path, "jco.js"),
+            Path.Combine(directory.Path, "api.js"),
             Path.Combine(directory.Path, "program.wasm"),
             Path.Combine(directory.Path, "output"),
             "program");

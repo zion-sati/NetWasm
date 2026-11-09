@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 import { buildRawAbiPlan } from "./raw-abi-plan-builder.mjs";
 import { composeRawImports } from "./raw-import-composer.mjs";
 
@@ -26,31 +23,6 @@ function commandPlan(imports = []) {
   });
 }
 
-function processPlan() {
-  return buildRawAbiPlan({
-    contractKey: processExecutionContract,
-    abi: {
-      target: "wasm32",
-      entryPoint: {
-        parameterShape: "none",
-        returnShape: "exitCode",
-        completionShape: "asynchronous",
-      },
-      imports: [
-        functionImport("cm32p2|netwasm:runtime/reactor-host@1", "watch"),
-        functionImport("cm32p2|netwasm:runtime/reactor-host@1", "cancel"),
-      ],
-      exports: [
-        functionExport("run"),
-        functionExport("netwasm.process.status"),
-        functionExport("netwasm.process.result"),
-        functionExport("netwasm.process.complete"),
-        functionExport("cm32p2|netwasm:runtime/reactor-guest@1|wake"),
-      ],
-    },
-  });
-}
-
 function canonicalBinding(imports = {}, target = "wasm32") {
   return { imports, target };
 }
@@ -59,7 +31,6 @@ function importInventory(plan = commandPlan()) {
   return {
     target: plan.target,
     imports: plan.imports,
-    reactorHostModule: plan.reactorHostModule,
   };
 }
 
@@ -104,24 +75,6 @@ test("composes exact canonical and separately declared physical imports", () => 
   assert.equal(Object.values(imports).every(Object.isFrozen), true);
 });
 
-test("composes the generated process reactor without exposing it to physical providers", () => {
-  const calls = [];
-  const reactorHost = {
-    watch(value) { calls.push(["watch", value]); },
-    cancel(value) { calls.push(["cancel", value]); },
-  };
-  const imports = compose({
-    canonicalBinding: canonicalBinding({
-      "cm32p2|netwasm:runtime/reactor-host@1": reactorHost,
-    }),
-    inventory: importInventory(processPlan()),
-  });
-  const reactor = imports["cm32p2|netwasm:runtime/reactor-host@1"];
-  reactor.watch(3);
-  reactor.cancel(5);
-  assert.deepEqual(calls, [["watch", 3], ["cancel", 5]]);
-});
-
 test("rejects malformed requests and forged import inventories", () => {
   for (const request of [null, [], {}, { extra: true }]) {
     assert.throws(() => composeRawImports(request), /request/);
@@ -134,8 +87,6 @@ test("rejects malformed requests and forged import inventories", () => {
     { ...valid, extra: true },
     { ...valid, target: "wasm128" },
     { ...valid, imports: null },
-    { ...valid, reactorHostModule: null },
-    { ...valid, reactorHostModule: "" },
   ]) {
     assert.throws(() => compose({ inventory }), /inventory/);
   }
@@ -222,11 +173,4 @@ test("rejects malformed physical providers and unavailable physical members", ()
       inventory: importInventory(plan),
     }), /provider|import|function/);
   }
-});
-
-test("rejects physical replacement of the generated reactor", () => {
-  const reserved = "cm32p2|netwasm:runtime/reactor-host@1";
-  assert.throws(() => compose({
-    physicalProviders: { [reserved]: {} },
-  }), /reserved/);
 });

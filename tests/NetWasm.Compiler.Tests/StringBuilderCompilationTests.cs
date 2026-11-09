@@ -216,7 +216,7 @@ public sealed class StringBuilderCompilationTests
                     var ensured = builder.EnsureCapacity(40);
                     var failures = 0;
                     try { builder.Append("x", -1, 1); } catch (ArgumentOutOfRangeException) { failures++; }
-                    try { _ = builder[-1]; } catch (ArgumentOutOfRangeException) { failures++; }
+                    try { _ = builder[-1]; } catch (IndexOutOfRangeException) { failures++; }
                     try { builder.Capacity = 1; } catch (ArgumentOutOfRangeException) { failures++; }
                     return initialCapacity == 16 && ensured >= 40 && builder.Length == 8
                         && builder[5] == '\ud800' && builder[7] == '\udc00'

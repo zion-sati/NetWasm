@@ -1199,6 +1199,8 @@ public enum RuntimeIntrinsic
     ArrayElementType,
     ArraySetValue,
     PreallocatedOutOfMemoryException,
+    ObjectClone,
+    JavaScriptHost,
 }
 
 public static class RuntimeIntrinsicKinds

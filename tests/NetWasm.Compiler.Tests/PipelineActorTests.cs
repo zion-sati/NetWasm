@@ -228,6 +228,27 @@ public sealed class PipelineActorTests
             program, [], ComponentBoundaryContract.Empty, methods, null!));
     }
 
+    // A Component Model built-in is part of the canonical ABI, not of the world.
+    [Fact]
+    public void ReachabilityValidatorAcceptsBuiltInsOutsideTheContract()
+    {
+        var method = ValidationTestData.Program().EntryPoint! with
+        {
+            WitImport = new WitImportDeclaration("$root", "[waitable-set-new]") { IsCanonicalBuiltIn = true },
+        };
+        var program = ValidationTestData.Program() with
+        {
+            WitImportMethods = [method],
+        };
+
+        new ComponentReachabilityValidator().Validate(
+            program,
+            [],
+            new ComponentBoundaryContract("", "", [Function(new EntityKey(ValidationTestData.Assembly, 0x06000009), "other")], []),
+            new MethodRepository(method),
+            new SymbolFormatter());
+    }
+
     [Fact]
     public void ReachabilityValidatorRequiresAContractForReachableBindings()
     {

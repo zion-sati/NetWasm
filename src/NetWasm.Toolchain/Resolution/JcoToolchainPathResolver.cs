@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NetWasm.Toolchain.Manifest;
 using NetWasm.Toolchain.Prerequisites;
 
@@ -60,21 +61,7 @@ public sealed class JcoToolchainPathResolver : IJcoToolchainPathResolver
         string? packageVersion = null;
         foreach (var assetId in ToolchainPlatformAssetIds.JcoClosure)
         {
-            var asset = _assets.Resolve(assetId) ??
-                throw new InvalidOperationException(
-                    "The platform asset resolver returned no asset.");
-            RequireAsset(asset, assetId);
-            packageId ??= asset.PackageId;
-            packageVersion ??= asset.PackageVersion;
-            if (!string.Equals(packageId, asset.PackageId, StringComparison.Ordinal)
-                || !string.Equals(packageVersion, asset.PackageVersion,
-                    StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    "Jco assets must belong to one Toolchain package identity.");
-            }
-
-            resolved.Add(assetId, asset);
+            resolved.Add(assetId, ResolveAsset(assetId, ref packageId, ref packageVersion));
         }
 
         var jcoPackage = resolved[ToolchainPlatformAssetIds.JcoPackage];
@@ -86,6 +73,14 @@ public sealed class JcoToolchainPathResolver : IJcoToolchainPathResolver
                 "The jco package and entry point must use one pinned jco version.");
         }
 
+        var packageLock = resolved[ToolchainPlatformAssetIds.JcoPackageLock];
+        var nodeHttpProvider = new NodeHttpProviderPaths(
+            Path.GetDirectoryName(packageLock.AbsolutePath)!,
+            ResolveAsset(ToolchainPlatformAssetIds.Preview3ShimHttp, ref packageId, ref packageVersion)
+                .AbsolutePath,
+            [.. ToolchainPlatformAssetIds.NodeHttpProviderFiles.Select(id =>
+                ResolveAsset(id, ref packageId, ref packageVersion).AbsolutePath)]);
+
         var integrity = resolved[ToolchainPlatformAssetIds.JcoClosureIntegrity];
         var integrityRelativePath = Path.GetRelativePath(
             _packageRoot,
@@ -96,14 +91,36 @@ public sealed class JcoToolchainPathResolver : IJcoToolchainPathResolver
             packageId!,
             packageVersion!,
             jcoBindgenPatch.Version,
-            resolved[ToolchainPlatformAssetIds.Preview2ShimPackage].Version,
+            resolved[ToolchainPlatformAssetIds.Preview3ShimPackage].Version,
             nodeExecutable.AbsolutePath,
             nodeCompatibility.Version,
             resolved[ToolchainPlatformAssetIds.JcoEntryPoint].AbsolutePath,
-            resolved[ToolchainPlatformAssetIds.JcoPackageLock].AbsolutePath,
+            packageLock.AbsolutePath,
             integrity.AbsolutePath,
             resolved[ToolchainPlatformAssetIds.JcoNotices].AbsolutePath,
-            resolved[ToolchainPlatformAssetIds.JcoClosurePolicy].AbsolutePath);
+            resolved[ToolchainPlatformAssetIds.JcoClosurePolicy].AbsolutePath,
+            nodeHttpProvider);
+    }
+
+    // Every jco asset belongs to the first one's Toolchain package identity.
+    private ResolvedPlatformAsset ResolveAsset(
+        string assetId,
+        ref string? packageId,
+        ref string? packageVersion)
+    {
+        var asset = _assets.Resolve(assetId) ??
+            throw new InvalidOperationException("The platform asset resolver returned no asset.");
+        RequireAsset(asset, assetId);
+        packageId ??= asset.PackageId;
+        packageVersion ??= asset.PackageVersion;
+        if (!string.Equals(packageId, asset.PackageId, StringComparison.Ordinal)
+            || !string.Equals(packageVersion, asset.PackageVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Jco assets must belong to one Toolchain package identity.");
+        }
+
+        return asset;
     }
 
     private static void RequireAsset(ResolvedPlatformAsset asset, string assetId)

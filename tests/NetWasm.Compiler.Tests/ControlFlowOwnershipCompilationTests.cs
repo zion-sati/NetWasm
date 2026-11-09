@@ -80,15 +80,9 @@ public sealed class ControlFlowOwnershipCompilationTests
             Input: 4,
             ReferencePaths: ImmutableArray<string>.Empty)
         {
-            Exports =
-            [
-                new RequestedExport("run", "AsyncControlFlowOwnership.Application.EntryPoint", "Run"),
-                new RequestedExport("observe", "AsyncControlFlowOwnership.Application.EntryPoint", "Observe"),
-            ],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            ObserveMethodName = "Observe",
         });
 
         Assert.Equal(1_005, result);

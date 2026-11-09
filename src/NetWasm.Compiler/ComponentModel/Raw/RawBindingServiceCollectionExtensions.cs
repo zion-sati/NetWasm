@@ -20,6 +20,8 @@ internal static class RawBindingServiceCollectionExtensions
                 provider.GetRequiredService<IRawWitFunctionLayoutBuilder>())),
             new(typeof(RawWitImportDeclaration.Resource), new RawResourceImportLayoutBuilder(
                 provider.GetRequiredService<IRawResourceIntrinsicLayoutPlanner>())),
+            new(typeof(RawWitImportDeclaration.Payload), new RawPayloadImportLayoutBuilder(
+                provider.GetRequiredService<IWitCanonicalTypeResolver>())),
         ]));
         services.AddSingleton<IRawWitBindingPlanBuilder, RawWitBindingPlanBuilder>();
         services.AddSingleton<IRawCliCoreSignatureProjector, RawCliCoreSignatureProjector>();

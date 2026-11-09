@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { prepareComponentExecution } from "./component-execution-preparation.mjs";
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 import { normalExecutionResult } from "./execution-result.mjs";
 
 test("prepares immutable common inputs and one snapshotted caller scope", async () => {
@@ -18,13 +15,11 @@ test("prepares immutable common inputs and one snapshotted caller scope", async 
   };
   const releaseActions = [action];
   const instantiateCore = () => {};
-  const schedule = () => {};
   const prepared = prepareComponentExecution({
     contractKey: commandExecutionContract,
     imports,
     instantiateCore,
     releaseActions,
-    schedule,
   });
 
   assert.equal(Object.isFrozen(prepared), true);
@@ -33,7 +28,6 @@ test("prepares immutable common inputs and one snapshotted caller scope", async 
   assert.equal(prepared.imports["wasi:cli/environment"], provider);
   assert.equal(prepared.instantiateCore, instantiateCore);
   assert.equal(prepared.signal, null);
-  assert.equal(prepared.schedule, schedule);
   imports["wasi:cli/environment"] = {};
   action.release = () => calls.push("changed");
   releaseActions.length = 0;
@@ -41,13 +35,10 @@ test("prepares immutable common inputs and one snapshotted caller scope", async 
   assert.deepEqual(calls, ["original"]);
 });
 
-test("accepts both exact contracts and defaults optional runtime inputs", () => {
-  for (const contractKey of [commandExecutionContract, processExecutionContract]) {
-    const prepared = prepareComponentExecution({ contractKey, imports: {} });
-    assert.equal(prepared.contractKey, contractKey);
-    assert.equal(prepared.instantiateCore, undefined);
-    assert.equal(typeof prepared.schedule, "function");
-  }
+test("accepts the exact command contract and defaults optional runtime inputs", () => {
+  const prepared = prepareComponentExecution({ contractKey: commandExecutionContract, imports: {} });
+  assert.equal(prepared.contractKey, commandExecutionContract);
+  assert.equal(prepared.instantiateCore, undefined);
 });
 
 test("rejects invalid preparation request shapes", () => {
@@ -64,7 +55,7 @@ test("rejects invalid preparation request shapes", () => {
 });
 
 test("rejects unsupported contracts and invalid optional dependencies", () => {
-  for (const contractKey of [null, "", "wasi-command@0.2.10"]) {
+  for (const contractKey of [null, "", "wasi-command@0.2.11", "netwasm:runtime/process@1.0.0"]) {
     assert.throws(() => prepareComponentExecution({ contractKey, imports: {} }), /unsupported/);
   }
   assert.throws(() => prepareComponentExecution({
@@ -82,8 +73,8 @@ test("rejects unsupported contracts and invalid optional dependencies", () => {
   assert.throws(() => prepareComponentExecution({
     contractKey: commandExecutionContract,
     imports: {},
-    schedule: null,
-  }), /scheduler/);
+    schedule: () => {},
+  }), /request/);
   assert.throws(() => prepareComponentExecution({
     contractKey: commandExecutionContract,
     imports: {},
@@ -105,8 +96,6 @@ test("projects only valid plain import data and reserves internal hosts", () => 
   Object.defineProperty(accessor, "getter", { get: () => ({}), enumerable: true });
   assertInvalidImports(accessor);
   for (const name of [
-    "netwasm:runtime/reactor-host",
-    "netwasm:runtime/reactor-host@1.0.0",
     "netwasm:diagnostics/terminal",
     "netwasm:diagnostics/terminal@1.0.0",
   ]) {

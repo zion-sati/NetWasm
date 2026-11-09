@@ -492,6 +492,45 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedMulticastInlineDispatch.Enabled => MulticastDispatchPolicy.Inline,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // Objects newobj produced are proven within each method. Proving a constructor's this
+        // non-null takes one more pass over the whole program, so only the presets that
+        // already pay for whole-program work take it: O3, and Os and Oz, where each null
+        // check left out is also bytes saved.
+        var newObjectsOverride = options?.NewObjectNullCheckElimination ?? ManagedNewObjectNullCheckElimination.Auto;
+        var newObjects = newObjectsOverride switch
+        {
+            ManagedNewObjectNullCheckElimination.Auto => preset switch
+            {
+                FinalWasmOptimization.None or FinalWasmOptimization.O0 => NewObjectNullCheckEliminationPolicy.Disabled,
+                FinalWasmOptimization.O1 or FinalWasmOptimization.O2 => NewObjectNullCheckEliminationPolicy.NewObjects,
+                _ => NewObjectNullCheckEliminationPolicy.ConstructedObjects,
+            },
+            ManagedNewObjectNullCheckElimination.Disabled => NewObjectNullCheckEliminationPolicy.Disabled,
+            ManagedNewObjectNullCheckElimination.Enabled => NewObjectNullCheckEliminationPolicy.ConstructedObjects,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // A reference that moves with a loop's counter costs a local and an add per
+        // iteration, and saves the counter's scaling and an add per read.
+        var strengthReductionOverride = options?.LoopStrengthReduction ?? ManagedLoopStrengthReduction.Auto;
+        var strengthReduction = strengthReductionOverride switch
+        {
+            ManagedLoopStrengthReduction.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? LoopStrengthReductionPolicy.Disabled : LoopStrengthReductionPolicy.AddressInduction,
+            ManagedLoopStrengthReduction.Disabled => LoopStrengthReductionPolicy.Disabled,
+            ManagedLoopStrengthReduction.Enabled => LoopStrengthReductionPolicy.AddressInduction,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // A branch the ranges of its operands settle costs a range analysis of
+        // the method, and saves the comparison and the code it cuts off.
+        var rangeBranchesOverride = options?.RangeBranchFolding ?? ManagedRangeBranchFolding.Auto;
+        var rangeBranches = rangeBranchesOverride switch
+        {
+            ManagedRangeBranchFolding.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? RangeBranchFoldingPolicy.Disabled : RangeBranchFoldingPolicy.ProvenRanges,
+            ManagedRangeBranchFolding.Disabled => RangeBranchFoldingPolicy.Disabled,
+            ManagedRangeBranchFolding.Enabled => RangeBranchFoldingPolicy.ProvenRanges,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
 
         if (preset == FinalWasmOptimization.None &&
             (hint != ManagedInliningHints.Auto ||
@@ -526,6 +565,9 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              integerChecksOverride == ManagedIntegerCheckElimination.Enabled ||
              invariantExpressionsOverride == ManagedLoopInvariantExpressionHoisting.Enabled ||
              multicastOverride == ManagedMulticastInlineDispatch.Enabled ||
+             newObjectsOverride == ManagedNewObjectNullCheckElimination.Enabled ||
+             strengthReductionOverride == ManagedLoopStrengthReduction.Enabled ||
+             rangeBranchesOverride == ManagedRangeBranchFolding.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -578,6 +620,14 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             integerChecks,
             options?.Converge ?? false,
             invariantExpressions,
-            multicast);
+            multicast,
+            // Static data starts above the first KiB, so wasm-opt may fold constant address adds
+            // into offsets, but no preset asks it to: Cranelift keeps a folded heap + index live
+            // across calls and adds it with arm64's slower extended-register form, and both arm64
+            // and x86-64 have more cases slower with it than without.
+            options?.LowMemoryUnused ?? false,
+            newObjects,
+            strengthReduction,
+            rangeBranches);
     }
 }

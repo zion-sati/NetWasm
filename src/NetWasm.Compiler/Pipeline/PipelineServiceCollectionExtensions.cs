@@ -16,6 +16,7 @@ internal static class PipelineServiceCollectionExtensions
         services.AddSingleton<IComponentExportMerger, ComponentExportMerger>();
         services.AddSingleton<IComponentReachabilityValidator,
             ComponentReachabilityValidator>();
+        services.AddSingleton<IPlainCoreModuleValidator, PlainCoreModuleValidator>();
         services.AddSingleton<ICompilationPreparationBuilder,
             CompilationPreparationBuilder>();
         services.AddSingleton<ICompilationAnalysisBuilder,

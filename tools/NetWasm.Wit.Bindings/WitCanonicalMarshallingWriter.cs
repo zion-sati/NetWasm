@@ -65,6 +65,11 @@ public sealed class WitCanonicalMarshallingTypeSectionWriter(
             document,
             reference));
         var kind = definition.Kind.EnumerateObject().Single().Name;
+        // A stream or future is a handle its __WitIntrinsics class lifts and lowers.
+        if (kind is "stream" or "future")
+        {
+            return;
+        }
         if (kind == "list")
         {
             WriteList(writer, document, id, typeName, definition);
@@ -290,6 +295,10 @@ public sealed class WitCanonicalMarshallingTypeSectionWriter(
                     offset,
                     value,
                     exportBoundary),
+            ["stream"] = () => writer.Line(
+                $"CanonicalAbi.WriteInt32({address}, {offset}, __WitIntrinsics.Stream{defined.Id}.Lower({value}));"),
+            ["future"] = () => writer.Line(
+                $"CanonicalAbi.WriteInt32({address}, {offset}, __WitIntrinsics.Future{defined.Id}.Lower({value}));"),
         };
         operations[kind.Name]();
     }
@@ -316,33 +325,39 @@ public sealed class WitCanonicalMarshallingTypeSectionWriter(
         string offset,
         string value)
     {
-        var operations = new Dictionary<string, Action>(StringComparer.Ordinal)
+        if (name != "string")
         {
-            ["bool"] = () => writer.Line($"CanonicalAbi.WriteByte({address}, {offset}, {value} ? (byte)1 : (byte)0);"),
-            ["s8"] = () => writer.Line($"CanonicalAbi.WriteByte({address}, {offset}, unchecked((byte){value}));"),
-            ["u8"] = () => writer.Line($"CanonicalAbi.WriteByte({address}, {offset}, unchecked((byte){value}));"),
-            ["s16"] = () => writer.Line($"CanonicalAbi.WriteUInt16({address}, {offset}, unchecked((ushort){value}));"),
-            ["u16"] = () => writer.Line($"CanonicalAbi.WriteUInt16({address}, {offset}, unchecked((ushort){value}));"),
-            ["s32"] = () => writer.Line($"CanonicalAbi.WriteInt32({address}, {offset}, unchecked((int){value}));"),
-            ["u32"] = () => writer.Line($"CanonicalAbi.WriteInt32({address}, {offset}, unchecked((int){value}));"),
-            ["char"] = () => writer.Line($"CanonicalAbi.WriteInt32({address}, {offset}, unchecked((int){value}));"),
-            ["s64"] = () => writer.Line($"CanonicalAbi.WriteInt64({address}, {offset}, unchecked((long){value}));"),
-            ["u64"] = () => writer.Line($"CanonicalAbi.WriteInt64({address}, {offset}, unchecked((long){value}));"),
-            ["f32"] = () => writer.Line($"CanonicalAbi.WriteSingle({address}, {offset}, {value});"),
-            ["f64"] = () => writer.Line($"CanonicalAbi.WriteDouble({address}, {offset}, {value});"),
-            ["string"] = () =>
-            {
-                writer.Line("{");
-                writer.Indent();
-                writer.Line($"var __text = CanonicalAbi.LowerString({value});");
-                writer.Line($"CanonicalAbi.WriteAddress({address}, {offset}, __text.Address);");
-                writer.Line($"CanonicalAbi.WriteAddress({address}, {Add(offset, "(nuint)UIntPtr.Size")}, __text.Length);");
-                writer.Unindent();
-                writer.Line("}");
-            },
-        };
-        operations[name]();
+            writer.Line(WritePrimitiveStatement(name, address, offset, value));
+            return;
+        }
+        writer.Line("{");
+        writer.Indent();
+        writer.Line($"var __text = CanonicalAbi.LowerString({value});");
+        writer.Line($"CanonicalAbi.WriteAddress({address}, {offset}, __text.Address);");
+        writer.Line($"CanonicalAbi.WriteAddress({address}, {Add(offset, "(nuint)UIntPtr.Size")}, __text.Length);");
+        writer.Unindent();
+        writer.Line("}");
     }
+
+    // Storing a primitive other than a string, which owns no memory.
+    internal static string WritePrimitiveStatement(
+        string name,
+        string address,
+        string offset,
+        string value) => name switch
+        {
+            "bool" => $"CanonicalAbi.WriteByte({address}, {offset}, {value} ? (byte)1 : (byte)0);",
+            "s8" or "u8" => $"CanonicalAbi.WriteByte({address}, {offset}, unchecked((byte){value}));",
+            "s16" or "u16" => $"CanonicalAbi.WriteUInt16({address}, {offset}, unchecked((ushort){value}));",
+            "s32" or "u32" or "char" => $"CanonicalAbi.WriteInt32({address}, {offset}, unchecked((int){value}));",
+            "s64" or "u64" => $"CanonicalAbi.WriteInt64({address}, {offset}, unchecked((long){value}));",
+            "f32" => $"CanonicalAbi.WriteSingle({address}, {offset}, {value});",
+            "f64" => $"CanonicalAbi.WriteDouble({address}, {offset}, {value});",
+            _ => throw new ArgumentOutOfRangeException(nameof(name)),
+        };
+
+    internal static string LiftPrimitiveExpression(string name, string address, string offset) =>
+        LiftPrimitive(name, address, offset);
 
     private void WriteRecord(
         CodeWriter writer,
@@ -624,6 +639,8 @@ public sealed class WitCanonicalMarshallingTypeSectionWriter(
                 address,
                 offset,
                 exportBoundary),
+            ["stream"] = () => $"__WitIntrinsics.Stream{defined.Id}.Lift(CanonicalAbi.ReadInt32({address}, {offset}))",
+            ["future"] = () => $"__WitIntrinsics.Future{defined.Id}.Lift(CanonicalAbi.ReadInt32({address}, {offset}))",
         };
         return operations[kind.Name]();
     }

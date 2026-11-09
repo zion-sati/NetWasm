@@ -17,10 +17,9 @@ public sealed class HostingPlatformCatalogJavaScriptWriterTests
                 [new($"wasi:test/module-{index}@1.0.0", "run", ["string"], ["u32"])]))
             .ToArray();
         var catalog = new HostingPlatformCatalog(
-            1,
+            2,
             "wasi:test/command@1.0.0",
             new('a', 64),
-            new("@bytecodealliance/preview2-shim", "0.24.1"),
             [.. providers]);
 
         var source = new HostingPlatformCatalogJavaScriptWriter().Write(catalog);
@@ -30,13 +29,10 @@ public sealed class HostingPlatformCatalogJavaScriptWriterTests
         Assert.Contains("export const platformProviderCatalog = deepFreeze(", source);
         using var json = JsonDocument.Parse(ReadJson(source));
         var root = json.RootElement;
-        Assert.Equal(1, root.GetProperty("schema").GetInt32());
+        Assert.Equal(2, root.GetProperty("schema").GetInt32());
+        Assert.False(root.TryGetProperty("shim", out _));
         Assert.Equal(catalog.World, root.GetProperty("world").GetString());
         Assert.Equal(catalog.WitSha256, root.GetProperty("witSha256").GetString());
-        Assert.Equal(catalog.Shim.Package,
-            root.GetProperty("shim").GetProperty("package").GetString());
-        Assert.Equal(catalog.Shim.Version,
-            root.GetProperty("shim").GetProperty("version").GetString());
         Assert.Equal(
             [
                 "baseline", "environment", "preopenedDirectories", "network",
@@ -58,7 +54,7 @@ public sealed class HostingPlatformCatalogJavaScriptWriterTests
         var provider = new NetWasmPlatformImportProvider(
             "wasi:test/api@1.0.0", (NetWasmPlatformCapability)99, []);
         var catalog = new HostingPlatformCatalog(
-            1, "world", "hash", new("shim", "version"), [provider]);
+            2, "world", "hash", [provider]);
 
         Assert.Throws<InvalidDataException>(() => writer.Write(catalog));
     }

@@ -332,7 +332,12 @@ public sealed class EntryPointContractCoverageTests
                 "z"),
         };
         third = third with { JSExport = new InteropExportDeclaration(null) };
-        var metadata = Snapshot([first, second, third]);
+        // A component lift keeps its full canonical name.
+        var lift = Method("Lift", 4, true, CliValueKind.I4, []) with
+        {
+            WitExport = new WitExportDeclaration(string.Empty, "[async-lift]run") { IsComponentLift = true },
+        };
+        var metadata = Snapshot([first, second, third, lift]);
         var finder = new MethodFinder(metadata.Methods);
         var options = Options();
 
@@ -348,7 +353,7 @@ public sealed class EntryPointContractCoverageTests
                 options with { UseJavaScriptExportBoundary = true })
             .Select(candidate => candidate.Export.Name));
         var wit = new WitExportResolver();
-        Assert.Equal(["cm32p2|test:pkg/interface@1|z"],
+        Assert.Equal(["[async-lift]run", "cm32p2|test:pkg/interface@1|z"],
             wit.Resolve(metadata, finder, options)
             .Select(candidate => candidate.Export.Name));
         var post = new WitPostReturnExportResolver();
@@ -452,6 +457,43 @@ public sealed class EntryPointContractCoverageTests
             Method("Main", 2, true, CliValueKind.Void, []),
             repository,
             repository));
+    }
+
+    // A managed executable's entry ends the process through CoreLib's one
+    // parameterless RunProcessExit; any other entry has no process to end.
+    [Fact]
+    public void ManagedExecutableRequiresExactlyOneProcessExit()
+    {
+        var coreLib = new AssemblyIdentity("System.Private.CoreLib");
+        var platformTypeKey = new EntityKey(coreLib, 0x02000001);
+        MethodDefinitionModel Exit(int token, string name = "RunProcessExit", bool isStatic = true) => new(
+            new EntityKey(coreLib, 0x06000000 + token),
+            platformTypeKey,
+            name,
+            isStatic,
+            MethodSignatureModel.Create(CliValueKind.Void),
+            0);
+        var type = new TypeDefinitionModel(
+            platformTypeKey,
+            "System.Runtime.InteropServices",
+            "PlatformServices",
+            false,
+            [],
+            []);
+        var exit = Exit(1);
+        var others = new[] { Exit(2, "Other"), Exit(3, isStatic: false) };
+        var resolver = new ManagedExecutableExitResolver();
+        var single = new ArgumentFactoryRepository(
+            type with { Methods = [exit.Key, .. others.Select(method => method.Key)] },
+            [exit, .. others]);
+
+        Assert.Equal(exit.Key, resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, single, single));
+        Assert.Null(resolver.Resolve(CompilerEntryPointKind.RawFunction, single, single));
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, null!, single));
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, single, null!));
+        var missing = new ArgumentFactoryRepository(type);
+        Assert.Throws<CompilerException>(() =>
+            resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, missing, missing));
     }
 
     [Fact]

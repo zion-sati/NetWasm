@@ -242,6 +242,15 @@ test("aborting a call the worker cannot observe rejects with the signal's reason
   const sent = worker.sent.length;
   await assert.rejects(client.invoke("add", [4], { signal: aborted }), /already aborted/);
   assert.equal(worker.sent.length, sent);
+
+  // Options without a signal are no signal; a failure leaves an abandoned call's rejection as it was.
+  const plain = client.invoke("add", [5], {});
+  const gone = new AbortController();
+  const dropped = client.invoke("add", [6], { signal: gone.signal });
+  gone.abort(new Error("gone"));
+  await assert.rejects(dropped, /gone/);
+  worker.emit("error", { message: "worker crashed" });
+  await assert.rejects(plain, /worker crashed/);
 });
 
 test("a task the worker's export canceled rejects with an AbortError, as on the page", async () => {

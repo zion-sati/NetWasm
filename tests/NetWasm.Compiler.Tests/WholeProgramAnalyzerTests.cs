@@ -429,8 +429,7 @@ public sealed class WholeProgramAnalyzerTests
             fields,
             methods,
             methodInstances,
-            symbols,
-            PlatformWorldCapabilities.None);
+            symbols);
         var analyzer = services.GetRequiredService<IWholeProgramAnalyzerFactory>().Create(
             snapshot,
             types,

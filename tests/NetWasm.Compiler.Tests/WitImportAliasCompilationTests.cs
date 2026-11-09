@@ -28,34 +28,13 @@ public sealed class WitImportAliasCompilationTests
 
             namespace WitImportAliasFixture;
 
-            internal static class GeneratedClockAndPollBindings
+            internal static class GeneratedClockBindings
             {
-                [WitImport("wasi:clocks/monotonic-clock@0.2.11", "now")]
+                [WitImport("wasi:clocks/monotonic-clock@0.3.2", "now")]
                 internal static extern long Now();
 
-                [WitImport("wasi:clocks/monotonic-clock@0.2.11", "resolution")]
+                [WitImport("wasi:clocks/monotonic-clock@0.3.2", "get-resolution")]
                 internal static extern long Resolution();
-
-                [WitImport("wasi:clocks/monotonic-clock@0.2.11", "subscribe-instant")]
-                internal static extern int SubscribeInstant(long instant);
-
-                [WitImport("wasi:clocks/monotonic-clock@0.2.11", "subscribe-duration")]
-                internal static extern int SubscribeDuration(long duration);
-
-                [WitImport("wasi:io/poll@0.2.11", "[resource-drop]pollable")]
-                internal static extern void Drop(int handle);
-
-                [WitImport("wasi:io/poll@0.2.11", "[method]pollable.ready")]
-                internal static extern int IsReady(int handle);
-
-                [WitImport("wasi:io/poll@0.2.11", "[method]pollable.block")]
-                internal static extern void Block(int handle);
-
-                [WitImport("wasi:io/poll@0.2.11", "poll")]
-                internal static extern void Poll(
-                    nuint handles,
-                    nuint handleCount,
-                    nuint result);
             }
 
             public static class EntryPoint
@@ -96,7 +75,7 @@ public sealed class WitImportAliasCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
 
         Assert.Equal(42, observed);

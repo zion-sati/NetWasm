@@ -594,6 +594,35 @@ public sealed class VirtualDispatchCallEmitterTests
         Assert.Empty(request.Instruction.Stack);
     }
 
+    // A dispatch whose receiver analysis proved non-null, as newobj produced it, skips
+    // its null check, unless the proof describes another snapshot of the body.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DispatchSkipsOnlyTheNullCheckAProofCovers(bool stale)
+    {
+        var type = ReferenceType();
+        var signature = MethodSignatureModel.Create(
+            CliValueKind.Void,
+            CliValueKind.ManagedReference);
+        var method = Method(Key(0x06000016), type, signature);
+        var request = CreateDispatchRequest(
+            method,
+            [new DispatchTargetModel(type, method)],
+            [CliValueKind.ManagedReference],
+            consumed: 1,
+            out var indices);
+        request = request with { Instruction = WithNonNullProof(request.Instruction, stale) };
+
+        Emit(
+            (ICallEmitter)CreateEmitter(new RecordingLayoutProvider()),
+            request,
+            indices);
+
+        Assert.Equal(stale, ((RecordingInstructionWriter)GetCodeWriter(request.Instruction)).ToInstructions()
+            .Any(code => code.Opcode == WasmOpcodes.I32EqualZero));
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32, 0)]
     [InlineData(WasmTarget.Wasm64, 8)]

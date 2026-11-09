@@ -24,6 +24,18 @@ public sealed class WitWorldSpecifierFormatterTests
         Assert.Equal("example:component/command", result);
     }
 
+    // wasm-tools reads a specifier as WIT, so a name that is a keyword keeps its '%'.
+    [Theory]
+    [InlineData("test:async", "y", "test:%async/y")]
+    [InlineData("stream:world@1.0.0", "export", "%stream:%world/%export@1.0.0")]
+    [InlineData("error-context:map", "async-x", "%error-context:%map/async-x")]
+    public void EscapesKeywordsAndKeepsTheVersion(string package, string world, string expected)
+    {
+        var formatter = AsFormatter(new WitWorldSpecifierFormatter());
+
+        Assert.Equal(expected, formatter.Format(new WitWorld(0, world, package, [], [])));
+    }
+
     [Fact]
     public void RejectsNullWorld()
     {

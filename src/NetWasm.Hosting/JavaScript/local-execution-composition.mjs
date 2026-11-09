@@ -12,14 +12,13 @@ import { importLocalVerifiedModule } from "./local-verified-module-importer.mjs"
 import { createNetWasmExecutionFacade } from "./netwasm-execution-facade.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
 import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
-import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
 import { executeWithTimeZoneResources } from "./timezone-execution.mjs";
 import { selectTimeZoneSidecar } from "./timezone-sidecar-selector.mjs";
 
 const factoryKeys = ["manifestPath", "platform"];
-const platformKeys = ["createFilesystem", "createShim"];
+const platformKeys = ["createFilesystem", "createImports"];
 
 export function createLocalExecutionComposition(
   options,
@@ -33,7 +32,7 @@ export function createLocalExecutionComposition(
   const transport = createLocalArtifactTransport({ manifestPath: options.manifestPath });
   const prepareProviders = createProviderExecutionComposition({
     catalog: platformProviderCatalog,
-    createShim: options.platform.createShim,
+    createImports: options.platform.createImports,
     hashBytes: transport.hashBytes,
     importModule: importLocalVerifiedModule,
     isAbsoluteHostPath: isAbsolute,
@@ -41,6 +40,7 @@ export function createLocalExecutionComposition(
     snapshotManifest: validateDeploymentManifest,
   });
   const validateRequest = createExecutionRequestValidator({
+    hostDirectories: false,
     isAbsoluteHostPath: isAbsolute,
     selectProviderKind,
   });
@@ -49,10 +49,7 @@ export function createLocalExecutionComposition(
     throw new TypeError("local NetWasm execution Strategy resolver is invalid");
   }
   const executeDeployment = createDeploymentExecution({
-    createFilesystem: preopens => createPreview2FilesystemScope({
-      createFilesystem: options.platform.createFilesystem,
-      preopens,
-    }),
+    createFilesystem: options.platform.createFilesystem,
     createOutputFinalization,
     createTimeZoneMaterializer: mountReadOnlyFile => createLocalTimeZoneMaterializer({
       manifestPath: options.manifestPath,

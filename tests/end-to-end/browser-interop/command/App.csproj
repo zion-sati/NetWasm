@@ -6,7 +6,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <NetWasmRawWasm>true</NetWasmRawWasm>
-    <NetWasmComponentContract>async-command</NetWasmComponentContract>
     <NetWasmPublishTarget>browser</NetWasmPublishTarget>
   </PropertyGroup>
   <ItemGroup>

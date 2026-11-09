@@ -12,7 +12,7 @@ const configuration = Object.freeze({
     environment: Object.freeze(["MODE"]),
     network: "denyAll",
     preopens: Object.freeze([]),
-    randomness: false,
+    randomness: false, temporaryDirectory: false, workingDirectory: false,
   }),
 });
 const startup = Object.freeze({ buildFingerprint: "1".repeat(64), manifestSha256: "2".repeat(64) });

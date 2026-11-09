@@ -60,7 +60,7 @@ Every option is optional:
 
 | Option | Effect |
 | --- | --- |
-| `stdout`, `stderr` | Receive guest output one line at a time. `stderr` also receives a report of each managed exception that leaves an export. Default: the console. |
+| `stdout`, `stderr` | Receive guest output one line at a time, asynchronously: a line an export writes arrives after the export returns. `stderr` also receives a report of each managed exception that leaves an export. Default: the console. |
 | `environment` | Adds or replaces environment variables over the project's `NetWasmEnvironmentVariable` items. |
 | `modules` | Supplies import modules at runtime, keyed by module name, beside the bundled `NetWasmJavaScriptModule` items. A module may not be both. |
 | `onNotification` | Receives notifications an import module sends, after the import returns. |
@@ -79,9 +79,24 @@ in a worker.
 | `page` (default) | Synchronous exports return values; `Task` exports return Promises. Import modules may use the DOM. | C# drives page UI, or calls are short. |
 | `worker` | Every export returns a Promise. Import modules run in the worker and reach the page through notifications. | Work is long enough to block the page. |
 | `page;worker` | Publishes both, sharing one runtime. | The page needs some calls of each kind. |
+| `node` | As `page`, from Node.js code. Import modules are passed to `open()`. | A server, CLI or serverless function calls C#. |
 
 The worker host publishes `browser/<AssemblyName>.worker-client.mjs`; see
-[C# Web Workers](web-workers.md). A `JSObject` stays in the realm that created
+[C# Web Workers](web-workers.md). The node host publishes
+`<AssemblyName>.node.mjs`, at the root of the publish directory when it is the
+only host and under `browser/` beside a page or worker:
+
+```js
+import { open } from "./publish/Functions.node.mjs";
+
+const app = await open({ modules: { probe: { report: console.log } } });
+console.log(await app.FetchTitle("https://example.com/"));
+await app.close();
+```
+
+A Node.js host loads the deployment from its files and makes HTTP requests
+with Node.js's `fetch`, so a serverless handler imports the module like any
+other dependency. A `JSObject` stays in the realm that created
 it, so the worker host rejects exports that pass one (NWSDK081).
 
 ## Declare imports and exports
@@ -160,7 +175,7 @@ For an ordinary browser application rather than a worker, reachable
 `[JSImport]` declarations require `<NetWasmRawWasm>true</NetWasmRawWasm>`.
 The same `NetWasmJavaScriptModule` item supplies page-owned modules; in
 that boundary the module runs in the page realm and may access the DOM. Follow
-the [entry-contract walkthrough](sdk-quickstart.md#choose-the-entry-contract-and-output-kind)
+the [output-kind walkthrough](sdk-quickstart.md#choose-the-output-kind)
 for the raw browser publish settings.
 
 A page starts the published application with the generated `run()` helper.
@@ -213,7 +228,7 @@ const request = {
   environment: [],
   grants: {
     environment: [], preopens: [], network: "denyAll",
-    clocks: [], randomness: true,
+    clocks: [], randomness: true, temporaryDirectory: false, workingDirectory: false,
   },
   applicationImports: [],
 };
@@ -238,6 +253,9 @@ local launcher replaces host paths in `detail` with `<host-path>`.
 
 The example grants randomness, which the NetWasm runtime uses to seed string
 hashing, and no network, clocks, environment variables or filesystem mounts.
+`workingDirectory` and `temporaryDirectory` mount the program's directory and
+a private temporary directory, which only the local launcher does; a browser
+request sets both to `false`.
 The deployment's `requiredImportModules` lists every platform capability it
 can use; a request that leaves one of them ungranted fails with a `detail` that
 names it. Enable only the capabilities your application requires. JavaScript
@@ -405,6 +423,11 @@ Such calls can nest up to 32 levels. A deeper call throws `NetWasmHostError`,
 which the managed caller observes as a `JSException`, and the session remains
 usable.
 
+A `JsModule` host does not suspend the guest, so a synchronous .NET call that
+must wait for I/O, such as `Console.ReadLine` or a synchronous socket call,
+throws `PlatformNotSupportedException`; await the async API instead. File APIs answer without waiting, so `File.ReadAllText`
+and the other synchronous file calls work.
+
 Calls in both directions run concurrently: while an asynchronous export awaits,
 page code can call it or another export again, in the page realm and in a
 worker alike. `dispose()` drains accepted worker calls, while `terminate()`
@@ -465,6 +488,32 @@ public static void Cancel() => _job?.Cancel();
 
 The runtime adds nothing beyond this: no cancellation type crosses the
 boundary, as in .NET's own browser interop.
+
+## Read and write files the user picked
+
+A browser project whose program uses `System.IO` file APIs gets an in-memory
+file system with an empty `/tmp`, where `Path.GetTempPath()` points. The page
+module (`open`), a command's `run` module and a worker client module also
+export `mount`, `unmount` and `sync`, which put what the user picked at an
+absolute path the program's `File`, `FileStream` and `Directory` calls see:
+
+```js
+import { open, mount, sync } from "./browser/Editor.mjs";
+
+const [picked] = await showOpenFilePicker();
+await mount("/input/notes.txt", await picked.getFile());      // a File: read-only
+await mount("/work", await navigator.storage.getDirectory()); // a handle: read-write
+
+const app = await open();
+app.Summarize("/input/notes.txt", "/work/summary.txt");
+await sync("/work"); // writes the program's changes back to the directory
+```
+
+A `File` or `Blob` mounts read-only, and writing to it throws `IOException`, as
+for a read-only mount on Linux. A `FileSystemFileHandle` or
+`FileSystemDirectoryHandle`, such as the Origin Private File System's root, is
+copied in when mounted and written back by `sync`. A worker client's mounts
+reach every worker it creates, including workers started before the mount.
 
 ## Serve the published files
 

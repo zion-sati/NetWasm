@@ -34,5 +34,8 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? quotientReuse = null,
         string? integerCheckElimination = null,
         string? loopInvariantExpressionHoisting = null,
-        string? multicastInlineDispatch = null);
+        string? multicastInlineDispatch = null,
+        string? newObjectNullCheckElimination = null,
+        string? loopStrengthReduction = null,
+        string? rangeBranchFolding = null);
 }

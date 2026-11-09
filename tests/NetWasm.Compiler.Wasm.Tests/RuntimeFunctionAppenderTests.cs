@@ -131,7 +131,8 @@ public sealed class RuntimeFunctionAppenderTests
     }
 
     [Fact]
-    public void ProcessEntryUsesTheSharedAsynchronousBoundary()
+    // Only Task and Task<int> are entry point results, and both have the callback-lifted entry.
+    public void AnAsynchronousProcessEntryWithoutTheCallbackEntryIsRejected()
     {
         var entries = new RecordingEntryPointEmitter();
         var wrapper = new FixedAsyncWrapperEmitter();
@@ -176,7 +177,7 @@ public sealed class RuntimeFunctionAppenderTests
         var helperIndices = new Dictionary<string, int>();
         var boundaries = new List<ManagedBoundaryPlanEntry>();
 
-        var result = appender.Append(
+        Assert.Throws<InvalidOperationException>(() => appender.Append(
             [],
             0,
             [],
@@ -187,15 +188,9 @@ public sealed class RuntimeFunctionAppenderTests
             binding,
             helperIndices,
             new FixedFunctionIndexResolver(),
-            boundaries);
-
-        Assert.Equal(2, result.EntryPointIndex);
-        Assert.Equal(1, wrapper.Count);
-        Assert.Equal(1, helpers.Count);
+            boundaries));
+        Assert.Equal(0, wrapper.Count);
         Assert.Equal(0, entries.Count);
-        Assert.Equal(
-            ManagedBoundaryKind.AsynchronousProcessStart,
-            boundaries[^1].Kind);
     }
 
     [Fact]
@@ -241,9 +236,13 @@ public sealed class RuntimeFunctionAppenderTests
             instance,
             instance,
             instance)
-        { GetVoidResult = instance, CommandEntryPoint = run };
+        {
+            GetVoidResult = instance,
+            CommandEntry = new(run, instance, instance),
+        };
         var functions = new List<WasmFunctionDefinition>();
         var boundaries = new List<ManagedBoundaryPlanEntry>();
+        var helperIndices = new Dictionary<string, int>();
 
         var result = appender.Append(
             functions,
@@ -254,17 +253,23 @@ public sealed class RuntimeFunctionAppenderTests
             TestRuntimeInitialization.Create(0),
             WasmEntryPointProfile.Process,
             binding,
-            new Dictionary<string, int>(),
+            helperIndices,
             new FixedFunctionIndexResolver(),
             boundaries);
 
+        // The start initializes the runtime; the callback and the exit code export after it.
         Assert.Equal(2, result.EntryPointIndex);
         Assert.Equal(0, wrapper.Count);
         Assert.Equal(0, helpers.Count);
-        Assert.Equal(1, entries.Count);
+        Assert.Equal(3, entries.Count);
+        Assert.Equal([true, false, false], entries.InitializesRuntime);
         Assert.Same(run, entries.Completion);
-        Assert.Equal(CliValueKind.Void, functions[^1].Type.Result);
-        Assert.Equal(ManagedBoundaryKind.ProcessEntryPoint, boundaries[^1].Kind);
+        Assert.Equal(CliValueKind.Void, functions[2].Type.Result);
+        Assert.Equal(
+            [("netwasm.entry.callback", 3), ("netwasm.entry.exit_code", 4)],
+            helperIndices.OrderBy(pair => pair.Value).Select(pair => (pair.Key, pair.Value)));
+        Assert.All(boundaries.TakeLast(3), boundary =>
+            Assert.Equal(ManagedBoundaryKind.ProcessEntryPoint, boundary.Kind));
     }
 
     private static IRuntimeFunctionAppender CreateAppender() => new[]
@@ -368,6 +373,7 @@ public sealed class RuntimeFunctionAppenderTests
     private sealed class RecordingEntryPointEmitter : IEntryPointEmitter
     {
         public int Count { get; private set; }
+        public List<bool> InitializesRuntime { get; } = [];
         public bool HasFinalizers { get; private set; }
         public bool ReportTerminalExceptions { get; private set; }
         public MethodInstanceModel? Completion { get; private set; }
@@ -379,12 +385,16 @@ public sealed class RuntimeFunctionAppenderTests
             IFunctionIndexResolver functionIndices,
             bool reportTerminalExceptions,
             EntityKey? argumentFactory,
-            MethodInstanceModel? completion)
+            MethodInstanceModel? completion,
+            EntityKey? localTimePreflight,
+            EntityKey? processExit,
+            bool initializesRuntime)
         {
             Count++;
+            InitializesRuntime.Add(initializesRuntime);
             HasFinalizers = hasFinalizers;
             ReportTerminalExceptions = reportTerminalExceptions;
-            Completion = completion;
+            Completion ??= completion;
             return [3];
         }
     }

@@ -6,10 +6,12 @@ const dependencyKeys = [
   "closeCanonicalBinding",
   "composeImports",
   "createCanonicalBinding",
-  "createGuestNotifier",
-  "createReactor",
+  "createEventPump",
   "createReleaseCommand",
+  "readComponentModel",
 ];
+// The module the Component Model's own built-ins come from, such as waitable sets.
+const componentModelRootModule = "$root";
 const requiredRequestKeys = Object.freeze([
   "abi",
   "adapter",
@@ -22,7 +24,6 @@ const requiredRequestKeys = Object.freeze([
 const requestKeys = new Set([
   ...requiredRequestKeys,
   "releaseActions",
-  "schedule",
 ]);
 
 export function createRawExportSessionOpener(dependencies) {
@@ -45,7 +46,6 @@ export function createRawExportSessionOpener(dependencies) {
         prepareInterop,
         providers,
         releaseActions = [],
-        schedule = globalThis.queueMicrotask?.bind(globalThis),
       } = request;
       if (abi === null || typeof abi !== "object" || Array.isArray(abi)
           || adapter === null || typeof adapter !== "object" || Array.isArray(adapter)
@@ -53,8 +53,7 @@ export function createRawExportSessionOpener(dependencies) {
           || providers === null || typeof providers !== "object" || Array.isArray(providers)) {
         throw new TypeError("raw export-session inputs are invalid");
       }
-      if (typeof instantiate !== "function" || typeof prepareInterop !== "function"
-          || typeof schedule !== "function") {
+      if (typeof instantiate !== "function" || typeof prepareInterop !== "function") {
         throw new TypeError("raw export-session actions are required");
       }
       validateReleaseActions(releaseActions);
@@ -65,8 +64,10 @@ export function createRawExportSessionOpener(dependencies) {
       let closeSession;
       let settleFailure;
       const failure = new Promise(resolve => { settleFailure = resolve; });
+      let pump;
       const markFailed = cause => {
         if (terminalFailure !== null || state === "closing" || state === "closed") return;
+        pump?.stop();
         const shouldClose = state === "ready";
         terminalFailure = cause instanceof NetWasmHostError
           ? cause
@@ -99,25 +100,18 @@ export function createRawExportSessionOpener(dependencies) {
           throw new NetWasmHostError("NetWasm export session is closed");
         }
       };
-      const assertReactorAvailable = () => {
-        if (terminalFailure !== null) throw terminalFailure;
-        if (state !== "initializing" && state !== "ready") {
-          throw new NetWasmHostError("NetWasm export-session reactor is unavailable");
-        }
-      };
-
       let interop;
-      let reactor = null;
       let canonicalBinding;
+      // Released in reverse: the event loop stops before anything it could call closes.
       const ownedReleaseActions = () => [
         ...releaseActions,
         ...(canonicalBinding === undefined ? [] : [() =>
           dependencies.closeCanonicalBinding({ binding: canonicalBinding })]),
-        ...(reactor === null ? [] : [reactor.close]),
         ...(interop === undefined ? [] : [
           interop.close,
           interop.drainTerminalReports,
         ]),
+        ...(pump === undefined ? [] : [pump.stop]),
       ];
       const rollback = async cause => {
         state = "closing";
@@ -137,47 +131,25 @@ export function createRawExportSessionOpener(dependencies) {
         interop = readInterop(prepareInterop(Object.freeze({
           assertAsyncDeliveryAvailable,
           assertAvailable,
+          // A JavaScript promise's result reached the module: its loop runs what that queued.
+          observeAsyncCompletion(error) {
+            if (error === undefined) pump?.turn();
+            else markFailed(error);
+          },
           observeAsyncFailure: markFailed,
         })));
-        let notifier;
-        if (requiresReactor(adapter)) {
-          reactor = readReactor(dependencies.createReactor({
-            onReady(token) {
-              if (terminalFailure !== null || state === "closing" || state === "closed") {
-                return;
-              }
-              if (notifier === undefined) {
-                markFailed(new NetWasmHostError(
-                  "NetWasm export-session reactor became ready before binding"));
-                return;
-              }
-              notifier.notify(token);
-            },
-            onFailure() {
-              markFailed(new NetWasmHostError("NetWasm export-session reactor failed"));
-            },
-            schedule,
-          }));
-          throwIfFailed();
+        if (Object.hasOwn(interop.imports, componentModelRootModule)) {
+          throw new TypeError("the Component Model built-ins are reserved by the export session");
         }
-        canonicalBinding = dependencies.createCanonicalBinding({
-          adapter,
-          providers,
-          reactor: reactor === null ? null : Object.freeze({
-            assertAvailable: assertReactorAvailable,
-            cancel: reactor.cancel,
-            module: plan.reactorHostModule,
-            watch: reactor.watch,
-          }),
-        });
+        canonicalBinding = dependencies.createCanonicalBinding({ adapter, providers });
+        const componentModel = dependencies.readComponentModel({ binding: canonicalBinding });
         const imports = dependencies.composeImports({
           canonicalBinding,
-          inventory: Object.freeze({
-            target: plan.target,
-            imports: plan.imports,
-            reactorHostModule: plan.reactorHostModule,
+          inventory: Object.freeze({ target: plan.target, imports: plan.imports }),
+          physicalProviders: Object.freeze({
+            ...interop.imports,
+            [componentModelRootModule]: componentModel.root,
           }),
-          physicalProviders: interop.imports,
         });
         const result = await instantiate(Object.freeze({ module, imports }));
         throwIfFailed();
@@ -186,18 +158,12 @@ export function createRawExportSessionOpener(dependencies) {
         throwIfFailed();
         dependencies.bindCanonicalInstance({ binding: canonicalBinding, instance });
         throwIfFailed();
-        if (reactor !== null) {
-          const guestWake = readInstanceFunction(instance, plan.reactorGuestExport);
-          notifier = dependencies.createGuestNotifier({
-            guestWake,
-            observeWake(error) {
-              if (error !== undefined) {
-                markFailed(new NetWasmHostError("NetWasm export-session guest wake failed"));
-              }
-            },
-          });
-          throwIfFailed();
-        }
+        pump = readEventPump(dependencies.createEventPump(Object.freeze({
+          componentModel,
+          run: readInstanceFunction(instance, plan.eventLoopRunExport),
+          callback: readInstanceFunction(instance, plan.eventLoopCallbackExport),
+          onFailure: markFailed,
+        })));
 
         const releaseCommand = dependencies.createReleaseCommand(ownedReleaseActions());
         let closeCompletion;
@@ -235,20 +201,13 @@ export function createRawExportSessionOpener(dependencies) {
         readInstanceFunction(instance, plan.canonicalInitializeExport)();
         throwIfFailed();
         state = "ready";
-        return Object.freeze({ close, exports: boundary.exports, failure });
+        pump.turn();
+        return Object.freeze({ close, exports: runLoopAfter(boundary.exports, pump.turn), failure });
       } catch (cause) {
         return rollback(cause);
       }
     },
   });
-}
-
-function requiresReactor(adapter) {
-  const metadata = readDataProperty(adapter, "rawAdapterMetadata");
-  const capabilities = metadata === null || typeof metadata !== "object"
-    ? undefined
-    : readDataProperty(metadata, "requiredCapabilities");
-  return Array.isArray(capabilities) && capabilities.includes("bindReactor");
 }
 
 function readInterop(value) {
@@ -275,17 +234,27 @@ function readInterop(value) {
   });
 }
 
-function readReactor(value) {
-  assertExactDataObject(value, ["cancel", "close", "watch"], "raw export-session reactor");
-  if (typeof value.cancel !== "function" || typeof value.close !== "function"
-      || typeof value.watch !== "function") {
-    throw new TypeError("raw export-session reactor actions are invalid");
+function readEventPump(value) {
+  if (value === null || typeof value !== "object"
+      || typeof value.turn !== "function" || typeof value.stop !== "function") {
+    throw new TypeError("raw export-session event pump is invalid");
   }
-  return Object.freeze({
-    cancel: value.cancel.bind(value),
-    close: value.close.bind(value),
-    watch: value.watch.bind(value),
-  });
+  return Object.freeze({ turn: value.turn.bind(value), stop: value.stop.bind(value) });
+}
+
+// Each call into the module may queue work, which its event loop then runs.
+function runLoopAfter(exports, turn) {
+  const wrapped = {};
+  for (const [name, value] of Object.entries(exports)) {
+    wrapped[name] = typeof value !== "function" ? value : (...parameters) => {
+      try {
+        return value.apply(exports, parameters);
+      } finally {
+        turn();
+      }
+    };
+  }
+  return Object.freeze(wrapped);
 }
 
 function readInstance(result) {

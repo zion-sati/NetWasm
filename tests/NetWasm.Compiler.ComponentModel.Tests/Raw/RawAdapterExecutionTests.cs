@@ -473,6 +473,9 @@ public sealed class RawAdapterExecutionTests
             const third = { ...second, nested: { tag: "some", val: undefined }, shape: { tag: "circle", val: 1.5 },
               handle: new FileHandle("third") };
             round(third, { ...third, smalls: [65535] });
+            // As JavaScript Component Model hosts read an option, null is none too.
+            const fourth = { ...third, maybe: null, handle: new FileHandle("fourth") };
+            round(fourth, { ...fourth, maybe: undefined, smalls: [65535] });
             const one = harness.register(new FileHandle("one"));
             const two = harness.register(new FileHandle("two"));
             harness.view().setUint32(1024, one, true);
@@ -480,6 +483,244 @@ public sealed class RawAdapterExecutionTests
             assert.equal(imports.peek(address(1024), wasm64 ? 2n : 2), 2);
             assert.deepEqual(peeked.map(handle => handle.name), ["one", "two"]);
             assert.equal(harness.borrow(0, one).name, "one");
+            """);
+    }
+
+    private static readonly RawPayloadOperation[] StreamOperations =
+    [
+        RawPayloadOperation.StreamNew, RawPayloadOperation.StreamRead, RawPayloadOperation.StreamWrite,
+        RawPayloadOperation.StreamDropReadable, RawPayloadOperation.StreamDropWritable,
+    ];
+
+    private static readonly RawPayloadOperation[] FutureOperations =
+    [
+        RawPayloadOperation.FutureNew, RawPayloadOperation.FutureRead, RawPayloadOperation.FutureWrite,
+        RawPayloadOperation.FutureDropReadable, RawPayloadOperation.FutureDropWritable,
+    ];
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void MovesStreamsAndFuturesThroughTheHostComponentModel(WasmTarget target)
+    {
+        Run(target, [
+            (null, """{"stream":"u8"}"""),
+            (null, """{"result":{"ok":null,"err":"u32"}}"""),
+            (null, """{"future":1}"""),
+            (null, """{"stream":"string"}"""),
+            (null, """{"list":"u32"}"""),
+            (null, """{"stream":4}"""),
+        ], [
+            Function("write", [("data", D(0))], D(2)),
+            Function("names", [("prefix", P("string"))], D(3)),
+            Function("lists", [], D(5)),
+        ], """
+            const written = [];
+            const harness = await open({ "sample:raw/api@1.0.0": {
+              write(data) {
+                return (async () => {
+                  for await (const chunk of data) written.push(...chunk);
+                  return { tag: "err", val: 7 };
+                })();
+              },
+              names: prefix => [prefix + "1", prefix + "β"],
+              lists: () => [[1, 2], []],
+            } });
+            const { imports, address, view, readPointer, readBytes, wasm64 } = harness;
+            const cm = harness.componentModel;
+            const split = ends => [Number(ends & 0xffffffffn), Number(ends >> 32n)];
+            const count = value => wasm64 ? BigInt(value) : value;
+
+            // The guest writes bytes to a stream the host reads, and reads the future of the write.
+            const [readable, writable] = split(imports["[stream-new-0]write"]());
+            harness.writeBytes(64, [5, 6, 7]);
+            assert.equal(imports["[async-lower][stream-write-0]write"](writable, address(64), count(3)), (3 << 4) | 0);
+            imports["[stream-drop-writable-0]write"](writable);
+            const future = imports.write(readable);
+            const set = cm.root["[waitable-set-new]"]();
+            cm.root["[waitable-join]"](future, set);
+            const status = imports["[async-lower][future-read-1]write"](future, address(128));
+            if (status === 0xffffffff) {
+              await new Promise(resolve => setTimeout(resolve, 5));
+              assert.equal(cm.root["[waitable-set-poll]"](set, 0), 4);
+            } else {
+              assert.equal(status, 0);
+            }
+            assert.deepEqual(written, [5, 6, 7]);
+            assert.deepEqual([view().getUint8(128), view().getUint32(132, true)], [1, 7]);
+            cm.root["[waitable-join]"](future, 0);
+            imports["[future-drop-readable-1]write"](future);
+
+            // The host supplies a stream of strings the guest reads into its memory.
+            const nameStream = imports.names(address(0), count(0));
+            const stride = wasm64 ? 16 : 8;
+            assert.equal(imports["[async-lower][stream-read-0]names"](nameStream, address(256), count(4)), (2 << 4) | 0);
+            const text = slot => new TextDecoder().decode(readBytes(
+              readPointer(256 + slot * stride), readPointer(256 + slot * stride + stride / 2)));
+            assert.deepEqual([text(0), text(1)], ["1", "β"]);
+            assert.equal(imports["[async-lower][stream-read-0]names"](nameStream, address(256), count(4)), 1);
+            imports["[stream-drop-readable-0]names"](nameStream);
+
+            // Each value a host stream yields is one element, even an array.
+            const listStream = imports.lists();
+            assert.equal(imports["[async-lower][stream-read-0]lists"](listStream, address(512), count(4)), (2 << 4) | 0);
+            assert.equal(readPointer(512 + stride / 2), 2);
+            assert.equal(readPointer(512 + stride + stride / 2), 0);
+            """);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CarriesStreamsAndFuturesInMemoryAndResourcesAsElements(WasmTarget target)
+    {
+        Run(target, [
+            ("file-handle", "\"resource\""),
+            (null, """{"handle":{"own":0}}"""),
+            (null, """{"stream":1}"""),
+            (null, """{"stream":"u8"}"""),
+            (null, """{"result":{"ok":null,"err":"u32"}}"""),
+            (null, """{"future":4}"""),
+            (null, """{"tuple":{"types":[3,5]}}"""),
+            (null, """{"future":"u32"}"""),
+            (null, """{"list":3}"""),
+            (null, """{"future":null}"""),
+            (null, """{"list":9}"""),
+        ], [
+            Function("open", [], D(6)),
+            Function("settle", [("pending", D(10))], null),
+            Function("consume", [("done", D(7)), ("inputs", D(8))], null),
+            Function("files", [], D(2)),
+            Function("take", [("files", D(2))], null),
+            Function("signal", [], D(9)),
+        ], """
+            class FileHandle { constructor(name) { this.name = name; } }
+            let consumed;
+            let taken;
+            const harness = await open({ "sample:raw/api@1.0.0": {
+              open: () => [[Uint8Array.of(1, 2)], Promise.resolve({ tag: "ok", val: undefined })],
+              consume(done, inputs) {
+                consumed = (async () => {
+                  const bytes = [];
+                  for (const input of inputs) for await (const chunk of input) bytes.push(...chunk);
+                  return [await done, bytes];
+                })();
+              },
+              files: () => [new FileHandle("a"), new FileHandle("b")],
+              take(files) {
+                taken = (async () => {
+                  const names = [];
+                  for await (const chunk of files) names.push(...chunk.map(file => file.name));
+                  return names;
+                })();
+              },
+              signal: () => Promise.resolve(),
+              settle(pending) { settled = Promise.all(pending); },
+            } });
+            let settled;
+            const { imports, address, view, wasm64 } = harness;
+            const count = value => wasm64 ? BigInt(value) : value;
+            const split = ends => [Number(ends & 0xffffffffn), Number(ends >> 32n)];
+            const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+            // A tuple of a stream and a future reaches the guest's return area as two handles.
+            imports.open(address(64));
+            const [opened, completion] = [view().getUint32(64, true), view().getUint32(68, true)];
+            assert.equal(imports["[async-lower][stream-read-0]open"](opened, address(128), count(8)), (2 << 4) | 0);
+            assert.deepEqual([...harness.readBytes(128, 2)], [1, 2]);
+            await tick();
+            assert.equal(imports["[async-lower][future-read-1]open"](completion, address(160)), 0);
+            assert.equal(view().getUint8(160), 0);
+
+            // A future in a flat parameter and streams in a list both lift.
+            const [done, doneWriter] = split(imports["[future-new-0]consume"]());
+            view().setUint32(192, 42, true);
+            assert.equal(imports["[async-lower][future-write-0]consume"](doneWriter, address(192)), 0);
+            imports["[future-drop-writable-0]consume"](doneWriter);
+            const [input, inputWriter] = split(imports["[stream-new-1]consume"]());
+            harness.writeBytes(224, [9, 8]);
+            imports["[async-lower][stream-write-1]consume"](inputWriter, address(224), count(2));
+            imports["[stream-drop-writable-1]consume"](inputWriter);
+            view().setUint32(256, input, true);
+            imports.consume(done, address(256), count(1));
+            assert.deepEqual(await consumed, [42, [9, 8]]);
+
+            // Resources travel as stream elements: the host's register, the guest's transfer.
+            const files = imports.files();
+            assert.equal(imports["[async-lower][stream-read-0]files"](files, address(288), count(4)), (2 << 4) | 0);
+            assert.deepEqual([0, 4].map(offset => harness.borrow(0, view().getUint32(288 + offset, true)).name), ["a", "b"]);
+            const [outgoing, outgoingWriter] = split(imports["[stream-new-0]take"]());
+            imports.take(outgoing);
+            const handle = harness.register(new FileHandle("c"));
+            view().setUint32(320, handle, true);
+            assert.equal(imports["[async-lower][stream-write-0]take"](outgoingWriter, address(320), count(1)), (1 << 4) | 0);
+            imports["[stream-drop-writable-0]take"](outgoingWriter);
+            assert.deepEqual(await taken, ["c"]);
+            assert.throws(() => harness.borrow(0, handle));
+
+            // A future without a payload only completes, here and as a list element.
+            const signal = imports.signal();
+            await tick();
+            assert.equal(imports["[async-lower][future-read-0]signal"](signal, address(352)), 0);
+            const [pending, pendingWriter] = split(imports["[future-new-0]settle"]());
+            view().setUint32(384, pending, true);
+            imports.settle(address(384), count(1));
+            assert.equal(imports["[async-lower][future-write-0]settle"](pendingWriter, address(0)), 0);
+            assert.deepEqual(await settled, [undefined]);
+            """);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CallsAnAsyncImportAsASubtaskThatReturnsLater(WasmTarget target)
+    {
+        Run(target, [
+            (null, """{"result":{"ok":"u32","err":"string"}}"""),
+        ], [
+            Function("sum", [("a", P("u32")), ("b", P("u32"))], D(0), new("async-freestanding")),
+            Function("ping", [], null, new("async-freestanding")),
+            Function("now", [], P("u64"), new("async-freestanding")),
+        ], """
+            let finish;
+            const pinged = [];
+            const harness = await open({ "sample:raw/api@1.0.0": {
+              sum(a, b) {
+                if (a === 0) throw { payload: "zero" };
+                if (a === 1) return { tag: "err", val: "tagged" };
+                return new Promise(resolve => { finish = () => resolve(a + b); });
+              },
+              ping() { pinged.push(true); },
+              now: () => 42n,
+            } });
+            const { imports, address, view, readPointer, readBytes, wasm64 } = harness;
+            const cm = harness.componentModel;
+            const stride = wasm64 ? 8 : 4;
+
+            // A value the provider has at once returns with the call.
+            assert.equal(imports["[async-lower]now"](address(64)), 2);
+            assert.equal(view().getBigUint64(64, true), 42n);
+            assert.equal(imports["[async-lower]ping"](), 2);
+            assert.deepEqual(pinged, [true]);
+            assert.equal(imports["[async-lower]sum"](0, 1, address(96)), 2);
+            assert.equal(view().getUint8(96), 1);
+            assert.equal(new TextDecoder().decode(readBytes(readPointer(96 + stride), readPointer(96 + 2 * stride))), "zero");
+            assert.equal(imports["[async-lower]sum"](1, 1, address(96)), 2);
+            assert.equal(new TextDecoder().decode(readBytes(readPointer(96 + stride), readPointer(96 + 2 * stride))), "tagged");
+
+            // A promise makes the call a subtask whose RETURNED event follows the delivery.
+            const status = imports["[async-lower]sum"](2, 3, address(128));
+            assert.equal(status & 0xf, 1);
+            const subtask = status >>> 4;
+            const set = cm.root["[waitable-set-new]"]();
+            cm.root["[waitable-join]"](subtask, set);
+            assert.equal(cm.root["[waitable-set-poll]"](set, 0), 0);
+            finish();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            assert.equal(cm.root["[waitable-set-poll]"](set, 0), 1);
+            assert.deepEqual([view().getUint32(0, true), view().getUint32(4, true)], [subtask, 2]);
+            assert.deepEqual([view().getUint8(128), view().getUint32(128 + stride, true)], [0, 5]);
+            cm.root["[subtask-drop]"](subtask);
             """);
     }
 
@@ -569,9 +810,25 @@ public sealed class RawAdapterExecutionTests
                 [.. function.Parameters.Select(parameter => new WitParameter(parameter.Name, parameter.Type))],
                 function.Result,
                 function.Kind);
-            var layout = new RawWitImportLayout.Callable(new(declaration, planner.Plan(canonical, target)));
+            var asynchronous = function.Kind.Name.StartsWith("async", StringComparison.Ordinal);
+            var layout = new RawWitImportLayout.Callable(new(declaration, planner.Plan(canonical, target, asynchronous)));
             layouts.Add(layout);
-            imports.Add(layout.Identity, new RawWitImportDeclaration.Callable(Interface, DeploymentInterface, declaration));
+            imports.Add(layout.Identity, new RawWitImportDeclaration.Callable(Interface, DeploymentInterface, declaration)
+            {
+                Asynchronous = asynchronous,
+            });
+            var payloads = WitPayloadTypes.Find(document, declaration);
+            for (var index = 0; index < payloads.Length; index++)
+            {
+                foreach (var operation in WitPayloadTypes.IsStream(document, payloads[index]) ? StreamOperations : FutureOperations)
+                {
+                    var payload = new RawWitImportDeclaration.Payload(
+                        Interface, DeploymentInterface, declaration, index, payloads[index], operation);
+                    var payloadLayout = new RawPayloadImportLayoutBuilder(resolver).Build(new(document, payload, target));
+                    layouts.Add(payloadLayout);
+                    imports.Add(payloadLayout.Identity, payload);
+                }
+            }
         }
         var catalog = new RawWitImportCatalog(
             document,

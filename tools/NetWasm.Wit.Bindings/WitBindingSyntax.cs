@@ -204,6 +204,18 @@ public sealed class WitBindingSyntaxFormatter(
             "result" => $"WitResult<{ResultType(document, kind.Value, "ok")}, {ResultType(document, kind.Value, "err")}>",
             "handle" => FormatTypeName(document, new WitTypeReference.Defined(
                 kind.Value.EnumerateObject().Single().Value.GetInt32())),
+            // A received stream<u8> is a readable Stream; a sent one is the Stream it copies.
+            "stream" when kind.Value.ValueKind == JsonValueKind.String && kind.Value.GetString() == "u8" =>
+                "global::System.IO.Stream",
+            // Any other element type is an asynchronous sequence of its values.
+            "stream" when kind.Value.ValueKind != JsonValueKind.Null =>
+                $"global::System.Collections.Generic.IAsyncEnumerable<{FormatTypeName(document, kind.Value)}>",
+            "stream" => throw WitBindingException.Invalid(
+                "a WIT stream without an element type is not supported yet"),
+            "future" when kind.Value.ValueKind != JsonValueKind.Null =>
+                $"global::System.Threading.Tasks.Task<{FormatTypeName(document, kind.Value)}>",
+            "future" => throw WitBindingException.Invalid(
+                "a WIT future without a value is not supported yet"),
             _ => throw WitBindingException.Invalid(
                 $"unsupported anonymous WIT type '{kind.Name}'"),
         };

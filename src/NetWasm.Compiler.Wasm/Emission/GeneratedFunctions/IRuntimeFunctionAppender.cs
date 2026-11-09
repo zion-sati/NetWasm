@@ -19,5 +19,7 @@ internal interface IRuntimeFunctionAppender
         IDictionary<string, int> asyncHelperIndices,
         IFunctionIndexResolver functionIndices,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
-        EntityKey? entryPointArgumentFactory = null);
+        EntityKey? entryPointArgumentFactory = null,
+        EntityKey? localTimePreflight = null,
+        EntityKey? processExit = null);
 }

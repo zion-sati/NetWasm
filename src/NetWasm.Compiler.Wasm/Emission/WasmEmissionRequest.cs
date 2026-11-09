@@ -69,6 +69,8 @@ public sealed record WasmEmissionRequest(
         MemberExecutionPlan.Empty;
 
     public EntityKey? EntryPointArgumentFactory { get; init; }
+    // CoreLib's process-exit method, which the process entry calls after Main.
+    public EntityKey? EntryPointExit { get; init; }
 
     public bool CollectManagedMethodMemoryMetrics { get; init; }
 

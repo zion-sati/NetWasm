@@ -1,15 +1,18 @@
 namespace System.Runtime.InteropServices.CommandLine
 {
+    using System.Runtime.InteropServices.WebAssembly;
+
     internal sealed class ManagedEntryPointArgumentSource(
-        ICommandLineArgumentSource commandLineArguments) :
+        IProcessEnvironment commandLineArguments) :
         IManagedEntryPointArgumentSource
     {
-        private readonly ICommandLineArgumentSource _commandLineArguments =
+        private readonly IProcessEnvironment _commandLineArguments =
             commandLineArguments ?? throw new ArgumentNullException();
 
         public string[] Read()
         {
-            var commandLineArguments = _commandLineArguments.Read();
+            var commandLineArguments = _commandLineArguments.GetArguments() ??
+                throw new InvalidOperationException("The command line service returned no arguments.");
             if (commandLineArguments.Length <= 1)
             {
                 return [];

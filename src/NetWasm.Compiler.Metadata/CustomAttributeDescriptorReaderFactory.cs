@@ -7,7 +7,17 @@ public sealed class CustomAttributeDescriptorReaderFactory : ICustomAttributeDes
 {
     public ICustomAttributeDescriptorReader Create(MetadataCompilationSnapshot metadata,
         ITypeDefinitionResolver definitions, ITypeIdentityResolver identities) =>
-        new CustomAttributeDescriptorReader(metadata.Assemblies.ToImmutableDictionary(
-            assembly => assembly.Identity, assembly => assembly.Metadata), definitions,
+        new CustomAttributeDescriptorReader(
+            metadata.Assemblies.ToImmutableDictionary(assembly => assembly.Identity, assembly => assembly.Metadata),
+            definitions,
+            new MetadataSignatureTypeResolver(new MetadataTypeResolver(definitions), identities));
+}
+
+public sealed class AssemblyAttributeDescriptorReaderFactory : IAssemblyAttributeDescriptorReaderFactory
+{
+    public IAssemblyAttributeDescriptorReader Create(MetadataCompilationSnapshot metadata,
+        ITypeDefinitionResolver definitions, ITypeIdentityResolver identities) =>
+        new AssemblyAttributeDescriptorReader(
+            metadata.Assemblies.ToImmutableDictionary(assembly => assembly.Identity, assembly => assembly.Metadata),
             new MetadataSignatureTypeResolver(new MetadataTypeResolver(definitions), identities));
 }

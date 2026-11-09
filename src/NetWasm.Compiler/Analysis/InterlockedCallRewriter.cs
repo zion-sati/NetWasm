@@ -40,6 +40,12 @@ internal sealed class InterlockedCallRewriter(
                     DiagnosticCode.UnsupportedMetadata,
                     "Interlocked.CompareExchange requires one closed type argument"));
             }
+            // An enum or primitive compares by its bits in the managed body; the atomic
+            // compare-exchange replaces only a reference's.
+            if (target.MethodArguments[0].IsValueType)
+            {
+                continue;
+            }
             instructions[index] = call with
             {
                 Operation = CilOperation.CompareExchange,

@@ -39,7 +39,7 @@ public sealed class ComponentManifestBuilderTests
         Assert.Equal("task", manifest.JavaScript.Imports[0].AsyncReturn);
         Assert.Equal("value-task", manifest.JavaScript.Exports[0].AsyncReturn);
         Assert.Equal("1.28.1", manifest.Adapters.Jco);
-        Assert.Equal("0.20.1", manifest.Adapters.Preview2Shim);
+        Assert.Equal("0.20.1", manifest.Adapters.Preview3Shim);
         Assert.Equal("wasm-tools 1.256.0", manifest.WasmToolsVersion);
         Assert.Equal(1, manifest.Version);
         Assert.Equal("example:component@1.0.0", manifest.Package);
@@ -165,7 +165,7 @@ public sealed class ComponentManifestBuilderTests
         Assert.Equal("run", inputs.JavaScript.Imports[0].Name);
         Assert.Null(inputs.JavaScript.Imports[0].AsyncReturn);
         Assert.Equal("jco", inputs.Adapters.Jco);
-        Assert.Equal("shim", inputs.Adapters.Preview2Shim);
+        Assert.Equal("shim", inputs.Adapters.Preview3Shim);
         Assert.Equal("run", function.Name);
         Assert.Empty(ComponentJavaScriptBoundary.Empty.Imports);
         Assert.Null(ComponentAdapterVersions.None.Jco);

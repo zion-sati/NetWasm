@@ -41,9 +41,8 @@ namespace System.Diagnostics
             }
         }
 
-        public static long GetTimestamp() => unchecked((long)
-            Runtime.InteropServices.PlatformServices.MonotonicClock
-                .GetMonotonicTime());
+        public static long GetTimestamp() =>
+            Runtime.InteropServices.PlatformServices.Clock.GetTimestamp();
 
         public static TimeSpan GetElapsedTime(long startingTimestamp) =>
             GetElapsedTime(startingTimestamp, GetTimestamp());

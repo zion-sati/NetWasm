@@ -57,7 +57,7 @@ function data() {
         preopens: [],
         network: "denyAll",
         clocks: [],
-        randomness: false,
+        randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
       applicationImports: [{
         module: applicationModule,
@@ -135,15 +135,13 @@ test("selects only required explicitly bound application modules", () => {
   });
 });
 
-test("selects type-only provider modules without inventing function imports", () => {
+test("selects type-only application modules and the provider of a type-only platform interface", () => {
   const platform = data();
   platform.manifest.requiredImportModules = [platformModule];
   platform.manifest.requiredImports = [];
   platform.request.applicationImports = [];
   const selectedPlatform = createSelector()(platform);
-  assert.deepEqual(
-    selectedPlatform.platformProviders.map(provider => provider.module),
-    [platformModule]);
+  assert.deepEqual(selectedPlatform.platformProviders.map(provider => provider.module), [platformModule]);
   assert.deepEqual(selectedPlatform.applicationProviders, []);
 
   const application = data();
@@ -157,13 +155,11 @@ test("selects type-only provider modules without inventing function imports", ()
   }]);
 });
 
-test("excludes runtime-owned reactor imports from external provider selection", () => {
+test("excludes runtime-owned diagnostic imports from external provider selection", () => {
   const value = data();
-  const reactorModule = "netwasm:runtime/reactor-host@1.0.0";
-  value.manifest.requiredImportModules.push(reactorModule);
-  value.manifest.requiredImports.push(
-    func(reactorModule, "watch", ["u32", "s64"]),
-    func(reactorModule, "cancel", ["u32"]));
+  const diagnosticModule = "netwasm:diagnostics/terminal@1.0.0";
+  value.manifest.requiredImportModules.push(diagnosticModule);
+  value.manifest.requiredImports.push(func(diagnosticModule, "report", ["u32"]));
 
   const selected = createSelector()(value);
 

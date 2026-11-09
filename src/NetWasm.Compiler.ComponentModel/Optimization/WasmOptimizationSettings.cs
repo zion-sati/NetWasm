@@ -50,4 +50,10 @@ public sealed record WasmOptimizationSettings(
     // Whether wasm-opt repeats the preset until the module stops shrinking (O1 and above).
     bool Converge = false,
     LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting = LoopInvariantExpressionHoistingPolicy.Disabled,
-    MulticastDispatchPolicy MulticastDispatch = MulticastDispatchPolicy.Shared);
+    MulticastDispatchPolicy MulticastDispatch = MulticastDispatchPolicy.Shared,
+    // Whether wasm-opt may assume the first KiB of memory is unused and fold constant address
+    // adds into load and store offsets (O1 and above).
+    bool LowMemoryUnused = false,
+    NewObjectNullCheckEliminationPolicy NewObjectNullCheckElimination = NewObjectNullCheckEliminationPolicy.Disabled,
+    LoopStrengthReductionPolicy LoopStrengthReduction = LoopStrengthReductionPolicy.Disabled,
+    RangeBranchFoldingPolicy RangeBranchFolding = RangeBranchFoldingPolicy.Disabled);

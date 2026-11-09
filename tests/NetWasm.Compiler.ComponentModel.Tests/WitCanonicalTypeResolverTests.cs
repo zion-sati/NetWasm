@@ -61,27 +61,18 @@ public sealed class WitCanonicalTypeResolverTests
         Assert.Contains("resource type", exception.Diagnostic.Message);
     }
 
-    [Fact]
-    public void RejectsUserDefinedFutureBeforeLowering()
+    // A stream or future end is a handle; its payload, if any, is its element type.
+    [Theory]
+    [InlineData("{\"stream\":\"u32\"}", CanonicalAbiTypeKind.Stream, true)]
+    [InlineData("{\"stream\":null}", CanonicalAbiTypeKind.Stream, false)]
+    [InlineData("{\"future\":\"u32\"}", CanonicalAbiTypeKind.Future, true)]
+    [InlineData("{\"future\":null}", CanonicalAbiTypeKind.Future, false)]
+    public void ResolvesStreamsAndFuturesWithTheirPayloads(string kind, CanonicalAbiTypeKind expected, bool hasPayload)
     {
-        var document = Document(Type(0, null, """{"future":"u32"}"""));
+        var resolved = _resolver.Resolve(Document(Type(0, null, kind)), new WitTypeReference.Defined(0));
 
-        var exception = Assert.Throws<CompilerException>(() =>
-            _resolver.Resolve(document, new WitTypeReference.Defined(0)));
-
-        Assert.Equal("NW1009", exception.Diagnostic.Id);
-        Assert.Contains("future", exception.Diagnostic.Message);
-    }
-
-    [Fact]
-    public void RejectsUserDefinedStreamBeforeLowering()
-    {
-        var document = Document(Type(0, null, "{\"stream\":\"u32\"}"));
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            _resolver.Resolve(document, new WitTypeReference.Defined(0)));
-
-        Assert.Contains("stream", exception.Diagnostic.Message);
+        Assert.Equal(expected, resolved.Kind);
+        Assert.Equal(hasPayload ? CanonicalAbiTypeKind.U32 : null, resolved.ElementType?.Kind);
     }
 
     [Fact]

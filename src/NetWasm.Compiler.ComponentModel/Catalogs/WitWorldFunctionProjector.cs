@@ -34,11 +34,6 @@ public sealed class WitWorldFunctionProjector(
     IWitJavaScriptNameFormatter javaScriptNames,
     IWitWorkerTypeProjector workerTypes) : IWitWorldFunctionProjector
 {
-    private const string ReactorGuestInterface =
-        "netwasm:runtime/reactor-guest@1.0.0";
-    private const string ReactorHostInterface =
-        "netwasm:runtime/reactor-host@1.0.0";
-    private const string ReactorWakeFunction = "wake";
     private readonly IWitWorldValidator _worlds = worlds ??
         throw new ArgumentNullException(nameof(worlds));
     private readonly IWitWorldSpecifierFormatter _worldSpecifiers = worldSpecifiers ??
@@ -160,11 +155,10 @@ public sealed class WitWorldFunctionProjector(
             .OrderBy(export => export.Operation, StringComparer.Ordinal)
             .ToImmutableArray();
         return new(
-            2,
+            3,
             _worldSpecifiers.Format(world),
             ordered,
-            _workerTypes.Project(document, ordered),
-            ProjectReactor(packagedDocument, packagedWorld));
+            _workerTypes.Project(document, ordered));
     }
 
     private WitWorkerExport ProjectWorkerExport(
@@ -222,67 +216,6 @@ public sealed class WitWorldFunctionProjector(
     // its package.
     private string ProjectInterfaceJavaScriptRoot(WitWorldItem item, WitInterface definition) =>
         _javaScriptNames.FormatMember(item.Name.Contains(':', StringComparison.Ordinal) ? definition.Name : item.Name);
-
-    private WitWorkerReactor? ProjectReactor(
-        WitDocument document,
-        WitWorld packagedWorld)
-    {
-        WitWorkerReactor? reactor = null;
-        var hostCount = 0;
-        foreach (var item in packagedWorld.Imports)
-        {
-            if (item.InterfaceId is not { } id)
-            {
-                continue;
-            }
-            // The reactor interfaces by their own identity, whatever the world
-            // names them.
-            var definition = document.Interfaces[id]!;
-            if (_interfaceSpecifiers.Format(definition) == ReactorHostInterface)
-            {
-                hostCount++;
-            }
-        }
-        foreach (var item in packagedWorld.Exports)
-        {
-            if (item.InterfaceId is not { } id)
-            {
-                continue;
-            }
-            var definition = document.Interfaces[id]!;
-            if (_interfaceSpecifiers.Format(definition) != ReactorGuestInterface)
-            {
-                continue;
-            }
-            var wakes = definition.Functions.Where(function =>
-                    function.Name == ReactorWakeFunction)
-                .ToArray();
-            if (wakes.Length != 1 || wakes[0].Kind.Name != "freestanding")
-            {
-                throw ComponentException.Invalid(
-                    "WIT worker reactor-guest export is incomplete");
-            }
-            if (reactor is not null)
-            {
-                throw ComponentException.Invalid(
-                    "WIT worker reactor-guest export is duplicated");
-            }
-            reactor = new(
-                item.Name,
-                ProjectInterfaceJavaScriptRoot(item, definition),
-                _javaScriptNames.FormatMember(wakes[0].Name));
-        }
-        if (reactor is null && hostCount == 0)
-        {
-            return null;
-        }
-        if (reactor is null || hostCount > 1)
-        {
-            throw ComponentException.Invalid(
-                "WIT worker reactor-host imports require exactly one reactor-guest export and may be declared at most once");
-        }
-        return reactor;
-    }
 
     private void ValidateApplicationWorldSubset(
         WitDocument packagedDocument,
@@ -409,11 +342,16 @@ public sealed class WitWorldFunctionProjector(
             pair.First.Name == pair.Second.Name
             && _types.Format(leftDocument, pair.First.Type)
                 == _types.Format(rightDocument, pair.Second.Type))
-        && (left.Result is null && right.Result is null
-            || left.Result is not null
-                && right.Result is not null
-                && _types.Format(leftDocument, left.Result)
-                    == _types.Format(rightDocument, right.Result));
+        && EquivalentResult(leftDocument, left.Result, rightDocument, right.Result);
+
+    private bool EquivalentResult(
+        WitDocument leftDocument,
+        WitTypeReference? left,
+        WitDocument rightDocument,
+        WitTypeReference? right) =>
+        left is null || right is null
+            ? left is null && right is null
+            : _types.Format(leftDocument, left) == _types.Format(rightDocument, right);
 
     private bool EquivalentFunctionKind(
         WitDocument leftDocument,

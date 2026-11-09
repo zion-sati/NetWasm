@@ -84,12 +84,12 @@ public sealed class WitWorkerContractReaderTests
     }
 
     internal static JsonObject Fixture() => JsonNode.Parse("""
-        { "schemaVersion": 2, "world": "example:worker/application@1.0.0",
+        { "schemaVersion": 3, "world": "example:worker/application@1.0.0",
           "exports": [{ "operation": "echo", "placement": "root", "worldItem": "echo", "interface": null,
             "javaScriptRoot": "", "javaScriptMember": "echo", "function": "echo", "parameters": [],
             "result": { "kind": "defined", "primitive": null, "definition": 42 }, "kind": { "name": "freestanding", "resourceType": null } }],
           "types": [{ "id": 42, "name": "item", "owner": { "kind": "interface", "identity": "example:worker/values@1.0.0" },
-            "kind": { "record": { "fields": [{ "name": "text", "type": "string" }] } } }], "reactor": null }
+            "kind": { "record": { "fields": [{ "name": "text", "type": "string" }] } } }] }
         """)!.AsObject();
 
     internal static byte[] Bytes(JsonObject value) => Encoding.UTF8.GetBytes(value.ToJsonString());

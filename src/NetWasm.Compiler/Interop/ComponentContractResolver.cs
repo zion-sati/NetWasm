@@ -243,14 +243,18 @@ internal sealed class ComponentContractResolver(
         {
             if (item.Function is not null)
             {
-                functions.Add(ResolveFunction(
+                if (ResolveFunction(
                     metadata,
                     symbols,
                     document,
                     string.Empty,
                     string.Empty,
                     item.Function,
-                    imported));
+                    imported) is { } worldFunction)
+                {
+                    functions.Add(worldFunction);
+                }
+
                 continue;
             }
             var @interface = document.Interfaces[item.InterfaceId!.Value];
@@ -258,14 +262,17 @@ internal sealed class ComponentContractResolver(
             var coreInterfaceName = item.CoreBindingName ?? interfaceName;
             foreach (var function in @interface.Functions)
             {
-                functions.Add(ResolveFunction(
+                if (ResolveFunction(
                     metadata,
                     symbols,
                     document,
                     interfaceName,
                     coreInterfaceName,
                     function,
-                    imported));
+                    imported) is { } interfaceFunction)
+                {
+                    functions.Add(interfaceFunction);
+                }
             }
         }
         return functions
@@ -274,7 +281,7 @@ internal sealed class ComponentContractResolver(
             .ToImmutableArray();
     }
 
-    private CanonicalAbiFunction ResolveFunction(
+    private CanonicalAbiFunction? ResolveFunction(
         MetadataCompilationSnapshot metadata,
         ISymbolFormatter symbols,
         WitDocument document,
@@ -283,14 +290,24 @@ internal sealed class ComponentContractResolver(
         WitFunction function,
         bool imported)
     {
-        if (function.Kind.Name.StartsWith("async", StringComparison.Ordinal))
-        {
-            throw Invalid(
-                $"user-defined asynchronous WIT function '{function.Name}' in " +
-                (interfaceName.Length == 0 ? "the world" : $"interface '{interfaceName}'") + " is not supported");
-        }
         var matchingMethods = WitBindings(metadata).Find(imported ? WitBindingKind.Import : WitBindingKind.Export,
             interfaceName, function.Name);
+        // An async func is bound through its canonical forms: an import's
+        // [ComponentBuiltIn] `[async-lower]` call, an export's [ComponentExport]
+        // `[async-lift]` start and callback, which wit-component checks against
+        // the world. A synchronous WitImport or WitExport cannot bind one.
+        if (function.Kind.Name.StartsWith("async", StringComparison.Ordinal))
+        {
+            if (matchingMethods.IsEmpty)
+            {
+                return null;
+            }
+
+            throw Invalid(
+                $"the asynchronous WIT function '{function.Name}' in " +
+                (interfaceName.Length == 0 ? "the world" : $"interface '{interfaceName}'") +
+                $" cannot have a synchronous {(imported ? "WitImport" : "WitExport")}; regenerate its bindings");
+        }
         var candidates = _bindings.Select(metadata, matchingMethods);
         if (!imported && candidates.Length != 1)
         {
@@ -432,8 +449,9 @@ internal sealed class ComponentContractResolver(
         {
             foreach (var method in methods)
             {
-                if (method.WitImport is { } import) Add(WitBindingKind.Import, import.InterfaceName, import.FunctionName, method);
-                if (method.WitExport is { } export) Add(WitBindingKind.Export, export.InterfaceName, export.FunctionName, method);
+                // A built-in is part of the canonical ABI, not a binding of a world function.
+                if (method.WitImport is { IsCanonicalBuiltIn: false } import) Add(WitBindingKind.Import, import.InterfaceName, import.FunctionName, method);
+                if (method.WitExport is { IsComponentLift: false } export) Add(WitBindingKind.Export, export.InterfaceName, export.FunctionName, method);
                 if (method.WitPostReturn is { } postReturn)
                     Add(WitBindingKind.PostReturn, postReturn.InterfaceName, postReturn.FunctionName, method);
             }

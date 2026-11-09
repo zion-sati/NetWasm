@@ -47,7 +47,7 @@ public sealed class CryptographicRandomSurfaceTests
         // No WIT world is selected: an accidentally retained secure import fails compilation.
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", []));
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport?.InterfaceName == "wasi:random/random@0.2.11");
+            method.WitImport?.InterfaceName == "wasi:random/random@0.3.2");
         Assert.DoesNotContain(result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values), body =>
             body.Method.DeclaringType.FullName == "System.Security.Cryptography.RandomNumberGeneratorImplementation");
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
@@ -76,7 +76,7 @@ public sealed class CryptographicRandomSurfaceTests
             WitWorld: "netwasm:platform/platform@1.0.0"));
         Assert.Contains(result.Program.WitImportMethods, method => method.WitImport is
         {
-            InterfaceName: "wasi:random/random@0.2.11",
+            InterfaceName: "wasi:random/random@0.3.2",
             FunctionName: "get-random-bytes",
         });
         var names = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
@@ -112,7 +112,7 @@ public sealed class CryptographicRandomSurfaceTests
 
         Assert.Contains(result.Program.WitImportMethods, method => method.WitImport is
         {
-            InterfaceName: "wasi:random/random@0.2.11",
+            InterfaceName: "wasi:random/random@0.3.2",
             FunctionName: "get-random-bytes",
         });
         Assert.Contains(result.Program.Methods.Values, body =>

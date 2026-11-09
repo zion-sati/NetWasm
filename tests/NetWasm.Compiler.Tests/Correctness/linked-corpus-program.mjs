@@ -39,13 +39,11 @@ export function createLinkedCorpusProgram({
       const observer = createLinkedCorpusObserver({
         async instantiate(reportImmediate) {
           let managed;
-          const prefix = request.target === "wasm64" ? "cm64p2" : "cm32p2";
           managed = await instantiate({
             module,
             manifest,
             runtimeModules: createRuntimeImports(
               request.target, () => managed.instance.exports.memory,
-              token => managed.instance.exports[`${prefix}|netwasm:runtime/reactor-guest@1|wake`](token),
               () => managed.instance.exports),
             managedExceptionReporting: { reportImmediate },
           });

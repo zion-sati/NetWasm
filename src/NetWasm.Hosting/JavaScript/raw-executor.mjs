@@ -1,24 +1,20 @@
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract } from "./execution-contracts.mjs";
 import { executeCommand } from "./command-executor.mjs";
 import { createExecutionScopeCloser } from "./execution-scope-closer.mjs";
 import { failedExecutionResult } from "./execution-result.mjs";
-import { createGuestWakeNotifier } from "./guest-wake-notifier.mjs";
-import { observeManagedProcess } from "./managed-process-observer.mjs";
-import { createPollableReactor } from "./pollable-reactor.mjs";
 import { buildRawAbiPlan } from "./raw-abi-plan-builder.mjs";
 import {
   bindRawCanonicalImportInstance,
   closeRawCanonicalImportBinding,
   createRawCanonicalImportBinding,
+  readRawComponentModel,
 } from "./raw-canonical-import-binding.mjs";
 import { bindRawExecutionInstance } from "./raw-execution-instance-binder.mjs";
 import { composeRawImports } from "./raw-import-composer.mjs";
 import { createTerminalManagedExport } from "./terminal-managed-export.mjs";
 
-const opaqueReactorFailure = Object.freeze({});
+// The module the Component Model's own built-ins come from, such as waitable sets.
+const componentModelRootModule = "$root";
 
 export async function executeRaw(request = {}) {
   if (request === null || typeof request !== "object" || Array.isArray(request)) {
@@ -39,9 +35,8 @@ export async function executeRaw(request = {}) {
     signal = null,
     instanceReleaseActions = [],
     releaseActions = [],
-    schedule = globalThis.queueMicrotask?.bind(globalThis),
   } = request;
-  if (contractKey !== commandExecutionContract && contractKey !== processExecutionContract) {
+  if (contractKey !== commandExecutionContract) {
     throw new TypeError("raw execution contract is unsupported");
   }
   if (module === null || typeof module !== "object") {
@@ -74,31 +69,10 @@ export async function executeRaw(request = {}) {
   if (typeof subscribeInteropCompletion !== "function") {
     throw new TypeError("raw interop completion subscription is required");
   }
-  if (typeof schedule !== "function") {
-    throw new TypeError("raw execution scheduler is required");
-  }
   const closeInstanceScope = createExecutionScopeCloser(instanceReleaseActions);
   const closeCallerScope = createExecutionScopeCloser(releaseActions);
 
-  if (contractKey === commandExecutionContract) {
-    return executeRawCommand({
-      contractKey,
-      abi,
-      adapter,
-      module,
-      providers,
-      physicalProviders,
-      instantiate,
-      bindInstance,
-      consumeTerminalEvent,
-      drainTerminalReports,
-      signal,
-      closeInstanceScope,
-      closeCallerScope,
-    });
-  }
-  return executeRawProcess({
-    subscribeInteropCompletion,
+  return executeRawCommand({
     contractKey,
     abi,
     adapter,
@@ -107,11 +81,12 @@ export async function executeRaw(request = {}) {
     physicalProviders,
     instantiate,
     bindInstance,
+    consumeTerminalEvent,
     drainTerminalReports,
+    subscribeInteropCompletion,
     signal,
     closeInstanceScope,
     closeCallerScope,
-    schedule,
   });
 }
 
@@ -126,10 +101,17 @@ async function executeRawCommand({
   bindInstance,
   consumeTerminalEvent,
   drainTerminalReports,
+  subscribeInteropCompletion,
   signal,
   closeInstanceScope,
   closeCallerScope,
 }) {
+  if (Object.hasOwn(physicalProviders, componentModelRootModule)) {
+    return closeOwnedScopes(
+      rawAbiFailure(new TypeError("the Component Model built-ins are reserved by the executor")),
+      closeInstanceScope,
+      closeCallerScope);
+  }
   let plan;
   try {
     plan = buildRawAbiPlan({ contractKey, abi });
@@ -137,8 +119,10 @@ async function executeRawCommand({
     return closeOwnedScopes(rawAbiFailure(error), closeInstanceScope, closeCallerScope);
   }
   let canonicalBinding;
+  let componentModel;
   try {
-    canonicalBinding = createRawCanonicalImportBinding({ adapter, providers, reactor: null });
+    canonicalBinding = createRawCanonicalImportBinding({ adapter, providers });
+    componentModel = readRawComponentModel({ binding: canonicalBinding });
   } catch (error) {
     return closeOwnedScopes(rawAbiFailure(error), closeInstanceScope, closeCallerScope);
   }
@@ -155,7 +139,10 @@ async function executeRawCommand({
     imports = composeRawImports({
       canonicalBinding,
       inventory: importInventory(plan),
-      physicalProviders,
+      physicalProviders: Object.freeze({
+        ...physicalProviders,
+        [componentModelRootModule]: componentModel.root,
+      }),
     });
   } catch (error) {
     return closeScope(rawAbiFailure(error));
@@ -177,7 +164,7 @@ async function executeRawCommand({
   let binding;
   try {
     bindRawCanonicalImportInstance({ binding: canonicalBinding, instance });
-    binding = bindRawExecutionInstance({ instance, plan });
+    binding = bindRawExecutionInstance({ componentModel, instance, plan });
   } catch (error) {
     return closeScope(rawExportFailure(error));
   }
@@ -192,143 +179,14 @@ async function executeRawCommand({
       }
       clearActiveException.call(instance.exports);
     });
-  const outcome = executeCommand({ run, signal });
-  await drainTerminalReports();
-  return closeScope(outcome);
-}
-
-async function executeRawProcess({
-  subscribeInteropCompletion,
-  contractKey,
-  abi,
-  adapter,
-  module,
-  providers,
-  physicalProviders,
-  instantiate,
-  bindInstance,
-  drainTerminalReports,
-  signal,
-  closeInstanceScope,
-  closeCallerScope,
-  schedule,
-}) {
-  let guestEntryEnabled = false;
-  let initializationReactorUse = false;
-  let observeWake;
-  let notifier;
-  const reactor = createPollableReactor({
-    onReady: token => notifier.notify(token),
-    onFailure: () => observeWake(opaqueReactorFailure),
-    schedule,
-  });
-  const closeReactorScope = createExecutionScopeCloser([
-    Object.freeze({
-      code: "host.raw-reactor",
-      message: "The execution host could not close the raw reactor.",
-      release: reactor.close,
-    }),
-  ]);
-  const closeBaseScope = outcome => closeOwnedScopes(
-    outcome,
-    closeReactorScope,
-    closeInstanceScope,
-    closeCallerScope);
-
-  function assertGuestEntry() {
-    if (guestEntryEnabled) return;
-    initializationReactorUse = true;
-    throw new Error("raw reactor use is unavailable before guest entry");
-  }
-
-  let plan;
-  try {
-    plan = buildRawAbiPlan({ contractKey, abi });
-  } catch (error) {
-    return closeBaseScope(rawAbiFailure(error));
-  }
-  let canonicalBinding;
-  try {
-    canonicalBinding = createRawCanonicalImportBinding({
-      adapter,
-      providers,
-      reactor: Object.freeze({
-        assertAvailable: assertGuestEntry,
-        cancel: reactor.cancel,
-        module: plan.reactorHostModule,
-        watch: reactor.watch,
-      }),
-    });
-  } catch (error) {
-    return closeBaseScope(rawAbiFailure(error));
-  }
-  const closeCanonicalScope = createExecutionScopeCloser([
-    canonicalReleaseAction(canonicalBinding),
-  ]);
-  const closeScope = outcome => closeOwnedScopes(
-    outcome,
-    closeReactorScope,
-    closeInstanceScope,
-    closeCanonicalScope,
-    closeCallerScope);
-  let imports;
-  try {
-    imports = composeRawImports({
-      canonicalBinding,
-      inventory: importInventory(plan),
-      physicalProviders,
-    });
-  } catch (error) {
-    return closeScope(rawAbiFailure(error));
-  }
-  if (signal?.aborted) {
-    return closeScope(preInstantiationCancellation());
-  }
-
-  let instance;
-  try {
-    instance = await instantiate(Object.freeze({ module, imports }));
-  } catch (error) {
-    return closeScope(initializationReactorUse
-      ? reactorInitializationFailure(error)
-      : rawInstantiationFailure(error));
-  }
-  if (initializationReactorUse) {
-    return closeScope(reactorInitializationFailure());
-  }
-
-  try {
-    bindInstance(instance);
-  } catch (error) {
-    return closeScope(rawInstanceBindingFailure(error));
-  }
-  let binding;
-  try {
-    bindRawCanonicalImportInstance({ binding: canonicalBinding, instance });
-    binding = bindRawExecutionInstance({ instance, plan });
-    notifier = createGuestWakeNotifier({
-      guestWake: binding.reactorGuest.wake,
-      observeWake: error => observeWake(error),
-    });
-  } catch (error) {
-    return closeScope(rawExportFailure(error));
-  }
-  guestEntryEnabled = true;
+  // A JavaScript interop completion gives the guest's event loop a turn to run what it
+  // queued.
+  const unsubscribe = subscribeInteropCompletion(() => componentModel.wake());
   let outcome;
   try {
-    outcome = await observeManagedProcess({
-      process: binding.process,
-      subscribeWake(observer) {
-        observeWake = observer;
-        const unsubscribeCompletion = subscribeInteropCompletion(observer);
-        return () => { unsubscribeCompletion(); observeWake = undefined; };
-      },
-      signal,
-    });
-  } catch (error) {
-    outcome = rawExecutionFailure(error);
+    outcome = await executeCommand({ run, signal });
   } finally {
-    guestEntryEnabled = false;
+    unsubscribe();
   }
   await drainTerminalReports();
   return closeScope(outcome);
@@ -346,7 +204,6 @@ function importInventory(plan) {
   return Object.freeze({
     target: plan.target,
     imports: plan.imports,
-    reactorHostModule: plan.reactorHostModule,
   });
 }
 
@@ -385,30 +242,12 @@ function rawInstanceBindingFailure(cause) {
     cause);
 }
 
-function rawExecutionFailure(cause) {
-  return failedExecutionResult(
-    "hostFailure",
-    "execution",
-    "host.raw-execution",
-    "The execution host could not execute the raw module.",
-    cause);
-}
-
 function rawExportFailure(cause) {
   return failedExecutionResult(
     "contractFailure",
     "instantiation",
     "contract.raw-exports",
     "The instantiated raw module does not expose its declared execution boundary.",
-    cause);
-}
-
-function reactorInitializationFailure(cause) {
-  return failedExecutionResult(
-    "contractFailure",
-    "instantiation",
-    "contract.reactor-initialization",
-    "The raw module used the reactor before guest entry.",
     cause);
 }
 

@@ -22,7 +22,7 @@ public sealed class WorkerEntryWriterTests
             ["monotonic"],
             "denyAll",
             false,
-            ["wasi:cli/environment@0.2.11", "wasi:io/streams@0.2.11", "wasi:random/random@0.2.11", "consumer.worker"],
+            ["wasi:cli/environment@0.3.2", "wasi:cli/stdout@0.3.2", "wasi:random/random@0.3.2", "consumer.worker"],
             true);
 
         new WorkerEntryWriter().WriteHost(request);
@@ -44,8 +44,7 @@ public sealed class WorkerEntryWriterTests
             StringComparison.Ordinal);
         Assert.Contains("import { bindWorkerImports, createBrowserRawExportSession, createWorkerSessionHost, mergeEnvironment } from \"netwasm:runtime/worker\";",
             source, StringComparison.Ordinal);
-        Assert.Contains("import { cli as preview2Cli } from \"netwasm:runtime/worker\";", source, StringComparison.Ordinal);
-        Assert.Contains("import { random as preview2Random } from \"netwasm:runtime/random\";", source, StringComparison.Ordinal);
+        Assert.Contains("import { createWasiPlatform, webPlatform } from \"netwasm:runtime/worker\";", source, StringComparison.Ordinal);
         Assert.DoesNotContain("file://", source.Split("consumer0")[0], StringComparison.Ordinal);
         Assert.Contains("snapshotDeploymentManifest: validateDeploymentManifest,", source, StringComparison.Ordinal);
         Assert.Contains("globalThis.addEventListener(\"messageerror\"", source, StringComparison.Ordinal);
@@ -58,14 +57,14 @@ public sealed class WorkerEntryWriterTests
         Assert.DoesNotContain("console[", source, StringComparison.Ordinal);
         Assert.Contains("Object.freeze({ name: \"MODE\", value: \"test\" })", source,
             StringComparison.Ordinal);
-        // Issue #121: only the Preview 2 families and providers the application links.
-        Assert.Contains("createShim: createSelectedPreview2ShimFactory({ cli: preview2Cli, io: preview2Io, random: preview2Random }),",
+        // Issue #121: only the providers the application links.
+        Assert.Contains("createImports: createWasiPlatform(Object.freeze({ initialDirectory: null, network: null })),",
             source, StringComparison.Ordinal);
         Assert.Contains("createFilesystemScope: null,", source, StringComparison.Ordinal);
-        Assert.Contains("\"module\":\"wasi:random/random@0.2.11\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("wasi:http/outgoing-handler", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("WASIShim", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("preview2Http", source, StringComparison.Ordinal);
+        Assert.Contains("\"module\":\"wasi:random/random@0.3.2\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("wasi:http/client", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("netwasm:runtime/filesystem", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("preview2", source, StringComparison.OrdinalIgnoreCase);
         Assert.True(source.LastIndexOf("import ", StringComparison.Ordinal)
             < source.IndexOf("function deepFreeze", StringComparison.Ordinal));
 
@@ -78,6 +77,40 @@ public sealed class WorkerEntryWriterTests
 
     // An import module binds every function its JavaScript module exports; a
     // module with no functions to bind is invalid unless it is an import module.
+    // A worker that links wasi:filesystem gets the page's file mounts (#142): its host passes its
+    // in-memory tree to the session, and its client exports mount, unmount and sync.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AWorkerThatUsesFilesTakesThePagesMounts(bool files)
+    {
+        using var directory = TemporaryDirectory.Create();
+        var hosting = Path.Combine(directory.Path, "hosting");
+        HostingCatalogFixture.Write(hosting);
+        var host = Path.Combine(directory.Path, "worker-entry.mjs");
+        new WorkerEntryWriter().WriteHost(new(hosting, host, [], ["argument"], [], ["monotonic"], "denyAll", false,
+            files ? ["wasi:cli/stdout@0.3.2", "wasi:filesystem/types@0.3.2"] : ["wasi:cli/stdout@0.3.2"], true));
+        var hostSource = File.ReadAllText(host);
+        Assert.Contains(files ? "  files: fileMounts," : "  files: null,", hostSource, StringComparison.Ordinal);
+        Assert.Equal(files, hostSource.Contains("new FileReaderSync()", StringComparison.Ordinal));
+
+        var client = Path.Combine(directory.Path, "client.mjs");
+        var declarations = Path.Combine(directory.Path, "client.d.mts");
+        new WorkerEntryWriter().WriteClient(new("app.worker.mjs", new string('1', 64), new string('2', 64), client,
+            declarations, [new("add", ["i32", "i32"], "i32", null)])
+        { FileMounts = files });
+        var clientSource = File.ReadAllText(client);
+        Assert.Equal(files, clientSource.Contains(
+            "import { createWorkerFileMounts, createWorkerSessionClient } from \"netwasm:runtime/worker-client\";",
+            StringComparison.Ordinal));
+        Assert.Equal(files, clientSource.Contains("export const { mount, unmount, sync } = fileMounts;", StringComparison.Ordinal));
+        Assert.Equal(files, clientSource.Contains("await fileMounts.attach(session)", StringComparison.Ordinal));
+        Assert.Contains(files ? "dispose: () => { detach(); return session.dispose(); }," : "dispose: () => session.dispose(),",
+            clientSource, StringComparison.Ordinal);
+        Assert.Equal(files, File.ReadAllText(declarations).Contains(
+            "export declare function unmount(guestPath: string): Promise<void>;", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void BindsEveryFunctionOfAnImportModule()
     {

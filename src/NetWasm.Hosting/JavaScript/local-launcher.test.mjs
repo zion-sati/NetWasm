@@ -5,15 +5,13 @@ import { createLocalLauncher } from "./local-launcher.mjs";
 import { normalExecutionResult } from "./execution-result.mjs";
 
 const sink = Object.freeze({ write() {} });
+const input = Object.freeze({ read() { return [][Symbol.iterator](); } });
 const descriptor = Object.freeze({
   buildFingerprint: "build",
   deploymentManifestPath: "/output/deployment.json",
   deploymentManifestSha256: "manifest",
   hostExecutablePath: "/tools/node",
   launcherPath: "/packages/hosting/launcher.mjs",
-  toolPackages: Object.freeze([
-    Object.freeze({ id: "NetWasm.Toolchain", rootPath: "/packages/toolchain" }),
-  ]),
 });
 const request = Object.freeze({
   buildFingerprint: descriptor.buildFingerprint,
@@ -34,6 +32,7 @@ function invocation(overrides = {}) {
     requestText: "request",
     signal: null,
     stderr: sink,
+    stdin: input,
     stdout: sink,
     ...overrides,
   };
@@ -41,7 +40,7 @@ function invocation(overrides = {}) {
 
 function createFixture(overrides = {}) {
   const calls = [];
-  const platform = Object.freeze({ createFilesystem() {}, createShim() {} });
+  const platform = Object.freeze({ createFilesystem() {}, createImports() {} });
   const outcome = normalExecutionResult(23);
   const options = {
     appendArguments(value, arguments_) {
@@ -54,6 +53,14 @@ function createFixture(overrides = {}) {
         calls.push(["execute", value_]);
         return outcome;
       };
+    },
+    async grantDirectories(value) {
+      calls.push(["directories", value]);
+      return Object.freeze({
+        request: value,
+        initialDirectory: "/work",
+        async release() { calls.push(["release"]); },
+      });
     },
     async loadPlatform(value) {
       calls.push(["platform", value]);
@@ -75,10 +82,6 @@ function createFixture(overrides = {}) {
     },
     async realPath(value) {
       calls.push(["real", value]);
-      return value;
-    },
-    async verifyPackage(value) {
-      calls.push(["verify", value]);
       return value;
     },
     ...overrides,
@@ -123,8 +126,11 @@ test("local launcher verifies identities and delegates the exact public executio
     ["real", descriptor.launcherPath],
     ["real", descriptor.launcherPath],
   ]);
-  assert.strictEqual(fixture.calls.find(([kind]) => kind === "verify")[1], descriptor.toolPackages[0]);
-  assert.strictEqual(fixture.calls.find(([kind]) => kind === "platform")[1], descriptor.toolPackages[0]);
+  assert.deepEqual(
+    fixture.calls.find(([kind]) => kind === "platform")[1],
+    { initialDirectory: "/work", manifestPath: descriptor.deploymentManifestPath });
+  assert.strictEqual(fixture.calls.find(([kind]) => kind === "directories")[1], overlaidRequest);
+  assert.deepEqual(fixture.calls.at(-1), ["release"]);
   const composition = fixture.calls.find(([kind]) => kind === "create")[1];
   assert.equal(Object.isFrozen(composition), true);
   assert.equal(composition.manifestPath, descriptor.deploymentManifestPath);
@@ -133,6 +139,7 @@ test("local launcher verifies identities and delegates the exact public executio
   assert.equal(Object.isFrozen(execution), true);
   assert.strictEqual(execution.request, overlaidRequest);
   assert.strictEqual(execution.stdout, sink);
+  assert.strictEqual(execution.stdin, input);
   assert.strictEqual(execution.stderr, sink);
   assert.equal(execution.signal, null);
 });
@@ -141,12 +148,12 @@ test("createLocalLauncher validates its exact dependencies", () => {
   const valid = {
     appendArguments() {},
     createExecution() {},
+    grantDirectories() {},
     loadPlatform() {},
     overlayEnvironment() {},
     readDescriptor() {},
     readRequest() {},
     realPath() {},
-    verifyPackage() {},
   };
   const { invalid, malformed } = malformedDataObjects(valid);
   for (const value of invalid) {
@@ -211,13 +218,19 @@ test("local launcher returns cancellation before and between setup stages", asyn
     "host.cancelled");
   assert.deepEqual(preFixture.calls, []);
 
-  for (const stage of ["request", "realPath", "loadPlatform"]) {
+  for (const stage of ["request", "realPath", "grantDirectories", "loadPlatform"]) {
     const controller = new AbortController();
-    const options = stage === "request"
-      ? { readRequest() { controller.abort(); return request; } }
-      : stage === "realPath"
-        ? { async realPath(value) { controller.abort(); return value; } }
-        : { async loadPlatform() { controller.abort(); return {}; } };
+    const options = {
+      request: { readRequest() { controller.abort(); return request; } },
+      realPath: { async realPath(value) { controller.abort(); return value; } },
+      grantDirectories: {
+        async grantDirectories(value) {
+          controller.abort();
+          return { request: value, initialDirectory: null, async release() {} };
+        },
+      },
+      loadPlatform: { async loadPlatform() { controller.abort(); return {}; } },
+    }[stage];
     const outcome = await createFixture(options).launch(
       invocation({ signal: controller.signal }));
     assertFailure(outcome, "callerCancellation", "host.cancelled");
@@ -263,22 +276,26 @@ test("local launcher maps physical identity mismatch and lookup failures", async
   assert.doesNotMatch(failedLookup.primaryFailure.message, /secret/i);
 });
 
-test("local launcher requires and verifies the exact Toolchain package", async () => {
-  const missingDescriptor = Object.freeze({ ...descriptor, toolPackages: Object.freeze([]) });
-  const missing = await createFixture({
-    readDescriptor() { return missingDescriptor; },
+test("local launcher maps directories it cannot grant and releases granted ones", async () => {
+  const failed = await createFixture({
+    async grantDirectories() { throw new Error("secret mkdtemp failure"); },
   }).launch(invocation());
-  assertFailure(missing, "hostFailure", "host.toolchain");
-  assert.match(missing.primaryFailure.message, /does not select/i);
+  assertFailure(failed, "hostFailure", "host.directories");
+  assert.doesNotMatch(failed.primaryFailure.message, /secret/i);
 
-  for (const options of [
-    { async verifyPackage() { throw new Error("secret verify failure"); } },
-    { async loadPlatform() { throw new Error("secret load failure"); } },
-  ]) {
-    const outcome = await createFixture(options).launch(invocation());
-    assertFailure(outcome, "hostFailure", "host.toolchain");
-    assert.doesNotMatch(outcome.primaryFailure.message, /secret/i);
-  }
+  const fixture = createFixture({
+    async loadPlatform() { throw new Error("secret load failure"); },
+  });
+  assertFailure(await fixture.launch(invocation()), "hostFailure", "host.platform");
+  assert.deepEqual(fixture.calls.at(-1), ["release"]);
+});
+
+test("local launcher maps a deployment whose host services cannot load", async () => {
+  const outcome = await createFixture({
+    async loadPlatform() { throw new Error("secret load failure"); },
+  }).launch(invocation());
+  assertFailure(outcome, "hostFailure", "host.platform");
+  assert.doesNotMatch(outcome.primaryFailure.message, /secret/i);
 });
 
 test("local launcher maps composition and unexpected execution failures", async () => {

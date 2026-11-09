@@ -18,7 +18,7 @@ typedef struct {
     size_t length;
 } NetWasmWasiEnvironment;
 
-NETWASM_WASI_IMPORT("wasi:cli/environment@0.2", "get-environment")
+NETWASM_WASI_IMPORT("wasi:cli/environment@0.3", "get-environment")
 void runtime_get_wasi_environment(NetWasmWasiEnvironment *result);
 
 #endif

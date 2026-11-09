@@ -75,6 +75,45 @@ namespace System
         {
         }
 
+        // The Calendar constructors are ported from dotnet/runtime commit
+        // 811225a482702af7ecc35d817966bc70b88a3a23. NetWasm's clock has no leap seconds, so
+        // upstream's leap-second branch never applies.
+        public DateTime(int year, int month, int day, Globalization.Calendar calendar)
+            : this(year, month, day, 0, 0, 0, calendar)
+        {
+        }
+
+        public DateTime(int year, int month, int day, int hour, int minute, int second, Globalization.Calendar calendar)
+        {
+            ArgumentNullException.ThrowIfNull(calendar);
+
+            _dateData = (ulong)calendar.ToDateTime(year, month, day, hour, minute, second, 0).Ticks;
+        }
+
+        public DateTime(int year, int month, int day, int hour, int minute, int second, int millisecond, Globalization.Calendar calendar)
+        {
+            ArgumentNullException.ThrowIfNull(calendar);
+
+            _dateData = (ulong)calendar.ToDateTime(year, month, day, hour, minute, second, millisecond).Ticks;
+        }
+
+        public DateTime(int year, int month, int day, int hour, int minute, int second, int millisecond, Globalization.Calendar calendar, DateTimeKind kind)
+        {
+            ArgumentNullException.ThrowIfNull(calendar);
+
+            if ((uint)millisecond >= TimeSpan.MillisecondsPerSecond)
+            {
+                throw new ArgumentOutOfRangeException(nameof(millisecond));
+            }
+            if ((uint)kind > (uint)DateTimeKind.Local)
+            {
+                throw new ArgumentException();
+            }
+
+            ulong ticks = (ulong)calendar.ToDateTime(year, month, day, hour, minute, second, millisecond).Ticks;
+            _dateData = ticks | ((ulong)(uint)kind << KindShift);
+        }
+
         public DateTime(int year, int month, int day, int hour, int minute, int second) :
             this(year, month, day, hour, minute, second, DateTimeKind.Unspecified)
         {
@@ -1113,19 +1152,8 @@ namespace System
 
     internal static class DateTimeClock
     {
-        internal static long UtcNowTicks()
-        {
-            var timestamp = Runtime.InteropServices.PlatformServices.Clock
-                .GetUtcTime();
-            if (timestamp.Seconds > long.MaxValue)
-            {
-                throw new OverflowException();
-            }
-            return checked(
-                GregorianDateMath.UnixEpochTicks
-                + (long)timestamp.Seconds * TimeSpan.TicksPerSecond
-                + timestamp.Nanoseconds / 100);
-        }
+        internal static long UtcNowTicks() =>
+            Runtime.InteropServices.PlatformServices.Clock.GetUtcNow().Ticks;
 
     }
 }

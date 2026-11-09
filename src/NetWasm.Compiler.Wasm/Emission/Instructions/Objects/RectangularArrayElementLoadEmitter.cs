@@ -59,6 +59,7 @@ internal sealed class RectangularArrayElementLoadEmitter(
             Get(code, request.Context.ObjectTemporary);
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context,
                 values.GetValueLayout(elementType).Size,
+                SmallBlockEmitter.WidestChunk(values.GetValueLayout(elementType)),
                 writer => EmitAddressConstant(writer, values.GetValueLayout(elementType).Size));
         }
         else

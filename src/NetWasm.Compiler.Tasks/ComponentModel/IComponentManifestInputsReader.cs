@@ -11,4 +11,4 @@ internal sealed record ComponentManifestInputsRequest(
     string InteropManifestPath,
     string Target,
     string? JcoVersion,
-    string? Preview2ShimVersion);
+    string? Preview3ShimVersion);

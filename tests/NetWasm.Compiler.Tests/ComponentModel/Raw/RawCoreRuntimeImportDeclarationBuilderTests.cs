@@ -78,6 +78,18 @@ public sealed class RawCoreRuntimeImportDeclarationBuilderTests
         Assert.Empty(facts.Projections);
     }
 
+    // The runtime's own Component Model built-ins come from the host's Component Model, even
+    // when no managed code imports them.
+    [Fact]
+    public void TheRuntimesComponentModelBuiltInsAreDeclaredAsObserved()
+    {
+        var wait = new RawCoreFunctionImportSignature(
+            new("$root", "[waitable-set-wait]"), [RawCoreValueType.I32, RawCoreValueType.I32], [RawCoreValueType.I32]);
+        var request = Request() with { RuntimeImports = [wait, Signature()], FinalImports = [wait.Identity] };
+
+        Assert.Same(wait, Assert.Single(Create(new RecordingFacts()).Build(request)).Value);
+    }
+
     // A linked native archive may import from a module the project declares;
     // the observed signature is the declaration the host supplies.
     [Fact]

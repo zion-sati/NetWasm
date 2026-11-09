@@ -1,103 +1,21 @@
-import { resourceDisposeSymbol } from "./resource-disposal.mjs";
-
-const requestKeys = ["outputStreamType", "pollableType", "sink"];
 const sinkKeys = ["write"];
-const writePermit = 1_000_000n;
-const blockingWriteLimit = 4096;
-const streamStates = new WeakMap();
-const pollableStates = new WeakSet();
+const chunkLimit = 64 * 1024;
 
-export function createOutputSinkStream(request) {
-  assertExactDataObject(request, requestKeys, "output-sink stream request");
-  assertResourceType(request.outputStreamType, "output-stream");
-  assertResourceType(request.pollableType, "pollable");
-  validateOutputSink(request.sink);
-
-  class OutputSinkStream extends request.outputStreamType {
-    checkWrite() {
-      const state = readOpenStream(this);
-      state.permit = writePermit;
-      return state.permit;
+// Copies a guest's stream<u8> (wasi:cli/stdout and stderr write-via-stream) into a host
+// sink until the guest drops its writable end, and settles as the write's future does:
+// ok once every byte reached the sink, or the WASI error code a failed sink write maps to.
+export async function writeStreamToSink(stream, sink) {
+  validateOutputSink(sink);
+  const read = createGuestByteReader(stream);
+  try {
+    for (;;) {
+      const chunk = await read();
+      if (chunk === null) return Object.freeze({ tag: "ok", val: undefined });
+      sink.write(chunk);
     }
-
-    write(bytes) {
-      const state = readOpenStream(this);
-      validateBytes(bytes);
-      if (BigInt(bytes.byteLength) > state.permit) {
-        throw new Error("output write exceeds the permit returned by checkWrite");
-      }
-      state.permit -= BigInt(bytes.byteLength);
-      state.sink.write(new Uint8Array(bytes));
-    }
-
-    blockingWriteAndFlush(bytes) {
-      const state = readOpenStream(this);
-      validateBytes(bytes);
-      if (bytes.byteLength > blockingWriteLimit) {
-        throw new RangeError("blocking output writes accept at most 4096 bytes");
-      }
-      state.sink.write(new Uint8Array(bytes));
-    }
-
-    flush() {
-      const state = readOpenStream(this);
-      state.permit = 0n;
-    }
-
-    blockingFlush() {
-      readOpenStream(this);
-    }
-
-    writeZeroes(length) {
-      const state = readOpenStream(this);
-      const count = validateLength(length);
-      if (length > state.permit) {
-        throw new Error("zero write exceeds the permit returned by checkWrite");
-      }
-      this.write(new Uint8Array(count));
-    }
-
-    blockingWriteZeroesAndFlush(length) {
-      readOpenStream(this);
-      const count = validateLength(length);
-      if (count > blockingWriteLimit) {
-        throw new RangeError("blocking zero writes accept at most 4096 bytes");
-      }
-      this.blockingWriteAndFlush(new Uint8Array(count));
-    }
-
-    splice(source, length) {
-      readOpenStream(this);
-      const count = Math.min(validateLength(length), Number(this.checkWrite()));
-      const bytes = readInput(source, "read", BigInt(count));
-      this.write(bytes);
-      return BigInt(bytes.byteLength);
-    }
-
-    blockingSplice(source, length) {
-      readOpenStream(this);
-      const count = Math.min(validateLength(length), Number(this.checkWrite()));
-      const bytes = readInput(source, "blockingRead", BigInt(count));
-      this.write(bytes);
-      return BigInt(bytes.byteLength);
-    }
-
-    subscribe() {
-      readOpenStream(this);
-      return createReadyPollable(request.pollableType);
-    }
-
-    [resourceDisposeSymbol]() {
-      const state = streamStates.get(this);
-      if (state === undefined || !state.open) return;
-      state.open = false;
-      state.permit = 0n;
-    }
+  } catch {
+    return Object.freeze({ tag: "err", val: "io" });
   }
-
-  const stream = new OutputSinkStream();
-  streamStates.set(stream, { open: true, permit: 0n, sink: request.sink });
-  return stream;
 }
 
 export function validateOutputSink(value, label = "output sink") {
@@ -108,64 +26,32 @@ export function validateOutputSink(value, label = "output sink") {
   return value;
 }
 
-function createReadyPollable(Pollable) {
-  class ReadyPollable extends Pollable {
-    ready() {
-      readPollable(this);
-      return true;
-    }
-
-    block() {
-      readPollable(this);
-    }
-
-    [resourceDisposeSymbol]() {
-      pollableStates.delete(this);
-    }
+// jco hands a host import a stream it can read in chunks or iterate, and a raw host hands it
+// an async iterator; either yields bytes until the guest drops the writable end, then null.
+export function createGuestByteReader(stream) {
+  if (stream !== null && typeof stream === "object" && typeof stream.read === "function") {
+    return async () => readChunk(await stream.read({ count: chunkLimit }));
   }
-  const pollable = new ReadyPollable();
-  pollableStates.add(pollable);
-  return pollable;
+  if (stream !== null && typeof stream === "object"
+      && typeof stream[Symbol.asyncIterator] === "function") {
+    const iterator = stream[Symbol.asyncIterator]();
+    return async () => readChunk(await iterator.next());
+  }
+  throw new TypeError("guest output stream is not readable");
 }
 
-function readOpenStream(stream) {
-  const state = streamStates.get(stream);
-  if (state === undefined || !state.open) throw Object.freeze({ tag: "closed" });
-  return state;
+function readChunk(value) {
+  if (value !== null && typeof value === "object" && typeof value.done === "boolean") {
+    return value.done ? null : bytesOf(value.value);
+  }
+  return value === null || value === undefined ? null : bytesOf(value);
 }
 
-function readPollable(pollable) {
-  if (!pollableStates.has(pollable)) {
-    throw new TypeError("output-sink pollable is disposed");
-  }
-}
-
-function readInput(source, method, length) {
-  if (source === null || typeof source !== "object" || typeof source[method] !== "function") {
-    throw new TypeError("output splice source is invalid");
-  }
-  const bytes = source[method](length);
-  validateBytes(bytes);
-  return bytes;
-}
-
-function validateBytes(bytes) {
-  if (!(bytes instanceof Uint8Array)) {
-    throw new TypeError("output bytes must be a Uint8Array");
-  }
-}
-
-function validateLength(length) {
-  if (typeof length !== "bigint" || length < 0n || length > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new TypeError("output length must be a safely representable u64");
-  }
-  return Number(length);
-}
-
-function assertResourceType(value, label) {
-  if (typeof value !== "function" || value.prototype === undefined) {
-    throw new TypeError(`${label} resource type is invalid`);
-  }
+function bytesOf(value) {
+  if (value instanceof Uint8Array) return new Uint8Array(value);
+  if (Array.isArray(value)) return Uint8Array.from(value);
+  if (typeof value === "number") return Uint8Array.of(value);
+  throw new TypeError("guest output chunk is not bytes");
 }
 
 function assertExactDataObject(value, keys, label) {

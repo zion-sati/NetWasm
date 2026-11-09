@@ -22,7 +22,8 @@ internal sealed record CorpusCompilerRequest(
     string? RuntimeLayoutPath,
     string? InteropManifestPath,
     bool StructuredDiagnostics = false,
-    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz);
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
+    CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction);
 
 internal interface ICorpusCompilerRequestFactory
 {
@@ -72,11 +73,14 @@ internal sealed class CorpusCompilerRequestFactory(
                 ? Path.Combine(environment.RepositoryRoot, "wit", "netwasm-platform-1.0.0")
                 : null,
             compilation.Fixture.RequiresReactor
-                ? "netwasm:platform/async-platform@1.0.0"
+                ? "netwasm:platform/platform@1.0.0"
                 : null,
             modulePath, compilation.Fixture.EmitStackTrace, stackTraceSymbolsPath,
             runtimeLayoutPath, interopManifestPath,
             StructuredDiagnostics: true,
-            Optimization: compilation.Fixture.Optimization);
+            Optimization: compilation.Fixture.Optimization,
+            EntryPointKind: compilation.Fixture.CallbackEntry
+                ? CompilerEntryPointKind.ManagedExecutable
+                : CompilerEntryPointKind.RawFunction);
     }
 }

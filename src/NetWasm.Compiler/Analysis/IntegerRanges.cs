@@ -442,6 +442,17 @@ internal sealed class IntegerRangeAnalysis(IStackEffectResolver effects) : IInte
         if (divisor.High >= 1) yield return new(Int128.Max(divisor.Low, 1), divisor.High);
     }
 
+    // Whether a branch that starts with these stack ranges, top last, always goes to its target (true) or never
+    // does (false), as its edges narrow them; null when it can go either way or does not branch on a comparison.
+    public static bool? Taken(CilOperation operation, ImmutableArray<IntegerRange?> stack)
+    {
+        if (Relation(operation, true) is not { } taken) return null;
+        var operands = operation is CilOperation.BranchIfTrue or CilOperation.BranchIfFalse ? 1 : 2;
+        var compared = stack.Skip(stack.Length - operands).Select(static range => new Value(range, -1)).ToArray();
+        var target = Narrow([], compared, taken);
+        return target == Narrow([], compared, Relation(operation, false)!.Value) ? null : target;
+    }
+
     private enum Comparison { Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual, Unsigned }
 
     // What a branch's operands satisfy on its taken or fall-through edge, or null for an instruction that does not

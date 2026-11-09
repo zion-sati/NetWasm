@@ -2,15 +2,15 @@
 
 `NetWasm.Toolchain` contains platform-neutral upstream assets used by the
 NetWasm build and deployment boundary. It carries the
-pinned Binaryen JavaScript closure, the audited jco 1.28.1 transpile entry point,
-the Preview 2 shim 0.24.1, the official wasm-tools 1.256.0 WASI module and
+pinned Binaryen JavaScript closure, the audited jco 1.41.0 transpile entry point,
+the WASI 0.3 shim (`preview3-shim` 0.13.0), the official wasm-tools 1.256.0 WASI module and
 runner, compiler-owned JavaScript commands and WIT contracts. Every entry point
 and supporting file is selected from the immutable package manifest and
 verified by SHA-256 before use.
 
 The jco files live at `tools/jco/node_modules/...` with no native-RID
 projection. The package qualifies the upstream
-`@bytecodealliance/jco/dist/jco.js` `transpile` command. Its lock-driven
+`@bytecodealliance/jco/dist/api.js` `transpile` function. Its lock-driven
 transpile-only closure retains the complete supported optional native binding
 set required by the selected runtime path. The separately inventoried Rolldown
 1.2.4 closure supplies the package-owned bundler used to emit one selected,
@@ -26,7 +26,7 @@ here. Wasmtime is optional and is not required by the standard SDK build, run
 or publish path. Builds do not download native tools.
 
 The package retains the pinned source WIT closures and their provenance
-manifests under `tools/wit`, `tools/async-wit` and `tools/compiler-wit`.
+manifests under `tools/wit`, `tools/diagnostic-wit` and `tools/compiler-wit`.
 The SDK consumes their deterministic binary WIT products under
 `tools/wit-packages`, whose own manifest binds each product to its source
 manifest and the pinned wasm-tools generator. This avoids host-dependent source

@@ -132,7 +132,7 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.ArrayGetLength or RuntimeIntrinsic.ArrayGetLowerBound or
             RuntimeIntrinsic.StringCharacterAt =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.IndexOutOfRange],
-            RuntimeIntrinsic.ArrayGetValue =>
+            RuntimeIntrinsic.ObjectClone or RuntimeIntrinsic.ArrayGetValue =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory],
             RuntimeIntrinsic.MemberExecuteMethod =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory,

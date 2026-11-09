@@ -15,6 +15,8 @@ internal enum NwcTarget
     Exe,
     Library,
     Function,
+    // A library build of a WIT world as a plain core module, without WASI.
+    CoreModule,
 }
 
 internal sealed record CompileCliOptions(
@@ -45,6 +47,7 @@ internal sealed record CompileCliOptions(
         "managedpurecallreuse", "managedfieldloadreuse", "managedconditionalstoremerging", "managedinlinearraydata",
         "managedquotientreuse", "managedintegercheckelimination", "managedloopinvariantexpressionhoisting",
         "managedmulticastinlinedispatch",
+        "managednewobjectnullcheckelimination", "managedloopstrengthreduction", "managedrangebranchfolding",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
@@ -103,6 +106,9 @@ internal sealed record CompileCliOptions(
     public string? ManagedIntegerCheckElimination { get; init; }
     public string? ManagedLoopInvariantExpressionHoisting { get; init; }
     public string? ManagedMulticastInlineDispatch { get; init; }
+    public string? ManagedNewObjectNullCheckElimination { get; init; }
+    public string? ManagedLoopStrengthReduction { get; init; }
+    public string? ManagedRangeBranchFolding { get; init; }
 
     public static CompileCliOptions Parse(NwcArguments arguments)
     {
@@ -120,7 +126,8 @@ internal sealed record CompileCliOptions(
             null or "exe" => NwcTarget.Exe,
             "library" => NwcTarget.Library,
             "function" => NwcTarget.Function,
-            _ => throw CliOptionException.Create("-target must be 'exe', 'library' or 'function'"),
+            "coremodule" => NwcTarget.CoreModule,
+            _ => throw CliOptionException.Create("-target must be 'exe', 'library', 'function' or 'coremodule'"),
         };
         var entry = options.Single("entry");
         (var entryType, var entryMethod) = target == NwcTarget.Function
@@ -195,6 +202,9 @@ internal sealed record CompileCliOptions(
             ManagedIntegerCheckElimination = options.Single("managedintegercheckelimination"),
             ManagedLoopInvariantExpressionHoisting = options.Single("managedloopinvariantexpressionhoisting"),
             ManagedMulticastInlineDispatch = options.Single("managedmulticastinlinedispatch"),
+            ManagedNewObjectNullCheckElimination = options.Single("managednewobjectnullcheckelimination"),
+            ManagedLoopStrengthReduction = options.Single("managedloopstrengthreduction"),
+            ManagedRangeBranchFolding = options.Single("managedrangebranchfolding"),
         };
     }
 
@@ -257,11 +267,11 @@ internal sealed record ComponentizeCliOptions(
     string Wit,
     string? World,
     string Output,
-    string Manifest,
+    string? Manifest,
     WasmTarget Platform,
     string? InteropManifest,
     string? JcoVersion,
-    string? Preview2ShimVersion,
+    string? Preview3ShimVersion,
     FinalWasmOptimization Optimization)
 {
     public const string CommandName = "componentize";
@@ -269,13 +279,23 @@ internal sealed record ComponentizeCliOptions(
     public static readonly FrozenSet<string> Names = new[]
     {
         "coremodule", "runtimemodule", "wit", "world", "out", "manifest", "platform",
-        "interopmanifest", "jcoversion", "preview2shimversion", "optimize", "managedinlininghints",
-        "converge",
+        "interopmanifest", "jcoversion", "preview3shimversion", "optimize", "managedinlininghints",
+        "converge", "entryassembly", "plaincoremodule", "lowmemoryunused",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public string? ManagedInliningHints { get; init; }
 
+    // A command's assembly, whose Main decides how the component lifts wasi:cli/run; a library
+    // component has none.
+    public string? EntryAssembly { get; init; }
+
     public bool Converge { get; init; }
+
+    // Write the linked core module itself, a plain core module without WASI, instead of a
+    // component; it has no component manifest.
+    public bool PlainCoreModule { get; init; }
+    // Null leaves the choice to the optimization preset.
+    public bool? LowMemoryUnused { get; init; }
 
     public static ComponentizeCliOptions Parse(NwcArguments arguments)
     {
@@ -286,21 +306,27 @@ internal sealed record ComponentizeCliOptions(
                 $"componentize takes no input files: {string.Join(", ", arguments.Inputs)}");
         }
         var options = new NwcOptionValues(arguments);
+        var plainCoreModule = options.Toggle("plaincoremodule");
         return new(
             options.Single("coremodule") ?? throw CliOptionException.Create("no core module was specified (-coremodule)"),
             options.Single("runtimemodule"),
             options.Single("wit") ?? throw CliOptionException.Create("no WIT package was specified (-wit)"),
             options.Single("world"),
             options.Single("out") ?? throw CliOptionException.Create("no output file was specified (-out)"),
-            options.Single("manifest") ?? throw CliOptionException.Create("no manifest file was specified (-manifest)"),
+            options.Single("manifest") ?? (plainCoreModule
+                ? null
+                : throw CliOptionException.Create("no manifest file was specified (-manifest)")),
             CompileCliOptions.ParsePlatform(options.Single("platform")),
             options.Single("interopmanifest"),
             options.Single("jcoversion"),
-            options.Single("preview2shimversion"),
+            options.Single("preview3shimversion"),
             CompileCliOptions.ParseOptimization(options.Single("optimize")))
         {
             ManagedInliningHints = options.Single("managedinlininghints"),
             Converge = options.Toggle("converge"),
+            EntryAssembly = options.Single("entryassembly"),
+            PlainCoreModule = plainCoreModule,
+            LowMemoryUnused = options.Toggle("lowmemoryunused", absent: null),
         };
     }
 }

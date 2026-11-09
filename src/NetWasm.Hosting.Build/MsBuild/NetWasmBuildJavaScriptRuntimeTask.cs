@@ -26,7 +26,6 @@ public sealed class NetWasmBuildJavaScriptRuntimeTask : Microsoft.Build.Utilitie
     [Required] public string NodePath { get; set; } = string.Empty;
     [Required] public string CommandPath { get; set; } = string.Empty;
     [Required] public string HostingJavaScriptRoot { get; set; } = string.Empty;
-    [Required] public string Preview2ShimRoot { get; set; } = string.Empty;
     [Required] public string OutputDirectory { get; set; } = string.Empty;
     public bool Minify { get; set; }
 
@@ -41,13 +40,13 @@ public sealed class NetWasmBuildJavaScriptRuntimeTask : Microsoft.Build.Utilitie
             var output = Path.Combine(root, Minify ? "minified" : "readable");
             var manifest = Path.Combine(output, "runtime.json");
             // The runtime is the same for every build of a release, so it is bundled again only
-            // when Node, the bundler, the hosting JavaScript or the preview2 shim changed.
+            // when Node, the bundler or the hosting JavaScript changed.
             var inputs = Path.Combine(output, ".netwasm-runtime-inputs");
             var stamp = FileTreeStamp.Compute(
                 [typeof(NetWasmBuildJavaScriptRuntimeTask).Assembly.ManifestModule.ModuleVersionId.ToString("N"),
                     Minify ? "minified" : "readable"],
                 [Path.GetFullPath(NodePath), Path.GetDirectoryName(Path.GetFullPath(CommandPath)),
-                    Path.GetFullPath(HostingJavaScriptRoot), Path.GetFullPath(Preview2ShimRoot)]);
+                    Path.GetFullPath(HostingJavaScriptRoot)]);
             if (File.Exists(manifest) && File.Exists(inputs) && File.ReadAllText(inputs) == stamp)
             {
                 JavaScriptRuntimeManifest.Read(manifest);
@@ -55,10 +54,7 @@ public sealed class NetWasmBuildJavaScriptRuntimeTask : Microsoft.Build.Utilitie
                 return true;
             }
             var facades = Path.Combine(root, "facades");
-            JavaScriptRuntime.WriteFacades(
-                facades,
-                Path.GetFullPath(HostingJavaScriptRoot),
-                Path.GetFullPath(Preview2ShimRoot));
+            JavaScriptRuntime.WriteFacades(facades, Path.GetFullPath(HostingJavaScriptRoot));
             // Each build replaces the files, so no runtime of an earlier build
             // can be published beside the current one.
             if (Directory.Exists(output))

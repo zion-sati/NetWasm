@@ -128,6 +128,94 @@ public sealed class EntryPointEmitterTests
                 body[index + 2] == WasmOpcodes.Call && body[index + 3] == 31);
     }
 
+    // The local-time preflight may wait on wasi:filesystem, so the process
+    // entry calls it after runtime initialization and before Main.
+    [Fact]
+    public void ProcessEntryRunsTheLocalTimePreflightBeforeMain()
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var entry = new FakeProgram().GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliValueKind.Void),
+        };
+        var preflight = new EntityKey(Assembly, 0x06000098);
+
+        var body = CreateEmitter(layouts, imports).Emit(
+            entry,
+            initialization: TestRuntimeInitialization.Create(512),
+            hasFinalizers: false,
+            new PreflightIndices(preflight),
+            reportTerminalExceptions: false,
+            localTimePreflight: preflight);
+
+        Assert.Contains(
+            Enumerable.Range(0, body.Length - 3),
+            index => body[index] == WasmOpcodes.Call && body[index + 1] == 32 &&
+                body[index + 2] == WasmOpcodes.Call && body[index + 3] == 30);
+    }
+
+    // The process entry ends the process through CoreLib after Main returns.
+    [Fact]
+    public void ProcessEntryRunsTheProcessExitAfterMain()
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var entry = new FakeProgram().GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliValueKind.Void),
+        };
+        var exit = new EntityKey(Assembly, 0x06000098);
+
+        var body = CreateEmitter(layouts, imports).Emit(
+            entry,
+            initialization: TestRuntimeInitialization.Create(512),
+            hasFinalizers: false,
+            new PreflightIndices(exit),
+            reportTerminalExceptions: false,
+            processExit: exit);
+
+        Assert.Contains(
+            Enumerable.Range(0, body.Length - 3),
+            index => body[index] == WasmOpcodes.Call && body[index + 1] == 30 &&
+                body[index + 2] == WasmOpcodes.Call && body[index + 3] == 32);
+    }
+
+    // A callback-lifted entry's callback runs after its start initialized the runtime, so its
+    // body is the entry's without the initialization.
+    [Fact]
+    public void ACallbackBoundarySkipsRuntimeInitialization()
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var entry = new FakeProgram().GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliValueKind.Void),
+        };
+        var exit = new EntityKey(Assembly, 0x06000098);
+        var emitter = CreateEmitter(layouts, imports);
+
+        var initialized = emitter.Emit(entry, TestRuntimeInitialization.Create(512), false,
+            new PreflightIndices(exit), reportTerminalExceptions: false);
+        var resumed = emitter.Emit(entry, TestRuntimeInitialization.Create(512), false,
+            new PreflightIndices(exit), reportTerminalExceptions: false, initializesRuntime: false);
+
+        Assert.True(resumed.Length < initialized.Length);
+        Assert.Equal([WasmOpcodes.Call, 30, WasmOpcodes.Return, WasmOpcodes.End], resumed[^4..]);
+        Assert.Equal(resumed[^4..], initialized[^4..]);
+    }
+
+    private sealed class PreflightIndices(EntityKey preflight) : IFunctionIndexResolver
+    {
+        public OptionalFunctionIndex ManagedThrowFunction => OptionalFunctionIndex.At(7);
+
+        public int Resolve(EntityKey method) =>
+            method == EntryKey ? 30 : method == preflight ? 32 : throw new InvalidOperationException();
+        public int Resolve(string method) => throw new InvalidOperationException();
+        public int Resolve(MethodInstanceModel method) => throw new InvalidOperationException();
+        public int Resolve(InteropImportKey import) => throw new InvalidOperationException();
+    }
+
     private sealed class CompletionIndices(MethodInstanceModel completion) : IFunctionIndexResolver
     {
         public OptionalFunctionIndex ManagedThrowFunction => OptionalFunctionIndex.At(7);

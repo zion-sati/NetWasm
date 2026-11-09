@@ -66,7 +66,7 @@ public sealed class NetWasmProjectWitFunctionsTaskTests
         Assert.Equal(Path.GetFullPath(task.WorkerContractPath), artifacts.Path);
         Assert.Contains("\"operation\":\"add\"", System.Text.Encoding.UTF8.GetString(artifacts.Bytes!),
             StringComparison.Ordinal);
-        Assert.Contains("\"schemaVersion\":2", System.Text.Encoding.UTF8.GetString(artifacts.Bytes!),
+        Assert.Contains("\"schemaVersion\":3", System.Text.Encoding.UTF8.GetString(artifacts.Bytes!),
             StringComparison.Ordinal);
     }
 
@@ -125,7 +125,7 @@ public sealed class NetWasmProjectWitFunctionsTaskTests
 
         var contract = projector.Project(new([], [], [world], [], "{}"), world).WorkerContract;
 
-        Assert.Equal(2, contract.SchemaVersion);
+        Assert.Equal(3, contract.SchemaVersion);
         Assert.Equal("value", Assert.Single(contract.Exports).Operation);
         Assert.Empty(contract.Types);
     }
@@ -175,7 +175,7 @@ public sealed class NetWasmProjectWitFunctionsTaskTests
                 [new("example:app/command@1.0.0", "main", [], [])],
                 ["example:host/api@1.0.0"],
                 new(
-                    2,
+                    3,
                     "example:app/application@1.0.0",
                     [new(
                         "add",
@@ -191,8 +191,7 @@ public sealed class NetWasmProjectWitFunctionsTaskTests
                         ],
                         new("primitive", "s32", null),
                         new WitFunctionKind("freestanding"))],
-                    [],
-                    null));
+                    []));
         }
 
         public void Dispose() => IsDisposed = true;

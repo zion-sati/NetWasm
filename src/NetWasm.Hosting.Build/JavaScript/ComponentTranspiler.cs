@@ -71,7 +71,7 @@ public sealed class ComponentTranspiler : IComponentTranspiler
                 request.NodePath,
                 Path.GetFullPath(_runnerPath),
                 [
-                    Path.Combine(Path.GetDirectoryName(request.JcoPath)!, "api.js"),
+                    request.JcoPath,
                     request.ComponentPath,
                     temporary,
                     request.BaseName,
@@ -83,12 +83,16 @@ public sealed class ComponentTranspiler : IComponentTranspiler
                 .Order(StringComparer.Ordinal)
                 .ToArray();
             var javaScript = Path.Combine(temporary, request.BaseName + ".js");
+            // jco loads every core module through getCoreModule: the component's own and
+            // the trampolines it emits for suspending calls (conditional-suspending-*).
             var cores = files.Where(path =>
                     string.Equals(Path.GetDirectoryName(path), temporary, StringComparison.Ordinal)
-                    &&
-                    Path.GetFileName(path).StartsWith(
-                        request.BaseName + ".core",
-                        StringComparison.Ordinal)
+                    && (Path.GetFileName(path).StartsWith(
+                            request.BaseName + ".core",
+                            StringComparison.Ordinal)
+                        || Path.GetFileName(path).StartsWith(
+                            request.BaseName + ".conditional-suspending-",
+                            StringComparison.Ordinal))
                     && string.Equals(Path.GetExtension(path), ".wasm", StringComparison.Ordinal))
                 .ToArray();
             var typeDeclarations = files.Where(path =>

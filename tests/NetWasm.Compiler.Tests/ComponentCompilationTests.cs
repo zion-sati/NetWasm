@@ -607,7 +607,7 @@ public sealed class ComponentCompilationTests
         Assert.Equal(0, wit.ExitCode);
         Assert.Contains("import increment: func(value: s32) -> s32", wit.StandardOutput);
         Assert.Contains("export run: func(value: s32) -> s32", wit.StandardOutput);
-        Assert.Contains("wasi:cli/environment@0.2", wit.StandardOutput);
+        Assert.Contains("wasi:cli/environment@0.3", wit.StandardOutput);
         Assert.DoesNotContain("preview1", wit.StandardOutput, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("wasi_unstable", wit.StandardOutput, StringComparison.OrdinalIgnoreCase);
     }

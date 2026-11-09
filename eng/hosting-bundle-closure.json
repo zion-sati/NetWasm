@@ -31,7 +31,7 @@
       "<true|false>"
     ]
   ],
-  "lockSha256": "a1e1788569730917c0f8187c2f0738de18cc1e0f2de36babb24d35a35a227fc7",
+  "lockSha256": "dcaff9a73991ecac37997106447a044775527bdf558fa818c76640aa3d07fbf4",
   "evidence": {
     "api": "rolldown@1.2.4/dist/index.d.mts",
     "minification": "rolldown@1.2.4 OutputOptions.minify",

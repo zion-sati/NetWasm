@@ -40,25 +40,14 @@ internal sealed class OutwardMethodFunctionAppender(
             var kinds = request.AsyncKinds ?? throw new ArgumentException(
                 "an asynchronous outward boundary requires boundary kinds",
                 nameof(request));
-            var process = kinds.Completion == ManagedBoundaryKind.AsynchronousProcessCompletion;
-            int? deliverFunctionIndex = process
-                ? request.Initialization.RuntimeImportSelection.IncludeTerminalExceptionReporter
-                    ? runtimeImports.Resolve(
-                        RuntimeImportSymbol.ManagedTerminalExceptionReport,
-                        request.Initialization.RuntimeImportSelection)
-                    : null
-                : runtimeImports.Resolve(
-                    RuntimeImportSymbol.ManagedExceptionCapture,
-                    request.Initialization.RuntimeImportSelection);
-            // Only a JavaScript boundary passes string and array arguments as host handles.
-            var javaScriptArguments = kinds.Start == ManagedBoundaryKind.AsynchronousExportStart
-                ? request.InteropImports
-                : null;
+            // A JavaScript boundary passes string and array arguments as host handles.
+            var javaScriptArguments = request.InteropImports;
             var completion = new AsyncTaskCompletionPlan(
                 request.FunctionIndices.Resolve(binding.GetVoidResult ??
                     throw new InvalidOperationException("An asynchronous boundary requires task fault observation.")),
-                deliverFunctionIndex,
-                process ? CliValueKind.Void : CliValueKind.I4);
+                runtimeImports.Resolve(
+                    RuntimeImportSymbol.ManagedExceptionCapture,
+                    request.Initialization.RuntimeImportSelection));
             request.Functions.Add(new WasmFunctionDefinition(
                 request.GeneratedFunctionName,
                 new(
@@ -123,7 +112,10 @@ internal sealed class OutwardMethodFunctionAppender(
                         request.FunctionIndices,
                         request.ReportTerminalExceptions,
                         request.ArgumentFactory,
-                        request.EntryCompletion)));
+                        request.EntryCompletion,
+                        request.LocalTimePreflight,
+                        request.ProcessExit,
+                        request.InitializesRuntime)));
             kind = request.SynchronousKind;
         }
 

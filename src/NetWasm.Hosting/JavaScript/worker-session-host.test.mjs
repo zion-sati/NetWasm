@@ -44,6 +44,7 @@ function fixture(overrides = {}) {
   let closes = 0;
   let terminations = 0;
   const options = {
+    files: null,
     async openSession(request) {
       opened.push(request);
       return {
@@ -190,6 +191,7 @@ test("settles the client queue when a result cannot be cloned", async () => {
   const worker = new LinkedWorker();
   let failFirstResult = true;
   const host = createWorkerSessionHost({
+    files: null,
     openSession: async () => ({
       exports: { add: (left, right) => left + right },
       close: async () => {},
@@ -229,6 +231,9 @@ test("rejects malformed composition, initialization and session products", async
   }]) assert.throws(() => createWorkerSessionHost(value), TypeError);
   for (const key of ["openSession", "post", "terminate"]) {
     assert.throws(() => createWorkerSessionHost({ ...valid, [key]: null }), /actions/);
+  }
+  for (const files of [{}, { mount() {}, unmount() {} }, 1]) {
+    assert.throws(() => createWorkerSessionHost({ ...valid, files }), /file mounts or null/);
   }
   for (const value of [
     null, [], {}, { ...initialize(), extra: true }, initialize({ protocolVersion: 1 }),
@@ -299,4 +304,36 @@ test("passes the environment to the session and forwards guest output until term
   state.host.terminate();
   request.stdout.write(bytes);
   assert.equal(state.messages.filter(message => message.kind === "output").length, 2);
+});
+
+// The page reaches the worker's file mounts (#142) through reserved operations its readiness list
+// leaves out, so the client's allowlist stays the application's.
+test("the page mounts, unmounts and syncs files in the worker", async () => {
+  const worker = new LinkedWorker();
+  const calls = [];
+  const host = createWorkerSessionHost({
+    files: {
+      mount: async (guestPath, source) => { calls.push(["mount", guestPath, source]); },
+      unmount: guestPath => { calls.push(["unmount", guestPath]); },
+      sync: async guestPath => { throw new Error(`cannot write ${guestPath} back`); },
+    },
+    openSession: async () => ({
+      exports: { add: (left, right) => left + right },
+      close: async () => {},
+      failure: new Promise(() => {}),
+    }),
+    post: message => queueMicrotask(() => worker.emit("message", { data: message })),
+    terminate: () => {},
+  });
+  worker.host = host;
+  const client = createWorkerSessionClient({ generation: "files", operations: ["add"], startup, worker });
+  await client.ready;
+  await client.files("mount", "/input/a.txt", "picked");
+  await client.files("unmount", "/input/a.txt");
+  await assert.rejects(client.files("sync", "/input/a.txt"), /cannot write \/input\/a.txt back/);
+  await assert.rejects(client.files("delete", "/x"), /file action is unavailable/);
+  await assert.rejects(client.invoke("netwasm:files:mount", ["/x", "y"]), /operation is unavailable/);
+  assert.deepEqual(calls, [["mount", "/input/a.txt", "picked"], ["unmount", "/input/a.txt"]]);
+  assert.equal(await client.invoke("add", [1, 2]), 3);
+  await client.dispose();
 });

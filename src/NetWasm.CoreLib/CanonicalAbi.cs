@@ -36,6 +36,74 @@ namespace System.Runtime.InteropServices.WebAssembly
 
         public static void Free(nuint address) { }
 
+        // Generated bindings for an async-lowered import: the status the call returned completes
+        // at once when the subtask has returned, else when the event loop sees it return.
+        // Generated bindings enter this scope for the length of a synchronous WIT export, where
+        // the Component Model forbids blocking until the export returns.
+        public static SynchronousExportScope EnterSynchronousExport() => SynchronousExportScope.Enter();
+
+        public static Threading.Tasks.Task AwaitSubtask(int status) =>
+            PlatformServices.AwaitSubtask(status);
+
+        // Generated bindings for a stream or future end: an async-lowered read or write returns
+        // BLOCKED (-1) or its result (count << 4 | 0 completed, 1 dropped, 2 cancelled); the task
+        // completes with the result.
+        public static Threading.Tasks.Task<int> AwaitCopy(int waitable, int status) =>
+            PlatformServices.AwaitCopy(waitable, status);
+
+        // Generated bindings for stream<u8> and future<T> values: a received stream is a readable
+        // Stream; a sent one copies a source Stream into a new stream; a received future is a
+        // Task<T>; a sent Task<T> becomes a future written when it completes. Lowering returns
+        // the readable end the callee receives.
+        public static IO.Stream LiftByteStream(int readable, WitStreamIntrinsics intrinsics) =>
+            new WitStreamReader(readable, intrinsics);
+
+        public static int LowerByteStream(IO.Stream source, WitStreamIntrinsics intrinsics) =>
+            WitStreamWriter.Start(source, intrinsics);
+
+        public static Collections.Generic.IAsyncEnumerable<T> LiftStream<T>(
+            int readable,
+            WitStreamIntrinsics intrinsics,
+            nuint size,
+            nuint alignment,
+            Func<nuint, T> lift) =>
+            WitElementStreams.Read(readable, intrinsics, size, alignment, lift);
+
+        public static int LowerStream<T>(
+            Collections.Generic.IAsyncEnumerable<T> source,
+            WitStreamIntrinsics intrinsics,
+            nuint size,
+            nuint alignment,
+            Action<T, nuint> lower,
+            Action<nuint> release) =>
+            WitElementStreams.Start(source, intrinsics, size, alignment, lower, release);
+
+        public static Threading.Tasks.Task<T> LiftFuture<T>(
+            int readable,
+            WitFutureIntrinsics intrinsics,
+            nuint size,
+            nuint alignment,
+            Func<nuint, T> lift) =>
+            WitFutures.Read(readable, intrinsics, size, alignment, lift);
+
+        public static int LowerFuture<T>(
+            Threading.Tasks.Task<T> value,
+            WitFutureIntrinsics intrinsics,
+            nuint size,
+            nuint alignment,
+            Action<T, nuint> lower,
+            Action<nuint> release) =>
+            WitFutures.Start(value, intrinsics, size, alignment, lower, release);
+
+        // Generated bindings for a callback-lifted export: its start passes the export's Task and
+        // the completion that lowers its result into task.return, and returns the callback code;
+        // its callback delivers each event.
+        public static int StartExportTask(Threading.Tasks.Task task, Action<Threading.Tasks.Task> complete) =>
+            PlatformServices.ExportTask.Start(task, complete);
+
+        public static int DeliverExportEvent(int eventCode, int waitable, int payload) =>
+            PlatformServices.ExportTask.Deliver(eventCode, waitable, payload);
+
         public static nuint Allocate(nuint size, nuint alignment)
         {
             var address = Reallocate(0, 0, alignment, size);

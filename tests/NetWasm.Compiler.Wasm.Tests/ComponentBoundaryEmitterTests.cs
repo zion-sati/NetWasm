@@ -226,7 +226,11 @@ public sealed class ComponentBoundaryEmitterTests
         var methods = new Repository();
         var preflight = new RecordingLocalTimePreflightCallEmitter();
         var (emitter, _) = CreateEmitter(WasmTarget.Wasm32, preflight);
-        var request = CreateRequest(methods, WasmTarget.Wasm32);
+        var request = CreateRequest(methods, WasmTarget.Wasm32) with
+        {
+            EntryPoint = null,
+            EntryPointProfile = WasmEntryPointProfile.None,
+        };
         var indices = EmitterTestSupport.CreateFunctionIndexResolver();
         var exportName = CanonicalAbiNames.Export(
             methods.Export.WitExport!.InterfaceName,
@@ -245,6 +249,42 @@ public sealed class ComponentBoundaryEmitterTests
         Assert.Same(request, preflight.Request);
         Assert.Same(indices, preflight.FunctionIndices);
         Assert.Equal([NetWasmRuntimeFeatureIds.LocalTime], result.RuntimeFeatures.ToArray());
+    }
+
+    // A process entry may block where initialization may not, so it runs the
+    // preflight itself; initialization only reports the local-time feature.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void InitializeLeavesTheProcessEntrysPreflightToTheEntry(bool usesLocalTime)
+    {
+        var methods = new Repository();
+        var preflight = new RecordingLocalTimePreflightCallEmitter();
+        var (emitter, _) = CreateEmitter(
+            WasmTarget.Wasm32,
+            preflight,
+            usesLocalTime ? methods.Export.Key : null);
+        var request = CreateRequest(methods, WasmTarget.Wasm32) with
+        {
+            EntryPoint = methods.Export,
+            EntryPointProfile = WasmEntryPointProfile.Process,
+        };
+        var exportName = CanonicalAbiNames.Export(
+            methods.Export.WitExport!.InterfaceName,
+            methods.Export.WitExport.FunctionName,
+            WasmTarget.Wasm32);
+
+        var result = emitter.Emit(
+            request,
+            WasmTarget.Wasm32,
+            TestRuntimeInitialization.Create(4096),
+            31,
+            7,
+            ImmutableDictionary<string, int>.Empty.Add(exportName, 37),
+            EmitterTestSupport.CreateFunctionIndexResolver());
+
+        Assert.Null(preflight.Request);
+        Assert.Equal(usesLocalTime ? [NetWasmRuntimeFeatureIds.LocalTime] : [], result.RuntimeFeatures.ToArray());
     }
 
     [Fact]
@@ -303,7 +343,8 @@ public sealed class ComponentBoundaryEmitterTests
 
     private static (IComponentBoundaryEmitter Emitter, RuntimeImportCatalog Imports) CreateEmitter(
         WasmTarget target,
-        ILocalTimePreflightCallEmitter? localTimePreflight = null)
+        ILocalTimePreflightCallEmitter? localTimePreflight = null,
+        EntityKey? localTimeMethod = null)
     {
         var imports = WasmRuntimeImports.CreateCatalog();
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
@@ -312,6 +353,7 @@ public sealed class ComponentBoundaryEmitterTests
             EmitterTestSupport.CreateRuntimeStateInitializer(),
             CreateCanonicalAbiFunctionTypePlanner(),
             localTimePreflight ?? new NoLocalTimePreflightCallEmitter(),
+            new FixedLocalTimePreflightMethodSelector(localTimeMethod),
             new GeneratedFunctionWriterFactory());
         return (new[] { emitter }.Cast<IComponentBoundaryEmitter>().Single(), imports);
     }
@@ -332,6 +374,11 @@ public sealed class ComponentBoundaryEmitterTests
 
     private static CanonicalAbiFunctionTypePlanner CreateCanonicalAbiFunctionTypePlanner() => new(
         new CanonicalAbiSignaturePlanner(new CanonicalAbiTypeFlattener()));
+
+    private sealed class FixedLocalTimePreflightMethodSelector(EntityKey? method) : ILocalTimePreflightMethodSelector
+    {
+        public EntityKey? Select(WasmEmissionRequest request) => method;
+    }
 
     private sealed class NoLocalTimePreflightCallEmitter : ILocalTimePreflightCallEmitter
     {

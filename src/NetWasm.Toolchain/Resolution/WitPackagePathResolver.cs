@@ -33,7 +33,7 @@ public sealed class WitPackagePathResolver(
             command.PackageId,
             command.PackageVersion,
             command.AbsolutePath,
-            resolved[ToolchainPlatformAssetIds.WitAsyncCommandPackage].AbsolutePath,
+            resolved[ToolchainPlatformAssetIds.WitDiagnosticCommandPackage].AbsolutePath,
             resolved[ToolchainPlatformAssetIds.WitCompilerPackage].AbsolutePath);
     }
 

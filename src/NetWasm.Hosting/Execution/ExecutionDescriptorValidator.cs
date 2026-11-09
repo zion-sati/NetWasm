@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 
 namespace NetWasm.Hosting.Execution;
@@ -21,25 +20,6 @@ public sealed class ExecutionDescriptorValidator : IExecutionDescriptorValidator
         ValidatePath(descriptor.DeploymentManifestPath);
         ValidatePath(descriptor.HostExecutablePath);
         ValidatePath(descriptor.LauncherPath);
-        if (descriptor.ToolPackages.IsDefaultOrEmpty)
-        {
-            throw new ArgumentException("Execution requires restored tool package identities.", nameof(descriptor));
-        }
-
-        var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var package in descriptor.ToolPackages)
-        {
-            ArgumentNullException.ThrowIfNull(package);
-            ArgumentException.ThrowIfNullOrWhiteSpace(package.Id);
-            ArgumentException.ThrowIfNullOrWhiteSpace(package.Version);
-            if (!identities.Add(package.Id))
-            {
-                throw new ArgumentException("Execution tool package identities must be unique.", nameof(descriptor));
-            }
-
-            ValidatePath(package.RootPath);
-            ValidateDigest(package.Sha256);
-        }
     }
 
     private static void ValidateDigest(string digest)

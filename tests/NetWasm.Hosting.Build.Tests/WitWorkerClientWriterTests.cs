@@ -90,10 +90,10 @@ public sealed class WitWorkerClientWriterTests
     }
 
     internal static WitWorkerClientRequest Request() => new(Encoding.UTF8.GetBytes("""
-        {"schemaVersion":2,"world":"example:worker/application@1.0.0","exports":[{"operation":"echo","placement":"root","worldItem":"echo","interface":null,
+        {"schemaVersion":3,"world":"example:worker/application@1.0.0","exports":[{"operation":"echo","placement":"root","worldItem":"echo","interface":null,
         "javaScriptRoot":"","javaScriptMember":"echo","function":"echo","parameters":[{"name":"value","type":{"kind":"defined","primitive":null,"definition":42}}],
         "result":{"kind":"defined","primitive":null,"definition":42},"kind":{"name":"freestanding","resourceType":null}}],
-        "types":[{"id":42,"name":"item","owner":{"kind":"interface","identity":"example:worker/values@1.0.0"},"kind":{"record":{"fields":[{"name":"text","type":"string"}]}}}],"reactor":null}
+        "types":[{"id":42,"name":"item","owner":{"kind":"interface","identity":"example:worker/values@1.0.0"},"kind":{"record":{"fields":[{"name":"text","type":"string"}]}}}]}
         """), Path.GetFullPath("hosting"), "worker.mjs", new string('a', 64), new string('b', 64));
 }
 

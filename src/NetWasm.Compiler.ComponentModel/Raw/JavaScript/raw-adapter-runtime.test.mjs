@@ -35,7 +35,9 @@ import {
   rcObject,
   rcReadBytes,
   rcReadText,
+  rcResultValue,
   rcSequenceLength,
+  rcSettleResult,
   rcStatic,
   rcTagged,
   rcTaggedResult,
@@ -175,6 +177,8 @@ test("accepts only plain objects with exactly the expected names", () => {
 test("reads a tagged value's case and payload", () => {
   assert.deepEqual(rcTagged({ tag: "b", val: 3 }, ["a", "b"], [false, true], "variant"), { index: 1, value: 3 });
   assert.deepEqual(rcTagged({ tag: "a" }, ["a", "b"], [false, true], "variant"), { index: 0, value: undefined });
+  assert.deepEqual(rcTagged({ tag: "a", val: undefined }, ["a", "b"], [false, true], "variant"),
+    { index: 0, value: undefined });
   const accessorTag = {};
   Object.defineProperty(accessorTag, "tag", { enumerable: true, get: () => "a" });
   const accessorValue = { tag: "b" };
@@ -309,6 +313,34 @@ test("tags provider results and reads a thrown error's payload", () => {
   assert.equal(rcErrorPayload("plain"), "plain");
   assert.equal(rcErrorPayload(null), null);
   assert.deepEqual(rcErrorPayload({ code: 1 }), { code: 1 });
+});
+
+test("reads a provider's result as JavaScript Component Model hosts do", () => {
+  const tagged = { tag: "err", val: 2 };
+  assert.equal(rcResultValue(tagged, true), tagged);
+  assert.equal(rcResultValue({ val: undefined, tag: "ok" }, false).tag, "ok");
+  for (const value of [3, null, undefined, [1, 2], { tag: "ok" }, { tag: "maybe", val: 1 },
+    { tag: "ok", val: 1, extra: 0 }, { tag: "err", other: 1 }]) {
+    assert.deepEqual({ ...rcResultValue(value, true) }, { tag: "ok", val: value });
+  }
+});
+
+test("settles an async provider's result from its value, promise or failure", async () => {
+  assert.deepEqual({ ...rcSettleResult(() => 4, true, true) }, { tag: "ok", val: 4 });
+  assert.deepEqual({ ...rcSettleResult(() => { throw { payload: "gone" }; }, true, true) },
+    { tag: "err", val: "gone" });
+  assert.deepEqual({ ...await rcSettleResult(() => Promise.resolve(5), true, false) }, { tag: "ok", val: 5 });
+  const tagged = { tag: "err", val: 6 };
+  assert.equal(await rcSettleResult(() => Promise.resolve(tagged), true, true), tagged);
+  assert.deepEqual({ ...await rcSettleResult(() => Promise.reject("denied"), false, true) },
+    { tag: "err", val: "denied" });
+  const failure = new RangeError("host");
+  await assert.rejects(rcSettleResult(() => Promise.reject(failure), true, true), error => error === failure);
+  assert.throws(() => rcSettleResult(() => { throw failure; }, true, true), error => error === failure);
+  const thenable = { then: resolve => resolve(7) };
+  assert.deepEqual({ ...await rcSettleResult(() => thenable, true, true) }, { tag: "ok", val: 7 });
+  const callable = Object.assign(() => {}, { then: undefined });
+  assert.equal(rcSettleResult(() => callable, true, true).val, callable);
 });
 
 test("binds provider functions, statics, constructors and methods", () => {

@@ -1,7 +1,8 @@
+import { validateInputSource } from "./input-source.mjs";
 import { validateOutputSink } from "./output-sink-stream.mjs";
 
-const factoryKeys = ["resolvePlatformProvider"];
-const loadRequestKeys = ["binding", "filesystem", "signal", "stderr", "stdout"];
+const factoryKeys = ["releasePlatformProviders", "resolvePlatformProvider"];
+const loadRequestKeys = ["binding", "filesystem", "signal", "stderr", "stdin", "stdout"];
 const bindingKeys = ["applicationProviders", "manifest", "platformProviders", "request"];
 const executionRequestKeys = [
   "applicationImports",
@@ -18,8 +19,9 @@ const registrationKeys = ["createSource", "provider"];
 
 export function createPlatformProviderLoader(options) {
   assertExactDataObject(options, factoryKeys, "platform provider loader options");
-  if (typeof options.resolvePlatformProvider !== "function") {
-    throw new TypeError("platform provider resolver is required");
+  if (typeof options.resolvePlatformProvider !== "function"
+      || typeof options.releasePlatformProviders !== "function") {
+    throw new TypeError("platform provider resolver and release action are required");
   }
 
   return Object.freeze(async function loadPlatformProviders(request) {
@@ -27,6 +29,7 @@ export function createPlatformProviderLoader(options) {
     validateSignal(request.signal);
     validateOutputSink(request.stdout, "platform provider stdout output sink");
     validateOutputSink(request.stderr, "platform provider stderr output sink");
+    validateInputSource(request.stdin, "platform provider stdin input source");
     if (request.filesystem !== null
         && (typeof request.filesystem !== "object" || Array.isArray(request.filesystem))) {
       throw new TypeError("platform provider filesystem must be an object or null");
@@ -37,24 +40,31 @@ export function createPlatformProviderLoader(options) {
       request.filesystem,
       request.signal,
       request.stderr,
+      request.stdin,
       request.stdout);
     throwIfAborted(request.signal);
 
+    const release = () => options.releasePlatformProviders(factoryRequest);
     const sources = [];
-    for (const selectedProvider of selectedProviders) {
-      const registration = options.resolvePlatformProvider({
-        module: selectedProvider.module,
-      });
-      const createSource = readRegistration(registration, selectedProvider);
-      throwIfAborted(request.signal);
-      const source = await createSource(factoryRequest);
-      if (source === null || typeof source !== "object" || Array.isArray(source)) {
-        throw new TypeError(`platform provider module '${selectedProvider.module}' returned an invalid source`);
+    try {
+      for (const selectedProvider of selectedProviders) {
+        const registration = options.resolvePlatformProvider({
+          module: selectedProvider.module,
+        });
+        const createSource = readRegistration(registration, selectedProvider);
+        throwIfAborted(request.signal);
+        const source = await createSource(factoryRequest);
+        if (source === null || typeof source !== "object" || Array.isArray(source)) {
+          throw new TypeError(`platform provider module '${selectedProvider.module}' returned an invalid source`);
+        }
+        sources.push(Object.freeze({ module: selectedProvider.module, value: source }));
+        throwIfAborted(request.signal);
       }
-      sources.push(Object.freeze({ module: selectedProvider.module, value: source }));
-      throwIfAborted(request.signal);
+    } catch (error) {
+      await release();
+      throw error;
     }
-    return Object.freeze(sources);
+    return Object.freeze({ sources: Object.freeze(sources), release });
   });
 }
 
@@ -85,7 +95,7 @@ function readBinding(binding) {
   });
 }
 
-function createFactoryRequest(request, filesystem, signal, stderr, stdout) {
+function createFactoryRequest(request, filesystem, signal, stderr, stdin, stdout) {
   return Object.freeze({
     arguments: request.arguments,
     environment: request.environment,
@@ -93,6 +103,7 @@ function createFactoryRequest(request, filesystem, signal, stderr, stdout) {
     grants: request.grants,
     signal,
     stderr,
+    stdin,
     stdout,
   });
 }

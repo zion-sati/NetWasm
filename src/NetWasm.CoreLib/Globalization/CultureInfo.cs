@@ -3,7 +3,7 @@
 
 namespace System.Globalization;
 
-public sealed class CultureInfo : IFormatProvider
+public sealed class CultureInfo : IFormatProvider, ICloneable
 {
     internal const int LOCALE_CUSTOM_UNSPECIFIED = 0x1000;
     internal const int LOCALE_CUSTOM_DEFAULT = 0x0c00;
@@ -68,6 +68,9 @@ public sealed class CultureInfo : IFormatProvider
     public override int GetHashCode() => Name.GetHashCode();
 
     public override string ToString() => Name;
+
+    // NetWasm: every culture is the invariant one, so a clone is a new instance of the same culture.
+    public object Clone() => new CultureInfo(Name, validate: false);
 
     private static void ValidateInvariant(CultureInfo value)
     {

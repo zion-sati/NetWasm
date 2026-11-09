@@ -52,7 +52,10 @@ internal sealed class VirtualDispatchCallEmitter(
                 instruction.Context,
                 request.ArgumentBase,
                 CliValueKind.ManagedReference);
-        EmitNullCheck(code, receiverLocal, request.Instruction.Context.ManagedThrowFunction);
+        if (!ReceiverNullProof.Proves(instruction))
+        {
+            EmitNullCheck(code, receiverLocal, request.Instruction.Context.ManagedThrowFunction);
+        }
         var returnsValue = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType;
         var returnOffset = returnsValue
             ? instruction.Context.ValueLayout.TemporaryOffsets[

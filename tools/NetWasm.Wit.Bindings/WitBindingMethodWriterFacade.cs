@@ -9,8 +9,11 @@ public interface IWitBindingMethodWriter
 
 public sealed class WitBindingMethodWriter(
     IWitBindingImportSectionWriter imports,
-    IWitBindingExportSectionWriter exports) : IWitBindingMethodWriter
+    IWitBindingExportSectionWriter exports,
+    IWitBindingIntrinsicsSectionWriter intrinsics) : IWitBindingMethodWriter
 {
+    private readonly IWitBindingIntrinsicsSectionWriter _intrinsics = intrinsics ??
+        throw new ArgumentNullException(nameof(intrinsics));
     private readonly IWitBindingImportSectionWriter _imports = imports ??
         throw new ArgumentNullException(nameof(imports));
     private readonly IWitBindingExportSectionWriter _exports = exports ??
@@ -20,6 +23,7 @@ public sealed class WitBindingMethodWriter(
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(world);
-        return _imports.Generate(document, world) + _exports.Generate(document, world);
+        return _imports.Generate(document, world) + _exports.Generate(document, world) +
+            _intrinsics.Generate(document, world);
     }
 }

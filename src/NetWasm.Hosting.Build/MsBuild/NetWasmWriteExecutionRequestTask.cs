@@ -35,6 +35,11 @@ public sealed class NetWasmWriteExecutionRequestTask : Microsoft.Build.Utilities
     public string Network { get; set; } = "allowAll";
     public bool Randomness { get; set; } = true;
 
+    // dotnet run and dotnet test mount the working directory and a private temporary directory
+    // unless the project opts out (NetWasmGrantWorkingDirectory, NetWasmGrantTemporaryDirectory).
+    public bool WorkingDirectory { get; set; } = true;
+    public bool TemporaryDirectory { get; set; } = true;
+
     public override bool Execute()
     {
         try
@@ -56,7 +61,11 @@ public sealed class NetWasmWriteExecutionRequestTask : Microsoft.Build.Utilities
                         ParseAccess(item.GetMetadata("Access"))))],
                     ParseNetwork(Network),
                     [.. Clocks.Select(item => ParseClock(item.ItemSpec))],
-                    Randomness),
+                    Randomness)
+                {
+                    WorkingDirectory = WorkingDirectory,
+                    TemporaryDirectory = TemporaryDirectory,
+                },
                 [.. ApplicationImports.Select(item => new NetWasmApplicationImport(
                     item.GetMetadata("Module"),
                     item.GetMetadata("ArtifactPath"),

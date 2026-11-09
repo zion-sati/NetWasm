@@ -73,9 +73,15 @@ public abstract class WitBindingMethodSectionBase(
         writer.Line($"public static partial class {className}");
         writer.Line("{");
         writer.Indent();
-        foreach (var function in functions)
+        // A function whose name collides with another's, such as two resources' static create,
+        // is qualified by its resource.
+        var imported = functions.ToArray();
+        var names = WitBindingNames.Assign(
+            [.. imported.Select(function => (Key: function.Name, Candidates: Candidates(function, [])))],
+            "imported functions");
+        foreach (var function in imported)
         {
-            WriteImport(writer, document, interfaceName, function);
+            WriteImport(writer, document, interfaceName, function, names[function.Name]);
             writer.Line();
         }
         writer.Unindent();
@@ -87,21 +93,49 @@ public abstract class WitBindingMethodSectionBase(
         CodeWriter writer,
         WitDocument document,
         string interfaceName,
-        WitFunction function)
+        WitFunction function,
+        string methodName)
     {
         function = TransparentAliases.Resolve(document, function);
+        // An async func is lowered with `async`: the call returns a subtask status, the method
+        // awaits the subtask and then lifts the result the callee wrote through its pointer.
+        var asynchronous = function.Kind.Name.StartsWith("async", StringComparison.Ordinal);
         var model = Model(
             document,
             interfaceName,
             function,
-            CanonicalAbiDirection.LoweredImport);
+            asynchronous ? CanonicalAbiDirection.AsyncLoweredImport : CanonicalAbiDirection.LoweredImport);
         var helperMethodName = _syntax.Format(new WitBindingSyntaxRequest.QualifiedFunctionName(interfaceName, function.Name));
-        var methodName = _syntax.Format(new WitBindingSyntaxRequest.FunctionName(function.Name));
         var returnType = _syntax.Format(new WitBindingSyntaxRequest.ReturnType(document, function));
-        writer.Line($"public static {returnType} {methodName}({_syntax.Format(new WitBindingSyntaxRequest.Parameters(document, function))})");
+        var declaredReturnType = !asynchronous
+            ? returnType
+            : function.Result is null
+                ? "async global::System.Threading.Tasks.Task"
+                : $"async global::System.Threading.Tasks.Task<{returnType}>";
+        writer.Line($"public static {declaredReturnType} {methodName}({_syntax.Format(new WitBindingSyntaxRequest.Parameters(document, function))})");
         writer.Line("{");
         writer.Indent();
+        WriteLoweredCall(writer, document, function, model, $"__Canonical{helperMethodName}", returnType, asynchronous);
+        writer.Unindent();
+        writer.Line("}");
+        writer.Line();
+        writer.Line(asynchronous
+            ? $"[ComponentBuiltIn(\"{(interfaceName.Length == 0 ? "$root" : interfaceName)}\", \"[async-lower]{function.Name}\")]"
+            : WitAttributeSyntax.Format("WitImport", interfaceName, function.Name));
+        writer.Line($"private static extern {RawType(model.Signature.Result)} __Canonical{helperMethodName}({RawParameters(model.Signature)});");
+    }
 
+    // Lowers the function's parameters, calls the core function and lifts its result: the body
+    // of an import binding, and of an async export's task.return with its result as parameter.
+    private void WriteLoweredCall(
+        CodeWriter writer,
+        WitDocument document,
+        WitFunction function,
+        WitBindingFunctionModel model,
+        string callee,
+        string returnType,
+        bool asynchronous)
+    {
         var lowerings = function.Parameters.Select((parameter, index) =>
             LowerParameter(document, parameter, index)).ToArray();
         foreach (var lowering in lowerings)
@@ -166,7 +200,11 @@ public abstract class WitBindingMethodSectionBase(
                 : callArguments + ", __canonicalResult";
         }
 
-        var call = $"__Canonical{helperMethodName}({callArguments})";
+        var call = $"{callee}({callArguments})";
+        if (asynchronous)
+        {
+            call = $"await CanonicalAbi.AwaitSubtask({call})";
+        }
         if (function.Result is null)
         {
             writer.Line(call + ";");
@@ -237,11 +275,6 @@ public abstract class WitBindingMethodSectionBase(
         {
             writer.Line("return __managedResult;");
         }
-        writer.Unindent();
-        writer.Line("}");
-        writer.Line();
-        writer.Line(WitAttributeSyntax.Format("WitImport", interfaceName, function.Name));
-        writer.Line($"private static extern {RawType(model.Signature.Result)} __Canonical{helperMethodName}({RawParameters(model.Signature)});");
     }
 
     protected void WriteExports(
@@ -270,7 +303,14 @@ public abstract class WitBindingMethodSectionBase(
         writer.Indent();
         foreach (var export in exports)
         {
-            WriteExport(writer, document, export.Interface, export.Function, methods[$"{export.Interface}#{export.Function.Name}"]);
+            if (export.Function.Kind.Name.StartsWith("async", StringComparison.Ordinal))
+            {
+                WriteAsyncExport(writer, document, export.Interface, export.Function, methods[$"{export.Interface}#{export.Function.Name}"]);
+            }
+            else
+            {
+                WriteExport(writer, document, export.Interface, export.Function, methods[$"{export.Interface}#{export.Function.Name}"]);
+            }
             writer.Line();
         }
         writer.Unindent();
@@ -318,6 +358,8 @@ public abstract class WitBindingMethodSectionBase(
         writer.Line($"private static {RawType(model.Signature.Result)} __Canonical{helperMethodName}({RawParameters(model.Signature)})");
         writer.Line("{");
         writer.Indent();
+        // A synchronous export may not block before it returns: a blocking wait throws.
+        writer.Line("using var __synchronous = CanonicalAbi.EnterSynchronousExport();");
 
         var lifted = LiftExportParameters(
             writer,
@@ -371,6 +413,83 @@ public abstract class WitBindingMethodSectionBase(
         WritePostReturn(writer, document, function.Result, model.Signature);
         writer.Unindent();
         writer.Line("}");
+    }
+
+    // An async func export is lifted with a callback: its start lifts the parameters, calls the
+    // Task-returning method and hands the task to the event loop; once the task completes, its
+    // result is lowered into task.return, and the callback delivers each event meanwhile.
+    private void WriteAsyncExport(
+        CodeWriter writer,
+        WitDocument document,
+        string interfaceName,
+        WitFunction function,
+        string methodName)
+    {
+        function = TransparentAliases.Resolve(document, function);
+        var model = Model(document, interfaceName, function, CanonicalAbiDirection.LiftedExport);
+        var helperMethodName = _syntax.Format(new WitBindingSyntaxRequest.QualifiedFunctionName(interfaceName, function.Name));
+        var resultType = function.Result is null
+            ? null
+            : _syntax.Format(new WitBindingSyntaxRequest.ReturnType(document, function));
+        var taskType = resultType is null
+            ? "global::System.Threading.Tasks.Task"
+            : $"global::System.Threading.Tasks.Task<{resultType}>";
+        var qualified = interfaceName.Length == 0 ? function.Name : $"{interfaceName}#{function.Name}";
+        writer.Line($"public static partial {taskType} {methodName}({_syntax.Format(new WitBindingSyntaxRequest.Parameters(document, function))});");
+        writer.Line();
+        writer.Line($"[ComponentExport(\"[async-lift]{qualified}\")]");
+        writer.Line($"private static int __Canonical{helperMethodName}({RawParameters(model.Signature)})");
+        writer.Line("{");
+        writer.Indent();
+        var lifted = LiftExportParameters(writer, document, function, model.Function, model.Signature);
+        if (lifted.Cleanup.Length != 0)
+        {
+            writer.Line("try");
+            writer.Line("{");
+            writer.Indent();
+        }
+        writer.Line($"return CanonicalAbi.StartExportTask({methodName}({string.Join(", ", lifted.Arguments)}), __Return{helperMethodName});");
+        if (lifted.Cleanup.Length != 0)
+        {
+            writer.Unindent();
+            writer.Line("}");
+            writer.Line("finally");
+            writer.Line("{");
+            writer.Indent();
+            foreach (var statement in lifted.Cleanup.Reverse())
+            {
+                writer.Line(statement);
+            }
+            writer.Unindent();
+            writer.Line("}");
+        }
+        writer.Unindent();
+        writer.Line("}");
+        writer.Line();
+
+        // task.return takes the result as its parameters, lowered as an import's would be.
+        var taskReturn = new WitFunction(
+            function.Name,
+            function.Result is null ? [] : [new WitParameter("result", function.Result)],
+            null,
+            new WitFunctionKind("freestanding"));
+        var returnModel = Model(document, interfaceName, taskReturn, CanonicalAbiDirection.LoweredImport);
+        writer.Line($"private static void __Return{helperMethodName}(global::System.Threading.Tasks.Task __task)");
+        writer.Line("{");
+        writer.Indent();
+        writer.Line(resultType is null
+            ? "__task.GetAwaiter().GetResult();"
+            : $"var {_syntax.Format(new WitBindingSyntaxRequest.Variable("result"))} = (({taskType})__task).GetAwaiter().GetResult();");
+        WriteLoweredCall(writer, document, taskReturn, returnModel, $"__TaskReturn{helperMethodName}", "void", asynchronous: false);
+        writer.Unindent();
+        writer.Line("}");
+        writer.Line();
+        writer.Line($"[ComponentBuiltIn(\"[export]{(interfaceName.Length == 0 ? "$root" : interfaceName)}\", \"[task-return]{function.Name}\")]");
+        writer.Line($"private static extern void __TaskReturn{helperMethodName}({RawParameters(returnModel.Signature)});");
+        writer.Line();
+        writer.Line($"[ComponentExport(\"[callback][async-lift]{qualified}\")]");
+        writer.Line($"private static int __Callback{helperMethodName}(int eventCode, int waitable, int payload) =>");
+        writer.Line("    CanonicalAbi.DeliverExportEvent(eventCode, waitable, payload);");
     }
 
     private ParameterLowering LowerParameter(
@@ -544,6 +663,14 @@ public abstract class WitBindingMethodSectionBase(
             writer.Line($"CanonicalAbi.Free({address});");
             return;
         }
+        // An async-lowered call writes even a scalar or a stream or future handle through its
+        // result pointer; the value owns nothing more.
+        if (result is WitTypeReference.Primitive ||
+            type.Kind is CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future)
+        {
+            writer.Line($"CanonicalAbi.Free({address});");
+            return;
+        }
         var defined = (WitTypeReference.Defined)result;
         if (type.Kind == CanonicalAbiTypeKind.List)
         {
@@ -574,6 +701,10 @@ public abstract class WitBindingMethodSectionBase(
         var type = _types.Resolve(document, reference);
         var typeName = _syntax.Format(new WitBindingSyntaxRequest.TypeName(document, reference));
         var id = ((WitTypeReference.Defined)reference).Id;
+        if (type.Kind is CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future)
+        {
+            return $"__WitIntrinsics.{IntrinsicsClass(type.Kind, id)}.Lift({values[0]})";
+        }
         if (type.Kind is CanonicalAbiTypeKind.OwnedResource or CanonicalAbiTypeKind.BorrowedResource)
         {
             var owns = type.Kind == CanonicalAbiTypeKind.OwnedResource ? "true" : "false";
@@ -674,6 +805,10 @@ public abstract class WitBindingMethodSectionBase(
         }
         var type = _types.Resolve(document, reference);
         var id = ((WitTypeReference.Defined)reference).Id;
+        if (type.Kind is CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future)
+        {
+            return new([], [], [$"__WitIntrinsics.{IntrinsicsClass(type.Kind, id)}.Lower({value})"], []);
+        }
         if (type.Kind is CanonicalAbiTypeKind.OwnedResource or CanonicalAbiTypeKind.BorrowedResource)
         {
             var owns = type.Kind == CanonicalAbiTypeKind.OwnedResource ? "true" : "false";
@@ -822,6 +957,10 @@ public abstract class WitBindingMethodSectionBase(
         }
         var type = _types.Resolve(document, reference);
         var defined = (WitTypeReference.Defined)reference;
+        if (type.Kind is CanonicalAbiTypeKind.Stream or CanonicalAbiTypeKind.Future)
+        {
+            return $"__WitIntrinsics.{IntrinsicsClass(type.Kind, defined.Id)}.Lift(CanonicalAbi.ReadInt32({address}, 0))";
+        }
         if (type.Kind is CanonicalAbiTypeKind.OwnedResource or
             CanonicalAbiTypeKind.BorrowedResource)
         {
@@ -886,6 +1025,8 @@ public abstract class WitBindingMethodSectionBase(
             [CanonicalAbiTypeKind.Enum] = () => [ReadI32(document, reference, address, offset)],
             [CanonicalAbiTypeKind.OwnedResource] = () => [ReadI32(document, reference, address, offset)],
             [CanonicalAbiTypeKind.BorrowedResource] = () => [ReadI32(document, reference, address, offset)],
+            [CanonicalAbiTypeKind.Stream] = () => [ReadI32(document, reference, address, offset)],
+            [CanonicalAbiTypeKind.Future] = () => [ReadI32(document, reference, address, offset)],
             [CanonicalAbiTypeKind.S64] = () => [$"CanonicalAbi.ReadInt64({address}, {offset})"],
             [CanonicalAbiTypeKind.U64] = () => [$"CanonicalAbi.ReadInt64({address}, {offset})"],
             [CanonicalAbiTypeKind.F32] = () => [$"CanonicalAbi.ReadSingle({address}, {offset})"],
@@ -1340,8 +1481,11 @@ public abstract class WitBindingMethodSectionBase(
         CanonicalAbiCoreSignature signature,
         int index)
     {
+        // A lowered import's result pointer follows its parameters, whether the core function
+        // returns nothing or, lowered with `async`, a subtask status.
+        var parameterCount = signature.IndirectParameters ? 1 : signature.FlatParameters.Length;
         if (signature.IndirectResult &&
-            signature.Result == CliValueKind.Void &&
+            signature.Parameters.Length == parameterCount + 1 &&
             index == signature.Parameters.Length - 1)
         {
             return "__result";
@@ -1355,6 +1499,9 @@ public abstract class WitBindingMethodSectionBase(
             : signature.Result == CliValueKind.Void
                 ? string.Empty
                 : $"{RawType(signature.Result)} __result";
+
+    private static string IntrinsicsClass(CanonicalAbiTypeKind kind, int id) =>
+        (kind == CanonicalAbiTypeKind.Stream ? "Stream" : "Future") + id;
 
     private WitBindingFunctionModel Model(
         WitDocument document,

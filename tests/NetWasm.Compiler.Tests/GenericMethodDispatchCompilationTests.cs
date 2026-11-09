@@ -364,7 +364,7 @@ public sealed class GenericMethodDispatchCompilationTests
             [new("run", "VariantInstantiationFixture.EntryPoint", "Run")],
             Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform@1.0.0/platform"));
 
         Assert.Equal(25, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0, target, result.StaticDataEnd));
     }

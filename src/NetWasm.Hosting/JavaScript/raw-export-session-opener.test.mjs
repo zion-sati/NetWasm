@@ -4,17 +4,10 @@ import { NetWasmHostError } from "./managed-errors.mjs";
 import { createRawExportSessionOpener } from "./raw-export-session-opener.mjs";
 import { createScopeReleaseCommand } from "./scope-release-command.mjs";
 
-const reactorModule = "cm32p2|netwasm:runtime/reactor-host@1";
-const reactorGuest = "cm32p2|netwasm:runtime/reactor-guest@1|wake";
 const initializeExport = "cm32p2_initialize";
-
-function adapter(withReactor = false) {
-  return {
-    rawAdapterMetadata: {
-      requiredCapabilities: withReactor ? ["bindReactor"] : [],
-    },
-  };
-}
+const runExport = "netwasm.events.run";
+const callbackExport = "netwasm.events.callback";
+const root = Object.freeze({ "[waitable-set-new]"() { return 1; } });
 
 function fixture({
   failAt = null,
@@ -24,10 +17,7 @@ function fixture({
   pendingExport = false,
   planOverrides = {},
   probeExportAtPrepare = false,
-  probeReactorAtCanonical = false,
-  reactor = false,
-  reactorReadyBeforeBind = false,
-  reactorProduct,
+  pumpProduct,
   releaseCommandFactory = createScopeReleaseCommand,
   releaseFailures = [],
 } = {}) {
@@ -47,9 +37,9 @@ function fixture({
       return {
         target: "wasm32",
         imports: [],
-        reactorHostModule: reactorModule,
-        reactorGuestExport: reactorGuest,
         canonicalInitializeExport: initializeExport,
+        eventLoopRunExport: runExport,
+        eventLoopCallbackExport: callbackExport,
         ...planOverrides,
       };
     },
@@ -57,52 +47,36 @@ function fixture({
       calls.push("close-canonical");
       if (releaseFailures.includes("canonical")) throw new Error("canonical cleanup failed");
     },
-    composeImports() {
+    composeImports(request) {
       calls.push("compose");
+      controls.composeRequest = request;
       fail("compose");
       return Object.freeze(Object.create(null));
     },
     createCanonicalBinding(request) {
       calls.push("canonical");
       controls.canonicalRequest = request;
-      if (probeReactorAtCanonical && request.reactor !== null) {
-        try { request.reactor.assertAvailable(); } catch (error) { controls.beforeReadyError = error; }
-      }
       fail("canonical");
-      return Object.freeze({ imports: Object.freeze({}), target: "wasm32" });
+      controls.canonicalBinding = Object.freeze({ imports: Object.freeze({}), target: "wasm32" });
+      return controls.canonicalBinding;
     },
-    createGuestNotifier(request) {
-      calls.push("notifier");
-      controls.notifierRequest = request;
-      fail("notifier");
-      return Object.freeze({
-        notify(token) {
-          calls.push(`notify:${token}`);
-          try {
-            request.guestWake(token);
-            request.observeWake();
-          } catch {
-            request.observeWake(Object.freeze({}));
-          }
-        },
-      });
-    },
-    createReactor(request) {
-      calls.push("reactor");
-      controls.reactorRequest = request;
-      fail("reactor");
-      if (reactorProduct !== undefined) return reactorProduct;
-      if (reactorReadyBeforeBind) request.onReady(3);
+    createEventPump(request) {
+      calls.push("pump");
+      controls.pumpRequest = request;
+      fail("pump");
+      if (pumpProduct !== undefined) return pumpProduct;
       return {
-        watch() { calls.push("reactor-watch"); },
-        cancel() { calls.push("reactor-cancel"); },
-        close() {
-          calls.push("close-reactor");
-          if (releaseFailures.includes("reactor")) throw new Error("reactor cleanup failed");
-        },
+        turn() { calls.push("turn"); },
+        stop() { calls.push("stop"); },
       };
     },
     createReleaseCommand: releaseCommandFactory,
+    readComponentModel(request) {
+      calls.push("component-model");
+      assert.equal(request.binding, controls.canonicalBinding);
+      controls.componentModel = Object.freeze({ root });
+      return controls.componentModel;
+    },
   };
   const instance = instanceOverride ?? {
     exports: {
@@ -112,15 +86,13 @@ function fixture({
         onInitialize?.(controls);
         fail("initialize");
       },
-      [reactorGuest](token) {
-        calls.push(`wake:${this.marker}:${token}`);
-        fail("wake");
-      },
+      [runExport]() { return 0; },
+      [callbackExport]() { return 0; },
     },
   };
   const request = {
     abi: {},
-    adapter: adapter(reactor),
+    adapter: {},
     instantiate: async value => {
       calls.push("instantiate");
       controls.instantiateRequest = value;
@@ -150,6 +122,7 @@ function fixture({
                 calls.push("read");
                 return 42;
               },
+              version: 3,
           };
           if (pendingExport) {
             exports.pending = () => {
@@ -174,7 +147,6 @@ function fixture({
       calls.push("close-caller");
       if (releaseFailures.includes("caller")) throw new Error("caller cleanup failed");
     }],
-    schedule: callback => callback(),
   };
   return {
     calls,
@@ -185,7 +157,7 @@ function fixture({
   };
 }
 
-test("opens, initializes and closes a non-reactor export session exactly once", async () => {
+test("opens, initializes and closes an export session exactly once", async () => {
   const state = fixture();
   const session = await state.opener.open(state.request);
 
@@ -193,10 +165,19 @@ test("opens, initializes and closes a non-reactor export session exactly once", 
   assert.equal(Object.isFrozen(session), true);
   assert.equal(session.exports.read(), 42);
   assert.deepEqual(state.calls, [
-    "plan", "prepare-interop", "canonical", "compose", "instantiate",
-    "bind-interop", "bind-canonical", "initialize:37", "read",
+    "plan", "prepare-interop", "canonical", "component-model", "compose", "instantiate",
+    "bind-interop", "bind-canonical", "pump", "initialize:37", "turn", "read", "turn",
   ]);
-  assert.equal(state.controls.canonicalRequest.reactor, null);
+  assert.equal(session.exports.version, 3);
+  assert.equal(state.controls.pumpRequest.componentModel, state.controls.componentModel);
+  assert.equal(Object.isFrozen(state.controls.pumpRequest), true);
+  state.controls.pumpRequest.run();
+  state.controls.pumpRequest.callback(0, 0, 0);
+  state.controls.lifetime.observeAsyncCompletion();
+  assert.equal(state.calls.at(-1), "turn");
+  assert.deepEqual(Object.keys(state.controls.canonicalRequest).sort(), ["adapter", "providers"]);
+  assert.equal(state.controls.composeRequest.physicalProviders.$root, root);
+  assert.deepEqual(state.controls.composeRequest.inventory, { target: "wasm32", imports: [] });
   assert.doesNotThrow(() => state.controls.lifetime.assertAsyncDeliveryAvailable());
   assert.equal(Object.isFrozen(state.controls.instantiateRequest), true);
   const firstClose = session.close();
@@ -204,74 +185,55 @@ test("opens, initializes and closes a non-reactor export session exactly once", 
   assert.equal(firstClose, secondClose);
   await firstClose;
   assert.equal(await session.failure, null);
-  assert.deepEqual(state.calls.slice(-3), [
-    "close-interop", "close-canonical", "close-caller",
+  assert.deepEqual(state.calls.slice(-4), [
+    "stop", "close-interop", "close-canonical", "close-caller",
   ]);
   assert.throws(() => session.exports.read(), /closed/);
+  assert.equal(state.calls.at(-1), "turn");
   assert.throws(() => state.controls.lifetime.assertAsyncDeliveryAvailable(), /closed/);
 });
 
-test("binds a declared reactor before initialization and reports readiness", async () => {
-  const state = fixture({ reactor: true });
+test("runs the module's event loop after each call, completion and failure", async () => {
+  const state = fixture();
   const session = await state.opener.open(state.request);
-  assert.deepEqual(state.calls.slice(0, 9), [
-    "plan", "prepare-interop", "reactor", "canonical", "compose", "instantiate",
-    "bind-interop", "bind-canonical", "notifier",
-  ]);
-  assert.equal(state.controls.canonicalRequest.reactor.module, reactorModule);
-  assert.doesNotThrow(() => state.controls.canonicalRequest.reactor.assertAvailable());
-  state.controls.reactorRequest.onReady(11);
-  assert.deepEqual(state.calls.slice(-2), ["notify:11", "wake:37:11"]);
+  assert.equal(state.calls.filter(value => value === "turn").length, 1);
+  session.exports.read();
+  state.controls.lifetime.observeAsyncCompletion(undefined);
+  assert.equal(state.calls.filter(value => value === "turn").length, 3);
+  state.controls.pumpRequest.onFailure(new Error("event loop trapped"));
+  const failure = await session.failure;
+  assert.match(failure.message, /export session failed/);
+  assert.ok(state.calls.includes("stop"));
+  assert.throws(() => session.exports.read(), error => error === failure);
+  assert.equal(state.calls.at(-1), "turn");
+  await new Promise(resolve => setTimeout(resolve, 0));
   await session.close();
-  assert.deepEqual(state.calls.slice(-4), [
-    "close-interop", "close-reactor", "close-canonical", "close-caller",
-  ]);
+
+  const completion = fixture();
+  const completed = await completion.opener.open(completion.request);
+  completion.controls.lifetime.observeAsyncCompletion(new Error("delivery failed"));
+  assert.match((await completed.failure).message, /export session failed/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await completed.close();
 });
 
-test("makes the first asynchronous or reactor failure permanent", async () => {
-  for (const source of ["interop", "reactor", "wake"]) {
-    const state = fixture({
-      reactor: source !== "interop",
-      failAt: source === "wake" ? "wake" : null,
-      pendingExport: true,
-    });
-    const session = await state.opener.open(state.request);
-    const pending = session.exports.pending();
-    const cause = new Error("private failure");
-    if (source === "interop") state.controls.lifetime.observeAsyncFailure(cause);
-    else if (source === "reactor") state.controls.reactorRequest.onFailure();
-    else state.controls.reactorRequest.onReady(7);
-    const failure = await session.failure;
-    assert.equal(failure instanceof NetWasmHostError, true);
-    assert.throws(() => session.exports.read(), error => error === failure);
-    assert.throws(() => state.controls.lifetime.assertAsyncDeliveryAvailable(),
-      error => error === failure);
-    if (source !== "interop") {
-      assert.throws(() => state.controls.canonicalRequest.reactor.assertAvailable(),
-        error => error === failure);
-      const callCount = state.calls.length;
-      state.controls.reactorRequest.onReady(9);
-      assert.equal(state.calls.length, callCount);
-    }
-    state.controls.lifetime.observeAsyncFailure(new Error("later"));
-    assert.equal(await session.failure, failure);
-    await assert.rejects(pending, /closed/);
-    await new Promise(resolve => setTimeout(resolve, 0));
-    assert.deepEqual(state.calls.filter(value => value.startsWith("close-")),
-      source === "interop"
-        ? ["close-interop", "close-canonical", "close-caller"]
-        : ["close-interop", "close-reactor", "close-canonical", "close-caller"]);
-    await session.close();
-  }
-});
-
-test("rolls back if a reactor becomes ready before guest binding", async () => {
-  const state = fixture({ reactor: true, reactorReadyBeforeBind: true });
-  await assert.rejects(() => state.opener.open(state.request), /before binding/);
-  assert.equal(state.calls.some(value => value.startsWith("initialize:")), false);
-  assert.deepEqual(state.calls.slice(-3), [
-    "close-interop", "close-reactor", "close-caller",
-  ]);
+test("makes the first asynchronous failure permanent", async () => {
+  const state = fixture({ pendingExport: true });
+  const session = await state.opener.open(state.request);
+  const pending = session.exports.pending();
+  state.controls.lifetime.observeAsyncFailure(new Error("private failure"));
+  const failure = await session.failure;
+  assert.equal(failure instanceof NetWasmHostError, true);
+  assert.throws(() => session.exports.read(), error => error === failure);
+  assert.throws(() => state.controls.lifetime.assertAsyncDeliveryAvailable(),
+    error => error === failure);
+  state.controls.lifetime.observeAsyncFailure(new Error("later"));
+  assert.equal(await session.failure, failure);
+  await assert.rejects(pending, /closed/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(state.calls.filter(value => value.startsWith("close-")),
+    ["close-interop", "close-canonical", "close-caller"]);
+  await session.close();
 });
 
 test("does not initialize after a terminal failure arrives during instantiation", async () => {
@@ -291,56 +253,35 @@ test("does not initialize after a terminal failure arrives during instantiation"
   ]);
 });
 
-test("allows reactor use during initialization but rejects it before and after", async () => {
-  let initializationAvailable = false;
-  const state = fixture({
-    reactor: true,
-    probeReactorAtCanonical: true,
-    onInitialize(controls) {
-      controls.canonicalRequest.reactor.assertAvailable();
-      initializationAvailable = true;
-    },
-  });
-  const session = await state.opener.open(state.request);
-  assert.equal(initializationAvailable, true);
-  assert.equal(state.controls.beforeReadyError instanceof NetWasmHostError, true);
-  await session.close();
-  assert.throws(() => state.controls.canonicalRequest.reactor.assertAvailable(), /unavailable/);
-});
-
-test("rejects export access before readiness and uses the platform scheduler default", async () => {
+test("rejects export access before readiness", async () => {
   const state = fixture({ probeExportAtPrepare: true });
-  delete state.request.schedule;
   const session = await state.opener.open(state.request);
   assert.match(state.controls.beforeReadyExportError.message, /not ready/);
   await session.close();
+});
 
-  const originalQueueMicrotask = globalThis.queueMicrotask;
-  try {
-    globalThis.queueMicrotask = undefined;
-    const missing = fixture();
-    delete missing.request.schedule;
-    await assert.rejects(() => missing.opener.open(missing.request), /actions/);
-  } finally {
-    globalThis.queueMicrotask = originalQueueMicrotask;
-  }
+test("keeps the Component Model's own built-ins from the interop imports", async () => {
+  const state = fixture();
+  const prepare = state.request.prepareInterop;
+  state.request.prepareInterop = lifetime => ({ ...prepare(lifetime), imports: { $root: {} } });
+  await assert.rejects(() => state.opener.open(state.request), /reserved/);
+  assert.deepEqual(state.calls.filter(value => value.startsWith("close-")), ["close-interop", "close-caller"]);
 });
 
 test("rolls back every acquired scope for each startup failure", async () => {
   const cases = [
     ["plan", ["close-caller"]],
     ["prepare-interop", ["close-caller"]],
-    ["reactor", ["close-interop", "close-caller"]],
-    ["canonical", ["close-interop", "close-reactor", "close-caller"]],
-    ["compose", ["close-interop", "close-reactor", "close-canonical", "close-caller"]],
-    ["instantiate", ["close-interop", "close-reactor", "close-canonical", "close-caller"]],
-    ["bind-interop", ["close-interop", "close-reactor", "close-canonical", "close-caller"]],
-    ["bind-canonical", ["close-interop", "close-reactor", "close-canonical", "close-caller"]],
-    ["notifier", ["close-interop", "close-reactor", "close-canonical", "close-caller"]],
-    ["initialize", ["close-interop", "close-reactor", "close-canonical", "close-caller"]],
+    ["canonical", ["close-interop", "close-caller"]],
+    ["compose", ["close-interop", "close-canonical", "close-caller"]],
+    ["instantiate", ["close-interop", "close-canonical", "close-caller"]],
+    ["bind-interop", ["close-interop", "close-canonical", "close-caller"]],
+    ["bind-canonical", ["close-interop", "close-canonical", "close-caller"]],
+    ["pump", ["close-interop", "close-canonical", "close-caller"]],
+    ["initialize", ["close-interop", "close-canonical", "close-caller"]],
   ];
   for (const [failAt, expectedClosing] of cases) {
-    const state = fixture({ failAt, reactor: !["plan", "prepare-interop"].includes(failAt) });
+    const state = fixture({ failAt });
     await assert.rejects(() => state.opener.open(state.request), new RegExp(failAt));
     assert.deepEqual(state.calls.filter(value => value.startsWith("close-")), expectedClosing);
   }
@@ -348,26 +289,24 @@ test("rolls back every acquired scope for each startup failure", async () => {
 
 test("attempts all cleanup and reports close and rollback failures", async () => {
   const closing = fixture({
-    reactor: true,
-    releaseFailures: ["interop", "reactor", "canonical", "caller"],
+    releaseFailures: ["interop", "canonical", "caller"],
   });
   const session = await closing.opener.open(closing.request);
   await assert.rejects(() => session.close(), error =>
-    error instanceof AggregateError && error.errors.length === 4);
+    error instanceof AggregateError && error.errors.length === 3);
   assert.equal((await session.failure) instanceof AggregateError, true);
-  assert.deepEqual(closing.calls.slice(-4), [
-    "close-interop", "close-reactor", "close-canonical", "close-caller",
+  assert.deepEqual(closing.calls.slice(-3), [
+    "close-interop", "close-canonical", "close-caller",
   ]);
 
   const rollback = fixture({
     failAt: "initialize",
-    reactor: true,
     releaseFailures: ["interop", "canonical"],
   });
   await assert.rejects(() => rollback.opener.open(rollback.request), error =>
     error instanceof AggregateError && error.errors.length === 3);
-  assert.deepEqual(rollback.calls.slice(-4), [
-    "close-interop", "close-reactor", "close-canonical", "close-caller",
+  assert.deepEqual(rollback.calls.slice(-3), [
+    "close-interop", "close-canonical", "close-caller",
   ]);
 
   const terminal = fixture({ releaseFailures: ["interop"] });
@@ -396,9 +335,8 @@ test("installs the session completion before cleanup can reenter close", async (
   session = await state.opener.open(state.request);
 
   const firstClose = session.close();
-  await Promise.resolve();
-  assert.equal(nestedClose, firstClose);
   await firstClose;
+  assert.equal(nestedClose, firstClose);
   assert.equal(state.calls.filter(value => value === "close-interop").length, 1);
   assert.equal(session.close(), firstClose);
 });
@@ -417,15 +355,15 @@ test("accepts a wrapped instance and rejects invalid instances, boundaries and e
   });
   const actual = fixture({
     instanceOverride: actualInstance,
-    planOverrides: { canonicalInitializeExport: "run" },
+    planOverrides: { canonicalInitializeExport: "run", eventLoopRunExport: "run", eventLoopCallbackExport: "run" },
   });
   actual.request.instantiate = async () => actualInstance;
   const actualSession = await actual.opener.open(actual.request);
   await actualSession.close();
 
   for (const mode of ["instance-null", "instance-exports", "boundary-null", "boundary-exports",
-    "initialize-accessor", "initialize-missing", "wake-accessor", "wake-missing"]) {
-    const state = fixture({ reactor: mode.startsWith("wake") });
+    "initialize-accessor", "initialize-missing"]) {
+    const state = fixture();
     if (mode === "instance-null") state.request.instantiate = async () => null;
     if (mode === "instance-exports") state.request.instantiate = async () => ({ exports: null });
     if (mode === "boundary-null") {
@@ -452,12 +390,6 @@ test("accepts a wrapped instance and rejects invalid instances, boundaries and e
       });
     }
     if (mode === "initialize-missing") delete state.instance.exports[initializeExport];
-    if (mode === "wake-accessor") {
-      Object.defineProperty(state.instance.exports, reactorGuest, {
-        enumerable: true, get: () => () => {},
-      });
-    }
-    if (mode === "wake-missing") delete state.instance.exports[reactorGuest];
     await assert.rejects(() => state.opener.open(state.request), TypeError);
   }
 });
@@ -466,8 +398,7 @@ test("rejects malformed dependencies and opening requests before acquisition", a
   const state = fixture();
   const validDependencies = {
     bindCanonicalInstance() {}, buildPlan() {}, closeCanonicalBinding() {}, composeImports() {},
-    createCanonicalBinding() {}, createGuestNotifier() {}, createReactor() {},
-    createReleaseCommand() {},
+    createCanonicalBinding() {}, createEventPump() {}, createReleaseCommand() {}, readComponentModel() {},
   };
   for (const dependencies of [null, [], {}, { ...validDependencies, extra() {} }, {
     ...validDependencies, [Symbol("invalid")]: true,
@@ -492,7 +423,7 @@ test("rejects malformed dependencies and opening requests before acquisition", a
     await assert.rejects(() => state.opener.open({ ...state.request, ...change }), /inputs/);
   }
   for (const change of [
-    { instantiate: null }, { prepareInterop: null }, { schedule: null },
+    { instantiate: null }, { prepareInterop: null },
   ]) {
     await assert.rejects(() => state.opener.open({ ...state.request, ...change }), /actions/);
   }
@@ -501,44 +432,30 @@ test("rejects malformed dependencies and opening requests before acquisition", a
   }
 });
 
-test("rejects malformed interop, reactor and adapter metadata products", async () => {
+test("rejects a malformed event pump", async () => {
+  for (const pumpProduct of [null, 1, {}, { turn() {} }, { stop() {} }]) {
+    const state = fixture({ pumpProduct });
+    await assert.rejects(() => state.opener.open(state.request), /event pump/);
+  }
+  const unavailable = fixture({ planOverrides: { eventLoopRunExport: "missing" } });
+  await assert.rejects(() => unavailable.opener.open(unavailable.request), /'missing' is unavailable/);
+});
+
+test("rejects malformed interop products", async () => {
   for (const interop of [null, [], {}, { imports: {}, bindInstance() {}, close() {}, extra: true },
     { imports: {}, bindInstance: null, close() {} },
     { imports: {}, bindInstance() {}, close: null },
     { imports: null, bindInstance() {}, close() {} },
     { imports: [], bindInstance() {}, close() {} },
     { imports: Object.create({}), bindInstance() {}, close() {} },
+    { imports: {}, bindInstance: null, close() {}, consumeTerminalEvent() {}, async drainTerminalReports() {} },
+    Object.assign(Object.create({ inherited: true }), {
+      imports: {}, bindInstance() {}, close() {}, consumeTerminalEvent() {}, async drainTerminalReports() {},
+    }),
   ]) {
     const state = fixture();
     state.request.prepareInterop = () => interop;
     await assert.rejects(() => state.opener.open(state.request), /interop/);
   }
 
-  for (const reactorProduct of [null, [], {}, { watch() {}, cancel() {}, close() {}, extra: true },
-    { watch: null, cancel() {}, close() {} },
-    { watch() {}, cancel: null, close() {} },
-    { watch() {}, cancel() {}, close: null },
-  ]) {
-    const state = fixture({ reactor: true, reactorProduct });
-    await assert.rejects(() => state.opener.open(state.request), /reactor/);
-  }
-
-  for (const rawAdapter of [
-    {},
-    { rawAdapterMetadata: null },
-    { rawAdapterMetadata: 1 },
-    { rawAdapterMetadata: {} },
-    { rawAdapterMetadata: { requiredCapabilities: null } },
-  ]) {
-    const state = fixture();
-    state.request.adapter = rawAdapter;
-    const session = await state.opener.open(state.request);
-    assert.equal(state.calls.includes("reactor"), false);
-    await session.close();
-  }
-  const accessor = fixture();
-  accessor.request.adapter = Object.defineProperty({}, "rawAdapterMetadata", {
-    enumerable: true, get: () => ({}),
-  });
-  await assert.rejects(() => accessor.opener.open(accessor.request), /data property/);
 });

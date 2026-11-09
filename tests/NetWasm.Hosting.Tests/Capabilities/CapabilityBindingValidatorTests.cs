@@ -113,18 +113,35 @@ public sealed class CapabilityBindingValidatorTests
     }
 
     [Fact]
-    public void AcceptsRuntimeOwnedReactorImportsWithoutAnExternalProvider()
+    public void NeedsNoProviderForATypeOnlyPlatformInterface()
     {
-        const string module = "netwasm:runtime/reactor-host@1.0.0";
+        const string module = "wasi:cli/types@0.3.2";
         var data = CapabilityBindingFixture.Create();
-        var watch = new DeploymentFunction(module, "watch", ["u32", "s64"], []);
-        var cancel = new DeploymentFunction(module, "cancel", ["u32"], []);
+        var manifest = data.Manifest with
+        {
+            RequiredImportModules = [.. data.Manifest.RequiredImportModules, module],
+        };
+
+        _subject.Validate(manifest, data.Request, data.PlatformProviders, data.ApplicationProviders);
+        Assert.Throws<ArgumentException>(() => _subject.Validate(
+            manifest,
+            data.Request,
+            [.. data.PlatformProviders, new(module, NetWasmPlatformCapability.Baseline, [])],
+            data.ApplicationProviders));
+    }
+
+    [Fact]
+    public void AcceptsRuntimeOwnedDiagnosticImportsWithoutAnExternalProvider()
+    {
+        const string module = "netwasm:diagnostics/terminal@1.0.0";
+        var data = CapabilityBindingFixture.Create();
+        var report = new DeploymentFunction(module, "report", ["u32"], []);
         data = data with
         {
             Manifest = data.Manifest with
             {
                 RequiredImportModules = [.. data.Manifest.RequiredImportModules, module],
-                RequiredImports = [.. data.Manifest.RequiredImports, watch, cancel],
+                RequiredImports = [.. data.Manifest.RequiredImports, report],
             },
         };
 

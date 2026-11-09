@@ -17,6 +17,10 @@ internal sealed class RuntimeFunctionAppender(
     IOutwardMethodFunctionAppender outwardMethods,
     IManagedBoundaryPlanBuilder boundaries) : IRuntimeFunctionAppender
 {
+    // A callback-lifted wasi:cli/run's callback, and the exit code its task.return reads.
+    internal const string EntryCallbackExport = "netwasm.entry.callback";
+    internal const string EntryExitCodeExport = "netwasm.entry.exit_code";
+
     public RuntimeFunctionAppendResult Append(
         IList<WasmFunctionDefinition> functions,
         int importCount,
@@ -29,7 +33,9 @@ internal sealed class RuntimeFunctionAppender(
         IDictionary<string, int> asyncHelperIndices,
         IFunctionIndexResolver functionIndices,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
-        EntityKey? entryPointArgumentFactory = null)
+        EntityKey? entryPointArgumentFactory = null,
+        EntityKey? localTimePreflight = null,
+        EntityKey? processExit = null)
     {
         ArgumentNullException.ThrowIfNull(functions);
         ArgumentOutOfRangeException.ThrowIfNegative(importCount);
@@ -103,11 +109,14 @@ internal sealed class RuntimeFunctionAppender(
         int entryPointIndex;
         if (entryPointProfile == WasmEntryPointProfile.Process)
         {
-            // Without a host-driven reactor an asynchronous Main is entered synchronously and
-            // AsyncEntryPoint.Run runs its event loop to completion; with one, the host observes
-            // the asynchronous process boundary.
-            var commandEntryPoint = asyncBinding?.CommandEntryPoint;
-            var processBinding = commandEntryPoint is null ? asyncBinding : null;
+            // An asynchronous Main is a callback-lifted wasi:cli/run: the entry starts it through
+            // AsyncEntryPoint.Start and returns the callback code.
+            var commandEntry = asyncBinding?.CommandEntry;
+            if (asyncBinding is not null && commandEntry is null)
+            {
+                throw new InvalidOperationException(
+                    "An asynchronous process entry point returns Task or Task<int>.");
+            }
             entryPointIndex = outwardMethods.Append(new(
                 functions,
                 importCount,
@@ -115,13 +124,9 @@ internal sealed class RuntimeFunctionAppender(
                 "netwasm.entry",
                 "run",
                 entryPoint,
-                processBinding,
-                processBinding is null
-                    ? null
-                    : ManagedAsyncBoundaryNames.ForProcess(processBinding),
-                processBinding is null
-                    ? null
-                    : ManagedAsyncBoundaryKinds.Process,
+                null,
+                null,
+                null,
                 initialization,
                 finalizableTypes.Length != 0,
                 true,
@@ -129,7 +134,36 @@ internal sealed class RuntimeFunctionAppender(
                 functionIndices,
                 boundaryEntries,
                 entryPointArgumentFactory,
-                EntryCompletion: commandEntryPoint));
+                EntryCompletion: commandEntry?.Start,
+                LocalTimePreflight: localTimePreflight,
+                // A callback-lifted entry exits when CoreLib completes its task.
+                ProcessExit: commandEntry is null ? processExit : null));
+            if (commandEntry is not null)
+            {
+                // The callback and the exit code have the entry's terminal boundary, not its
+                // initialization: the start initialized the runtime.
+                AppendEntryExport(EntryCallbackExport, commandEntry.Callback);
+                AppendEntryExport(EntryExitCodeExport, commandEntry.ExitCode);
+            }
+
+            void AppendEntryExport(string name, MethodInstanceModel method) =>
+                asyncHelperIndices.Add(name, outwardMethods.Append(new(
+                    functions,
+                    importCount,
+                    asyncHelperIndices,
+                    name,
+                    name,
+                    method.Definition,
+                    null,
+                    null,
+                    null,
+                    initialization,
+                    finalizableTypes.Length != 0,
+                    true,
+                    ManagedBoundaryKind.ProcessEntryPoint,
+                    functionIndices,
+                    boundaryEntries,
+                    InitializesRuntime: false)));
         }
         else
         {

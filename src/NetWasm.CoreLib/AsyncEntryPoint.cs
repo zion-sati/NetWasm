@@ -2,23 +2,54 @@ namespace System.Runtime.InteropServices
 {
     using Threading.Tasks;
 
-    // The synchronous entry a command world gives an asynchronous Main, after Mono's
-    // AsyncHelpers.HandleAsyncEntryPoint on WASI: the program drives its own event loop until
-    // Main's task completes, then observes the task with await semantics, so a fault, a
-    // cancellation or an exit code surfaces exactly as a synchronous Main's would. The compiler
-    // calls it with Main's task when the selected world has no host-driven reactor.
+    // An asynchronous Main is a callback-lifted wasi:cli/run. Start runs Main's ready work and
+    // returns the callback code: EXIT once the task has completed, else WAIT on the event loop's
+    // waitable set. The host then calls Callback with each event of that set until EXIT. A
+    // completed task is observed with await semantics, so a fault or a cancellation surfaces as
+    // a synchronous Main's would, and its exit code is kept for the adapter's task.return.
     internal static class AsyncEntryPoint
     {
-        internal static void Run(Task task)
+        private const int CallbackExit = 0;
+        private static Task? s_task;
+        private static int s_exitCode;
+
+        internal static int Start(Task task)
         {
-            PlatformServices.RunEntryPointToCompletion(task);
-            task.GetAwaiter().GetResult();
+            s_task = task ?? throw new ArgumentNullException();
+            return Finish(PlatformServices.StartEntryPoint(task));
         }
 
-        internal static int Run(Task<int> task)
+        internal static int Callback(int eventCode, int waitable, int payload)
         {
-            PlatformServices.RunEntryPointToCompletion(task);
-            return task.GetAwaiter().GetResult();
+            if (s_task == null)
+            {
+                throw new InvalidOperationException();
+            }
+
+            return Finish(PlatformServices.DeliverEntryPointEvent(
+                s_task, eventCode, waitable, unchecked((uint)payload)));
+        }
+
+        // Main's exit code once Start or Callback returned EXIT; zero for a Task.
+        internal static int ExitCode() => s_exitCode;
+
+        private static int Finish(int code)
+        {
+            if (code == CallbackExit)
+            {
+                if (s_task is Task<int> withExitCode)
+                {
+                    s_exitCode = withExitCode.GetAwaiter().GetResult();
+                }
+                else
+                {
+                    s_task!.GetAwaiter().GetResult();
+                }
+
+                PlatformServices.RunProcessExit();
+            }
+
+            return code;
         }
     }
 }

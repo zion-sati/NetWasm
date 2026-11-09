@@ -131,8 +131,11 @@ internal ref struct UnitFingerprintBuilder
         foreach (var type in body.LocalSignatureTypes) Add(type);
         Add(body.Instructions.Length);
         foreach (var instruction in body.Instructions) Add(instruction);
-        // As the structured header carries them.
+        // As the structured header carries them. Which references are proven non-null
+        // can depend on the rest of the program, as a constructor's this does on its
+        // callers, so those offsets count too.
         Add(body.ExceptionRegions.IsEmpty && body.ArrayBoundsProof is not null);
+        if (body.ExceptionRegions.IsEmpty && body.ArrayBoundsProof is { } proof) Add(proof.NonNullOffsets.Order());
         Add(body.IntegerCheckProof is not null);
         Add(body.PinnedLocals.Order());
         Add(body.ExceptionRegions.Length);

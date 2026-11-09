@@ -65,6 +65,7 @@ internal sealed class RuntimeModuleMaterializer(
             request.OutputPath)
         {
             RuntimeFeatures = sourceLayout.RuntimeFeatures,
+            PlainCoreModule = request.PlainCoreModule,
         });
         var optimizeArguments = request.Optimization == RuntimeWasmOptimization.None
             ? ImmutableArray<string>.Empty

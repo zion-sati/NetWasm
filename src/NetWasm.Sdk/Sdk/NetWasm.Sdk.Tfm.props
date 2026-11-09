@@ -61,7 +61,7 @@
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <!-- A test root must declare IsTestProject during its first restore. -->
     <NetWasmRequiresHostTools Condition="'$(NetWasmRequiresHostTools)' == ''">false</NetWasmRequiresHostTools>
-    <NetWasmRequiresHostTools Condition="'$(OutputType)' == 'Exe' OR '$(IsTestProject)' == 'true' OR '$(_NetWasmWorkerKind)' != ''">true</NetWasmRequiresHostTools>
+    <NetWasmRequiresHostTools Condition="'$(OutputType)' == 'Exe' OR '$(IsTestProject)' == 'true' OR '$(_NetWasmWorkerKind)' != '' OR '$(_NetWasmPlainCoreModule)' == 'true' OR '$(_NetWasmComponentLibrary)' == 'true'">true</NetWasmRequiresHostTools>
     <NetWasmBuildHostOSArchitecture>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)</NetWasmBuildHostOSArchitecture>
     <!-- A distribution-built .NET SDK reports its distribution's RID (arch-x64,
          fedora.42-x64, rhel.9-x64); the host tools are built for the portable
@@ -106,9 +106,11 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
-    <!-- Tool-only download: never add desktop generator assemblies to guest references. -->
+    <!-- Tool-only download: never add desktop generator assemblies to guest references. A
+         component also gets it, since the bindings of the world it exports may come from a
+         package's targets, which restore has not imported yet. -->
     <PackageDownload Include="NetWasm.Wit.Bindings.Tool" Version="[$(NetWasmSdkPackageVersion)]"
-                     Condition="'@(_NetWasmWorkerReference)' != '' OR '@(NetWasmWit)' != ''" />
+                     Condition="'@(_NetWasmWorkerReference)' != '' OR '@(NetWasmWit)' != '' OR '$(_NetWasmComponentLibrary)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRefPackageId)' != ''">

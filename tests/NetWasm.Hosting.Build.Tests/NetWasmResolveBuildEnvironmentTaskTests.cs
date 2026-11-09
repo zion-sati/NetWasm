@@ -41,14 +41,16 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
         Assert.Equal("NetWasm.Toolchain", task.ToolchainPackageId);
         Assert.Equal("0.1.0-preview.29", task.ToolchainPackageVersion);
         Assert.Equal(PathFor("command.wit.wasm"), task.CommandWitPackagePath);
-        Assert.Equal(PathFor("async-command.wit.wasm"),
-            task.AsyncCommandWitPackagePath);
+        Assert.Equal(PathFor("diagnostic-command.wit.wasm"),
+            task.DiagnosticCommandWitPackagePath);
         Assert.Equal(PathFor("compiler.wit.wasm"), task.CompilerWitPackagePath);
         Assert.Equal(PathFor("inspect.mjs"), task.RawInspectionCommandPath);
         Assert.Equal(PathFor("jco.mjs"), task.JcoPath);
-        Assert.Equal("1.28.1+netwasm.2", task.JcoVersion);
-        Assert.Equal("0.24.1", task.Preview2ShimVersion);
-        Assert.Equal(PathFor("preview2-shim"), task.Preview2ShimRoot);
+        Assert.Equal("1.41.0+netwasm.1", task.JcoVersion);
+        Assert.Equal("0.13.0", task.Preview3ShimVersion);
+        Assert.Equal(PathFor("jco"), task.NodeHttpProviderRoot);
+        Assert.Equal(PathFor("http.js"), task.NodeHttpProviderEntryPath);
+        Assert.Equal($"{PathFor("package.json")};{PathFor("client.js")}", task.NodeHttpProviderFiles);
         Assert.Equal(PathFor("zoneinfo"), task.TimeZoneSourceRoot);
         Assert.Equal("2026c", task.TimeZoneDataVersion);
         Assert.Equal(PathFor("bundle.mjs"), task.HostingBundleCommandPath);
@@ -111,7 +113,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
 
         Assert.Equal(1, first.Calls);
         Assert.Equal(("cache.json", "stamp"), (cache.WrittenPath, cache.WrittenStamp));
-        Assert.Equal(32, cache.Outputs!.Count);
+        Assert.Equal(34, cache.Outputs!.Count);
         var second = new RecordingResolver(CreateEnvironment());
         var cached = new NetWasmResolveBuildEnvironmentTask(second, new FixedStamper("stamp"), cache, cache)
         {
@@ -239,9 +241,8 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",
                     PathFor("command.wit.wasm"),
-                    PathFor("async-command.wit.wasm"),
+                    PathFor("diagnostic-command.wit.wasm"),
                     PathFor("compiler.wit.wasm")),
-                PathFor("preview2-shim"),
                 new(
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",
@@ -267,15 +268,19 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                 new(
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",
-                    "1.28.1+netwasm.2",
-                    "0.24.1",
+                    "1.41.0+netwasm.1",
+                    "0.13.0",
                     node.AbsolutePath,
                     nodeCompatibility.Version,
                     PathFor("jco.mjs"),
                     PathFor("jco-lock"),
                     PathFor("jco-integrity"),
                     PathFor("jco-notices"),
-                    PathFor("jco-policy")),
+                    PathFor("jco-policy"),
+                    new(
+                        PathFor("jco"),
+                        PathFor("http.js"),
+                        [PathFor("package.json"), PathFor("client.js")])),
                 new(
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",

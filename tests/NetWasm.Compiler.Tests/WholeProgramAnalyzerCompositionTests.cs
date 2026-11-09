@@ -211,8 +211,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
             fields,
             methods,
             methodInstances,
-            symbols,
-            PlatformWorldCapabilities.None);
+            symbols);
         var analyzer = factory.Create(
             snapshot,
             types,
@@ -570,8 +569,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
             IFieldRepository fields,
             IMethodRepository methods,
             IMethodInstanceResolver methodInstances,
-            ISymbolFormatter symbols,
-            PlatformWorldCapabilities world)
+            ISymbolFormatter symbols)
         {
             Called = true;
             return new JavaScriptAsyncBindingResolver(
@@ -581,8 +579,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
                 fields,
                 methods,
                 methodInstances,
-                symbols,
-                world);
+                symbols);
         }
     }
 

@@ -204,6 +204,7 @@ internal sealed class CompilationEmissionBuilder(
             NativeCallbacks = nativeCallbacks,
             AddressedNativeCallbacks = addressedNativeCallbacks,
             EntryPointArgumentFactory = preparation.EntryPointArgumentFactory,
+            EntryPointExit = preparation.EntryPointExit,
             CollectManagedMethodMemoryMetrics = options.DiagnosticTracePath is not null,
             CompiledUnits = units,
             UseJavaScriptExportBoundary =

@@ -8,14 +8,28 @@ namespace System.Runtime.InteropServices
     // the values for code compiled without that rewrite, such as CoreLib's desktop actor tests.
     internal static class PlatformWorld
     {
-        // True when the selected world imports netwasm:runtime/reactor-host, whose host wakes the
-        // pollable reactor; false for command worlds and when no world is selected.
+        // True unless the program is a plain core module, which has no WASI: its platform services
+        // are the program's own bindings or throw PlatformNotSupportedException.
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal static bool ImportsReactorHost() => true;
+        internal static bool ProvidesWasi() => true;
 
-        // True when the selected world imports wasi:io/poll and the monotonic clock, which a
-        // program needs to run its own event loop.
+        // True for a component: the Component Model's waitable sets run its event loop.
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static bool ImportsEventLoop() => true;
+
+        // True when the selected world imports wasi:clocks/monotonic-clock, whose wait-for a
+        // delay needs.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static bool ImportsMonotonicClock() => true;
+
+        // True when the program has a synchronous WIT export, inside which a blocking wait
+        // throws.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static bool HasSynchronousExports() => true;
+
+        // True for a module a JavaScript host runs: the host runs its event loop and can complete
+        // a task through a JavaScript promise the program awaits.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static bool HasHostEventLoop() => true;
     }
 }

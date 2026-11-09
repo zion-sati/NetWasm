@@ -1,12 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Runtime.InteropServices.Cryptography;
-
 namespace System.Diagnostics
 {
     /// <summary>
-    /// Supplies Activity identifiers from the already-qualified WASI secure entropy capability.
+    /// Supplies Activity identifiers from the program's secure random source.
     /// </summary>
     internal sealed class RandomNumberGenerator
     {
@@ -20,12 +18,9 @@ namespace System.Diagnostics
 
         public unsafe long Next()
         {
-            byte[] bytes = new byte[sizeof(ulong)];
-            fixed (byte* destination = bytes)
-            {
-                CryptographicRandomServices.Filler.Fill((nuint)destination, bytes.Length);
-                return (long)(*(ulong*)destination);
-            }
+            ulong value;
+            Runtime.InteropServices.PlatformServices.Random.Fill(new Span<byte>(&value, sizeof(ulong)));
+            return (long)value;
         }
     }
 }

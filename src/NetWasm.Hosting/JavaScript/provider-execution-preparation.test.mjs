@@ -6,7 +6,7 @@ import { createProviderExecutionPreparation } from "./provider-execution-prepara
 const manifest = Object.freeze({ name: "manifest" });
 const executionRequest = Object.freeze({ name: "request" });
 const filesystem = Object.freeze({ name: "filesystem" });
-const platformProvider = Object.freeze({ module: "wasi:cli/environment@0.2.11" });
+const platformProvider = Object.freeze({ module: "wasi:cli/environment@0.3.2" });
 const applicationProvider = Object.freeze({ module: "example:app/imports@1.0.0" });
 const metadata = Object.freeze({
   applicationProviders: Object.freeze([applicationProvider]),
@@ -16,12 +16,15 @@ const binding = Object.freeze({ ...metadata, manifest, request: executionRequest
 const platformSource = Object.freeze({ module: platformProvider.module, value: Object.freeze({}) });
 const applicationSource = Object.freeze({ module: applicationProvider.module, value: Object.freeze({}) });
 const platformSources = Object.freeze([platformSource]);
+let releases = 0;
+const loadedPlatform = Object.freeze({ release: async () => { releases++; }, sources: platformSources });
 const applicationSources = Object.freeze([applicationSource]);
 const componentImports = Object.freeze(Object.create(null));
 const consumerModules = Object.freeze(Object.create(null));
 const rawProviders = Object.freeze(Object.create(null));
 const stdout = Object.freeze({ write() {} });
 const stderr = Object.freeze({ write() {} });
+const stdin = Object.freeze({ read() { return [][Symbol.iterator](); } });
 
 function fixture(overrides = {}) {
   const calls = [];
@@ -48,7 +51,7 @@ function fixture(overrides = {}) {
     },
     async loadPlatformProviders(value) {
       calls.push(["platform", value]);
-      return platformSources;
+      return loadedPlatform;
     },
     projectProviderModules(value) {
       calls.push(["project", value]);
@@ -60,7 +63,7 @@ function fixture(overrides = {}) {
 }
 
 function request(overrides = {}) {
-  return { filesystem, manifest, request: executionRequest, signal: null, stderr, stdout, ...overrides };
+  return { filesystem, manifest, request: executionRequest, signal: null, stderr, stdin, stdout, ...overrides };
 }
 
 test("selects, validates, loads, and projects only the execution providers", async () => {
@@ -73,6 +76,7 @@ test("selects, validates, loads, and projects only the execution providers", asy
   assert.equal(result.componentImports, componentImports);
   assert.equal(result.consumerModules, consumerModules);
   assert.equal(result.rawProviders, rawProviders);
+  assert.equal(result.release, loadedPlatform.release);
   assert.deepEqual(f.calls, [
     ["validate-manifest", manifest],
     ["validate-request", executionRequest],
@@ -84,7 +88,7 @@ test("selects, validates, loads, and projects only the execution providers", asy
       request: executionRequest,
     }],
     ["application", { binding, signal: null }],
-    ["platform", { binding, filesystem, signal: null, stderr, stdout }],
+    ["platform", { binding, filesystem, signal: null, stderr, stdin, stdout }],
     ["project", {
       providers: [platformProvider, applicationProvider],
       sources: [platformSource, applicationSource],
@@ -120,7 +124,7 @@ test("observes cancellation before and between every side-effecting phase", asyn
     } else if (stage === "after-application") {
       overrides.loadApplicationProviders = async () => { controller.abort(); return applicationSources; };
     } else if (stage === "after-platform") {
-      overrides.loadPlatformProviders = async () => { controller.abort(); return platformSources; };
+      overrides.loadPlatformProviders = async () => { controller.abort(); return loadedPlatform; };
     }
     const f = fixture(overrides);
     await assert.rejects(
@@ -182,8 +186,10 @@ test("rejects malformed dependency products at their owning boundaries", async (
     ["validateCapabilityBinding", { ...binding, extra: true }, /binding/],
     ["loadApplicationProviders", [], /immutable array/],
     ["loadApplicationProviders", Object.freeze({}), /immutable array/],
-    ["loadPlatformProviders", [], /immutable array/],
-    ["loadPlatformProviders", Object.freeze({}), /immutable array/],
+    ["loadPlatformProviders", [], /loaded platform providers/],
+    ["loadPlatformProviders", Object.freeze({}), /loaded platform providers/],
+    ["loadPlatformProviders", Object.freeze({ release: null, sources: platformSources }), /releasable/],
+    ["loadPlatformProviders", Object.freeze({ release() {}, sources: [] }), /immutable array/],
     ["projectProviderModules", null, /modules/],
     ["projectProviderModules", { ...Object.freeze({ componentImports, consumerModules, rawProviders }), extra: true }, /modules/],
     ["projectProviderModules", Object.freeze({ componentImports: null, consumerModules, rawProviders }), /component imports/],
@@ -203,3 +209,17 @@ test("rejects malformed dependency products at their owning boundaries", async (
 function asyncOrValue(name, value) {
   return name.startsWith("load") ? async () => value : () => value;
 }
+
+test("releases the platform providers when preparation fails after loading them", async () => {
+  releases = 0;
+  const failure = new Error("projection");
+  const f = fixture({ projectProviderModules() { throw failure; } });
+  await assert.rejects(() => f.prepare(request()), error => error === failure);
+  assert.equal(releases, 1);
+  const controller = new AbortController();
+  const cancelled = fixture({
+    loadPlatformProviders: async () => { controller.abort(); return loadedPlatform; },
+  });
+  await assert.rejects(() => cancelled.prepare(request({ signal: controller.signal })), /cancelled/);
+  assert.equal(releases, 2);
+});

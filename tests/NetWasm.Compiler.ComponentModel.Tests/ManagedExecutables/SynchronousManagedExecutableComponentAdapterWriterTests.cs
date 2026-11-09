@@ -53,7 +53,7 @@ public sealed class SynchronousManagedExecutableComponentAdapterWriterTests
         Assert.DoesNotContain(".const 0 call $application_run", modules.Source);
         Assert.Contains(expectedNormalization, modules.Source);
         Assert.Contains(
-            $"(export \"{canonicalPrefix}|wasi:cli/run@0.2|run\")",
+            $"(export \"{canonicalPrefix}|wasi:cli/run@0.3|run\")",
             modules.Source);
         Assert.DoesNotContain($"{canonicalPrefix}_memory", modules.Source);
         Assert.DoesNotContain("terminal_exception", modules.Source);

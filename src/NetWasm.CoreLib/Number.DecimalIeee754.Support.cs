@@ -115,6 +115,7 @@ namespace System
         internal const string Argument_DestinationTooShort = "Destination is too short.";
         internal const string ArgumentOutOfRange_IndexMustBeLess = "Index was out of range. Must be non-negative and less than the size of the collection.";
         internal const string NotSupported_Type = "Type is not supported.";
+        internal const string PlatformNotSupported_TypedReference = "NetWasm cannot create or read through a TypedReference; typed references need a runtime field layout and boxing representation it does not have.";
         internal const string Argument_BadFormatSpecifier = "Format specifier was invalid.";
         internal const string Argument_CannotParsePrecision = "Characters following the format symbol must be a number of {0} or less.";
         internal const string Argument_GWithPrecisionNotSupported = "The 'G' format combined with a precision is not supported.";

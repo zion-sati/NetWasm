@@ -40,7 +40,7 @@ class ClosureStagingError(RuntimeError):
 
 ROOT_PACKAGES = (
     "node_modules/@bytecodealliance/jco",
-    "node_modules/@bytecodealliance/preview2-shim",
+    "node_modules/@bytecodealliance/preview3-shim",
 )
 POLICY_SCHEMA_VERSION = "1"
 POLICY_CONTRACT = "jco-transpile-only"
@@ -58,21 +58,18 @@ BINDGEN_PATCH_TARGET = (
     "node_modules/@bytecodealliance/jco-transpile/vendor/"
     "js-component-bindgen-component.core.wasm"
 )
-PATCHED_JCO_VERSION = "1.28.1+netwasm.2"
-UPSTREAM_JCO_VERSION = "1.28.1"
+PATCHED_JCO_VERSION = "1.41.0+netwasm.1"
+UPSTREAM_JCO_VERSION = "1.41.0"
 ACCEPTED_INVOCATION = [
     "transpile",
     "<component>",
-    "--out-dir",
-    "<output>",
-    "--name",
-    "program-component",
-    "--instantiation",
-    "async",
-    "--strict",
-    "--bindgen-enable-wasm-exnref",
-    "--no-wasi-shim",
-    "--quiet",
+    "bindgenEnableWasmExnref=true",
+    "emitTypescriptDeclarations=false",
+    "instantiation=async",
+    "name=<name>",
+    "quiet=true",
+    "strict=true",
+    "wasiShim=false",
 ]
 
 
@@ -185,8 +182,8 @@ def _validate_policy(policy: Any) -> tuple[set[str], dict[str, dict[str, Any]]]:
         raise ClosureStagingError("closure policy is not the transpile-only contract")
     if policy.get("roots") != list(ROOT_PACKAGES):
         raise ClosureStagingError("closure policy roots do not match the canonical roots")
-    if policy.get("entryPoint") != f"{ROOT_PACKAGES[0]}/dist/jco.js":
-        raise ClosureStagingError("closure policy entry point is not dist/jco.js")
+    if policy.get("entryPoint") != f"{ROOT_PACKAGES[0]}/dist/api.js":
+        raise ClosureStagingError("closure policy entry point is not dist/api.js")
     commands = policy.get("requiredCommands")
     if not isinstance(commands, list) or commands != ["transpile"]:
         raise ClosureStagingError("closure policy must qualify only the transpile command")
@@ -210,7 +207,7 @@ def _validate_policy(policy: Any) -> tuple[set[str], dict[str, dict[str, Any]]]:
     if ROOT_PACKAGES[0] not in compiler_closure:
         raise ClosureStagingError("closure policy compilerClosure omits the jco root")
     if ROOT_PACKAGES[1] not in runtime_shim_closure:
-        raise ClosureStagingError("closure policy runtimeShimClosure omits the Preview 2 shim root")
+        raise ClosureStagingError("closure policy runtimeShimClosure omits the WASI 0.3 shim root")
     excluded = _policy_entry_map(policy, "excludedPackagePaths")
     selected = set(selected_entries)
     if selected & excluded.keys():
@@ -1068,7 +1065,7 @@ def stage(
             )
             patch_manifest_sha256 = hashlib.sha256(patch_manifest_bytes).hexdigest()
 
-        entry_point = canonical_stage / "node_modules/@bytecodealliance/jco/dist/jco.js"
+        entry_point = canonical_stage / "node_modules/@bytecodealliance/jco/dist/api.js"
         if not entry_point.is_file():
             raise ClosureStagingError("canonical jco entrypoint is missing")
         canonical_lock.write_bytes(lock_bytes)

@@ -1,6 +1,5 @@
 const inventoryKeys = [
   "imports",
-  "reactorHostModule",
   "target",
 ];
 
@@ -13,9 +12,6 @@ export function composeRawImports(request = {}) {
   validateInventory(inventory);
   const canonical = readCanonicalBinding(canonicalBinding, inventory.target);
   assertPlainObject(physicalProviders, "raw physical providers");
-  if (Object.hasOwn(physicalProviders, inventory.reactorHostModule)) {
-    throw new TypeError("raw reactor host is reserved by the executor");
-  }
   const descriptors = new Map(inventory.imports.map(descriptor => [
     identityKey(descriptor.module, descriptor.name),
     descriptor,
@@ -59,9 +55,7 @@ export function composeRawImports(request = {}) {
 function validateInventory(inventory) {
   assertExactObject(inventory, inventoryKeys, "raw import inventory");
   if (inventory.target !== "wasm32" && inventory.target !== "wasm64"
-      || !Array.isArray(inventory.imports)
-      || typeof inventory.reactorHostModule !== "string"
-      || inventory.reactorHostModule.length === 0) {
+      || !Array.isArray(inventory.imports)) {
     throw new TypeError("raw import inventory is invalid");
   }
 }

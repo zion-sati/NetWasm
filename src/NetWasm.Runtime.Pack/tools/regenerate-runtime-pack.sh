@@ -165,13 +165,17 @@ NODE
     --native-profile "$native_profile" \
     --relocatable \
     --output "$collector_root/libnetwasm-runtime.a" \
-    --collector-output "$collector_root/libgc.a"
+    --collector-output "$collector_root/libgc.a" \
+    --wasi-output "$collector_root/libnetwasm-runtime-wasi.a" \
+    --nowasi-output "$collector_root/libnetwasm-runtime-nowasi.a"
   node "$source_package_root/tools/normalize-archive-paths.mjs" \
     --prefix "$repo_root" --prefix "$EMSDK" \
     --prefix "$temporary_root" \
     --prefix "$HOME" \
     --archive "$collector_root/libnetwasm-runtime.a" \
-    --archive "$collector_root/libgc.a"
+    --archive "$collector_root/libgc.a" \
+    --archive "$collector_root/libnetwasm-runtime-wasi.a" \
+    --archive "$collector_root/libnetwasm-runtime-nowasi.a"
 
   footprint=""
   for base in "$alignment" 123456 67108864; do
@@ -182,7 +186,8 @@ NODE
     initial_memory=$(( (base + 262144 + wasm_page_size - 1) / wasm_page_size * wasm_page_size ))
     proof="$temporary_root/$target-$collector_directory-$native_profile-$base.wasm"
     "$wasm_ld" "$machine" -Bstatic --strip-debug --table-base=1 \
-      --whole-archive "$collector_root/libnetwasm-runtime.a" --no-whole-archive \
+      --whole-archive "$collector_root/libnetwasm-runtime.a" "$collector_root/libnetwasm-runtime-wasi.a" \
+      --no-whole-archive \
       "$collector_root/libgc.a" \
       "${system_paths[@]}" \
       --allow-undefined-file="$target_root/allowed-undefined-symbols.txt" \

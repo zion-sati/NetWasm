@@ -46,26 +46,13 @@ public sealed class ComponentBuilder(
             request.OutputPath,
             request.Target,
             request.RuntimeModulePath,
-            SelectEntryPoint(request.ManagedExecutableEntryPoint, document, world),
+            request.ManagedExecutableEntryPoint,
             request.Optimization,
             request.StructuredDiagnostics)
-        { OptimizationOverrides = request.OptimizationOverrides });
+        {
+            OptimizationOverrides = request.OptimizationOverrides,
+            PlainCoreModule = request.PlainCoreModule,
+        });
         return manifest;
     }
-
-    // Only a world that exports netwasm:runtime/process lets a host observe an asynchronous Main.
-    // In any other world, such as wasi:cli/command, the compiler enters an asynchronous Main
-    // synchronously through AsyncEntryPoint.Run, which runs its event loop to completion, so the
-    // component links it like a synchronous entry point.
-    private static ManagedExecutableEntryPointAbi? SelectEntryPoint(
-        ManagedExecutableEntryPointAbi? entryPoint,
-        WitDocument document,
-        WitWorld world) =>
-        entryPoint is { CompletionShape: ManagedExecutableCompletionShape.Asynchronous } &&
-        !world.Exports.Any(export => export.InterfaceId is { } id &&
-            document.Interfaces[id] is { Name: "process" } exported &&
-            (exported.Package == "netwasm:runtime" ||
-             exported.Package.StartsWith("netwasm:runtime@", StringComparison.Ordinal)))
-            ? entryPoint with { CompletionShape = ManagedExecutableCompletionShape.Synchronous }
-            : entryPoint;
 }

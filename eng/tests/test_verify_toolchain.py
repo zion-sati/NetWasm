@@ -76,7 +76,7 @@ class VerifyToolchainTests(unittest.TestCase):
         self._write_node("26.7.0")
         self._write_executable(self.bin / "wasm-validate", "printf '1.0.41\\n'")
         self._write_executable(self.bin / "wasm-tools", "printf 'wasm-tools 1.256.0\\n'")
-        self._write_executable(self.bin / "wasmtime", "printf 'wasmtime 49.0.3 (test)\\n'")
+        self._write_executable(self.bin / "wasmtime", "printf 'wasmtime 50.0.1 (test)\\n'")
 
         result = self._run("--qualification")
 
@@ -140,7 +140,7 @@ fi
             self.modules / "playwright",
             "printf 'Version 1.62.1\\n'",
         )
-        self._write_executable(self.modules / "jco", "printf '1.28.1\\n'")
+        self._write_executable(self.modules / "jco", "printf '1.41.0\\n'")
 
     def _write_node(self, version: str) -> None:
         self._write_executable(

@@ -32,10 +32,6 @@ public sealed class WitWorkerComponentAdapterWriter(
         throw new ArgumentNullException(nameof(layouts));
 
     public const string ContractKey = "netwasm:worker/wit@1.0.0";
-    private const string ReactorGuestInterface = "netwasm:runtime/reactor-guest@1.0.0";
-    private const string ReactorHostModule = "netwasm:runtime/reactor-host";
-    private const string VersionedReactorHostModule =
-        "netwasm:runtime/reactor-host@1.0.0";
     public byte[] Write(WitWorkerComponentAdapterRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -52,7 +48,7 @@ public sealed class WitWorkerComponentAdapterWriter(
 
         var contract = _contracts.Read(request.ContractJson);
         var layouts = _layouts.Plan(contract);
-        if (contract.Exports.Any(export => export!.Kind!.Name != "freestanding")
+        if (contract.Exports.Any(export => export!.Kind!.Name is not ("freestanding" or "async-freestanding"))
             || layouts.Values.Any(layout => layout.Kind is "handle" or "resource"))
             throw new NotSupportedException("Resource-bearing application exports are unsupported by Web Workers");
         var rootExports = ValidateRootExports(request.RootExports);
@@ -71,37 +67,11 @@ public sealed class WitWorkerComponentAdapterWriter(
         AppendLine(source, "  return Object.freeze({");
         AppendLine(source, "    contractKey,");
         AppendLine(source, "    async instantiate(request = {}) {");
-        if (contract.Reactor is null)
-        {
-            AppendLine(source, "      const { loadCoreModule, imports, instantiateCore } = validateRequest(request);");
-            AppendLine(source, "      const root = await instantiateGenerated(loadCoreModule, imports, instantiateCore);");
-        }
-        else
-        {
-            AppendLine(source, "      const { loadCoreModule, imports, instantiateCore, reactorHost } = validateRequest(request);");
-            AppendLine(source, "      const componentImports = bindReactorHost(imports, reactorHost);");
-            AppendLine(source, "      const root = await instantiateGenerated(loadCoreModule, componentImports, instantiateCore);");
-        }
+        AppendLine(source, "      const { loadCoreModule, imports, instantiateCore } = validateRequest(request);");
+        AppendLine(source, "      const root = await instantiateGenerated(loadCoreModule, imports, instantiateCore);");
         AppendLine(source, "      if (root === null || typeof root !== \"object\") {");
         AppendLine(source, "        throw new TypeError(\"pinned jco WIT worker exports are unavailable\");");
         AppendLine(source, "      }");
-        if (contract.Reactor is { } reactor)
-        {
-            var reactorRoot = ResolveInterfaceRoot(
-                reactor.JavaScriptRoot!,
-                reactor.Interface!,
-                rootExports);
-            AppendLine(source, $"      const reactorGuest = root[{Json(reactorRoot)}];");
-            AppendLine(source, "      if (reactorGuest === null || typeof reactorGuest !== \"object\"");
-            AppendLine(source, $"          || typeof reactorGuest[{Json(reactor.JavaScriptMember!)}] !== \"function\") {{");
-            AppendLine(source, "        throw new TypeError(\"pinned jco reactor-guest export is unavailable\");");
-            AppendLine(source, "      }");
-            AppendLine(source, $"      const guestWake = reactorGuest[{Json(reactor.JavaScriptMember!)}].bind(reactorGuest);");
-        }
-        else
-        {
-            AppendLine(source, "      const guestWake = null;");
-        }
         AppendLine(source, "      const exports = Object.create(null);");
         for (var index = 0; index < contract.Exports.Length; index++)
         {
@@ -140,9 +110,13 @@ public sealed class WitWorkerComponentAdapterWriter(
             AppendLine(source, "      }");
             if (IsDeclaredResult(export.Result, contract, layouts))
             {
+                // An async func's export returns a promise of its result.
                 AppendLine(source, $"      exports[{Json(export.Operation!)}] = (...args) => {{");
-                AppendLine(source, $"        try {{ return {{ tag: 'ok', val: {binding}[{Json(export.JavaScriptMember!)}](...args) }}; }}");
-                AppendLine(source, "        catch (cause) { if (!isComponentError(cause)) throw cause; return { tag: 'err', val: cause.payload }; }");
+                AppendLine(source, "        const failed = cause => { if (!isComponentError(cause)) throw cause; return { tag: 'err', val: cause.payload }; };");
+                AppendLine(source, "        let value;");
+                AppendLine(source, $"        try {{ value = {binding}[{Json(export.JavaScriptMember!)}](...args); }}");
+                AppendLine(source, "        catch (cause) { return failed(cause); }");
+                AppendLine(source, "        return value instanceof Promise ? value.then(val => ({ tag: 'ok', val }), failed) : { tag: 'ok', val: value };");
                 AppendLine(source, "      };");
             }
             else
@@ -151,10 +125,7 @@ public sealed class WitWorkerComponentAdapterWriter(
                 AppendLine(source, $"        {binding}[{Json(export.JavaScriptMember!)}](...args);");
             }
         }
-        AppendLine(source, "      return Object.freeze({");
-        AppendLine(source, "        exports: Object.freeze(exports),");
-        AppendLine(source, "        guestWake,");
-        AppendLine(source, "      });");
+        AppendLine(source, "      return Object.freeze({ exports: Object.freeze(exports) });");
         AppendLine(source, "    },");
         AppendLine(source, "  });");
         AppendLine(source, "}");
@@ -171,7 +142,7 @@ public sealed class WitWorkerComponentAdapterWriter(
         AppendLine(source, "  if (request === null || typeof request !== \"object\" || Array.isArray(request)) {");
         AppendLine(source, "    throw new TypeError(\"component adapter instantiation request is required\");");
         AppendLine(source, "  }");
-        AppendLine(source, "  const { loadCoreModule, imports, instantiateCore, reactorHost } = request;");
+        AppendLine(source, "  const { loadCoreModule, imports, instantiateCore } = request;");
         AppendLine(source, "  if (typeof loadCoreModule !== \"function\") {");
         AppendLine(source, "    throw new TypeError(\"component core-module loader is required\");");
         AppendLine(source, "  }");
@@ -183,37 +154,8 @@ public sealed class WitWorkerComponentAdapterWriter(
         AppendLine(source, "  if (instantiateCore !== undefined && typeof instantiateCore !== \"function\") {");
         AppendLine(source, "    throw new TypeError(\"component core-module instantiator is invalid\");");
         AppendLine(source, "  }");
-        AppendLine(source, "  return { loadCoreModule, imports, instantiateCore, reactorHost };");
+        AppendLine(source, "  return { loadCoreModule, imports, instantiateCore };");
         AppendLine(source, "}");
-        if (contract.Reactor is not null)
-        {
-            AppendLine(source);
-            AppendLine(source, "function bindReactorHost(imports, reactorHost) {");
-            AppendLine(source, $"  if (Object.hasOwn(imports, {Json(ReactorHostModule)})");
-            AppendLine(source, $"      || Object.hasOwn(imports, {Json(VersionedReactorHostModule)})) {{");
-            AppendLine(source, "    throw new TypeError(\"component reactor host is a reserved import\");");
-            AppendLine(source, "  }");
-            AppendLine(source, "  if (reactorHost === null || typeof reactorHost !== \"object\"");
-            AppendLine(source, "      || typeof reactorHost.assertAvailable !== \"function\"");
-            AppendLine(source, "      || typeof reactorHost.watch !== \"function\"");
-            AppendLine(source, "      || typeof reactorHost.cancel !== \"function\") {");
-            AppendLine(source, "    throw new TypeError(\"component reactor host is unavailable\");");
-            AppendLine(source, "  }");
-            AppendLine(source, "  const binding = Object.freeze({");
-            AppendLine(source, "    watch(ready, token) {");
-            AppendLine(source, "      reactorHost.assertAvailable();");
-            AppendLine(source, "      return reactorHost.watch(ready, token);");
-            AppendLine(source, "    },");
-            AppendLine(source, "    cancel(token) {");
-            AppendLine(source, "      reactorHost.assertAvailable();");
-            AppendLine(source, "      return reactorHost.cancel(token);");
-            AppendLine(source, "    },");
-            AppendLine(source, "  });");
-            AppendLine(source, "  return Object.freeze(Object.assign(Object.create(null), imports, {");
-            AppendLine(source, $"    [{Json(ReactorHostModule)}]: binding,");
-            AppendLine(source, "  }));");
-            AppendLine(source, "}");
-        }
         return Encoding.UTF8.GetBytes(source.ToString());
     }
 

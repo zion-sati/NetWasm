@@ -1025,6 +1025,9 @@ namespace System.Threading.Tasks
 
     public partial class Task : IAsyncResult, IDisposable
     {
+        Threading.WaitHandle IAsyncResult.AsyncWaitHandle =>
+            throw new PlatformNotSupportedException("Task.AsyncWaitHandle host wait handles are not available on this NetWasm platform.");
+
         private static int s_nextId;
         private static readonly Task s_completedTask = CreateCompletedTask();
         private static Task? s_currentTask;
@@ -3482,7 +3485,8 @@ namespace System.Threading.Tasks
         }
     }
 
-    public sealed class TaskCompletionSource
+    // Unsealed, as upstream declares it: types such as System.Net.Http's MessageProcessingHandler derive from it.
+    public class TaskCompletionSource
     {
         private readonly Task _task;
 
@@ -3585,7 +3589,8 @@ namespace System.Threading.Tasks
         }
     }
 
-    public sealed class TaskCompletionSource<T>
+    // Unsealed, as upstream declares it: types such as System.Net.Http's MessageProcessingHandler derive from it.
+    public class TaskCompletionSource<T>
     {
         private readonly Task<T> _task;
 

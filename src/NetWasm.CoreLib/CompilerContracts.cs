@@ -5,7 +5,7 @@
 namespace System
 {
     [AttributeUsage(AttributeTargets.All, Inherited = true, AllowMultiple = false)]
-    public abstract class Attribute
+    public abstract partial class Attribute
     {
         protected Attribute()
         {
@@ -155,10 +155,6 @@ namespace System.Runtime.CompilerServices
     public enum CompilationRelaxations : int
     {
         NoStringInterning = 0x0008,
-    }
-
-    public static class ContractHelper
-    {
     }
 
     public static class IsConst
@@ -471,19 +467,96 @@ namespace System.Runtime.CompilerServices
         {
         }
 
+        // NetWasm has no engine-stack capacity to report, so both checks succeed (owner decision
+        // 2026-10-21); upstream compares the current position with the thread's stack limit.
         public static void EnsureSufficientExecutionStack()
         {
         }
 
+        public static bool TryEnsureSufficientExecutionStack() => true;
+
         // The compiler calls this for a value type that inherits ToString from Object or ValueType,
         // passing the receiver by reference instead of boxing it.
         internal static string ValueTypeToString<T>(ref T value) where T : struct => typeof(T).ToString();
+
+        // Methods are compiled ahead of time, so preparing one only validates its handle, as
+        // native AOT does.
+        public static void PrepareMethod(RuntimeMethodHandle method)
+        {
+            if (method.Value == IntPtr.Zero)
+                throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized, nameof(method));
+        }
+
+        public static void PrepareMethod(RuntimeMethodHandle method, RuntimeTypeHandle[]? instantiation)
+        {
+            if (method.Value == IntPtr.Zero)
+                throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized, nameof(method));
+        }
 
         [Obsolete("The Constrained Execution Region (CER) feature is not supported.",
             DiagnosticId = "SYSLIB0004",
             UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
         public static void ProbeForSufficientStack()
         {
+        }
+
+        // The handle is a semantic type ID; the compiler runs that type's static-initializer
+        // guard, compiling the initializers of types whose handles the program names.
+        public static void RunClassConstructor(RuntimeTypeHandle type)
+        {
+            if (type.Value == IntPtr.Zero)
+                throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized);
+
+            RuntimeHelpersRuntime.RunClassConstructor((int)type.Value);
+        }
+
+        public static void RunModuleConstructor(ModuleHandle module)
+        {
+            if (module.AssociatedModule == null)
+                throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized);
+
+            // As in native AOT, module initializers already ran during startup.
+        }
+
+        // Native AOT's checks and order. The compiler allocates zeroed storage for the types the
+        // program names or already allocates; IsCOMObject and IsFunctionPointer never hold here.
+        public static object GetUninitializedObject(
+            [Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
+                Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors |
+                Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors)]
+            Type type)
+        {
+            if (type is null)
+                throw new ArgumentNullException(nameof(type), SR.ArgumentNull_Type);
+
+            if (type.HasElementType || type.IsGenericParameter)
+                throw new ArgumentException(SR.Argument_InvalidValue);
+
+            if (type.ContainsGenericParameters)
+                throw new MemberAccessException(SR.Acc_CreateGeneric);
+
+            if (type.IsAbstract)
+                throw new MemberAccessException(SR.Acc_CreateAbst);
+
+            if (type == typeof(void))
+                throw new ArgumentException(SR.Argument_InvalidValue);
+
+            if (type == typeof(string))
+                throw new ArgumentException(SR.Argument_NoUninitializedStrings);
+
+            if (typeof(Delegate).IsAssignableFrom(type))
+                throw new MemberAccessException();
+
+            if (type.IsByRefLike)
+                throw new NotSupportedException(SR.NotSupported_ByRefLike);
+
+            if (Nullable.GetUnderlyingType(type) is { } underlying)
+                return GetUninitializedObject(underlying);
+
+            RunClassConstructor(type.TypeHandle);
+
+            return RuntimeHelpersRuntime.AllocateUninitializedObject(type.SemanticTypeId) ??
+                throw new PlatformNotSupportedException(SR.PlatformNotSupported_UninitializedObject);
         }
 
         [Intrinsic]
@@ -514,6 +587,12 @@ namespace System.Runtime.CompilerServices
 
     internal static class RuntimeHelpersRuntime
     {
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern void RunClassConstructor(int typeId);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern object? AllocateUninitializedObject(int typeId);
+
         [MethodImpl(MethodImplOptions.InternalCall)]
         internal static extern object? CloneBoxedValue(object value);
 

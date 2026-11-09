@@ -71,7 +71,7 @@ internal sealed record UnitRuntimeObjectLayout(
 internal static class UnitPlanCodec
 {
     private const uint Magic = 0x4C504E4E; // "NNPL"
-    private const int Version = 5;
+    private const int Version = 6;
 
     public static byte[] Encode(InstructionModuleTarget target, IRuntimeObjectLayout runtimeObjects, UnitProgramFacts program)
     {
@@ -528,7 +528,13 @@ internal static class UnitPlanCodec
             OptionalField(writer, binding.StatusField);
             OptionalField(writer, binding.ResultField);
             OptionalMethod(writer, binding.GetVoidResult);
-            OptionalMethod(writer, binding.CommandEntryPoint);
+            writer.Bool(binding.CommandEntry is not null);
+            if (binding.CommandEntry is { } commandEntry)
+            {
+                writer.Method(commandEntry.Start);
+                writer.Method(commandEntry.Callback);
+                writer.Method(commandEntry.ExitCode);
+            }
         }
     }
 
@@ -553,7 +559,9 @@ internal static class UnitPlanCodec
                 StatusField = OptionalField(reader)!,
                 ResultField = OptionalField(reader),
                 GetVoidResult = OptionalMethod(reader),
-                CommandEntryPoint = OptionalMethod(reader),
+                CommandEntry = reader.Bool()
+                    ? new(reader.Method(), reader.Method(), reader.Method())
+                    : null,
             });
         }
         return bindings.ToImmutable();
@@ -572,11 +580,12 @@ internal static class UnitPlanCodec
         writer.Bool(selection.IncludeRandomSeed);
         writer.Bool(selection.IncludeArraySetValue);
         writer.Bool(selection.IncludeUnhandledExceptionHint);
+        writer.Bool(selection.IncludeObjectClone);
     }
 
     private static RuntimeImportSelection Runtime(UnitModelReader reader) => new(
         (WasmModuleProfile)reader.Byte(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(),
-        reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool());
+        reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool());
 
     private static void Adapters(UnitModelWriter writer, ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan> adapters)
     {

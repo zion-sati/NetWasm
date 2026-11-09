@@ -7,8 +7,8 @@ namespace NetWasm.Compiler.Tests;
 // await's resume path enters the loop from the method's state dispatch, so the protected code
 // before the nested try is an irreducible dispatcher whose exits are the await's suspension and
 // the fallthrough into the nested try. Upstream ManagedWebSocket.CloseAsyncPrivate has this shape.
-// Each case runs through the reactor and checks the result and how often the finally and catch
-// ran, so code that runs on the wrong exit fails even when nothing suspends.
+// Each case runs as an asynchronous Main and checks the result and how often the finally and
+// catch ran, so code that runs on the wrong exit fails even when nothing suspends.
 public sealed class LoopNestedProtectedRegionAsyncCompilationTests
 {
     public static TheoryData<string, bool, WasmTarget> Cases()
@@ -29,29 +29,28 @@ public sealed class LoopNestedProtectedRegionAsyncCompilationTests
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public void AsyncLoopsWithNestedProtectedRegionsCompleteThroughTheReactor(
+    public void AsyncLoopsWithNestedProtectedRegionsComplete(
         string shape,
         bool optimize,
         WasmTarget target)
     {
         using var assets = TestAssets.Create();
-        var source = Prefix + Shapes[shape] + Suffix;
+        var (source, entryType) = AsyncObservationEntry.Append(
+            Prefix + Shapes[shape] + Suffix, "LoopNestedProtected.EntryPoint", "Run", "Observe");
         var name = $"LoopNestedProtected{shape}{(optimize ? "Release" : "Debug")}{target}";
         var assembly = optimize
             ? assets.CompileOptimizedSource(name, source)
             : assets.CompileSource(name, source);
-        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "LoopNestedProtected.EntryPoint",
-            "Run",
-            [
-                new("run", "LoopNestedProtected.EntryPoint", "Run"),
-                new("observe", "LoopNestedProtected.EntryPoint", "Observe"),
-            ],
+        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], entryType,
+            AsyncObservationEntry.MethodName,
+            [],
             Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform/async-platform@1.0.0"));
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
 
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
-            assets.Directory, 41, target, result.StaticDataEnd, drainReactor: true, observeExportName: "observe"));
+            assets.Directory, 41, target, result.StaticDataEnd, callbackEntry: true, inputArgument: true));
     }
 
     private const string Prefix = """
@@ -78,7 +77,7 @@ public sealed class LoopNestedProtectedRegionAsyncCompilationTests
                 : pending.IsFaulted || pending.IsCanceled ? 99
                 : pending.Result;
 
-            // Completes on a later reactor turn, so awaiting it suspends.
+            // Completes on a later turn of the event loop, so awaiting it suspends.
             private static async ValueTask<int> Later()
             {
                 await s_gate!.Task.ConfigureAwait(false);

@@ -14,8 +14,8 @@ public sealed class ComponentizeCliOptionsTests
     {
         var options = Parse([
             .. Required, "-runtimemodule:runtime.wasm", "-world:example:test/main", "-platform:wasm64",
-            "-interopmanifest:interop.json", "-jcoversion:1.2.3", "-preview2shimversion:4.5.6", "-optimize:none",
-            "-managedinlininghints:Preserve", "-converge+",
+            "-interopmanifest:interop.json", "-jcoversion:1.2.3", "-preview3shimversion:4.5.6", "-optimize:none",
+            "-managedinlininghints:Preserve", "-converge+", "-lowmemoryunused-",
         ]);
 
         Assert.Equal("application.wasm", options.CoreModule);
@@ -27,11 +27,24 @@ public sealed class ComponentizeCliOptionsTests
         Assert.Equal(WasmTarget.Wasm64, options.Platform);
         Assert.Equal("interop.json", options.InteropManifest);
         Assert.Equal("1.2.3", options.JcoVersion);
-        Assert.Equal("4.5.6", options.Preview2ShimVersion);
+        Assert.Equal("4.5.6", options.Preview3ShimVersion);
         Assert.True(options.Converge);
         Assert.False(Parse([.. Required]).Converge);
+        Assert.False(options.LowMemoryUnused);
+        Assert.True(Parse([.. Required, "-lowmemoryunused"]).LowMemoryUnused);
+        Assert.True(Parse([.. Required, "-lowmemoryunused+"]).LowMemoryUnused);
         Assert.Equal(FinalWasmOptimization.None, options.Optimization);
         Assert.Equal("Preserve", options.ManagedInliningHints);
+    }
+
+    [Fact]
+    public void APlainCoreModuleNeedsNoManifest()
+    {
+        var options = Parse(["-coremodule:application.wasm", "-wit:contract.wit", "-out:plugin.wasm", "-plaincoremodule"]);
+
+        Assert.True(options.PlainCoreModule);
+        Assert.Null(options.Manifest);
+        Assert.False(Parse(Required).PlainCoreModule);
     }
 
     [Fact]
@@ -44,9 +57,10 @@ public sealed class ComponentizeCliOptionsTests
         Assert.Equal(WasmTarget.Wasm32, options.Platform);
         Assert.Null(options.InteropManifest);
         Assert.Null(options.JcoVersion);
-        Assert.Null(options.Preview2ShimVersion);
+        Assert.Null(options.Preview3ShimVersion);
         Assert.Equal(FinalWasmOptimization.Oz, options.Optimization);
         Assert.Null(options.ManagedInliningHints);
+        Assert.Null(options.LowMemoryUnused);
     }
 
     [Theory]

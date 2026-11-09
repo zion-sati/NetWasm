@@ -18,14 +18,22 @@ public sealed class WasmModuleEmitterContractTests
     [InlineData(WasmTarget.Wasm64, 1)]
     [InlineData(WasmTarget.Wasm32, 2)]
     [InlineData(WasmTarget.Wasm64, 2)]
+    [InlineData(WasmTarget.Wasm32, 3)]
+    [InlineData(WasmTarget.Wasm64, 3)]
+    [InlineData(WasmTarget.Wasm32, 4)]
+    [InlineData(WasmTarget.Wasm64, 4)]
     public void PublishesOnlyTheSelectedOptionalRuntimeFeature(WasmTarget width, int feature)
     {
         var fixture = new Fixture(width, false, ephemerons: feature == 0,
-            weakHandles: feature == 1, diagnostics: feature == 2);
+            weakHandles: feature == 1, diagnostics: feature == 2, randomSeed: feature == 3, objectClone: feature == 4);
         var expected = feature switch
         {
             0 => NetWasmRuntimeFeatureIds.EphemeronHandles,
             1 => NetWasmRuntimeFeatureIds.WeakHandles,
+            // The runtime's hash seed, and its wasi:random import, only where a hash is seeded.
+            3 => NetWasmRuntimeFeatureIds.RandomSeed,
+            // MemberwiseClone's runtime copy, only where an object is cloned.
+            4 => NetWasmRuntimeFeatureIds.ObjectClone,
             _ => NetWasmRuntimeFeatureIds.StructuredCommandDiagnostics,
         };
 
@@ -166,7 +174,9 @@ public sealed class WasmModuleEmitterContractTests
             bool finalization = false,
             bool ephemerons = false,
             bool weakHandles = false,
-            bool diagnostics = false)
+            bool diagnostics = false,
+            bool randomSeed = false,
+            bool objectClone = false)
         {
             var (request, plan) = WasmModulePlanInvariantValidatorTests.CreateNativePlan();
             plan = plan with
@@ -176,6 +186,8 @@ public sealed class WasmModuleEmitterContractTests
                     IncludeFinalization = finalization,
                     IncludeEphemeronHandles = ephemerons,
                     IncludeWeakHandles = weakHandles,
+                    IncludeRandomSeed = randomSeed,
+                    IncludeObjectClone = objectClone,
                 },
             };
             request = request with { StructuredDiagnostics = diagnostics };
@@ -204,6 +216,7 @@ public sealed class WasmModuleEmitterContractTests
                 Capability<IAsyncJSImportSetAppender>("async"),
                 Capability<IFilterFunctionSetAppender>("filters"),
                 Capability<IRuntimeFunctionAppender>("runtime", new RuntimeFunctionAppendResult(22, 23, 21, false)),
+                new NoLocalTimeMethod(),
                 Capability<IRequestedExportSetAppender>("requested"),
                 Capability<IComponentFunctionAppender>("component", ImmutableArray.Create("feature")),
                 Capability<IFunctionIndexResolverFactory>("indices", Capability<IFunctionIndexResolver>("resolve")),
@@ -285,5 +298,11 @@ public sealed class WasmModuleEmitterContractTests
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
             InvokeCapability(targetMethod!, args ?? []);
+    }
+
+    private sealed class NoLocalTimeMethod :
+        NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.LocalTime.ILocalTimePreflightMethodSelector
+    {
+        public EntityKey? Select(WasmEmissionRequest request) => null;
     }
 }

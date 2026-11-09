@@ -8,13 +8,16 @@ namespace NetWasm.Compiler.ComponentModel;
 
 public interface IComponentCoreModuleOptimizer
 {
-    // Converging repeats the preset until the module stops shrinking.
+    // Converging repeats the preset until the module stops shrinking. With low memory unused,
+    // wasm-opt folds constant address adds into load and store offsets, which is valid only
+    // while nothing lives in the first KiB of memory.
     void Optimize(
         string inputPath,
         string outputPath,
         ComponentTarget target,
         FinalWasmOptimization optimization,
-        bool converge = false);
+        bool converge = false,
+        bool lowMemoryUnused = false);
 }
 
 public sealed class ComponentCoreModuleOptimizer(
@@ -47,7 +50,8 @@ public sealed class ComponentCoreModuleOptimizer(
         string outputPath,
         ComponentTarget target,
         FinalWasmOptimization optimization,
-        bool converge = false)
+        bool converge = false,
+        bool lowMemoryUnused = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
@@ -90,6 +94,10 @@ public sealed class ComponentCoreModuleOptimizer(
         if (converge)
         {
             arguments.Insert(2, "--converge");
+        }
+        if (lowMemoryUnused)
+        {
+            arguments.Add("--low-memory-unused");
         }
         arguments.Add("--output");
         arguments.Add(outputPath);

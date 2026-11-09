@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { instantiateNetWasm } from "../../../src/NetWasm.Runtime/browser-host.mjs";
 import { createRuntimeContractImports } from "../../NetWasm.Runtime.Tests/runtime-contract-imports.mjs";
-import { createTimerReactorImports } from "../../NetWasm.Runtime.Tests/timer-reactor-imports.mjs";
+import { createMonotonicClockImports } from "../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs";
 import { createLinkedCorpusProgram } from "./linked-corpus-program.mjs";
 
 export const linkedCorpusProgramDependencies = Object.freeze({
@@ -13,10 +13,9 @@ export const linkedCorpusProgramDependencies = Object.freeze({
   listImports: module => WebAssembly.Module.imports(module),
   hash: bytes => createHash("sha256").update(bytes).digest("hex"),
   instantiate: instantiateNetWasm,
-  createRuntimeImports: (target, getMemory, wake, getExports) => ({
+  createRuntimeImports: (target, getMemory, getExports) => ({
     ...createRuntimeContractImports(target, getMemory, getExports),
-    ...createTimerReactorImports(target, () => process.hrtime.bigint(),
-      (milliseconds, callback) => setTimeout(callback, milliseconds), clearTimeout, wake),
+    ...createMonotonicClockImports(target, () => process.hrtime.bigint()),
   }),
 });
 const program = createLinkedCorpusProgram(linkedCorpusProgramDependencies);

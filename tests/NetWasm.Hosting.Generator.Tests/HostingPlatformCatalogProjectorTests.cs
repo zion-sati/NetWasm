@@ -7,7 +7,7 @@ namespace NetWasm.Hosting.Generator.Tests;
 public sealed class HostingPlatformCatalogProjectorTests
 {
     [Fact]
-    public void ProjectsCallableProvidersAndAuditsEmptyMarkerInterfaces()
+    public void ProjectsCallableAndResourceOnlyProviders()
     {
         var capabilities = new RecordingClassifier();
         var hashes = new RecordingHasher();
@@ -21,16 +21,17 @@ public sealed class HostingPlatformCatalogProjectorTests
                 new("wasi:test/callable@1.0.0", [function]),
                 new("wasi:test/marker@1.0.0", []),
             ]);
-        var shim = new Preview2ShimIdentity("shim", "1.0.0");
+        var result = projector.Project(catalog);
 
-        var result = projector.Project(catalog, shim);
-
-        Assert.Equal(1, result.Schema);
+        Assert.Equal(2, result.Schema);
         Assert.Equal(catalog.World, result.World);
         Assert.Equal(hashes.Output, result.WitSha256);
-        Assert.Same(shim, result.Shim);
-        var provider = Assert.Single(result.Providers);
+        Assert.Equal(2, result.Providers.Length);
+        var provider = result.Providers[0];
         Assert.Equal(function.Interface, provider.Module);
+        var marker = result.Providers[1];
+        Assert.Equal("wasi:test/marker@1.0.0", marker.Module);
+        Assert.Empty(marker.Functions);
         Assert.Equal(NetWasmPlatformCapability.Baseline, provider.Capability);
         var projected = Assert.Single(provider.Functions);
         Assert.Equal(function.Name, projected.Name);
@@ -46,35 +47,33 @@ public sealed class HostingPlatformCatalogProjectorTests
         var capabilities = new RecordingClassifier();
         var hashes = new RecordingHasher();
         var valid = new WitInterfaceCatalog("world", "json", [new("module", [])]);
-        var shim = new Preview2ShimIdentity("shim", "version");
 
         Assert.Throws<ArgumentNullException>(() =>
             new HostingPlatformCatalogProjector(null!, hashes));
         Assert.Throws<ArgumentNullException>(() =>
             new HostingPlatformCatalogProjector(capabilities, null!));
         var projector = new HostingPlatformCatalogProjector(capabilities, hashes);
-        Assert.Throws<ArgumentNullException>(() => projector.Project(null!, shim));
-        Assert.Throws<ArgumentNullException>(() => projector.Project(valid, null!));
+        Assert.Throws<ArgumentNullException>(() => projector.Project(null!));
         Assert.Throws<InvalidDataException>(() =>
-            projector.Project(valid with { Interfaces = default }, shim));
+            projector.Project(valid with { Interfaces = default }));
         Assert.Throws<InvalidDataException>(() =>
-            projector.Project(valid with { Interfaces = [] }, shim));
+            projector.Project(valid with { Interfaces = [] }));
         Assert.Throws<InvalidDataException>(() =>
-            projector.Project(valid with { World = " " }, shim));
+            projector.Project(valid with { World = " " }));
         Assert.Throws<InvalidDataException>(() =>
-            projector.Project(valid with { NormalizedWitJson = "" }, shim));
+            projector.Project(valid with { NormalizedWitJson = "" }));
         Assert.Throws<InvalidDataException>(() =>
-            projector.Project(valid with { Interfaces = [null!] }, shim));
+            projector.Project(valid with { Interfaces = [null!] }));
         Assert.Throws<InvalidDataException>(() =>
             projector.Project(valid with
             {
                 Interfaces = [new("module", default)]
-            }, shim));
+            }));
         Assert.Throws<InvalidDataException>(() =>
             projector.Project(valid with
             {
                 Interfaces = [new("module", [null!])]
-            }, shim));
+            }));
     }
 
     [Fact]
@@ -87,7 +86,7 @@ public sealed class HostingPlatformCatalogProjectorTests
 
         Assert.Same(failure, Assert.Throws<InvalidOperationException>(() =>
             new HostingPlatformCatalogProjector(capabilities, hashes).Project(
-                catalog, new("shim", "version"))));
+                catalog)));
         Assert.Null(hashes.Input);
     }
 
@@ -102,7 +101,7 @@ public sealed class HostingPlatformCatalogProjectorTests
         Assert.Throws<ArgumentNullException>(() => hasher.Hash(null!));
     }
 
-    private sealed class RecordingClassifier : IWasiPreview2CapabilityClassifier
+    private sealed class RecordingClassifier : IWasiCapabilityClassifier
     {
         public List<string> Modules { get; } = [];
         public Exception? Failure { get; init; }

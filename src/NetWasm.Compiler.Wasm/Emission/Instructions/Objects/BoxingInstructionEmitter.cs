@@ -77,7 +77,7 @@ internal sealed class BoxingInstructionEmitter(
                 request.Context,
                 slot,
                 CliValueKind.ValueType)))));
-            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, value.Size,
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, value.Size, SmallBlockEmitter.WidestChunk(value),
                 writer => addresses.Emit(writer, value.Size));
         }
         else

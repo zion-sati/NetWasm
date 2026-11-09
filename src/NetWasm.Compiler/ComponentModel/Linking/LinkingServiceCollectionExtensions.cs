@@ -24,16 +24,7 @@ internal static class LinkingServiceCollectionExtensions
         services.AddSingleton<IComponentCoreModuleMergeRunner, WasmCoreModuleMergeRunner>();
         services.AddSingleton<IComponentCoreModuleOptimizer,
             ComponentCoreModuleOptimizer>();
-        services.AddSingleton<INetWasmHostComponentShimWriter>(provider =>
-            new NetWasmHostComponentShimWriter(
-            [
-                new(ManagedExecutableCompletionShape.Synchronous,
-                    new PortableCommandHostComponentShimWriter(
-                        provider.GetRequiredService<IWasmTextModuleWriter>())),
-                new(ManagedExecutableCompletionShape.Asynchronous,
-                    new HostedNetWasmHostComponentShimWriter(
-                        provider.GetRequiredService<IWasmTextModuleWriter>())),
-            ]));
+        services.AddSingleton<INetWasmHostComponentShimWriter, PortableCommandHostComponentShimWriter>();
         services.AddSingleton<IManagedExecutableComponentAdapterWriter>(provider =>
             new ManagedExecutableComponentAdapterWriter(
             [
@@ -41,7 +32,7 @@ internal static class LinkingServiceCollectionExtensions
                     new SynchronousManagedExecutableComponentAdapterWriter(
                         provider.GetRequiredService<IWasmTextModuleWriter>())),
                 new(ManagedExecutableCompletionShape.Asynchronous,
-                    new AsynchronousManagedExecutableComponentAdapterWriter(
+                    new CallbackManagedExecutableComponentAdapterWriter(
                         provider.GetRequiredService<IWasmTextModuleWriter>())),
             ]));
         services.AddSingleton<IComponentCoreModuleLinker,

@@ -29,8 +29,8 @@ const runtimeModules = createRuntimeContractImports(
   target,
   () => managed.instance.exports.memory,
 );
-runtimeModules[`${prefix}|wasi:cli/environment@0.2`] = {
-  ...runtimeModules[`${prefix}|wasi:cli/environment@0.2`],
+runtimeModules[`${prefix}|wasi:cli/environment@0.3`] = {
+  ...runtimeModules[`${prefix}|wasi:cli/environment@0.3`],
   "get-arguments"(result) {
     new Uint8Array(managed.instance.exports.memory.buffer, Number(result), width * 2).fill(0);
   },

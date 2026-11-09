@@ -44,6 +44,9 @@ public sealed class WitWorkerClientWriter(
         var ts = new StringBuilder();
         var module = new Uri(Path.Combine(request.HostingJavaScriptRoot, "worker-session-client.mjs")).AbsoluteUri;
         js.AppendLine(CultureInfo.InvariantCulture, $"import {{ createWorkerSessionClient }} from {Json(module)};");
+        js.AppendLine(CultureInfo.InvariantCulture,
+            $"import {{ createWorkerFileMounts }} from {Json(new Uri(Path.Combine(request.HostingJavaScriptRoot, "worker-file-mounts.mjs")).AbsoluteUri)};");
+        WorkerClientFileMounts.AppendModuleScope(js);
         js.AppendLine(CultureInfo.InvariantCulture, $"export const workerContractFingerprint = {Json(Convert.ToHexStringLower(SHA256.HashData(request.ContractJson.Span)))};");
         ts.AppendLine("export declare const workerContractFingerprint: string;");
         ts.AppendLine("export interface NetWasmWorkerStartupOptions { signal?: AbortSignal; environment?: Record<string, string>; stdout?: (line: string) => void; stderr?: (line: string) => void; onNotification?: (value: { operation: string; arguments: unknown[] }) => void | Promise<void>; }");
@@ -66,7 +69,9 @@ public sealed class WitWorkerClientWriter(
         js.AppendLine(CultureInfo.InvariantCulture, $"operations: {System.Text.Json.JsonSerializer.Serialize([.. contract.Exports.Select(export => export!.Operation)], HostingBuildJsonContext.Default.StringArray)},");
         js.AppendLine(CultureInfo.InvariantCulture, $"startup: {{ buildFingerprint: {Json(request.BuildFingerprint)}, manifestSha256: {Json(request.ManifestSha256)} }},");
         js.AppendLine("}); const abort = () => session.terminate(); signal?.addEventListener('abort', abort, { once: true });");
-        js.AppendLine("try { if (signal?.aborted) abort(); await session.ready; } finally { signal?.removeEventListener('abort', abort); } return Object.freeze({");
+        js.AppendLine("try { if (signal?.aborted) abort(); await session.ready; } finally { signal?.removeEventListener('abort', abort); }");
+        WorkerClientFileMounts.AppendAttach(js, "");
+        js.AppendLine("return Object.freeze({");
         ts.AppendLine("export interface NetWasmWorkerClient {");
         var types = new WitWorkerValueSourceRequest(0, new("", "", default, false, null), layouts);
         // Parameter names must not shadow the module-level helpers the copies call.
@@ -86,10 +91,11 @@ public sealed class WitWorkerClientWriter(
                 .Append("options?: NetWasmWorkerCallOptions");
             ts.AppendLine(CultureInfo.InvariantCulture, $"{Json(export.Operation!)}({string.Join(", ", parameterTypes)}): Promise<{(export.Result is null ? "void" : types.Type(export.Result))}>;");
         }
-        js.AppendLine("dispose: () => session.dispose(), terminate: () => session.terminate(),");
+        js.Append(WorkerClientFileMounts.Dispose).Append(' ').AppendLine(WorkerClientFileMounts.Terminate);
         js.AppendLine("}); }");
         ts.AppendLine("dispose(): Promise<void>; terminate(): void; }");
         ts.AppendLine("export declare function createWorker(options?: NetWasmWorkerStartupOptions): Promise<NetWasmWorkerClient>;");
+        WorkerClientFileMounts.AppendDeclarations(ts);
         return new(Encoding.UTF8.GetBytes(js.ToString().ReplaceLineEndings("\n")),
             Encoding.UTF8.GetBytes(ts.ToString().ReplaceLineEndings("\n")));
     }
@@ -100,6 +106,7 @@ public sealed class WitWorkerClientWriter(
     private static readonly ImmutableArray<string> ModuleNames =
     [
         "options", "session", "args", "cause", "createWorker", "createWorkerSessionClient",
+        "createWorkerFileMounts", "fileMounts", "mount", "unmount", "sync", "detach",
         "workerContractFingerprint",
         .. System.Text.RegularExpressions.Regex.Matches(PrimitiveCopies, @"function\s+([A-Za-z_$][\w$]*)")
             .Select(match => match.Groups[1].Value),

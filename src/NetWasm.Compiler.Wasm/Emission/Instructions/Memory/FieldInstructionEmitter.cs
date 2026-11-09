@@ -15,6 +15,7 @@ internal sealed class FieldInstructionEmitter(
     IFieldRepository fieldRepository,
     ITargetLayout layouts,
     IInstanceFieldLayoutProvider fields,
+    IValueLayoutProvider values,
     IImplicitExceptionEmitter exceptions,
     IAddressInstructionEmitter addresses,
     IAddressTakenAggregateProjectionEmitter aggregateProjections) :
@@ -88,6 +89,7 @@ internal sealed class FieldInstructionEmitter(
                 addresses.Emit(code, AddressOperation.Add);
             }
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+                SmallBlockEmitter.WidestChunk(values.GetValueLayout(fieldType)),
                 writer => addresses.Emit(writer, layout.Size));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
@@ -238,6 +240,7 @@ internal sealed class FieldInstructionEmitter(
             }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+                SmallBlockEmitter.WidestChunk(values.GetValueLayout(fieldType)),
                 writer => addresses.Emit(writer, layout.Size));
             request.Stack.RemoveRange(objectSlot, 2);
             return;
@@ -275,17 +278,14 @@ internal sealed class FieldInstructionEmitter(
                 : CliValueKind.ManagedReference);
     }
 
-    // An object reference is checked unless an earlier access to it already was.
+    // An object reference is checked unless analysis proved it non-null.
     private void EmitNullCheckIfRequired(
         InstructionEmissionRequest request,
         IWasmInstructionWriter code,
         int objectLocal,
         CliValueKind receiverType)
     {
-        if (receiverType != CliValueKind.ManagedReference ||
-            request.Header.ArrayBoundsProof is { } proof &&
-            proof.Describes(request.Header.Instructions, request.Header.Locals, request.Header.LocalSignatureTypes) &&
-            proof.ProvesNonNull(request.Instruction.Offset) && proof.Contains(request.Instruction))
+        if (receiverType != CliValueKind.ManagedReference || ReceiverNullProof.Proves(request))
         {
             return;
         }

@@ -8,6 +8,28 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class RuntimeIntrinsicRegistryTests
 {
+    [Fact]
+    public void MemberwiseCloneRequiresTheInstanceParameterlessObjectContract()
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var type = new EntityKey(assembly, 1);
+        var method = new MethodDefinitionModel(new(assembly, 2), type, "MemberwiseClone", false,
+            MethodSignatureModel.Create(CliValueKind.ManagedReference), 0);
+        var symbols = new DictionarySymbolFormatter((type, "System.Object"));
+        AssertIntrinsic(new RuntimeIntrinsicRegistry(symbols, [method]), method.Key, RuntimeIntrinsic.ObjectClone);
+        foreach (var invalid in new[]
+        {
+            method with { IsStatic = true },
+            method with { GenericArity = 1 },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.I4) },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I4) },
+        })
+        {
+            Assert.False(((IRuntimeIntrinsicRegistry)new RuntimeIntrinsicRegistry(symbols, [invalid]))
+                .TryGetIntrinsic(invalid.Key, out _));
+        }
+    }
+
     [Theory]
     [InlineData("System.Math", CliValueKind.F8)]
     [InlineData("System.MathF", CliValueKind.F4)]

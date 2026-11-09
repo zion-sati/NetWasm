@@ -35,7 +35,10 @@ public static class WitBindingCompositionRoot
             syntax,
             slotCoercions,
             writers);
-        var methods = new WitBindingMethodWriter(imports, exports);
+        var methods = new WitBindingMethodWriter(
+            imports,
+            exports,
+            new WitBindingIntrinsicsSectionWriter(canonicalTypes, layouts, syntax, writers));
         var types = new WitTypeDeclarationWriter(
             syntax,
             writers,

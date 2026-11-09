@@ -14,6 +14,8 @@ namespace System
         public virtual int GetHashCode() => ObjectIdentityRuntime.GetHashCode(this);
         public virtual string ToString() => GetType().ToString();
         public Type GetType() => null!;
+        [Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        protected extern object MemberwiseClone();
         public static bool Equals(object? left, object? right) =>
             left == null ? right == null : left.Equals(right);
         internal static int GetValueHashCode(object? value) =>

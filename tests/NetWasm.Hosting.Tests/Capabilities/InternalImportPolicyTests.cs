@@ -7,8 +7,6 @@ public sealed class InternalImportPolicyTests
     private readonly InternalImportPolicy _subject = new();
 
     [Theory]
-    [InlineData("netwasm:runtime/reactor-host")]
-    [InlineData("netwasm:runtime/reactor-host@1.0.0")]
     [InlineData("netwasm:diagnostics/terminal")]
     [InlineData("netwasm:diagnostics/terminal@1.0.0")]
     public void RecognizesExactRuntimeOwnedModules(string module)
@@ -17,6 +15,8 @@ public sealed class InternalImportPolicyTests
     }
 
     [Theory]
+    [InlineData("netwasm:runtime/reactor-host")]
+    [InlineData("netwasm:runtime/reactor-host@1.0.0")]
     [InlineData("netwasm:runtime/reactor-host@1.0.1")]
     [InlineData("netwasm:runtime/reactor-host@1")]
     [InlineData("netwasm:runtime/reactor-hosted@1.0.0")]

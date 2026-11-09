@@ -45,6 +45,36 @@ public sealed class NetWasmComponentizeTaskTests
             sessions.Session.Request.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
     }
 
+    // Empty leaves the low-memory choice to the preset; true or false overrides it.
+    [Theory]
+    [InlineData("", null)]
+    [InlineData("true", true)]
+    [InlineData("False", false)]
+    public void PassesTheLowMemoryChoiceToTheLinkSession(string value, bool? expected)
+    {
+        var sessions = new RecordingSessionFactory();
+        var task = CreateTask(sessions, new RecordingManifestInputsReader(),
+            new RecordingManifestWriter(), new RecordingEntryPointReader());
+        task.OptimizerLowMemoryUnused = value;
+        Assert.True(task.Execute());
+        Assert.Equal(expected, sessions.Session.Request!.OptimizationOverrides?.LowMemoryUnused);
+    }
+
+    [Fact]
+    public void AnInvalidLowMemoryChoiceFailsBeforeCreatingSession()
+    {
+        var sessions = new RecordingSessionFactory();
+        var build = new RecordingBuildEngine();
+        var task = CreateTask(sessions, new RecordingManifestInputsReader(),
+            new RecordingManifestWriter(), new RecordingEntryPointReader());
+        task.OptimizerLowMemoryUnused = "sometimes";
+        task.BuildEngine = build;
+        Assert.False(task.Execute());
+        Assert.Null(sessions.WasmToolsCommand);
+        Assert.Empty(task.Components);
+        Assert.Contains("NetWasmOptimizerLowMemoryUnused must be true, false or empty.", Assert.Single(build.Errors));
+    }
+
     [Fact]
     public void InvalidHintsFailBeforeCreatingSession()
     {
@@ -78,7 +108,7 @@ public sealed class NetWasmComponentizeTaskTests
         task.Target = target;
         task.World = world;
         task.JcoVersion = jco;
-        task.Preview2ShimVersion = shim;
+        task.Preview3ShimVersion = shim;
         task.Optimization = "None";
 
         Assert.True(task.Execute());
@@ -110,7 +140,7 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Equal("runtime.wasm", sessions.Session.Request.RuntimeModulePath);
         Assert.Equal("interop.json", inputs.Request!.InteropManifestPath);
         Assert.Equal(NullIfEmpty(jco), inputs.Request.JcoVersion);
-        Assert.Equal(NullIfEmpty(shim), inputs.Request.Preview2ShimVersion);
+        Assert.Equal(NullIfEmpty(shim), inputs.Request.Preview3ShimVersion);
         Assert.Equal("app.dll", entries.Path);
         Assert.Equal(FinalWasmOptimization.None, sessions.Session.Request.Optimization);
         Assert.True(sessions.Session.IsDisposed);
@@ -119,6 +149,24 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Equal("Component", component.GetMetadata("Kind"));
         Assert.Equal(expectedWidth, component.GetMetadata("WasmTarget"));
         Assert.Equal("0.2", component.GetMetadata("WasiVersion"));
+    }
+
+    // A plain core module is the linked core module: no component manifest is written.
+    [Fact]
+    public void APlainCoreModuleWritesNoManifest()
+    {
+        var sessions = new RecordingSessionFactory();
+        var manifests = new RecordingManifestWriter();
+        var task = CreateTask(sessions, new RecordingManifestInputsReader(), manifests, new RecordingEntryPointReader());
+        task.World = "plugin";
+        task.CompileAsLibrary = true;
+        task.PlainCoreModule = true;
+
+        Assert.True(task.Execute());
+
+        Assert.True(sessions.Session.Request!.PlainCoreModule);
+        Assert.Null(manifests.Request);
+        Assert.Equal("CoreModule", Assert.Single(task.Components).GetMetadata("Kind"));
     }
 
     [Theory]

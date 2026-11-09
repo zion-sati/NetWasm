@@ -1,12 +1,10 @@
 using System;
-using System.Collections.Immutable;
-using System.Linq;
 using System.Text.Json;
 using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Execution;
 
-/// <summary>Produces deterministic UTF-8 without BOM, with LF formatting and ordered package identities.</summary>
+/// <summary>Produces deterministic UTF-8 without BOM, with LF formatting.</summary>
 public sealed class ExecutionDescriptorWriter : IExecutionDescriptorWriter
 {
     private static readonly HostingJsonContext Json = new(new()
@@ -27,10 +25,6 @@ public sealed class ExecutionDescriptorWriter : IExecutionDescriptorWriter
     {
         ArgumentNullException.ThrowIfNull(descriptor);
         _validator.Validate(descriptor);
-        var ordered = descriptor with
-        {
-            ToolPackages = descriptor.ToolPackages.OrderBy(package => package.Id, StringComparer.Ordinal).ToImmutableArray(),
-        };
-        return JsonSerializer.SerializeToUtf8Bytes(ordered, Json.ExecutionDescriptor);
+        return JsonSerializer.SerializeToUtf8Bytes(descriptor, Json.ExecutionDescriptor);
     }
 }

@@ -151,7 +151,8 @@ function liftArgument(
       targetLayout: request.targetLayout,
     });
     // Promise callbacks already notify through settleAsyncCompletion. Ordinary
-    // callbacks can also complete Main without a reactor wake. Observe only
+    // callbacks can also complete work the program awaits, which its event loop
+    // then runs. Observe only
     // after the callback releases its transient handles and the outer Wasm
     // stack has returned, including synchronous guest-to-host reentrancy.
     if (callback === null || request.descriptor.result === "promise") return callback;

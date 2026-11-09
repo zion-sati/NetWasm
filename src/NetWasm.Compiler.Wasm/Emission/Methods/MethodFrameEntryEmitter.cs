@@ -165,6 +165,7 @@ internal sealed class MethodFrameEntryEmitter(
             if (capture.Type.StackKind == CliValueKind.ValueType)
             {
                 SmallBlockEmitter.EmitKnownSizeCopy(code, context, values.GetValueLayout(capture.Type).Size,
+                    SmallBlockEmitter.WidestChunk(values.GetValueLayout(capture.Type)),
                     writer => EmitAddressConstant(writer, values.GetValueLayout(capture.Type).Size));
             }
             else

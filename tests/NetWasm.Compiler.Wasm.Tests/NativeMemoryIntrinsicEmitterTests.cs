@@ -78,7 +78,7 @@ public sealed class NativeMemoryIntrinsicEmitterTests
         };
         var writer = new EmitterTestSupport.RecordingInstructionWriter();
 
-        SmallBlockEmitter.EmitKnownSizeCopy(writer, context, size, code => code.Write(
+        SmallBlockEmitter.EmitKnownSizeCopy(writer, context, size, 16, code => code.Write(
             WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(size))));
 
         List<WasmInstruction> instructions = [.. writer.ToInstructions()];
@@ -91,6 +91,89 @@ public sealed class NativeMemoryIntrinsicEmitterTests
         Assert.True(instructions.FindLastIndex(IsLoad) < instructions.FindIndex(IsStore));
         Assert.Equal(storeOffsets.Split(',').Select(uint.Parse), instructions.Where(IsStore).Select(store =>
             store.Opcode == WasmOpcodes.SimdPrefixed ? store.Operand.Third : store.Operand.Offset));
+    }
+
+    // Where at most four chunks of the widest chunk cover the value, its copy reads
+    // no chunk wider than that: Span<int> on wasm32 (8 bytes, widest chunk 4)
+    // copies as two i32 chunks, not one i64. A value needing more keeps the widest.
+    [Theory]
+    [InlineData(8, 4, "4:i32,0:i32")]
+    [InlineData(8, 8, "0:i64")]
+    [InlineData(12, 4, "8:i32,4:i32,0:i32")]
+    [InlineData(16, 4, "12:i32,8:i32,4:i32,0:i32")]
+    [InlineData(16, 8, "8:i64,0:i64")]
+    [InlineData(16, 16, "0:v128")]
+    [InlineData(6, 2, "4:i16,2:i16,0:i16")]
+    [InlineData(3, 1, "2:i8,1:i8,0:i8")]
+    [InlineData(4, 1, "3:i8,2:i8,1:i8,0:i8")]
+    [InlineData(32, 8, "24:i64,16:i64,8:i64,0:i64")]
+    [InlineData(5, 1, "4:i8,0:i32")]
+    [InlineData(8, 1, "0:i64")]
+    [InlineData(16, 1, "0:v128")]
+    [InlineData(10, 2, "8:i16,0:i64")]
+    [InlineData(40, 8, "32:i64,16:v128,0:v128")]
+    [InlineData(24, 32, "16:i64,0:v128")]
+    [InlineData(17, 1, "16:i8,0:v128")]
+    [InlineData(24, 4, "16:i64,0:v128")]
+    public void KnownSizeCopiesReadNoChunkWiderThanTheWidestChunkWhereFourCoverIt(int size, int widestChunk, string stores)
+    {
+        var context = CreateMethodEmissionContext() with
+        {
+            InlineSmallBlocks = true,
+            CopyDestinationTemporary = 30,
+            CopySourceTemporary = 31,
+        };
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+
+        SmallBlockEmitter.EmitKnownSizeCopy(writer, context, size, widestChunk, code => code.Write(
+            WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(size))));
+
+        List<WasmInstruction> instructions = [.. writer.ToInstructions()];
+        Assert.True(instructions.FindLastIndex(IsLoad) < instructions.FindIndex(IsStore));
+        Assert.Equal(stores, string.Join(",", instructions.Where(IsStore).Select(store => store.Opcode switch
+        {
+            WasmOpcodes.SimdPrefixed => $"{store.Operand.Third}:v128",
+            WasmOpcodes.I64Store => $"{store.Operand.Offset}:i64",
+            WasmOpcodes.I32Store => $"{store.Operand.Offset}:i32",
+            WasmOpcodes.I32Store16 => $"{store.Operand.Offset}:i16",
+            _ => $"{store.Operand.Offset}:i8",
+        })));
+        Assert.Equal(instructions.Count(IsStore), instructions.Count(IsLoad));
+    }
+
+    // A value holding a byref (a span) is built field by field in frames, so its
+    // copies read no chunk wider than its alignment; any other value's read 16.
+    [Theory]
+    [InlineData(4, true, 4)]
+    [InlineData(8, true, 8)]
+    [InlineData(4, false, 16)]
+    [InlineData(1, false, 16)]
+    public void TheWidestCopyChunkIsTheAlignmentOnlyForValuesHoldingAByref(int alignment, bool holdsByReference, int widest)
+    {
+        var layout = new ValueLayout(CliTypeIdentity.Primitive("i4", CliValueKind.I4), 8, alignment, [])
+        {
+            ByReferenceOffsets = holdsByReference ? [0] : [],
+        };
+
+        Assert.Equal(widest, SmallBlockEmitter.WidestChunk(layout));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(-4)]
+    public void AChunkWidthThatIsNotAPositivePowerOfTwoIsRejectedBeforeAnyCodeIsWritten(int alignment)
+    {
+        var context = CreateMethodEmissionContext() with
+        {
+            InlineSmallBlocks = true,
+            CopyDestinationTemporary = 30,
+            CopySourceTemporary = 31,
+        };
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => SmallBlockEmitter.EmitInlineKnownSizeCopy(writer, context, 8, alignment));
+        Assert.Empty(writer.ToInstructions());
     }
 
     private static List<WasmInstruction> EmitInline(RuntimeIntrinsic intrinsic, bool memory64, CliValueKind[] stack)

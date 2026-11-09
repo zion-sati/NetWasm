@@ -135,6 +135,12 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         Assert.Equal(["i32", "i32"], export.Parameters.ToArray());
         Assert.Equal("i32", export.Result);
         Assert.Equal("task", export.AsyncReturn);
+        Assert.False(request.FileMounts);
+
+        // A worker that links wasi:filesystem takes the page's file mounts.
+        task.RequiredImportModules = [Item("wasi:filesystem/preopens@0.3.2")];
+        Assert.True(task.Execute());
+        Assert.True(Assert.IsType<WorkerClientEntryRequest>(writer.Client).FileMounts);
     }
 
     [Fact]
@@ -144,7 +150,6 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         var task = new NetWasmWriteWitWorkerHostEntryTask(writer)
         {
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("worker-entry.mjs"),
             Arguments = [new TaskItem("argument")],
             ApplicationImports = [Item("events.mjs", ("Module", "example:app/events"),
@@ -177,7 +182,6 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         {
             BuildEngine = build,
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("worker-entry.mjs"),
             Network = "denyAll",
         };

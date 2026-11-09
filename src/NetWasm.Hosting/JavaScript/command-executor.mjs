@@ -3,11 +3,12 @@ import {
   normalExecutionResult,
 } from "./execution-result.mjs";
 import { managedExceptionBrand } from "./managed-errors.mjs";
+import { isWasiExit } from "./wasi-platform.mjs";
 
 const minSignedInt32 = -0x80000000;
 const maxSignedInt32 = 0x7fffffff;
 
-export function executeCommand(request = {}) {
+export async function executeCommand(request = {}) {
   if (request === null || typeof request !== "object") {
     throw new TypeError("command execution request is required");
   }
@@ -30,8 +31,9 @@ export function executeCommand(request = {}) {
 
   let exitCode;
   try {
-    exitCode = run();
+    exitCode = await run();
   } catch (cause) {
+    if (isWasiExit(cause)) return normalExecutionResult(cause.code);
     if (cause?.[managedExceptionBrand] === true) {
       return failedExecutionResult(
         "managedFailure",

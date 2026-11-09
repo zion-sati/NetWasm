@@ -51,7 +51,8 @@ public sealed class RawImportBindingSelector : IRawImportBindingSelector
             }
             if (!declared.Contains(identity))
             {
-                throw ComponentException.Invalid("final raw import has no declared binding");
+                throw ComponentException.Invalid(
+                    $"final raw import '{identity.Module}' '{identity.Name}' has no declared binding");
             }
         }
         var wit = ImmutableArray.CreateBuilder<RawCanonicalImportIdentity>();

@@ -23,6 +23,7 @@ public sealed class CanonicalAbiSignaturePlanner(
     ICanonicalAbiTypeFlattener flattener) : ICanonicalAbiSignaturePlanner
 {
     private const int MaximumFlatParameters = 16;
+    private const int MaximumFlatAsyncParameters = 4;
     private const int MaximumFlatResults = 1;
     private readonly ICanonicalAbiTypeFlattener _flattener = flattener ??
         throw new ArgumentNullException(nameof(flattener));
@@ -38,24 +39,30 @@ public sealed class CanonicalAbiSignaturePlanner(
         var flatResults = abiFunction.Result is null
             ? ImmutableArray<CliValueKind>.Empty
             : _flattener.Flatten(abiFunction.Result);
-        var indirectParameters = flatParameters.Length > MaximumFlatParameters;
-        var indirectResult = flatResults.Length > MaximumFlatResults;
+        var asynchronous = direction == CanonicalAbiDirection.AsyncLoweredImport;
+        var indirectParameters = flatParameters.Length >
+            (asynchronous ? MaximumFlatAsyncParameters : MaximumFlatParameters);
+        var indirectResult = asynchronous
+            ? !flatResults.IsEmpty
+            : flatResults.Length > MaximumFlatResults;
         var parameters = indirectParameters
             ? ImmutableArray.Create(CliValueKind.ManagedAddress)
             : flatParameters;
-        if (indirectResult && direction == CanonicalAbiDirection.LoweredImport)
+        if (indirectResult && direction != CanonicalAbiDirection.LiftedExport)
         {
             parameters = parameters.Add(CliValueKind.ManagedAddress);
         }
         return new(
             parameters,
-            indirectResult
-                ? direction == CanonicalAbiDirection.LoweredImport
-                    ? CliValueKind.Void
-                    : CliValueKind.ManagedAddress
-                : flatResults.IsEmpty
-                    ? CliValueKind.Void
-                    : flatResults[0],
+            asynchronous
+                ? CliValueKind.I4
+                : indirectResult
+                    ? direction == CanonicalAbiDirection.LoweredImport
+                        ? CliValueKind.Void
+                        : CliValueKind.ManagedAddress
+                    : flatResults.IsEmpty
+                        ? CliValueKind.Void
+                        : flatResults[0],
             flatParameters,
             flatResults,
             indirectParameters,

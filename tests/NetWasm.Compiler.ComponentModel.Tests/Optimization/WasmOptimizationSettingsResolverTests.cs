@@ -93,10 +93,28 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? IntegerCheckEliminationPolicy.Disabled
             : IntegerCheckEliminationPolicy.ProvenRanges;
 
+    private static NewObjectNullCheckEliminationPolicy NewObjectNullCheckElimination(FinalWasmOptimization preset) =>
+        preset switch
+        {
+            FinalWasmOptimization.None or FinalWasmOptimization.O0 => NewObjectNullCheckEliminationPolicy.Disabled,
+            FinalWasmOptimization.O1 or FinalWasmOptimization.O2 => NewObjectNullCheckEliminationPolicy.NewObjects,
+            _ => NewObjectNullCheckEliminationPolicy.ConstructedObjects,
+        };
+
     private static MulticastDispatchPolicy MulticastDispatch(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
             ? MulticastDispatchPolicy.Inline
             : MulticastDispatchPolicy.Shared;
+
+    private static LoopStrengthReductionPolicy LoopStrengthReduction(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? LoopStrengthReductionPolicy.Disabled
+            : LoopStrengthReductionPolicy.AddressInduction;
+
+    private static RangeBranchFoldingPolicy RangeBranchFolding(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? RangeBranchFoldingPolicy.Disabled
+            : RangeBranchFoldingPolicy.ProvenRanges;
 
     private static LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
@@ -167,6 +185,12 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ? ManagedLoopInvariantExpressionHoisting.Enabled : ManagedLoopInvariantExpressionHoisting.Disabled));
             var multicast = resolver.Resolve(preset, new(MulticastInlineDispatch: enabled
                 ? ManagedMulticastInlineDispatch.Enabled : ManagedMulticastInlineDispatch.Disabled));
+            var newObjects = resolver.Resolve(preset, new(NewObjectNullCheckElimination: enabled
+                ? ManagedNewObjectNullCheckElimination.Enabled : ManagedNewObjectNullCheckElimination.Disabled));
+            var strengthReduction = resolver.Resolve(preset, new(LoopStrengthReduction: enabled
+                ? ManagedLoopStrengthReduction.Enabled : ManagedLoopStrengthReduction.Disabled));
+            var rangeBranches = resolver.Resolve(preset, new(RangeBranchFolding: enabled
+                ? ManagedRangeBranchFolding.Enabled : ManagedRangeBranchFolding.Disabled));
             Assert.Equal(baseline with
             {
                 ConstantArgumentPropagation = enabled ? ConstantArgumentPropagationPolicy.Conservative : ConstantArgumentPropagationPolicy.Disabled,
@@ -279,6 +303,20 @@ public sealed class WasmOptimizationSettingsResolverTests
             {
                 MulticastDispatch = enabled ? MulticastDispatchPolicy.Inline : MulticastDispatchPolicy.Shared,
             }, multicast);
+            Assert.Equal(baseline with
+            {
+                NewObjectNullCheckElimination = enabled
+                    ? NewObjectNullCheckEliminationPolicy.ConstructedObjects : NewObjectNullCheckEliminationPolicy.Disabled,
+            }, newObjects);
+            Assert.Equal(baseline with
+            {
+                LoopStrengthReduction = enabled
+                    ? LoopStrengthReductionPolicy.AddressInduction : LoopStrengthReductionPolicy.Disabled,
+            }, strengthReduction);
+            Assert.Equal(baseline with
+            {
+                RangeBranchFolding = enabled ? RangeBranchFoldingPolicy.ProvenRanges : RangeBranchFoldingPolicy.Disabled,
+            }, rangeBranches);
         }
     }
 
@@ -334,6 +372,12 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(LoopInvariantExpressionHoisting: (ManagedLoopInvariantExpressionHoisting)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(MulticastInlineDispatch: (ManagedMulticastInlineDispatch)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(NewObjectNullCheckElimination: (ManagedNewObjectNullCheckElimination)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(LoopStrengthReduction: (ManagedLoopStrengthReduction)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(RangeBranchFolding: (ManagedRangeBranchFolding)255)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
@@ -383,6 +427,12 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(MulticastInlineDispatch: ManagedMulticastInlineDispatch.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(NewObjectNullCheckElimination: ManagedNewObjectNullCheckElimination.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(LoopStrengthReduction: ManagedLoopStrengthReduction.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(RangeBranchFolding: ManagedRangeBranchFolding.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopInvariantFieldHoisting: ManagedLoopInvariantFieldHoisting.NullChecks)));
         Assert.Equal(resolver.Resolve(FinalWasmOptimization.None), resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Disabled,
@@ -408,7 +458,10 @@ public sealed class WasmOptimizationSettingsResolverTests
                 QuotientReuse: ManagedQuotientReuse.Disabled,
                 IntegerCheckElimination: ManagedIntegerCheckElimination.Disabled,
                 LoopInvariantExpressionHoisting: ManagedLoopInvariantExpressionHoisting.Disabled,
-                MulticastInlineDispatch: ManagedMulticastInlineDispatch.Disabled)));
+                MulticastInlineDispatch: ManagedMulticastInlineDispatch.Disabled,
+                NewObjectNullCheckElimination: ManagedNewObjectNullCheckElimination.Disabled,
+                LoopStrengthReduction: ManagedLoopStrengthReduction.Disabled,
+                RangeBranchFolding: ManagedRangeBranchFolding.Disabled)));
     }
 
     [Theory]
@@ -494,7 +547,10 @@ public sealed class WasmOptimizationSettingsResolverTests
             QuotientReuse(preset),
             IntegerCheckElimination(preset),
             LoopInvariantExpressionHoisting: LoopInvariantExpressionHoisting(preset),
-            MulticastDispatch: MulticastDispatch(preset));
+            MulticastDispatch: MulticastDispatch(preset),
+            NewObjectNullCheckElimination: NewObjectNullCheckElimination(preset),
+            LoopStrengthReduction: LoopStrengthReduction(preset),
+            RangeBranchFolding: RangeBranchFolding(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
@@ -511,6 +567,24 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.False(resolver.Resolve(FinalWasmOptimization.O3).Converge);
         Assert.False(resolver.Resolve(FinalWasmOptimization.Oz, new()).Converge);
         Assert.True(resolver.Resolve(FinalWasmOptimization.O3, new(Converge: true)).Converge);
+    }
+
+    [Theory]
+    [InlineData(FinalWasmOptimization.None)]
+    [InlineData(FinalWasmOptimization.O0)]
+    [InlineData(FinalWasmOptimization.O1)]
+    [InlineData(FinalWasmOptimization.O2)]
+    [InlineData(FinalWasmOptimization.O3)]
+    [InlineData(FinalWasmOptimization.Os)]
+    [InlineData(FinalWasmOptimization.Oz)]
+    public void NoPresetAssumesLowMemoryIsUnusedUnlessAProjectSaysSo(FinalWasmOptimization preset)
+    {
+        var resolver = Create();
+
+        Assert.False(resolver.Resolve(preset).LowMemoryUnused);
+        Assert.False(resolver.Resolve(preset, new()).LowMemoryUnused);
+        Assert.False(resolver.Resolve(preset, new(LowMemoryUnused: false)).LowMemoryUnused);
+        Assert.True(resolver.Resolve(preset, new(LowMemoryUnused: true)).LowMemoryUnused);
     }
 
     [Theory]
@@ -603,7 +677,10 @@ public sealed class WasmOptimizationSettingsResolverTests
                     QuotientReuse(preset),
                     IntegerCheckElimination(preset),
                     LoopInvariantExpressionHoisting: LoopInvariantExpressionHoisting(preset),
-                    MulticastDispatch: MulticastDispatch(preset)),
+                    MulticastDispatch: MulticastDispatch(preset),
+                    NewObjectNullCheckElimination: NewObjectNullCheckElimination(preset),
+                    LoopStrengthReduction: LoopStrengthReduction(preset),
+                    RangeBranchFolding: RangeBranchFolding(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }

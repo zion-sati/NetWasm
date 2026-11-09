@@ -282,6 +282,58 @@ public sealed class ModuleImportCollectorTests
     }
 
     [Fact]
+    public void CollectsComponentBuiltInsByTheirFullCoreNamesWithoutAContract()
+    {
+        var program = new FakeProgram();
+        var entry = program.GetMethod(EmitterTestSupport.EntryKey);
+        var wait = entry with
+        {
+            Key = EmitterTestSupport.Key(0x06000034),
+            Name = "Wait",
+            Signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.NativeInt),
+            RelativeVirtualAddress = 0,
+            WitImport = new("$root", "[waitable-set-wait]") { IsCanonicalBuiltIn = true },
+        };
+        var create = wait with
+        {
+            Key = EmitterTestSupport.Key(0x06000035),
+            Name = "CreateStream",
+            Signature = MethodSignatureModel.Create(CliValueKind.I8),
+            WitImport = new("wasi:cli/stdout@0.3.2", "[stream-new-0]write-via-stream") { IsCanonicalBuiltIn = true },
+        };
+        var request = EmitterTestSupport.CreateEmissionRequest(program) with
+        {
+            WitImportMethods = [wait, create, wait],
+        };
+
+        var imports = CreateCollector(program, new RecordingJavaScriptParameterTypeResolver()).Collect(
+            new(request, [], [], WasmTarget.Wasm32, []));
+
+        Assert.Equal(
+            [
+                "$root [waitable-set-wait] (I4, NativeInt) -> I4",
+                "wasi:cli/stdout@0.3.2 [stream-new-0]write-via-stream () -> I8",
+            ],
+            imports.Select(import =>
+                $"{import.Module} {import.Name} ({string.Join(", ", import.Type.Parameters)}) -> {import.Type.Result}"));
+    }
+
+    [Fact]
+    public void BuiltInResolverRejectsMethodsThatAreNotBuiltIns()
+    {
+        var program = new FakeProgram();
+        var entry = program.GetMethod(EmitterTestSupport.EntryKey);
+        var resolver = new ComponentBuiltInImportResolver();
+
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(null!));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(entry));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(entry with
+        {
+            WitImport = new("example:host/api@1.0.0", "read"),
+        }));
+    }
+
+    [Fact]
     public void RejectsMissingRequest()
     {
         var program = new FakeProgram();
@@ -299,7 +351,8 @@ public sealed class ModuleImportCollectorTests
             new RecordingLayoutProvider(),
             parameters,
             new CanonicalAbiFunctionTypePlanner(
-                new CanonicalAbiSignaturePlanner(new CanonicalAbiTypeFlattener()))),
+                new CanonicalAbiSignaturePlanner(new CanonicalAbiTypeFlattener())),
+            new ComponentBuiltInImportResolver()),
     }.Cast<IModuleImportCollector>().Single();
 
     private static WasmFunctionImport Import(string module, string name) => new(

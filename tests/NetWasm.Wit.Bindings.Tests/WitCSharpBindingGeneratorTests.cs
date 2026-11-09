@@ -48,24 +48,76 @@ public sealed class WitCSharpBindingGeneratorTests
             first, StringComparison.Ordinal);
         Assert.Contains("public static partial uint Run(uint value);", first,
             StringComparison.Ordinal);
+        // A synchronous export may not block before it returns, so a blocking wait inside it throws.
+        Assert.Contains("using var __synchronous = CanonicalAbi.EnterSynchronousExport();", first,
+            StringComparison.Ordinal);
     }
 
+    // An async func import is lowered with `async`: the binding awaits the subtask its call
+    // starts, then lifts the result the callee wrote through its pointer.
     [Fact]
-    public void RejectsAsyncFunctionsBeforeGeneratingPartialBindings()
+    public void AsyncImportsAwaitTheirAsyncLoweredSubtask()
     {
-        var function = new WitFunction(
-            "[async]run",
-            [],
-            null,
+        var import = new WitFunction(
+            "transform-value",
+            [new("input-value", new WitTypeReference.Defined(0))],
+            new WitTypeReference.Defined(1),
             new WitFunctionKind("async-freestanding"));
-        var document = Document(function, function);
+        var export = new WitFunction(
+            "run",
+            [new("value", new WitTypeReference.Primitive("u32"))],
+            new WitTypeReference.Primitive("u32"),
+            new WitFunctionKind("freestanding"));
+        var document = Document(import, export);
 
-        var exception = Assert.Throws<CompilerException>(() =>
-            CreateGenerator().Generate(document, document.Worlds[0]));
+        var source = CreateGenerator().Generate(document, document.Worlds[0]);
 
-        Assert.Equal("NW1009", exception.Diagnostic.Id);
-        Assert.Contains("asynchronous WIT function", exception.Diagnostic.Message,
+        Assert.Contains("public static async global::System.Threading.Tasks.Task<WitResult<Point, string>> TransformValue(Point inputValue)",
+            source, StringComparison.Ordinal);
+        Assert.Contains("await CanonicalAbi.AwaitSubtask(__CanonicalExampleSmokeHost100_TransformValue(", source,
             StringComparison.Ordinal);
+        Assert.Contains("[ComponentBuiltIn(\"example:smoke/host@1.0.0\", \"[async-lower]transform-value\")]",
+            source, StringComparison.Ordinal);
+        Assert.Contains("private static extern int __CanonicalExampleSmokeHost100_TransformValue(int __f0, nuint __result);",
+            source, StringComparison.Ordinal);
+    }
+
+    // An async func export is lifted with a callback: the start hands the user's Task to the
+    // event loop, the completion lowers its result into task.return, the callback forwards events.
+    [Fact]
+    public void AsyncExportsLiftWithACallbackAndReturnThroughTaskReturn()
+    {
+        var import = new WitFunction(
+            "transform-value",
+            [new("input-value", new WitTypeReference.Defined(0))],
+            new WitTypeReference.Defined(1),
+            new WitFunctionKind("freestanding"));
+        var export = new WitFunction(
+            "run",
+            [new("value", new WitTypeReference.Primitive("u32"))],
+            new WitTypeReference.Primitive("string"),
+            new WitFunctionKind("async-freestanding"));
+        var document = Document(import, export);
+
+        var source = CreateGenerator().Generate(document, document.Worlds[0]);
+
+        foreach (var expected in new[]
+        {
+            "public static partial global::System.Threading.Tasks.Task<string> Run(uint value);",
+            "[ComponentExport(\"[async-lift]run\")]",
+            "return CanonicalAbi.StartExportTask(Run(__managed0), __Return__Run);",
+            "var result = ((global::System.Threading.Tasks.Task<string>)__task).GetAwaiter().GetResult();",
+            "[ComponentBuiltIn(\"[export]$root\", \"[task-return]run\")]",
+            "private static extern void __TaskReturn__Run(nuint __f0, nuint __f1);",
+            "[ComponentExport(\"[callback][async-lift]run\")]",
+            "CanonicalAbi.DeliverExportEvent(eventCode, waitable, payload);",
+        })
+        {
+            Assert.Contains(expected, source, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("WitPostReturn(\"run\")", source, StringComparison.Ordinal);
+        // An async-typed task may block.
+        Assert.DoesNotContain("EnterSynchronousExport", source, StringComparison.Ordinal);
     }
 
     [Fact]

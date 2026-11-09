@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createWasiFilesystem } from "./wasi-filesystem.mjs";
 import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 
@@ -50,7 +51,6 @@ const interopManifest = encoder.encode(JSON.stringify({
   exports: [],
   callbacks: [],
 }));
-class Descriptor { openAt() { return new Descriptor(); } read() { return [new Uint8Array(), true]; } }
 const sink = Object.freeze({ write() {} });
 
 function sha256(bytes) {
@@ -65,7 +65,7 @@ function deployment(artifacts) {
   return {
     schemaVersion: 1, semanticBuildId: digest, deploymentKind: "raw",
     profile: "netwasm0.1", target: "wasm32", featureSet: "default",
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     versions: { compiler: "1", hosting: "1", runtime: "1", runtimeAbi: "1", sdk: "1", toolchain: "1" },
     buildFingerprint: digest, runtimeFeatures: [], artifacts,
     requiredImportModules: [], requiredImports: [], exports: [],
@@ -78,7 +78,7 @@ function request(deploymentManifestSha256) {
     arguments: Object.freeze([]), environment: Object.freeze([]),
     grants: Object.freeze({
       environment: Object.freeze([]), preopens: Object.freeze([]), network: "denyAll",
-      clocks: Object.freeze([]), randomness: false,
+      clocks: Object.freeze([]), randomness: false, temporaryDirectory: false, workingDirectory: false,
     }),
     applicationImports: Object.freeze([]),
   });
@@ -104,17 +104,15 @@ function fixture(imports = []) {
   ]);
   const modules = new Map();
   let sequence = 0;
-  const createFilesystem = () => ({
-    types: { Descriptor }, preopens: { getDirectories: () => [] },
-  });
-  const createShim = () => { throw new Error("empty provider set must not create a shim"); };
+  const createFilesystem = preopens => createWasiFilesystem(Object.freeze({ hostFiles: null, preopens }));
+  const createImports = () => { throw new Error("empty provider set must not create imports"); };
   return {
     createFilesystem,
-    createShim,
+    createImports,
     manifestBytes,
     options: {
       manifestUrl,
-      preview2: { createFilesystem, createShim },
+      wasi: { createFilesystem, createImports },
       web: {
         compileCoreModule: WebAssembly.compile.bind(WebAssembly),
         createModuleUrl(bytes) {
@@ -156,7 +154,7 @@ function malformedDataObjects(value) {
   return { invalid: [null, 1, [], withSymbol], malformed: [inherited, extra, missing, nonEnumerable, accessor] };
 }
 
-test("browser bootstrap composes selected Preview 2 and Web mechanisms", async () => {
+test("browser bootstrap composes selected WASI and Web mechanisms", async () => {
   for (const createBootstrap of [createBrowserNetWasmBootstrap, createRawBootstrap]) {
     const value = fixture();
     const executeNetWasm = createBootstrap(value.options);
@@ -165,6 +163,7 @@ test("browser bootstrap composes selected Preview 2 and Web mechanisms", async (
       request: request(sha256(value.manifestBytes)),
       signal: null,
       stderr: sink,
+      stdin: null,
       stdout: sink,
     });
     assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 37]);
@@ -178,7 +177,7 @@ test("raw browser bootstrap binds application modules without a worker caller", 
     const value = fixture([imported]);
     const modules = supplied ? { [imported.module]: { read: () => 42 } } : {};
     const execute = createRawBootstrap(value.options, modules);
-    const outcome = await execute({ request: request(sha256(value.manifestBytes)), signal: null, stderr: sink, stdout: sink });
+    const outcome = await execute({ request: request(sha256(value.manifestBytes)), signal: null, stderr: sink, stdin: null, stdout: sink });
     assert.equal(outcome.completionKind, supplied ? "normal" : "hostFailure");
   }
 });
@@ -193,7 +192,7 @@ test("browser bootstrap validates its exact three-part composition", () => {
     assert.throws(() => createBrowserNetWasmBootstrap(value), /options shape/i);
   }
 
-  for (const [key, label] of [["preview2", "Preview 2"], ["web", "Web"]]) {
+  for (const [key, label] of [["wasi", "WASI"], ["web", "Web"]]) {
     const nested = base[key];
     const values = malformedDataObjects(nested);
     for (const value of values.invalid) {

@@ -21,12 +21,38 @@ namespace System
 
     public static class Console
     {
+        private static IO.TextReader? s_in;
         private static IO.TextWriter? s_out;
         private static IO.TextWriter? s_error;
+        private static bool? s_isInputRedirected;
+        private static bool? s_isOutputRedirected;
+        private static bool? s_isErrorRedirected;
+
+        public static IO.TextReader In => s_in ?? StandardInput.Reader;
 
         public static IO.TextWriter Out => s_out ?? StandardOutput.Writer;
 
         public static IO.TextWriter Error => s_error ?? StandardError.Writer;
+
+        // A redirected stream is one that is not a terminal. Each is asked once, on first use.
+        public static bool IsInputRedirected => s_isInputRedirected ??=
+            !Runtime.InteropServices.PlatformServices.StandardStreams.IsTerminal(
+                Runtime.InteropServices.WebAssembly.StandardStream.Input);
+
+        public static bool IsOutputRedirected => s_isOutputRedirected ??=
+            !Runtime.InteropServices.PlatformServices.StandardStreams.IsTerminal(
+                Runtime.InteropServices.WebAssembly.StandardStream.Output);
+
+        public static bool IsErrorRedirected => s_isErrorRedirected ??=
+            !Runtime.InteropServices.PlatformServices.StandardStreams.IsTerminal(
+                Runtime.InteropServices.WebAssembly.StandardStream.Error);
+
+        public static void SetIn(IO.TextReader newIn)
+        {
+            ArgumentNullException.ThrowIfNull(newIn);
+            // TODO(netwasm-threading)
+            s_in = newIn;
+        }
 
         public static void SetOut(IO.TextWriter newOut)
         {
@@ -40,6 +66,38 @@ namespace System
             ArgumentNullException.ThrowIfNull(newError);
             // TODO(netwasm-threading)
             s_error = newError;
+        }
+
+        public static int Read() => In.Read();
+
+        public static string? ReadLine() => In.ReadLine();
+
+        public static IO.Stream OpenStandardInput() =>
+            Runtime.InteropServices.ConsoleServices.ConsoleCompositionRoot.OpenStandardInput();
+
+        // The buffer size is validated and otherwise ignored, as in System.Console.
+        public static IO.Stream OpenStandardInput(int bufferSize)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(bufferSize);
+            return OpenStandardInput();
+        }
+
+        public static IO.Stream OpenStandardOutput() =>
+            Runtime.InteropServices.ConsoleServices.ConsoleCompositionRoot.OpenStandardOutput();
+
+        public static IO.Stream OpenStandardOutput(int bufferSize)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(bufferSize);
+            return OpenStandardOutput();
+        }
+
+        public static IO.Stream OpenStandardError() =>
+            Runtime.InteropServices.ConsoleServices.ConsoleCompositionRoot.OpenStandardError();
+
+        public static IO.Stream OpenStandardError(int bufferSize)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(bufferSize);
+            return OpenStandardError();
         }
 
         public static void WriteLine() => Out.WriteLine();
@@ -143,6 +201,13 @@ namespace System
         public static void Write(string? value) => Out.Write(value);
 
         public static void Write(ReadOnlySpan<char> value) => Out.Write(value);
+
+        private static class StandardInput
+        {
+            internal static readonly IO.TextReader Reader =
+                Runtime.InteropServices.ConsoleServices.ConsoleCompositionRoot
+                    .CreateStandardInputReader();
+        }
 
         private static class StandardOutput
         {

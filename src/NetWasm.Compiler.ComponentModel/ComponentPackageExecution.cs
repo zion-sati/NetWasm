@@ -11,7 +11,8 @@ public interface IComponentPackageExecution
 public sealed class ComponentPackageExecution(
     IComponentPackageOperationRunner operations,
     IComponentCoreModuleLinker coreModules,
-    IFileMover files) : IComponentPackageExecution
+    IFileMover files,
+    IPlainCoreModuleImportValidator plainCoreModuleImports) : IComponentPackageExecution
 {
     private readonly IComponentPackageOperationRunner _operations = operations ??
         throw new ArgumentNullException(nameof(operations));
@@ -19,6 +20,8 @@ public sealed class ComponentPackageExecution(
         throw new ArgumentNullException(nameof(coreModules));
     private readonly IFileMover _files = files ??
         throw new ArgumentNullException(nameof(files));
+    private readonly IPlainCoreModuleImportValidator _plainCoreModuleImports = plainCoreModuleImports ??
+        throw new ArgumentNullException(nameof(plainCoreModuleImports));
 
     public void Run(ComponentPackageRequest request, ComponentPackageWorkspace workspace)
     {
@@ -37,6 +40,17 @@ public sealed class ComponentPackageExecution(
                 request.StructuredDiagnostics)
             { OptimizationOverrides = request.OptimizationOverrides });
             componentCoreModule = workspace.LinkedModulePath;
+        }
+        if (request.PlainCoreModule)
+        {
+            _operations.Run(
+                ["strip", "--all", componentCoreModule, "--output", workspace.ComponentPath],
+                "strip core module metadata");
+            _operations.Run(["validate", workspace.ComponentPath, "--features", "all"],
+                "validate core module");
+            _plainCoreModuleImports.Validate(workspace.ComponentPath);
+            _files.Move(workspace.ComponentPath, request.OutputPath);
+            return;
         }
         var embedArguments = new List<string>
         {

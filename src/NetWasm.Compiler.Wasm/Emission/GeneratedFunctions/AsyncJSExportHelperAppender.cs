@@ -32,12 +32,7 @@ internal sealed class AsyncJSExportHelperAppender(
         ArgumentNullException.ThrowIfNull(boundaryEntries);
         ArgumentNullException.ThrowIfNull(completion);
         ArgumentOutOfRangeException.ThrowIfNegative(completion.ObserveFunctionIndex);
-        if (completion.DeliverFunctionIndex is { } deliverFunctionIndex)
-            ArgumentOutOfRangeException.ThrowIfNegative(deliverFunctionIndex);
-        var expectedResult = kinds.Completion == ManagedBoundaryKind.AsynchronousProcessCompletion
-            ? CliValueKind.Void : CliValueKind.I4;
-        if (completion.ResultKind != expectedResult)
-            throw new ArgumentException("Task completion result does not match its boundary.", nameof(completion));
+        ArgumentOutOfRangeException.ThrowIfNegative(completion.CaptureFunctionIndex);
 
         var statusName = names.Status;
         indices.Add(statusName, importCount + functions.Count);
@@ -76,7 +71,7 @@ internal sealed class AsyncJSExportHelperAppender(
         var completeIndex = importCount + functions.Count;
         functions.Add(new WasmFunctionDefinition(
             completeName,
-            WasmFunctionType.Create(completion.ResultKind, CliValueKind.I4),
+            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4),
             completions.Emit(binding, completion)));
         boundaryEntries.Add(boundaries.Build(new(
             [.. functions],

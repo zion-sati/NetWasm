@@ -6,10 +6,11 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
 
 namespace System
 {
-    public class Exception
+    public partial class Exception : ISerializable
     {
         private readonly string? _message;
         private readonly Exception? _innerException;
@@ -32,6 +33,23 @@ namespace System
             HResult = HResults.COR_E_EXCEPTION;
         }
 
+        // Formatter execution is unavailable; retain the standard base contract
+        // so derived library exception declarations and overrides bind normally.
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        protected Exception(SerializationInfo info, StreamingContext context) =>
+            throw new PlatformNotSupportedException("Exception formatter deserialization is not available on this NetWasm platform.");
+
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        public virtual void GetObjectData(SerializationInfo info, StreamingContext context) =>
+            throw new PlatformNotSupportedException("Exception.GetObjectData formatter serialization is not available on this NetWasm platform.");
+
+        [Obsolete(Obsoletions.LegacyFormatterMessage, DiagnosticId = Obsoletions.LegacyFormatterDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        protected event EventHandler<SafeSerializationEventArgs> SerializeObjectState
+        {
+            add => throw new PlatformNotSupportedException("Exception.SerializeObjectState is not available on this NetWasm platform.");
+            remove => throw new PlatformNotSupportedException("Exception.SerializeObjectState is not available on this NetWasm platform.");
+        }
+
         public virtual string Message
         {
             get => _message ?? "An exception was thrown.";
@@ -42,6 +60,9 @@ namespace System
         }
         public new Type GetType() => base.GetType();
         public virtual string? StackTrace => _stackTrace;
+        // The frames the runtime captured at the throw, which StackTrace(Exception) reads without
+        // calling a derived type's StackTrace override, as upstream reads its stack data.
+        internal string? CapturedStackTrace => _stackTrace;
         public virtual string? Source { get => _source; set => _source = value; }
         public virtual string? HelpLink { get => _helpLink; set => _helpLink = value; }
         public int HResult { get => _hResult; set => _hResult = value; }
@@ -67,6 +88,9 @@ namespace System
 
     public class SystemException : Exception
     {
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        protected SystemException(SerializationInfo info, StreamingContext context) : base(info, context) { }
+
         public SystemException() => HResult = HResults.COR_E_SYSTEM;
         public SystemException(string? message) : base(message) => HResult = HResults.COR_E_SYSTEM;
         public SystemException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SYSTEM;
@@ -74,6 +98,11 @@ namespace System
 
     public class PlatformNotSupportedException : NotSupportedException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected PlatformNotSupportedException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("PlatformNotSupportedException formatter deserialization is not available on this NetWasm platform.");
+
         public PlatformNotSupportedException() => HResult = HResults.COR_E_PLATFORMNOTSUPPORTED;
         public PlatformNotSupportedException(string? message) : base(message) => HResult = HResults.COR_E_PLATFORMNOTSUPPORTED;
         public PlatformNotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_PLATFORMNOTSUPPORTED;
@@ -81,6 +110,11 @@ namespace System
 
     public class NotSupportedException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected NotSupportedException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("NotSupportedException formatter deserialization is not available on this NetWasm platform.");
+
         public NotSupportedException() => HResult = HResults.COR_E_NOTSUPPORTED;
         public NotSupportedException(string? message) : base(message) => HResult = HResults.COR_E_NOTSUPPORTED;
         public NotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_NOTSUPPORTED;
@@ -88,13 +122,23 @@ namespace System
 
     public class InvalidOperationException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected InvalidOperationException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("InvalidOperationException formatter deserialization is not available on this NetWasm platform.");
+
         public InvalidOperationException() => HResult = HResults.COR_E_INVALIDOPERATION;
         public InvalidOperationException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDOPERATION;
         public InvalidOperationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDOPERATION;
     }
 
-    public class ObjectDisposedException : InvalidOperationException
+    public partial class ObjectDisposedException : InvalidOperationException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ObjectDisposedException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ObjectDisposedException formatter deserialization is not available on this NetWasm platform.");
+
         private readonly string? _objectName;
 
         private ObjectDisposedException() : this(null, (string?)null) { }
@@ -133,6 +177,11 @@ namespace System
 
     public class OperationCanceledException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected OperationCanceledException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("OperationCanceledException formatter deserialization is not available on this NetWasm platform.");
+
         private readonly Threading.CancellationToken _cancellationToken;
 
         public OperationCanceledException() => HResult = HResults.COR_E_OPERATIONCANCELED;
@@ -163,6 +212,11 @@ namespace System
 
     public class NullReferenceException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected NullReferenceException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("NullReferenceException formatter deserialization is not available on this NetWasm platform.");
+
         public NullReferenceException() => HResult = HResults.E_POINTER;
         public NullReferenceException(string? message) : base(message) => HResult = HResults.E_POINTER;
         public NullReferenceException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_POINTER;
@@ -177,6 +231,11 @@ namespace System
 
     public class ArithmeticException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ArithmeticException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ArithmeticException formatter deserialization is not available on this NetWasm platform.");
+
         public ArithmeticException() => HResult = HResults.COR_E_ARITHMETIC;
         public ArithmeticException(string? message) : base(message) => HResult = HResults.COR_E_ARITHMETIC;
         public ArithmeticException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ARITHMETIC;
@@ -184,6 +243,11 @@ namespace System
 
     public class DivideByZeroException : ArithmeticException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected DivideByZeroException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("DivideByZeroException formatter deserialization is not available on this NetWasm platform.");
+
         public DivideByZeroException() => HResult = HResults.COR_E_DIVIDEBYZERO;
         public DivideByZeroException(string? message) : base(message) => HResult = HResults.COR_E_DIVIDEBYZERO;
         public DivideByZeroException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DIVIDEBYZERO;
@@ -191,6 +255,11 @@ namespace System
 
     public class OverflowException : ArithmeticException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected OverflowException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("OverflowException formatter deserialization is not available on this NetWasm platform.");
+
         public OverflowException() => HResult = HResults.COR_E_OVERFLOW;
         public OverflowException(string? message) : base(message) => HResult = HResults.COR_E_OVERFLOW;
         public OverflowException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_OVERFLOW;
@@ -198,6 +267,11 @@ namespace System
 
     public class FormatException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected FormatException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("FormatException formatter deserialization is not available on this NetWasm platform.");
+
         public FormatException() => HResult = HResults.COR_E_FORMAT;
         public FormatException(string? message) : base(message) => HResult = HResults.COR_E_FORMAT;
         public FormatException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_FORMAT;
@@ -205,6 +279,11 @@ namespace System
 
     public class InvalidCastException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected InvalidCastException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("InvalidCastException formatter deserialization is not available on this NetWasm platform.");
+
         public InvalidCastException() => HResult = HResults.COR_E_INVALIDCAST;
         public InvalidCastException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDCAST;
         public InvalidCastException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDCAST;
@@ -213,13 +292,23 @@ namespace System
 
     public class OutOfMemoryException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected OutOfMemoryException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("OutOfMemoryException formatter deserialization is not available on this NetWasm platform.");
+
         public OutOfMemoryException() => HResult = HResults.COR_E_OUTOFMEMORY;
         public OutOfMemoryException(string? message) : base(message) => HResult = HResults.COR_E_OUTOFMEMORY;
         public OutOfMemoryException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_OUTOFMEMORY;
     }
 
-    public class ArgumentException : SystemException
+    public partial class ArgumentException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ArgumentException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ArgumentException formatter deserialization is not available on this NetWasm platform.");
+
         public ArgumentException() => HResult = HResults.COR_E_ARGUMENT;
         public ArgumentException(string? message) : base(message) => HResult = HResults.COR_E_ARGUMENT;
         public ArgumentException(string? message, string? paramName) : base(message)
@@ -261,6 +350,11 @@ namespace System
 
     public class ArgumentNullException : ArgumentException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ArgumentNullException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ArgumentNullException formatter deserialization is not available on this NetWasm platform.");
+
         public ArgumentNullException() => HResult = HResults.E_POINTER;
         public ArgumentNullException(string? paramName) : base(null, paramName) => HResult = HResults.E_POINTER;
 
@@ -279,10 +373,21 @@ namespace System
         {
             if (argument is null) throw new ArgumentNullException(paramName);
         }
+
+        // Upstream's internal overload: a zero IntPtr is null for CoreLib's native-pointer arguments.
+        internal static void ThrowIfNull(IntPtr argument, [CallerArgumentExpression(nameof(argument))] string? paramName = null)
+        {
+            if (argument == IntPtr.Zero) throw new ArgumentNullException(paramName);
+        }
     }
 
-    public class ArgumentOutOfRangeException : ArgumentException
+    public partial class ArgumentOutOfRangeException : ArgumentException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ArgumentOutOfRangeException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ArgumentOutOfRangeException formatter deserialization is not available on this NetWasm platform.");
+
         public ArgumentOutOfRangeException() => HResult = HResults.COR_E_ARGUMENTOUTOFRANGE;
         public ArgumentOutOfRangeException(string? paramName) : base(null, paramName) => HResult = HResults.COR_E_ARGUMENTOUTOFRANGE;
         public ArgumentOutOfRangeException(string? paramName, string? message) : base(message, paramName) => HResult = HResults.COR_E_ARGUMENTOUTOFRANGE;
@@ -353,6 +458,11 @@ namespace System
 
     public class ArrayTypeMismatchException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ArrayTypeMismatchException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ArrayTypeMismatchException formatter deserialization is not available on this NetWasm platform.");
+
         public ArrayTypeMismatchException() => HResult = HResults.COR_E_ARRAYTYPEMISMATCH;
         public ArrayTypeMismatchException(string? message) : base(message) => HResult = HResults.COR_E_ARRAYTYPEMISMATCH;
         public ArrayTypeMismatchException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ARRAYTYPEMISMATCH;
@@ -361,30 +471,137 @@ namespace System
 
 namespace System
 {
-    public class AccessViolationException : SystemException { public AccessViolationException() => HResult = HResults.E_POINTER; public AccessViolationException(string? message) : base(message) => HResult = HResults.E_POINTER; public AccessViolationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_POINTER; }
-    public class AppDomainUnloadedException : SystemException { public AppDomainUnloadedException() => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPDOMAINUNLOADED; }
-    public class ApplicationException : Exception { public ApplicationException() => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message) : base(message) => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPLICATION; }
-    public class CannotUnloadAppDomainException : SystemException { public CannotUnloadAppDomainException() => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message) : base(message) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; }
-    public class ContextMarshalException : SystemException { public ContextMarshalException() => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message) : base(message) => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CONTEXTMARSHAL; }
+    public class AccessViolationException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected AccessViolationException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("AccessViolationException formatter deserialization is not available on this NetWasm platform.");
+        public AccessViolationException() => HResult = HResults.E_POINTER; public AccessViolationException(string? message) : base(message) => HResult = HResults.E_POINTER; public AccessViolationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_POINTER;
+    }
+    public class AppDomainUnloadedException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected AppDomainUnloadedException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("AppDomainUnloadedException formatter deserialization is not available on this NetWasm platform.");
+        public AppDomainUnloadedException() => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPDOMAINUNLOADED;
+    }
+    public class ApplicationException : Exception
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ApplicationException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ApplicationException formatter deserialization is not available on this NetWasm platform.");
+        public ApplicationException() => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message) : base(message) => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPLICATION;
+    }
+    public class CannotUnloadAppDomainException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected CannotUnloadAppDomainException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("CannotUnloadAppDomainException formatter deserialization is not available on this NetWasm platform.");
+        public CannotUnloadAppDomainException() => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message) : base(message) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN;
+    }
+    public class ContextMarshalException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected ContextMarshalException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("ContextMarshalException formatter deserialization is not available on this NetWasm platform.");
+        public ContextMarshalException() => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message) : base(message) => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CONTEXTMARSHAL;
+    }
     public class DataMisalignedException : SystemException { public DataMisalignedException() => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message) : base(message) => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DATAMISALIGNED; }
     public class ExecutionEngineException : SystemException { public ExecutionEngineException() => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message) : base(message) => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_EXECUTIONENGINE; }
     public class InsufficientExecutionStackException : SystemException { public InsufficientExecutionStackException() => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; }
     public class InsufficientMemoryException : OutOfMemoryException { public InsufficientMemoryException() => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; }
     public class InvalidProgramException : SystemException { public InvalidProgramException() => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDPROGRAM; }
-    public class InvalidTimeZoneException : Exception { public InvalidTimeZoneException() { } public InvalidTimeZoneException(string? message) : base(message) { } public InvalidTimeZoneException(string? message, Exception? innerException) : base(message, innerException) { } }
-    public class MemberAccessException : SystemException { public MemberAccessException() => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message) : base(message) => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MEMBERACCESS; }
-    public class MethodAccessException : MemberAccessException { public MethodAccessException() => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message) : base(message) => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_METHODACCESS; }
-    public class MulticastNotSupportedException : SystemException { public MulticastNotSupportedException() => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message) : base(message) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; }
-    public class NotImplementedException : SystemException { public NotImplementedException() => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message) : base(message) => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_NOTIMPL; }
-    public class RankException : SystemException { public RankException() => HResult = HResults.COR_E_RANK; public RankException(string? message) : base(message) => HResult = HResults.COR_E_RANK; public RankException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_RANK; }
-    public class StackOverflowException : SystemException { public StackOverflowException() => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message) : base(message) => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_STACKOVERFLOW; }
-    public class TimeoutException : SystemException { public TimeoutException() => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message) : base(message) => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TIMEOUT; }
-    public class TimeZoneNotFoundException : Exception { public TimeZoneNotFoundException() { } public TimeZoneNotFoundException(string? message) : base(message) { } public TimeZoneNotFoundException(string? message, Exception? innerException) : base(message, innerException) { } }
-    public class TypeUnloadedException : SystemException { public TypeUnloadedException() => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEUNLOADED; }
-    public class UnauthorizedAccessException : SystemException { public UnauthorizedAccessException() => HResult = HResults.COR_E_UNAUTHORIZEDACCESS; public UnauthorizedAccessException(string? message) : base(message) => HResult = HResults.COR_E_UNAUTHORIZEDACCESS; public UnauthorizedAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_UNAUTHORIZEDACCESS; }
-
-    public class BadImageFormatException : SystemException
+    public class InvalidTimeZoneException : Exception
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected InvalidTimeZoneException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("InvalidTimeZoneException formatter deserialization is not available on this NetWasm platform.");
+        public InvalidTimeZoneException() { }
+        public InvalidTimeZoneException(string? message) : base(message) { }
+        public InvalidTimeZoneException(string? message, Exception? innerException) : base(message, innerException) { }
+    }
+    public class MemberAccessException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected MemberAccessException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("MemberAccessException formatter deserialization is not available on this NetWasm platform.");
+        public MemberAccessException() => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message) : base(message) => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MEMBERACCESS;
+    }
+    public class MethodAccessException : MemberAccessException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected MethodAccessException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("MethodAccessException formatter deserialization is not available on this NetWasm platform.");
+        public MethodAccessException() => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message) : base(message) => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_METHODACCESS;
+    }
+    public class MulticastNotSupportedException : SystemException { public MulticastNotSupportedException() => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message) : base(message) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; }
+    public class NotImplementedException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected NotImplementedException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("NotImplementedException formatter deserialization is not available on this NetWasm platform.");
+        public NotImplementedException() => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message) : base(message) => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_NOTIMPL;
+    }
+    public class RankException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected RankException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("RankException formatter deserialization is not available on this NetWasm platform.");
+        public RankException() => HResult = HResults.COR_E_RANK; public RankException(string? message) : base(message) => HResult = HResults.COR_E_RANK; public RankException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_RANK;
+    }
+    public class StackOverflowException : SystemException { public StackOverflowException() => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message) : base(message) => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_STACKOVERFLOW; }
+    public class TimeoutException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected TimeoutException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("TimeoutException formatter deserialization is not available on this NetWasm platform.");
+        public TimeoutException() => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message) : base(message) => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TIMEOUT;
+    }
+    public class TimeZoneNotFoundException : Exception
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected TimeZoneNotFoundException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("TimeZoneNotFoundException formatter deserialization is not available on this NetWasm platform.");
+        public TimeZoneNotFoundException() { }
+        public TimeZoneNotFoundException(string? message) : base(message) { }
+        public TimeZoneNotFoundException(string? message, Exception? innerException) : base(message, innerException) { }
+    }
+    public class TypeUnloadedException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected TypeUnloadedException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("TypeUnloadedException formatter deserialization is not available on this NetWasm platform.");
+        public TypeUnloadedException() => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEUNLOADED;
+    }
+    public class UnauthorizedAccessException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected UnauthorizedAccessException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("UnauthorizedAccessException formatter deserialization is not available on this NetWasm platform.");
+        public UnauthorizedAccessException() => HResult = HResults.COR_E_UNAUTHORIZEDACCESS; public UnauthorizedAccessException(string? message) : base(message) => HResult = HResults.COR_E_UNAUTHORIZEDACCESS; public UnauthorizedAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_UNAUTHORIZEDACCESS;
+    }
+
+    public partial class BadImageFormatException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected BadImageFormatException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("BadImageFormatException formatter deserialization is not available on this NetWasm platform.");
+
         private readonly string? _fileName;
         private readonly string? _fusionLog = null;
         public BadImageFormatException() => HResult = HResults.COR_E_BADIMAGEFORMAT;
@@ -420,6 +637,11 @@ namespace System
 
     public class DuplicateWaitObjectException : ArgumentException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected DuplicateWaitObjectException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("DuplicateWaitObjectException formatter deserialization is not available on this NetWasm platform.");
+
         public DuplicateWaitObjectException() => HResult = HResults.COR_E_DUPLICATEWAITOBJECT;
         public DuplicateWaitObjectException(string? parameterName) : base(null, parameterName)
         {
@@ -435,14 +657,41 @@ namespace System
         }
     }
 
-    public class EntryPointNotFoundException : TypeLoadException { public EntryPointNotFoundException() => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; }
-    public class FieldAccessException : MemberAccessException { public FieldAccessException() => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message) : base(message) => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_FIELDACCESS; }
-    public class DllNotFoundException : TypeLoadException { public DllNotFoundException() => HResult = HResults.COR_E_DLLNOTFOUND; public DllNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_DLLNOTFOUND; public DllNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DLLNOTFOUND; }
-
-    public class MissingMemberException : MemberAccessException
+    public class EntryPointNotFoundException : TypeLoadException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected EntryPointNotFoundException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("EntryPointNotFoundException formatter deserialization is not available on this NetWasm platform.");
+        public EntryPointNotFoundException() => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND;
+    }
+    public class FieldAccessException : MemberAccessException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected FieldAccessException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("FieldAccessException formatter deserialization is not available on this NetWasm platform.");
+        public FieldAccessException() => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message) : base(message) => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_FIELDACCESS;
+    }
+    public class DllNotFoundException : TypeLoadException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected DllNotFoundException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("DllNotFoundException formatter deserialization is not available on this NetWasm platform.");
+        public DllNotFoundException() => HResult = HResults.COR_E_DLLNOTFOUND; public DllNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_DLLNOTFOUND; public DllNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DLLNOTFOUND;
+    }
+
+    public partial class MissingMemberException : MemberAccessException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected MissingMemberException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("MissingMemberException formatter deserialization is not available on this NetWasm platform.");
+
         protected string? ClassName;
         protected string? MemberName;
+        protected byte[]? Signature;
 
         public MissingMemberException() => HResult = HResults.COR_E_MISSINGMEMBER;
         public MissingMemberException(string? message) : base(message) => HResult = HResults.COR_E_MISSINGMEMBER;
@@ -462,6 +711,11 @@ namespace System
     }
     public class MissingFieldException : MissingMemberException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected MissingFieldException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("MissingFieldException formatter deserialization is not available on this NetWasm platform.");
+
         public MissingFieldException() => HResult = HResults.COR_E_MISSINGFIELD;
         public MissingFieldException(string? message) : base(message) => HResult = HResults.COR_E_MISSINGFIELD;
         public MissingFieldException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MISSINGFIELD;
@@ -472,6 +726,11 @@ namespace System
     }
     public class MissingMethodException : MissingMemberException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected MissingMethodException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("MissingMethodException formatter deserialization is not available on this NetWasm platform.");
+
         public MissingMethodException() => HResult = HResults.COR_E_MISSINGMETHOD;
         public MissingMethodException(string? message) : base(message) => HResult = HResults.COR_E_MISSINGMETHOD;
         public MissingMethodException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MISSINGMETHOD;
@@ -481,8 +740,13 @@ namespace System
             : "Method '" + ClassName + "." + MemberName + "' not found.";
     }
 
-    public class NotFiniteNumberException : ArithmeticException
+    public partial class NotFiniteNumberException : ArithmeticException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected NotFiniteNumberException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("NotFiniteNumberException formatter deserialization is not available on this NetWasm platform.");
+
         private readonly double _offendingNumber;
         public NotFiniteNumberException() => HResult = HResults.COR_E_NOTFINITENUMBER;
         public NotFiniteNumberException(double offendingNumber)
@@ -508,8 +772,13 @@ namespace System
         }
     }
 
-    public class TypeLoadException : SystemException
+    public partial class TypeLoadException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected TypeLoadException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("TypeLoadException formatter deserialization is not available on this NetWasm platform.");
+
         private readonly string? _typeName = null;
         public TypeLoadException() => HResult = HResults.COR_E_TYPELOAD;
         public TypeLoadException(string? message) : base(message) => HResult = HResults.COR_E_TYPELOAD;
@@ -520,8 +789,15 @@ namespace System
             get => base.Message;
         }
     }
-    public class TypeAccessException : TypeLoadException { public TypeAccessException() => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message) : base(message) => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEACCESS; }
-    public sealed class TypeInitializationException : SystemException
+    public class TypeAccessException : TypeLoadException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected TypeAccessException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("TypeAccessException formatter deserialization is not available on this NetWasm platform.");
+        public TypeAccessException() => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message) : base(message) => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEACCESS;
+    }
+    public sealed partial class TypeInitializationException : SystemException
     {
         private readonly string? _typeName;
         public TypeInitializationException(string? typeName, Exception? innerException) : base("The type initializer for '" + typeName + "' threw an exception.", innerException)
@@ -555,7 +831,7 @@ namespace System.Runtime
 
 namespace System.Runtime.CompilerServices
 {
-    public class RuntimeWrappedException : System.Exception
+    public partial class RuntimeWrappedException : System.Exception
     {
         private readonly object? _wrappedException;
         public RuntimeWrappedException(object? thrownObject)
@@ -569,7 +845,7 @@ namespace System.Runtime.CompilerServices
         }
     }
 
-    public class SwitchExpressionException : System.InvalidOperationException
+    public partial class SwitchExpressionException : System.InvalidOperationException
     {
         private readonly object? _unmatchedValue;
         public SwitchExpressionException() { }
@@ -590,17 +866,57 @@ namespace System.Runtime.CompilerServices
 
 namespace System.Runtime.InteropServices
 {
-    public class InvalidComObjectException : SystemException { public InvalidComObjectException() => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDCOMOBJECT; }
-    public class InvalidOleVariantTypeException : SystemException { public InvalidOleVariantTypeException() => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; }
-    public class MarshalDirectiveException : SystemException { public MarshalDirectiveException() => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message) : base(message) => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MARSHALDIRECTIVE; }
-    public class SafeArrayRankMismatchException : SystemException { public SafeArrayRankMismatchException() => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message) : base(message) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; }
-    public class SafeArrayTypeMismatchException : SystemException { public SafeArrayTypeMismatchException() => HResult = HResults.COR_E_SAFEARRAYTYPEMISMATCH; public SafeArrayTypeMismatchException(string? message) : base(message) => HResult = HResults.COR_E_SAFEARRAYTYPEMISMATCH; public SafeArrayTypeMismatchException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SAFEARRAYTYPEMISMATCH; }
+    public class InvalidComObjectException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected InvalidComObjectException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("InvalidComObjectException formatter deserialization is not available on this NetWasm platform.");
+        public InvalidComObjectException() => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDCOMOBJECT;
+    }
+    public class InvalidOleVariantTypeException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected InvalidOleVariantTypeException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("InvalidOleVariantTypeException formatter deserialization is not available on this NetWasm platform.");
+        public InvalidOleVariantTypeException() => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE;
+    }
+    public class MarshalDirectiveException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected MarshalDirectiveException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("MarshalDirectiveException formatter deserialization is not available on this NetWasm platform.");
+        public MarshalDirectiveException() => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message) : base(message) => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MARSHALDIRECTIVE;
+    }
+    public class SafeArrayRankMismatchException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected SafeArrayRankMismatchException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("SafeArrayRankMismatchException formatter deserialization is not available on this NetWasm platform.");
+        public SafeArrayRankMismatchException() => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message) : base(message) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH;
+    }
+    public class SafeArrayTypeMismatchException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected SafeArrayTypeMismatchException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("SafeArrayTypeMismatchException formatter deserialization is not available on this NetWasm platform.");
+        public SafeArrayTypeMismatchException() => HResult = HResults.COR_E_SAFEARRAYTYPEMISMATCH; public SafeArrayTypeMismatchException(string? message) : base(message) => HResult = HResults.COR_E_SAFEARRAYTYPEMISMATCH; public SafeArrayTypeMismatchException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SAFEARRAYTYPEMISMATCH;
+    }
 }
 
 namespace System.Security.Cryptography
 {
     public class CryptographicException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected CryptographicException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("CryptographicException formatter deserialization is not available on this NetWasm platform.");
+
         public CryptographicException() { }
         public CryptographicException(int hResult) => HResult = hResult;
         public CryptographicException(string? message) : base(message) { }
@@ -611,8 +927,13 @@ namespace System.Security.Cryptography
 
 namespace System.Security
 {
-    public class SecurityException : SystemException
+    public partial class SecurityException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected SecurityException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("SecurityException formatter deserialization is not available on this NetWasm platform.");
+
         private object? _demanded;
         private object? _denySetInstance;
         private string? _grantedSet;
@@ -621,6 +942,8 @@ namespace System.Security
         private object? _permitOnlySetInstance;
         private string? _refusedSet;
         private string? _url;
+        private System.Reflection.AssemblyName? _failedAssemblyInfo;
+        private System.Reflection.MethodInfo? _method;
         public SecurityException() => HResult = HResults.COR_E_SECURITY;
         public SecurityException(string? message) : base(message) => HResult = HResults.COR_E_SECURITY;
         public SecurityException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SECURITY;
@@ -643,6 +966,8 @@ namespace System.Security
         public object? PermitOnlySetInstance { get => _permitOnlySetInstance; set => _permitOnlySetInstance = value; }
         public string? RefusedSet { get => _refusedSet; set => _refusedSet = value; }
         public string? Url { get => _url; set => _url = value; }
+        public System.Reflection.AssemblyName? FailedAssemblyInfo { get => _failedAssemblyInfo; set => _failedAssemblyInfo = value; }
+        public System.Reflection.MethodInfo? Method { get => _method; set => _method = value; }
 
         public override string ToString()
         {
@@ -650,7 +975,14 @@ namespace System.Security
         }
     }
 
-    public class VerificationException : SystemException { public VerificationException() => HResult = HResults.COR_E_VERIFICATION; public VerificationException(string? message) : base(message) => HResult = HResults.COR_E_VERIFICATION; public VerificationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_VERIFICATION; }
+    public class VerificationException : SystemException
+    {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected VerificationException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("VerificationException formatter deserialization is not available on this NetWasm platform.");
+        public VerificationException() => HResult = HResults.COR_E_VERIFICATION; public VerificationException(string? message) : base(message) => HResult = HResults.COR_E_VERIFICATION; public VerificationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_VERIFICATION;
+    }
 }
 
 namespace System.Runtime.ExceptionServices
@@ -663,6 +995,14 @@ namespace System.Runtime.ExceptionServices
         {
             get => _sourceException;
         }
+        // NetWasm records a stack trace when an exception is thrown; one created and returned unthrown
+        // keeps none, as upstream's would before it is thrown.
+        public static System.Exception SetCurrentStackTrace(System.Exception source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            return source;
+        }
+
         public static ExceptionDispatchInfo Capture(System.Exception sourceException) =>
             sourceException is null ? throw new System.ArgumentNullException(nameof(sourceException)) : new(sourceException);
         public void Throw() => InternalThrow(_sourceException);
@@ -680,6 +1020,11 @@ namespace System.Collections.Generic
 {
     public class KeyNotFoundException : SystemException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected KeyNotFoundException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("KeyNotFoundException formatter deserialization is not available on this NetWasm platform.");
+
         public KeyNotFoundException() => HResult = HResults.COR_E_KEYNOTFOUND;
         public KeyNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_KEYNOTFOUND;
         public KeyNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_KEYNOTFOUND;

@@ -5,7 +5,7 @@ import { createBrowserComponentLoader } from "./browser-component-loader.mjs";
 
 const encoder = new TextEncoder();
 const adapterSource = encoder.encode(`
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter(generatedModule) {
   return Object.freeze({ contractKey, instantiate: generatedModule.instantiate });
 }
@@ -27,7 +27,7 @@ test("loads segment-encoded browser artifacts and revokes verified module URLs",
     signal: controller.signal,
   });
 
-  assert.equal(loaded.adapter.contractKey, "wasi-command@0.2.11");
+  assert.equal(loaded.adapter.contractKey, "wasi-command@0.3.2");
   assert.equal((await loaded.adapter.instantiate()).command.run(), 17);
   assert.equal(loaded.loadCoreModule("app #?%.core.wasm") instanceof WebAssembly.Module, true);
   assert.deepEqual(fixture.fetches.map(value => value.url), [
@@ -133,7 +133,7 @@ test("validates and binds browser platform composition", () => {
   }
 
   for (const manifestUrl of [null, "", "manifest.json", "https://example.test/a b/manifest.json",
-    "file:///tmp/manifest.json", "https://user@example.test/manifest.json",
+    "ftp://example.test/manifest.json", "https://user@example.test/manifest.json",
     "https://user:secret@example.test/manifest.json", "https://example.test/manifest.json#fragment",
     "https://example.test/deploy/"]) {
     assert.throws(() => createBrowserComponentLoader({

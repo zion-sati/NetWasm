@@ -12,9 +12,9 @@ public sealed class RawAdapterValueTypeTests
     [Fact]
     public void RejectsAKindItDoesNotKnow()
     {
-        var error = Assert.Throws<InvalidOperationException>(() => Type("""{"kind":"stream"}"""));
+        var error = Assert.Throws<InvalidOperationException>(() => Type("""{"kind":"error-context"}"""));
 
-        Assert.Contains("'stream'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'error-context'", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

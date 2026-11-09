@@ -1,5 +1,5 @@
 import { createRuntimeContractImports } from "../../NetWasm.Runtime.Tests/runtime-contract-imports.mjs";
-import { createYieldReactorImports } from "../../NetWasm.Runtime.Tests/yield-reactor-imports.mjs";
+import { createMonotonicClockImports } from "../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs";
 
 export async function runMixedBoundary(
   instantiateNetWasm,
@@ -29,8 +29,6 @@ export async function runMixedBoundary(
   var multiplyCalls = 0;
   var canonicalPrefix = target === "wasm64" ? "cm64p2" : "cm32p2";
   var managed;
-  var wakeReactor = token => managed.instance.exports[
-    `${canonicalPrefix}|netwasm:runtime/reactor-guest@1|wake`](token);
   var getMemory = () => managed.instance.exports.memory;
   var stoppedMediaStreams = 0;
   managed = await instantiateNetWasm({
@@ -38,7 +36,7 @@ export async function runMixedBoundary(
     manifest,
     runtimeModules: {
       ...createRuntimeContractImports(target, getMemory),
-      ...createYieldReactorImports(target, queueMicrotask, wakeReactor),
+      ...createMonotonicClockImports(target, () => 0n),
       "netwasm.host.v1": { write_i32() {} },
       [`${target === "wasm64" ? "cm64p2" : "cm32p2"}|netwasm:mixed/arithmetic@1`]: {
         add: (left, right) => {
@@ -46,7 +44,7 @@ export async function runMixedBoundary(
           return left + right;
         },
       },
-      [`${target === "wasm64" ? "cm64p2" : "cm32p2"}|wasi:clocks/wall-clock@0.2`]: {
+      [`${target === "wasm64" ? "cm64p2" : "cm32p2"}|wasi:clocks/system-clock@0.3`]: {
         now(result) {
           clockCalls++;
           var view = new DataView(getMemory().buffer);

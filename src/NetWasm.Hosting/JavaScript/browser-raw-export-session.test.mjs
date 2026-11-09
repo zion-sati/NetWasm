@@ -4,7 +4,7 @@ import test from "node:test";
 import { createBrowserRawExportSession } from "./browser-raw-export-session.mjs";
 import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
-import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
+import { createWasiFilesystem } from "./wasi-filesystem.mjs";
 import { timeZoneContainer } from "./timezone-sidecar-zones.test.mjs";
 
 const encoder = new TextEncoder();
@@ -12,14 +12,14 @@ const decoder = new TextDecoder();
 const buildFingerprint = "1".repeat(64);
 const manifestUrl = "https://example.test/workers/deployment.json";
 const application = Buffer.from(
-  "AGFzbQEAAAABFgRgBH9/f38Bf2AAAGACf38Bf2AAAX8DBQQAAQIDBQMBAAEGBgF/AUEACwdKBQ1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAABFjbTMycDJfaW5pdGlhbGl6ZQABA2FkZAACC2luaXRpYWxpemVkAAMKGgQEAEEACwYAQQEkAAsHACAAIAFqCwQAIwALABUEbmFtZQcOAQALaW5pdGlhbGl6ZWQ=",
+  "AGFzbQEAAAABHQVgBH9/f38Bf2AAAGACf38Bf2AAAX9gA39/fwF/AwcGAAECAwMEBQMBAAEGBgF/AUEACwd5Bw1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAABFjbTMycDJfaW5pdGlhbGl6ZQABA2FkZAACC2luaXRpYWxpemVkAAMSbmV0d2FzbS5ldmVudHMucnVuAAQXbmV0d2FzbS5ldmVudHMuY2FsbGJhY2sABQokBgQAQQALBgBBASQACwcAIAAgAWoLBAAjAAsEAEEACwQAQQALABUEbmFtZQcOAQALaW5pdGlhbGl6ZWQ=",
   "base64");
 // The fixture application with one import from the host_ui import module.
 const hostUiApplication = Buffer.from(
-  "AGFzbQEAAAABGwVgAX8BfmAEf39/fwF/YAAAYAJ/fwF/YAABfwIXAQdob3N0X3VpC2NyZWF0ZV9ub2RlAAADBQQBAgMEBQMBAAEGBgF/AUEACwdKBQ1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAARFjbTMycDJfaW5pdGlhbGl6ZQACA2FkZAADC2luaXRpYWxpemVkAAQKGgQEAEEACwYAQQEkAAsHACAAIAFqCwQAIwAL",
+  "AGFzbQEAAAABIgZgAX8BfmAEf39/fwF/YAAAYAJ/fwF/YAABf2ADf39/AX8CFwEHaG9zdF91aQtjcmVhdGVfbm9kZQAAAwcGAQIDBAQFBQMBAAEGBgF/AUEACwd5Bw1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAARFjbTMycDJfaW5pdGlhbGl6ZQACA2FkZAADC2luaXRpYWxpemVkAAQSbmV0d2FzbS5ldmVudHMucnVuAAUXbmV0d2FzbS5ldmVudHMuY2FsbGJhY2sABgokBgQAQQALBgBBASQACwcAIAAgAWoLBAAjAAsEAEEACwQAQQAL",
   "base64");
 const reportingApplication = Buffer.from(
-  "AGFzbQEAAAABEgNgA39/fwBgBH9/f38Bf2AAAAIwAQ9uZXR3YXNtLmhvc3QudjEccmVwb3J0X3Rlcm1pbmFsX2V4Y2VwdGlvbl92MQAAAwQDAQICBQMBAAEGBgF/AUEACwc/BA1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAARFjbTMycDJfaW5pdGlhbGl6ZQACBnJlcG9ydAADChgDBABBAAsGAEEBJAALCgBBB0EAQQAQAAs=",
+  "AGFzbQEAAAABHQVgA39/fwBgBH9/f38Bf2AAAGAAAX9gA39/fwF/AjABD25ldHdhc20uaG9zdC52MRxyZXBvcnRfdGVybWluYWxfZXhjZXB0aW9uX3YxAAADBgUBAgIDBAUDAQABBgYBfwFBAAsHbgYNY20zMnAyX21lbW9yeQIADmNtMzJwMl9yZWFsbG9jAAERY20zMnAyX2luaXRpYWxpemUAAgZyZXBvcnQAAxJuZXR3YXNtLmV2ZW50cy5ydW4ABBduZXR3YXNtLmV2ZW50cy5jYWxsYmFjawAFCiIFBABBAAsGAEEBJAALCgBBB0EAQQAQAAsEAEEACwQAQQAL",
   "base64");
 const rawAdapter = encoder.encode(`
 export const rawAdapterMetadata = Object.freeze({
@@ -147,7 +147,7 @@ function fixture({
       arguments: [],
       environment: [],
       grants: {
-        clocks: [], environment: [], network: "denyAll", preopens: [], randomness: false,
+        clocks: [], environment: [], network: "denyAll", preopens: [], randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
       ...configuration,
     },
@@ -155,25 +155,23 @@ function fixture({
     manifestUrl,
     platform: {
       compileCoreModule: WebAssembly.compile.bind(WebAssembly),
-      createFilesystemScope: preopens => createPreview2FilesystemScope({
-        createFilesystem() {
-          return {
-            types: { Descriptor },
-            preopens: { getDirectories: () => [] },
-            dispose() {
-              filesystemDisposals++;
-              if (filesystemDisposeError !== null) throw filesystemDisposeError;
-            },
-          };
-        },
-        preopens,
-      }),
+      createFilesystemScope(preopens) {
+        const filesystem = createWasiFilesystem(Object.freeze({ hostFiles: null, preopens }));
+        return {
+          ...filesystem,
+          async dispose() {
+            filesystemDisposals++;
+            await filesystem.dispose();
+            if (filesystemDisposeError !== null) throw filesystemDisposeError;
+          },
+        };
+      },
       createModuleUrl(bytes) {
         const url = `blob:netwasm-worker/${++moduleId}`;
         modules.set(url, new Uint8Array(bytes));
         return url;
       },
-      createShim() { shimCalls++; throw new Error("shim should not be needed"); },
+      createImports() { shimCalls++; throw new Error("imports should not be needed"); },
       digest: webcrypto.subtle.digest.bind(webcrypto.subtle),
       async fetch(url) {
         const bytes = files.get(url);
@@ -228,7 +226,7 @@ test("pins deployment identity and the library hosting contract", async () => {
     buildFingerprint, manifestSha256: "5".repeat(64),
   } }), /integrity/);
 
-  for (const executionContract of ["wasi-command@0.2.11", "netwasm:worker/jsexport@1.0.0"]) {
+  for (const executionContract of ["wasi-command@0.3.2", "netwasm:worker/jsexport@1.0.0"]) {
     const rejected = fixture({ executionContract });
     await assert.rejects(() => rejected.open({ startup: {
       buildFingerprint, manifestSha256: rejected.manifestSha256,
@@ -261,7 +259,7 @@ test("retains timezone resources until the persistent session closes", async () 
     configuration: {
       environment: [{ name: "TZ", value: "Australia/Melbourne" }],
       grants: {
-        clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false,
+        clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
     },
     timeZoneBytes: timeZoneContainer([["Australia/Melbourne", 1]]),
@@ -338,14 +336,14 @@ test("requires the import modules the final module calls", async () => {
 });
 
 test("releases acquired scopes when provider preparation fails", async () => {
-  const wallClock = "wasi:clocks/wall-clock@0.2.11";
+  const wallClock = "wasi:clocks/system-clock@0.3.2";
   const state = fixture({
     requiredImportModules: [wallClock],
     requiredImports: [{
       interface: wallClock,
       name: "now",
       parameters: [],
-      results: [`${wallClock}#datetime`],
+      results: [`${wallClock}#instant`],
     }],
   });
   await assert.rejects(() => state.open({ startup: {
@@ -355,7 +353,7 @@ test("releases acquired scopes when provider preparation fails", async () => {
 });
 
 test("reports startup and cleanup failures together", async () => {
-  const wallClock = "wasi:clocks/wall-clock@0.2.11";
+  const wallClock = "wasi:clocks/system-clock@0.3.2";
   const state = fixture({
     filesystemDisposeError: new Error("filesystem cleanup failed"),
     requiredImportModules: [wallClock],
@@ -363,7 +361,7 @@ test("reports startup and cleanup failures together", async () => {
       interface: wallClock,
       name: "now",
       parameters: [],
-      results: [`${wallClock}#datetime`],
+      results: [`${wallClock}#instant`],
     }],
   });
   await assert.rejects(() => state.open({ startup: {
@@ -403,7 +401,7 @@ test("time zone data without a filesystem scope fails clearly", async () => {
     configuration: {
       environment: [{ name: "TZ", value: "Australia/Melbourne" }],
       grants: {
-        clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false,
+        clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
     },
     mutateOptions(options) { options.platform.createFilesystemScope = null; },
@@ -417,7 +415,7 @@ test("time zone data without a filesystem scope fails clearly", async () => {
 test("rejects browser host filesystem paths", () => {
   const state = fixture({ configuration: {
     grants: {
-      clocks: [], environment: [], network: "denyAll", randomness: false,
+      clocks: [], environment: [], network: "denyAll", randomness: false, temporaryDirectory: false, workingDirectory: false,
       preopens: [{ access: "readOnly", guestPath: "/data", hostPath: "/host/data" }],
     },
   } });

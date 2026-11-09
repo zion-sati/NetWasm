@@ -1,7 +1,7 @@
 # NetWasm.Templates
 
 This package contains the `dotnet new` templates for a
-NetWasm application and a dual-target library. The templates use the
+NetWasm application, a dual-target library and an HTTP service. The templates use the
 `NetWasm.Sdk` project SDK and the `netwasm0.1` profile.
 
 Application templates do not copy reusable JavaScript host files. The SDK
@@ -25,6 +25,14 @@ Create a worker whose contract is described by WIT instead:
 
 ```bash
 dotnet new netwasm-app --worker wit
+```
+
+Create an HTTP service, a WASI 0.3 component whose
+`Handle(HttpRequestMessage)` answers each request, which `wasmtime serve`,
+Spin and wasmCloud run as published:
+
+```bash
+dotnet new netwasm-serverless
 ```
 
 The package follows NetWasm's documented support profile. The application

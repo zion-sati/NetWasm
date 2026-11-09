@@ -18,7 +18,6 @@ public partial class AsyncFixtureJsonContext : JsonSerializerContext;
 
 public static class EntryPoint
 {
-    private static Task<int>? _operation;
     private static int _iteratorDisposeCount;
     private static int _throwBeforeDisposeCount;
 
@@ -26,77 +25,35 @@ public static class EntryPoint
         ? ExecutePipeRoundTripAsync(input).GetAwaiter().GetResult()
         : ExecuteAsync(input).GetAwaiter().GetResult();
 
-    public static int Start(int input)
-    {
-        _operation = ExecuteAsync(input);
-        return _operation.IsCompleted ? -900 : 0;
-    }
-
-    public static int Observe(int input)
-    {
-        if (_operation is null || !_operation.IsCompleted)
-        {
-            return -901;
-        }
-
-        return _operation.GetAwaiter().GetResult();
-    }
-
-    public static int StartPipeRoundTrip(int input)
-    {
-        _operation = ExecutePipeRoundTripAsync(input);
-        return _operation.IsCompleted ? -900 : 0;
-    }
-
     public static int RunPipeRoundTrip(int input) =>
         ExecutePipeRoundTripAsync(input).GetAwaiter().GetResult();
-
-    public static int ObservePipeRoundTrip(int input)
-    {
-        if (_operation is null || !_operation.IsCompleted)
-        {
-            return -901;
-        }
-
-        return _operation.GetAwaiter().GetResult();
-    }
-
-    public static int StartStreamRoundTrip(int input)
-    {
-        _operation = ExecuteStreamRoundTripAsync(input);
-        return _operation.IsCompleted ? -900 : 0;
-    }
 
     public static int RunStreamRoundTrip(int input) =>
         ExecuteStreamRoundTripAsync(input).GetAwaiter().GetResult();
 
-    public static int StartSequenceRoundTrip(int input)
-    {
-        _operation = ExecuteSequenceRoundTripAsync(input);
-        return _operation.IsCompleted ? -900 : 0;
-    }
-
     public static int RunSequenceRoundTrip(int input) =>
         ExecuteSequenceRoundTripAsync(input).GetAwaiter().GetResult();
-
-    public static int StartSequenceFailures(int input)
-    {
-        _operation = ExecuteSequenceFailuresAsync(input);
-        return _operation.IsCompleted ? -900 : 0;
-    }
 
     public static int RunSequenceFailures(int input) =>
         ExecuteSequenceFailuresAsync(input).GetAwaiter().GetResult();
 
-    public static int ObserveSlice(int input)
-    {
-        if (_operation is null || !_operation.IsCompleted)
-        {
-            return -901;
-        }
+    // Each slice's asynchronous Main, which a host runs as a callback-lifted wasi:cli/run, so its
+    // awaits resume in the host's callbacks; the input is the program's one argument.
+    public static Task<int> RunAsync(string[] arguments) => int.Parse(arguments[0]) is var input && input >= 10000
+        ? ExecutePipeRoundTripAsync(input)
+        : ExecuteAsync(input);
 
-        return _operation.GetAwaiter().GetResult();
-    }
+    public static Task<int> RunPipeRoundTripAsync(string[] arguments) =>
+        ExecutePipeRoundTripAsync(int.Parse(arguments[0]));
+
+    public static Task<int> RunStreamRoundTripAsync(string[] arguments) =>
+        ExecuteStreamRoundTripAsync(int.Parse(arguments[0]));
+
+    public static Task<int> RunSequenceRoundTripAsync(string[] arguments) =>
+        ExecuteSequenceRoundTripAsync(int.Parse(arguments[0]));
+
+    public static Task<int> RunSequenceFailuresAsync(string[] arguments) =>
+        ExecuteSequenceFailuresAsync(int.Parse(arguments[0]));
 
     private static async Task<int> ExecuteStreamRoundTripAsync(int input)
     {

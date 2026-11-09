@@ -49,15 +49,15 @@ public sealed class WitPackageArtifactTests
         var sources = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["command"] = Path.Combine(toolchain, "wit", "wit-manifest.json"),
-            ["async-command"] = Path.Combine(
-                toolchain, "async-wit", "wit-manifest.json"),
+            ["diagnostic-command"] = Path.Combine(
+                toolchain, "diagnostic-wit", "wit-manifest.json"),
             ["compiler"] = Path.Combine(
                 repository, "wit", "netwasm-platform-1.0.0", "wit-manifest.json"),
         };
         var packagedSources = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["command"] = "../wit/wit-manifest.json",
-            ["async-command"] = "../async-wit/wit-manifest.json",
+            ["diagnostic-command"] = "../diagnostic-wit/wit-manifest.json",
             ["compiler"] = "../compiler-wit/wit-manifest.json",
         };
         var products = artifactManifest.RootElement.GetProperty("products")
@@ -87,7 +87,7 @@ public sealed class WitPackageArtifactTests
         {
             ["wit.package-manifest"] = "wit-package-manifest.json",
             ["wit.command-package"] = "command.wit.wasm",
-            ["wit.async-command-package"] = "async-command.wit.wasm",
+            ["wit.diagnostic-command-package"] = "diagnostic-command.wit.wasm",
             ["wit.compiler-package"] = "compiler.wit.wasm",
         };
         foreach (var (assetId, file) in compiledArtifacts)

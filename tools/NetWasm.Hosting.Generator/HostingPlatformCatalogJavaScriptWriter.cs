@@ -49,10 +49,6 @@ internal sealed class HostingPlatformCatalogJavaScriptWriter :
         writer.WriteNumber("schema", catalog.Schema);
         writer.WriteString("world", catalog.World);
         writer.WriteString("witSha256", catalog.WitSha256);
-        writer.WriteStartObject("shim");
-        writer.WriteString("package", catalog.Shim.Package);
-        writer.WriteString("version", catalog.Shim.Version);
-        writer.WriteEndObject();
         writer.WriteStartArray("providers");
         foreach (var provider in catalog.Providers)
         {

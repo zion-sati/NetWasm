@@ -11,7 +11,8 @@ public interface IRawWitFunctionLayoutBuilder
         string interfaceName,
         string coreInterfaceName,
         WitFunction witFunction,
-        WasmTarget target);
+        WasmTarget target,
+        bool asynchronous = false);
 }
 
 public sealed class RawWitFunctionLayoutBuilder(
@@ -26,7 +27,8 @@ public sealed class RawWitFunctionLayoutBuilder(
         string interfaceName,
         string coreInterfaceName,
         WitFunction witFunction,
-        WasmTarget target)
+        WasmTarget target,
+        bool asynchronous = false)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(interfaceName);
@@ -40,6 +42,6 @@ public sealed class RawWitFunctionLayoutBuilder(
         {
             CoreInterfaceName = coreInterfaceName,
         };
-        return new(witFunction, _layouts.Plan(canonical, target));
+        return new(witFunction, _layouts.Plan(canonical, target, asynchronous));
     }
 }

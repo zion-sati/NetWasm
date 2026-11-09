@@ -84,6 +84,37 @@ class ProjectReleaseVersionTests(unittest.TestCase):
             template_project.read_text(encoding="utf-8"),
         )
 
+    def test_projects_a_template_package_float_within_the_minor(self) -> None:
+        template_project = (
+            self.root
+            / "src/NetWasm.Templates/content/NetWasm.Serverless/NetWasmService.csproj"
+        )
+        template_project.parent.mkdir(parents=True)
+        template_project.write_text(
+            '<Project Sdk="NetWasm.Sdk/0.1.0-rc.1">\n'
+            '  <ItemGroup>\n'
+            '    <PackageReference Include="NetWasm.System.Net.Http" Version="0.1.*-*" />\n'
+            '    <PackageReference Include="Other.Package" Version="0.1.*-*" />\n'
+            '  </ItemGroup>\n'
+            '</Project>\n',
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "-C", str(self.root), "add", template_project], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "--quiet", "-m", "template"], check=True)
+
+        MODULE.project_version(self.root, "0.12.0", self.root / "receipt.json")
+
+        projected = template_project.read_text(encoding="utf-8")
+        self.assertIn('Sdk="NetWasm.Sdk/0.12.0"', projected)
+        self.assertIn('Include="NetWasm.System.Net.Http" Version="0.12.*"', projected)
+        self.assertIn('Include="Other.Package" Version="0.1.*-*"', projected)
+
+    def test_minor_float_matches_prereleases_only_for_a_prerelease(self) -> None:
+        self.assertEqual(b"0.12.*", MODULE.minor_float("0.12.0"))
+        self.assertEqual(b"0.12.*", MODULE.minor_float("0.12.3+build.5"))
+        self.assertEqual(b"0.12.*-*", MODULE.minor_float("0.12.0-preview.1"))
+        self.assertEqual(b"1.0.*-*", MODULE.minor_float("1.0.0-rc.1+sha.1"))
+
     def test_rejects_a_template_project_at_another_version(self) -> None:
         template_project = (
             self.root

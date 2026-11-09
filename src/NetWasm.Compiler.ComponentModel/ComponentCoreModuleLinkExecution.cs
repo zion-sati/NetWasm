@@ -51,7 +51,6 @@ public sealed class ComponentCoreModuleLinkExecution(
                 _hostShim.Write(new(
                     workspace.HostModulePath,
                     request.Target,
-                    request.ManagedExecutableEntryPoint.CompletionShape,
                     request.StructuredDiagnostics));
                 _managedExecutables.Write(new(
                     workspace.ManagedExecutableAdapterModulePath,
@@ -87,7 +86,8 @@ public sealed class ComponentCoreModuleLinkExecution(
                 request.OutputPath,
                 request.Target,
                 settings.BackendPreset,
-                settings.Converge);
+                settings.Converge,
+                settings.LowMemoryUnused);
         }
         finally
         {

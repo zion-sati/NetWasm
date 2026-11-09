@@ -169,73 +169,145 @@
       "id": "wit.package-manifest",
       "version": "1",
       "relativePath": "tools/wit-packages/wit-package-manifest.json",
-      "sha256": "128bfefc6d7a5a7e3292405ba98889c0966f70fc5e02f9d4c6e2eeebd6b97ef6"
+      "sha256": "5377b17cf0ff7516d40b9a361374aaab2afdaef8444d4d352f038bceedeba33b"
     },
     {
       "id": "wit.command-package",
-      "version": "0.2.11",
+      "version": "1.0.0",
       "relativePath": "tools/wit-packages/command.wit.wasm",
-      "sha256": "624c67b287c812050a207dfd28a401f798838adbff330d702df0ccc711743293"
+      "sha256": "967991ea81470f7c6f574974667f63d45b08933978af2bdd11a7810f446f424c"
     },
     {
-      "id": "wit.async-command-package",
+      "id": "wit.diagnostic-command-package",
       "version": "1.0.0",
-      "relativePath": "tools/wit-packages/async-command.wit.wasm",
-      "sha256": "2d9f6e646bf37da0299cb3c9aa4988ee139300540dc4f14aea5d29d45f16fa37"
+      "relativePath": "tools/wit-packages/diagnostic-command.wit.wasm",
+      "sha256": "befd947ee6361cc16c4c0fc99fa9e09e6470913c2263b994c0b57090baf5553f"
     },
     {
       "id": "wit.compiler-package",
       "version": "1.0.0",
       "relativePath": "tools/wit-packages/compiler.wit.wasm",
-      "sha256": "fc1c2b66aa8e597775fdd0fe7c01eb436337e266d504b435986db823cd26f556"
+      "sha256": "9c5e5a5dba5467aa7170959a8a3794b09d3a448df84208d0f322e4d29f4353e0"
     },
     {
       "id": "jco.package",
-      "version": "1.28.1",
+      "version": "1.41.0",
       "relativePath": "tools/jco/node_modules/@bytecodealliance/jco/package.json",
-      "sha256": "7268276d9a951dfefbc9820b57d68f6bbd705ecff660083a6972ead670e35c60"
+      "sha256": "131a81abfe848e9d95ff5e22f848592c13885989f6601cd209c0bbe489480faf"
     },
     {
-      "id": "preview2-shim.package",
-      "version": "0.24.1",
-      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview2-shim/package.json",
-      "sha256": "19b2990da50d68b47fc9d3431c217de1016eaea6fa0ff25f294d113acfa993d9"
+      "id": "preview3-shim.package",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/package.json",
+      "sha256": "9fdb1dba8bc525f5aad31d173a3074bd12893365fa12b97605fd34b8fafc92ba"
+    },
+    {
+      "id": "preview3-shim.license",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/LICENSE",
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+    },
+    {
+      "id": "preview3-shim.http",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/http.js",
+      "sha256": "b0955c94bceb396f6487016d2beabfc83dc847801c6144f09e4098cc1a4de5ad"
+    },
+    {
+      "id": "preview3-shim.http-client",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/http/client.js",
+      "sha256": "1f39e24abf66ab4db511a9d1afd36362581d2c43021f85003c8f0de91d37bce4"
+    },
+    {
+      "id": "preview3-shim.http-error",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/http/error.js",
+      "sha256": "b42fd0f825486792bd6dcc93365f1b3e30ef152fc1650969034d0e214f323acb"
+    },
+    {
+      "id": "preview3-shim.http-fields",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/http/fields.js",
+      "sha256": "47e2602f96d349e68a418a49afbea6e66dbb1f54f4a2b8fcc16ff6674239242a"
+    },
+    {
+      "id": "preview3-shim.http-request",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/http/request.js",
+      "sha256": "a52e2e4660d12d4612a93dbe30d17fba3b12eee55185c398760f9b38f96871a9"
+    },
+    {
+      "id": "preview3-shim.http-response",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/http/response.js",
+      "sha256": "ae0e7119b532f525969001cee22da116c7db065a57d5b1691fdda51e77dd1965"
+    },
+    {
+      "id": "preview3-shim.http-server",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/http/server.js",
+      "sha256": "ab91cda3ed4cbf291def28cf6a2ddd909cacdf34f2ba3e306527705a6600c294"
+    },
+    {
+      "id": "preview3-shim.future",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/future.js",
+      "sha256": "21ebc61bf542e99ff49c2e29612dc22f82e8aa325aba54b4b78c7529788b110f"
+    },
+    {
+      "id": "preview3-shim.stream",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/stream.js",
+      "sha256": "ff59b51f02cec7355f32d3aaa7aa196e06e5896f0b245f42665c5b4a12a5a2e8"
+    },
+    {
+      "id": "preview3-shim.http-worker",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/workers/http-worker.bundle.js",
+      "sha256": "f7206d51febd81f79cb10439f2b1c655534b62e30e907d68e8dc574195ec9844"
+    },
+    {
+      "id": "preview3-shim.resource-worker",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/workers/resource-worker.js",
+      "sha256": "9e27a9f1db8e5925fc5e1f42bd706eaae93967de5c46d3ade5c9640b4018bd03"
     },
     {
       "id": "jco.entrypoint",
-      "version": "1.28.1",
-      "relativePath": "tools/jco/node_modules/@bytecodealliance/jco/dist/jco.js",
-      "sha256": "298a6b8cb36bcbeb792ad952e84806f33bb57cda17da91c28385156cdbad0679"
+      "version": "1.41.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/jco/dist/api.js",
+      "sha256": "3fc51de467612b4368f4f053b5c054399de483095d023430056bae1ea0af7a1e"
     },
     {
       "id": "jco.package-lock",
       "version": "1",
       "relativePath": "tools/jco/package-lock.json",
-      "sha256": "a1e1788569730917c0f8187c2f0738de18cc1e0f2de36babb24d35a35a227fc7"
+      "sha256": "dcaff9a73991ecac37997106447a044775527bdf558fa818c76640aa3d07fbf4"
     },
     {
       "id": "jco.closure-integrity",
       "version": "1",
       "relativePath": "tools/jco/closure-integrity.json",
-      "sha256": "827d7a0f23aa0ea96c909176d272be5995cc4caf6f42c9fe79fe13715295dbc5"
+      "sha256": "dd0b7bab782c8d8343870d71ad60e7be9fb8fed0d07ab47eb91f4a12f845526d"
     },
     {
       "id": "jco.notices",
       "version": "1",
       "relativePath": "tools/jco/notices.json",
-      "sha256": "b4f5739409454b2dc09293c1647dea901ec30f8876c40aecbcb3f070200224c4"
+      "sha256": "b5bd1dfd46298df5b41f340b65c34e212f749c4e2b307494f9399d81e4a76d04"
     },
     {
       "id": "jco.closure-policy",
       "version": "1",
       "relativePath": "tools/jco/closure-policy.json",
-      "sha256": "bc65a6b87be119c87c1c51f155681b045382b3d29e467cc6b7765cf9006d8a70"
+      "sha256": "7f7c30accb406f371ab61e704382563e40321f4b8bd465f7b976e5a31e23a443"
     },
     {
       "id": "jco.bindgen-patch",
-      "version": "1.28.1+netwasm.2",
+      "version": "1.41.0+netwasm.1",
       "relativePath": "tools/jco/patch-provenance.json",
-      "sha256": "c205e2c248f8bdefae317606fb03af5711c5fa6e9bb4ff10b85d94a92a389ce5"
+      "sha256": "41da27ed94a57735a5eb72962cf06798a01caa5f936517cd93393d1238568d06"
     },
     {
       "id": "hosting-bundle.command",
@@ -259,7 +331,7 @@
       "id": "hosting-bundle.package-lock",
       "version": "1",
       "relativePath": "tools/bundler/package-lock.json",
-      "sha256": "a1e1788569730917c0f8187c2f0738de18cc1e0f2de36babb24d35a35a227fc7"
+      "sha256": "dcaff9a73991ecac37997106447a044775527bdf558fa818c76640aa3d07fbf4"
     },
     {
       "id": "hosting-bundle.closure-integrity",
@@ -277,7 +349,7 @@
       "id": "hosting-bundle.closure-policy",
       "version": "2",
       "relativePath": "tools/bundler/closure-policy.json",
-      "sha256": "5886456a23ae0d069f007463704a6fe58df6c9f038536285ef063292b5674038"
+      "sha256": "9b35f599cd0a95ccffb4f384993a98cab335d009b9fa1f3320923483f520ba0c"
     },
     {
       "id": "timezones.closure-integrity",

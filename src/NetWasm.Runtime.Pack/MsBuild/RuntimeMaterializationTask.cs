@@ -75,6 +75,9 @@ public sealed class RuntimeMaterializationTask : Task
 
     public string NativeCallbackObjectPath { get; set; } = string.Empty;
 
+    // A plain core module's runtime, whose platform functions use no WASI.
+    public bool PlainCoreModule { get; set; }
+
     [Required]
     public string SdkVersion { get; set; } = string.Empty;
 
@@ -148,6 +151,7 @@ public sealed class RuntimeMaterializationTask : Task
                 NativeLibraries = _nativeLibraries.Read(NativeLibraries),
                 NativeCallbackObjectPath = NativeCallbackObjectPath,
                 NativeWasmToolsPath = NativeWasmToolsPath.Length == 0 ? null : NativeWasmToolsPath,
+                PlainCoreModule = PlainCoreModule,
             });
             RuntimeModules = [CreateRuntimeModule(materialization)];
             LogCacheMetrics(materialization.CacheMetrics);

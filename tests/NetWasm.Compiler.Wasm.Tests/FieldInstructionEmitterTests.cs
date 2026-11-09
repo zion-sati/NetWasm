@@ -68,18 +68,8 @@ public sealed class FieldInstructionEmitterTests
     [InlineData(CilOperation.LoadField, 1, true)]
     public void AccessSkipsOnlyTheNullCheckAnEarlierAccessProved(CilOperation operation, int stackSize, bool stale)
     {
-        var request = CreateRequest(operation, stackSize);
+        var request = WithNonNullProof(CreateRequest(operation, stackSize), stale);
         var writer = (RecordingInstructionWriter)GetCodeWriter(request);
-        var header = request.Header with { Instructions = [request.Instruction] };
-        header = header with
-        {
-            ArrayBoundsProof = new(header.Instructions, header.Locals, header.LocalSignatureTypes, [])
-            {
-                NonNullOffsets = [request.Instruction.Offset],
-            },
-        };
-        if (stale) header = header with { Instructions = [request.Instruction with { OriginalOffset = 123 }] };
-        request = request with { Header = header };
 
         AsProvider(CreateEmitter()).Commands.Single(command => command.Operation == operation)
             .Emit(request, writer, CreateFunctionIndexResolver());
@@ -291,6 +281,50 @@ public sealed class FieldInstructionEmitterTests
         Emit(emitter, request);
 
         Assert.Equal([CliValueKind.ValueType], request.Stack);
+    }
+
+    // A value holding a byref, as a span, copies in chunks no wider than its
+    // alignment, since code builds it field by field; another 8-byte value aligned
+    // to 4 copies as one i64.
+    [Theory]
+    [InlineData(true, "4:i32,0:i32")]
+    [InlineData(false, "0:i64")]
+    public void AValueTypeFieldCopiesInChunksSetByWhetherItHoldsAByref(bool holdsByReference, string stores)
+    {
+        var valueType = CreateValueType();
+        var field = CreateField(valueType);
+        var layout = new FieldLayout(8)
+        {
+            Size = 8,
+            Type = valueType,
+        };
+        var context = CreateMethodEmissionContext() with
+        {
+            InlineSmallBlocks = true,
+            CopyDestinationTemporary = 30,
+            CopySourceTemporary = 31,
+            ValueLayout = new ValueFrameLayout(
+                16,
+                [],
+                [],
+                ImmutableDictionary<int, int>.Empty.Add(0, 4),
+                []),
+        };
+        var emitter = CreateEmitter(
+            new FieldProgram(field, true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, layout, 4, holdsByReference));
+        var request = CreateRequest(
+            CilOperation.LoadField,
+            [CliValueKind.ManagedAddress],
+            new CilOperand.Entity(InstanceFieldKey),
+            context);
+
+        Emit(emitter, request);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.Equal(stores, string.Join(",", instructions
+            .Where(instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I64Store)
+            .Select(store => $"{store.Operand.Offset}:{(store.Opcode == WasmOpcodes.I64Store ? "i64" : "i32")}")));
     }
 
     [Fact]
@@ -550,6 +584,7 @@ public sealed class FieldInstructionEmitterTests
             fieldRepository ?? program,
             actualLayouts,
             fields ?? (IInstanceFieldLayoutProvider)actualLayouts,
+            (IValueLayoutProvider)actualLayouts,
             new RecordingImplicitExceptionEmitter(),
             addresses,
             projections ?? new AddressTakenAggregateProjectionEmitter(actualLayouts)));
@@ -628,11 +663,19 @@ public sealed class FieldInstructionEmitterTests
             []);
     }
 
+    // A value-type field's alignment caps its copy chunks only where it holds a byref.
     private sealed class FieldLayoutScenario(
         WasmTargetLayout target,
-        FieldLayout layout) : ITargetLayout, IInstanceFieldLayoutProvider
+        FieldLayout layout,
+        int alignment = 16,
+        bool holdsByReference = false) : ITargetLayout, IInstanceFieldLayoutProvider, IValueLayoutProvider
     {
         public WasmTargetLayout Target { get; } = target;
+
+        public ValueLayout GetValueLayout(CliTypeIdentity type) => new(type, layout.Size, alignment, [])
+        {
+            ByReferenceOffsets = holdsByReference ? [0] : [],
+        };
 
         public FieldLayout GetFieldLayout(FieldInstanceModel field) => layout;
 

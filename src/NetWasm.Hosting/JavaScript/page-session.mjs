@@ -12,12 +12,12 @@ const factoryKeys = [
 const requestKeys = ["exports", "options", "startup"];
 const optionNames = new Set(["environment", "modules", "onNotification", "platform", "stderr", "stdout"]);
 const platformHookNames = new Set(["now", "random"]);
-const wallClockModule = "wasi:clocks/wall-clock@0.2.11";
+const wallClockModule = "wasi:clocks/system-clock@0.3.2";
 const randomModules = Object.freeze({
-  "wasi:random/insecure@0.2.11": ["getInsecureRandomBytes", "getInsecureRandomU64"],
-  "wasi:random/random@0.2.11": ["getRandomBytes", "getRandomU64"],
+  "wasi:random/insecure@0.3.2": ["getInsecureRandomBytes", "getInsecureRandomU64"],
+  "wasi:random/random@0.3.2": ["getRandomBytes", "getRandomU64"],
 });
-const insecureSeedModule = "wasi:random/insecure-seed@0.2.11";
+const insecureSeedModule = "wasi:random/insecure-seed@0.3.2";
 const reservedExportNames = new Set([
   "__proto__",
   "close",
@@ -124,17 +124,16 @@ function readOpenOptions(value) {
   return value;
 }
 
-// Test hooks replace the wall clock and the random sources the WASI shim supplies.
+// Test hooks replace the system clock and the random sources the WASI platform supplies.
 function withPlatformHooks(platform, hooks) {
   if (hooks === undefined) return platform;
   return Object.freeze({
     ...platform,
-    createShim(configuration) {
-      const shim = platform.createShim(configuration);
+    createImports(request) {
+      const importSet = platform.createImports(request);
       return Object.freeze({
-        getImportObject(request) {
-          return applyPlatformHooks(shim.getImportObject(request), hooks);
-        },
+        imports: applyPlatformHooks(importSet.imports, hooks),
+        release: importSet.release,
       });
     },
   });
@@ -158,7 +157,7 @@ function applyPlatformHooks(imports, hooks) {
       }
     }
     if (result[insecureSeedModule] !== undefined) {
-      result[insecureSeedModule] = Object.freeze({ ...result[insecureSeedModule], insecureSeed: () => [u64(), u64()] });
+      result[insecureSeedModule] = Object.freeze({ ...result[insecureSeedModule], getInsecureSeed: () => [u64(), u64()] });
     }
   }
   return result;

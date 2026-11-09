@@ -8,6 +8,7 @@ public sealed class TemplateContractTests
     [Theory]
     [InlineData("NetWasm.App")]
     [InlineData("NetWasm.Library")]
+    [InlineData("NetWasm.Serverless")]
     public void NamedProjectsPreferTheirOwnDirectory(string templateName)
     {
         using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
@@ -22,6 +23,7 @@ public sealed class TemplateContractTests
     [Theory]
     [InlineData("NetWasm.App")]
     [InlineData("NetWasm.Library")]
+    [InlineData("NetWasm.Serverless")]
     public void EachTemplateSourceHoldsFiles(string templateName)
     {
         var template = Path.Combine(FindRepositoryRoot(), "src", "NetWasm.Templates", "content", templateName);
@@ -82,6 +84,7 @@ public sealed class TemplateContractTests
     [Theory]
     [InlineData("NetWasm.App")]
     [InlineData("NetWasm.Library")]
+    [InlineData("NetWasm.Serverless")]
     public void GeneratedProjectUsesTheUsersSdk(string templateName)
     {
         var template = Path.Combine(FindRepositoryRoot(), "src", "NetWasm.Templates", "content", templateName);
@@ -95,6 +98,7 @@ public sealed class TemplateContractTests
     [InlineData("NetWasm.App/host-worker/NetWasmProject.csproj")]
     [InlineData("NetWasm.App/wit/NetWasmProject.csproj")]
     [InlineData("NetWasm.Library/NetWasmLibrary.csproj")]
+    [InlineData("NetWasm.Serverless/NetWasmService.csproj")]
     public void GeneratedProjectNamesTheSdkVersionItWasCreatedWith(string projectPath)
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -107,6 +111,37 @@ public sealed class TemplateContractTests
         var project = XDocument.Load(Path.Combine(repositoryRoot, "src", "NetWasm.Templates", "content", projectPath));
 
         Assert.Equal($"NetWasm.Sdk/{declaredSdkVersion}", (string?)project.Root!.Attribute("Sdk"));
+    }
+
+    // NetWasm.System.Net.Http ships from the libraries release after the SDK, at its own patch
+    // numbers, so the service floats within the SDK's minor (owner, 2026-11-09); the release
+    // projection moves the float with the version.
+    [Fact]
+    public void ServerlessTemplateIsAnHttpServiceFloatingSystemNetHttpWithinTheSdkMinor()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var sdkVersion = XDocument
+            .Load(Path.Combine(repositoryRoot, "src", "NetWasm.Sdk", "NetWasm.Sdk.csproj"))
+            .Descendants("Version")
+            .Single()
+            .Value;
+        var template = Path.Combine(repositoryRoot, "src", "NetWasm.Templates", "content", "NetWasm.Serverless");
+        var project = XDocument.Load(Path.Combine(template, "NetWasmService.csproj"));
+
+        Assert.Equal("Component", project.Descendants("OutputType").Single().Value);
+        Assert.Equal("service", project.Descendants("NetWasmWorld").Single().Value);
+        var reference = Assert.Single(project.Descendants("PackageReference"));
+        Assert.Equal("NetWasm.System.Net.Http", (string?)reference.Attribute("Include"));
+        var minor = string.Join('.', sdkVersion.Split('-')[0].Split('.').Take(2));
+        var expected = sdkVersion.Contains('-', StringComparison.Ordinal) ? $"{minor}.*-*" : $"{minor}.*";
+        Assert.Equal(expected, (string?)reference.Attribute("Version"));
+        Assert.Contains(
+            "public static async partial Task<HttpResponseMessage> Handle(HttpRequestMessage request)",
+            File.ReadAllText(Path.Combine(template, "ServiceExports.cs")),
+            StringComparison.Ordinal);
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            template, ".template.config", "template.json")));
+        Assert.Equal("netwasm-serverless", document.RootElement.GetProperty("shortName").GetString());
     }
 
     [Fact]

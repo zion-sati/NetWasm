@@ -200,24 +200,12 @@ public sealed class AsyncIoSemanticsCompilationTests
             41,
             [])
         {
-            Exports =
-            [
-                new RequestedExport(
-                    "run",
-                    "AsyncIoSemanticsFixture.EntryPoint",
-                    "Run"),
-                new RequestedExport(
-                    "observe",
-                    "AsyncIoSemanticsFixture.EntryPoint",
-                    "Observe"),
-            ],
             WitPath = Path.Combine(
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            ObserveMethodName = "Observe",
         });
 
         Assert.Equal(42, observed);
@@ -469,15 +457,9 @@ public sealed class AsyncIoSemanticsCompilationTests
             77,
             [])
         {
-            Exports =
-            [
-                new RequestedExport("run", "AsyncStreamIoFixture.EntryPoint", "Run"),
-                new RequestedExport("observe", "AsyncStreamIoFixture.EntryPoint", "Observe"),
-            ],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            ObserveMethodName = "Observe",
         });
 
         Assert.Equal(78, observed);
@@ -674,15 +656,9 @@ public sealed class AsyncIoSemanticsCompilationTests
             41,
             [])
         {
-            Exports =
-            [
-                new RequestedExport("run", "StreamWriterFidelityFixture.EntryPoint", "Run"),
-                new RequestedExport("observe", "StreamWriterFidelityFixture.EntryPoint", "Observe"),
-            ],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform/async-platform@1.0.0",
-            DrainReactor = true,
-            ObserveExportName = "observe",
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            ObserveMethodName = "Observe",
         });
 
         Assert.Equal(42, observed);

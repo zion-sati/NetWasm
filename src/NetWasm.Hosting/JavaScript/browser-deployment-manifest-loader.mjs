@@ -51,6 +51,8 @@ export function createBrowserDeploymentManifestLoader(options) {
   });
 }
 
+const manifestProtocols = new Set(["http:", "https:", "file:"]);
+
 function validateManifestUrl(value) {
   if (typeof value !== "string" || value.length === 0) {
     throw new TypeError("browser deployment manifest URL is required");
@@ -61,10 +63,11 @@ function validateManifestUrl(value) {
   } catch {
     throw new TypeError("browser deployment manifest URL is invalid");
   }
-  if (url.href !== value || url.protocol !== "https:" && url.protocol !== "http:"
+  // A page loads its deployment over HTTP(S); a host that Node.js code imports, from files.
+  if (url.href !== value || !manifestProtocols.has(url.protocol)
       || url.username.length !== 0 || url.password.length !== 0
       || url.hash.length !== 0 || url.pathname.endsWith("/")) {
-    throw new TypeError("browser deployment manifest URL must be canonical absolute HTTP(S)");
+    throw new TypeError("browser deployment manifest URL must be a canonical absolute HTTP(S) or file URL");
   }
   return url.href;
 }

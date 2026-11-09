@@ -1,0 +1,9 @@
+package netwasm:test-async@1.0.0;
+
+// A library component whose export is an async func: the host calls it, the
+// guest awaits a delay and an async import, and returns through task.return.
+world async-export {
+    import wasi:clocks/monotonic-clock@0.3.2;
+
+    export greet: async func(name: string, milliseconds: u32) -> string;
+}

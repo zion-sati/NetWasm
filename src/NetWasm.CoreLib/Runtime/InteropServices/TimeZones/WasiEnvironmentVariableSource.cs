@@ -1,14 +1,15 @@
 namespace System.Runtime.InteropServices.TimeZones
 {
+    using System.Collections.Generic;
     using System.Runtime.InteropServices.WebAssembly;
 
     internal sealed class WasiEnvironmentVariableSource(
-        IWasiEnvironmentInvoker invoker) : IEnvironmentVariableSource
+        IWasiEnvironmentInvoker invoker) : IEnvironmentSource
     {
         private readonly IWasiEnvironmentInvoker _invoker =
             invoker ?? throw new ArgumentNullException();
 
-        public EnvironmentVariable[] Read()
+        public KeyValuePair<string, string>[] GetVariables()
         {
             var addressSize = unchecked((nuint)nuint.Size);
             var result = CanonicalAbi.Allocate(addressSize * 2, addressSize);
@@ -21,7 +22,7 @@ namespace System.Runtime.InteropServices.TimeZones
                 {
                     throw new OutOfMemoryException();
                 }
-                var variables = new EnvironmentVariable[(int)length];
+                var variables = new KeyValuePair<string, string>[(int)length];
                 var stride = addressSize * 4;
                 for (var index = 0; index < variables.Length; index++)
                 {
@@ -32,7 +33,7 @@ namespace System.Runtime.InteropServices.TimeZones
                     var valueLength = CanonicalAbi.ReadAddress(element, addressSize * 3);
                     try
                     {
-                        variables[index] = new EnvironmentVariable(
+                        variables[index] = new KeyValuePair<string, string>(
                             CanonicalAbi.LiftString(nameAddress, nameLength),
                             CanonicalAbi.LiftString(valueAddress, valueLength));
                     }

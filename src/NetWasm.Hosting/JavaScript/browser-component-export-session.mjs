@@ -10,7 +10,6 @@ import { platformProviderCatalog } from "./platform-provider-catalog.generated.m
 import { bindWorkerImports } from "./worker-import-bindings.mjs";
 import { witWorkerExecutionContract } from "./execution-contracts.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
-import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
 import { createScopeReleaseCommand } from "./scope-release-command.mjs";
@@ -21,8 +20,8 @@ const configurationKeys = ["applicationImports", "arguments", "environment", "gr
 const platformKeys = [
   "compileCoreModule",
   "createFilesystem",
+  "createImports",
   "createModuleUrl",
-  "createShim",
   "digest",
   "fetch",
   "importModule",
@@ -74,6 +73,7 @@ export function createBrowserComponentExportSession(options) {
     }),
   });
   const validateRequest = createExecutionRequestValidator({
+    hostDirectories: false,
     isAbsoluteHostPath: rejectHostPath,
     selectProviderKind,
   });
@@ -109,10 +109,7 @@ export function createBrowserComponentExportSession(options) {
         signal: null,
       }));
 
-      const filesystem = createPreview2FilesystemScope({
-        createFilesystem: options.platform.createFilesystem,
-        preopens: hostRequest.grants.preopens,
-      });
+      const filesystem = options.platform.createFilesystem(hostRequest.grants.preopens);
       releaseActions.push(filesystem.dispose);
       const selection = selectTimeZoneSidecar({
         artifacts: manifest.artifacts,
@@ -135,7 +132,7 @@ export function createBrowserComponentExportSession(options) {
 
       const prepareProviders = createProviderExecutionComposition({
         catalog: platformProviderCatalog,
-        createShim: options.platform.createShim,
+        createImports: options.platform.createImports,
         hashBytes: transport.hashBytes,
         importModule: async (...arguments_) => bindWorkerImports(
           await importModule(...arguments_), request.notify),
@@ -149,8 +146,11 @@ export function createBrowserComponentExportSession(options) {
         request: hostRequest,
         signal: null,
         stderr: output.stderr,
+        // An export session's calls have no standard input.
+        stdin: null,
         stdout: output.stdout,
       }));
+      releaseActions.push(providers.release);
       const ownedReleaseActions = releaseActions;
       releaseActions = null;
       return await openComponentExportSession({

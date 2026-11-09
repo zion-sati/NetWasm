@@ -8,15 +8,13 @@ test("composes one persistent scalar component session", async () => {
   const session = await openComponentExportSession({
     adapter: {
       contractKey: "netwasm:worker/wit@1.0.0",
-      async instantiate({ reactorHost }) {
+      async instantiate() {
         instantiations++;
-        reactorHost.assertAvailable();
         return {
           exports: {
             add(delta) { value += delta; return value; },
             read() { return value; },
           },
-          guestWake() {},
         };
       },
     },

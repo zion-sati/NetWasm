@@ -9,7 +9,6 @@
 #include "runtime_system_initializer.h"
 #include "object_data_address_resolver.h"
 #include "unmanaged_allocator.h"
-#include "wasi_random_import.h"
 #include "collector/weak_handle_table.h"
 #include "collector/strong_handle_table.h"
 #include "collector/gc_handle_table.h"
@@ -40,10 +39,6 @@
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-NETWASM_EXPORT("random_seed") uint64_t random_seed(void)
-{
-    return runtime_get_random_u64();
-}
 
 _Static_assert(sizeof(netwasm_id_t) == sizeof(u32),
                "NetWasm semantic identifiers must remain i32");
@@ -2737,6 +2732,46 @@ netwasm_reference_t allocate_string(u32 value, u32 length, u32 type_id)
     allocation_root = 0;
     return string;
 }
+
+/* Shallow cloning preserves managed fields but allocates independent collector,
+   identity and finalization state. The caller publishes the source as a GC root. */
+#if !defined(NETWASM_NO_OBJECT_CLONE)
+NETWASM_EXPORT("object_clone")
+netwasm_reference_t object_clone(netwasm_reference_t source)
+{
+    if (source == 0) {
+        __builtin_trap();
+    }
+    u32 type_id = *(const u32 *)(uintptr_t)source;
+    if (type_id >= type_capacity || !type_descriptors[type_id].registered) {
+        __builtin_trap();
+    }
+    if (type_data_kinds[type_id] == NETWASM_OBJECT_DATA_ARRAY) {
+        return array_clone(source, 0, UINT32_MAX);
+    }
+    if (type_data_kinds[type_id] == NETWASM_OBJECT_DATA_STRING) {
+        u32 length = *(const u32 *)(uintptr_t)(source + NETWASM_STRING_LENGTH_OFFSET);
+        netwasm_reference_t clone = allocate_string(0, length, type_id);
+        if (clone != 0) {
+            memcpy((void *)(uintptr_t)(clone + NETWASM_STRING_DATA_OFFSET),
+                (const void *)(uintptr_t)(source + NETWASM_STRING_DATA_OFFSET),
+                (size_t)length * sizeof(uint16_t));
+        }
+        return clone;
+    }
+    TypeDescriptor *entry = &type_descriptors[type_id];
+    netwasm_reference_t clone = entry->has_finalizer
+        ? allocate_finalizable(entry->size, type_id)
+        : allocate_registered(entry->size, type_id);
+    if (clone != 0) {
+        collector_move_value_range(clone,
+            (void *)(uintptr_t)clone,
+            (const void *)(uintptr_t)source,
+            1, entry->size);
+    }
+    return clone;
+}
+#endif
 
 NETWASM_FINALIZATION_EXPORT("suppress_finalize")
 void suppress_finalize(netwasm_reference_t object)

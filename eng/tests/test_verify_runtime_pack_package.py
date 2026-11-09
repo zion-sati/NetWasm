@@ -47,10 +47,18 @@ class RuntimePackPackageTests(unittest.TestCase):
                     "nativeStackSizeBytes": 65_536,
                     "runtimeArchive": self.asset(f"{prefix}/libnetwasm-runtime.a", b"runtime"),
                     "collectorArchive": self.asset(f"{prefix}/libgc.a", b"collector"),
+                    "platformArchives": {
+                        "wasi": self.asset(f"{prefix}/libnetwasm-runtime-wasi.a", b"wasi"),
+                        "noWasi": self.asset(f"{prefix}/libnetwasm-runtime-nowasi.a", b"nowasi"),
+                    },
                     "speed": {
                         "runtimeFootprintBytes": 74_096,
                         "runtimeArchive": self.asset(f"{prefix}/speed/libnetwasm-runtime.a", b"speed-runtime"),
                         "collectorArchive": self.asset(f"{prefix}/speed/libgc.a", b"speed-collector"),
+                        "platformArchives": {
+                            "wasi": self.asset(f"{prefix}/speed/libnetwasm-runtime-wasi.a", b"speed-wasi"),
+                            "noWasi": self.asset(f"{prefix}/speed/libnetwasm-runtime-nowasi.a", b"speed-nowasi"),
+                        },
                     },
                     "allowedUndefinedSymbols": self.asset(f"{target}/allowed-undefined-symbols.txt",
                                                           b"emscripten_notify_memory_growth\n"),

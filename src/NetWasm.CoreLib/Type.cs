@@ -1,31 +1,49 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace System
 {
-    public sealed partial class Type : MemberInfo
+    public partial class Type : MemberInfo
     {
+        public static readonly Type[] EmptyTypes = Array.Empty<Type>();
+
         internal int SemanticTypeId = 0;
 
-        private Type()
+        // Canonical runtime Type objects are created directly by get_type_object.
+        // User-defined metadata providers need a separate supported construction model.
+        protected Type()
         {
+            throw new PlatformNotSupportedException("Constructing custom Type metadata providers is not supported on NetWasm.");
         }
 
         public static Type? GetTypeFromHandle(RuntimeTypeHandle handle) => null;
+
+        // RuntimeTypeHandle uses the compiler's 32-bit semantic type identity on
+        // both Wasm targets, matching ldtoken and GetTypeFromHandle.
+        public RuntimeTypeHandle TypeHandle => Unsafe.As<int, RuntimeTypeHandle>(ref SemanticTypeId);
+
+
+        public static RuntimeTypeHandle GetTypeHandle(object o)
+        {
+            ArgumentNullException.ThrowIfNull(o);
+            return o.GetType().TypeHandle;
+        }
+
         internal static Type GetTypeFromSemanticId(int semanticTypeId) =>
             throw new PlatformNotSupportedException(
                 "Only compiler-emitted semantic type identities are supported.");
-        public bool IsValueType => HasFlag(RuntimeTypeFactsFlags.ValueType);
+        public bool IsValueType => IsValueTypeImpl();
         public bool IsEnum => HasFlag(RuntimeTypeFactsFlags.Enum);
         public bool IsInterface => HasFlag(RuntimeTypeFactsFlags.Interface);
-        public bool IsByRef => HasFlag(RuntimeTypeFactsFlags.ByReference);
-        public bool IsPointer => HasFlag(RuntimeTypeFactsFlags.Pointer);
+        public bool IsByRef => IsByRefImpl();
+        public bool IsPointer => IsPointerImpl();
         public bool ContainsGenericParameters =>
             HasFlag(RuntimeTypeFactsFlags.ContainsGenericParameters);
         public bool IsGenericTypeDefinition =>
             HasFlag(RuntimeTypeFactsFlags.GenericTypeDefinition);
         public bool IsGenericType => HasFlag(RuntimeTypeFactsFlags.GenericType);
-        public bool IsArray => HasFlag(RuntimeTypeFactsFlags.Array);
+        public bool IsArray => IsArrayImpl();
         public bool IsSZArray => HasFlag(RuntimeTypeFactsFlags.SzArray);
         public bool IsClass => HasFlag(RuntimeTypeFactsFlags.Class);
         public bool IsSealed => HasFlag(RuntimeTypeFactsFlags.Sealed);
@@ -60,7 +78,7 @@ namespace System
         }
 
         public static TypeCode GetTypeCode(Type? type) =>
-            type is null ? TypeCode.Empty : (TypeCode)type.GetFacts().TypeCode;
+            type is null ? TypeCode.Empty : type.GetTypeCodeImpl();
 
         public bool IsAssignableFrom(Type? candidate)
         {
@@ -227,6 +245,12 @@ namespace System
         internal const int Sealed = 1 << 11;
         internal const int Nullable = 1 << 12;
         internal const int Abstract = 1 << 13;
+        internal const int GenericTypeParameter = 1 << 14;
+        internal const int GenericMethodParameter = 1 << 15;
+        internal const int ByRefLike = 1 << 16;
+        internal const int TypeDefinition = 1 << 23;
+        internal const int ArrayRankShift = 17;
+        internal const int ArrayRankMask = 0x3f;
     }
 
     internal static class RuntimeTypeNamePayload
@@ -259,25 +283,55 @@ namespace System
         internal readonly nint DisplayName;
     }
 
-    public readonly struct RuntimeTypeHandle
+    public readonly partial struct RuntimeTypeHandle : IEquatable<RuntimeTypeHandle>
     {
+        // Handles are opaque semantic IDs, not dereferenceable host addresses.
+        private int SemanticId
+        {
+            get
+            {
+                var handle = this;
+                return Unsafe.As<RuntimeTypeHandle, int>(ref handle);
+            }
+        }
+
+        public nint Value => SemanticId;
+        public override int GetHashCode() => SemanticId;
+        public override bool Equals(object? obj) => obj is RuntimeTypeHandle handle && Equals(handle);
+        public bool Equals(RuntimeTypeHandle handle) => SemanticId == handle.SemanticId;
+        public static bool operator ==(RuntimeTypeHandle left, object? right) => left.Equals(right);
+        public static bool operator ==(object? left, RuntimeTypeHandle right) => right.Equals(left);
+        public static bool operator !=(RuntimeTypeHandle left, object? right) => !left.Equals(right);
+        public static bool operator !=(object? left, RuntimeTypeHandle right) => !right.Equals(left);
     }
 
-    public readonly struct RuntimeMethodHandle
+    // Method and field handles carry the same opaque native-width IDs; identity and hashing use
+    // them as upstream uses its runtime pointers. They are never dereferenced.
+    public readonly partial struct RuntimeMethodHandle : IEquatable<RuntimeMethodHandle>
     {
         private readonly nint _value;
 
         internal RuntimeMethodHandle(nint value) => _value = value;
 
-        internal nint Value => _value;
+        public nint Value => _value;
+        public override int GetHashCode() => HashCode.Combine(Value);
+        public override bool Equals([NotNullWhen(true)] object? obj) => obj is RuntimeMethodHandle handle && Equals(handle);
+        public bool Equals(RuntimeMethodHandle handle) => _value == handle._value;
+        public static bool operator ==(RuntimeMethodHandle left, RuntimeMethodHandle right) => left.Equals(right);
+        public static bool operator !=(RuntimeMethodHandle left, RuntimeMethodHandle right) => !left.Equals(right);
     }
 
-    public readonly struct RuntimeFieldHandle
+    public readonly partial struct RuntimeFieldHandle : IEquatable<RuntimeFieldHandle>
     {
         private readonly nint _value;
 
         internal RuntimeFieldHandle(nint value) => _value = value;
 
-        internal nint Value => _value;
+        public nint Value => _value;
+        public override int GetHashCode() => HashCode.Combine(Value);
+        public override bool Equals([NotNullWhen(true)] object? obj) => obj is RuntimeFieldHandle handle && Equals(handle);
+        public bool Equals(RuntimeFieldHandle handle) => _value == handle._value;
+        public static bool operator ==(RuntimeFieldHandle left, RuntimeFieldHandle right) => left.Equals(right);
+        public static bool operator !=(RuntimeFieldHandle left, RuntimeFieldHandle right) => !left.Equals(right);
     }
 }

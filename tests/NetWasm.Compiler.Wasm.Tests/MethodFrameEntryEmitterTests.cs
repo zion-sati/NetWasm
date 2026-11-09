@@ -159,16 +159,17 @@ public sealed class MethodFrameEntryEmitterTests
 
     private sealed class RecordingValueCopies : IValueCopyEmitter
     {
-        public List<(int Destination, int Size, int Alignment, int Source)> Requests { get; } = [];
+        public List<(int Destination, int Size, int Alignment, int WidestChunk, int Source)> Requests { get; } = [];
 
         public void Emit(IWasmInstructionWriter code, int destinationLocal, int size,
-            int alignment, Action<IWasmInstructionWriter> emitSource, MethodEmissionContext? inlineContext = null)
+            int alignment, int widestChunk, Action<IWasmInstructionWriter> emitSource,
+            MethodEmissionContext? inlineContext = null)
         {
             var source = new RecordingInstructionWriter();
             emitSource(source);
             var instruction = Assert.Single(source.ToInstructions());
             Assert.Equal(WasmOpcodes.LocalGet, instruction.Opcode);
-            Requests.Add((destinationLocal, size, alignment, (int)instruction.Operand.UnsignedValue));
+            Requests.Add((destinationLocal, size, alignment, widestChunk, (int)instruction.Operand.UnsignedValue));
         }
     }
 

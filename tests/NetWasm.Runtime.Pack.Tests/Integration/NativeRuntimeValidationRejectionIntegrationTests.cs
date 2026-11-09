@@ -38,8 +38,8 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
         {
             "preview1" => (Module: "wasi_snapshot_preview1", Name: "fd_write"),
             "arbitrary-host" => (Module: "native.custom.host", Name: "call"),
-            "wrong-width" => (Module: otherPrefix + "|wasi:cli/exit@0.2", Name: "exit"),
-            "wrong-signature" => (Module: (target == "wasm64" ? "cm64p2" : "cm32p2") + "|wasi:cli/stdout@0.2", Name: "get-stdout"),
+            "wrong-width" => (Module: otherPrefix + "|wasi:cli/exit@0.3", Name: "exit"),
+            "wrong-signature" => (Module: (target == "wasm64" ? "cm64p2" : "cm32p2") + "|wasi:cli/exit@0.3", Name: "exit"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
         var source = $$"""

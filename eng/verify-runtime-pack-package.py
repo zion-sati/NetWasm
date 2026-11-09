@@ -75,10 +75,16 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
             if closure.get("names") != required or len(closure.get("assets", [])) != len(required):
                 raise ValueError(f"Runtime-pack {name} system-library inventory is incomplete.")
             assets = [target["runtimeArchive"], target["collectorArchive"],
+                      target["platformArchives"]["wasi"], target["platformArchives"]["noWasi"],
                       speed["runtimeArchive"], speed["collectorArchive"],
+                      speed["platformArchives"]["wasi"], speed["platformArchives"]["noWasi"],
                       target["allowedUndefinedSymbols"], *closure["assets"]]
             expected_paths = [f"{name}/{collector}/libnetwasm-runtime.a", f"{name}/{collector}/libgc.a",
+                              f"{name}/{collector}/libnetwasm-runtime-wasi.a",
+                              f"{name}/{collector}/libnetwasm-runtime-nowasi.a",
                               f"{name}/{collector}/speed/libnetwasm-runtime.a", f"{name}/{collector}/speed/libgc.a",
+                              f"{name}/{collector}/speed/libnetwasm-runtime-wasi.a",
+                              f"{name}/{collector}/speed/libnetwasm-runtime-nowasi.a",
                               f"{name}/allowed-undefined-symbols.txt", *(
                 f"{name}/system-libraries/{library}" for library in required)]
             if [asset.get("path") for asset in assets] != expected_paths:

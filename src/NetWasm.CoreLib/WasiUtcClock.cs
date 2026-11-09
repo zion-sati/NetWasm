@@ -2,8 +2,12 @@ namespace System.Runtime.InteropServices
 {
     using WebAssembly;
 
-    internal sealed class WasiUtcClock : IPlatformUtcClock
+    // wasi:clocks/system-clock as DateTime.UtcNow's clock.
+    internal sealed class WasiUtcClock : ISystemClock
     {
+        // 1970-01-01T00:00:00Z, the epoch of WASI's system clock, in DateTime ticks.
+        private const long UnixEpochTicks = 621_355_968_000_000_000;
+
         private readonly IPlatformUtcClockSource _source;
 
         internal WasiUtcClock(IPlatformUtcClockSource source)
@@ -11,7 +15,20 @@ namespace System.Runtime.InteropServices
             _source = source ?? throw new ArgumentNullException();
         }
 
-        public PlatformTimestamp GetUtcTime() => _source.GetUtcTime();
+        public DateTime GetUtcNow()
+        {
+            var timestamp = _source.GetUtcTime();
+            if (timestamp.Seconds > long.MaxValue)
+            {
+                throw new OverflowException();
+            }
+            return new DateTime(
+                checked(
+                    UnixEpochTicks
+                    + (long)timestamp.Seconds * TimeSpan.TicksPerSecond
+                    + timestamp.Nanoseconds / 100),
+                DateTimeKind.Utc);
+        }
     }
 
     internal sealed class WasiUtcClockSource : IPlatformUtcClockSource

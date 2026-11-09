@@ -40,7 +40,7 @@ public sealed class WitWorkerContractReader(IWitWorkerTypeReferenceReader refere
         {
             throw new InvalidDataException("WIT worker contract is invalid", exception);
         }
-        if (contract.SchemaVersion != 2 || string.IsNullOrWhiteSpace(contract.World)
+        if (contract.SchemaVersion != 3 || string.IsNullOrWhiteSpace(contract.World)
             || contract.Exports.IsDefaultOrEmpty || contract.Types.IsDefault)
             throw Invalid("WIT worker contract shape is invalid");
 
@@ -95,7 +95,7 @@ public sealed class WitWorkerContractReader(IWitWorkerTypeReferenceReader refere
                 Visit(parameter.Type);
             }
             if (export.Result is not null) Visit(export.Result);
-            if (export.Kind.Name == "freestanding")
+            if (export.Kind.Name is "freestanding" or "async-freestanding")
             {
                 if (export.Kind.ResourceType is not null) throw Invalid("WIT worker function kind is invalid");
             }
@@ -107,9 +107,6 @@ public sealed class WitWorkerContractReader(IWitWorkerTypeReferenceReader refere
             else throw Invalid("WIT worker function kind is invalid");
             previous = export.Operation;
         }
-        if (contract.Reactor is { } reactor && (reactor.Interface != "netwasm:runtime/reactor-guest@1.0.0"
-            || string.IsNullOrWhiteSpace(reactor.JavaScriptRoot) || string.IsNullOrWhiteSpace(reactor.JavaScriptMember)))
-            throw Invalid("WIT worker reactor export shape is invalid");
         return new(contract, definitions.ToImmutable(), references.ToImmutable());
 
         void Visit(WitWorkerValueReference? reference)

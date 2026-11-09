@@ -54,14 +54,12 @@ public sealed class WitWorkerComponentAdapterWriterTests
                 "root-value",
                 [],
                 null)))!.AsObject();
-        contract["reactor"] = Reactor();
 
         var contractJson = contract.ToJsonString();
         WitWorkerRootExport[] roots =
         [
             new("mathAlias", "instance"),
             new("rootValue", "function"),
-            new("netwasm:runtime/reactor-guest@1.0.0", "instance"),
         ];
         var first = _subject.Write(new(
             Encoding.UTF8.GetBytes(contractJson), JcoVersion, [.. roots]));
@@ -89,17 +87,10 @@ public sealed class WitWorkerComponentAdapterWriterTests
             "binding1[\"rootValue\"](...args);",
             source,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "root[\"netwasm:runtime/reactor-guest@1.0.0\"]",
-            source,
-            StringComparison.Ordinal);
         Assert.DoesNotContain("split(", source, StringComparison.Ordinal);
-        Assert.Contains("const guestWake = reactorGuest[\"wake\"].bind(reactorGuest);",
-            source, StringComparison.Ordinal);
-        Assert.Contains("componentImports = bindReactorHost(imports, reactorHost)",
-            source, StringComparison.Ordinal);
-        Assert.Contains("[\"netwasm:runtime/reactor-host\"]: binding",
-            source, StringComparison.Ordinal);
+        Assert.Contains("return Object.freeze({ exports: Object.freeze(exports) });", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("reactor", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("guestWake", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -129,17 +120,18 @@ public sealed class WitWorkerComponentAdapterWriterTests
             StringComparison.Ordinal);
     }
 
+    // An async func's export is lifted with a callback; jco returns a promise of its result.
     [Fact]
-    public void OmitsReactorBindingWhenPackagedWorldDoesNotDeclareIt()
+    public void BindsAnAsyncExportLikeASynchronousOne()
     {
+        var export = Export("value", "root", "value", null, "", "value", "value", [], null);
+        export["kind"]!["name"] = "async-freestanding";
         var source = Encoding.UTF8.GetString(_subject.Write(new(
-            Encoding.UTF8.GetBytes(Contract(Export(
-                "value", "root", "value", null, "", "value", "value", [], null))),
+            Encoding.UTF8.GetBytes(Contract(export)),
             JcoVersion,
             [new("value", "function")])));
 
-        Assert.Contains("const guestWake = null;", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("reactorGuest", source, StringComparison.Ordinal);
+        Assert.Contains("exports[\"value\"] = (...args) =>", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -251,7 +243,7 @@ public sealed class WitWorkerComponentAdapterWriterTests
             [Parameter("input", Type("s32"))],
             Type("s32"))))!.AsObject();
 
-        yield return Mutate(valid, root => root["schemaVersion"] = 3);
+        yield return Mutate(valid, root => root["schemaVersion"] = 2);
         yield return Mutate(valid, root => root["world"] = " ");
         yield return Mutate(valid, root => root["exports"] = new JsonArray());
         yield return Mutate(valid, root => root.Remove("types"));
@@ -305,22 +297,8 @@ public sealed class WitWorkerComponentAdapterWriterTests
             item["interface"] = "example:worker/api@1.0.0";
             item["javaScriptRoot"] = "";
         });
-        yield return Mutate(valid, root => root["reactor"] = new JsonObject());
-        yield return Mutate(valid, root =>
-        {
-            root["reactor"] = Reactor();
-            root["reactor"]!["interface"] = "example:worker/reactor@1.0.0";
-        });
-        yield return Mutate(valid, root =>
-        {
-            root["reactor"] = Reactor();
-            root["reactor"]!["javaScriptRoot"] = "";
-        });
-        yield return Mutate(valid, root =>
-        {
-            root["reactor"] = Reactor();
-            root["reactor"]!["javaScriptMember"] = "";
-        });
+        // Schema 3 has no reactor.
+        yield return Mutate(valid, root => root["reactor"] = null);
     }
 
     private static (string Json, Type ExceptionType) Mutate(
@@ -338,19 +316,11 @@ public sealed class WitWorkerComponentAdapterWriterTests
 
     private static string Contract(params JsonObject[] exports) => new JsonObject
     {
-        ["schemaVersion"] = 2,
+        ["schemaVersion"] = 3,
         ["world"] = "example:worker/application@1.0.0",
         ["exports"] = new JsonArray(exports.Select(export => export.DeepClone()).ToArray()),
         ["types"] = new JsonArray(),
-        ["reactor"] = null,
     }.ToJsonString();
-
-    private static JsonObject Reactor() => new()
-    {
-        ["interface"] = "netwasm:runtime/reactor-guest@1.0.0",
-        ["javaScriptRoot"] = "netwasm:runtime/reactor-guest@1.0.0",
-        ["javaScriptMember"] = "wake",
-    };
 
     private static JsonObject Export(
         string operation,

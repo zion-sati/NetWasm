@@ -12,20 +12,17 @@ internal sealed class HostingPlatformCatalogApplication(
     ITextFileStore files,
     IWitDocumentJsonReader documents,
     IWitInterfaceCatalogBuilder catalogs,
-    IPreview2ShimIdentityReader shims,
     IHostingPlatformCatalogProjector projector,
     IHostingPlatformCatalogJavaScriptWriter writer) :
     IHostingPlatformCatalogApplication
 {
-    private const string PlatformWorld = "netwasm:hosting-platform@1.0.0/preview2";
+    private const string PlatformWorld = "netwasm:hosting-platform@1.0.0/wasi";
     private readonly ITextFileStore _files = files ??
         throw new ArgumentNullException(nameof(files));
     private readonly IWitDocumentJsonReader _documents = documents ??
         throw new ArgumentNullException(nameof(documents));
     private readonly IWitInterfaceCatalogBuilder _catalogs = catalogs ??
         throw new ArgumentNullException(nameof(catalogs));
-    private readonly IPreview2ShimIdentityReader _shims = shims ??
-        throw new ArgumentNullException(nameof(shims));
     private readonly IHostingPlatformCatalogProjector _projector = projector ??
         throw new ArgumentNullException(nameof(projector));
     private readonly IHostingPlatformCatalogJavaScriptWriter _writer = writer ??
@@ -36,10 +33,10 @@ internal sealed class HostingPlatformCatalogApplication(
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(standardOutput);
         ArgumentNullException.ThrowIfNull(standardError);
-        if (arguments.Length != 3 || arguments.Any(string.IsNullOrWhiteSpace))
+        if (arguments.Length != 2 || arguments.Any(string.IsNullOrWhiteSpace))
         {
             standardError.WriteLine(
-                "usage: NetWasm.Hosting.Generator <normalized-wit-json> <preview2-shim-package-json> <output-esm>");
+                "usage: NetWasm.Hosting.Generator <normalized-wit-json> <output-esm>");
             return 2;
         }
 
@@ -48,9 +45,8 @@ internal sealed class HostingPlatformCatalogApplication(
             var document = _documents.Read(_files.Read(arguments[0]));
             var world = document.SelectWorld(PlatformWorld);
             var catalog = _catalogs.Build(document, world);
-            var shim = _shims.Read(_files.Read(arguments[1]));
-            var projected = _projector.Project(catalog, shim);
-            _files.Write(arguments[2], _writer.Write(projected));
+            var projected = _projector.Project(catalog);
+            _files.Write(arguments[1], _writer.Write(projected));
             standardOutput.WriteLine(
                 $"Generated {projected.Providers.Length} platform providers from " +
                 $"{catalog.Interfaces.Length} imported interfaces for {catalog.World}.");

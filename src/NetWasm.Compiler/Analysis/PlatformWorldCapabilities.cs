@@ -5,26 +5,39 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Analysis;
 
 // What the selected WIT world provides to CoreLib's world-dependent composition
-// (System.Runtime.InteropServices.PlatformWorld): a host-driven reactor, or the wasi:io/poll and
-// monotonic-clock imports a program needs to run its own event loop.
-public sealed record PlatformWorldCapabilities(bool ReactorHost, bool EventLoop)
+// (System.Runtime.InteropServices.PlatformWorld). Every component has an event loop: the
+// Component Model's waitable sets wait for its subtasks, streams and futures. A delay also needs
+// the monotonic clock's wait-for; the world declaring the clock is enough, since CoreLib calls
+// wait-for as a Component Model built-in that wit-component resolves against the world, whether
+// or not any reachable code binds the clock's now. A core module has neither. A synchronous
+// export (an async func's export is lifted with a callback and is not in the contract's
+// exports) is where a blocking wait must throw; a program without one leaves that check out.
+public sealed record PlatformWorldCapabilities(bool EventLoop, bool MonotonicClock, bool SynchronousExports)
 {
-    internal const string ReactorHostInterface = "netwasm:runtime/reactor-host@1.0.0";
-    internal const string PollInterface = "wasi:io/poll@0.2.11";
-    internal const string MonotonicClockInterface = "wasi:clocks/monotonic-clock@0.2.11";
+    internal const string MonotonicClockInterface = "wasi:clocks/monotonic-clock@0.3.2";
+
+    // A module a JavaScript host runs (a raw build): the host runs its event loop and can
+    // complete a task through a JavaScript promise the program awaits.
+    public bool HostEventLoop { get; init; }
+
+    // Whether the program has WASI, so that NetWasm's WASI 0.3 platform services are the
+    // defaults; a plain core module has none.
+    public bool Wasi { get; init; } = true;
+
+    // The program's declared platform (NetWasmPlatformAttribute), or null for the default one.
+    public PlatformServices.DeclaredPlatform? DeclaredPlatform { get; init; }
 
     public static PlatformWorldCapabilities From(ComponentBoundaryContract contract)
     {
         ArgumentNullException.ThrowIfNull(contract);
+        var component = contract.World.Length != 0;
         return new(
-            Declares(contract, ReactorHostInterface, "watch") &&
-                Declares(contract, ReactorHostInterface, "cancel"),
-            Declares(contract, PollInterface, "poll") &&
-                Declares(contract, MonotonicClockInterface, "subscribe-duration"));
+            component,
+            component && Declares(contract, MonotonicClockInterface, "now"),
+            contract.Exports.Any(export => export.Kind is
+                CanonicalAbiFunctionKind.Function or CanonicalAbiFunctionKind.ExportedResourceDestructor));
     }
 
     private static bool Declares(ComponentBoundaryContract contract, string interfaceName, string function) =>
-        contract.Imports.Any(import =>
-            import.HasManagedBinding &&
-            import.Identity == new WitFunctionIdentity(interfaceName, function));
+        contract.Imports.Any(import => import.Identity == new WitFunctionIdentity(interfaceName, function));
 }

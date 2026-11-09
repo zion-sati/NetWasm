@@ -16,4 +16,7 @@ public sealed record ComponentBuildRequest(
     bool StructuredDiagnostics = false)
 {
     public WasmOptimizationOverrides? OptimizationOverrides { get; init; }
+
+    // Write the linked plain core module, without WASI, rather than a component.
+    public bool PlainCoreModule { get; init; }
 }

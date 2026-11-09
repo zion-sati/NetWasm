@@ -36,6 +36,8 @@ export function createCapabilityBindingValidator(options) {
       throw new TypeError("selected provider collections must be explicit");
     }
 
+    // Every platform interface the application imports has a provider, a types-only one
+    // (wasi:cli/terminal-input) too: JavaScript bindings construct its resources.
     const requiredModules = new Set(manifest.requiredImportModules.filter(
       module => !readInternalImport(isInternalImport, module)));
     const providerModules = new Set();

@@ -26,12 +26,16 @@ public sealed class JcoToolchainPathResolverTests
         var result = resolver.Resolve(CreateExecutable(), CreateCompatibility());
 
         Assert.Equal(
-            ToolchainPlatformAssetIds.JcoClosure.ToArray(),
+            [
+                .. ToolchainPlatformAssetIds.JcoClosure,
+                ToolchainPlatformAssetIds.Preview3ShimHttp,
+                .. ToolchainPlatformAssetIds.NodeHttpProviderFiles,
+            ],
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
         Assert.Equal("0.1.0-preview.23", result.PackageVersion);
-        Assert.Equal("1.28.1+netwasm.2", result.JcoVersion);
-        Assert.Equal("0.24.1", result.Preview2ShimVersion);
+        Assert.Equal("1.41.0+netwasm.1", result.JcoVersion);
+        Assert.Equal("0.13.0", result.Preview3ShimVersion);
         Assert.Equal(NodePath, result.NodePath);
         Assert.Equal(new Version(25, 0), result.NodeVersion);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.JcoEntryPoint), result.EntryPointPath);
@@ -39,6 +43,13 @@ public sealed class JcoToolchainPathResolverTests
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.JcoClosureIntegrity), result.ClosureIntegrityPath);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.JcoNotices), result.NoticesPath);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.JcoClosurePolicy), result.ClosurePolicyPath);
+        Assert.Equal(Path.Combine(PackageRoot, "tools", "jco"), result.NodeHttpProvider.Root);
+        Assert.Equal(
+            AssetPath(ToolchainPlatformAssetIds.Preview3ShimHttp),
+            result.NodeHttpProvider.EntryPointPath);
+        Assert.Equal(
+            ToolchainPlatformAssetIds.NodeHttpProviderFiles.Select(AssetPath),
+            result.NodeHttpProvider.FilePaths);
         Assert.Equal(PackageRoot, closureVerifier.PackageRoot);
         Assert.Equal(
             "tools/jco/closure-integrity.json",
@@ -175,11 +186,11 @@ public sealed class JcoToolchainPathResolverTests
     }
 
     [Theory]
-    [InlineData("wrong", "NetWasm.Toolchain", "0.1.0-preview.23", "1.28.1", true)]
-    [InlineData("jco.package", "", "0.1.0-preview.23", "1.28.1", true)]
-    [InlineData("jco.package", "NetWasm.Toolchain", "", "1.28.1", true)]
+    [InlineData("wrong", "NetWasm.Toolchain", "0.1.0-preview.23", "1.41.0", true)]
+    [InlineData("jco.package", "", "0.1.0-preview.23", "1.41.0", true)]
+    [InlineData("jco.package", "NetWasm.Toolchain", "", "1.41.0", true)]
     [InlineData("jco.package", "NetWasm.Toolchain", "0.1.0-preview.23", "", true)]
-    [InlineData("jco.package", "NetWasm.Toolchain", "0.1.0-preview.23", "1.28.1", false)]
+    [InlineData("jco.package", "NetWasm.Toolchain", "0.1.0-preview.23", "1.41.0", false)]
     public void ResolveRejectsMalformedAssetProducts(
         string returnedId,
         string packageId,
@@ -212,12 +223,26 @@ public sealed class JcoToolchainPathResolverTests
         string packageId,
         string packageVersion)
     {
-        var failedId = ToolchainPlatformAssetIds.Preview2ShimPackage;
+        var failedId = ToolchainPlatformAssetIds.Preview3ShimPackage;
         var product = CreateAsset(failedId) with
         {
             PackageId = packageId,
             PackageVersion = packageVersion,
         };
+        IJcoToolchainPathResolver resolver = new JcoToolchainPathResolver(
+            PackageRoot,
+            new RecordingAssetResolver(failedId, product),
+            new RecordingClosureIntegrityVerifier());
+
+        Assert.Throws<InvalidOperationException>(() => resolver.Resolve(
+            CreateExecutable(), CreateCompatibility()));
+    }
+
+    [Fact]
+    public void ResolveRejectsAnHttpClientFileFromAnotherPackage()
+    {
+        var failedId = ToolchainPlatformAssetIds.Preview3ShimHttpWorker;
+        var product = CreateAsset(failedId) with { PackageVersion = "0.1.0-preview.20" };
         IJcoToolchainPathResolver resolver = new JcoToolchainPathResolver(
             PackageRoot,
             new RecordingAssetResolver(failedId, product),
@@ -270,10 +295,11 @@ public sealed class JcoToolchainPathResolverTests
     {
         var version = id switch
         {
-            ToolchainPlatformAssetIds.JcoPackage => "1.28.1",
-            ToolchainPlatformAssetIds.JcoEntryPoint => "1.28.1",
-            ToolchainPlatformAssetIds.JcoBindgenPatch => "1.28.1+netwasm.2",
-            ToolchainPlatformAssetIds.Preview2ShimPackage => "0.24.1",
+            ToolchainPlatformAssetIds.JcoPackage => "1.41.0",
+            ToolchainPlatformAssetIds.JcoEntryPoint => "1.41.0",
+            ToolchainPlatformAssetIds.JcoBindgenPatch => "1.41.0+netwasm.1",
+            ToolchainPlatformAssetIds.Preview3ShimPackage => "0.13.0",
+            _ when id.StartsWith("preview3-shim.", StringComparison.Ordinal) => "0.13.0",
             _ => "1",
         };
         return new(
@@ -294,13 +320,13 @@ public sealed class JcoToolchainPathResolverTests
             "@bytecodealliance",
             "jco",
             "package.json"),
-        ToolchainPlatformAssetIds.Preview2ShimPackage => Path.Combine(
+        ToolchainPlatformAssetIds.Preview3ShimPackage => Path.Combine(
             PackageRoot,
             "tools",
             "jco",
             "node_modules",
             "@bytecodealliance",
-            "preview2-shim",
+            "preview3-shim",
             "package.json"),
         ToolchainPlatformAssetIds.JcoEntryPoint => Path.Combine(
             PackageRoot,
@@ -310,7 +336,7 @@ public sealed class JcoToolchainPathResolverTests
             "@bytecodealliance",
             "jco",
             "dist",
-            "jco.js"),
+            "api.js"),
         ToolchainPlatformAssetIds.JcoPackageLock => Path.Combine(
             PackageRoot,
             "tools",
@@ -336,6 +362,14 @@ public sealed class JcoToolchainPathResolverTests
             "tools",
             "jco",
             "patch-provenance.json"),
+        _ when id.StartsWith("preview3-shim.", StringComparison.Ordinal) => Path.Combine(
+            PackageRoot,
+            "tools",
+            "jco",
+            "node_modules",
+            "@bytecodealliance",
+            "preview3-shim",
+            id["preview3-shim.".Length..] + ".js"),
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, null),
     };
 

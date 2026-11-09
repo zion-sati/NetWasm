@@ -26,7 +26,6 @@ public sealed class NetWasmWriteExecutionDescriptorTask : Microsoft.Build.Utilit
     [Required] public string HostingVersion { get; set; } = string.Empty;
     [Required] public string HostExecutablePath { get; set; } = string.Empty;
     [Required] public string LauncherPath { get; set; } = string.Empty;
-    [Required] public ITaskItem[] ToolPackages { get; set; } = [];
 
     public override bool Execute()
     {
@@ -39,12 +38,7 @@ public sealed class NetWasmWriteExecutionDescriptorTask : Microsoft.Build.Utilit
                 DeploymentManifestSha256,
                 HostingVersion,
                 Path.GetFullPath(HostExecutablePath),
-                Path.GetFullPath(LauncherPath),
-                [.. ToolPackages.Select(package => new ExecutionToolPackageSource(
-                    package.GetMetadata("Id"),
-                    package.GetMetadata("Version"),
-                    Path.GetFullPath(package.GetMetadata("RootPath")),
-                    Path.GetFullPath(package.GetMetadata("ArchivePath"))))]));
+                Path.GetFullPath(LauncherPath)));
             return true;
         }
         catch (Exception exception)

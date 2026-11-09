@@ -28,10 +28,12 @@ internal sealed class WitExportResolver : ICompilationExportResolver
             .Select(method =>
             {
                 var export = method.WitExport!;
-                var name = CanonicalAbiNames.Export(
-                    export.InterfaceName,
-                    export.FunctionName,
-                    options.Target);
+                var name = export.IsComponentLift
+                    ? export.FunctionName
+                    : CanonicalAbiNames.Export(
+                        export.InterfaceName,
+                        export.FunctionName,
+                        options.Target);
                 return new CompilationExportCandidate(
                     new ProgramExport(name, method.Key),
                     DiagnosticCode.ComponentContract,

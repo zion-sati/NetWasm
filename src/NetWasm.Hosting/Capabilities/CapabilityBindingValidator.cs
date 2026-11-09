@@ -51,8 +51,14 @@ public sealed class CapabilityBindingValidator : ICapabilityBindingValidator
             throw new ArgumentException("Selected import provider collections must be explicit.", nameof(platformProviders));
         }
 
+        // A platform interface the application calls no function of (a WIT types-only
+        // interface) is a type namespace that no host provides.
+        var calledModules = manifest.RequiredImports
+            .Select(function => function.Interface)
+            .ToHashSet(StringComparer.Ordinal);
         var requiredModules = manifest.RequiredImportModules
-            .Where(module => !_internalImports.IsInternal(module))
+            .Where(module => !_internalImports.IsInternal(module)
+                && (calledModules.Contains(module) || !IsReservedModule(module)))
             .ToHashSet(StringComparer.Ordinal);
         var providerModules = new HashSet<string>(StringComparer.Ordinal);
         var platforms = ValidatePlatformProviders(platformProviders, requiredModules, providerModules, request.Grants);

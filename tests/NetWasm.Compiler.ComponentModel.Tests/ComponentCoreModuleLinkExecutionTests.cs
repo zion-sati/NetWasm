@@ -26,6 +26,7 @@ public sealed class ComponentCoreModuleLinkExecutionTests
         Assert.Equal(WasmInlineAnnotationSelection.SizeAware, stages.Merge.RuntimeInlineAnnotations);
         Assert.Equal(FinalWasmOptimization.O1, stages.Optimization!.Value.Item4);
         Assert.True(stages.Converge);
+        Assert.True(stages.LowMemoryUnused);
     }
 
     [Fact]
@@ -53,7 +54,8 @@ public sealed class ComponentCoreModuleLinkExecutionTests
                 FinalWasmOptimization.O1,
                 WasmInlineAnnotationSelection.Preserve,
                 WasmInlineAnnotationSelection.SizeAware,
-                Converge: true);
+                Converge: true,
+                LowMemoryUnused: true);
         }
     }
 
@@ -165,6 +167,7 @@ public sealed class ComponentCoreModuleLinkExecutionTests
         public ManagedExecutableComponentAdapterRequest? Adapter { get; private set; }
         public (string, string, ComponentTarget, FinalWasmOptimization)? Optimization { get; private set; }
         public bool? Converge { get; private set; }
+        public bool? LowMemoryUnused { get; private set; }
 
         public void Write(string outputPath, ComponentTarget target)
         {
@@ -196,11 +199,13 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             string outputPath,
             ComponentTarget target,
             FinalWasmOptimization optimization,
-            bool converge)
+            bool converge,
+            bool lowMemoryUnused)
         {
             Calls.Add("optimize");
             Optimization = (inputPath, outputPath, target, optimization);
             Converge = converge;
+            LowMemoryUnused = lowMemoryUnused;
         }
 
         public void Delete(string path) => Calls.Add("delete:" + path);

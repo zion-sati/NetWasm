@@ -17,6 +17,17 @@ internal static class PathInternal
     internal const char VolumeSeparatorChar = '/';
     internal const char PathSeparator = ':';
     internal const string DirectorySeparatorCharAsString = "/";
+    internal const string ParentDirectoryPrefix = @"../";
+    internal const string DirectorySeparators = DirectorySeparatorCharAsString;
+    internal static ReadOnlySpan<byte> Utf8DirectorySeparators => "/"u8;
+
+    // A WASI host's file system is case-sensitive, as Linux's is.
+    internal static bool IsCaseSensitive => true;
+
+    internal static StringComparison StringComparison => StringComparison.Ordinal;
+
+    internal static string EnsureTrailingSeparator(string path) =>
+        EndsInDirectorySeparator(path.AsSpan()) ? path : path + DirectorySeparatorCharAsString;
 
     internal static int GetRootLength(ReadOnlySpan<char> path) =>
         path.Length > 0 && IsDirectorySeparator(path[0]) ? 1 : 0;

@@ -1,62 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NetWasmHostError } from "./managed-errors.mjs";
 import { createComponentExportSessionOpener } from "./component-export-session-opener.mjs";
 import { createScopeReleaseCommand } from "./scope-release-command.mjs";
 
 function fixture({
   failAt = null,
-  guestWake = true,
-  readyBeforeBind = false,
   releaseFailures = [],
   releaseCommandFactory = createScopeReleaseCommand,
 } = {}) {
   const calls = [];
   const controls = {};
-  const fail = name => {
-    if (failAt === name) throw new Error(`${name} failed`);
-  };
-  const dependencies = {
-    createGuestNotifier(request) {
-      calls.push("notifier");
-      controls.notifierRequest = request;
-      fail("notifier");
-      return Object.freeze({
-        notify(token) {
-          calls.push(`notify:${token}`);
-          try {
-            request.guestWake(token);
-            request.observeWake();
-          } catch {
-            request.observeWake(Object.freeze({}));
-          }
-        },
-      });
-    },
-    createReactor(request) {
-      calls.push("reactor");
-      controls.reactorRequest = request;
-      fail("reactor");
-      if (readyBeforeBind) request.onReady(3);
-      return {
-        cancel() { calls.push("reactor-cancel"); },
-        close() {
-          calls.push("close-reactor");
-          if (releaseFailures.includes("reactor")) throw new Error("reactor close failed");
-        },
-        watch() { calls.push("reactor-watch"); },
-      };
-    },
-    createReleaseCommand: releaseCommandFactory,
-  };
   let counter = 0;
   const adapter = {
     contractKey: "netwasm:worker/wit@1.0.0",
     async instantiate(request) {
       calls.push("instantiate");
       controls.instantiateRequest = request;
-      request.reactorHost.assertAvailable();
-      fail("instantiate");
+      if (failAt === "instantiate") throw new Error("instantiate failed");
       return {
         exports: {
           add(value) {
@@ -69,12 +29,6 @@ function fixture({
             return counter;
           },
         },
-        guestWake: guestWake
-          ? token => {
-            calls.push(`wake:${token}`);
-            fail("wake");
-          }
-          : null,
       };
     },
   };
@@ -87,12 +41,11 @@ function fixture({
       calls.push("close-caller");
       if (releaseFailures.includes("caller")) throw new Error("caller close failed");
     }],
-    schedule: callback => callback(),
   };
   return {
     calls,
     controls,
-    opener: createComponentExportSessionOpener(dependencies),
+    opener: createComponentExportSessionOpener(Object.freeze({ createReleaseCommand: releaseCommandFactory })),
     request,
   };
 }
@@ -107,132 +60,42 @@ test("instantiates once, retains state and closes exactly once", async () => {
   assert.equal(session.exports.add(20), 20);
   assert.equal(session.exports.add(22), 42);
   assert.equal(session.exports.read(), 42);
-  assert.deepEqual(state.calls.slice(0, 5), [
-    "reactor", "instantiate", "notifier", "add:20", "add:22",
-  ]);
+  assert.deepEqual(state.calls, ["instantiate", "add:20", "add:22", "read"]);
   assert.equal(Object.isFrozen(state.controls.instantiateRequest), true);
+  assert.deepEqual(Object.keys(state.controls.instantiateRequest).sort(),
+    ["imports", "instantiateCore", "loadCoreModule"]);
   assert.equal(state.controls.instantiateRequest.imports, state.request.imports);
-  assert.equal(state.controls.instantiateRequest.instantiateCore,
-    state.request.instantiateCore);
-  assert.equal(state.controls.instantiateRequest.loadCoreModule,
-    state.request.loadCoreModule);
+  assert.equal(state.controls.instantiateRequest.instantiateCore, state.request.instantiateCore);
+  assert.equal(state.controls.instantiateRequest.loadCoreModule, state.request.loadCoreModule);
 
   const firstClose = session.close();
   assert.equal(session.close(), firstClose);
   await firstClose;
   assert.equal(await session.failure, null);
-  assert.deepEqual(state.calls.slice(-2), ["close-reactor", "close-caller"]);
+  assert.deepEqual(state.calls.slice(-1), ["close-caller"]);
   assert.throws(() => session.exports.read(), /closed/);
 });
 
-test("binds reactor delivery after component instantiation", async () => {
-  const state = fixture();
-  const session = await state.opener.open(state.request);
-
-  state.controls.reactorRequest.onReady(7);
-  assert.deepEqual(state.calls.slice(-2), ["notify:7", "wake:7"]);
-  state.controls.instantiateRequest.reactorHost.watch();
-  state.controls.instantiateRequest.reactorHost.cancel();
-  assert.deepEqual(state.calls.slice(-2), ["reactor-watch", "reactor-cancel"]);
-
-  await session.close();
-  assert.throws(() => state.controls.instantiateRequest.reactorHost.assertAvailable(),
-    /unavailable/);
-});
-
-test("supports components without a reactor guest export", async () => {
-  const state = fixture({ guestWake: false });
-  const session = await state.opener.open(state.request);
-
-  assert.equal(session.exports.add(42), 42);
-  assert.equal(state.calls.includes("notifier"), false);
-  state.controls.reactorRequest.onReady(7);
-  const failure = await session.failure;
-  assert.equal(failure instanceof NetWasmHostError, true);
-  assert.match(failure.message, /no guest wake binding/);
-  await session.close();
-});
-
-test("rolls back when reactor readiness races guest binding", async () => {
-  const state = fixture({ readyBeforeBind: true });
-
-  await assert.rejects(() => state.opener.open(state.request), /before binding/);
-  assert.deepEqual(state.calls.filter(value => value.startsWith("close-")), [
-    "close-reactor", "close-caller",
-  ]);
-});
-
-test("makes reactor and guest-wake failures terminal", async () => {
-  for (const source of ["reactor", "wake"]) {
-    const state = fixture({ failAt: source === "wake" ? "wake" : null });
-    const session = await state.opener.open(state.request);
-    if (source === "reactor") state.controls.reactorRequest.onFailure();
-    else state.controls.reactorRequest.onReady(9);
-
-    const failure = await session.failure;
-    assert.equal(failure instanceof NetWasmHostError, true);
-    assert.throws(() => session.exports.read(), error => error === failure);
-    assert.throws(
-      () => state.controls.instantiateRequest.reactorHost.assertAvailable(),
-      error => error === failure);
-    state.controls.reactorRequest.onFailure();
-    state.controls.reactorRequest.onReady(10);
-    await new Promise(resolve => setTimeout(resolve, 0));
-    assert.deepEqual(state.calls.filter(value => value.startsWith("close-")), [
-      "close-reactor", "close-caller",
-    ]);
-    await session.close();
-  }
-});
-
-test("preserves a terminal failure when asynchronous cleanup also fails", async () => {
-  const state = fixture({ releaseFailures: ["reactor"] });
-  const session = await state.opener.open(state.request);
-
-  state.controls.reactorRequest.onFailure();
-  const failure = await session.failure;
-  await new Promise(resolve => setTimeout(resolve, 0));
-
-  assert.equal(failure instanceof NetWasmHostError, true);
-  await assert.rejects(() => session.close(), AggregateError);
-  assert.equal(await session.failure, failure);
-});
-
 test("rolls back startup failures and reports cleanup failures", async () => {
-  const reactor = fixture({ failAt: "reactor" });
-  await assert.rejects(() => reactor.opener.open(reactor.request), /reactor failed/);
-  assert.deepEqual(reactor.calls.filter(value => value.startsWith("close-")), [
-    "close-caller",
-  ]);
-
   const startup = fixture({ failAt: "instantiate" });
   await assert.rejects(() => startup.opener.open(startup.request), /instantiate failed/);
-  assert.deepEqual(startup.calls.filter(value => value.startsWith("close-")), [
-    "close-reactor", "close-caller",
-  ]);
+  assert.deepEqual(startup.calls.filter(value => value.startsWith("close-")), ["close-caller"]);
 
-  const cleanup = fixture({
-    failAt: "instantiate",
-    releaseFailures: ["reactor", "caller"],
-  });
+  const cleanup = fixture({ failAt: "instantiate", releaseFailures: ["caller"] });
   await assert.rejects(() => cleanup.opener.open(cleanup.request), error =>
-    error instanceof AggregateError && error.errors.length === 3);
+    error instanceof AggregateError && error.errors.length === 2);
 
-  const closing = fixture({ releaseFailures: ["reactor", "caller"] });
+  const closing = fixture({ releaseFailures: ["caller"] });
   const session = await closing.opener.open(closing.request);
   await assert.rejects(() => session.close(), error =>
-    error instanceof AggregateError && error.errors.length === 2);
+    error instanceof AggregateError && error.errors.length === 1);
   assert.equal((await session.failure) instanceof AggregateError, true);
 });
 
 test("validates dependencies, requests, boundaries and exported operations", async () => {
   const state = fixture();
   assert.throws(() => createComponentExportSessionOpener({}), /shape/);
-  assert.throws(() => createComponentExportSessionOpener({
-    createGuestNotifier() {},
-    createReactor: 1,
-    createReleaseCommand() {},
-  }), /createReactor action/);
+  assert.throws(() => createComponentExportSessionOpener({ createReleaseCommand: 1 }), /createReleaseCommand action/);
   await assert.rejects(() => state.opener.open(), /request shape/);
   await assert.rejects(() => state.opener.open(null), /request is invalid/);
   await assert.rejects(() => state.opener.open({ ...state.request, extra: true }), /shape/);
@@ -252,29 +115,13 @@ test("validates dependencies, requests, boundaries and exported operations", asy
     enumerable: true,
     get() { return {}; },
   });
-  await assert.rejects(() => state.opener.open({
-    ...state.request,
-    imports: accessorImports,
-  }), /plain data object/);
+  await assert.rejects(() => state.opener.open({ ...state.request, imports: accessorImports }),
+    /plain data object/);
 
-  const invalidReactor = fixture();
-  invalidReactor.request.adapter = state.request.adapter;
-  invalidReactor.opener = createComponentExportSessionOpener({
-    createGuestNotifier() {},
-    createReactor: () => ({ cancel() {}, close() {}, watch: 1 }),
-    createReleaseCommand: createScopeReleaseCommand,
-  });
-  await assert.rejects(() => invalidReactor.opener.open(invalidReactor.request),
-    /reactor actions/);
-
-  for (const boundary of [null, {}, { exports: {}, guestWake() {} },
-    { exports: { bad: 1 }, guestWake() {} },
-    { exports: { read() {} }, guestWake: 1 }]) {
+  for (const boundary of [null, {}, { exports: {} }, { exports: { bad: 1 } },
+    { exports: { read() {} }, guestWake: null }]) {
     const current = fixture();
-    current.request.adapter = {
-      ...current.request.adapter,
-      instantiate: async () => boundary,
-    };
+    current.request.adapter = { ...current.request.adapter, instantiate: async () => boundary };
     await assert.rejects(() => current.opener.open(current.request), TypeError);
   }
 });
@@ -287,14 +134,12 @@ test("rejects calls while close is in progress", async () => {
 
   const closing = session.close();
   assert.throws(() => session.exports.read(), /closed/);
-  assert.throws(() => state.controls.instantiateRequest.reactorHost.assertAvailable(),
-    /unavailable/);
   await Promise.resolve();
   release();
   await closing;
 });
 
-test("reports release-command rejection and requires a scheduler", async () => {
+test("reports a release-command rejection", async () => {
   const rejected = new Error("release rejected");
   const state = fixture({
     releaseCommandFactory: () => ({ close: () => Promise.reject(rejected) }),
@@ -302,19 +147,4 @@ test("reports release-command rejection and requires a scheduler", async () => {
   const session = await state.opener.open(state.request);
   await assert.rejects(() => session.close(), error => error === rejected);
   assert.equal(await session.failure, rejected);
-
-  const platformScheduler = fixture();
-  delete platformScheduler.request.schedule;
-  const platformSession = await platformScheduler.opener.open(platformScheduler.request);
-  await platformSession.close();
-
-  const missing = fixture();
-  delete missing.request.schedule;
-  const original = globalThis.queueMicrotask;
-  try {
-    globalThis.queueMicrotask = undefined;
-    await assert.rejects(() => missing.opener.open(missing.request), /actions/);
-  } finally {
-    globalThis.queueMicrotask = original;
-  }
 });

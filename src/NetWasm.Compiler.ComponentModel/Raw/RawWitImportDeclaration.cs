@@ -23,7 +23,23 @@ public abstract record RawWitImportDeclaration(
             : this(interfaceName, interfaceName, definition)
         {
         }
+
+        /// <summary>An async func lowered with <c>async</c>: it returns a subtask status.</summary>
+        public bool Asynchronous { get; init; }
     }
+
+    /// <summary>
+    /// One Component Model built-in for a stream or future type in a function's signature:
+    /// the type is the function's <see cref="Index"/>th, counted as the bindings number them.
+    /// </summary>
+    public sealed record Payload(
+        string InterfaceName,
+        string DeploymentInterfaceName,
+        WitFunction Function,
+        int Index,
+        int TypeId,
+        RawPayloadOperation Operation) :
+        RawWitImportDeclaration(InterfaceName, DeploymentInterfaceName);
 
     public sealed record Resource(
         string InterfaceName,
@@ -40,4 +56,19 @@ public abstract record RawWitImportDeclaration(
         {
         }
     }
+}
+
+/// <summary>The stream and future built-ins a raw module imports for a payload type.</summary>
+public enum RawPayloadOperation
+{
+    StreamNew,
+    StreamRead,
+    StreamWrite,
+    StreamDropReadable,
+    StreamDropWritable,
+    FutureNew,
+    FutureRead,
+    FutureWrite,
+    FutureDropReadable,
+    FutureDropWritable,
 }

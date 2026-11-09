@@ -9,7 +9,6 @@ namespace NetWasm.Hosting.Build.JavaScript;
 
 public sealed record WitWorkerHostEntryRequest(
     string HostingJavaScriptRoot,
-    string Preview2ShimRoot,
     string OutputPath,
     ImmutableArray<string> Arguments,
     ImmutableArray<WorkerEnvironmentVariable> Environment,
@@ -32,7 +31,7 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
         AppendLine(source, $"import {{ createBrowserComponentExportSession }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "browser-component-export-session.mjs"))};");
         AppendLine(source, $"import {{ createWorkerSessionHost }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "worker-session-host.mjs"))};");
         AppendLine(source, $"import {{ mergeEnvironment }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "session-options.mjs"))};");
-        BrowserHostSource.AppendImports(source, request.Preview2ShimRoot, request.HostingJavaScriptRoot);
+        BrowserHostSource.AppendImports(source, request.HostingJavaScriptRoot);
         source.AppendLine();
         source.AppendLine("const manifestUrl = new URL(\"./deployment.json\", import.meta.url).href;");
         source.AppendLine("let fatalScheduled = false;");
@@ -43,6 +42,7 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
         source.AppendLine("  queueMicrotask(() => { throw error; });");
         source.AppendLine("  globalThis.close();");
         source.AppendLine("}");
+        BrowserHostSource.AppendFileMounts(source, worker: true);
         source.AppendLine("const configuration = Object.freeze({");
         BrowserHostSource.AppendConfiguration(source, "  ",
             request.ApplicationImports.IsDefault ? [] : request.ApplicationImports,
@@ -58,6 +58,7 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
         source.AppendLine("  stdout: request.stdout,");
         source.AppendLine("})({ startup: request.startup, notify: request.notify });");
         source.AppendLine("const host = createWorkerSessionHost({");
+        source.AppendLine("  files: fileMounts,");
         source.AppendLine("  openSession: open,");
         source.AppendLine("  post: (message, transfer = []) => globalThis.postMessage(message, transfer),");
         source.AppendLine("  terminate: cause => cause === null ? globalThis.close() : fatal(cause),");
@@ -73,7 +74,6 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
         if (new[]
             {
                 request.HostingJavaScriptRoot,
-                request.Preview2ShimRoot,
                 request.OutputPath,
             }.Any(path => string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
             || request.Arguments.IsDefault || request.Environment.IsDefault

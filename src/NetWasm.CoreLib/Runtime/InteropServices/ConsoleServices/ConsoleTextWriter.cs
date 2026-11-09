@@ -6,15 +6,8 @@ namespace System.Runtime.InteropServices.ConsoleServices;
 // Floating-point and decimal values are written with a null provider. FormatProvider is always
 // the current culture here, and the no-provider form writes the same text, so console output does
 // not make the provider-driven formatter reachable.
-internal sealed class ConsoleTextWriter : TextWriter
+internal abstract class ConsoleTextWriter : TextWriter
 {
-    private readonly IPlatformOutputStream _output;
-    private bool _disposed;
-
-    internal ConsoleTextWriter(IPlatformOutputStream output)
-    {
-        _output = output ?? throw new ArgumentNullException();
-    }
 
     public override Encoding Encoding => Encoding.UTF8;
 
@@ -47,24 +40,28 @@ internal sealed class ConsoleTextWriter : TextWriter
 
     public override void WriteLine(string? value) => Write((value ?? string.Empty) + NewLine);
 
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing && !_disposed)
-        {
-            _disposed = true;
-            _output.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
-
     private void WriteBytes(byte[] contents)
     {
-        if (contents.Length == 0)
+        if (contents.Length != 0)
         {
-            return;
+            WriteToStream(contents);
         }
-
-        _output.WriteBlocking(contents);
     }
+
+    // Writes to the stream's platform service.
+    protected abstract void WriteToStream(ReadOnlySpan<byte> contents);
+}
+
+internal sealed class StandardOutputTextWriter(WebAssembly.IStandardStreams streams) : ConsoleTextWriter
+{
+    private readonly WebAssembly.IStandardStreams _streams = streams ?? throw new ArgumentNullException();
+
+    protected override void WriteToStream(ReadOnlySpan<byte> contents) => _streams.WriteOutput(contents);
+}
+
+internal sealed class StandardErrorTextWriter(WebAssembly.IStandardStreams streams) : ConsoleTextWriter
+{
+    private readonly WebAssembly.IStandardStreams _streams = streams ?? throw new ArgumentNullException();
+
+    protected override void WriteToStream(ReadOnlySpan<byte> contents) => _streams.WriteError(contents);
 }

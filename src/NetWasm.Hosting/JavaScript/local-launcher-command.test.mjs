@@ -5,6 +5,7 @@ import { createLocalLauncherCommand } from "./local-launcher-command.mjs";
 import { normalExecutionResult } from "./execution-result.mjs";
 
 const sink = Object.freeze({ write() {} });
+const input = Object.freeze({ read() { return [][Symbol.iterator](); } });
 const environment = Object.freeze([
   Object.freeze({ name: "APP_MODE", value: "local" }),
 ]);
@@ -26,6 +27,7 @@ function invocation(overrides = {}) {
     launcherPath: "/packages/hosting/launcher.mjs",
     signal: null,
     stderr: sink,
+    stdin: input,
     stdout: sink,
     ...overrides,
   };
@@ -88,6 +90,7 @@ test("local launcher command preserves application streams and writes its result
   assert.equal(launch.hostExecutablePath, "/tools/node");
   assert.equal(launch.launcherPath, "/packages/hosting/launcher.mjs");
   assert.strictEqual(launch.stdout, sink);
+  assert.strictEqual(launch.stdin, input);
   assert.strictEqual(launch.stderr, sink);
   assert.equal(launch.signal, null);
   assert.deepEqual(fixture.calls.at(-1), [
@@ -109,9 +112,10 @@ test("local launcher command accepts stdin and option reordering", async () => {
   assert.strictEqual(outcome, fixture.outcome);
   assert.deepEqual(fixture.calls.filter(([kind]) => kind === "stdin"), [["stdin"]]);
   assert.equal(fixture.calls.filter(([kind]) => kind === "file").length, 1);
-  assert.equal(
-    fixture.calls.find(([kind]) => kind === "launch")[1].requestText,
-    "stdin-request-text");
+  const launch = fixture.calls.find(([kind]) => kind === "launch")[1];
+  assert.equal(launch.requestText, "stdin-request-text");
+  // The request consumed standard input, so the application has none.
+  assert.equal(launch.stdin, null);
 });
 
 test("local launcher command explicitly replaces an SDK-owned result channel", async () => {

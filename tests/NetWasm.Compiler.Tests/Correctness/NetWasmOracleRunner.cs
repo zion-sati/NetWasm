@@ -41,7 +41,7 @@ internal sealed class NetWasmOracleRunner(
             ? modulePath + ".stacktrace.json"
             : null;
         var hostConfigurationPath = stackTraceSymbolsPath is null &&
-            compilation.Fixture.ReactorObserveMethod is null
+            !compilation.Fixture.CallbackEntry
             ? null
             : modulePath + ".host.json";
         var exports = exportFactory.Create(compilation.Fixture);
@@ -59,10 +59,8 @@ internal sealed class NetWasmOracleRunner(
             File.WriteAllText(hostConfigurationPath, JsonSerializer.Serialize(new
             {
                 stackTraceSymbolsPath,
-                drainReactor = compilation.Fixture.ReactorObserveMethod is not null,
-                observeExportName = compilation.Fixture.ReactorObserveMethod is null
-                    ? null
-                    : "observe",
+                callbackEntry = compilation.Fixture.CallbackEntry,
+                inputArgument = compilation.Fixture.CallbackEntry,
             }));
         }
         progress.Report(compilation.Fixture.Name, target, OracleOperationStage.ValidateDirect, operationPlan);

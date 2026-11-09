@@ -544,7 +544,12 @@ public sealed class TypedStackValidator(
                 PopExpected(body, instruction, stack, CliValueKind.ManagedReference);
                 stack.Clear();
                 return;
+            // rethrow leaves the handler like throw and takes nothing from the stack (ECMA-335
+            // III.4.24), so values on it are discarded: Roslyn keeps a value for the branch that
+            // does not rethrow, as in `x ?? throw` inside a catch (dup; brtrue; rethrow).
             case CilOperation.Rethrow:
+                stack.Clear();
+                return;
             case CilOperation.EndFinally:
                 RequireEmpty(body, instruction, stack);
                 return;

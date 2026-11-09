@@ -26,7 +26,7 @@ export function createGuestEnvironmentImports(target, getMemory, allocate, envir
     return address;
   }
   return {
-    [`${prefix}|wasi:cli/environment@0.2`]: {
+    [`${prefix}|wasi:cli/environment@0.3`]: {
       'get-environment'(result) {
         const elements = entries.length === 0 ? 0 : Number(allocate(entries.length * width * 4, width));
         for (let index = 0; index < entries.length; index++) {

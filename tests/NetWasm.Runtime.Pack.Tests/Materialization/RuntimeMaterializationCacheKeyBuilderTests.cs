@@ -258,6 +258,27 @@ public sealed class RuntimeMaterializationCacheKeyBuilderTests
                 },
             },
             baseline with { Layout = baseline.Layout with { RuntimeGlobalBase = 65_568 } },
+            baseline with
+            {
+                Target = baseline.Target with
+                {
+                    PlatformArchives = baseline.Target.PlatformArchives! with
+                    {
+                        Wasi = baseline.Target.PlatformArchives.Wasi with { Sha256 = new string('c', 64) },
+                    },
+                },
+            },
+            baseline with
+            {
+                Target = baseline.Target with
+                {
+                    PlatformArchives = baseline.Target.PlatformArchives! with
+                    {
+                        NoWasi = baseline.Target.PlatformArchives.NoWasi with { Sha256 = new string('d', 64) },
+                    },
+                },
+            },
+            baseline with { Target = baseline.Target with { PlatformArchives = null } },
             baseline with { Layout = baseline.Layout with { InitialMemorySizeBytes = 327_680 } },
             baseline with { Optimization = RuntimeWasmOptimization.O3 },
             baseline with

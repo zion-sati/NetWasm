@@ -17,15 +17,7 @@ internal sealed class AsyncTaskCompletionEmitter(
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentOutOfRangeException.ThrowIfNegative(plan.ObserveFunctionIndex);
-        if (plan.DeliverFunctionIndex is { } deliverFunctionIndex)
-            ArgumentOutOfRangeException.ThrowIfNegative(deliverFunctionIndex);
-        if (plan.ResultKind is not (CliValueKind.Void or CliValueKind.I4))
-            throw new ArgumentOutOfRangeException(nameof(plan));
-        if (plan.DeliverFunctionIndex is null && plan.ResultKind != CliValueKind.Void)
-            throw new ArgumentException(
-                "A completion payload requires a delivery function.",
-                nameof(plan));
-        var returnsPayload = plan.ResultKind == CliValueKind.I4;
+        ArgumentOutOfRangeException.ThrowIfNegative(plan.CaptureFunctionIndex);
         var statusOffset = fields.GetFieldLayout(binding.StatusField).Offset;
         var code = writers.Create();
         const int task = 1, exception = 2, root = 3, type = 4;
@@ -34,8 +26,7 @@ internal sealed class AsyncTaskCompletionEmitter(
         ImmutableArray<CliValueKind> locals =
             [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
              CliValueKind.ManagedAddress, CliValueKind.I4, CliValueKind.ManagedReference,
-             CliValueKind.I4, CliValueKind.ManagedReference, CliValueKind.I4];
-        if (returnsPayload) locals = locals.Add(CliValueKind.I4);
+             CliValueKind.I4, CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4];
         WasmLocalDeclarationWriter.Write(code.Bytes, locals, layouts.Target);
 
         LocalGet(0);
@@ -43,9 +34,8 @@ internal sealed class AsyncTaskCompletionEmitter(
         Local(WasmOpcodes.LocalTee, task);
         Op(layouts.Target.UsesMemory64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero);
         Block(WasmOpcodes.If, WasmOpcodes.EmptyBlockType);
-        if (returnsPayload)
-            code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(0)));
+        code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant,
+            WasmInstructionOperand.Signed(0)));
         Op(WasmOpcodes.Return);
         Op(WasmOpcodes.End);
         LocalGet(task);
@@ -78,19 +68,6 @@ internal sealed class AsyncTaskCompletionEmitter(
         Local(WasmOpcodes.LocalSet, exception);
         LocalGet(type);
         Call(imports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind));
-        if (plan.DeliverFunctionIndex is null)
-        {
-            // Release the managed catch state and task handle before terminating.
-            // Lean process builds deliberately carry no diagnostic payload ABI.
-            Call(imports.Resolve(RuntimeImportSymbol.EndCatch));
-            ReleaseHandle();
-            Op(WasmOpcodes.Unreachable);
-            Op(WasmOpcodes.Else);
-            ReleaseHandle();
-            Op(WasmOpcodes.End);
-            Op(WasmOpcodes.End);
-            return code.Snapshots.Read();
-        }
         code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant,
             WasmInstructionOperand.Signed(1)));
         Call(imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
@@ -114,8 +91,8 @@ internal sealed class AsyncTaskCompletionEmitter(
         LocalGet(messageLength);
         LocalGet(trace);
         LocalGet(traceLength);
-        Call(plan.DeliverFunctionIndex.Value);
-        if (returnsPayload) Local(WasmOpcodes.LocalSet, payload);
+        Call(plan.CaptureFunctionIndex);
+        Local(WasmOpcodes.LocalSet, payload);
         Op(WasmOpcodes.End);
         ReleaseRoot();
         code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.Branch,
@@ -129,7 +106,7 @@ internal sealed class AsyncTaskCompletionEmitter(
         Op(WasmOpcodes.End);
         // The host owns only copied exception data. The managed root has been
         // released before returning; nonfault completion returns the zero local.
-        if (returnsPayload) LocalGet(payload);
+        LocalGet(payload);
         Op(WasmOpcodes.End);
         return code.Snapshots.Read();
 

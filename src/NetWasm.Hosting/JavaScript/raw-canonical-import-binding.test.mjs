@@ -4,6 +4,7 @@ import {
   bindRawCanonicalImportInstance,
   closeRawCanonicalImportBinding,
   createRawCanonicalImportBinding,
+  readRawComponentModel,
 } from "./raw-canonical-import-binding.mjs";
 import { resourceDisposeSymbol } from "./resource-disposal.mjs";
 
@@ -13,9 +14,6 @@ const resourceIdentity = { module: "cm32p2|sample:raw/api@1", name: "file_drop" 
 const textIdentity = { module: "cm32p2|sample:raw/api@1", name: "get-text" };
 const exportedNewIdentity = { module: "cm32p2|_ex_sample:raw/api@1", name: "file_new" };
 const exportedDestructor = "cm32p2|sample:raw/api@1|file_dtor";
-const reactorModule = "cm32p2|netwasm:runtime/reactor-host@1";
-const watchIdentity = { module: reactorModule, name: "watch" };
-const cancelIdentity = { module: reactorModule, name: "cancel" };
 
 class File {
   constructor(released) {
@@ -75,42 +73,6 @@ const exportedNewBinding = () => ({
   },
 });
 
-const reactorBinding = operation => ({
-  kind: "callable",
-  target: "wasm32",
-  physical: operation === "watch" ? watchIdentity : cancelIdentity,
-  coreSignature: {
-    parameters: operation === "watch" ? ["i32", "i32"] : ["i32"],
-    results: [],
-  },
-  provider: {
-    interface: "netwasm:runtime/reactor-host@1.0.0",
-    function: operation,
-    javascriptName: operation,
-    functionKind: "freestanding",
-    resourceType: null,
-    resourceName: null,
-    resourceJavaScriptName: null,
-  },
-  parameters: operation === "watch"
-    ? [
-        { name: "ready", javascriptName: "ready", type: { kind: "owned-resource", resourceType: 9 } },
-        { name: "token", javascriptName: "token", type: { kind: "u32" } },
-      ]
-    : [{ name: "token", javascriptName: "token", type: { kind: "u32" } }],
-  result: null,
-  canonicalSignature: {
-    parameters: operation === "watch" ? ["i32", "i32"] : ["i32"],
-    result: null,
-    flatParameters: operation === "watch" ? ["i32", "i32"] : ["i32"],
-    flatResults: [],
-    indirectParameters: false,
-    indirectResult: false,
-  },
-  parameterMemory: { size: operation === "watch" ? 8 : 4, alignment: 4 },
-  resultMemory: null,
-});
-
 function generatedAdapter(options = {}) {
   const capabilities = options.capabilities ?? ["bindResource", "canonical"];
   const identities = options.identities ?? [callableIdentity, resourceIdentity];
@@ -157,7 +119,6 @@ test("composes selected generated imports and owns their resource lifetime", () 
   const adapter = generatedAdapter({ observeRequest: value => { adapterRequest = value; } });
   const binding = createRawCanonicalImportBinding({
     adapter,
-    reactor: null,
     providers: {
       "sample:raw@1/api": {
         File,
@@ -168,9 +129,13 @@ test("composes selected generated imports and owns their resource lifetime", () 
   assert.equal(binding.target, "wasm32");
   assert.deepEqual(Object.keys(adapterRequest).sort(), ["bindResource", "canonical", "metadata"]);
   assert.deepEqual(Object.keys(adapterRequest.canonical).sort(), [
-    "borrow", "drop", "memory", "providers", "reallocate", "register", "release", "store", "transfer",
+    "borrow", "componentModel", "drop", "memory", "providers", "reallocate", "register", "release", "store",
+    "transfer",
   ]);
   assert.equal(Object.isFrozen(adapterRequest.canonical), true);
+  const componentModel = readRawComponentModel({ binding });
+  assert.equal(adapterRequest.canonical.componentModel, componentModel);
+  assert.equal(typeof componentModel.root["[waitable-set-new]"], "function");
   const imports = binding.imports[callableIdentity.module];
   assert.throws(() => imports[callableIdentity.name](), /not bound/);
   assert.equal(providerCalls, 0);
@@ -182,9 +147,20 @@ test("composes selected generated imports and owns their resource lifetime", () 
   assert.equal(released.length, 0);
   imports[resourceIdentity.name](handle);
   assert.equal(released.length, 1);
+  const reader = componentModel.liftStream(Number(componentModel.stream.new({
+    align: 1, bytes: true, lift() {}, lower() {}, size: 1,
+  }) & 0xffffffffn));
+  const pending = reader.read();
   closeRawCanonicalImportBinding({ binding });
   assert.throws(() => imports[callableIdentity.name](), /closed/);
   assert.throws(() => closeRawCanonicalImportBinding({ binding }), /closed/);
+  assert.throws(() => readRawComponentModel({ binding }), /closed/);
+  assert.throws(() => componentModel.callAsync(() => 0, () => {}), /closed/);
+  for (const request of [null, {}, { binding, extra: true }]) {
+    assert.throws(() => readRawComponentModel(request), /Component Model request/);
+  }
+  assert.throws(() => readRawComponentModel(), /Component Model request/);
+  return pending.then(result => assert.equal(result.done, true));
   assert.throws(() => bindRawCanonicalImportInstance({ binding, instance: instance() }), /closed/);
 });
 
@@ -202,7 +178,6 @@ test("requests only the selected callable, resource or empty capability subset",
         identities,
         observeRequest: request => { keys = Object.keys(request).sort(); },
       }),
-      reactor: null,
       providers: { "sample:raw@1/api": { getFile() { return {}; } } },
     });
     assert.deepEqual(keys, ["metadata", ...capabilities].sort());
@@ -214,7 +189,6 @@ test("closes outstanding provider resources after binding", () => {
   const released = [];
   const binding = createRawCanonicalImportBinding({
     adapter: generatedAdapter(),
-    reactor: null,
     providers: {
       "sample:raw@1/api": { getFile() { return new File(released); } },
     },
@@ -239,7 +213,6 @@ test("uses the deferred canonical reallocator for an indirect text result", () =
   });
   const binding = createRawCanonicalImportBinding({
     adapter,
-    reactor: null,
     providers: { "sample:raw@1/api": { getText() { return "hi"; } } },
   });
   const value = instance({ cm32p2_realloc() { return 64; } });
@@ -267,7 +240,7 @@ test("requires and invokes an exact exported-resource destructor on close", () =
       });
     },
   });
-  const binding = createRawCanonicalImportBinding({ adapter, providers: {}, reactor: null });
+  const binding = createRawCanonicalImportBinding({ adapter, providers: {} });
   bindRawCanonicalImportInstance({
     binding,
     instance: instance({ [exportedDestructor](value) { destroyed.push(value); } }),
@@ -278,66 +251,11 @@ test("requires and invokes an exact exported-resource destructor on close", () =
   assert.deepEqual(destroyed, [42]);
 });
 
-test("binds selected reactor calls through the owned resource store", () => {
-  const calls = [];
-  let available = false;
-  const adapter = generatedAdapter({
-    capabilities: ["bindReactor", "canonical"],
-    identities: [callableIdentity, watchIdentity, cancelIdentity],
-    product(request, metadata) {
-      return Object.freeze({
-        imports: Object.freeze({
-          [callableIdentity.module]: Object.freeze({
-            [callableIdentity.name]: getFile(request.canonical),
-          }),
-          [reactorModule]: Object.freeze({
-            watch: request.bindReactor(reactorBinding("watch")),
-            cancel: request.bindReactor(reactorBinding("cancel")),
-          }),
-        }),
-        metadata,
-      });
-    },
-  });
-  const binding = createRawCanonicalImportBinding({
-    adapter,
-    providers: {
-      "sample:raw@1/api": {
-        getFile() { return new File(calls); },
-      },
-    },
-    reactor: {
-      module: reactorModule,
-      assertAvailable() {
-        if (!available) throw new Error("not available");
-      },
-      watch(pollable, token) { calls.push(["watch", pollable, token]); },
-      cancel(token) { calls.push(["cancel", token]); },
-    },
-  });
-  assert.throws(() => binding.imports[reactorModule].cancel(1), /not available/);
-  bindRawCanonicalImportInstance({ binding, instance: instance() });
-  available = true;
-  const pollable = binding.imports[callableIdentity.module][callableIdentity.name]();
-  binding.imports[reactorModule].watch(pollable, 17);
-  binding.imports[reactorModule].cancel(17);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0][0], "watch");
-  assert.equal(calls[0][2], 17);
-  assert.deepEqual(calls[1], ["cancel", 17]);
-  closeRawCanonicalImportBinding({ binding });
-  assert.equal(calls.length, 2);
-});
-
 test("rejects invalid factory, adapter namespace and metadata contracts", () => {
-  const valid = { adapter: generatedAdapter(), providers: {}, reactor: null };
+  const valid = { adapter: generatedAdapter(), providers: {} };
   for (const request of [null, [], {}, { ...valid, extra: true }, { ...valid, adapter: null }]) {
     assert.throws(() => createRawCanonicalImportBinding(request), TypeError);
   }
-  assert.throws(() => createRawCanonicalImportBinding({
-    ...valid,
-    reactor: {},
-  }), /undeclared reactor/);
   assert.throws(() => createRawCanonicalImportBinding({
     ...valid,
     adapter: Object.defineProperty({}, "rawAdapterMetadata", { get() { return {}; } }),
@@ -378,7 +296,6 @@ test("rejects invalid factory, adapter namespace and metadata contracts", () => 
     assert.throws(() => createRawCanonicalImportBinding({
       adapter: generatedAdapter({ metadata: candidate }),
       providers: {},
-      reactor: null,
     }), TypeError);
   }
 });
@@ -415,7 +332,6 @@ test("rejects invalid generated adapter products and exact import inventories", 
     assert.throws(() => createRawCanonicalImportBinding({
       adapter: generatedAdapter({ product: create }),
       providers: {},
-      reactor: null,
     }), TypeError);
   }
 });
@@ -424,7 +340,6 @@ test("rejects invalid bind and close requests and duplicate instance binding", (
   const binding = createRawCanonicalImportBinding({
     adapter: generatedAdapter({ capabilities: [], identities: [] }),
     providers: {},
-    reactor: null,
   });
   for (const request of [null, [], {}, { binding: {} }, { binding, instance: {}, extra: true }]) {
     assert.throws(() => bindRawCanonicalImportInstance(request), TypeError);

@@ -161,12 +161,20 @@ public sealed class ConsoleCompilationTests
             .ToArray();
         Assert.True(reachableMethods.Count(name => name == "WriteLine") >= 2);
         Assert.Contains("CreateStandardOutputWriter", reachableMethods);
-        Assert.Contains("WriteBlocking", reachableMethods);
+        Assert.Contains("WriteToStream", reachableMethods);
+        // Standard output is a WASI 0.3 stream: write-via-stream takes its readable end and each
+        // blocking write is an async-lowered stream.write.
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:io/streams@0.2.11",
-                FunctionName: "[method]output-stream.blocking-write-and-flush",
+                InterfaceName: "wasi:cli/stdout@0.3.2",
+                FunctionName: "write-via-stream",
+            });
+        Assert.Contains(result.Program.WitImportMethods, method =>
+            method.WitImport is
+            {
+                InterfaceName: "wasi:cli/stdout@0.3.2",
+                FunctionName: "[async-lower][stream-write-0]write-via-stream",
             });
         Assert.True(
             result.Program.Finalizers.IsEmpty,
@@ -213,15 +221,58 @@ public sealed class ConsoleCompilationTests
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:cli/stderr@0.2.11",
-                FunctionName: "get-stderr",
+                InterfaceName: "wasi:cli/stderr@0.3.2",
+                FunctionName: "write-via-stream",
             });
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport is
+            method.WitImport!.InterfaceName == "wasi:cli/stdout@0.3.2");
+        // The platform's other facades are not reached through its construction.
+        Assert.DoesNotContain(result.Program.WitImportMethods, method =>
+            method.WitImport!.InterfaceName.StartsWith("wasi:filesystem/", StringComparison.Ordinal) ||
+            method.WitImport!.InterfaceName.StartsWith("wasi:random/", StringComparison.Ordinal));
+    }
+
+    // Standard input and terminal detection are platform services of their own: a program pays
+    // for wasi:cli/stdin only when it reads, and for a terminal interface only when it asks
+    // whether that stream is redirected.
+    [Theory]
+    [InlineData("ReadLine", "global::System.Console.ReadLine()?.Length ?? -1", "wasi:cli/stdin@0.3.2", "read-via-stream")]
+    [InlineData("Read", "global::System.Console.Read()", "wasi:cli/stdin@0.3.2", "read-via-stream")]
+    [InlineData("Stream", "global::System.Console.OpenStandardInput(16).ReadByte()", "wasi:cli/stdin@0.3.2", "read-via-stream")]
+    [InlineData("InputRedirected", "global::System.Console.IsInputRedirected ? 1 : 0", "wasi:cli/terminal-stdin@0.3.2", "get-terminal-stdin")]
+    [InlineData("ErrorRedirected", "global::System.Console.IsErrorRedirected ? 1 : 0", "wasi:cli/terminal-stderr@0.3.2", "get-terminal-stderr")]
+    public void ConsoleInputAndTerminalsImportOnlyWhatTheProgramUses(
+        string name, string expression, string interfaceName, string functionName)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "ConsoleInput" + name,
+            $$"""
+            namespace ConsoleInputFixture;
+
+            public static class EntryPoint
             {
-                InterfaceName: "wasi:cli/stdout@0.2.11",
-                FunctionName: "get-stdout",
-            });
+                public static int Run(int value) => value + ({{expression}});
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "ConsoleInputFixture.EntryPoint",
+            "Run",
+            [],
+            WasmTarget.Wasm32,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0"));
+
+        CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+        var imports = result.Program.WitImportMethods.Select(method => method.WitImport!).ToArray();
+        Assert.Contains(imports, import => import.InterfaceName == interfaceName && import.FunctionName == functionName);
+        var stdin = interfaceName == "wasi:cli/stdin@0.3.2";
+        Assert.Equal(stdin, imports.Any(import => import.InterfaceName == "wasi:cli/stdin@0.3.2"));
+        Assert.Equal(!stdin, imports.Any(import => import.InterfaceName.StartsWith("wasi:cli/terminal-", StringComparison.Ordinal)));
+        Assert.DoesNotContain(imports, import => import.InterfaceName == "wasi:cli/stdout@0.3.2");
     }
 
     [Theory]
@@ -268,7 +319,7 @@ public sealed class ConsoleCompilationTests
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:cli/environment@0.2.11",
+                InterfaceName: "wasi:cli/environment@0.3.2",
                 FunctionName: "get-arguments",
             });
         Assert.True(
@@ -314,7 +365,7 @@ public sealed class ConsoleCompilationTests
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:cli/environment@0.2.11",
+                InterfaceName: "wasi:cli/environment@0.3.2",
                 FunctionName: "get-arguments",
             });
     }

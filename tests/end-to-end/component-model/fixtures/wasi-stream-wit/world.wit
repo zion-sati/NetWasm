@@ -1,11 +1,12 @@
 package netwasm:test-stream@1.0.0;
 
 interface acceptance {
-  write: func() -> u32;
+  write: async func() -> u32;
 }
 
+// The export writes four bytes through wasi:cli/stdout's stream. The world has no clock: the
+// event loop that waits for the copy needs none.
 world test-stream {
-  import wasi:io/streams@0.2.11;
-  import wasi:cli/stdout@0.2.11;
+  import wasi:cli/stdout@0.3.2;
   export acceptance;
 }

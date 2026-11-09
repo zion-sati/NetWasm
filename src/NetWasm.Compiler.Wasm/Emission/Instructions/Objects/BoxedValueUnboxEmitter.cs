@@ -90,7 +90,7 @@ internal sealed class BoxedValueUnboxEmitter(
             WasmInstructionOperand.Unsigned((uint)objectLocal)));
         addresses.Emit(code, payloadOffset);
         addresses.Emit(code, AddressOperation.Add);
-        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, value.Size,
+        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, value.Size, SmallBlockEmitter.WidestChunk(value),
             writer => addresses.Emit(writer, value.Size));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,

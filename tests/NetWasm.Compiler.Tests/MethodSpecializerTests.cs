@@ -84,12 +84,12 @@ public sealed class MethodSpecializerTests
     [Fact]
     public void InterlockedRuleRewritesClosedCompareExchangeThroughItsContract()
     {
-        var valueType = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var referenceType = CliTypeIdentity.Named(new AssemblyIdentity("in-memory"), "Fixtures", "Reference", false);
         var target = Target(
             "CompareExchange",
             11,
             "System.Threading.Interlocked",
-            [valueType],
+            [referenceType],
             genericArity: 1);
         var rewritten = Rewrite(
             new InterlockedCallRewriter(
@@ -102,7 +102,31 @@ public sealed class MethodSpecializerTests
                 new CilOperand.Entity(target.Definition.Key))));
 
         Assert.Equal(CilOperation.CompareExchange, rewritten.Instructions[0].Operation);
-        Assert.Equal(new CilOperand.TypeIdentity(valueType), rewritten.Instructions[0].Operand);
+        Assert.Equal(new CilOperand.TypeIdentity(referenceType), rewritten.Instructions[0].Operand);
+    }
+
+    [Fact]
+    public void InterlockedRuleLeavesValueTypeCompareExchangeToItsManagedBody()
+    {
+        var target = Target(
+            "CompareExchange",
+            13,
+            "System.Threading.Interlocked",
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)],
+            genericArity: 1);
+        var body = Body(new CilInstruction(
+            0,
+            1,
+            CilOperation.Call,
+            new CilOperand.Entity(target.Definition.Key)));
+
+        var rewritten = Rewrite(
+            new InterlockedCallRewriter(
+                new FixedCalledMethodResolver(target),
+                new FixedSymbolFormatter("System.Threading.Interlocked")),
+            body);
+
+        Assert.Same(body, rewritten);
     }
 
     [Fact]

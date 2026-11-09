@@ -88,24 +88,16 @@ test("main-module adapter runs only the matching executable", async () => {
   assert.deepEqual(calls, [["request", "response"]]);
 });
 
-test("runtime composition supplies isolated cancellable reactor wakes for both widths", async () => {
+test("runtime composition supplies WASI 0.3 contracts and the clock for both widths", () => {
   for (const target of ["wasm32", "wasm64"]) {
     const prefix = target === "wasm64" ? "cm64p2" : "cm32p2";
-    const calls = [];
-    const completion = Promise.withResolvers();
     const modules = linkedCorpusProgramDependencies.createRuntimeImports(
-      target, () => { throw new Error("timer needs no memory"); }, token => {
-        calls.push(token);
-        completion.resolve();
-      });
-    const clock = modules[`${prefix}|wasi:clocks/monotonic-clock@0.2`];
-    const reactor = modules[`${prefix}|netwasm:runtime/reactor-host@1`];
-    reactor.watch(clock["subscribe-duration"](0n), 7);
-    reactor.cancel(7);
-    assert.deepEqual(calls, []);
-    reactor.watch(clock["subscribe-duration"](0n), 8);
-    await completion.promise;
-    assert.deepEqual(calls, [8]);
-    assert.ok(modules[`${prefix}|wasi:cli/environment@0.2`]);
+      target, () => { throw new Error("the clock needs no memory"); }, () => ({}));
+    const now = modules[`${prefix}|wasi:clocks/monotonic-clock@0.3`].now();
+    assert.equal(typeof now, "bigint");
+    const status = modules["wasi:clocks/monotonic-clock@0.3.2"]["[async-lower]wait-for"](0n);
+    assert.equal(status & 15, 1);
+    assert.ok(modules[`${prefix}|wasi:cli/environment@0.3`]);
+    assert.equal(typeof modules.$root["[waitable-set-new]"], "function");
   }
 });

@@ -15,7 +15,8 @@ internal sealed class ComponentizeCliCommand(
     IComponentPackager packager,
     IComponentManifestInputReader manifestInputs,
     ITextFileWriter textFiles,
-    IManagedInliningHintsParser inlineHints) : ICompilerCliCommand
+    IManagedInliningHintsParser inlineHints,
+    IManagedEntryPointReader entryPoints) : ICompilerCliCommand
 {
     private readonly IWitDocumentReader _documents = documents ??
         throw new ArgumentNullException(nameof(documents));
@@ -31,6 +32,8 @@ internal sealed class ComponentizeCliCommand(
         throw new ArgumentNullException(nameof(textFiles));
     private readonly IManagedInliningHintsParser _inlineHints = inlineHints ??
         throw new ArgumentNullException(nameof(inlineHints));
+    private readonly IManagedEntryPointReader _entryPoints = entryPoints ??
+        throw new ArgumentNullException(nameof(entryPoints));
 
     public string Name => ComponentizeCliOptions.CommandName;
 
@@ -42,17 +45,21 @@ internal sealed class ComponentizeCliCommand(
         var optimizationOverrides = _inlineHints.Parse(options.ManagedInliningHints);
         if (options.Converge)
             optimizationOverrides = (optimizationOverrides ?? new()) with { Converge = true };
+        if (options.LowMemoryUnused is { } lowMemoryUnused)
+            optimizationOverrides = (optimizationOverrides ?? new()) with { LowMemoryUnused = lowMemoryUnused };
         var target = options.Platform == WasmTarget.Wasm32
             ? ComponentTarget.Wasm32Wasi02
             : ComponentTarget.Wasm64Wasi02;
         var document = _documents.Read(options.Wit);
         var world = document.SelectWorld(options.World);
         _validator.Validate(document, world);
-        var manifest = _manifests.Build(
-            document,
-            world,
-            target,
-            _manifestInputs.Read(options));
+        var manifest = options.PlainCoreModule
+            ? null
+            : _manifests.Build(
+                document,
+                world,
+                target,
+                _manifestInputs.Read(options));
         _packager.Package(new ComponentPackageRequest(
             options.CoreModule,
             options.Wit,
@@ -60,9 +67,16 @@ internal sealed class ComponentizeCliCommand(
             options.Output,
             target,
             options.RuntimeModule,
+            options.EntryAssembly is { } entryAssembly ? _entryPoints.Read(entryAssembly).Abi : null,
             Optimization: options.Optimization)
-        { OptimizationOverrides = optimizationOverrides });
-        _textFiles.Write(options.Manifest, JsonSerializer.Serialize(manifest, CliJsonContext.Default.ComponentManifest));
+        {
+            OptimizationOverrides = optimizationOverrides,
+            PlainCoreModule = options.PlainCoreModule,
+        });
+        if (manifest is not null)
+        {
+            _textFiles.Write(options.Manifest!, JsonSerializer.Serialize(manifest, CliJsonContext.Default.ComponentManifest));
+        }
         return 0;
     }
 }
@@ -119,6 +133,6 @@ internal sealed class ComponentManifestInputReader : IComponentManifestInputRead
                         export.AsyncReturn))]),
             new ComponentAdapterVersions(
                 options.JcoVersion,
-                options.Preview2ShimVersion));
+                options.Preview3ShimVersion));
     }
 }

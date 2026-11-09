@@ -15,7 +15,7 @@ public sealed class BrowserLinkOptimizationInspectorTests
     {
         var operation = Operation() with
         {
-            Arguments = ["input", profile, "--converge", "--enable-memory64", "--output", "output"],
+            Arguments = ["input", profile, "--converge", "--enable-memory64", "--low-memory-unused", "--output", "output"],
         };
 
         var contract = Create().Inspect(operation);

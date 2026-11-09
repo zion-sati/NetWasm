@@ -1,3 +1,4 @@
+import { validateInputSource } from "./input-source.mjs";
 import { validateOutputSink } from "./output-sink-stream.mjs";
 
 const factoryKeys = [
@@ -9,10 +10,11 @@ const factoryKeys = [
   "validateManifest",
   "validateRequest",
 ];
-const requestKeys = ["filesystem", "manifest", "request", "signal", "stderr", "stdout"];
+const requestKeys = ["filesystem", "manifest", "request", "signal", "stderr", "stdin", "stdout"];
 const metadataKeys = ["applicationProviders", "platformProviders"];
 const bindingKeys = ["applicationProviders", "manifest", "platformProviders", "request"];
 const projectionKeys = ["componentImports", "consumerModules", "rawProviders"];
+const platformKeys = ["release", "sources"];
 
 export function createProviderExecutionPreparation(options) {
   assertExactDataObject(options, factoryKeys, "provider execution preparation options");
@@ -28,6 +30,7 @@ export function createProviderExecutionPreparation(options) {
     validateSignal(request.signal);
     validateOutputSink(request.stdout, "provider execution stdout output sink");
     validateOutputSink(request.stderr, "provider execution stderr output sink");
+    validateInputSource(request.stdin, "provider execution stdin input source");
     throwIfAborted(request.signal);
 
     const manifest = validateSnapshot(options.validateManifest(request.manifest), "deployment manifest");
@@ -54,30 +57,41 @@ export function createProviderExecutionPreparation(options) {
     });
     validateSources(applicationSources, "application");
     throwIfAborted(request.signal);
-    const platformSources = await options.loadPlatformProviders({
+    const platform = await options.loadPlatformProviders({
       binding,
       filesystem: request.filesystem,
       signal: request.signal,
       stderr: request.stderr,
+      stdin: request.stdin,
       stdout: request.stdout,
     });
-    validateSources(platformSources, "platform");
-    throwIfAborted(request.signal);
+    assertExactDataObject(platform, platformKeys, "loaded platform providers");
+    if (typeof platform.release !== "function") {
+      throw new TypeError("loaded platform providers must be releasable");
+    }
+    try {
+      validateSources(platform.sources, "platform");
+      throwIfAborted(request.signal);
 
-    const projection = options.projectProviderModules({
-      providers: [...binding.platformProviders, ...binding.applicationProviders],
-      sources: [...platformSources, ...applicationSources],
-    });
-    assertExactDataObject(projection, projectionKeys, "projected provider modules");
-    validateProjection(projection.componentImports, "component imports");
-    validateProjection(projection.consumerModules, "consumer modules");
-    validateProjection(projection.rawProviders, "raw providers");
-    return Object.freeze({
-      binding,
-      componentImports: projection.componentImports,
-      consumerModules: projection.consumerModules,
-      rawProviders: projection.rawProviders,
-    });
+      const projection = options.projectProviderModules({
+        providers: [...binding.platformProviders, ...binding.applicationProviders],
+        sources: [...platform.sources, ...applicationSources],
+      });
+      assertExactDataObject(projection, projectionKeys, "projected provider modules");
+      validateProjection(projection.componentImports, "component imports");
+      validateProjection(projection.consumerModules, "consumer modules");
+      validateProjection(projection.rawProviders, "raw providers");
+      return Object.freeze({
+        binding,
+        componentImports: projection.componentImports,
+        consumerModules: projection.consumerModules,
+        rawProviders: projection.rawProviders,
+        release: platform.release,
+      });
+    } catch (error) {
+      await platform.release();
+      throw error;
+    }
   });
 }
 

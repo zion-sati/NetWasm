@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createWasiFilesystem } from "./wasi-filesystem.mjs";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -39,7 +40,7 @@ export function createAdapter() {
 }
 `);
 const componentAdapter = encoder.encode(`
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter(generated) {
   return Object.freeze({ contractKey, instantiate: generated.instantiate });
 }
@@ -73,7 +74,6 @@ const interopManifest = encoder.encode(JSON.stringify({
   callbacks: [],
 }));
 
-class Descriptor { openAt() { return new Descriptor(); } read() { return [new Uint8Array(), true]; } }
 const sink = Object.freeze({ write() {} });
 
 test("executes a verified raw deployment through the local composition root", async () => {
@@ -99,15 +99,15 @@ test("executes a verified raw deployment through the local composition root", as
       const executeNetWasm = createExecution({
         manifestPath,
         platform: {
-          createFilesystem({ preopens }) {
-            assert.deepEqual({ ...preopens }, {});
-            return { types: { Descriptor }, preopens: { getDirectories: () => [] } };
+          createFilesystem(preopens) {
+            assert.deepEqual(preopens, []);
+            return createWasiFilesystem(Object.freeze({ hostFiles: null, preopens }));
           },
-          createShim() { assert.fail("an empty WIT provider set must not create a shim"); },
+          createImports() { assert.fail("an empty WIT provider set must not create imports"); },
         },
       });
       const outcome = await executeNetWasm({
-        request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdout: sink,
+        request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdin: null, stdout: sink,
       });
       assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 37]);
     }
@@ -139,7 +139,7 @@ test("executes a verified component deployment through the local composition roo
     ]) {
       const executeNetWasm = createExecution({ manifestPath, platform: platform() });
       const outcome = await executeNetWasm({
-        request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdout: sink,
+        request: executionRequest(sha256(manifestBytes)), signal: null, stderr: sink, stdin: null, stdout: sink,
       });
       assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 41]);
     }
@@ -163,7 +163,7 @@ test("rejects deployment kinds unavailable to the local host", async () => {
     ]) {
       const executeNetWasm = createExecution({ manifestPath, platform: platform() });
       const outcome = await executeNetWasm({
-        request: executionRequest(sha256(bytes)), signal: null, stderr: sink, stdout: sink,
+        request: executionRequest(sha256(bytes)), signal: null, stderr: sink, stdin: null, stdout: sink,
       });
       assert.equal(outcome.primaryFailure.code, "contract.invalid");
     }
@@ -186,7 +186,7 @@ test("maps an invalid local request to the public contract result", async () => 
       buildFingerprint: "invalid",
     });
     const outcome = await executeNetWasm({
-      request: invalid, signal: null, stderr: sink, stdout: sink,
+      request: invalid, signal: null, stderr: sink, stdin: null, stdout: sink,
     });
     assert.equal(outcome.primaryFailure.code, "contract.invalid");
   } finally {
@@ -221,7 +221,7 @@ function deployment(kind, artifacts) {
   return {
     schemaVersion: 1, semanticBuildId: digest, deploymentKind: kind,
     profile: "netwasm0.1", target: "wasm32", featureSet: "default",
-    executionContract: "wasi-command@0.2.11",
+    executionContract: "wasi-command@0.3.2",
     versions: { compiler: "1", hosting: "1", runtime: "1", runtimeAbi: "1", sdk: "1", toolchain: "1" },
     buildFingerprint: digest, runtimeFeatures: [], artifacts,
     requiredImportModules: [], requiredImports: [], exports: [],
@@ -234,7 +234,7 @@ function executionRequest(deploymentManifestSha256) {
     arguments: Object.freeze([]), environment: Object.freeze([]),
     grants: Object.freeze({
       environment: Object.freeze([]), preopens: Object.freeze([]), network: "denyAll",
-      clocks: Object.freeze([]), randomness: false,
+      clocks: Object.freeze([]), randomness: false, temporaryDirectory: false, workingDirectory: false,
     }),
     applicationImports: Object.freeze([]),
   });
@@ -248,7 +248,7 @@ function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex")
 
 function platform() {
   return {
-    createFilesystem: () => ({ types: { Descriptor }, preopens: { getDirectories: () => [] } }),
-    createShim: () => ({ getImportObject: () => ({}) }),
+    createFilesystem: preopens => createWasiFilesystem(Object.freeze({ hostFiles: null, preopens })),
+    createImports: () => Object.freeze({ imports: Object.freeze({}), release: async () => {} }),
   };
 }

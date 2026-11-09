@@ -6,6 +6,8 @@ const optionKeys = ["operations", "startup", "worker"];
 const optionalOptionKeys = ["environment", "generation", "onNotification", "stderr", "stdout"];
 const outputStreams = new Set(["stderr", "stdout"]);
 const protocolVersion = 2;
+// The worker host's file mount actions (#142), reserved beside the application's operations.
+const fileActions = new Set(["mount", "unmount", "sync"]);
 
 export class NetWasmWorkerError extends Error {
   constructor(message, {
@@ -91,37 +93,12 @@ export function createWorkerSessionClient(options) {
       if (!operations.has(operation)) {
         return Promise.reject(new TypeError("worker operation is unavailable"));
       }
-      if (!Array.isArray(arguments_)) {
-        return Promise.reject(new TypeError("worker arguments must be an array"));
-      }
-      let signal;
-      try {
-        signal = snapshotCallOptions(callOptions);
-      } catch (cause) {
-        return Promise.reject(cause);
-      }
-      if (disposeRequested || state === "terminated" || state === "failed") {
-        return Promise.reject(new NetWasmWorkerError("worker session is closed"));
-      }
-      if (signal?.aborted) return Promise.reject(signal.reason);
-      const requestId = nextRequestId++;
-      const completion = new Promise((resolve, reject) => {
-        const request = {
-          requestId,
-          operation,
-          arguments: snapshotArguments(arguments_),
-          resolve,
-          reject,
-          settled: false,
-          signal,
-          abort: null,
-        };
-        request.abort = () => abortRequest(request);
-        signal?.addEventListener("abort", request.abort, { once: true });
-        queued.push(request);
-      });
-      dispatch();
-      return completion;
+      return request(operation, arguments_, callOptions);
+    },
+    // Mounts, unmounts or syncs a picked file in the worker's file system (#142).
+    files(action, ...arguments_) {
+      if (!fileActions.has(action)) return Promise.reject(new TypeError("worker file action is unavailable"));
+      return request(`netwasm:files:${action}`, arguments_, undefined);
     },
     dispose() {
       if (disposeCompletion !== undefined) return disposeCompletion;
@@ -143,6 +120,40 @@ export function createWorkerSessionClient(options) {
       terminate(new NetWasmWorkerError("worker session was terminated"), false);
     },
   });
+
+  function request(operation, arguments_, callOptions) {
+    if (!Array.isArray(arguments_)) {
+      return Promise.reject(new TypeError("worker arguments must be an array"));
+    }
+    let signal;
+    try {
+      signal = snapshotCallOptions(callOptions);
+    } catch (cause) {
+      return Promise.reject(cause);
+    }
+    if (disposeRequested || state === "terminated" || state === "failed") {
+      return Promise.reject(new NetWasmWorkerError("worker session is closed"));
+    }
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    const requestId = nextRequestId++;
+    const completion = new Promise((resolve, reject) => {
+      const pending = {
+        requestId,
+        operation,
+        arguments: snapshotArguments(arguments_),
+        resolve,
+        reject,
+        settled: false,
+        signal,
+        abort: null,
+      };
+      pending.abort = () => abortRequest(pending);
+      signal?.addEventListener("abort", pending.abort, { once: true });
+      queued.push(pending);
+    });
+    dispatch();
+    return completion;
+  }
 
   function receive(message) {
     if (state === "terminated") return;
@@ -199,7 +210,6 @@ export function createWorkerSessionClient(options) {
   // sent, and a running one is abandoned, its eventual reply dropped. Asking
   // the export itself to stop is an ordinary call to another export.
   function abortRequest(request) {
-    if (request.settled) return;
     const index = queued.indexOf(request);
     if (index >= 0) queued.splice(index, 1);
     request.settled = true;

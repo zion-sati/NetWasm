@@ -7,7 +7,7 @@ import {
   requireRawInstanceFunction,
 } from "./raw-instance-boundary.mjs";
 import { createRawCanonicalResourceBinder } from "./raw-canonical-resource-binder.mjs";
-import { createRawPhysicalReactorBinder } from "./raw-physical-reactor-binder.mjs";
+import { createRawComponentModel } from "./raw-component-model.mjs";
 import { releaseRawProviderResource } from "./raw-provider-resource-releaser.mjs";
 import {
   borrowRawResource,
@@ -19,9 +19,10 @@ import {
 } from "./raw-resource-store.mjs";
 
 const states = new WeakMap();
-const requestKeys = ["adapter", "providers", "reactor"];
+const requestKeys = ["adapter", "providers"];
 const bindKeys = ["binding", "instance"];
 const closeKeys = ["binding"];
+const componentModelKeys = ["binding"];
 const metadataKeys = [
   "abiVersion",
   "bindingIdentities",
@@ -31,7 +32,7 @@ const metadataKeys = [
 ];
 const identityKeys = ["module", "name"];
 const productKeys = ["imports", "metadata"];
-const capabilityOrder = Object.freeze(["bindReactor", "bindResource", "canonical"]);
+const capabilityOrder = Object.freeze(["bindResource", "canonical"]);
 
 export function createRawCanonicalImportBinding(request = {}) {
   assertExactObject(request, requestKeys, "raw canonical-import binding factory");
@@ -39,8 +40,10 @@ export function createRawCanonicalImportBinding(request = {}) {
   const metadata = readMetadata(adapter.metadata);
   const boundary = createRawInstanceBoundary({ target: metadata.target });
   const store = createRawResourceStore();
-  const lifecycle = { boundary, closed: false, store };
   const readOpenMemory = () => readRawInstanceMemory({ boundary: readOpen(lifecycle).boundary });
+  // The instance's streams, futures, waitable sets and subtasks, whose other end is this host.
+  const componentModel = createRawComponentModel({ memory: readOpenMemory });
+  const lifecycle = { boundary, closed: false, componentModel, store };
   const readOpenStore = () => {
     const open = readOpen(lifecycle);
     readRawInstanceMemory({ boundary: open.boundary });
@@ -53,6 +56,7 @@ export function createRawCanonicalImportBinding(request = {}) {
   // The adapter's generated bindings lift and lower each call themselves.
   const canonical = Object.freeze({
     borrow: borrowRawResource,
+    componentModel,
     drop: dropRawResource,
     memory: readOpenMemory,
     providers: request.providers,
@@ -70,25 +74,10 @@ export function createRawCanonicalImportBinding(request = {}) {
     releaseExportedResource: request => releaseRawExportedResource({ boundary, ...request }),
     requireInstanceFunction: name => requireRawInstanceFunction({ boundary, name }),
   });
-  const requiresReactor = metadata.requiredCapabilities.includes("bindReactor");
-  if (!requiresReactor && request.reactor !== null) {
-    throw new TypeError("raw canonical imports mix an undeclared reactor binding");
-  }
-  const reactor = requiresReactor
-    ? createRawPhysicalReactorBinder({
-        providers: request.providers,
-        reactor: request.reactor,
-        readStore: readOpenStore,
-        releasePollable: releaseRawProviderResource,
-        transferPollable: transferRawResource,
-      })
-    : null;
   const adapterRequest = Object.create(null);
   adapterRequest.metadata = metadata.value;
   for (const capability of metadata.requiredCapabilities) {
-    adapterRequest[capability] = capability === "canonical"
-      ? canonical
-      : capability === "bindReactor" ? reactor : resource;
+    adapterRequest[capability] = capability === "canonical" ? canonical : resource;
   }
   const product = adapter.create(adapterRequest);
   const imports = readProduct(product, metadata);
@@ -107,7 +96,13 @@ export function closeRawCanonicalImportBinding(request = {}) {
   assertExactObject(request, closeKeys, "raw canonical-import binding close");
   const state = readOpenBinding(request.binding);
   state.closed = true;
+  state.componentModel.close();
   closeRawResourceStore({ store: state.store });
+}
+
+export function readRawComponentModel(request = {}) {
+  assertExactObject(request, componentModelKeys, "raw Component Model request");
+  return readOpenBinding(request.binding).componentModel;
 }
 
 function readAdapter(value) {

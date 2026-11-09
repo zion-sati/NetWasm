@@ -28,6 +28,23 @@ public sealed class WitTypeIdentityFormatterTests
     }
 
     [Fact]
+    public void FormatsStreamsAndFuturesWithAndWithoutPayloads()
+    {
+        var document = Document(
+            Type(0, null, """{"stream":"u8"}"""),
+            Type(1, null, """{"result":{"ok":null,"err":"u32"}}"""),
+            Type(2, null, """{"future":1}"""),
+            Type(3, null, """{"stream":null}"""),
+            Type(4, null, """{"future":null}"""));
+        var formatter = Create();
+
+        Assert.Equal("stream<u8>", formatter.Format(document, new WitTypeReference.Defined(0)));
+        Assert.Equal("future<result<unit,u32>>", formatter.Format(document, new WitTypeReference.Defined(2)));
+        Assert.Equal("stream", formatter.Format(document, new WitTypeReference.Defined(3)));
+        Assert.Equal("future", formatter.Format(document, new WitTypeReference.Defined(4)));
+    }
+
+    [Fact]
     public void FormatsNamedAndAnonymousStructuralIdentities()
     {
         var document = Document(
@@ -137,8 +154,8 @@ public sealed class WitTypeIdentityFormatterTests
     [InlineData("{}")]
     [InlineData("{\"list\":\"u8\",\"option\":\"u8\"}")]
     [InlineData("{\"mystery\":\"u8\"}")]
-    [InlineData("{\"future\":\"u8\"}")]
-    [InlineData("{\"stream\":\"u8\"}")]
+    [InlineData("{\"stream\":[]}")]
+    [InlineData("{\"future\":\"bad\"}")]
     [InlineData("{\"record\":{\"fields\":\"bad\"}}")]
     [InlineData("{\"record\":{\"fields\":[\"bad\"]}}")]
     [InlineData("{\"record\":{\"fields\":[{\"name\":1,\"type\":\"u8\"}]}}")]

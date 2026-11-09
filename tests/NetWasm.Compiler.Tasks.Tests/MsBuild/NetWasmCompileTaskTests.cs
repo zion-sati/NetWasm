@@ -50,6 +50,9 @@ public sealed class NetWasmCompileTaskTests
         task.ManagedIntegerCheckElimination = "Enabled";
         task.ManagedLoopInvariantExpressionHoisting = "Disabled";
         task.ManagedMulticastInlineDispatch = "Enabled";
+        task.ManagedNewObjectNullCheckElimination = "Disabled";
+        task.ManagedLoopStrengthReduction = "Disabled";
+        task.ManagedRangeBranchFolding = "Enabled";
 
         Assert.Equal(
             [
@@ -73,6 +76,9 @@ public sealed class NetWasmCompileTaskTests
                 "-managedintegercheckelimination:Enabled",
                 "-managedloopinvariantexpressionhoisting:Disabled",
                 "-managedmulticastinlinedispatch:Enabled",
+                "-managednewobjectnullcheckelimination:Disabled",
+                "-managedloopstrengthreduction:Disabled",
+                "-managedrangebranchfolding:Enabled",
             ],
             Lines(task.ResponseFileCommands));
     }
@@ -108,6 +114,16 @@ public sealed class NetWasmCompileTaskTests
                 "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
             ],
             Lines(task.ResponseFileCommands));
+    }
+
+    [Fact]
+    public void APlainCoreModuleCompilesWithTheCoreModuleTarget()
+    {
+        var task = CreateTask();
+        task.CompileAsLibrary = true;
+        task.PlainCoreModule = true;
+
+        Assert.Equal("-target:coremodule", Lines(task.ResponseFileCommands)[1]);
     }
 
     [Fact]

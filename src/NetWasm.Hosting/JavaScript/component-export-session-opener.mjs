@@ -1,8 +1,6 @@
 import { NetWasmHostError } from "./managed-errors.mjs";
 
 const dependencyKeys = [
-  "createGuestNotifier",
-  "createReactor",
   "createReleaseCommand",
 ];
 const requiredRequestKeys = Object.freeze([
@@ -14,7 +12,6 @@ const requestKeys = new Set([
   ...requiredRequestKeys,
   "instantiateCore",
   "releaseActions",
-  "schedule",
 ]);
 
 export function createComponentExportSessionOpener(dependencies) {
@@ -37,116 +34,47 @@ export function createComponentExportSessionOpener(dependencies) {
         loadCoreModule,
         instantiateCore,
         releaseActions = [],
-        schedule = globalThis.queueMicrotask?.bind(globalThis),
       } = request;
       validateAdapter(adapter);
       assertPlainDataObject(imports, "component export-session imports");
       if (typeof loadCoreModule !== "function"
-          || instantiateCore !== undefined && typeof instantiateCore !== "function"
-          || typeof schedule !== "function") {
+          || instantiateCore !== undefined && typeof instantiateCore !== "function") {
         throw new TypeError("component export-session actions are invalid");
       }
       validateReleaseActions(releaseActions);
 
+      // The component's own exports run its event loop, so nothing fails the session
+      // between calls; its failure settles when it closes.
       let state = "opening";
-      let terminalFailure = null;
-      let closeSession;
       let settleFailure;
       const failure = new Promise(resolve => { settleFailure = resolve; });
-      const markFailed = cause => {
-        if (terminalFailure !== null || state === "closing" || state === "closed") return;
-        const shouldClose = state === "ready";
-        terminalFailure = cause;
-        state = "failed";
-        settleFailure(terminalFailure);
-        if (shouldClose) {
-          Promise.resolve().then(() => closeSession()).catch(() => undefined);
-        }
-      };
-      const throwIfFailed = () => {
-        if (terminalFailure !== null) throw terminalFailure;
-      };
       const assertAvailable = () => {
-        if (terminalFailure !== null) throw terminalFailure;
         if (state !== "ready") {
           throw new NetWasmHostError("NetWasm component export session is closed");
         }
       };
-      const assertReactorAvailable = () => {
-        if (terminalFailure !== null) throw terminalFailure;
-        if (state !== "initializing" && state !== "ready") {
-          throw new NetWasmHostError(
-            "NetWasm component export-session reactor is unavailable");
-        }
-      };
-
-      let notifier;
-      let reactor;
-      const releaseCommand = dependencies.createReleaseCommand([
-        ...releaseActions,
-        () => reactor?.close(),
-      ]);
+      const releaseCommand = dependencies.createReleaseCommand([...releaseActions]);
       const rollback = async cause => {
         state = "closing";
         const failures = await releaseCommand.close();
         state = "closed";
         if (failures.length !== 0) {
-          settleFailure(terminalFailure ?? new NetWasmHostError(
+          settleFailure(new NetWasmHostError(
             "NetWasm component export session cleanup failed", { cause: failures[0] }));
           throw new AggregateError(
             [cause, ...failures], "NetWasm component export session startup failed");
         }
-        settleFailure(terminalFailure);
+        settleFailure(null);
         throw cause;
       };
 
       try {
-        reactor = readReactor(dependencies.createReactor({
-          onReady(token) {
-            if (terminalFailure !== null || state === "closing" || state === "closed") return;
-            if (notifier === undefined) {
-              markFailed(new NetWasmHostError(
-                "NetWasm component export-session reactor became ready before binding"));
-              return;
-            }
-            if (notifier === null) {
-              markFailed(new NetWasmHostError(
-                "NetWasm component export-session reactor has no guest wake binding"));
-              return;
-            }
-            notifier.notify(token);
-          },
-          onFailure() {
-            markFailed(new NetWasmHostError(
-              "NetWasm component export-session reactor failed"));
-          },
-          schedule,
-        }));
-        throwIfFailed();
         state = "initializing";
         const boundary = readBoundary(await adapter.instantiate(Object.freeze({
           imports,
           instantiateCore,
           loadCoreModule,
-          reactorHost: Object.freeze({
-            assertAvailable: assertReactorAvailable,
-            cancel: reactor.cancel,
-            watch: reactor.watch,
-          }),
         })));
-        throwIfFailed();
-        notifier = boundary.guestWake === null
-          ? null
-          : dependencies.createGuestNotifier({
-            guestWake: boundary.guestWake,
-            observeWake(error) {
-              if (error !== undefined) {
-                markFailed(new NetWasmHostError(
-                  "NetWasm component export-session guest wake failed"));
-              }
-            },
-          });
-        throwIfFailed();
 
         let closeCompletion;
         const close = () => {
@@ -163,20 +91,19 @@ export function createComponentExportSessionOpener(dependencies) {
             if (failures.length !== 0) {
               const cleanupFailure = new AggregateError(
                 failures, "NetWasm component export session cleanup failed");
-              if (terminalFailure === null) settleFailure(cleanupFailure);
+              settleFailure(cleanupFailure);
               rejectClose(cleanupFailure);
               return;
             }
-            if (terminalFailure === null) settleFailure(null);
+            settleFailure(null);
             resolveClose();
           }, cause => {
             state = "closed";
-            if (terminalFailure === null) settleFailure(cause);
+            settleFailure(cause);
             rejectClose(cause);
           });
           return closeCompletion;
         };
-        closeSession = close;
         const exports = guardExports(boundary.exports, assertAvailable);
         state = "ready";
         return Object.freeze({ close, exports, failure });
@@ -206,29 +133,8 @@ function guardExports(value, assertAvailable) {
 }
 
 function readBoundary(value) {
-  assertExactDataObject(value, ["exports", "guestWake"],
-    "component export-session boundary");
-  if (value.guestWake !== null && typeof value.guestWake !== "function") {
-    throw new TypeError("component export-session guest wake is invalid");
-  }
-  return Object.freeze({
-    exports: value.exports,
-    guestWake: value.guestWake,
-  });
-}
-
-function readReactor(value) {
-  assertExactDataObject(value, ["cancel", "close", "watch"],
-    "component export-session reactor");
-  if (typeof value.cancel !== "function" || typeof value.close !== "function"
-      || typeof value.watch !== "function") {
-    throw new TypeError("component export-session reactor actions are invalid");
-  }
-  return Object.freeze({
-    cancel: value.cancel.bind(value),
-    close: value.close.bind(value),
-    watch: value.watch.bind(value),
-  });
+  assertExactDataObject(value, ["exports"], "component export-session boundary");
+  return Object.freeze({ exports: value.exports });
 }
 
 function validateAdapter(adapter) {

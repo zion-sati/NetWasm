@@ -3,6 +3,7 @@ using NetWasm.Compiler.Cli.Tests.TestSupport;
 
 namespace NetWasm.Compiler.Cli.Tests;
 
+[Collection(ProcessConsoleTests.Name)]
 public sealed class NwcConsoleTests
 {
     [Theory]

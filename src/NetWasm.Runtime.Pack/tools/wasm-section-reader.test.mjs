@@ -24,11 +24,11 @@ test('reads function imports without asking the JavaScript engine to compile the
   const imports = [
     ...u32(2),
     ...name('netwasm.application.v1'), ...name('netwasm.filter'), 0, ...u32(3),
-    ...name('cm64p2|wasi:cli/environment@0.2'), ...name('get-environment'), 0, ...u32(4),
+    ...name('cm64p2|wasi:cli/environment@0.3'), ...name('get-environment'), 0, ...u32(4),
   ];
   assert.deepEqual(readFunctionImports(module(section(2, imports))), [
     { module: 'netwasm.application.v1', name: 'netwasm.filter', kind: 'function' },
-    { module: 'cm64p2|wasi:cli/environment@0.2', name: 'get-environment', kind: 'function' },
+    { module: 'cm64p2|wasi:cli/environment@0.3', name: 'get-environment', kind: 'function' },
   ]);
 });
 

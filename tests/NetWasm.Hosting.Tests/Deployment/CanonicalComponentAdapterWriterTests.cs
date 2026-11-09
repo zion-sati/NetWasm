@@ -28,36 +28,17 @@ public sealed class CanonicalComponentAdapterWriterTests
         Assert.DoesNotContain("import ", source, StringComparison.Ordinal);
         Assert.Contains("export function createAdapter(generatedModule)", source, StringComparison.Ordinal);
         Assert.Contains("generatedModule.instantiate.bind(generatedModule)", source, StringComparison.Ordinal);
-        Assert.Contains("root?.[\"wasi:cli/run@0.2.11\"]", source, StringComparison.Ordinal);
+        Assert.Contains("root?.[\"wasi:cli/run@0.3.2\"]", source, StringComparison.Ordinal);
         Assert.Contains("root[\"netwasm:diagnostics/command@1.0.0\"]", source, StringComparison.Ordinal);
         Assert.Contains("diagnosticCommand.run.bind(diagnosticCommand)", source, StringComparison.Ordinal);
-        Assert.Contains("Object.hasOwn(error, \"payload\")", source, StringComparison.Ordinal);
-        Assert.Contains("constructor?.name === \"ComponentError\"", source, StringComparison.Ordinal);
-        Assert.Contains("if (isWasiCommandError(error)) return 1;", source, StringComparison.Ordinal);
+        Assert.Contains("generatedModule._util?.isComponentError", source, StringComparison.Ordinal);
+        Assert.Contains("isComponentError(error)", source, StringComparison.Ordinal);
+        Assert.Contains("await command.run();", source, StringComparison.Ordinal);
         Assert.Contains("return 0;", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("constructor?.name", source, StringComparison.Ordinal);
         Assert.DoesNotContain("wasiCliRun", source, StringComparison.Ordinal);
         Assert.DoesNotContain("root.run", source, StringComparison.Ordinal);
-        Assert.DoesNotContain(CanonicalComponentAdapterWriter.ProcessContract, source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void WritesDeterministicDependencyFreeProcessAdapter()
-    {
-        var source = Encoding.UTF8.GetString(_subject.Write(new(
-            CanonicalComponentAdapterWriter.ProcessContract,
-            CanonicalComponentAdapterWriter.SupportedJcoVersion)));
-
-        Assert.DoesNotContain("import ", source, StringComparison.Ordinal);
-        Assert.Contains("export function createAdapter(generatedModule)", source, StringComparison.Ordinal);
-        Assert.Contains("generatedModule.instantiate.bind(generatedModule)", source, StringComparison.Ordinal);
-        Assert.Contains("process: root.process", source, StringComparison.Ordinal);
-        Assert.Contains("reactorGuest: root.reactorGuest", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("wasi:cli/run", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("wasiCliRun", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("netwasm:runtime/process@1", source.Replace(
-            CanonicalComponentAdapterWriter.ProcessContract,
-            string.Empty,
-            StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.DoesNotContain("netwasm:runtime/process", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -72,7 +53,8 @@ public sealed class CanonicalComponentAdapterWriterTests
     [Theory]
     [InlineData("")]
     [InlineData("wasi-command@0.2.10")]
-    [InlineData("netwasm-process@1.0.0")]
+    [InlineData("wasi-command@0.2.11")]
+    [InlineData("netwasm:runtime/process@1.0.0")]
     public void RejectsUnsupportedExecutionContract(string contractKey)
     {
         var request = new CanonicalComponentAdapterRequest(

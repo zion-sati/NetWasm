@@ -1,6 +1,7 @@
 // Factory for native contracts that select no environment or external I/O.
 // With the guest's exports it also returns random bytes, in a list the guest
-// allocates as a host's would be.
+// allocates as a host's would be. A contract never waits, so the Component
+// Model built-ins only keep waitable sets and subtasks as bookkeeping.
 export function createRuntimeContractImports(target, getMemory, getExports) {
   if (target !== 'wasm32' && target !== 'wasm64')
     throw new TypeError('Unsupported runtime target');
@@ -10,21 +11,37 @@ export function createRuntimeContractImports(target, getMemory, getExports) {
   const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
   const unexpected = () => { throw new Error('Unexpected runtime service call'); };
   const address = value => target === 'wasm64' ? BigInt(value) : Number(value);
+  // Opening a standard stream is output, which a contract never writes.
+  const standardStream = {
+    '[stream-new-0]write-via-stream': unexpected,
+    '[async-lower][stream-write-0]write-via-stream': unexpected,
+    '[stream-drop-writable-0]write-via-stream': unexpected,
+    '[async-lower][future-read-1]write-via-stream': unexpected,
+    '[future-drop-readable-1]write-via-stream': unexpected,
+  };
   // Bytes keep counting across calls, as the simulated oracle's do, so code
   // that draws until a value fits a range gets a new one each time.
   let randomByte = 0;
+  let nextWaitableSet = 0;
   return {
     'netwasm.application.v1': {
       'netwasm.filter': unexpected,
       'netwasm.finalize': unexpected,
     },
     env: { emscripten_notify_memory_growth() {} },
-    [`${prefix}|wasi:cli/environment@0.2`]: {
+    $root: {
+      '[waitable-set-new]': () => ++nextWaitableSet,
+      '[waitable-join]'() {},
+      '[waitable-set-wait]': unexpected,
+      '[subtask-drop]'() {},
+      '[subtask-cancel]': () => 4,
+    },
+    [`${prefix}|wasi:cli/environment@0.3`]: {
       'get-environment'(result) {
         new Uint8Array(getMemory().buffer, Number(result), width * 2).fill(0);
       },
     },
-    [`${prefix}|wasi:random/random@0.2`]: {
+    [`${prefix}|wasi:random/random@0.3`]: {
       'get-random-u64': () => 0x0123456789abcdefn,
       'get-random-bytes'(length, result) {
         const reallocate = getExports?.().component_realloc;
@@ -44,13 +61,10 @@ export function createRuntimeContractImports(target, getMemory, getExports) {
         }
       },
     },
-    [`${prefix}|wasi:cli/stdout@0.2`]: { 'get-stdout': unexpected },
-    [`${prefix}|wasi:cli/stderr@0.2`]: { 'get-stderr': unexpected },
-    [`${prefix}|wasi:io/streams@0.2`]: {
-      '[method]output-stream.blocking-write-and-flush': unexpected,
-      'output-stream_drop': unexpected,
-    },
-    [`${prefix}|wasi:io/error@0.2`]: { error_drop: unexpected },
-    [`${prefix}|wasi:cli/exit@0.2`]: { exit: unexpected },
+    [`${prefix}|wasi:cli/stdout@0.3`]: { 'write-via-stream': unexpected },
+    [`${prefix}|wasi:cli/stderr@0.3`]: { 'write-via-stream': unexpected },
+    'wasi:cli/stdout@0.3.2': standardStream,
+    'wasi:cli/stderr@0.3.2': standardStream,
+    [`${prefix}|wasi:cli/exit@0.3`]: { exit: unexpected },
   };
 }

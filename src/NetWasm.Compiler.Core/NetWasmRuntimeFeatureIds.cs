@@ -8,6 +8,8 @@ public static class NetWasmRuntimeFeatureIds
     public const string EphemeronHandles = "ephemeron-handles";
     public const string Finalization = "finalization";
     public const string LocalTime = "local-time";
+    public const string ObjectClone = "object-clone";
+    public const string RandomSeed = "random-seed";
     public const string StructuredCommandDiagnostics = "structured-command-diagnostics";
     public const string WeakHandles = "weak-handles";
 
@@ -19,6 +21,8 @@ public static class NetWasmRuntimeFeatureIds
         EphemeronHandles,
         Finalization,
         LocalTime,
+        ObjectClone,
+        RandomSeed,
         StructuredCommandDiagnostics,
         WeakHandles,
     ];

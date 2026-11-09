@@ -1,5 +1,0 @@
-package netwasm:deferred@1.0.0;
-
-world deferred {
-    export run: async func(value: u32) -> u32;
-}

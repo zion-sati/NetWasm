@@ -20,10 +20,23 @@ public sealed class WitBindingMethodWriterTests
         var imports = WitBindingWriterFixture.CreateImports();
         var exports = WitBindingWriterFixture.CreateExports();
 
+        var intrinsics = WitBindingWriterFixture.CreateIntrinsics();
+
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingMethodWriter(null!, exports));
+            new WitBindingMethodWriter(null!, exports, intrinsics));
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingMethodWriter(imports, null!));
+            new WitBindingMethodWriter(imports, null!, intrinsics));
+        Assert.Throws<ArgumentNullException>(() =>
+            new WitBindingMethodWriter(imports, exports, null!));
+        var syntax = new WitBindingSyntaxFormatter(new NetWasm.Wit.Bindings.TypeDefinitions.WitTypeDefinitionClassifier());
+        Assert.Throws<ArgumentNullException>(() => new WitBindingIntrinsicsSectionWriter(
+            null!, new CanonicalAbiMemoryLayoutPlanner(), syntax, new CodeWriterFactory()));
+        Assert.Throws<ArgumentNullException>(() => new WitBindingIntrinsicsSectionWriter(
+            new WitCanonicalTypeResolver(), null!, syntax, new CodeWriterFactory()));
+        Assert.Throws<ArgumentNullException>(() => new WitBindingIntrinsicsSectionWriter(
+            new WitCanonicalTypeResolver(), new CanonicalAbiMemoryLayoutPlanner(), null!, new CodeWriterFactory()));
+        Assert.Throws<ArgumentNullException>(() => new WitBindingIntrinsicsSectionWriter(
+            new WitCanonicalTypeResolver(), new CanonicalAbiMemoryLayoutPlanner(), syntax, null!));
     }
 
     [Fact]

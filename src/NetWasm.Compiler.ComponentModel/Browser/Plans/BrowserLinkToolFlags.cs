@@ -19,6 +19,6 @@ internal static class BrowserLinkToolFlags
 
     internal static readonly FrozenSet<string> Passes = new[]
     {
-        "--converge", "--remove-unused-module-elements", "--strip-debug",
+        "--converge", "--low-memory-unused", "--remove-unused-module-elements", "--strip-debug",
     }.ToFrozenSet(StringComparer.Ordinal);
 }

@@ -404,6 +404,8 @@ public sealed class ManagedAssemblyTests
                 [WitImport("import-value")] public static extern int ImportValue();
                 [WitExport("example:api", "export-value")] public static int ExportValue(int value) => value;
                 [WitPostReturn("post-value")] public static void PostReturn() { }
+                [ComponentBuiltIn("$root", "[waitable-set-new]")] public static extern int BuiltIn();
+                [ComponentExport("[async-lift]run")] public static int Lift() => 0;
             }
             """);
         using var assembly = ManagedAssemblyTestFactory.Load(assemblyPath);
@@ -420,6 +422,17 @@ public sealed class ManagedAssemblyTests
         Assert.Equal(string.Empty, methods["ImportValue"].WitImport!.InterfaceName);
         Assert.Equal("example:api", methods["ExportValue"].WitExport!.InterfaceName);
         Assert.Equal("post-value", methods["PostReturn"].WitPostReturn!.FunctionName);
+        Assert.False(methods["ImportValue"].WitImport!.IsCanonicalBuiltIn);
+        Assert.Equal(
+            ("$root", "[waitable-set-new]", true),
+            (methods["BuiltIn"].WitImport!.InterfaceName, methods["BuiltIn"].WitImport!.FunctionName,
+                methods["BuiltIn"].WitImport!.IsCanonicalBuiltIn));
+        // A component lift is exported under its full name, not a world function's.
+        Assert.Equal(
+            ("", "[async-lift]run", true),
+            (methods["Lift"].WitExport!.InterfaceName, methods["Lift"].WitExport!.FunctionName,
+                methods["Lift"].WitExport!.IsComponentLift));
+        Assert.False(methods["ExportValue"].WitExport!.IsComponentLift);
     }
 
     // A world's own function takes the one-argument form; the empty interface
@@ -653,8 +666,10 @@ public sealed class ManagedAssemblyTests
     [InlineData("System.Runtime.InteropServices.JavaScript.JSImport(\"one\")", "System.Runtime.InteropServices.JavaScript.JSImport(\"two\")")]
     [InlineData("System.Runtime.InteropServices.JavaScript.JSExport(\"one\")", "System.Runtime.InteropServices.JavaScript.JSExport(\"two\")")]
     [InlineData("System.Runtime.InteropServices.WebAssembly.WitImport(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitImport(\"api\", \"two\")")]
+    [InlineData("System.Runtime.InteropServices.WebAssembly.WitImport(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.ComponentBuiltIn(\"$root\", \"[waitable-set-new]\")")]
     [InlineData("System.Runtime.InteropServices.WebAssembly.WitExport(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitExport(\"api\", \"two\")")]
     [InlineData("System.Runtime.InteropServices.WebAssembly.WitPostReturn(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitPostReturn(\"api\", \"two\")")]
+    [InlineData("System.Runtime.InteropServices.WebAssembly.WitExport(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.ComponentExport(\"[async-lift]one\")")]
     public void ManagedAssemblyRejectsDuplicateInteropDeclarations(
         string first,
         string second)
@@ -692,9 +707,19 @@ public sealed class ManagedAssemblyTests
                     public WitExportAttribute(string first, string second) { }
                 }
                 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+                public sealed class ComponentBuiltInAttribute : Attribute
+                {
+                    public ComponentBuiltInAttribute(string first, string second) { }
+                }
+                [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
                 public sealed class WitPostReturnAttribute : Attribute
                 {
                     public WitPostReturnAttribute(string first, string second) { }
+                }
+                [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+                public sealed class ComponentExportAttribute : Attribute
+                {
+                    public ComponentExportAttribute(string name) { }
                 }
             }
 

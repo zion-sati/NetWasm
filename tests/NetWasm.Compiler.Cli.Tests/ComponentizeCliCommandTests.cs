@@ -2,6 +2,7 @@ using NetWasm.Compiler.Cli.Tests.TestSupport;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.ManagedExecutables;
 
 namespace NetWasm.Compiler.Cli.Tests;
 
@@ -39,6 +40,42 @@ public sealed class ComponentizeCliCommandTests
         Assert.DoesNotContain('\r', manifest.Content);
     }
 
+    // A command's component lifts wasi:cli/run as its Main declares; a library has no entry.
+    [Fact]
+    public void PackagesACommandWithItsEntryAbi()
+    {
+        var harness = new Harness("wasm32");
+
+        harness.Run(
+            "-coremodule:app.wasm", "-wit:contract.wit", "-out:component.wasm", "-manifest:component.json",
+            "-entryassembly:App.dll");
+
+        Assert.Equal("App.dll", harness.EntryPoints.Path);
+        Assert.Same(RecordingEntryPoints.Abi, harness.Packager.Request!.ManagedExecutableEntryPoint);
+
+        var library = new Harness("wasm32");
+        library.Run("-coremodule:app.wasm", "-wit:contract.wit", "-out:component.wasm", "-manifest:component.json");
+        Assert.Null(library.EntryPoints.Path);
+        Assert.Null(library.Packager.Request!.ManagedExecutableEntryPoint);
+    }
+
+    // A plain core module is the linked module itself: it needs no component manifest.
+    [Fact]
+    public void WritesAPlainCoreModuleWithoutAManifest()
+    {
+        var harness = new Harness("wasm32");
+
+        var result = harness.Run(
+            "-coremodule:app.wasm", "-runtimemodule:runtime.wasm", "-wit:contract.wit", "-out:plugin.wasm",
+            "-plaincoremodule");
+
+        Assert.Equal(0, result);
+        Assert.True(harness.Validator.Called);
+        Assert.True(harness.Packager.Request!.PlainCoreModule);
+        Assert.Equal("plugin.wasm", harness.Packager.Request.OutputPath);
+        Assert.Empty(harness.Files.TextWrites);
+    }
+
     [Fact]
     public void PackagesAWasm64Component()
     {
@@ -68,7 +105,36 @@ public sealed class ComponentizeCliCommandTests
 
         var overrides = harness.Packager.Request!.OptimizationOverrides!;
         Assert.True(overrides.Converge);
+        Assert.Null(overrides.LowMemoryUnused);
         Assert.Equal(hints is null ? ManagedInliningHints.Auto : ManagedInliningHints.Preserve, overrides.ManagedInliningHints);
+    }
+
+    [Theory]
+    [InlineData("-lowmemoryunused-", false)]
+    [InlineData("-lowmemoryunused", true)]
+    public void PassesAnExplicitLowMemoryChoiceToTheOptimizer(string option, bool expected)
+    {
+        var harness = new Harness("wasm32");
+
+        Assert.Equal(0, harness.Run(
+            "-coremodule:app.wasm", "-runtimemodule:runtime.wasm", "-wit:contract.wit", "-out:component.wasm",
+            "-manifest:component.json", "-optimize:O3", option));
+
+        var overrides = harness.Packager.Request!.OptimizationOverrides!;
+        Assert.Equal(expected, overrides.LowMemoryUnused);
+        Assert.False(overrides.Converge);
+    }
+
+    [Fact]
+    public void LeavesTheLowMemoryChoiceToThePresetWhenNotAsked()
+    {
+        var harness = new Harness("wasm32");
+
+        Assert.Equal(0, harness.Run(
+            "-coremodule:app.wasm", "-runtimemodule:runtime.wasm", "-wit:contract.wit", "-out:component.wasm",
+            "-manifest:component.json", "-optimize:O3"));
+
+        Assert.Null(harness.Packager.Request!.OptimizationOverrides?.LowMemoryUnused);
     }
 
     [Fact]
@@ -105,20 +171,24 @@ public sealed class ComponentizeCliCommandTests
         var files = new RecordingFiles();
         var hints = new ManagedInliningHintsParser();
 
+        var entries = new RecordingEntryPoints();
+
         Assert.Throws<ArgumentNullException>(() =>
-            new ComponentizeCliCommand(null!, validator, manifests, packager, inputs, files, hints));
+            new ComponentizeCliCommand(null!, validator, manifests, packager, inputs, files, hints, entries));
         Assert.Throws<ArgumentNullException>(() =>
-            new ComponentizeCliCommand(documents, null!, manifests, packager, inputs, files, hints));
+            new ComponentizeCliCommand(documents, null!, manifests, packager, inputs, files, hints, entries));
         Assert.Throws<ArgumentNullException>(() =>
-            new ComponentizeCliCommand(documents, validator, null!, packager, inputs, files, hints));
+            new ComponentizeCliCommand(documents, validator, null!, packager, inputs, files, hints, entries));
         Assert.Throws<ArgumentNullException>(() =>
-            new ComponentizeCliCommand(documents, validator, manifests, null!, inputs, files, hints));
+            new ComponentizeCliCommand(documents, validator, manifests, null!, inputs, files, hints, entries));
         Assert.Throws<ArgumentNullException>(() =>
-            new ComponentizeCliCommand(documents, validator, manifests, packager, null!, files, hints));
+            new ComponentizeCliCommand(documents, validator, manifests, packager, null!, files, hints, entries));
         Assert.Throws<ArgumentNullException>(() =>
-            new ComponentizeCliCommand(documents, validator, manifests, packager, inputs, null!, hints));
+            new ComponentizeCliCommand(documents, validator, manifests, packager, inputs, null!, hints, entries));
         Assert.Throws<ArgumentNullException>(() =>
-            new ComponentizeCliCommand(documents, validator, manifests, packager, inputs, files, null!));
+            new ComponentizeCliCommand(documents, validator, manifests, packager, inputs, files, null!, entries));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ComponentizeCliCommand(documents, validator, manifests, packager, inputs, files, hints, null!));
     }
 
     private sealed class Harness
@@ -133,8 +203,11 @@ public sealed class ComponentizeCliCommandTests
                 Packager,
                 new RecordingManifestInputs(),
                 Files,
-                new ManagedInliningHintsParser());
+                new ManagedInliningHintsParser(),
+                EntryPoints);
         }
+
+        public RecordingEntryPoints EntryPoints { get; } = new();
 
         public RecordingValidator Validator { get; } = new();
         public RecordingPackager Packager { get; } = new();
@@ -162,6 +235,22 @@ public sealed class ComponentizeCliCommandTests
     {
         public ComponentManifest Build(
             WitDocument document, WitWorld world, ComponentTarget target, ComponentManifestInputs inputs) => manifest;
+    }
+
+    private sealed class RecordingEntryPoints : IManagedEntryPointReader
+    {
+        public static ManagedExecutableEntryPointAbi Abi { get; } = new(
+            ManagedExecutableParameterShape.StringArray,
+            ManagedExecutableReturnShape.ExitCode,
+            ManagedExecutableCompletionShape.Asynchronous);
+
+        public string? Path { get; private set; }
+
+        public ManagedEntryPoint Read(string assemblyPath)
+        {
+            Path = assemblyPath;
+            return new("Program", "Main", 0x06000001, Abi);
+        }
     }
 
     private sealed class RecordingPackager : IComponentPackager

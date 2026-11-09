@@ -18,7 +18,17 @@ internal static class WitBindingWriterFixture
     public static IWitBindingMethodWriter Create()
     {
         var sections = CreateSections();
-        return new WitBindingMethodWriter(sections.Imports, sections.Exports);
+        return new WitBindingMethodWriter(sections.Imports, sections.Exports, CreateIntrinsics());
+    }
+
+    public static IWitBindingIntrinsicsSectionWriter CreateIntrinsics()
+    {
+        var syntax = new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier());
+        return new WitBindingIntrinsicsSectionWriter(
+            new WitCanonicalTypeResolver(),
+            new CanonicalAbiMemoryLayoutPlanner(),
+            syntax,
+            new CodeWriterFactory());
     }
 
     private static (

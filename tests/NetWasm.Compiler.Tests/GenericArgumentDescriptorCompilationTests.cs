@@ -35,7 +35,7 @@ public sealed class GenericArgumentDescriptorCompilationTests
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "ExistingGenericArguments.EntryPoint",
             "Run", [new("run", "ExistingGenericArguments.EntryPoint", "Run")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform@1.0.0/platform"));
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 41, target, result.StaticDataEnd));
     }

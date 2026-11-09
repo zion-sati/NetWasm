@@ -6,19 +6,30 @@ using NetWasm.Hosting.Build;
 namespace NetWasm.Hosting.Build.JavaScript;
 
 /// <summary>
-/// Source shared by every generated browser host: the WASI Preview 2 shim and
-/// in-memory filesystem imports, the platform actions a hosting composition
-/// takes, and the MSBuild-selected execution configuration.
+/// Source shared by every generated browser host: NetWasm's WASI 0.3 platform and
+/// filesystem imports, the platform actions a hosting composition takes, and the
+/// MSBuild-selected execution configuration.
 /// </summary>
 internal static class BrowserHostSource
 {
-    private static readonly string[] Preview2Members =
+    // A browser grants no host directories: its filesystem is the host's in-memory tree
+    // (#142), a read-write root holding /tmp and what the page mounts. Its network is HTTP
+    // over fetch; the WASI platform supplies it to an execution the network grant allows.
+    private const string MemoryFilesystem =
+        "createWasiFilesystem(Object.freeze({ hostFiles: fileMounts.hostFiles, preopens: Object.freeze([...preopens, " +
+        "Object.freeze({ access: \"readWrite\", guestPath: \"/\", hostPath: \"/\" })]) }))";
+
+    // A worker reads a picked File in place; the page copies it in when mounted.
+    private const string WorkerBlobReader =
+        "(blob, start, end) => new Uint8Array(new FileReaderSync().readAsArrayBuffer(blob.slice(start, end)))";
+
+    private const string FetchNetwork =
+        "Object.freeze({ modules: createWasiHttpFetch(Object.freeze({ fetch: webPlatform.fetch })) })";
+
+    private static readonly string[] WasiMembers =
     [
-        "createFilesystem({ preopens }) {",
-        "  if (Object.keys(preopens).length !== 0) throw new TypeError(\"browser preopens require explicit browser capabilities\");",
-        "  return createFilesystem({ adapter: new InMemoryFilesystemAdapter(), preopens: Object.freeze({}) });",
-        "},",
-        "createShim: configuration => new WASIShim(configuration),",
+        $"createFilesystem: preopens => {MemoryFilesystem},",
+        $"createImports: createWasiPlatform(Object.freeze({{ initialDirectory: null, network: {FetchNetwork} }})),",
     ];
 
     // The hosting module's web actions look their browser APIs up when they
@@ -26,55 +37,95 @@ internal static class BrowserHostSource
     // imports the host and reports the failure from open() or run().
     private static readonly string[] WebMembers = ["...webPlatform,"];
 
-    public static void AppendImports(StringBuilder source, string preview2ShimRoot, string hostingRoot)
+    public static void AppendImports(StringBuilder source, string hostingRoot)
     {
         source.Append("import { webPlatform } from ")
             .Append(ModuleSpecifier(Path.Combine(hostingRoot, "browser-web-platform.mjs")))
             .AppendLine(";");
-        source.Append("import { WASIShim } from ")
-            .Append(ModuleSpecifier(Path.Combine(preview2ShimRoot, "dist", "common", "instantiation.js")))
+        source.Append("import { createWasiPlatform } from ")
+            .Append(ModuleSpecifier(Path.Combine(hostingRoot, "wasi-platform.mjs")))
             .AppendLine(";");
-        source.Append("import { createFilesystem, InMemoryFilesystemAdapter } from ")
-            .Append(ModuleSpecifier(Path.Combine(preview2ShimRoot, "dist", "browser", "filesystem.js")))
+        source.Append("import { createWasiFilesystem } from ")
+            .Append(ModuleSpecifier(Path.Combine(hostingRoot, "wasi-filesystem.mjs")))
+            .AppendLine(";");
+        source.Append("import { createBrowserFileMounts } from ")
+            .Append(ModuleSpecifier(Path.Combine(hostingRoot, "browser-file-mounts.mjs")))
+            .AppendLine(";");
+        source.Append("import { createWasiHttpFetch } from ")
+            .Append(ModuleSpecifier(Path.Combine(hostingRoot, "wasi-http-fetch.mjs")))
             .AppendLine(";");
     }
 
-    /// <summary>The export-session and execution platform: Preview 2 and web actions together.</summary>
+    /// <summary>
+    /// The host's in-memory file system (#142), declared before the platform that uses it. A page
+    /// host exports its mount, unmount and sync actions; a worker host reads picked files in place.
+    /// </summary>
+    public static void AppendFileMounts(StringBuilder source, bool worker)
+    {
+        source.Append("const fileMounts = createBrowserFileMounts(Object.freeze({ readBlobSync: ")
+            .Append(worker ? WorkerBlobReader : "null").AppendLine(" }));");
+        if (!worker) source.AppendLine("export const { mount, unmount, sync } = fileMounts;");
+    }
+
+    /// <summary>The export-session and execution platform: WASI and web actions together.</summary>
     public static void AppendPlatformMembers(StringBuilder source, string indent)
     {
-        AppendPreview2Members(source, indent);
+        AppendWasiMembers(source, indent);
         AppendWebMembers(source, indent);
     }
 
-    public static void AppendPreview2Members(StringBuilder source, string indent) =>
-        AppendLines(source, indent, Preview2Members);
+    public static void AppendWasiMembers(StringBuilder source, string indent) =>
+        AppendLines(source, indent, WasiMembers);
 
     public static void AppendWebMembers(StringBuilder source, string indent) =>
         AppendLines(source, indent, WebMembers);
 
     /// <summary>
-    /// Imports for a raw page or worker host from the shared runtime: the shim
-    /// factory with only the application's Preview 2 families, and the
-    /// filesystem scope when it links a filesystem interface.
+    /// Imports for a raw page or worker host from the shared runtime: the WASI
+    /// platform, and the filesystem scope when the application links a
+    /// filesystem interface.
     /// </summary>
     public static void AppendRawImports(
         StringBuilder source,
         string host,
         RawBrowserHostCapabilities capabilities)
     {
-        source.Append("import { createSelectedPreview2ShimFactory, webPlatform } from ")
+        source.Append("import { createWasiPlatform, webPlatform } from ")
             .Append(JavaScriptRuntime.Quoted(host)).AppendLine(";");
         if (capabilities.LinksFilesystem)
         {
-            source.Append("import { createPreview2FilesystemScope } from ")
+            source.Append("import { createBrowserFileMounts, createWasiFilesystem } from ")
                 .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.Filesystem)).AppendLine(";");
         }
-        foreach (var family in capabilities.ShimFamilies)
+        if (capabilities.LinksHttp)
         {
-            source.Append("import { ").Append(family).Append(" as ").Append(FamilyIdentifier(family))
-                .Append(" } from ").Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.FamilyModule(family, host)))
-                .AppendLine(";");
+            source.Append("import { createWasiHttpFetch } from ")
+                .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.Http)).AppendLine(";");
         }
+    }
+
+    /// <summary>
+    /// <see cref="AppendRawImports"/> and <see cref="AppendManifestValidatorImport"/> for a host
+    /// that Node.js code imports: the hosting sources themselves, and Node.js's web actions in
+    /// place of the browser's.
+    /// </summary>
+    public static void AppendNodeRawImports(
+        StringBuilder source,
+        string hostingRoot,
+        RawBrowserHostCapabilities capabilities,
+        bool validate)
+    {
+        void Import(string names, string file) => source.Append("import { ").Append(names).Append(" } from ")
+            .Append(ModuleSpecifier(Path.Combine(hostingRoot, file))).AppendLine(";");
+        Import("createWasiPlatform", "wasi-platform.mjs");
+        Import("nodePlatform as webPlatform", "node-web-platform.mjs");
+        if (capabilities.LinksFilesystem)
+        {
+            Import("createWasiFilesystem", "wasi-filesystem.mjs");
+            Import("createBrowserFileMounts", "browser-file-mounts.mjs");
+        }
+        if (capabilities.LinksHttp) Import("createWasiHttpFetch", "wasi-http-fetch.mjs");
+        if (validate) Import("validateDeploymentManifest", "deployment-manifest-validator.mjs");
     }
 
     /// <summary>The helper <see cref="AppendProviderCatalog"/> freezes the catalog with; written after the imports.</summary>
@@ -107,32 +158,19 @@ internal static class BrowserHostSource
         source.AppendLine("}");
     }
 
-    /// <summary>The raw export-session platform: the selected Preview 2 shim and web actions.</summary>
+    /// <summary>The raw export-session platform: the WASI platform and web actions.</summary>
     public static void AppendRawPlatformMembers(
         StringBuilder source,
         string indent,
         RawBrowserHostCapabilities capabilities)
     {
-        if (capabilities.LinksFilesystem)
-        {
-            AppendLines(source, indent,
-            [
-                "createFilesystemScope: preopens => createPreview2FilesystemScope({",
-                "  createFilesystem({ preopens }) {",
-                "    if (Object.keys(preopens).length !== 0) throw new TypeError(\"browser preopens require explicit browser capabilities\");",
-                $"    return {FamilyIdentifier("filesystem")}.createFilesystem({{ adapter: new {FamilyIdentifier("filesystem")}.InMemoryFilesystemAdapter(), preopens: Object.freeze({{}}) }});",
-                "  },",
-                "  preopens,",
-                "}),",
-            ]);
-        }
-        else
-        {
-            AppendLines(source, indent, ["createFilesystemScope: null,"]);
-        }
-        source.Append(indent).Append("createShim: createSelectedPreview2ShimFactory({ ")
-            .Append(string.Join(", ", capabilities.ShimFamilies.Select(family => $"{family}: {FamilyIdentifier(family)}")))
-            .AppendLine(" }),");
+        AppendLines(source, indent,
+        [
+            capabilities.LinksFilesystem
+                ? $"createFilesystemScope: preopens => {MemoryFilesystem},"
+                : "createFilesystemScope: null,",
+            $"createImports: createWasiPlatform(Object.freeze({{ initialDirectory: null, network: {(capabilities.LinksHttp ? FetchNetwork : "null")} }})),",
+        ]);
         AppendWebMembers(source, indent);
     }
 
@@ -143,9 +181,6 @@ internal static class BrowserHostSource
         RawBrowserHostCapabilities capabilities) =>
         source.Append(indent).Append("platformProviderCatalog: deepFreeze(")
             .Append(capabilities.ProviderCatalogJson).AppendLine("),");
-
-    private static string FamilyIdentifier(string family) =>
-        "preview2" + char.ToUpperInvariant(family[0]) + family[1..];
 
     public static void AppendConfiguration(
         StringBuilder source,
@@ -188,6 +223,9 @@ internal static class BrowserHostSource
         source.Append(indent).Append("  network: ").Append(Json(network)).AppendLine(",");
         source.Append(indent).AppendLine("  preopens: Object.freeze([]),");
         source.Append(indent).Append("  randomness: ").Append(randomness ? "true" : "false").AppendLine(",");
+        // A browser has no working or temporary directory to grant.
+        source.Append(indent).AppendLine("  temporaryDirectory: false,");
+        source.Append(indent).AppendLine("  workingDirectory: false,");
         source.Append(indent).AppendLine("}),");
     }
 

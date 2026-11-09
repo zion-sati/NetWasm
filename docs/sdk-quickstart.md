@@ -103,6 +103,11 @@ calls to `NoInlining` methods that an earlier round found empty, which makes som
 micro-benchmarks up to three times faster. The published benchmarks build with
 it, as a CI release build can afford to.
 
+NetWasm places nothing in the first KiB of memory, so at every level that runs
+`wasm-opt` it lets Binaryen assume that memory is unused, as Emscripten's optimized
+builds do. Binaryen then folds a constant added to an address into the load or
+store that uses it. Set `NetWasmOptimizerLowMemoryUnused=false` to turn that off.
+
 An application or runnable test project restores one host-tools package. A
 plain or dual-target library does not; its consumer selects the host package.
 If you move a restored checkout to another development host, run `dotnet
@@ -122,40 +127,28 @@ generate the new host file, then review and remove the old file. To keep a
 deliberate custom name, set `NuGetLockFilePath` explicitly; one explicit lock
 file shared across different hosts must be regenerated for each host.
 
-### Choose the entry contract and output kind
+### Choose the output kind
 
-The entry contract and the output kind answer different questions:
+An application's `Main` can be synchronous or asynchronous (`Task Main`,
+`Task<int> Main`) without any setting: the host waits for the returned task
+and uses its exit code. What a project builds is chosen by `OutputType` and,
+for application-owned JavaScript imports, `NetWasmRawWasm`:
 
-- `NetWasmComponentContract` selects how the host starts and completes the
-  application.
-- `NetWasmRawWasm` selects a raw linked Wasm module instead of the default WASI
-  component.
-
-The default `command` contract is appropriate for a synchronous `Main`. When
-`Main` returns `Task` or `Task<int>` and may suspend, select `async-command`:
-
-```xml
-<PropertyGroup>
-  <NetWasmComponentContract>async-command</NetWasmComponentContract>
-</PropertyGroup>
-```
-
-`dotnet run` supports `async-command` with either the default component output
-or raw output. Async code alone is not a reason to set `NetWasmRawWasm=true`.
-
-| Application boundary | Required project setting | Output kind |
+| What you are building | Project setting | Output |
 | --- | --- | --- |
-| Synchronous `Main` | Default `command` contract | Component by default; raw is optional |
-| Suspending `Task Main` or `Task<int> Main` | `NetWasmComponentContract=async-command` | Component by default; raw is optional |
-| Reachable application-owned `[JSImport]` | Contract chosen from the entry point, plus `NetWasmRawWasm=true` | Raw |
+| A program with `Main` | `OutputType=Exe` (the default) | A WASI 0.3 command component |
+| A program with application-owned `[JSImport]` modules | `OutputType=Exe` plus `NetWasmRawWasm=true` | Raw, with the NetWasm JavaScript host |
 | C# exports that JavaScript calls, with no `Main` | `OutputType=JsModule` and `NetWasmJavaScriptHosts` | Raw, with a generated `open()` module |
+| A worker described by WIT | `OutputType=WitWebWorker` | A component with generated WIT bindings |
+| A component that exports a WIT world, such as an HTTP service | `OutputType=Component` and `NetWasmWorld` | One WASI 0.3 component, `<AssemblyName>.wasm` |
+| A module for an engine without the Component Model | `OutputType=CoreModule` and `NetWasmWorld` | One plain core module with no WASI |
 
-For example, a suspending entry point that directly imports an application
-JavaScript module uses both settings for separate reasons:
+Async code alone is not a reason to set `NetWasmRawWasm=true`. For example, an
+entry point that directly imports an application JavaScript module selects
+raw output because of that import:
 
 ```xml
 <PropertyGroup>
-  <NetWasmComponentContract>async-command</NetWasmComponentContract>
   <NetWasmRawWasm>true</NetWasmRawWasm>
 </PropertyGroup>
 ```
@@ -205,30 +198,29 @@ published deployment with the project's arguments, environment and grants; see
 `executeNetWasm`, which takes a request you build yourself. This is an authored
 module binding; the host does not read a global module registry. Custom hosts can instead use their declared
 application-provider contracts. WASI-backed
-APIs supplied by NetWasm, including the supported HTTP profile, do not become
-application-owned `[JSImport]` modules
-and do not require raw output for this reason.
+APIs supplied by NetWasm, including `HttpClient`, sockets and files, do not
+become application-owned `[JSImport]` modules and do not require raw output
+for this reason.
 
 Configuration failures identify the mismatched boundary:
 
-- `NW1009` means reached imports are outside the selected WIT world. A
-  suspending entry point using the default `command` world is one common cause.
+- `NW1009` means reached imports are outside the selected WIT world.
 - `NW1010` rejects a requested component boundary that cannot represent the
   reached application-owned JavaScript imports.
-- An entry point whose return shape does not match `command` or
-  `async-command` is rejected rather than invoked through a guessed ABI.
+- `NetWasmComponentContract` is no longer used; a project that still sets it
+  fails with a message asking you to remove it.
 
-JavaScript module and worker templates select their own boundary and do not use
-the `command`/`async-command` properties. Use `dotnet new netwasm-app --host page`,
-`--host worker` or `--worker wit` for those workflows. The
-[C# Web Workers guide](web-workers.md) covers both boundaries, generated clients,
-notifications, failure handling, and worker lifecycle.
+JavaScript module and worker projects select their boundary with `OutputType`.
+Use `dotnet new netwasm-app --host page`, `--host worker` or `--worker wit` for
+those workflows. The [C# Web Workers guide](web-workers.md) covers both
+boundaries, generated clients, notifications, failure handling, and worker
+lifecycle.
 
-An `async-command` remains alive until its managed entry task completes. A
-JavaScript event can invoke a delegate registered through `[JSImport]` and
-complete that task. When C# should keep answering JavaScript for the life of
-the page, publish a `JsModule` and call its exports instead of keeping `Main`
-waiting. A service returning `JSSubscription` must return an object
+An asynchronous `Main` remains alive until its task completes. A JavaScript
+event can invoke a delegate registered through `[JSImport]` and complete that
+task. When C# should keep answering JavaScript for the life of the page,
+publish a `JsModule` and call its exports instead of keeping `Main` waiting. A
+service returning `JSSubscription` must return an object
 with a `dispose()` method, such as `{ dispose() { /* remove the listener */ } }`.
 Release the subscription in a managed `finally` block. Output sinks passed to
 `executeNetWasm` must be frozen objects with a synchronous `write(bytes)` method.
@@ -240,16 +232,77 @@ Command execution returns an execution outcome, not a live export table; a
 Promise-based export methods. Worker code uses notifications to request DOM
 updates on the page. `dispose()` drains accepted calls before closing;
 `terminate()` stops the worker and rejects pending calls. Calls after either
-closure are rejected. This worker boundary does not expose exports from an
-already-running page `async-command`.
+closure are rejected. This worker boundary does not expose exports from a
+page's already-running `Main`.
 
 When a `Task` or `ValueTask` export faults, its rejected promise preserves the
 managed message in `error.message`. The worker error's `managed` property also
 contains `typeId`, `typeName`, `message` and `stackTrace`. Debug traces include
 available source files and line numbers. Optional diagnostic metadata can be
 unavailable, in which case `typeName` is null and the numeric type ID remains.
-The managed trace is separate from the JavaScript stack. Catching that rejection
-leaves the worker available for later calls.
+
+### Write an HTTP service
+
+An HTTP service is a component whose world is NetWasm's `service` world
+(`wasi:cli` imports plus `wasi:http/service`). `dotnet new netwasm-serverless`
+creates one, with a README showing how to serve it. By hand: reference
+`NetWasm.System.Net.Http` and implement one method that takes an
+`HttpRequestMessage` and returns an `HttpResponseMessage`:
+
+```xml
+<Project Sdk="NetWasm.Sdk/<version>">
+  <PropertyGroup>
+    <OutputType>Component</OutputType>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <NetWasmWorld>service</NetWasmWorld>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NetWasm.System.Net.Http" Version="<version>" />
+  </ItemGroup>
+</Project>
+```
+
+```csharp
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+namespace Greeter;
+
+public static partial class ServiceExports
+{
+    public static async partial Task<HttpResponseMessage> Handle(HttpRequestMessage request)
+    {
+        var body = await request.Content!.ReadAsStringAsync();
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($"{request.Method} {request.RequestUri!.PathAndQuery} [{body}]"),
+        };
+    }
+}
+```
+
+The class goes in the project's root namespace (set
+`NetWasmHttpServiceNamespace` to use another). The package generates the
+`wasi:http` handler that turns each request into an `HttpRequestMessage`,
+calls `Handle`, and streams the response back with its status, headers and
+content. An exception from `Handle` answers with `wasi:http`'s internal error,
+which hosts send as a 500. The service can use `HttpClient` and the other
+WASI-backed APIs while it handles a request.
+
+`dotnet run` does not serve a service; it says how to publish and host it.
+`dotnet publish` writes `Greeter.wasm`, which any `wasi:http` 0.3 host runs
+unchanged:
+
+```bash
+wasmtime serve -Sp3 -Scli --addr 127.0.0.1:8080 publish/Greeter.wasm
+```
+
+Spin runs it from a manifest whose component `source` is the published file
+(list the origins `HttpClient` calls in `allowed_outbound_hosts`), and
+wasmCloud's `wash dev` from a project configuration whose
+`build.component_path` names it. Node.js cannot serve WASI 0.3 HTTP components
+yet: jco and its preview3-shim do not serve them correctly.
 
 ### Host capabilities
 
@@ -257,14 +310,23 @@ Only reachable APIs retain managed code, Wasm imports and JavaScript providers.
 The local launcher supplies clocks, randomness and HTTP when needed; a custom
 host can restrict those capabilities.
 
-Filesystem access requires explicit host-to-guest mappings. A **preopen** is
-WASI's equivalent of mounting a host directory into the application's filesystem
-sandbox before the program starts. The application receives access to the guest
-path, not ambient access
-to the original host path or the rest of the host filesystem.
+File access is capability-based: `File`, `FileStream`, `Directory` and the
+rest of `System.IO` work on the directories the host mounts into the
+application's filesystem sandbox (WASI calls them **preopens**), and nothing
+else on the host is reachable.
 
-For example, this maps the project's `data` directory to `/data` inside the
-Wasm application:
+`dotnet run` and `dotnet test` mount two directories, so ordinary code behaves
+as it does on desktop .NET:
+
+- the working directory (the project directory, unless `RunWorkingDirectory`
+  says otherwise), read-write, at its own absolute path. It is also the
+  program's current directory, so relative paths resolve as usual;
+- a private temporary directory, created for the run and deleted after it, at
+  `/tmp`, where `Path.GetTempPath()` and `Path.GetTempFileName()` point.
+
+Set `NetWasmGrantWorkingDirectory` or `NetWasmGrantTemporaryDirectory` to
+`false` to leave either out. Mount further directories with `NetWasmPreopen`;
+this maps the project's `data` directory to `/data`:
 
 ```xml
 <ItemGroup>
@@ -279,16 +341,6 @@ Wasm application:
 forward-slash syntax and must be unique within the project. `readOnly` blocks
 filesystem mutation through that mount; use `readWrite` only when the
 application genuinely needs to modify the mapped directory.
-
-NetWasm does not infer a preopen from the project directory or current working
-directory. There is no portable, unambiguous host-to-guest path mapping, and an
-implicit mount would expose host files that the application did not request.
-With no `NetWasmPreopen` items, no consumer directory is mounted.
-
-A preopen grants the host-side filesystem capability; it does not create the
-currently missing general `System.IO.File`, `FileStream` or `Directory` API
-surface. Those APIs remain outside the first-preview profile.
-
 
 ### Run a browser project
 
@@ -352,7 +404,34 @@ dotnet publish -c Release -o publish/local
 ```
 
 The local publish contains the selected `netwasm.host.mjs` launcher and its
-portable deployment closure.
+portable deployment closure. Copy the folder anywhere and run it with your own
+Node.js, as `dotnet run` does:
+
+```bash
+node publish/local/netwasm.host.mjs first second
+```
+
+The launcher passes the arguments to `Main`, inherits the environment, grants
+the network, clocks and random numbers, and exits with the program's exit code.
+A published run mounts no directories unless you name them with
+`--dir HOST[::GUEST]`, as Wasmtime's `--dir` does, before the program's
+arguments (`--` ends the launcher's options). A directory without a guest path
+is seen at its own absolute path, and the program starts in the shell's
+working directory:
+
+```bash
+node publish/local/netwasm.host.mjs --dir . --dir ./data::/data first second
+```
+ A program that uses `HttpClient` carries the
+Node.js HTTP client it needs under `node_modules`, so nothing else is
+installed. A command component also runs in any WASI 0.3 host, such as
+[Wasmtime](https://wasmtime.dev/):
+
+```bash
+wasmtime run --dir . publish/local/HelloNetWasm.wasm first second
+```
+
+Add `-Shttp -Sinherit-network` for a program that uses `HttpClient`.
 
 Publish the browser-selected deployment instead:
 

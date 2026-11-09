@@ -7,6 +7,8 @@ namespace NetWasm.Runtime.Pack.Materialization;
 internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuilder
 {
     private const string ArraySetValueFeature = "array-set-value";
+    private const string ObjectCloneFeature = "object-clone";
+    private const string RandomSeedFeature = "random-seed";
     private const string EphemeronHandlesFeature = "ephemeron-handles";
     private const string FinalizationFeature = "finalization";
     private const string StructuredCommandDiagnosticsFeature =
@@ -109,6 +111,14 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
         if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ArraySetValueFeature))
         {
             exports = exports.Remove("array_set_value");
+        }
+        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ObjectCloneFeature))
+        {
+            exports = exports.Remove("object_clone");
+        }
+        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(RandomSeedFeature))
+        {
+            exports = exports.Remove("random_seed");
         }
         return exports;
     }

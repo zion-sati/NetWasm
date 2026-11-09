@@ -10,14 +10,6 @@ public sealed record WitWorkerContractArtifact
     public string? World { get; init; }
     public ImmutableArray<WitWorkerExportArtifact?> Exports { get; init; }
     public ImmutableArray<WitWorkerTypeArtifact?> Types { get; init; }
-    public WitWorkerReactorArtifact? Reactor { get; init; }
-}
-
-public sealed record WitWorkerReactorArtifact
-{
-    public string? Interface { get; init; }
-    public string? JavaScriptRoot { get; init; }
-    public string? JavaScriptMember { get; init; }
 }
 
 public sealed record WitWorkerExportArtifact
@@ -60,7 +52,6 @@ public sealed record WitWorkerResolvedContract(
     ImmutableDictionary<int, ImmutableArray<WitWorkerValueReference>> References)
 {
     public ImmutableArray<WitWorkerExportArtifact?> Exports => Artifact.Exports;
-    public WitWorkerReactorArtifact? Reactor => Artifact.Reactor;
 }
 
 public interface IWitWorkerContractReader

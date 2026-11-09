@@ -6,6 +6,7 @@ export async function openAdapter({ adapterPath, repositoryRoot, target, provide
   const hosting = `${repositoryRoot}/src/NetWasm.Hosting/JavaScript`;
   const store = await import(pathToFileURL(`${hosting}/raw-resource-store.mjs`).href);
   const releaser = await import(pathToFileURL(`${hosting}/raw-provider-resource-releaser.mjs`).href);
+  const { createRawComponentModel } = await import(pathToFileURL(`${hosting}/raw-component-model.mjs`).href);
   const adapter = await import(pathToFileURL(adapterPath).href);
   const wasm64 = target === "wasm64";
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 256 });
@@ -21,8 +22,10 @@ export async function openAdapter({ adapterPath, repositoryRoot, target, provide
     while (next > memory.buffer.byteLength) memory.grow(1);
     return wasm64 ? BigInt(result) : result;
   };
+  const componentModel = createRawComponentModel({ memory: () => memory });
   const canonical = Object.freeze({
     borrow: store.borrowRawResource,
+    componentModel,
     drop: store.dropRawResource,
     memory: () => memory,
     providers,
@@ -33,9 +36,12 @@ export async function openAdapter({ adapterPath, repositoryRoot, target, provide
     transfer: store.transferRawResource,
   });
   const product = adapter.createAdapter({ metadata: adapter.rawAdapterMetadata, canonical });
-  const module = Object.values(product.imports)[0];
+  // A function's async lowering and its stream and future built-ins are named by its full
+  // interface name, apart from its other imports; their names differ.
+  const module = Object.assign({}, ...Object.values(product.imports));
   return {
     address: value => wasm64 ? BigInt(value) : value,
+    componentModel,
     imports: module,
     memory,
     reallocations,

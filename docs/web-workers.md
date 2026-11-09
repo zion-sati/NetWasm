@@ -28,8 +28,7 @@ notifications, a generated worker client, and orderly disposal.
 | `--worker wit` | The application contract should be language-neutral and explicitly described by WIT. | A WebAssembly Component with generated WIT bindings. |
 | `--host worker` | JavaScript should call managed methods declared with `[JSExport]`, and managed code may use application-supplied `[JSImport]` modules. | Raw WebAssembly with the NetWasm JavaScript interop ABI. |
 
-Worker projects select their boundary with `OutputType` and do not use the
-ordinary `command` or `async-command` entry contracts:
+Worker projects select their boundary with `OutputType`:
 
 ```xml
 <!-- WIT worker -->

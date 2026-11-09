@@ -71,7 +71,10 @@ public sealed class CompileCliOptionsTests
             "-managedquotientreuse:Disabled",
             "-managedintegercheckelimination:Disabled",
             "-managedloopinvariantexpressionhoisting:Disabled",
-            "-managedmulticastinlinedispatch:Enabled");
+            "-managedmulticastinlinedispatch:Enabled",
+            "-managednewobjectnullcheckelimination:Disabled",
+            "-managedloopstrengthreduction:Disabled",
+            "-managedrangebranchfolding:Enabled");
 
         Assert.Equal(NwcTarget.Function, options.Target);
         Assert.Equal("Example.Entry", options.EntryType);
@@ -137,16 +140,25 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("Disabled", options.ManagedIntegerCheckElimination);
         Assert.Equal("Disabled", options.ManagedLoopInvariantExpressionHoisting);
         Assert.Equal("Enabled", options.ManagedMulticastInlineDispatch);
+        Assert.Equal("Disabled", options.ManagedNewObjectNullCheckElimination);
+        Assert.Equal("Disabled", options.ManagedLoopStrengthReduction);
+        Assert.Equal("Enabled", options.ManagedRangeBranchFolding);
     }
 
     [Theory]
     [InlineData("exe")]
     [InlineData("library")]
+    [InlineData("coremodule")]
     public void TargetsWithoutAnEntryMethod(string target)
     {
         var options = Parse("App.dll", "-out:app.wasm", $"-target:{target}");
 
-        Assert.Equal(target == "exe" ? NwcTarget.Exe : NwcTarget.Library, options.Target);
+        Assert.Equal(target switch
+        {
+            "exe" => NwcTarget.Exe,
+            "library" => NwcTarget.Library,
+            _ => NwcTarget.CoreModule,
+        }, options.Target);
         Assert.Empty(options.EntryType);
         Assert.Empty(options.EntryMethod);
     }
@@ -186,7 +198,7 @@ public sealed class CompileCliOptionsTests
     [InlineData("option '-out+' requires a value", "App.dll", "-out+")]
     [InlineData("option '-out:\"\"' requires a value", "App.dll", "-out:\"\"")]
     [InlineData("option '-r:-' requires a value", "App.dll", "-out:a.wasm", "-r:-")]
-    [InlineData("-target must be 'exe', 'library' or 'function'", "App.dll", "-out:a.wasm", "-target:winexe")]
+    [InlineData("-target must be 'exe', 'library', 'function' or 'coremodule'", "App.dll", "-out:a.wasm", "-target:winexe")]
     [InlineData("-target:function requires -entry:Type::Method", "App.dll", "-out:a.wasm", "-target:function")]
     [InlineData("-entry is only valid with -target:function", "App.dll", "-out:a.wasm", "-entry:Type::Run")]
     [InlineData("-entry is only valid with -target:function",

@@ -43,7 +43,7 @@ public sealed class CaseInsensitiveCollectionPayForPlayCompilationTests
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "CaseInsensitiveCollectionFixture.EntryPoint", "Run",
             [new("run", "CaseInsensitiveCollectionFixture.EntryPoint", "Run")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform@1.0.0/platform"));
         var reachable = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
             .Select(body => body.Method.DeclaringType.FullName)
             .ToHashSet(StringComparer.Ordinal);

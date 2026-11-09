@@ -7,7 +7,7 @@ import test from "node:test";
 import { createLocalComponentLoader } from "./local-component-loader.mjs";
 
 const adapterSource = new TextEncoder().encode(`
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter(generatedModule) {
   return Object.freeze({ contractKey, instantiate: generatedModule.instantiate });
 }
@@ -30,7 +30,7 @@ test("loads verified local files once and isolates generated module state", asyn
       load({ ...fixture.request, signal: new AbortController().signal }),
     ]);
     assert.equal(Object.isFrozen(first), true);
-    assert.equal(first.adapter.contractKey, "wasi-command@0.2.11");
+    assert.equal(first.adapter.contractKey, "wasi-command@0.3.2");
     assert.equal((await first.adapter.instantiate()).command.run(), 1);
     assert.equal((await second.adapter.instantiate()).command.run(), 1);
     assert.equal(first.loadCoreModule("app-component.core.wasm") instanceof WebAssembly.Module, true);
@@ -43,7 +43,7 @@ test("rejects tampered artifacts before evaluating JavaScript", async () => {
     globalThis.__netwasmLocalImportCount = 0;
     await writeFile(fixture.adapterPath, new TextEncoder().encode(`
 globalThis.__netwasmLocalImportCount++;
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter() { return {}; }
 `));
     await assert.rejects(() => load(fixture.request), /integrity/);
@@ -57,7 +57,7 @@ test("rejects static dependencies in verified local JavaScript", async () => {
     const load = createLocalComponentLoader({ manifestPath: fixture.manifestPath });
     const source = new TextEncoder().encode(`
 import "node:assert/strict";
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter() { return { contractKey, instantiate() {} }; }
 `);
     await writeFile(fixture.adapterPath, source);
@@ -78,7 +78,7 @@ test("chains unrelated process module loads while a verified import is active", 
     const source = new TextEncoder().encode(`
 globalThis.__netwasmLocalHookReady();
 await globalThis.__netwasmLocalHookGate;
-export const contractKey = "wasi-command@0.2.11";
+export const contractKey = "wasi-command@0.3.2";
 export function createAdapter(generatedModule) {
   return { contractKey, instantiate: generatedModule.instantiate };
 }
@@ -91,7 +91,7 @@ export function createAdapter(generatedModule) {
       const unrelated = await import("data:text/javascript,export const value=42#netwasm-unrelated");
       assert.equal(unrelated.value, 42);
       releaseImport();
-      assert.equal((await loading).adapter.contractKey, "wasi-command@0.2.11");
+      assert.equal((await loading).adapter.contractKey, "wasi-command@0.3.2");
     } finally {
       releaseImport();
       delete globalThis.__netwasmLocalHookReady;

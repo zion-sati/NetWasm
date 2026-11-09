@@ -8,22 +8,23 @@ namespace NetWasm.Compiler.ComponentModel.Tests.Raw;
 public sealed class RawWitFunctionLayoutBuilderTests
 {
     [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void PreservesTheWitDeclarationAndDelegatesTheResolvedFunction(WasmTarget target)
+    [InlineData(WasmTarget.Wasm32, false)]
+    [InlineData(WasmTarget.Wasm64, false)]
+    [InlineData(WasmTarget.Wasm32, true)]
+    public void PreservesTheWitDeclarationAndDelegatesTheResolvedFunction(WasmTarget target, bool asynchronous)
     {
         var dependencies = new RecordingDependencies();
         var document = new WitDocument([], [], [], [], "{}");
         var declaration = new WitFunction("[method]file.read", [], null, new("method", 3));
 
         var product = Create(dependencies).Build(
-            document, "example:files/api@1.0.0", "file-alias", declaration, target);
+            document, "example:files/api@1.0.0", "file-alias", declaration, target, asynchronous);
 
         Assert.Same(declaration, product.Declaration);
         Assert.Same(dependencies.Layout, product.Layout);
         Assert.Equal(["function", "layout"], dependencies.Calls);
         Assert.Equal((document, "example:files/api@1.0.0", declaration), dependencies.FunctionRequest);
-        Assert.Equal((dependencies.Function with { CoreInterfaceName = "file-alias" }, target),
+        Assert.Equal((dependencies.Function with { CoreInterfaceName = "file-alias" }, target, asynchronous),
             dependencies.LayoutRequest);
     }
 
@@ -120,7 +121,7 @@ public sealed class RawWitFunctionLayoutBuilderTests
             new("", "resolved", default, [], null), "module", "member",
             new([], CliValueKind.Void, [], [], false, false), new(0, 1, []), null);
         public (WitDocument, string, WitFunction)? FunctionRequest { get; private set; }
-        public (CanonicalAbiFunction, WasmTarget)? LayoutRequest { get; private set; }
+        public (CanonicalAbiFunction, WasmTarget, bool)? LayoutRequest { get; private set; }
 
         public CanonicalAbiFunction Build(WitDocument document, string interfaceName, WitFunction witFunction)
         {
@@ -129,10 +130,10 @@ public sealed class RawWitFunctionLayoutBuilderTests
             return Function;
         }
 
-        public RawCanonicalFunctionLayout Plan(CanonicalAbiFunction abiFunction, WasmTarget target)
+        public RawCanonicalFunctionLayout Plan(CanonicalAbiFunction abiFunction, WasmTarget target, bool asynchronous = false)
         {
             Enter("layout");
-            LayoutRequest = (abiFunction, target);
+            LayoutRequest = (abiFunction, target, asynchronous);
             return Layout;
         }
 

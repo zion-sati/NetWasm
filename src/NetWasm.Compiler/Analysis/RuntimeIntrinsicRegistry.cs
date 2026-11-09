@@ -28,6 +28,9 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
             var typeName = symbols.Format(method.DeclaringType);
             RuntimeIntrinsic? intrinsic = (typeName, method.Name) switch
             {
+                ("System.Object", "MemberwiseClone") when !method.IsStatic &&
+                    method.GenericArity == 0 && method.Signature.ParameterTypes.IsEmpty &&
+                    method.Signature.ReturnType == CliValueKind.ManagedReference => RuntimeIntrinsic.ObjectClone,
                 ("System.String", "get_Length") => RuntimeIntrinsic.StringLength,
                 ("System.Array", "get_Length") => RuntimeIntrinsic.ArrayLength,
                 ("System.Array", "get_Rank") => RuntimeIntrinsic.ArrayRank,
@@ -244,6 +247,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Enum", "System.IConvertible.ToDouble") => RuntimeIntrinsic.EnumConvert,
                 (("System.IntPtr", "get_Size") or ("System.UIntPtr", "get_Size")) =>
                     RuntimeIntrinsic.NativeIntegerSize,
+                ("System.Runtime.InteropServices.NetWasmHost", "get_IsJavaScriptHost") =>
+                    RuntimeIntrinsic.JavaScriptHost,
                 ("System.BitConverter", "SingleToInt32Bits") =>
                     RuntimeIntrinsic.SingleToInt32Bits,
                 ("System.BitConverter", "Int32BitsToSingle") =>

@@ -59,13 +59,15 @@ public sealed class DiagnosticsDirectActorTests
     [InlineData(CompilerEntryPointKind.RawFunction, true, "function")]
     [InlineData(CompilerEntryPointKind.ManagedExecutable, false, "exe")]
     [InlineData(CompilerEntryPointKind.Library, false, "library")]
+    [InlineData(CompilerEntryPointKind.Library, false, "coremodule")]
     public void ReproductionCommandPreservesTheCompilationMode(
         CompilerEntryPointKind kind, bool hasEntry, string target)
     {
         var builder = new[] { new CompilerReproductionCommandBuilder(new RecordingSourcePaths()) }
             .Cast<ICompilerReproductionCommandBuilder>().Single();
         var command = builder.Build(new CompilerOptions("worker.dll", [], "Worker", "Run", [],
-            EntryPointKind: kind));
+            EntryPointKind: kind)
+        { PlainCoreModule = target == "coremodule" });
 
         Assert.Equal(hasEntry, command.Contains("'-entry:Worker::Run'", StringComparison.Ordinal));
         Assert.Contains($"'-target:{target}'", command);

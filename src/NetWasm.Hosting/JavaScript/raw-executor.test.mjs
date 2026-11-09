@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  commandExecutionContract as commandComponentContract,
-  processExecutionContract as processComponentContract,
-} from "./execution-contracts.mjs";
+import { commandExecutionContract as commandComponentContract } from "./execution-contracts.mjs";
 import { executeRaw } from "./raw-executor.mjs";
-import { resourceDisposeSymbol } from "./resource-disposal.mjs";
 
 const functionImport = (module, name) => ({ module, name, kind: "function" });
 const functionExport = name => ({ name, kind: "function" });
@@ -15,21 +11,14 @@ const commandAbi = (returnShape = "exitCode") => ({
   imports: [functionImport("platform", "value")],
   exports: [functionExport("run")],
 });
-const processAbi = () => ({
+const asyncCommandAbi = () => ({
   target: "wasm32",
   entryPoint: { parameterShape: "none", returnShape: "exitCode", completionShape: "asynchronous" },
-  imports: [
-    functionImport("platform", "value"),
-    functionImport("cm32p2|fixture:reactor/source@1", "get-pollable"),
-    functionImport("cm32p2|netwasm:runtime/reactor-host@1", "watch"),
-    functionImport("cm32p2|netwasm:runtime/reactor-host@1", "cancel"),
-  ],
+  imports: [functionImport("platform", "value"), functionImport("$root", "[waitable-set-new]")],
   exports: [
     functionExport("run"),
-    functionExport("netwasm.process.status"),
-    functionExport("netwasm.process.result"),
-    functionExport("netwasm.process.complete"),
-    functionExport("cm32p2|netwasm:runtime/reactor-guest@1|wake"),
+    functionExport("netwasm.entry.callback"),
+    functionExport("netwasm.entry.exit_code"),
   ],
 });
 const fingerprint = `sha256:${"1".repeat(64)}`;
@@ -53,15 +42,8 @@ const canonicalIdentity = {
   module: "cm32p2|sample:raw/api@1",
   name: "read-value",
 };
-const pollableIdentity = {
-  module: "cm32p2|fixture:reactor/source@1",
-  name: "get-pollable",
-};
-const reactorModule = "cm32p2|netwasm:runtime/reactor-host@1";
-const watchIdentity = { module: reactorModule, name: "watch" };
-const cancelIdentity = { module: reactorModule, name: "cancel" };
-// The code a generated adapter emits for read-value: () -> u32 and
-// get-pollable: () -> own<pollable>, with providers resolved when bound.
+// The code a generated adapter emits for read-value: () -> u32, with its provider resolved
+// when bound.
 function provider(canonical, interfaceName, name) {
   const source = canonical.providers[interfaceName];
   if (source === null || typeof source !== "object") {
@@ -80,23 +62,6 @@ const readValue = canonical => {
       throw new TypeError("raw canonical u32 value is invalid");
     }
     return value | 0;
-  };
-};
-const getPollable = canonical => {
-  const source = provider(canonical, "fixture:reactor@1/source", "getPollable");
-  return () => {
-    canonical.memory();
-    const store = canonical.store();
-    const value = source.getPollable();
-    if (value === null || typeof value !== "object" && typeof value !== "function") {
-      throw new TypeError("raw canonical owned resource value is invalid");
-    }
-    return canonical.register({
-      release: item => canonical.release({ type: 7, value: item }),
-      store,
-      type: 7,
-      value,
-    }) | 0;
   };
 };
 const canonicalAdapter = () => {
@@ -120,76 +85,6 @@ const canonicalAdapter = () => {
     },
   });
 };
-const reactorBinding = operation => Object.freeze({
-  kind: "callable",
-  target: "wasm32",
-  physical: Object.freeze(operation === "watch" ? watchIdentity : cancelIdentity),
-  coreSignature: Object.freeze({
-    parameters: Object.freeze(operation === "watch" ? ["i32", "i32"] : ["i32"]),
-    results: Object.freeze([]),
-  }),
-  provider: Object.freeze({
-    interface: "netwasm:runtime/reactor-host@1.0.0",
-    function: operation,
-    javascriptName: operation,
-    functionKind: "freestanding",
-    resourceType: null,
-    resourceName: null,
-    resourceJavaScriptName: null,
-  }),
-  parameters: Object.freeze(operation === "watch"
-    ? [
-        Object.freeze({
-          name: "ready",
-          javascriptName: "ready",
-          type: Object.freeze({ kind: "owned-resource", resourceType: 7 }),
-        }),
-        Object.freeze({ name: "token", javascriptName: "token", type: Object.freeze({ kind: "u32" }) }),
-      ]
-    : [Object.freeze({ name: "token", javascriptName: "token", type: Object.freeze({ kind: "u32" }) })]),
-  result: null,
-  canonicalSignature: Object.freeze({
-    parameters: Object.freeze(operation === "watch" ? ["i32", "i32"] : ["i32"]),
-    result: null,
-    flatParameters: Object.freeze(operation === "watch" ? ["i32", "i32"] : ["i32"]),
-    flatResults: Object.freeze([]),
-    indirectParameters: false,
-    indirectResult: false,
-  }),
-  parameterMemory: Object.freeze({ size: operation === "watch" ? 8 : 4, alignment: 4 }),
-  resultMemory: null,
-});
-const processAdapter = () => {
-  const identities = Object.freeze([
-    Object.freeze(pollableIdentity),
-    Object.freeze(watchIdentity),
-    Object.freeze(cancelIdentity),
-  ]);
-  const metadata = Object.freeze({
-    abiVersion: 2,
-    bindingIdentities: identities,
-    requiredCapabilities: Object.freeze(["bindReactor", "canonical"]),
-    target: "wasm32",
-    witSourceFingerprint: fingerprint,
-  });
-  return Object.freeze({
-    rawAdapterMetadata: metadata,
-    createAdapter(request) {
-      return Object.freeze({
-        imports: Object.freeze({
-          [pollableIdentity.module]: Object.freeze({
-            [pollableIdentity.name]: getPollable(request.canonical),
-          }),
-          [reactorModule]: Object.freeze({
-            watch: request.bindReactor(reactorBinding("watch")),
-            cancel: request.bindReactor(reactorBinding("cancel")),
-          }),
-        }),
-        metadata,
-      });
-    },
-  });
-};
 const rawInstance = exports => ({
   exports: {
     cm32p2_memory: new WebAssembly.Memory({ initial: 1 }),
@@ -204,14 +99,6 @@ const base = () => ({
   providers: {},
   releaseActions: [],
 });
-const processBase = (getPollable = () => ({ block() {} })) => ({
-  ...base(),
-  adapter: processAdapter(),
-  providers: {
-    "fixture:reactor@1/source": { getPollable },
-  },
-});
-
 test("executes a raw command through the exact projected imports", async () => {
   const calls = [];
   const module = {};
@@ -318,7 +205,7 @@ test("executes a generated canonical import beside an explicit physical import",
 test("closes caller and canonical state when raw adapter preparation fails", async () => {
   for (const [contractKey, abi] of [
     [commandComponentContract, commandAbi()],
-    [processComponentContract, processAbi()],
+    [commandComponentContract, asyncCommandAbi()],
   ]) {
     for (const adapter of [{}, emptyAdapter("wasm64")]) {
       const calls = [];
@@ -391,331 +278,50 @@ test("maps raw instantiation and instantiated-export failures with their causes"
   assert.equal(failedInstanceBinding.primaryFailure.detail, "Error: private instance binding detail");
 });
 
-test("observes an immediate raw managed process and closes in ownership order", async () => {
+test("drives an asynchronous Main through the instance's Component Model", async () => {
   const calls = [];
+  let observer;
   const result = await executeRaw({
-    ...processBase(),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    instantiate: async request => {
-      assert.deepEqual(Object.keys(request.imports["cm32p2|netwasm:runtime/reactor-host@1"]),
-        ["watch", "cancel"]);
-      calls.push("instantiate");
-      return rawInstance({
-        run() { calls.push("start"); return 7; },
-        "netwasm.process.status"() { calls.push("status"); return 1; },
-        "netwasm.process.result"() { calls.push("result"); return 23; },
-        "netwasm.process.complete"() { calls.push("complete"); },
-        "cm32p2|netwasm:runtime/reactor-guest@1|wake"() { calls.push("wake"); },
-      });
+    ...base(),
+    contractKey: commandComponentContract,
+    abi: asyncCommandAbi(),
+    subscribeInteropCompletion(observe) {
+      observer = observe;
+      return () => { calls.push("unsubscribe"); observer = undefined; };
     },
-    releaseActions: [{ code: "host.caller", message: "close", release() { calls.push("caller-close"); } }],
-  });
-  assert.equal(result.exitCode, 23);
-  assert.deepEqual(calls, ["instantiate", "start", "status", "result", "complete", "caller-close"]);
-});
-
-test("observes process completion and delivery failure without a pollable wake", async () => {
-  for (const failed of [false, true]) {
-    let completed = false;
-    let subscribed = false;
-    let observer;
-    const calls = [];
-    const result = await executeRaw({
-      ...processBase(),
-      contractKey: processComponentContract,
-      abi: processAbi(),
-      subscribeInteropCompletion(value) {
-        observer = value; subscribed = true; calls.push("subscribe");
-        return () => { subscribed = false; calls.push("unsubscribe"); };
-      },
-      instantiate: async () => rawInstance({
-        run() {
-          assert.equal(subscribed, true);
-          queueMicrotask(() => {
-            completed = true;
-            observer(failed ? new Error("delivery failed") : undefined);
-          });
-          return 7;
-        },
-        "netwasm.process.status": () => completed ? 1 : 0,
-        "netwasm.process.result": () => 42,
-        "netwasm.process.complete"() { assert.equal(subscribed, false); calls.push("complete"); },
-        "cm32p2|netwasm:runtime/reactor-guest@1|wake"() { assert.fail("no pollable wake is needed"); },
-      }),
-      instanceReleaseActions: [{ code: "host.interop-close", message: "close", release() { assert.equal(subscribed, false); calls.push("close"); } }],
-    });
-    assert.equal(result.completionKind, failed ? "hostFailure" : "normal");
-    if (failed) assert.equal(result.primaryFailure.code, "host.process-wake");
-    else assert.equal(result.exitCode, 42);
-    assert.deepEqual(calls, ["subscribe", "unsubscribe", "complete", "close"]);
-    observer();
-    assert.deepEqual(calls, ["subscribe", "unsubscribe", "complete", "close"]);
-  }
-});
-
-test("closes reactor, instance services, canonical state, and caller resources in order", async () => {
-  const calls = [];
-  let canonicalImport;
-  let nextPollable = 0;
-  const result = await executeRaw({
-    ...processBase(() => {
-      const id = ++nextPollable;
-      return {
-        block: () => new Promise(() => {}),
-        [resourceDisposeSymbol]() { calls.push(`pollable-close:${id}`); },
-      };
-    }),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    schedule() {},
     instantiate: async request => {
-      canonicalImport = request.imports[pollableIdentity.module][pollableIdentity.name];
+      assert.deepEqual(Object.keys(request.imports).sort(), ["$root", "platform"]);
+      const newSet = request.imports.$root["[waitable-set-new]"];
       return rawInstance({
         run() {
-          const handle = canonicalImport();
-          request.imports[reactorModule].watch(handle, 17);
-          return 1;
+          calls.push("run");
+          // A JavaScript completion arrives while Main waits on its set.
+          setTimeout(() => observer(), 0);
+          return 2 | (newSet() << 4);
         },
-        "netwasm.process.status": () => 1,
-        "netwasm.process.result": () => 0,
-        "netwasm.process.complete": () => { calls.push("complete"); },
-        "cm32p2|netwasm:runtime/reactor-guest@1|wake": () => {},
+        "netwasm.entry.callback"(...event) { calls.push(["callback", ...event]); return 0; },
+        "netwasm.entry.exit_code"() { calls.push("exit"); return 5; },
       });
     },
-    instanceReleaseActions: [{
-      code: "host.interop-close",
-      message: "close interop",
-      release() {
-        calls.push("interop-close");
-        canonicalImport();
-      },
-    }],
-    releaseActions: [{
-      code: "host.caller-close",
-      message: "close caller",
-      release() {
-        calls.push("caller-close");
-        assert.throws(() => canonicalImport(), /closed/);
-      },
-    }],
   });
-  assert.equal(result.exitCode, 0);
-  assert.deepEqual(calls, [
-    "complete",
-    "pollable-close:1",
-    "interop-close",
-    "pollable-close:2",
-    "caller-close",
-  ]);
+  assert.equal(result.completionKind, "normal");
+  assert.equal(result.exitCode, 5);
+  assert.deepEqual(calls, ["run", ["callback", 0, 0, 0], "exit", "unsubscribe"]);
 });
 
-test("uses guarded readiness to resume a deferred raw process", async () => {
-  const jobs = [];
+test("keeps the Component Model's own built-ins from physical providers", async () => {
   const calls = [];
-  let status = 0;
-  const result = executeRaw({
-    ...processBase(() => ({
-      block() { calls.push("block"); status = 1; return Promise.resolve(); },
-      [resourceDisposeSymbol]() { calls.push("dispose"); },
-    })),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    schedule: callback => jobs.push(callback),
-    instantiate: async request => rawInstance({
-      run() {
-        calls.push("start");
-        assert.equal(
-          request.imports["cm32p2|netwasm:runtime/reactor-host@1"].cancel(99),
-          undefined);
-        const handle = request.imports[pollableIdentity.module][pollableIdentity.name]();
-        request.imports["cm32p2|netwasm:runtime/reactor-host@1"].watch(handle, 13);
-        return 7;
-      },
-      "netwasm.process.status"() { calls.push("status"); return status; },
-      "netwasm.process.result"() { calls.push("result"); return 29; },
-      "netwasm.process.complete"() { calls.push("complete"); },
-      "cm32p2|netwasm:runtime/reactor-guest@1|wake"(token) { calls.push(`wake:${token}`); },
-    }),
-  });
-  await Promise.resolve();
-  assert.deepEqual(calls, ["start", "status"]);
-  jobs.shift()();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal((await result).exitCode, 29);
-  assert.deepEqual(calls, ["start", "status", "block", "dispose", "wake:13", "status", "result", "complete"]);
-});
-
-test("rejects initialization-time raw reactor use even when instantiation catches it", async () => {
   const result = await executeRaw({
-    ...processBase(),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    instantiate: async request => {
-      try {
-        request.imports["cm32p2|netwasm:runtime/reactor-host@1"].cancel(1);
-      } catch {}
-      return { exports: {} };
-    },
+    ...base(),
+    contractKey: commandComponentContract,
+    abi: asyncCommandAbi(),
+    physicalProviders: { platform: { value() {} }, $root: { "[waitable-set-new]"() { return 1; } } },
+    instantiate() { calls.push("instantiate"); },
+    releaseActions: [{ code: "host.caller", message: "close", release() { calls.push("close"); } }],
   });
-  assert.equal(result.primaryFailure.code, "contract.reactor-initialization");
-});
-
-test("maps every raw process setup and binding failure before guest execution", async () => {
-  const controller = new AbortController();
-  controller.abort();
-  const cases = [
-    {
-      abi: { ...processAbi(), exports: [] },
-      instantiate: async () => { throw new Error("must not instantiate"); },
-      expected: "contract.raw-abi",
-      detail: /^TypeError: \S/u,
-    },
-    {
-      abi: processAbi(),
-      signal: controller.signal,
-      instantiate: async () => { throw new Error("must not instantiate"); },
-      expected: "caller.cancelled",
-      detail: undefined,
-    },
-    {
-      abi: processAbi(),
-      physicalProviders: {},
-      instantiate: async () => { throw new Error("must not instantiate"); },
-      expected: "contract.raw-abi",
-      detail: /^TypeError: \S/u,
-    },
-    {
-      abi: processAbi(),
-      instantiate: async () => { throw new Error("private instantiate failure"); },
-      expected: "host.raw-instantiate",
-      detail: "Error: private instantiate failure",
-    },
-    {
-      abi: processAbi(),
-      instantiate: async request => {
-        try {
-          request.imports["cm32p2|netwasm:runtime/reactor-host@1"].watch({}, 1);
-        } catch {}
-        throw new Error("private initialization failure");
-      },
-      expected: "contract.reactor-initialization",
-      detail: "Error: private initialization failure",
-    },
-    {
-      abi: processAbi(),
-      instantiate: async () => rawInstance({}),
-      expected: "contract.raw-exports",
-      detail: /^TypeError: \S/u,
-    },
-    {
-      abi: processAbi(),
-      instantiate: async () => rawInstance({}),
-      bindInstance() { throw new Error("private binding failure"); },
-      expected: "host.raw-instance-bind",
-      detail: "Error: private binding failure",
-    },
-  ];
-  for (const item of cases) {
-    const request = processBase();
-    const result = await executeRaw({
-      ...request,
-      contractKey: processComponentContract,
-      abi: item.abi,
-      physicalProviders: item.physicalProviders ?? request.physicalProviders,
-      signal: item.signal,
-      instantiate: item.instantiate,
-      bindInstance: item.bindInstance,
-    });
-    assert.equal(result.primaryFailure.code, item.expected);
-    assertDetail(result.primaryFailure, item.detail);
-  }
-});
-
-test("contains a rejected raw pollable as an opaque observation failure", async () => {
-  const jobs = [];
-  const result = executeRaw({
-    ...processBase(() => ({
-      block: () => Promise.reject(new Error("private pollable failure")),
-      [resourceDisposeSymbol]() {},
-    })),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    schedule: callback => jobs.push(callback),
-    instantiate: async request => rawInstance({
-      run() {
-        const handle = request.imports[pollableIdentity.module][pollableIdentity.name]();
-        request.imports["cm32p2|netwasm:runtime/reactor-host@1"].watch(handle, 7);
-        return 3;
-      },
-      "netwasm.process.status": () => 0,
-      "netwasm.process.result": () => 0,
-      "netwasm.process.complete": () => {},
-      "cm32p2|netwasm:runtime/reactor-guest@1|wake": () => {
-        throw new Error("must not wake");
-      },
-    }),
-  });
-  await Promise.resolve();
-  jobs.shift()();
-  await Promise.resolve();
-  await Promise.resolve();
-  const outcome = await result;
-  assert.equal(outcome.primaryFailure.code, "host.process-wake");
-  assert.doesNotMatch(JSON.stringify(outcome), /private/);
-});
-
-test("releases a transferred pollable when the reactor rejects its watch", async () => {
-  const releases = [];
-  let next = 0;
-  const result = await executeRaw({
-    ...processBase(() => {
-      const id = ++next;
-      return {
-        block: () => new Promise(() => {}),
-        [resourceDisposeSymbol]() { releases.push(id); },
-      };
-    }),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    schedule() {},
-    instantiate: async request => rawInstance({
-      run() {
-        const imports = request.imports;
-        const first = imports[pollableIdentity.module][pollableIdentity.name]();
-        imports[reactorModule].watch(first, 11);
-        const rejected = imports[pollableIdentity.module][pollableIdentity.name]();
-        imports[reactorModule].watch(rejected, 11);
-        return 1;
-      },
-      "netwasm.process.status": () => 0,
-      "netwasm.process.result": () => 0,
-      "netwasm.process.complete": () => {},
-      "cm32p2|netwasm:runtime/reactor-guest@1|wake": () => {},
-    }),
-  });
-
-  assert.equal(result.primaryFailure.code, "host.process-start");
-  assert.deepEqual(releases, [2, 1]);
-});
-
-test("rejects a caller-owned logical reactor provider before instantiation", async () => {
-  let instantiated = false;
-  const request = processBase();
-  const result = await executeRaw({
-    ...request,
-    providers: {
-      ...request.providers,
-      "netwasm:runtime/reactor-host@1.0.0": { watch() {}, cancel() {} },
-    },
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    instantiate() { instantiated = true; },
-  });
-
   assert.equal(result.primaryFailure.code, "contract.raw-abi");
-  assert.equal(instantiated, false);
+  assert.match(result.primaryFailure.detail, /reserved/);
+  assert.deepEqual(calls, ["close"]);
 });
 
 test("validates the raw execution request before invoking dependencies", async () => {
@@ -741,7 +347,6 @@ test("validates the raw execution request before invoking dependencies", async (
     { drainTerminalReports: null },
     { instanceReleaseActions: null },
     { releaseActions: null },
-    { schedule: null },
     { signal: {} },
   ]) {
     await assert.rejects(() => executeRaw({ ...valid, ...mutation }), TypeError);
@@ -760,10 +365,10 @@ test("validates and snapshots cleanup before creating execution resources", asyn
   ];
   for (const mutation of invalidActions) {
     await assert.rejects(() => executeRaw({
-      ...processBase(),
+      ...base(),
       adapter: guardedAdapter,
-      contractKey: processComponentContract,
-      abi: processAbi(),
+      contractKey: commandComponentContract,
+      abi: asyncCommandAbi(),
       instantiate: async () => rawInstance({}),
       ...mutation,
     }), TypeError);
@@ -801,88 +406,7 @@ test("validates and snapshots cleanup before creating execution resources", asyn
   assert.deepEqual(calls, ["instance-original", "caller-original"]);
 });
 
-test("contains an unexpected observation rejection and closes every owned scope", async () => {
-  const calls = [];
-  let abortedReads = 0;
-  const signal = {
-    get aborted() {
-      abortedReads++;
-      if (abortedReads === 3) throw new Error("private observation detail");
-      return false;
-    },
-    addEventListener() {},
-    removeEventListener() {},
-  };
-  const result = await executeRaw({
-    ...processBase(),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    signal,
-    instantiate: async () => rawInstance({
-      run: () => 1,
-      "netwasm.process.status": () => 1,
-      "netwasm.process.result": () => 0,
-      "netwasm.process.complete": () => {},
-      "cm32p2|netwasm:runtime/reactor-guest@1|wake": () => {},
-    }),
-    instanceReleaseActions: [{
-      code: "host.instance-close",
-      message: "close instance",
-      release() { calls.push("instance-close"); },
-    }],
-    releaseActions: [{
-      code: "host.caller-close",
-      message: "close caller",
-      release() { calls.push("caller-close"); },
-    }],
-  });
-  assert.equal(result.primaryFailure.code, "host.raw-execution");
-  assert.deepEqual(calls, ["instance-close", "caller-close"]);
-  assert.equal(result.primaryFailure.detail, "Error: private observation detail");
-});
-
-test("records raw reactor and caller cleanup failures", async () => {
-  let disposed = false;
-  const result = await executeRaw({
-    ...processBase(() => ({
-      block: () => new Promise(() => {}),
-      [resourceDisposeSymbol]() { disposed = true; throw new Error("private reactor close"); },
-    })),
-    contractKey: processComponentContract,
-    abi: processAbi(),
-    schedule() {},
-    instantiate: async request => rawInstance({
-      run() {
-        const handle = request.imports[pollableIdentity.module][pollableIdentity.name]();
-        request.imports["cm32p2|netwasm:runtime/reactor-host@1"].watch(handle, 9);
-        return 3;
-      },
-      "netwasm.process.status": () => 1,
-      "netwasm.process.result": () => 0,
-      "netwasm.process.complete": () => {},
-      "cm32p2|netwasm:runtime/reactor-guest@1|wake": () => {},
-    }),
-    releaseActions: [{
-      code: "host.caller-close",
-      message: "The caller could not close.",
-      release() { throw new Error("private caller close"); },
-    }],
-  });
-  assert.equal(disposed, true);
-  assert.equal(result.primaryFailure.code, "host.raw-reactor");
-  assert.deepEqual(result.cleanupFailures.map(failure => failure.code), ["host.caller-close"]);
-  assert.deepEqual([result.primaryFailure, ...result.cleanupFailures].map(failure => failure.detail), [
-    "Error: The execution host could not release every pending pollable.",
-    "Error: private caller close",
-  ]);
-});
-
 test("rejects an invalid interop observer subscription before guest entry", async () => {
   await assert.rejects(() => executeRaw({ ...base(), contractKey: commandComponentContract,
     abi: commandAbi(), instantiate: async () => { assert.fail("must not enter guest"); }, subscribeInteropCompletion: null }), /subscription/);
 });
-
-function assertDetail(failure, expected) {
-  if (expected instanceof RegExp) assert.match(failure.detail, expected);
-  else assert.equal(failure.detail, expected);
-}

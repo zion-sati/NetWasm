@@ -117,6 +117,39 @@ public sealed class DirectCallEmitterTests
         Assert.Contains(WasmOpcodes.Call, GetCodeBytes(instruction));
     }
 
+    // A callvirt whose object analysis proved non-null, as newobj produced it, calls
+    // without its null check, unless the proof describes another snapshot of the body.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void VirtualReferenceCallSkipsOnlyTheNullCheckAProofCovers(bool stale)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
+        var instruction = WithNonNullProof(CreateInstructionRequest(
+            CilOperation.CallVirtual,
+            [CliValueKind.ManagedReference],
+            new CilOperand.Entity(ConstructorKey)), stale);
+        var definition = program.GetMethod(ConstructorKey) with
+        {
+            Name = "Virtual",
+            IsVirtual = true,
+        };
+        var method = new MethodInstanceModel(
+            definition,
+            CliTypeIdentity.Named(Assembly, "Test", "Type", isValueType: false),
+            [],
+            definition.Signature);
+
+        CreateEmitter(layouts).Emit(
+            new CallEmissionRequest(instruction, method, 0, 1),
+            GetCodeWriter(instruction),
+            CreateIndices(program));
+
+        Assert.Equal(stale, ((RecordingInstructionWriter)GetCodeWriter(instruction)).ToInstructions()
+            .Any(code => code.Opcode == WasmOpcodes.I32EqualZero));
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32, 0, WasmOpcodes.I32Constant)]
     [InlineData(WasmTarget.Wasm64, 8, WasmOpcodes.I64Constant)]

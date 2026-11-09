@@ -16,12 +16,6 @@ const valid = {
   hostingVersion: "0.1.0-preview.1",
   hostExecutablePath: "/tools/node",
   launcherPath: "/packages/hosting/tools/netwasm/hosting/launcher.mjs",
-  toolPackages: [{
-    id: "NetWasm.Toolchain",
-    version: "0.1.0-preview.23",
-    rootPath: "/packages/toolchain",
-    sha256: digest,
-  }],
 };
 
 test("execution descriptor reader composes the strict public data boundary", () => {
@@ -34,7 +28,6 @@ test("execution descriptor reader composes the strict public data boundary", () 
   const result = read(JSON.stringify(valid));
   assert.deepEqual(result, valid);
   assert.equal(Object.isFrozen(result), true);
-  assert.equal(Object.isFrozen(result.toolPackages[0]), true);
   assert.throws(
     () => read(`${JSON.stringify(valid).slice(0, -1)},"schemaVersion":1}`),
     /duplicate property 'schemaVersion'/i);

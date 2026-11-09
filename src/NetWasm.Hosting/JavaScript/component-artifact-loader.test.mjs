@@ -43,7 +43,7 @@ const markerDigests = new Map([
 test("verifies the complete closure before importing and compiling exact owned bytes", async () => {
   const calls = [];
   const transportBuffers = new Map();
-  const adapter = Object.freeze({ contractKey: "wasi-command@0.2.11", instantiate() {} });
+  const adapter = Object.freeze({ contractKey: "wasi-command@0.3.2", instantiate() {} });
   const loaded = await loadComponentArtifacts({
     deploymentKind: "component",
     artifacts: artifacts(),
@@ -71,9 +71,9 @@ test("verifies the complete closure before importing and compiling exact owned b
       calls.push(`import:${marker}`);
       if (value.role === "component-adapter") {
         return {
-          contractKey: "wasi-command@0.2.11",
+          contractKey: "wasi-command@0.3.2",
           createAdapter(generatedModule) {
-            assert.equal(this.contractKey, "wasi-command@0.2.11");
+            assert.equal(this.contractKey, "wasi-command@0.3.2");
             assert.equal(generatedModule.marker, 3);
             return adapter;
           },
@@ -106,7 +106,7 @@ test("verifies the complete closure before importing and compiling exact owned b
 
 test("loads browser artifacts through the identical shared contract", async () => {
   const loaded = await loadComponentArtifacts(createRequest({ deploymentKind: "browser" }));
-  assert.equal(loaded.adapter.contractKey, "wasi-command@0.2.11");
+  assert.equal(loaded.adapter.contractKey, "wasi-command@0.3.2");
 });
 
 test("loads an older component closure without diagnostic artifacts", async () => {
@@ -270,8 +270,8 @@ function createRequest(overrides = {}) {
     hashBytes: async bytes => markerDigests.get(bytes[0]),
     importModule: async (_bytes, value) => value.role === "component-adapter"
       ? {
-        contractKey: "wasi-command@0.2.11",
-        createAdapter: () => ({ contractKey: "wasi-command@0.2.11", instantiate() {} }),
+        contractKey: "wasi-command@0.3.2",
+        createAdapter: () => ({ contractKey: "wasi-command@0.3.2", instantiate() {} }),
       }
       : { marker: 3 },
     compileCoreModule: async bytes => ({ marker: bytes[0] }),

@@ -18,7 +18,7 @@ function request(overrides = {}) {
       preopens: [{ hostPath: "/host/data", guestPath: "/data", access: "readOnly" }],
       network: "denyAll",
       clocks: ["wall", "monotonic"],
-      randomness: false,
+      randomness: false, temporaryDirectory: false, workingDirectory: false,
     },
     applicationImports: [{
       module: "example:logging/logger@1.0.0",
@@ -29,8 +29,9 @@ function request(overrides = {}) {
   };
 }
 
-function createValidator(predicate = value => value.startsWith("/")) {
+function createValidator(predicate = value => value.startsWith("/"), hostDirectories = true) {
   return createExecutionRequestValidator({
+    hostDirectories,
     isAbsoluteHostPath: predicate,
     selectProviderKind,
   });
@@ -48,7 +49,7 @@ test("execution request validator snapshots every supported authority value", ()
           ...request().grants,
           network,
           preopens: [{ hostPath: "/host/data", guestPath: "/", access }],
-          randomness: true,
+          randomness: true, temporaryDirectory: false, workingDirectory: false,
         },
       });
       const result = createValidator()(source);
@@ -74,7 +75,7 @@ test("execution request validator snapshots every supported authority value", ()
       preopens: [],
       network: "denyAll",
       clocks: [],
-      randomness: false,
+      randomness: false, temporaryDirectory: false, workingDirectory: false,
     },
     applicationImports: [],
   });
@@ -85,7 +86,7 @@ test("execution request validator snapshots every supported authority value", ()
 });
 
 test("createExecutionRequestValidator validates its exact dependencies", () => {
-  const valid = { isAbsoluteHostPath() {}, selectProviderKind() {} };
+  const valid = { hostDirectories: false, isAbsoluteHostPath() {}, selectProviderKind() {} };
   const withSymbol = { ...valid, [Symbol("hidden")]: true };
   const inherited = Object.assign(Object.create({ inherited: true }), valid);
   const wrongKey = { other() {} };
@@ -101,10 +102,13 @@ test("createExecutionRequestValidator validates its exact dependencies", () => {
   }
   assert.throws(
     () => createExecutionRequestValidator({ ...valid, isAbsoluteHostPath: null }),
-    /predicate.*selector are required/i);
+    /predicate.*selector.*are required/i);
   assert.throws(
     () => createExecutionRequestValidator({ ...valid, selectProviderKind: null }),
-    /predicate.*selector are required/i);
+    /predicate.*selector.*are required/i);
+  assert.throws(
+    () => createExecutionRequestValidator({ ...valid, hostDirectories: "yes" }),
+    /host-directory support are required/i);
 });
 
 test("execution request validator rejects invalid root identity and arguments", () => {
@@ -159,6 +163,15 @@ test("execution request validator rejects malformed grant objects and collection
   }
   for (const randomness of [null, 0, "false"]) {
     expectInvalid(request({ grants: { ...base, randomness } }), /randomness grant/i);
+  }
+  for (const key of ["workingDirectory", "temporaryDirectory"]) {
+    expectInvalid(request({ grants: { ...base, [key]: "true" } }), /directory grants must be Booleans/i);
+    // Only a host that mounts directories (the local launcher) takes them.
+    expectInvalid(
+      request({ grants: { ...base, [key]: true } }),
+      /cannot grant its working or temporary directory/i,
+      createValidator(undefined, false));
+    assert.equal(createValidator()(request({ grants: { ...base, [key]: true } })).grants[key], true);
   }
   for (const key of ["environment", "preopens", "clocks"]) {
     expectInvalid(request({ grants: { ...base, [key]: null } }), /collections must be explicit/i);
@@ -286,6 +299,7 @@ test("execution request validator enforces application import bindings", () => {
     request(),
     /selector returned an unsupported kind/i,
     createExecutionRequestValidator({
+      hostDirectories: false,
       isAbsoluteHostPath: value => value.startsWith("/"),
       selectProviderKind: () => "future",
     }));

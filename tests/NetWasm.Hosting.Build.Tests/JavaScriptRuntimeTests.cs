@@ -26,24 +26,21 @@ public sealed class JavaScriptRuntimeTests
         File.WriteAllText(Path.Combine(facades, "stale.mjs"), "export {};\n");
         File.WriteAllText(Path.Combine(facades, "notes.txt"), "kept");
 
-        JavaScriptRuntime.WriteFacades(facades, Path.Combine(directory.Path, "hosting"), Path.Combine(directory.Path, "shim"));
+        JavaScriptRuntime.WriteFacades(facades, Path.Combine(directory.Path, "hosting"));
 
         Assert.Equal(
-            ["clocks", "filesystem", "http", "manifest-validator", "page", "random", "sockets", "worker", "worker-client"],
+            ["filesystem", "http", "manifest-validator", "page", "worker", "worker-client"],
             Directory.EnumerateFiles(facades, "*.mjs").Select(Path.GetFileNameWithoutExtension).Order(StringComparer.Ordinal));
         Assert.True(File.Exists(Path.Combine(facades, "notes.txt")));
         var page = File.ReadAllText(Path.Combine(facades, "page.mjs"));
         Assert.Contains("export { createPageSession } from \"file://", page, StringComparison.Ordinal);
         Assert.Contains("/hosting/page-session-root.mjs\";", page, StringComparison.Ordinal);
-        Assert.Contains("export * as cli from \"file://", page, StringComparison.Ordinal);
-        Assert.Contains("/shim/dist/browser/io.js\";", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("random", page, StringComparison.Ordinal);
+        Assert.Contains("export { createWasiPlatform } from \"file://", page, StringComparison.Ordinal);
+        Assert.Contains("/hosting/wasi-platform.mjs\";", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("wasi-filesystem", page, StringComparison.Ordinal);
         var filesystem = File.ReadAllText(Path.Combine(facades, "filesystem.mjs"));
-        Assert.Contains("export { createPreview2FilesystemScope } from", filesystem, StringComparison.Ordinal);
-        Assert.Contains("export * as filesystem from", filesystem, StringComparison.Ordinal);
+        Assert.Contains("export { createWasiFilesystem } from", filesystem, StringComparison.Ordinal);
         Assert.Equal("netwasm:runtime/worker-client", JavaScriptRuntime.Specifier(JavaScriptRuntime.WorkerClient));
-        Assert.Equal("page", JavaScriptRuntime.FamilyModule("io", JavaScriptRuntime.Page));
-        Assert.Equal("clocks", JavaScriptRuntime.FamilyModule("clocks", JavaScriptRuntime.Worker));
     }
 
     [Fact]
@@ -176,7 +173,6 @@ public sealed class JavaScriptRuntimeTests
             NodePath = Path.Combine(directory.Path, "node"),
             CommandPath = Path.Combine(directory.Path, "bundle.mjs"),
             HostingJavaScriptRoot = Path.Combine(directory.Path, "hosting"),
-            Preview2ShimRoot = Path.Combine(directory.Path, "shim"),
             OutputDirectory = output,
             Minify = true,
         };
@@ -196,7 +192,6 @@ public sealed class JavaScriptRuntimeTests
             NodePath = task.NodePath,
             CommandPath = task.CommandPath,
             HostingJavaScriptRoot = task.HostingJavaScriptRoot,
-            Preview2ShimRoot = task.Preview2ShimRoot,
             OutputDirectory = output,
         };
         Assert.False(failing.Execute());
@@ -226,7 +221,6 @@ public sealed class JavaScriptRuntimeTests
             NodePath = Path.Combine(directory.Path, "node"),
             CommandPath = Path.Combine(directory.Path, "bundler", "bundle.mjs"),
             HostingJavaScriptRoot = hosting,
-            Preview2ShimRoot = Path.Combine(directory.Path, "shim"),
             OutputDirectory = Path.Combine(directory.Path, "javascript-runtime"),
         };
 

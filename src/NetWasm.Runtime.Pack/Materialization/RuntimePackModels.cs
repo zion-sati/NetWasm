@@ -55,7 +55,14 @@ internal sealed record RuntimePackTarget(
     public string GarbageCollector { get; init; } = string.Empty;
     public RuntimeNativeValidationProfile? NativeValidation { get; init; }
     public RuntimePackSpeedAssets? Speed { get; init; }
+    public RuntimePackPlatformArchives? PlatformArchives { get; init; }
 }
+
+// The runtime's WASI uses, and their replacements for a plain core module without WASI; a link
+// takes exactly one of the two.
+internal sealed record RuntimePackPlatformArchives(
+    RuntimePackAsset Wasi,
+    RuntimePackAsset NoWasi);
 
 internal sealed record RuntimePackSystemLibraries(
     ImmutableArray<string> Names,
@@ -121,6 +128,8 @@ internal sealed record RuntimeLinkRequest(
     public string? NativeCallbackObjectPath { get; init; }
     public string? NativeCallbackAllowedUndefinedPath { get; init; }
     public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
+    // Link the platform functions without WASI, for a plain core module.
+    public bool PlainCoreModule { get; init; }
 }
 
 internal sealed record RuntimeOptimizationRequest(
@@ -171,6 +180,8 @@ internal sealed record RuntimeMaterializationRequest(
     public string? NativeCallbackObjectPath { get; init; }
     // A native wasm-tools of the same release, which validates in place of the WASI one.
     public string? NativeWasmToolsPath { get; init; }
+    // A plain core module's runtime: its platform functions use no WASI.
+    public bool PlainCoreModule { get; init; }
 }
 
 internal sealed record RuntimeMaterializationCacheKeyRequest(

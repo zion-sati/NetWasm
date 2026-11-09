@@ -9,8 +9,8 @@ selective managed-library coverage, and the lack of wasm64 Component output.
 There is no member-by-member CoreLib catalogue. wasm64
 core modules and raw-core integration work, but Component packaging reports
 `NW1010` while the external `cm64p2`/Memory64 Component toolchain is
-unavailable. Components target WASI 0.2; a wasm32 WASI 0.3 transport
-evolution neither solves nor waits on that independent Memory64 limitation.
+unavailable. Components target WASI 0.3, which neither solves nor waits on
+that independent Memory64 limitation.
 
 The first preview also has no general managed file/directory, raw-socket,
 subprocess, or multi-threaded runtime surface. The exact supported exceptions

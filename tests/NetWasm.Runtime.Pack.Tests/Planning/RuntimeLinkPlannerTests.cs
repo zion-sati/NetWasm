@@ -155,6 +155,9 @@ public sealed class RuntimeLinkPlannerTests
         Assert.Equal(target.RuntimeArchive.Sha256, actual.Inputs[0].Sha256);
         Assert.Equal(target.CollectorArchive.Sha256, actual.Inputs[1].Sha256);
         Assert.Equal(target.AllowedUndefinedSymbols.Sha256, actual.Inputs[2].Sha256);
+        // A browser link takes the WASI platform functions.
+        Assert.Contains(actual.Inputs[3].Path, actual.Arguments);
+        Assert.Equal(target.PlatformArchives!.Wasi.Sha256, actual.Inputs[3].Sha256);
         Assert.All(actual.Inputs, asset => Assert.StartsWith("/", asset.Path));
         Assert.Equal("runtime-materialization-cache-v1", actual.Cache.Schema);
         Assert.All([actual.Cache.Namespace, actual.Cache.Slot, actual.Cache.Key], value =>

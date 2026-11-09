@@ -18,8 +18,7 @@ public sealed class ExecutionDescriptorReaderTests
         var calls = 0;
         var subject = Assert.IsAssignableFrom<IExecutionDescriptorReader>(new ExecutionDescriptorReader(new DescriptorValidationStub(value =>
         {
-            Assert.Equal(original with { ToolPackages = value.ToolPackages }, value);
-            Assert.Equal<ExecutionToolPackage>(original.ToolPackages, value.ToolPackages);
+            Assert.Equal(original, value);
             calls++;
         })));
         var result = subject.Read(Encoding.UTF8.GetBytes(text));
@@ -45,9 +44,6 @@ public sealed class ExecutionDescriptorReaderTests
     [InlineData("null")]
     [InlineData("case")]
     [InlineData("duplicate")]
-    [InlineData("nested-unknown")]
-    [InlineData("nested-missing")]
-    [InlineData("nested-duplicate")]
     public void RejectsMalformedMembersBeforeValidation(string mutation)
     {
         var writer = Assert.IsAssignableFrom<IExecutionDescriptorWriter>(new ExecutionDescriptorWriter(new ExecutionDescriptorValidator()));
@@ -55,7 +51,6 @@ public sealed class ExecutionDescriptorReaderTests
         var json = mutation switch
         {
             "duplicate" => document.ToJsonString().Insert(1, "\"schemaVersion\":1,"),
-            "nested-duplicate" => document.ToJsonString().Replace("\"id\":", "\"id\":\"Duplicate\",\"id\":", StringComparison.Ordinal),
             _ => Mutate(document, mutation),
         };
         var subject = Assert.IsAssignableFrom<IExecutionDescriptorReader>(new ExecutionDescriptorReader(new DescriptorValidationStub(_ => Assert.Fail("Must not validate malformed JSON."))));
@@ -70,8 +65,6 @@ public sealed class ExecutionDescriptorReaderTests
             case "missing": document.Remove("launcherPath"); break;
             case "null": document["launcherPath"] = null; break;
             case "case": document["LauncherPath"] = document["launcherPath"]!.DeepClone(); document.Remove("launcherPath"); break;
-            case "nested-unknown": document["toolPackages"]![0]!["extra"] = 1; break;
-            case "nested-missing": document["toolPackages"]![0]!.AsObject().Remove("id"); break;
         }
         return document.ToJsonString();
     }

@@ -61,12 +61,12 @@ public sealed class NwcCompilerSessionTests
         Assert.Null(actual.ExceptionTypeMap);
     }
 
-    // An entry export completes before it returns unless an asynchronous Main is
-    // left for the host's reactor to drive.
+    // An entry export completes before it returns unless Main is asynchronous: an
+    // asynchronous Main is a callback-lifted wasi:cli/run, however CoreLib enters it.
     [Theory]
     [InlineData(false, false, false, true)]
     [InlineData(true, false, false, true)]
-    [InlineData(true, true, true, true)]
+    [InlineData(true, true, true, false)]
     [InlineData(true, true, false, false)]
     public void RecordsWhetherTheEntryExportCompletesSynchronously(
         bool hasEntry, bool isAsync, bool enteredThroughCoreLib, bool expected)
@@ -84,7 +84,9 @@ public sealed class NwcCompilerSessionTests
                     Main,
                     new JavaScriptAsyncMethodBinding(Main, default, null!, null!, null!, null!)
                     {
-                        CommandEntryPoint = enteredThroughCoreLib ? new MethodInstanceModel(null!, null!, [], null!) : null,
+                        CommandEntry = enteredThroughCoreLib
+                            ? new(new MethodInstanceModel(null!, null!, [], null!), null!, null!)
+                            : null,
                     })
                 : ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty,
         };

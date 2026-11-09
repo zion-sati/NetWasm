@@ -81,16 +81,15 @@ public sealed class BrowserComponentCoreModulesTests
         var adapter = plan.Operations.OfType<BrowserLinkTextOperation>().ToArray()[2].Text;
         if (asynchronous)
         {
-            Assert.Contains("netwasm:runtime/process@1|start", adapter);
-            Assert.Contains("netwasm.process.status", adapter);
-            Assert.Contains("netwasm.process.complete", adapter);
-            Assert.DoesNotContain("wasi:cli/run", adapter);
-            Assert.Equal(returns == ManagedExecutableReturnShape.ExitCode,
-                adapter.Contains("netwasm.process.result", StringComparison.Ordinal));
+            // An asynchronous Main is a callback-lifted wasi:cli/run whatever it returns.
+            Assert.Contains("[async-lift]wasi:cli/run@0.3.2#run", adapter);
+            Assert.Contains("[callback][async-lift]wasi:cli/run@0.3.2#run", adapter);
+            Assert.Contains("netwasm.entry.exit_code", adapter);
+            Assert.DoesNotContain("cm32p2|wasi:cli/run", adapter);
         }
         else
         {
-            Assert.Contains("cm32p2|wasi:cli/run@0.2|run", adapter);
+            Assert.Contains("cm32p2|wasi:cli/run@0.3|run", adapter);
             Assert.Contains(returns == ManagedExecutableReturnShape.ExitCode ? "i32.eqz i32.eqz" : "i32.const 0", adapter);
         }
         Assert.Equal(new[] { "v/host.wasm", RuntimeAbi.HostModule, "v/command.wasm", "netwasm.command.v1" },

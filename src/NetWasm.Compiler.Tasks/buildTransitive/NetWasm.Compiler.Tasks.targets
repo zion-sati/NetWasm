@@ -4,6 +4,9 @@
        NetWasmIsolateBuildTasks=true: a process of their own for each task. -->
   <PropertyGroup>
     <_NetWasmBuildTaskFactory Condition="'$(MSBuildRuntimeType)' != 'Core' OR '$(NetWasmIsolateBuildTasks)' == 'true'">TaskHostFactory</_NetWasmBuildTaskFactory>
+    <!-- NetWasm.Sdk decides whether a project builds a module (it adds plain core modules); a
+         project importing these targets alone builds one as an executable or a worker. -->
+    <_NetWasmBuildsModule Condition="'$(_NetWasmBuildsModule)' == '' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">true</_NetWasmBuildsModule>
   </PropertyGroup>
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmCompileTask"
              Runtime="NET"
@@ -81,6 +84,8 @@
     <NetWasmManagedInliningHints Condition="'$(NetWasmManagedInliningHints)' == ''">Auto</NetWasmManagedInliningHints>
     <!-- Repeats wasm-opt's preset until the module stops shrinking: slower builds for a little size. -->
     <NetWasmOptimizerConverge Condition="'$(NetWasmOptimizerConverge)' == ''">false</NetWasmOptimizerConverge>
+    <!-- NetWasmOptimizerLowMemoryUnused: true lets wasm-opt fold constant address adds into offsets
+         (static data starts above the first KiB); off by default. -->
     <NetWasmManagedLoopInvariantFieldHoisting Condition="'$(NetWasmManagedLoopInvariantFieldHoisting)' == ''">Auto</NetWasmManagedLoopInvariantFieldHoisting>
     <NetWasmManagedStaticDataViewElimination Condition="'$(NetWasmManagedStaticDataViewElimination)' == ''">Auto</NetWasmManagedStaticDataViewElimination>
     <NetWasmManagedAddressTakenValuePromotion Condition="'$(NetWasmManagedAddressTakenValuePromotion)' == ''">Auto</NetWasmManagedAddressTakenValuePromotion>
@@ -113,6 +118,9 @@
     <NetWasmManagedIntegerCheckElimination Condition="'$(NetWasmManagedIntegerCheckElimination)' == ''">Auto</NetWasmManagedIntegerCheckElimination>
     <NetWasmManagedLoopInvariantExpressionHoisting Condition="'$(NetWasmManagedLoopInvariantExpressionHoisting)' == ''">Auto</NetWasmManagedLoopInvariantExpressionHoisting>
     <NetWasmManagedMulticastInlineDispatch Condition="'$(NetWasmManagedMulticastInlineDispatch)' == ''">Auto</NetWasmManagedMulticastInlineDispatch>
+    <NetWasmManagedNewObjectNullCheckElimination Condition="'$(NetWasmManagedNewObjectNullCheckElimination)' == ''">Auto</NetWasmManagedNewObjectNullCheckElimination>
+    <NetWasmManagedLoopStrengthReduction Condition="'$(NetWasmManagedLoopStrengthReduction)' == ''">Auto</NetWasmManagedLoopStrengthReduction>
+    <NetWasmManagedRangeBranchFolding Condition="'$(NetWasmManagedRangeBranchFolding)' == ''">Auto</NetWasmManagedRangeBranchFolding>
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
@@ -148,7 +156,7 @@
     <NetWasmRawBuildDependsOn Condition="'$(NetWasmRawBuildDependsOn)' == ''">NetWasmCompilerTasksBuildRawBindings</NetWasmRawBuildDependsOn>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
     <NetWasmArtifact Include="$(NetWasmCoreModuleOutputPath)">
       <Kind>CoreModule</Kind>
       <MediaType>application/wasm</MediaType>
@@ -188,7 +196,7 @@
   </ItemGroup>
 
   <Target Name="NetWasmReadPreviousCompileOutputs"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND Exists('$(NetWasmArtifactManifestPath)')">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND Exists('$(NetWasmArtifactManifestPath)')">
     <ItemGroup>
       <_NetWasmConditionalCompileOutput Remove="@(_NetWasmConditionalCompileOutput)" />
     </ItemGroup>
@@ -203,7 +211,7 @@
   </Target>
 
   <Target Name="NetWasmWriteCompilationIdentity"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
     <ItemGroup>
       <_NetWasmCompilationIdentityLine Remove="@(_NetWasmCompilationIdentityLine)" />
       <_NetWasmCompilationIdentityLine Include="library=$(_NetWasmCompileAsLibrary)" />
@@ -250,6 +258,9 @@
       <_NetWasmCompilationIdentityLine Include="managedIntegerCheckElimination=$(NetWasmManagedIntegerCheckElimination)" />
       <_NetWasmCompilationIdentityLine Include="managedLoopInvariantExpressionHoisting=$(NetWasmManagedLoopInvariantExpressionHoisting)" />
       <_NetWasmCompilationIdentityLine Include="managedMulticastInlineDispatch=$(NetWasmManagedMulticastInlineDispatch)" />
+      <_NetWasmCompilationIdentityLine Include="managedNewObjectNullCheckElimination=$(NetWasmManagedNewObjectNullCheckElimination)" />
+      <_NetWasmCompilationIdentityLine Include="managedLoopStrengthReduction=$(NetWasmManagedLoopStrengthReduction)" />
+      <_NetWasmCompilationIdentityLine Include="managedRangeBranchFolding=$(NetWasmManagedRangeBranchFolding)" />
       <_NetWasmCompilationIdentityLine Include="pathMap=$(PathMap)" />
       <!-- Modules the project's native archives may import from: each declared
            NetWasmImportModule and each registered JavaScript module. -->
@@ -296,7 +307,7 @@
   <Target Name="NetWasmCompileCoreModule"
           DependsOnTargets="NetWasmWriteCompilationIdentity;NetWasmReadPreviousCompileOutputs"
           AfterTargets="CoreCompile"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(DesignTimeBuild)' != 'true'"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(DesignTimeBuild)' != 'true'"
           Inputs="@(IntermediateAssembly);@(ReferenceCopyLocalPaths);$(NetWasmRuntimeCoreLibPath);@(Compile);@(_NetWasmCompilerWitInput);@(_NetWasmPortablePdbInput);$(NetWasmCompilationIdentityPath)"
           Outputs="$(NetWasmCoreModuleOutputPath);$(NetWasmRuntimeLayoutPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerMetadataPath);$(NetWasmExceptionTypeMapPath);$(NetWasmArtifactManifestPath);@(_NetWasmConditionalCompileOutput)">
     <ItemGroup>
@@ -318,6 +329,7 @@
                         References="@(_NetWasmManagedLinkReference)"
                         Sources="@(Compile)"
                         CompileAsLibrary="$(_NetWasmCompileAsLibrary)"
+                        PlainCoreModule="$(_NetWasmPlainCoreModule)"
                         UseJavaScriptExportBoundary="$(NetWasmRawWasm)"
                         Target="$(NetWasmTarget)"
                         CoreModulePath="$(NetWasmCoreModuleOutputPath)"
@@ -374,6 +386,9 @@
                         ManagedIntegerCheckElimination="$(NetWasmManagedIntegerCheckElimination)"
                         ManagedLoopInvariantExpressionHoisting="$(NetWasmManagedLoopInvariantExpressionHoisting)"
                         ManagedMulticastInlineDispatch="$(NetWasmManagedMulticastInlineDispatch)"
+                        ManagedNewObjectNullCheckElimination="$(NetWasmManagedNewObjectNullCheckElimination)"
+                        ManagedLoopStrengthReduction="$(NetWasmManagedLoopStrengthReduction)"
+                        ManagedRangeBranchFolding="$(NetWasmManagedRangeBranchFolding)"
                         NoLogo="$(NoLogo)"
                         ExceptionTypeMapPath="$(NetWasmExceptionTypeMapPath)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)" />
@@ -405,12 +420,13 @@
   </Target>
 
   <Target Name="NetWasmWritePackagingIdentity"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
     <ItemGroup>
       <_NetWasmPackagingIdentityLine Remove="@(_NetWasmPackagingIdentityLine)" />
       <_NetWasmPackagingIdentityLine Include="optimization=$(_NetWasmCanonicalOptimization)" />
       <_NetWasmPackagingIdentityLine Include="managedInliningHints=$(NetWasmManagedInliningHints)" />
       <_NetWasmPackagingIdentityLine Include="optimizerConverge=$(NetWasmOptimizerConverge)" />
+      <_NetWasmPackagingIdentityLine Include="optimizerLowMemoryUnused=$(NetWasmOptimizerLowMemoryUnused)" />
       <_NetWasmPackagingIdentityLine Include="packagingPolicyRevision=4" />
       <_NetWasmPackagingIdentityLine Include="target=$(NetWasmTarget)" />
       <_NetWasmPackagingIdentityLine Include="worker=$(_NetWasmWorkerKind)" />
@@ -429,7 +445,7 @@
                                       Condition="'$(_NetWasmWorkerKind)' == 'wit'" />
       <_NetWasmPackagingIdentityLine Include="wit=$(_NetWasmComponentWitPath)" />
       <_NetWasmPackagingIdentityLine Include="jco=$(NetWasmJcoVersion)" />
-      <_NetWasmPackagingIdentityLine Include="preview2Shim=$(NetWasmPreview2ShimVersion)" />
+      <_NetWasmPackagingIdentityLine Include="preview3Shim=$(NetWasmPreview3ShimVersion)" />
       <_NetWasmPackagingIdentityLine Include="node=$(NetWasmNodePath)" />
       <_NetWasmPackagingIdentityLine Include="wasmToolsCommand=$(NetWasmWasmToolsCommandPath)" />
       <_NetWasmPackagingIdentityLine Include="wasmToolsModule=$(NetWasmWasmToolsModulePath)" />
@@ -453,7 +469,7 @@
 
   <Target Name="NetWasmCompilerTasksComponentize"
           DependsOnTargets="NetWasmRuntimePackMaterialize;NetWasmWritePackagingIdentity"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'"
           Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(_NetWasmComponentWitPath);@(NetWasmComponentWitVariant);$(NetWasmInteropManifestPath);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmNativeWasmToolsPath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
           Outputs="$(NetWasmOutputPath);$(NetWasmComponentManifestPath)">
     <Error Code="NWSDK022"
@@ -467,6 +483,7 @@
            Text="Component packaging requires the pinned platform-neutral NetWasm Binaryen commands." />
     <NetWasmComponentizeTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
                              CompileAsLibrary="$(_NetWasmCompileAsLibrary)"
+                             PlainCoreModule="$(_NetWasmPlainCoreModule)"
                              CoreModulePath="$(NetWasmCoreModuleOutputPath)"
                              RuntimeModulePath="@(NetWasmComponentRuntime->'%(FullPath)')"
                              WitPath="$(_NetWasmComponentWitPath)"
@@ -484,10 +501,11 @@
                              NativeBinaryenWasmOptPath="$(NetWasmNativeBinaryenWasmOptPath)"
                              Target="$(NetWasmTarget)"
                              JcoVersion="$(NetWasmJcoVersion)"
-                             Preview2ShimVersion="$(NetWasmPreview2ShimVersion)"
+                             Preview3ShimVersion="$(NetWasmPreview3ShimVersion)"
                              Optimization="$(_NetWasmCanonicalOptimization)"
                              ManagedInliningHints="$(NetWasmManagedInliningHints)"
                              OptimizerConverge="$(NetWasmOptimizerConverge)"
+                             OptimizerLowMemoryUnused="$(NetWasmOptimizerLowMemoryUnused)"
                              StructuredDiagnostics="$(NetWasmStructuredDiagnostics)">
       <Output TaskParameter="Components" ItemName="_NetWasmBuiltComponent" />
       <Output TaskParameter="SelectedWitPath" PropertyName="NetWasmSelectedWitPath" />
@@ -497,7 +515,7 @@
 
   <Target Name="NetWasmCompilerTasksLinkRawModule"
           DependsOnTargets="NetWasmRuntimePackMaterialize;NetWasmWritePackagingIdentity"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmRawWasm)' == 'true'"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(NetWasmRawWasm)' == 'true'"
           Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmNativeWasmToolsPath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
           Outputs="$(NetWasmOutputPath)">
     <Error Code="NWSDK028"
@@ -524,6 +542,7 @@
                               Target="$(NetWasmTarget)"
                               ManagedInliningHints="$(NetWasmManagedInliningHints)"
                               OptimizerConverge="$(NetWasmOptimizerConverge)"
+                              OptimizerLowMemoryUnused="$(NetWasmOptimizerLowMemoryUnused)"
                               Optimization="$(_NetWasmCanonicalOptimization)">
       <Output TaskParameter="Modules" ItemName="_NetWasmBuiltRawModule" />
     </NetWasmLinkRawModuleTask>
@@ -531,7 +550,7 @@
 
   <Target Name="NetWasmCompilerTasksBuildRawBindings"
           DependsOnTargets="NetWasmCompilerTasksLinkRawModule"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmRawWasm)' == 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(NetWasmRawWasm)' == 'true'">
     <!-- These computed task outputs cannot be inferred from an existing adapter.
          Recreate logical requirements whenever preparing a deployment; compiler,
          raw linking and runtime materialization retain their own caches. -->
@@ -572,7 +591,7 @@
 
   <Target Name="NetWasmValidateCompilerArtifacts"
           DependsOnTargets="NetWasmWriteCompilationIdentity"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmSemanticBuildId)' == ''">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(NetWasmSemanticBuildId)' == ''">
     <ItemGroup>
       <_NetWasmValidationManagedLinkReference Include="@(ReferenceCopyLocalPaths)"
                                               Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib'" />
@@ -615,7 +634,7 @@
   <Target Name="NetWasmCopyArtifactsToPublish"
           BeforeTargets="Publish"
           DependsOnTargets="NetWasmValidateCompilerArtifacts"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmPublishCompilerArtifacts)' == 'true' AND '$(IsPublishable)' == 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(NetWasmPublishCompilerArtifacts)' == 'true' AND '$(IsPublishable)' == 'true'">
     <ItemGroup>
       <_NetWasmPublishArtifact Include="@(NetWasmArtifact)"
                                Condition="'%(NetWasmArtifact.CopyToPublishDirectory)' != 'Never'" />

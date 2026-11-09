@@ -23,6 +23,100 @@ public static class Path
     public static readonly char VolumeSeparatorChar = PathInternal.VolumeSeparatorChar;
     public static readonly char PathSeparator = PathInternal.PathSeparator;
 
+    // Ported from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23 Path.Unix.cs: a relative
+    // path resolves against Environment.CurrentDirectory.
+    public static string GetFullPath(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        if (path.Contains('\0'))
+            throw new ArgumentException(SR.Argument_NullCharInPath, nameof(path));
+
+        // Expand with current directory if necessary
+        return GetFullPathInternal(IsPathRooted(path) ? path : Combine(Interop.Sys.GetCwd(), path));
+    }
+
+    private static string DefaultTempPath => "/tmp/";
+
+    public static string GetTempPath()
+    {
+        const string TempEnvVar = "TMPDIR";
+
+        // Get the temp path from the TMPDIR environment variable.
+        // If it's not set, just return the default path.
+        // If it is, return it, ensuring it ends with a slash.
+        string? path = Environment.GetEnvironmentVariable(TempEnvVar);
+        return
+            string.IsNullOrEmpty(path) ? DefaultTempPath :
+            PathInternal.IsDirectorySeparator(path[path.Length - 1]) ? path :
+            path + PathInternal.DirectorySeparatorChar;
+    }
+
+    public static unsafe string GetTempFileName()
+    {
+        const int SuffixByteLength = 4; // ".tmp"
+        ReadOnlySpan<byte> fileTemplate = "tmpXXXXXX.tmp"u8;
+
+        // mkstemps takes a char* and overwrites the XXXXXX with six characters
+        // that'll result in a unique file name.
+        string tempPath = Path.GetTempPath();
+        int tempPathByteCount = Encoding.UTF8.GetByteCount(tempPath);
+        int totalByteCount = checked(tempPathByteCount + fileTemplate.Length + 1);
+
+        Span<byte> path = (uint)totalByteCount <= 256 ? stackalloc byte[totalByteCount] : new byte[totalByteCount];
+        int pos = Encoding.UTF8.GetBytes(tempPath, path);
+        fileTemplate.CopyTo(path.Slice(pos));
+        path[^1] = 0;
+
+        // Create, open, and close the temp file.
+        fixed (byte* pPath = path)
+        {
+            // if this returns ENOENT it's because TMPDIR doesn't exist, so isDirError:true
+            IntPtr fd = Interop.CheckIo(Interop.Sys.MksTemps(pPath, SuffixByteLength), tempPath, isDirError: true);
+            Interop.Sys.Close(fd); // ignore any errors from close; nothing to do if cleanup isn't possible
+        }
+
+        // 'path' is now the name of the file
+        return Encoding.UTF8.GetString(path.Slice(0, path.Length - 1)); // trim off the trailing '\0'
+    }
+
+    public static bool Exists([NotNullWhen(true)] string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+
+        string? fullPath;
+        try
+        {
+            fullPath = GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        bool result = ExistsCore(fullPath, out bool isDirectory);
+        if (result && PathInternal.IsDirectorySeparator(fullPath[^1]))
+        {
+            // Some sys-calls remove all trailing slashes and may give false positives for existing files.
+            // We want to make sure that if the path ends in a trailing slash, it's truly a directory.
+            return isDirectory;
+        }
+
+        return result;
+    }
+
+    // Checks if the given path is available for use.
+    private static bool ExistsCore(string fullPath, out bool isDirectory)
+    {
+        bool result = Interop.Sys.LStat(fullPath, out Interop.Sys.FileStatus fileInfo) == 0;
+        isDirectory = result && (fileInfo.Mode & Interop.Sys.FileTypes.S_IFMT) == Interop.Sys.FileTypes.S_IFDIR;
+
+        return result;
+    }
+
     public static char[] GetInvalidFileNameChars() => ['\0', '/'];
 
     public static char[] GetInvalidPathChars() => ['\0'];
@@ -86,7 +180,7 @@ public static class Path
         return end >= 0 ? path.Slice(0, end) : ReadOnlySpan<char>.Empty;
     }
 
-    private static int GetDirectoryNameOffset(ReadOnlySpan<char> path)
+    internal static int GetDirectoryNameOffset(ReadOnlySpan<char> path)
     {
         var rootLength = PathInternal.GetRootLength(path);
         var end = path.Length;
@@ -107,6 +201,7 @@ public static class Path
         return end;
     }
 
+    [return: NotNullIfNotNull(nameof(path))]
     public static string? GetExtension(string? path)
     {
         if (path is null)
@@ -136,6 +231,7 @@ public static class Path
         return ReadOnlySpan<char>.Empty;
     }
 
+    [return: NotNullIfNotNull(nameof(path))]
     public static string? GetFileName(string? path)
     {
         if (path is null)
@@ -154,6 +250,7 @@ public static class Path
         return path.Slice(index < root ? root : index + 1);
     }
 
+    [return: NotNullIfNotNull(nameof(path))]
     public static string? GetFileNameWithoutExtension(string? path)
     {
         if (path is null)
@@ -501,6 +598,11 @@ public static class Path
             IsPathFullyQualified(path) ? path : CombineInternal(basePath, path));
     }
 
+    // NetWasm adaptation: collapses "." and ".." lexically and never consults the current
+    // directory, so GetFullPath(path, basePath) and GetRelativePath stay pure functions a program
+    // can use without a platform; only GetFullPath(path) resolves a relative path against
+    // Environment.CurrentDirectory. GetRelativePath therefore differs from desktop .NET only for
+    // one rooted and one relative argument when the current directory is not the rooted one's.
     private static string GetFullPathInternal(string path)
     {
         var collapsed = PathInternal.RemoveRelativeSegments(

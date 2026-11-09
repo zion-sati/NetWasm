@@ -1,5 +1,5 @@
 import { createRuntimeContractImports } from "../../NetWasm.Runtime.Tests/runtime-contract-imports.mjs";
-import { createYieldReactorImports } from "../../NetWasm.Runtime.Tests/yield-reactor-imports.mjs";
+import { createMonotonicClockImports } from "../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs";
 import { createOutputStreamImports } from "../../NetWasm.Runtime.Tests/output-stream-imports.mjs";
 
 export async function runAsyncJavaScriptInterop(
@@ -25,10 +25,7 @@ export async function runAsyncJavaScriptInterop(
     }
     throw new Error(`${message}: operation completed successfully`);
   };
-  var canonicalPrefix = manifest.target === "wasm64" ? "cm64p2" : "cm32p2";
   var managed;
-  var wakeReactor = token => managed.instance.exports[
-    `${canonicalPrefix}|netwasm:runtime/reactor-guest@1|wake`](token);
   managed = await instantiateNetWasm({
     module,
     manifest,
@@ -37,7 +34,7 @@ export async function runAsyncJavaScriptInterop(
       ...createOutputStreamImports(manifest.target, () => managed.instance.exports.memory,
         () => { throw new Error("Unexpected async interop stdout"); },
         bytes => console.error(new TextDecoder().decode(bytes).trimEnd())),
-      ...createYieldReactorImports(manifest.target, queueMicrotask, wakeReactor),
+      ...createMonotonicClockImports(manifest.target, () => 0n),
     },
     consumerModules: {
       "consumer.promises": {

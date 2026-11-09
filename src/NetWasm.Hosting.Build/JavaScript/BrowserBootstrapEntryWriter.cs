@@ -9,7 +9,6 @@ public sealed record BrowserJavaScriptModule(string Module, string SourcePath);
 
 public sealed record BrowserBootstrapEntryRequest(
     string HostingBrowserModulePath,
-    string Preview2ShimRoot,
     string OutputPath,
     ImmutableArray<BrowserJavaScriptModule> Modules = default);
 
@@ -30,7 +29,7 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
         builder.Append("import { createCommandRun } from ")
             .Append(ModuleSpecifier(Path.Combine(Path.GetDirectoryName(request.HostingBrowserModulePath)!, "command-run.mjs")))
             .AppendLine(";");
-        BrowserHostSource.AppendImports(builder, request.Preview2ShimRoot, Path.GetDirectoryName(request.HostingBrowserModulePath)!);
+        BrowserHostSource.AppendImports(builder, Path.GetDirectoryName(request.HostingBrowserModulePath)!);
         foreach (var (module, index) in modules.Select((module, index) => (module, index)))
         {
             builder.Append("import * as consumerModule").Append(index).Append(" from ")
@@ -38,8 +37,9 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
         }
         builder.AppendLine();
         builder.AppendLine("const manifestUrl = new URL(\"./deployment.json\", import.meta.url).href;");
-        builder.AppendLine("const preview2 = Object.freeze({");
-        BrowserHostSource.AppendPreview2Members(builder, "  ");
+        BrowserHostSource.AppendFileMounts(builder, worker: false);
+        builder.AppendLine("const wasi = Object.freeze({");
+        BrowserHostSource.AppendWasiMembers(builder, "  ");
         builder.AppendLine("});");
         builder.AppendLine("const web = Object.freeze({");
         BrowserHostSource.AppendWebMembers(builder, "  ");
@@ -49,7 +49,7 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
             $"[{JsonSerializer.Serialize(module.Module, HostingBuildJsonContext.Default.String)}]: consumerModule{index}"));
         builder.AppendLine("export const executeNetWasm = createBrowserNetWasmBootstrap({");
         builder.AppendLine("  manifestUrl,");
-        builder.AppendLine("  preview2,");
+        builder.AppendLine("  wasi,");
         builder.AppendLine("  web,");
         builder.Append("}, Object.freeze({ ").Append(moduleBindings).AppendLine(" }));");
         // The generated <App>.mjs run() helper calls this with the build's request.
@@ -70,7 +70,6 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
         foreach (var path in new[]
                  {
                      request.HostingBrowserModulePath,
-                     request.Preview2ShimRoot,
                      request.OutputPath,
                  })
         {

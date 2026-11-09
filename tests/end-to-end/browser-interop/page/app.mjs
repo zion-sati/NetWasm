@@ -227,6 +227,8 @@ try {
   check(first.now() === 86_400_000n, "Platform clock hook was ignored.");
   first.print("first line");
   first.print("second line");
+  // Output crosses a WASI 0.3 stream, which the page reads once the export has returned.
+  await new Promise(resolve => setTimeout(resolve, 0));
   check(lines.join("|") === "first line|second line", "Line output was lost.");
 
   document.body.dataset.testCase = "failure";

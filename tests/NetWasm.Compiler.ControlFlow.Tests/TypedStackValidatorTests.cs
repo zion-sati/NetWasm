@@ -2143,7 +2143,8 @@ public sealed class TypedStackValidatorTests
                 I(1, CilOperation.Throw),
                 I(2, CilOperation.Pop),
                 I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
-                I(4, CilOperation.Rethrow)) with
+                I(4, CilOperation.Leave, new CilOperand.BranchTarget(5)),
+                I(5, CilOperation.Return)) with
             {
                 ExceptionRegions =
                 [
@@ -2158,6 +2159,40 @@ public sealed class TypedStackValidatorTests
                 ],
             }),
             "evaluation stack is not empty at control transfer");
+    }
+
+    // Roslyn's `address ?? rethrow` in a catch handler (dotnet/runtime's Dns.EndResolve): the
+    // value duplicated for the branch that continues is still on the stack at rethrow, which
+    // discards it.
+    [Fact]
+    public void RethrowDiscardsTheValuesOnTheStack()
+    {
+        Validate(Body(
+            CliValueKind.Void,
+            2,
+            [],
+            I(0, CilOperation.Leave, new CilOperand.BranchTarget(8)),
+            I(1, CilOperation.Pop),
+            I(2, CilOperation.LoadNull),
+            I(3, CilOperation.Duplicate),
+            I(4, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(6)),
+            I(5, CilOperation.Rethrow),
+            I(6, CilOperation.Pop),
+            I(7, CilOperation.Leave, new CilOperand.BranchTarget(8)),
+            I(8, CilOperation.Return)) with
+        {
+            ExceptionRegions =
+            [
+                new CilExceptionRegion(
+                    CilExceptionRegionKind.Catch,
+                    0,
+                    1,
+                    1,
+                    7,
+                    TypeKey,
+                    null),
+            ],
+        });
     }
 
     // An array initializer whose field holds the bytes.

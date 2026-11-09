@@ -52,6 +52,7 @@ internal static class PlanningServiceCollectionExtensions
         services.AddSingleton<IModuleExportCollector, ModuleExportCollector>();
         services.AddSingleton<IModuleExportValidator, ModuleExportValidator>();
         services.AddSingleton<IModuleImportCollector, ModuleImportCollector>();
+        services.AddSingleton<IComponentBuiltInImportResolver, ComponentBuiltInImportResolver>();
         services.AddSingleton<WasmModuleTargetFactory>();
         services.AddSingleton<IWasmModuleTargetFactory>(provider =>
             provider.GetRequiredService<WasmModuleTargetFactory>());

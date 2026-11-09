@@ -344,6 +344,7 @@ public sealed class TimeZoneToolTests
         Assert.Equal("zones.loader.mjs", manifest.BrowserLoaderFile);
         var loader = Encoding.UTF8.GetString(
             writer.Artifacts["output/zones.loader.mjs"]);
+        Assert.Contains("from \"@bytecodealliance/preview3-shim\"", loader);
         Assert.Contains("filesystem._setPreopens", loader);
         Assert.Contains("timeZone === \"UTC\"", loader);
         Assert.Equal(["Area/A"], manifest.Zones);

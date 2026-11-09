@@ -68,6 +68,19 @@ public sealed class RawCanonicalBindingEmitterTests
         Assert.Contains(message, error.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("""{"kind":"u32"}""", "new", "needs a stream or future type")]
+    [InlineData("""{"kind":"stream","element":null}""", "cancel-read", "'cancel-read' is unsupported")]
+    public void RejectsPayloadBuiltInsItCannotPerform(string type, string operation, string message)
+    {
+        using var document = JsonDocument.Parse($$"""{"type":{{type}},"operation":"{{operation}}"}""");
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            new RawCanonicalBindingEmitter(wasm64: false).EmitPayload(0, document.RootElement));
+
+        Assert.Contains(message, error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TagsResultCasesThatCarryNoPayload()
     {
@@ -76,7 +89,7 @@ public sealed class RawCanonicalBindingEmitterTests
         var source = Emit(Freestanding, [status], status, ["i32"]);
 
         Assert.Contains("return { tag: \"ok\" };", source, StringComparison.Ordinal);
-        Assert.Contains("rcTaggedResult(\"ok\", false,", source, StringComparison.Ordinal);
+        Assert.Contains("value = rcResultValue(invoke(p0), false);", source, StringComparison.Ordinal);
         Assert.Contains("rcTagged(value, [\"ok\",\"err\"], [false, false], \"result\")", source, StringComparison.Ordinal);
         Assert.Contains("const lift = undefined;", source, StringComparison.Ordinal);
     }

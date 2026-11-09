@@ -59,7 +59,7 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", chunk => text += chunk);
 process.stdin.on("end", () => {
   const required = [
-    "cm32p2|wasi:random/random@0.2",
+    "cm32p2|wasi:random/random@0.3",
     "get-random-u64",
   ];
   for (const value of required) {
@@ -86,7 +86,7 @@ for repeat in first second; do
         -runtimemodule:"$artifact_root/runtime.wasm32.wasm" \
         -wit:"$wit" -platform:wasm32 \
         -jcoversion:"$jco_version" \
-        -preview2shimversion:"$(node -p 'require(process.argv[1]).preview2Shim' "$toolchain")" \
+        -preview3shimversion:"$(node -p 'require(process.argv[1]).preview3Shim' "$toolchain")" \
         -out:"$artifact_root/component.$repeat.wasm" \
         -manifest:"$artifact_root/manifest.$repeat.json"
 done
@@ -98,7 +98,7 @@ native_result="$(cargo run --quiet --locked --release \
     --manifest-path "$repo_root/tests/end-to-end/component-model/hosts/wasmtime-scalar/Cargo.toml" \
     --bin netwasm-wasmtime-wasi-host -- \
     "$artifact_root/component.first.wasm")"
-[[ "$native_result" = "WASI Preview 2 component PASS" ]] || {
+[[ "$native_result" = "WASI 0.3 component PASS" ]] || {
     echo "WASI component returned '$native_result'" >&2
     exit 1
 }
@@ -107,7 +107,7 @@ mkdir -p "$artifact_root/package.first" "$artifact_root/package.second"
 for repeat in first second; do
     npx jco transpile "$artifact_root/component.first.wasm" \
         -o "$artifact_root/package.$repeat" --name wasi \
-        --instantiation async --strict --quiet
+        --instantiation async --strict --quiet --bindgen-enable-wasm-exnref
 done
 for file in wasi.js wasi.d.ts wasi.core.wasm wasi.core2.wasm; do
     cmp "$artifact_root/package.first/$file" \

@@ -68,13 +68,27 @@ require glibc 2.28 or newer; the restored Linux package includes Node's
 | --- | --- | --- |
 | Core module | Supported | Supported |
 | Raw core module with generated JavaScript adapter | Conditional: the host supplies the explicit JavaScript contract | Conditional: the host must implement Memory64; addresses cross the adapter as checked `BigInt` values |
-| WASI Preview 2 Component | Conditional: the `cm32p2` toolchain and host must provide every declared WIT/WASI capability | Not available; see [external toolchain blocker](#external-toolchain-blocker) |
+| WASI 0.3 Component | Conditional: the host must implement the Component Model with its async ABI and WASI 0.3, and provide every import the component declares | Not available; see [external toolchain blocker](#external-toolchain-blocker) |
 
 Chromium is the primary browser acceptance target. Firefox is retained for
 compatibility coverage. WebKit is exercised for wasm32; it is not a wasm64
 Memory64 execution target. A wasm64 raw-core deployment therefore requires a
-Memory64-capable host. A Component host, such as Wasmtime or the pinned browser
-component path, must implement the imports declared by the selected world.
+Memory64-capable host. A Component host, such as Wasmtime 50 (`wasmtime run
+-Wcomponent-model-async -Sp3`, or `wasmtime serve -Sp3 -Scli` for an HTTP
+service) or NetWasm's Node.js and browser hosts, must implement the imports
+declared by the selected world. NetWasm never uses WASI Preview 1; an engine
+without the Component Model can load a plain core module (`<OutputType>CoreModule</OutputType>`),
+which has no WASI, so its system APIs throw `PlatformNotSupportedException`
+unless the host provides those services through the module's world.
+
+| Project | Output | Runs in |
+| --- | --- | --- |
+| Command (`<OutputType>Exe</OutputType>`, `Main`) | Component, `wasi:cli/command` | Wasmtime, wasmCloud, Node.js (the published folder), `dotnet run` |
+| Component (`<OutputType>Component</OutputType>`) | Component exporting the world `NetWasmWorld` selects | Other components, Wasmtime, Spin, wasmCloud, jco |
+| HTTP service (a Component whose world is `service`) | Component, `wasi:http/service` | `wasmtime serve`, Spin, wasmCloud |
+| WIT worker (`<OutputType>WitWebWorker</OutputType>`) | Component with the application's world | Browser workers |
+| JavaScript module (`<OutputType>JsModule</OutputType>`) | Raw core module and NetWasm's JavaScript host | Browser pages and workers, Node.js |
+| Plain core module (`<OutputType>CoreModule</OutputType>`) | Self-contained core module importing only its world, no WASI | Any engine with the required features |
 
 ## Conditional capabilities and deployment inputs
 
@@ -106,28 +120,28 @@ WIT/WASI imports declared by its selected world, and its host must supply each
 one before managed code begins. Clocks, streams, randomness, filesystem access,
 and timezone assets are never implicitly available.
 
-### First-preview WASI-backed .NET surface
+### WASI-backed .NET surface
 
-The checked-in WASI 0.2.11 WIT closure describes upstream interfaces, and the
+The checked-in WASI 0.3.2 WIT closure describes upstream interfaces, and the
 Hosting provider catalog describes interfaces that a host adapter can supply.
 Neither is a claim that NetWasm exposes every corresponding .NET API. The
-closed-world compiler retains only imports reached by the application, and the
-current managed surface is deliberately narrower:
+closed-world compiler retains only imports reached by the application, so a
+component imports only what its program uses. Every system service goes through
+the program's platform (`NetWasmPlatform`; `WasiPlatform` by default in a
+component), which an application can replace with its own.
 
-| Area | Available in the first preview | Not implemented as a public managed surface |
+| Area | Available | Not available |
 | --- | --- | --- |
-| Files and directories | Abstract and in-memory streams, readers/writers and pipelines. Local-time support may read one fixed, read-only timezone sidecar through an explicitly mounted preopen. | General path-backed `System.IO.File`, `FileStream`, `Directory`, directory enumeration, mutation, watching and arbitrary preopen access. Public file APIs are deferred until after the WASI 0.3 migration. |
-| Networking | The selected `System.Net.Http` client uses declared WASI HTTP capabilities in its qualified profile. | `System.Net.Sockets`, raw TCP/UDP sockets, listeners and general DNS APIs. The presence of socket WIT definitions or a host provider does not make these managed APIs available. |
-| CLI and processes | Selected command-line arguments, environment access, standard output/runtime diagnostics and application exit plumbing. | `System.Diagnostics.Process`, child-process creation, shell execution, process enumeration and ambient machine/user/process discovery. |
-| Concurrency | Single-reactor `Task`, `ValueTask`, cancellation, timers and readiness-driven continuations. | Managed threads, workers sharing the managed heap, a managed thread pool, `Task.Run` parallelism, blocking waits and shared-memory/atomic threading semantics. Source-compatibility shims do not provide concurrency. |
+| Files and directories | `System.IO.File`, `FileStream`, `Directory`, `DirectoryInfo`, `FileInfo`, `Path` and their readers and writers over WASI 0.3's filesystem, within the directories the host grants (`dotnet run` grants the working directory and a private temporary directory; a published command takes `--dir` in the Node.js launcher or Wasmtime). A browser page or worker mounts files with NetWasm's mount API. | Permissions, ownership, locking, watching, and paths outside the granted directories. |
+| Networking | `System.Net.Sockets` (`Socket`, `TcpClient`, `TcpListener`, `UdpClient`, `NetworkStream`) and `Dns` over WASI 0.3's sockets, blocking and asynchronous; `ws://` WebSockets (`ClientWebSocket`, `WebSocket.CreateFromStream`); `HttpClient` (`NetWasm.System.Net.Http`) over `wasi:http`, and HTTP services that answer it. | Non-blocking sockets and socket timeouts, `Poll`/`Select`, Unix domain sockets, multicast and broadcast, binding a dual-mode socket to the IPv6 wildcard, reverse DNS, `wss://` (no TLS yet), and WebSocket compression. |
+| CLI and processes | Command-line arguments, environment variables, standard input, output and error, and the exit code. | `System.Diagnostics.Process`, child-process creation, shell execution, process enumeration and ambient machine/user/process discovery. |
+| Concurrency | Single-reactor `Task`, `ValueTask`, cancellation, timers and readiness-driven continuations; synchronous I/O APIs over WASI's asynchronous operations inside a command or an async export. | Managed threads, workers sharing the managed heap, a managed thread pool, `Task.Run` parallelism, blocking waits on a task, and shared-memory/atomic threading semantics. Source-compatibility shims do not provide concurrency. |
 | Host and browser services | Explicit application WIT imports and explicit JavaScript imports in the applicable output mode. | Implicit DOM, fetch, storage, registry, proxy, certificate-store or other ambient OS/browser services. |
 
 The timer entry in this profile means `TimeProvider`, `ITimer`,
-`PeriodicTimer`, cancellation deadlines and framework-owned delay/wait timers.
-The desktop `System.Threading.Timer` facade is not in the selected public
-surface. `TaskFactory` is also absent; use the retained direct `Task` APIs and
-reactor continuations. Neither omission changes the availability of
-readiness-driven async work on the single reactor.
+`PeriodicTimer`, `System.Threading.Timer`, cancellation deadlines and
+framework-owned delay/wait timers. `TaskFactory` is absent; use the retained
+direct `Task` APIs and reactor continuations.
 
 This table describes the public managed compatibility boundary. It does not
 forbid Hosting from using a capability internally, nor does it turn every
@@ -191,7 +205,7 @@ profile. The separate library and test packages below are also published.
 | --- | --- |
 | Reflection-free dependency injection | `NetWasm.Microsoft.Extensions.DependencyInjection` and its Abstractions package provide generated activation, keyed/sequence services, scopes and package-owned open-generic closure. Runtime reflection, dynamic activation and runtime generic construction remain outside the profile. |
 | `System.Xml` | `NetWasm.System.Xml` provides the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, interpreted transforms and primitive serialization. Its `System.Xml.Schema` types are a minimal object model that checks only the document element's name against the schema's top-level elements; they do not perform XSD validation. A port of the .NET schema compiler and validator is in progress. Nonprimitive runtime serializer discovery and ambient network/filesystem resolution remain excluded. |
-| WASI-only HTTP (`System.Net.Http`) | `NetWasm.System.Net.Http` provides the qualified WASI HTTP Preview 2 wasm32 native/browser client profile, with a version-neutral transport seam and no framework `[JSImport]`. wasm64 Component packaging remains externally blocked. |
+| WASI-only HTTP (`System.Net.Http`) | `NetWasm.System.Net.Http` provides upstream's `HttpClient` over a `wasi:http` 0.3 client transport for wasm32 components and NetWasm's Node.js and browser hosts, with no framework `[JSImport]`, and binds an `<OutputType>Component</OutputType>` HTTP service's `Handle(HttpRequestMessage)` to `wasi:http/handler`. wasm64 Component packaging remains externally blocked. |
 | TUnit | The `NetWasm.TUnit.*` packages provide the generated catalog, sequential runner and `dotnet test` integration. A later upstream contribution is a separate decision. |
 
 ### Compiler and SDK capability acceptance
@@ -281,8 +295,8 @@ module with its own host contract.
 WASI 0.3 does not remove this blocker. A wasm32 WASI 0.3 transport evolution is
 independent of `cm64p2`: it neither solves nor waits on the missing Memory64
 Component encoder, Canonical ABI support, runtime support, validation, and
-browser tooling. NetWasm's current Component contract is WASI 0.2; qualifying a
-wasm32 transport evolution would not make wasm64 Component output available.
+browser tooling. NetWasm's Component contract is WASI 0.3, which does not make
+wasm64 Component output available.
 
 ## Intentionally unsupported
 

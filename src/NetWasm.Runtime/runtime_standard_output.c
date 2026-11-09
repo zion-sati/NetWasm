@@ -6,17 +6,18 @@
 #include "runtime_standard_output.h"
 #include "wasi_output_imports.h"
 
-/* WASI's blocking-write-and-flush contract permits at most 4096 bytes. */
-#define NETWASM_WASI_BLOCKING_WRITE_LIMIT ((size_t)4096)
 #define NETWASM_SSIZE_MAX (SIZE_MAX >> 1)
 
 typedef struct {
-    uint32_t handle;
-    int acquired;
+    uint32_t writable;
+    uint32_t completion;
+    int opened;
+    int reader_gone;
     int closed;
 } StandardOutput;
 
 static StandardOutput outputs[2];
+static uint32_t wait_set;
 
 static StandardOutput *resolve_output(int descriptor)
 {
@@ -25,7 +26,48 @@ static StandardOutput *resolve_output(int descriptor)
         errno = EBADF;
         return NULL;
     }
+
     return &outputs[descriptor - STDOUT_FILENO];
+}
+
+/* Blocks until the waitable has an event and returns its payload. No other
+ * code runs during the wait, so one set serves every wait. */
+static uint32_t wait_for(uint32_t waitable)
+{
+    uint32_t event[2];
+    if (wait_set == 0) {
+        wait_set = runtime_wasi_waitable_set_new();
+    }
+
+    runtime_wasi_waitable_join(waitable, wait_set);
+    runtime_wasi_waitable_set_wait(wait_set, event);
+    runtime_wasi_waitable_join(waitable, 0);
+    if (event[0] != waitable) {
+        abort();
+    }
+
+    return event[1];
+}
+
+static void open_output(int descriptor, StandardOutput *output)
+{
+    uint64_t ends = descriptor == STDOUT_FILENO
+        ? runtime_wasi_stdout_stream_new() : runtime_wasi_stderr_stream_new();
+    uint32_t readable = (uint32_t)ends;
+    output->writable = (uint32_t)(ends >> 32);
+    output->completion = descriptor == STDOUT_FILENO
+        ? runtime_wasi_stdout_write_via_stream(readable)
+        : runtime_wasi_stderr_write_via_stream(readable);
+    output->opened = 1;
+}
+
+static uint32_t copy_output(int descriptor, StandardOutput *output,
+                            const unsigned char *contents, size_t length)
+{
+    uint32_t status = descriptor == STDOUT_FILENO
+        ? runtime_wasi_stdout_stream_write(output->writable, contents, length)
+        : runtime_wasi_stderr_stream_write(output->writable, contents, length);
+    return status == NETWASM_WASI_OUTPUT_BLOCKED ? wait_for(output->writable) : status;
 }
 
 ssize_t runtime_write_standard_output(int descriptor, const void *contents, size_t length)
@@ -34,46 +76,51 @@ ssize_t runtime_write_standard_output(int descriptor, const void *contents, size
     if (output == NULL) {
         return -1;
     }
+
     if (length > NETWASM_SSIZE_MAX) {
         errno = EINVAL;
         return -1;
     }
+
     if (length != 0 && contents == NULL) {
         errno = EFAULT;
         return -1;
     }
+
     if (length == 0) {
         return 0;
     }
-    if (!output->acquired) {
-        output->handle = descriptor == STDOUT_FILENO
-            ? runtime_get_wasi_stdout() : runtime_get_wasi_stderr();
-        output->acquired = 1;
+
+    if (output->reader_gone) {
+        errno = EPIPE;
+        return -1;
     }
+
+    if (!output->opened) {
+        open_output(descriptor, output);
+    }
+
     size_t written = 0;
     while (written < length) {
-        size_t remaining = length - written;
-        size_t chunk = remaining < NETWASM_WASI_BLOCKING_WRITE_LIMIT
-            ? remaining : NETWASM_WASI_BLOCKING_WRITE_LIMIT;
-        NetWasmWasiOutputResult result = {0};
-        runtime_write_wasi_output(output->handle,
-            (const unsigned char *)contents + written, chunk, &result);
-        if (result.is_error != 0) {
-            if (result.is_error != 1) {
-                abort();
-            }
-            if (result.error_kind == 0) {
-                runtime_drop_wasi_output_error(result.error_handle);
-                errno = EIO;
-            } else if (result.error_kind == 1) {
+        uint32_t progress = copy_output(descriptor, output,
+            (const unsigned char *)contents + written, length - written);
+        written += progress >> 4;
+        uint32_t result = progress & 0xFu;
+        if (result == NETWASM_WASI_COPY_DROPPED) {
+            output->reader_gone = 1;
+            if (written == 0) {
                 errno = EPIPE;
-            } else {
-                abort();
+                return -1;
             }
-            return written == 0 ? -1 : (ssize_t)written;
+
+            return (ssize_t)written;
         }
-        written += chunk;
+
+        if (result != NETWASM_WASI_COPY_COMPLETED) {
+            abort();
+        }
     }
+
     return (ssize_t)written;
 }
 
@@ -123,8 +170,25 @@ int runtime_close_standard_output(int descriptor)
     if (output == NULL) {
         return -1;
     }
-    if (output->acquired) {
-        runtime_drop_wasi_output(output->handle);
+    if (output->opened) {
+        /* Ending the stream and waiting for the completion future flushes
+         * it; a closed console reports no write error, as on desktop. */
+        unsigned char result[2];
+        if (descriptor == STDOUT_FILENO) {
+            runtime_wasi_stdout_stream_drop_writable(output->writable);
+            if (runtime_wasi_stdout_future_read(output->completion, result) ==
+                NETWASM_WASI_OUTPUT_BLOCKED) {
+                wait_for(output->completion);
+            }
+            runtime_wasi_stdout_future_drop_readable(output->completion);
+        } else {
+            runtime_wasi_stderr_stream_drop_writable(output->writable);
+            if (runtime_wasi_stderr_future_read(output->completion, result) ==
+                NETWASM_WASI_OUTPUT_BLOCKED) {
+                wait_for(output->completion);
+            }
+            runtime_wasi_stderr_future_drop_readable(output->completion);
+        }
     }
     output->closed = 1;
     return 0;

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1",
+  "package": "netwasm:component@1.0.0",
+  "world": "diagnostic-command",
+  "worlds": [
+    "diagnostic-command"
+  ],
+  "main": "world.wit",
+  "provenance": {
+    "sourceKind": "netwasm-composed-world",
+    "closurePolicy": "official-wasi-cli-imports-and-wasi-http-client-with-sync-diagnostics"
+  },
+  "files": [
+    {
+      "path": "world.wit",
+      "sha256": "c0ecc555497ccffd50ca709922dd2c6ca5505362d3791e343244e9a359eff234"
+    }
+  ],
+  "dependencies": [
+    {
+      "package": "netwasm:command@1.0.0",
+      "sourceManifest": "../wit/wit-manifest.json",
+      "sourceManifestSha256": "a1fbe2be7459a640b907e22cadf52166565367496e6e1704e23f0ad38e6ae2b4"
+    }
+  ]
+}

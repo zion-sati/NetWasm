@@ -11,6 +11,8 @@ force_component_collection=0
 gc_stress=0
 output_kind="module"
 collector_output=""
+wasi_output=""
+nowasi_output=""
 collector="compact"
 link_map=""
 additional_sources=()
@@ -26,6 +28,8 @@ while [[ $# -gt 0 ]]; do
         --gc-stress) gc_stress=1; shift ;;
         --relocatable) output_kind="relocatable"; shift ;;
         --collector-output) collector_output="$2"; shift 2 ;;
+        --wasi-output) wasi_output="$2"; shift 2 ;;
+        --nowasi-output) nowasi_output="$2"; shift 2 ;;
         --collector) collector="$2"; shift 2 ;;
         --link-map) link_map="$2"; shift 2 ;;
         --additional-source) additional_sources+=("$2"); shift 2 ;;
@@ -44,6 +48,10 @@ done
 }
 [[ -z "$collector_output" || "$output_kind" = relocatable ]] || {
     echo "--collector-output requires a relocatable runtime archive" >&2
+    exit 2
+}
+[[ ( -z "$wasi_output" && -z "$nowasi_output" ) || "$output_kind" = relocatable ]] || {
+    echo "--wasi-output and --nowasi-output require a relocatable runtime archive" >&2
     exit 2
 }
 [[ -f "$layout" ]] || { echo "missing --runtime-layout file '$layout'" >&2; exit 2; }
@@ -74,6 +82,10 @@ for source in "${additional_sources[@]}"; do
 done
 [[ ${#additional_sources[@]} = 0 || "$output_kind" = module ]] || {
     echo "additional sources require a final runtime module" >&2
+    exit 2
+}
+[[ "$output_kind" != relocatable || ( -n "$wasi_output" && -n "$nowasi_output" ) ]] || {
+    echo "--relocatable requires --wasi-output and --nowasi-output" >&2
     exit 2
 }
 [[ "$output_kind" != relocatable || -n "$collector_output" ]] || {
@@ -150,8 +162,13 @@ const includeFinalization = layout.runtimeFeatures === undefined ||
   layout.runtimeFeatures.includes("finalization");
 const includeArraySetValue = layout.runtimeFeatures === undefined ||
   layout.runtimeFeatures.includes("array-set-value");
+// The hash seed's wasi:random import stays out of a program that never seeds a hash.
+const includeRandomSeed = layout.runtimeFeatures === undefined ||
+  layout.runtimeFeatures.includes("random-seed");
+const includeObjectClone = layout.runtimeFeatures === undefined ||
+  layout.runtimeFeatures.includes("object-clone");
 process.stdout.write(
-  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}`);
+  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}\n${includeRandomSeed ? 1 : 0}\n${includeObjectClone ? 1 : 0}`);
 NODE
 )"
 runtime_target="${runtime_layout_values%%$'\n'*}"
@@ -163,12 +180,18 @@ runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_structured_command_diagnostics="${runtime_layout_values%%$'\n'*}"
 runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_finalization="${runtime_layout_values%%$'\n'*}"
-include_array_set_value="${runtime_layout_values#*$'\n'}"
+runtime_layout_values="${runtime_layout_values#*$'\n'}"
+include_array_set_value="${runtime_layout_values%%$'\n'*}"
+runtime_layout_values="${runtime_layout_values#*$'\n'}"
+include_random_seed="${runtime_layout_values%%$'\n'*}"
+include_object_clone="${runtime_layout_values#*$'\n'}"
 [[ "$runtime_target" = "$target" && "$runtime_global_base" =~ ^[0-9]+$ &&
    "$include_ephemerons" =~ ^[01]$ &&
    "$include_structured_command_diagnostics" =~ ^[01]$ &&
    "$include_finalization" =~ ^[01]$ &&
-   "$include_array_set_value" =~ ^[01]$ ]] || {
+   "$include_array_set_value" =~ ^[01]$ &&
+   "$include_random_seed" =~ ^[01]$ &&
+   "$include_object_clone" =~ ^[01]$ ]] || {
     echo "runtime layout contract validation failed" >&2
     exit 1
 }
@@ -240,6 +263,12 @@ fi
 if [[ "$include_array_set_value" = 0 ]]; then
     defines+=(-DNETWASM_NO_ARRAY_SET_VALUE)
 fi
+if [[ "$include_random_seed" = 0 ]]; then
+    defines+=(-DNETWASM_NO_RANDOM_SEED)
+fi
+if [[ "$include_object_clone" = 0 ]]; then
+    defines+=(-DNETWASM_NO_OBJECT_CLONE)
+fi
 
 optimization=("$native_optimization" -flto)
 configuration_defines=()
@@ -280,11 +309,8 @@ runtime_sources=(
   "$repo_root/src/NetWasm.Runtime/native_runtime.c"
   "$repo_root/src/NetWasm.Runtime/runtime_system_initializer.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_libc_initializer.c" \
-  "$repo_root/src/NetWasm.Runtime/runtime_environment_reader.c" \
-  "$repo_root/src/NetWasm.Runtime/runtime_standard_output.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_posix_io.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_stdio.c" \
-  "$repo_root/src/NetWasm.Runtime/runtime_process_exit.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_posix_exit.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_abort.c" \
   "$repo_root/src/NetWasm.Runtime/object_data_address_resolver.c" \
@@ -317,6 +343,17 @@ else
     collector_core="$gc_work/netwasm_gc.c"
     if [[ "$collector" = compact ]]; then collector_core="$gc_work/compact_gc.c"; fi
     collector_sources=("$collector_core" "$gc_work/lifetime.c")
+fi
+# The runtime's WASI uses. A runtime pack keeps them in their own archive, with
+# runtime_platform_nowasi.c's replacements for a plain core module in another.
+platform_sources=(
+  "$repo_root/src/NetWasm.Runtime/runtime_environment_reader.c"
+  "$repo_root/src/NetWasm.Runtime/runtime_standard_output.c"
+  "$repo_root/src/NetWasm.Runtime/runtime_process_exit.c"
+  "$repo_root/src/NetWasm.Runtime/runtime_random_seed.c"
+)
+if [[ "$output_kind" = module ]]; then
+    runtime_sources+=("${platform_sources[@]}")
 fi
 runtime_sources+=("${additional_sources[@]}")
 libc_internal_include="$EMSDK/upstream/emscripten/system/lib/libc/musl/src/internal"
@@ -357,6 +394,27 @@ if [[ "$output_kind" = relocatable ]]; then
     done
     rm -f "$collector_output"
     emar rcs "$collector_output" "${collector_objects[@]}"
+    compile_platform() {
+        local archive="$1"
+        shift
+        local objects=()
+        for source in "$@"; do
+            local object="$archive_work/platform-$(basename "${source%.c}").o"
+            (
+                cd "$repo_root"
+                emcc "${source#"$repo_root"/}" -c -I"$repo_root/src/NetWasm.Runtime" \
+                    -I"$libc_internal_include" -I"$libc_arch_include" -I"$libc_source_include" \
+                    "${defines[@]}" "${configuration_defines[@]}" -DNETWASM_RUNTIME_PACK \
+                    "${target_args[@]}" "${optimization[@]}" "${debug_information[@]}" -o "$object"
+            )
+            objects+=("$object")
+        done
+        mkdir -p "$(dirname "$archive")"
+        rm -f "$archive"
+        emar rcs "$archive" "${objects[@]}"
+    }
+    compile_platform "$wasi_output" "${platform_sources[@]}"
+    compile_platform "$nowasi_output" "$repo_root/src/NetWasm.Runtime/runtime_platform_nowasi.c"
 else
     initial_memory="$(( (runtime_global_base + 4194304 + 65535) / 65536 * 65536 ))"
     emcc_args=(

@@ -72,18 +72,20 @@ full `DateTime` range. Its outputs are deterministic for the same source:
 - `netwasm-timezones.nwtz.br`: the transfer/deployment form;
 - `netwasm-timezones.json`: the IANA version, payload identity, exact sizes, and
   included zone names;
-- `netwasm-timezones.loader.mjs`: browser configuration for the standard
-  Preview 2 WASI environment and filesystem capabilities.
+- `netwasm-timezones.loader.mjs`: browser configuration of the WASI 0.3
+  environment and filesystem for a custom host that runs the component through
+  jco and preview3-shim.
 
 For browsers, serve the Brotli representation at the asset URL with
-`Content-Encoding: br`. `fetch()` receives the decompressed bytes, and the
-generated loader mounts those bytes as
-`/netwasm-timezones/netwasm-timezones.nwtz` before jco instantiates the
-component. The loader uses `@bytecodealliance/preview2-shim`; it does not add a
-framework `JSImport`. It was qualified against jco 1.29.0 and Preview 2 shim
-0.20.2. Browser support in that shim is currently described upstream as
-experimental, so deployments should retain the NetWasm browser qualification
-gate when upgrading it.
+`Content-Encoding: br`. `fetch()` receives the decompressed bytes. NetWasm's
+browser hosts mount them themselves. In a custom host that instantiates the
+component through jco, the generated loader mounts those bytes as
+`/netwasm-timezones/netwasm-timezones.nwtz` before the component starts. The
+loader configures `@bytecodealliance/preview3-shim`'s browser environment and
+preopens; it does not add a framework `JSImport`. jco 1.41 maps only
+`wasi:*@0.3.0` imports to preview3-shim by default, so such a host passes a
+`map` for the component's `@0.3.2` imports. Browser support in preview3-shim is
+recent, so keep a browser test of the host when upgrading it.
 
 Invoke the generated loader only for a component whose imports show reachable
 local-time support. Passing no `timeZone`, `UTC`, or `Etc/UTC` clears timezone
