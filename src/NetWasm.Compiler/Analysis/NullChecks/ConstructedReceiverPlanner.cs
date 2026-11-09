@@ -139,7 +139,7 @@ internal sealed class ConstructedReceiverPlanner(
         switch (instruction.Operation)
         {
             case CilOperation.LoadLocal or CilOperation.LoadArgument:
-                var loaded = Loaded(instruction)!.Value;
+                var loaded = Loaded(instruction);
                 origins.Add(stored.TryGetValue(loaded, out var held)
                     ? held
                     : loaded == new Slot(true, 0) ? Origin.This : new Origin(OriginKind.Loaded, loaded));
@@ -178,12 +178,9 @@ internal sealed class ConstructedReceiverPlanner(
         }
     }
 
-    private static Slot? Loaded(CilInstruction instruction) => instruction switch
-    {
-        { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index local } => new(false, local.Value),
-        { Operation: CilOperation.LoadArgument, Operand: CilOperand.Index argument } => new(true, argument.Value),
-        _ => null,
-    };
+    // The argument or local an ldarg or ldloc reads.
+    private static Slot Loaded(CilInstruction instruction) =>
+        new(instruction.Operation == CilOperation.LoadArgument, ((CilOperand.Index)instruction.Operand!).Value);
 
     private static Slot? Stored(CilInstruction instruction) => instruction switch
     {

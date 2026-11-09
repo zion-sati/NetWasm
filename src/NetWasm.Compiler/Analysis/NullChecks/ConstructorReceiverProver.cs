@@ -116,7 +116,7 @@ internal sealed class ConstructorReceiverProver(
                 CilOperation.Call or CilOperation.CallVirtual or CilOperation.LoadFunction or
                     CilOperation.LoadVirtualFunction => _calledMethods.Resolve(instruction),
                 // A method handle reaches reflection, which can invoke the method on any object.
-                CilOperation.LoadMethodToken => (instruction.Operand as CilOperand.MethodInstance)?.Value,
+                CilOperation.LoadMethodToken => ((CilOperand.MethodInstance)instruction.Operand!).Value,
                 _ => null,
             };
             if (target is not null && ConstructorReceivers.IsInstanceConstructor(target))

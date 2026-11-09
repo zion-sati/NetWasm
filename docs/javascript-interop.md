@@ -489,6 +489,32 @@ public static void Cancel() => _job?.Cancel();
 The runtime adds nothing beyond this: no cancellation type crosses the
 boundary, as in .NET's own browser interop.
 
+## Read and write files the user picked
+
+A browser project whose program uses `System.IO` file APIs gets an in-memory
+file system with an empty `/tmp`, where `Path.GetTempPath()` points. The page
+module (`open`), a command's `run` module and a worker client module also
+export `mount`, `unmount` and `sync`, which put what the user picked at an
+absolute path the program's `File`, `FileStream` and `Directory` calls see:
+
+```js
+import { open, mount, sync } from "./browser/Editor.mjs";
+
+const [picked] = await showOpenFilePicker();
+await mount("/input/notes.txt", await picked.getFile());      // a File: read-only
+await mount("/work", await navigator.storage.getDirectory()); // a handle: read-write
+
+const app = await open();
+app.Summarize("/input/notes.txt", "/work/summary.txt");
+await sync("/work"); // writes the program's changes back to the directory
+```
+
+A `File` or `Blob` mounts read-only, and writing to it throws `IOException`, as
+for a read-only mount on Linux. A `FileSystemFileHandle` or
+`FileSystemDirectoryHandle`, such as the Origin Private File System's root, is
+copied in when mounted and written back by `sync`. A worker client's mounts
+reach every worker it creates, including workers started before the mount.
+
 ## Serve the published files
 
 During development, `dotnet run` publishes the project and serves it on
