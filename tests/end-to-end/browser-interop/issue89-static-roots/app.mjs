@@ -13,7 +13,7 @@ async function start() {
       buildFingerprint: manifest.buildFingerprint,
       deploymentManifestSha256: sha256,
       arguments: [], environment: [],
-      grants: { environment: [], preopens: [], network: "denyAll", clocks: ["monotonic"], randomness: true },
+      grants: { environment: [], preopens: [], network: "denyAll", clocks: ["monotonic"], randomness: true, temporaryDirectory: false, workingDirectory: false },
       applicationImports: [],
     },
     stdout: sink, stderr: sink, stdin: null, signal: null,

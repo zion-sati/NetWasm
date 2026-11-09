@@ -15,7 +15,7 @@ try {
       arguments: [],
       environment: [],
       grants: { clocks: ["wall", "monotonic"], environment: [], network: "denyAll",
-        preopens: [], randomness: true },
+        preopens: [], randomness: true, temporaryDirectory: false, workingDirectory: false },
       applicationImports: [],
     },
     signal: null,

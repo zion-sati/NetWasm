@@ -60,7 +60,7 @@ Every option is optional:
 
 | Option | Effect |
 | --- | --- |
-| `stdout`, `stderr` | Receive guest output one line at a time. `stderr` also receives a report of each managed exception that leaves an export. Default: the console. |
+| `stdout`, `stderr` | Receive guest output one line at a time, asynchronously: a line an export writes arrives after the export returns. `stderr` also receives a report of each managed exception that leaves an export. Default: the console. |
 | `environment` | Adds or replaces environment variables over the project's `NetWasmEnvironmentVariable` items. |
 | `modules` | Supplies import modules at runtime, keyed by module name, beside the bundled `NetWasmJavaScriptModule` items. A module may not be both. |
 | `onNotification` | Receives notifications an import module sends, after the import returns. |
@@ -228,7 +228,7 @@ const request = {
   environment: [],
   grants: {
     environment: [], preopens: [], network: "denyAll",
-    clocks: [], randomness: true,
+    clocks: [], randomness: true, temporaryDirectory: false, workingDirectory: false,
   },
   applicationImports: [],
 };
@@ -253,6 +253,9 @@ local launcher replaces host paths in `detail` with `<host-path>`.
 
 The example grants randomness, which the NetWasm runtime uses to seed string
 hashing, and no network, clocks, environment variables or filesystem mounts.
+`workingDirectory` and `temporaryDirectory` mount the program's directory and
+a private temporary directory, which only the local launcher does; a browser
+request sets both to `false`.
 The deployment's `requiredImportModules` lists every platform capability it
 can use; a request that leaves one of them ungranted fails with a `detail` that
 names it. Enable only the capabilities your application requires. JavaScript

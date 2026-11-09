@@ -350,13 +350,10 @@ namespace System.Runtime.InteropServices
                     "The asynchronous entry point cannot complete: a core module has no event loop.");
             }
 
-            if (_commandScheduler == null)
-            {
-                throw new InvalidOperationException(
-                    "The asynchronous entry point cannot complete: no scheduled work or pending I/O remains.");
-            }
-
-            return _commandScheduler;
+            // An entry point that so far only awaits its host, such as a JavaScript promise, has
+            // scheduled nothing; the event loop still decides whether it can complete.
+            _ = Scheduler;
+            return _commandScheduler!;
         }
 
         internal static void EnsureLocalTimeReady()

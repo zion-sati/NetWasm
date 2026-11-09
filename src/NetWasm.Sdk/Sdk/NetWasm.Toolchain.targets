@@ -1619,11 +1619,11 @@
   <Target Name="NetWasmSdkRejectComponentRun"
           BeforeTargets="ComputeRunArguments"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmComponentLibrary)' == 'true'">
-    <Error Code="NWSDK103"
-           Condition="'$(NetWasmWorld)' == 'service' OR '$(NetWasmWorld)' == 'netwasm:command/service@1.0.0' OR '$(NetWasmWorld)' == 'netwasm:command@1.0.0/service'"
-           Text="An HTTP service is not run with dotnet run. Publish it with dotnet publish and serve $(AssemblyName).wasm with wasmtime serve -Sp3 -Scli, Spin or wasmCloud." />
-    <Error Code="NWSDK103"
-           Text="A component is not run with dotnet run. Publish it with dotnet publish and load $(AssemblyName).wasm in a host that implements the world $(NetWasmWorld)." />
+    <PropertyGroup>
+      <_NetWasmComponentRunGuidance>A component is not run with dotnet run. Publish it with dotnet publish and load $(AssemblyName).wasm in a host that implements the world $(NetWasmWorld).</_NetWasmComponentRunGuidance>
+      <_NetWasmComponentRunGuidance Condition="'$(NetWasmWorld)' == 'service' OR '$(NetWasmWorld)' == 'netwasm:command/service@1.0.0' OR '$(NetWasmWorld)' == 'netwasm:command@1.0.0/service'">An HTTP service is not run with dotnet run. Publish it with dotnet publish and serve $(AssemblyName).wasm with wasmtime serve -Sp3 -Scli, Spin or wasmCloud.</_NetWasmComponentRunGuidance>
+    </PropertyGroup>
+    <Error Code="NWSDK103" Text="$(_NetWasmComponentRunGuidance)" />
   </Target>
 
   <!-- dotnet run runs what dotnet publish produces. An application published

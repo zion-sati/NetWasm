@@ -1,7 +1,6 @@
 <Project Sdk="NetWasm.Sdk">
   <PropertyGroup>
     <TargetFramework>netwasm0.1</TargetFramework>
-    <NetWasmComponentContract>async-command</NetWasmComponentContract>
     <NetWasmOptimization>None</NetWasmOptimization>
   </PropertyGroup>
   <ItemGroup>

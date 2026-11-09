@@ -270,9 +270,9 @@ internal static class WitWorkerClientGenerationFixture
     internal static byte[] Contract(params (int Id, string Name, string Kind)[] definitions)
     {
         var contract = JsonNode.Parse("""
-            {"schemaVersion":2,"world":"example:worker/application@1.0.0","exports":[{"operation":"echo","placement":"root","worldItem":"echo","interface":null,
+            {"schemaVersion":3,"world":"example:worker/application@1.0.0","exports":[{"operation":"echo","placement":"root","worldItem":"echo","interface":null,
             "javaScriptRoot":"","javaScriptMember":"echo","function":"echo","parameters":[],"result":{"kind":"primitive","primitive":"u32","definition":null},
-            "kind":{"name":"freestanding","resourceType":null}}],"types":[],"reactor":null}
+            "kind":{"name":"freestanding","resourceType":null}}],"types":[]}
             """)!.AsObject();
         foreach (var (id, name, kind) in definitions)
             contract["types"]!.AsArray().Add(new JsonObject

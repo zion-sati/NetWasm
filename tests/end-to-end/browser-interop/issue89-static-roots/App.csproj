@@ -4,7 +4,6 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>Issue89StaticRoots</AssemblyName>
     <Nullable>enable</Nullable>
-    <NetWasmComponentContract>async-command</NetWasmComponentContract>
     <NetWasmRawWasm>true</NetWasmRawWasm>
     <NetWasmPublishTarget>browser</NetWasmPublishTarget>
     <!-- variants.json selects 0, 200 or 400 reachable static reference fields. -->
