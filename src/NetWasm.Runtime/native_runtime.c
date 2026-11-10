@@ -7,6 +7,7 @@
 #include "native_target.h"
 #include "gc_metric_reader.h"
 #include "runtime_system_initializer.h"
+#include "runtime_finalizer_safepoint.h"
 #include "object_data_address_resolver.h"
 #include "unmanaged_allocator.h"
 #include "collector/weak_handle_table.h"
@@ -220,7 +221,6 @@ u32 netwasm_evaluate_filter(
 static uintptr_t finalizer_root;
 static u32 finalizer_count;
 static u32 escaped_finalizer_status;
-static u32 draining_finalizers;
 static int finalization_initialized;
 
 __attribute__((import_module("netwasm.application.v1"),
@@ -960,12 +960,7 @@ netwasm_reference_t finalizer_safepoint(void)
     if (escaped_finalizer_status != 0) {
         return dispatch_root;
     }
-    collect_internal();
-    if (!draining_finalizers && collector_has_pending_finalizers()) {
-        draining_finalizers = 1;
-        (void)collector_invoke_finalizers();
-        draining_finalizers = 0;
-    }
+    runtime_run_queued_finalizers();
     return escaped_finalizer_status == 0 ? 0 : dispatch_root;
 #else
     return 0;

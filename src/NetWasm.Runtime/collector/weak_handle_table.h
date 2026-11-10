@@ -8,7 +8,10 @@ typedef struct NetWasmWeakHandleTable {
     uintptr_t *slots;
     uint8_t *lifetimes;
     uint8_t *occupied;
+    uint32_t *next_free;
     uint32_t capacity;
+    uint32_t next_index;
+    uint32_t free_head;
 } NetWasmWeakHandleTable;
 
 uint32_t weak_handle_table_create(

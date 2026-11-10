@@ -122,6 +122,23 @@ test("starts one generation and dispatches every accepted call without waiting f
   assert.equal(await third, 7);
 });
 
+// Calls made while the worker starts wait in a queue, which is sent in order once it is
+// ready; shifting it made each call cost time in proportion to those behind it.
+test("sending calls queued during startup costs the same per call however many wait", async () => {
+  const { client, worker } = fixture();
+  const count = 200_000;
+  const calls = [];
+  for (let index = 0; index < count; index++) calls.push(client.invoke("add", [index, 0]));
+  const start = performance.now();
+  worker.emit("message", ready());
+  assert.ok(performance.now() - start < 2000, `took ${performance.now() - start} ms`);
+  await client.ready;
+  assert.equal(worker.sent.length, count + 1);
+  assert.deepEqual([worker.sent[1].requestId, worker.sent.at(-1).requestId], [1, count]);
+  for (let requestId = 1; requestId <= count; requestId++) worker.emit("message", result(requestId, requestId));
+  assert.equal((await Promise.all(calls)).length, count);
+});
+
 test("snapshots byte views when calls are accepted", async () => {
   const { client, worker } = fixture();
   const backing = new Uint8Array(8);

@@ -91,6 +91,7 @@ echo "Independent NetWasmGC layout and endpoint contract PASS"
 netwasm_gc_sources=(
   "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/netwasm_gc.c"
   "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/lifetime.c"
+  "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/address_index.c"
   "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/allocation.c"
   "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/collection.c"
   "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/ephemeron.c"
@@ -111,6 +112,13 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic \
   -o "$output_dir/netwasm_gc_runtime_contract"
 "$output_dir/netwasm_gc_runtime_contract"
 echo "Independent NetWasmGC runtime contract PASS"
+cc -std=c11 -Wall -Wextra -Werror -pedantic \
+  -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/address_index.c" \
+  "$script_dir/netwasm_gc_address_index_contract.c" \
+  -o "$output_dir/netwasm_gc_address_index_contract"
+"$output_dir/netwasm_gc_address_index_contract"
+echo "NetWasmGC address index contract PASS"
 
 # Compact's own core behind NetWasmGC's interface, with the shared adapters.
 compact_gc_sources=(
@@ -335,6 +343,14 @@ cc -std=c11 -Wall -Wextra -Werror \
   -o "$output_dir/runtime_process_exit_contract"
 "$output_dir/runtime_process_exit_contract"
 echo "Runtime Preview 2 exit contract PASS"
+
+cc -std=c11 -Wall -Wextra -Werror \
+  -I"$workspace_dir/src/NetWasm.Runtime" \
+  "$workspace_dir/src/NetWasm.Runtime/runtime_finalizer_safepoint.c" \
+  "$script_dir/runtime_finalizer_safepoint_contract.c" \
+  -o "$output_dir/runtime_finalizer_safepoint_contract"
+"$output_dir/runtime_finalizer_safepoint_contract"
+echo "Runtime finalizer safepoint contract PASS"
 
 # Rename standard symbols in these in-memory facade tests so the executable's
 # own libc, test diagnostics and coverage writers retain their host I/O.

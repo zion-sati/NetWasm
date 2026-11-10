@@ -308,6 +308,7 @@ node "$repo_root/src/NetWasm.Runtime.Pack/tools/validate-runtime-component-metad
 runtime_sources=(
   "$repo_root/src/NetWasm.Runtime/native_runtime.c"
   "$repo_root/src/NetWasm.Runtime/runtime_system_initializer.c" \
+  "$repo_root/src/NetWasm.Runtime/runtime_finalizer_safepoint.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_libc_initializer.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_posix_io.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_stdio.c" \
@@ -342,7 +343,7 @@ else
     # Compact has its own size-first core behind NetWasmGC's interface.
     collector_core="$gc_work/netwasm_gc.c"
     if [[ "$collector" = compact ]]; then collector_core="$gc_work/compact_gc.c"; fi
-    collector_sources=("$collector_core" "$gc_work/lifetime.c")
+    collector_sources=("$collector_core" "$gc_work/lifetime.c" "$gc_work/address_index.c")
 fi
 # The runtime's WASI uses. A runtime pack keeps them in their own archive, with
 # runtime_platform_nowasi.c's replacements for a plain core module in another.

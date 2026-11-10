@@ -191,7 +191,8 @@ export function createJavaScriptValueServices(handles, Registry = globalThis.Fin
     },
     value_from_managed: handle => track(Object.freeze(new ManagedObject()), handle),
     value_from_managed_error: (message, handle) => track(new ManagedError(message), handle),
-    value_collected: () => collected.shift() ?? 0n,
+    // Any order frees them; taking the last costs the same however many JavaScript collected.
+    value_collected: () => collected.pop() ?? 0n,
   };
 }
 

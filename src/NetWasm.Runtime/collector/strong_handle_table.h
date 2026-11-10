@@ -7,7 +7,10 @@ typedef struct NetWasmStrongHandleTable {
     uintptr_t *slots;
     uint8_t *occupied;
     uint8_t *pinned;
+    uint32_t *next_free;
     uint32_t capacity;
+    uint32_t next_index;
+    uint32_t free_head;
 } NetWasmStrongHandleTable;
 
 uint32_t strong_handle_table_create(NetWasmStrongHandleTable *table, uintptr_t target);

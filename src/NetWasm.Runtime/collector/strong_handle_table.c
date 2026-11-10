@@ -15,15 +15,18 @@ static void grow(NetWasmStrongHandleTable *table)
     uintptr_t *slots = collector_allocate_metadata(capacity * sizeof(uintptr_t));
     uint8_t *occupied = collector_allocate_metadata(capacity * sizeof(uint8_t));
     uint8_t *pinned = collector_allocate_metadata(capacity * sizeof(uint8_t));
-    if (slots == NULL || occupied == NULL || pinned == NULL) abort();
+    uint32_t *next_free = collector_allocate_metadata(capacity * sizeof(uint32_t));
+    if (slots == NULL || occupied == NULL || pinned == NULL || next_free == NULL) abort();
 
     memset(slots, 0, capacity * sizeof(uintptr_t));
     memset(occupied, 0, capacity * sizeof(uint8_t));
     memset(pinned, 0, capacity * sizeof(uint8_t));
+    memset(next_free, 0, capacity * sizeof(uint32_t));
     if (table->slots != NULL) {
         memcpy(slots, table->slots, table->capacity * sizeof(uintptr_t));
         memcpy(occupied, table->occupied, table->capacity * sizeof(uint8_t));
         memcpy(pinned, table->pinned, table->capacity * sizeof(uint8_t));
+        memcpy(next_free, table->next_free, table->capacity * sizeof(uint32_t));
         for (uint32_t index = 0; index < table->capacity; index++) {
             if (table->pinned[index] != 0) collector_unpin_reference(&table->slots[index]);
         }
@@ -34,9 +37,11 @@ static void grow(NetWasmStrongHandleTable *table)
     collector_release_metadata(table->slots);
     collector_release_metadata(table->occupied);
     collector_release_metadata(table->pinned);
+    collector_release_metadata(table->next_free);
     table->slots = slots;
     table->occupied = occupied;
     table->pinned = pinned;
+    table->next_free = next_free;
     table->capacity = capacity;
 
     for (uint32_t index = 0; index < table->capacity; index++) {
@@ -46,11 +51,18 @@ static void grow(NetWasmStrongHandleTable *table)
 
 uint32_t strong_handle_table_create(NetWasmStrongHandleTable *table, uintptr_t target)
 {
-    uint32_t index = 0;
-    while (index < table->capacity && table->occupied[index] != 0) index++;
-    if (index == table->capacity) grow(table);
+    /* Released handles are reused first, so creating one costs the same however many live. */
+    uint32_t index;
+    if (table->free_head != 0) {
+        index = table->free_head - 1;
+        table->free_head = table->next_free[index];
+    } else {
+        if (table->next_index == table->capacity) grow(table);
+        index = table->next_index++;
+    }
 
     table->occupied[index] = 1;
+    table->next_free[index] = 0;
     table->slots[index] = target;
     return index + 1;
 }
@@ -87,6 +99,8 @@ void strong_handle_table_release(NetWasmStrongHandleTable *table, uint32_t handl
     table->slots[index] = 0;
     table->occupied[index] = 0;
     table->pinned[index] = 0;
+    table->next_free[index] = table->free_head;
+    table->free_head = handle;
 }
 
 uint32_t strong_handle_table_count(const NetWasmStrongHandleTable *table)

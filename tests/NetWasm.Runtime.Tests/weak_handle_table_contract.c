@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <time.h>
 
 static uintptr_t *registered_slot;
 static NetWasmWeakReferenceLifetime registered_lifetime;
@@ -42,6 +43,22 @@ int collector_unregister_weak_reference(
     unregistrations++;
     if (registered_slot == slot) registered_slot = NULL;
     return 1;
+}
+
+/* A released handle is reused at once, so creating one costs the same however many live;
+ * scanning for a free slot made creating n handles quadratic. */
+static void creation_cost_does_not_grow_with_live_handles(void)
+{
+    enum { COUNT = 100000 };
+    NetWasmWeakHandleTable table = {0};
+    clock_t start = clock();
+    for (uint32_t handle = 1; handle <= COUNT; handle++)
+        assert(weak_handle_table_create(&table, 0, false) == handle);
+    for (uint32_t handle = COUNT; handle != 0; handle--) {
+        weak_handle_table_release(&table, handle);
+        assert(weak_handle_table_create(&table, 0, false) == handle);
+    }
+    assert(clock() - start < CLOCKS_PER_SEC);
 }
 
 int main(void)
@@ -86,5 +103,6 @@ int main(void)
     assert(weak_handle_table_get(&table, table.capacity + 1) == 0);
     assert(registrations == before);
     assert(unregistrations > 0);
+    creation_cost_does_not_grow_with_live_handles();
     return 0;
 }

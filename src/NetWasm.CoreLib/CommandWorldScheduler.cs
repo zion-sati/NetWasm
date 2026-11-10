@@ -19,7 +19,8 @@ namespace System.Runtime.InteropServices
         private const int LastCopyEvent = 5;
 
         private readonly Queue<CommandWorldWork> _ready = new();
-        private readonly List<CommandWorldWork> _waiting = new();
+        // Pending work by its waitable, so an event finds its work however much is pending.
+        private readonly Dictionary<int, CommandWorldWork> _waiting = new();
         private readonly IWasiMonotonicWaitInvoker _clock;
         private readonly IWasiWaitableSetCreateInvoker _createSet;
         private readonly IWasiWaitableJoinInvoker _join;
@@ -77,7 +78,7 @@ namespace System.Runtime.InteropServices
                 }
 
                 _join.Join(waiting.Waitable, _set);
-                _waiting.Add(waiting);
+                _waiting.Add(waiting.Waitable, waiting);
                 return waiting;
             }
 
@@ -109,7 +110,7 @@ namespace System.Runtime.InteropServices
             }
 
             _join.Join(waitable, _set);
-            _waiting.Add(waiting);
+            _waiting.Add(waitable, waiting);
             return waiting;
         }
 
@@ -209,8 +210,11 @@ namespace System.Runtime.InteropServices
         // for it, since the stream or future's owner cancels or drops the copy.
         internal void Cancel(CommandWorldWork work)
         {
-            if (work.Waitable != CommandWorldWork.NoWaitable && _waiting.Remove(work))
+            // Work that became ready no longer waits, and its waitable may name newer work.
+            if (work.Waitable != CommandWorldWork.NoWaitable &&
+                _waiting.TryGetValue(work.Waitable, out var waiting) && waiting == work)
             {
+                _waiting.Remove(work.Waitable);
                 _join.Join(work.Waitable, 0);
                 if (!work.IsCopy)
                 {
@@ -224,21 +228,19 @@ namespace System.Runtime.InteropServices
         // or whose stream or future copy ended, with the copy's result as its payload.
         private void Ready(int eventCode, int waitable, uint payload)
         {
-            var index = _waiting.FindIndex(work => work.Waitable == waitable);
-            if (index < 0 || eventCode < SubtaskEvent || eventCode > LastCopyEvent ||
-                _waiting[index].IsCopy != (eventCode != SubtaskEvent))
+            if (!_waiting.TryGetValue(waitable, out var work) || eventCode < SubtaskEvent ||
+                eventCode > LastCopyEvent || work.IsCopy != (eventCode != SubtaskEvent))
             {
                 throw new InvalidOperationException(
                     "The event loop received an event for no scheduled work.");
             }
 
-            var work = _waiting[index];
             if (!work.IsCopy && payload != Returned)
             {
                 return;
             }
 
-            _waiting.RemoveAt(index);
+            _waiting.Remove(waitable);
             _join.Join(work.Waitable, 0);
             if (work.IsCopy)
             {
