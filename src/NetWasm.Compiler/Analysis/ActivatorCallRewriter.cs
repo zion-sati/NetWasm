@@ -29,43 +29,79 @@ internal sealed class ActivatorCallRewriter(
                 continue;
             }
             var createdType = AssertSingleClosedArgument(activator.Value);
-            var definition = typeDefinitions.ResolveTypeIdentity(createdType);
-            var constructor = definition.Methods
-                .Select(methods.GetMethod)
-                .SingleOrDefault(candidate =>
-                    candidate.Name == ".ctor" &&
-                    !candidate.IsStatic &&
-                    candidate.Signature.ParameterTypes.IsEmpty);
-            if (constructor is null)
+            if (Replacement(activator.Value, createdType) is not { } replacement)
             {
-                if (!createdType.IsValueType)
-                {
-                    throw new CompilerException(new CompilerDiagnostic(
-                        DiagnosticCode.UnsupportedMetadata,
-                        $"closed new() type '{createdType.CanonicalName}' has no " +
-                        "parameterless constructor"));
-                }
-                instructions[index] = call with
-                {
-                    Operation = CilOperation.DefaultValue,
-                    Operand = new CilOperand.TypeIdentity(createdType),
-                };
+                continue;
             }
-            else
+            instructions[index] = call with
             {
-                instructions[index] = call with
-                {
-                    Operation = CilOperation.NewObject,
-                    Operand = new CilOperand.MethodInstance(ConstructedInstance(
-                        constructor,
-                        createdType.Shape == CliTypeShape.GenericInstantiation
-                            ? createdType.TypeArguments
-                            : [])),
-                };
-            }
+                Operation = replacement.Operation,
+                Operand = replacement.Operand,
+            };
             changed = true;
         }
         return changed ? body with { Instructions = [.. instructions] } : body;
+    }
+
+    // What Activator.CreateInstance<T>() compiles to, as .NET behaves: construction for a value
+    // type or a concrete class with a public parameterless constructor, a value type's zero
+    // value when it declares none, and a throw of MissingMethodException for a parameterless
+    // constructor that is not public. Null leaves the call, whose body throws what .NET throws
+    // for string, arrays, pointers, interfaces, abstract classes and classes without a
+    // parameterless constructor.
+    private (CilOperation Operation, CilOperand Operand)? Replacement(
+        MethodInstanceModel activator,
+        CliTypeIdentity createdType)
+    {
+        if (createdType.Shape is not (CliTypeShape.Primitive or CliTypeShape.Named or
+                CliTypeShape.GenericInstantiation) ||
+            createdType.CanonicalName == "primitive:string")
+        {
+            return null;
+        }
+        var definition = typeDefinitions.ResolveTypeIdentity(createdType);
+        if (!createdType.IsValueType && (definition.IsInterface || definition.IsAbstract))
+        {
+            return null;
+        }
+        var constructor = definition.Methods
+            .Select(methods.GetMethod)
+            .SingleOrDefault(candidate =>
+                candidate.Name == ".ctor" &&
+                !candidate.IsStatic &&
+                candidate.Signature.ParameterTypes.IsEmpty);
+        return constructor switch
+        {
+            null when createdType.IsValueType =>
+                (CilOperation.DefaultValue, new CilOperand.TypeIdentity(createdType)),
+            null => null,
+            { IsPublic: true } =>
+                (CilOperation.NewObject, new CilOperand.MethodInstance(ConstructedInstance(
+                    constructor,
+                    createdType.Shape == CliTypeShape.GenericInstantiation
+                        ? createdType.TypeArguments
+                        : []))),
+            _ => (CilOperation.Call, new CilOperand.MethodInstance(
+                NonPublicConstructorThrow(activator, createdType))),
+        };
+    }
+
+    private MethodInstanceModel NonPublicConstructorThrow(
+        MethodInstanceModel activator,
+        CliTypeIdentity createdType)
+    {
+        var assembly = activator.Definition.Key.Assembly;
+        var thrower = typeDefinitions
+            .ResolveTypeIdentity(CliTypeIdentity.Named(assembly, "System", "Activator", false))
+            .Methods
+            .Select(methods.GetMethod)
+            .Single(method => method.Name == "CreateInstanceWithNonPublicConstructor");
+        return methodInstances.ResolveMethodInstance(
+            assembly,
+            thrower.Key.MetadataToken,
+            symbols.Format(thrower),
+            0,
+            new CliGenericContext([], [createdType]));
     }
 
     private static CliTypeIdentity AssertSingleClosedArgument(MethodInstanceModel method)

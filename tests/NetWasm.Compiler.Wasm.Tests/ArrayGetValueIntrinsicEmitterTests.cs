@@ -19,17 +19,16 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
     [InlineData(WasmTarget.Wasm64, false)]
     [InlineData(WasmTarget.Wasm32, true)]
     [InlineData(WasmTarget.Wasm64, true)]
-    public void PublishesRootsAndTranslatesTheRuntimeAllocationFailureSentinel(WasmTarget target, bool nullable)
+    public void TranslatesTheRuntimeAllocationFailureSentinel(WasmTarget target, bool nullable)
     {
         var layout = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var descriptors = new Descriptors(nullable);
         var receiver = new RecordingReceiver();
         var addresses = new RecordingAddresses();
         var exceptions = new RecordingExceptions();
-        var roots = new RecordingRoots();
         var imports = WasmRuntimeImports.CreateCatalog();
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(
-            new ArrayGetValueIntrinsicEmitter(receiver, imports, addresses, exceptions, roots, descriptors, new NullableTypeResolver(), layout, layout, layout));
+            new ArrayGetValueIntrinsicEmitter(receiver, imports, addresses, exceptions, descriptors, new NullableTypeResolver(), layout, layout, layout));
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayGetValue,
             [CliValueKind.ManagedReference, CliValueKind.I4]) with
         { Target = WasmTargetLayout.For(target) };
@@ -40,10 +39,7 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         var code = writer.ToInstructions();
         Assert.Equal(request.Local(0, CliValueKind.ManagedReference), receiver.Local);
         Assert.Same(writer, receiver.Writer);
-        Assert.Same(request.Instruction, roots.Request);
-        Assert.Same(writer, roots.Writer);
         Assert.Equal(0, receiver.InstructionCount);
-        Assert.Equal(0, roots.InstructionCount);
         var tail = code.TakeLast(8).ToArray();
         Assert.Equal([WasmOpcodes.LocalGet, WasmOpcodes.LocalGet, WasmOpcodes.LocalGet,
             WasmOpcodes.LocalGet, WasmOpcodes.Call, WasmOpcodes.LocalTee, WasmOpcodes.If, WasmOpcodes.End], tail.Select(item => item.Opcode));
@@ -69,7 +65,7 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         var layout = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
         var addresses = new RecordingAddresses();
         var emitter = new ArrayGetValueIntrinsicEmitter(new RecordingReceiver(), WasmRuntimeImports.CreateCatalog(),
-            addresses, new RecordingExceptions(), new RecordingRoots(), new Descriptors(true),
+            addresses, new RecordingExceptions(), new Descriptors(true),
             new NullableTypeResolver(), new UnboxedLayouts(layout), layout, layout);
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayGetValue,
             [CliValueKind.ManagedReference, CliValueKind.I4]);
@@ -120,20 +116,6 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         }
     }
 
-    private sealed class RecordingRoots : IRootPublicationEmitter
-    {
-        public InstructionEmissionRequest? Request { get; private set; }
-        public IWasmInstructionWriter? Writer { get; private set; }
-        public int InstructionCount { get; private set; }
-
-        public void Emit(InstructionEmissionRequest request, IWasmInstructionWriter code, bool constructorCall = false)
-        {
-            Assert.False(constructorCall);
-            Request = request;
-            Writer = code;
-            InstructionCount = Assert.IsType<RecordingInstructionWriter>(code).ToInstructions().Length;
-        }
-    }
 
     private sealed class RecordingAddresses : IAddressInstructionEmitter
     {

@@ -94,6 +94,11 @@ internal enum RuntimeImportSymbol
     ArraySetValue,
     ReportUnhandledException,
     ObjectClone,
+    AllocateObject,
+    AllocationRun,
+    AllocationSlot,
+    AllocationRunsEnabled,
+    AllocateObjectFallback,
 }
 
 internal readonly record struct RuntimeImportBinding(

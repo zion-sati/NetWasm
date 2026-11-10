@@ -24,6 +24,8 @@ internal static class Program
         {
             "object-graph" => ObjectGraph(count),
             "ui-churn" => UiChurn(count),
+            "binary-trees" => BinaryTrees(count),
+            "nullable-boxes" => NullableBoxes(count),
             _ => default,
         };
         if (result.Name is null) return 3;
@@ -94,6 +96,70 @@ internal static class Program
         GC.KeepAlive(retained);
         return new Result("ui-churn", elapsed, checksum, allocated, automatic, retainedBytes, retained.Length);
     }
+
+    private sealed class TreeNode(TreeNode? left, TreeNode? right)
+    {
+        public TreeNode? Left { get; } = left;
+        public TreeNode? Right { get; } = right;
+    }
+
+    // The Computer Language Benchmarks Game's binary-trees: short-lived complete
+    // trees of every even depth from 4, next to one tree that lives throughout.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Result BinaryTrees(int maxDepth)
+    {
+        var collectionsBefore = GC.CollectionCount(0);
+        var allocatedBefore = GC.GetTotalAllocatedBytes();
+        var started = Stopwatch.GetTimestamp();
+        var longLived = Tree(maxDepth);
+        var checksum = 0L;
+        for (var depth = 4; depth <= maxDepth; depth += 2)
+        {
+            var iterations = 1 << (maxDepth - depth + 4);
+            for (var index = 0; index < iterations; index++)
+                checksum += Count(Tree(depth));
+        }
+        checksum += Count(longLived);
+        var elapsed = Stopwatch.GetTimestamp() - started;
+        var automatic = GC.CollectionCount(0) - collectionsBefore;
+        var allocated = GC.GetTotalAllocatedBytes() - allocatedBefore;
+        GC.Collect();
+        var retainedBytes = GC.GetTotalMemory(false);
+        var retained = Count(longLived);
+        GC.KeepAlive(longLived);
+        return new Result("binary-trees", elapsed, checksum, allocated, automatic, retainedBytes, retained);
+    }
+
+    // Boxes a Nullable<int> each iteration into a ring of retained slots, a null
+    // one in eight, and reads an older box back.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Result NullableBoxes(int count)
+    {
+        var boxes = new object?[1024];
+        var collectionsBefore = GC.CollectionCount(0);
+        var allocatedBefore = GC.GetTotalAllocatedBytes();
+        var started = Stopwatch.GetTimestamp();
+        var checksum = 0L;
+        for (var index = 0; index < count; index++)
+        {
+            int? value = (index & 7) == 0 ? null : index;
+            boxes[index & 1023] = value;
+            if (boxes[(index * 7) & 1023] is int boxed) checksum += boxed;
+        }
+        var elapsed = Stopwatch.GetTimestamp() - started;
+        var automatic = GC.CollectionCount(0) - collectionsBefore;
+        var allocated = GC.GetTotalAllocatedBytes() - allocatedBefore;
+        GC.Collect();
+        var retainedBytes = GC.GetTotalMemory(false);
+        GC.KeepAlive(boxes);
+        return new Result("nullable-boxes", elapsed, checksum, allocated, automatic, retainedBytes, boxes.Length);
+    }
+
+    private static TreeNode Tree(int depth) =>
+        depth == 0 ? new TreeNode(null, null) : new TreeNode(Tree(depth - 1), Tree(depth - 1));
+
+    private static int Count(TreeNode node) =>
+        node.Left is null ? 1 : 1 + Count(node.Left) + Count(node.Right!);
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ValidateGraph(ProbeObject[] objects)

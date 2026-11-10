@@ -92,14 +92,18 @@ public sealed class JavaScriptImportResultMarshallerTests
         Assert.Equal("unsupported scalar host result type", exception.Message);
     }
 
+    // Managed code's import result is allocated with the module's allocation
+    // policy, allocate_object where the runtime inlines it; a generated function
+    // has no policy and calls allocate.
     [Theory]
-    [InlineData(false, false, 0)]
-    [InlineData(true, false, 1)]
-    [InlineData(true, true, 1)]
+    [InlineData(false, false, 0, false)]
+    [InlineData(true, false, 1, true)]
+    [InlineData(true, true, 1, false)]
     public void HostObjectEmitterOwnsNullCallbackAndSubscriptionPaths(
         bool hasCallback,
         bool subscription,
-        int expectedContextReleaseCount)
+        int expectedContextReleaseCount,
+        bool inlineObjectAllocation)
     {
         var type = CliTypeIdentity.Named(
             new AssemblyIdentity("Tests"),
@@ -113,7 +117,9 @@ public sealed class JavaScriptImportResultMarshallerTests
         var addresses = new RecordingAddressInstructionEmitter();
         var functionIndices = new RecordingOptionalFunctionIndexValidator();
         var callback = hasCallback ? CreateCallback() : null;
-        var target = CreateInteropTarget();
+        var target = inlineObjectAllocation
+            ? CreateInteropTarget() with { ObjectAllocation = new(default, Inline: true) }
+            : CreateInteropTarget();
         IJavaScriptImportResultEmitter emitter = new[]
         {
             new HostObjectJavaScriptImportResultMarshaller(
@@ -128,10 +134,13 @@ public sealed class JavaScriptImportResultMarshallerTests
                 addresses),
         }.Cast<IJavaScriptImportResultEmitter>().Single();
 
-        emitter.Emit(
-            CreateRequest(type, stack, consumed: 1, callback, target),
-            new EmitterTestSupport.RecordingInstructionWriter());
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+        emitter.Emit(CreateRequest(type, stack, consumed: 1, callback, target), writer);
 
+        var code = writer.ToInstructions();
+        var call = code.IndexOf(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned(23)));
+        Assert.Equal(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(inlineObjectAllocation ? 0 : 9)),
+            code[call - 1]);
         Assert.Equal([CliValueKind.ManagedReference], stack);
         Assert.Equal(1, captures.Count);
         Assert.Equal(expectedContextReleaseCount, handles.ContextReleaseCount);

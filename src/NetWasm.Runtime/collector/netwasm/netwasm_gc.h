@@ -62,6 +62,20 @@ NetWasmGcResult netwasm_gc_allocate(
     bool contains_references,
     void **result);
 
+/* An open run of one size class: zeroed slots from cursor to end. */
+typedef struct {
+    unsigned char *cursor;
+    unsigned char *end;
+} NetWasmGcRun;
+
+/* The collector's runs, indexed [slot_bytes / A - 1][contains_references],
+ * where A is max_align_t's alignment and slot_bytes = (bytes + A) & ~(A - 1).
+ * Code outside the collector may take an object of `bytes` (below 4 KiB) from
+ * its run by advancing the cursor by slot_bytes while the cursor stays at or
+ * below the end; the slot is zeroed and counted when the run closes. NULL when
+ * the collector has no such runs (Compact). */
+NetWasmGcRun *netwasm_gc_allocation_runs(NetWasmGc *gc);
+
 void netwasm_gc_collect(NetWasmGc *gc);
 bool netwasm_gc_mark(NetWasmGc *gc, uintptr_t address);
 void netwasm_gc_drain(NetWasmGc *gc);

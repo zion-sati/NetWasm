@@ -13,6 +13,10 @@
 
 /* Bump chunks are zeroed when acquired and never reused, so every allocation is
  * zeroed; nothing is traced. */
+/* Bump allocates from its arena, so code outside it always calls in. */
+static NetWasmAllocationRun no_allocation_runs[NETWASM_ALLOCATION_RUN_CLASSES][2];
+NetWasmAllocationRun *collector_allocation_runs = &no_allocation_runs[0][0];
+
 void *collector_allocate_object(size_t bytes, bool contains_references)
 {
     (void)contains_references;

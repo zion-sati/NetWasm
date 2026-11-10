@@ -150,9 +150,10 @@ static void reserved_run_tail_is_unpublished_and_retired(void)
     void *object = NULL;
     assert(test_allocate(gc, 1, 1, NULL, &object) == NETWASM_GC_OK);
     NetWasmGcBlock *block = object_block(gc, object);
-    NetWasmGcClass *size_class = block_class(gc, block);
-    assert(size_class->run_cursor < size_class->run_end);
-    uintptr_t reserved_payload = (uintptr_t)size_class->run_cursor;
+    NetWasmGcRun *run = &gc->runs[block->class_index][block->traced];
+    assert(block_class(gc, block)->run_block == block);
+    assert(run->cursor < run->end);
+    uintptr_t reserved_payload = (uintptr_t)run->cursor;
     assert(!netwasm_gc_contains(gc, reserved_payload));
     /* The whole run is charged to the heap when it is reserved. */
     assert(gc->occupied_bytes > block->slot_bytes);

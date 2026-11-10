@@ -169,3 +169,37 @@ every run's time to `summary.json`.
 `compiler-qualification/runtime-performance/README.md` describes the options.
 See [Choosing a garbage collector](runtime-garbage-collection.md) for the
 collector comparison on its own.
+
+## Name functions in a profile
+
+A published module keeps no function names, so a profiler shows its functions
+only by index, such as Wasmtime's `wasm[0]::function[N]`. To name them, publish
+a diagnostic twin of the same project and read the names from it. Never time
+the twin.
+
+- Set `NETWASM_KEEP_NAMES=1` for the twin's publish. The compiler's module
+  merge then keeps every input's function names, runtime functions included,
+  for components and plain modules alike.
+- Binaryen drops the names whenever it strips debug information, so also set
+  `NETWASM_WASM_OPT_PATH` to
+  `compiler-qualification/runtime-performance/named-wasm-opt.py`, with
+  `NETWASM_REAL_WASM_OPT` naming the restored `wasm-opt` and
+  `NETWASM_NAMED_WASM_DIR` a directory for its output. With
+  `NETWASM_KEEP_NAMES` set, every `wasm-opt` run keeps the names, and the copy
+  of each stripped output is written there as `<name>.named.wasm`.
+
+The twin's code must strip to the product's exact code, so its functions are
+numbered as the product's and an index from a profile of the product names a
+twin function. `profile.py` builds both, checks that, and attributes a
+scenario's time to named functions with Wasmtime's guest profiler:
+
+```sh
+python3 compiler-qualification/runtime-performance/profile.py \
+  --feed <feed> <version> --collector NetWasm \
+  --scenarios object-graph --output <new-directory>
+```
+
+For instruction-level detail, record the product under `perf` with
+`wasmtime run --profile=jitdump`, run `perf inject --jit`, and name the hot
+functions from the twin. `compiler-qualification/runtime-performance/README.md`
+describes the index mapping.

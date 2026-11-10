@@ -37,12 +37,16 @@ public sealed class StaticInitializationEmitterTests
                 { FunctionIndex = OptionalFunctionIndex.At(42) }),
         };
         var writer = new RecordingInstructionWriter();
-        var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(program, program,
+        var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(new StaticInitializerGuardResolver(program, program),
             new AddressInstructionEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target)))));
 
-        emitter.Emit(new(TypeKey, owner, Lookups.Of(data.StaticInitializerGuards), methodCall), writer, new RecordingIndices());
+        var request = new StaticInitializationEmissionRequest(TypeKey, owner, Lookups.Of(data.StaticInitializerGuards), methodCall);
+        emitter.Emit(request, writer, new RecordingIndices());
 
         Assert.Equal(!(beforeFieldInit && methodCall), writer.ToInstructions().Any(item => item.Opcode == WasmOpcodes.Call));
+        // The resolver finds a guard exactly when Emit writes one, whose initializer call can collect.
+        Assert.Equal(!(beforeFieldInit && methodCall),
+            new StaticInitializerGuardResolver(program, program).TryResolve(request, out _));
         if (beforeFieldInit && methodCall) Assert.Empty(writer.ToInstructions());
     }
 
@@ -65,7 +69,7 @@ public sealed class StaticInitializationEmitterTests
         };
         var indices = new RecordingIndices();
         var writer = new RecordingInstructionWriter();
-        var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(program, program,
+        var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(new StaticInitializerGuardResolver(program, program),
             new AddressInstructionEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target)))));
 
         emitter.Emit(new(TypeKey, owner, Lookups.Of(data.StaticInitializerGuards)), writer, indices);
@@ -91,7 +95,7 @@ public sealed class StaticInitializationEmitterTests
         var program = new InitializerProgram(hasInitializer);
         var indices = new RecordingIndices();
         var writer = new RecordingInstructionWriter();
-        var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(program, program,
+        var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(new StaticInitializerGuardResolver(program, program),
             new AddressInstructionEmitter(new RecordingLayoutProvider())));
 
         emitter.Emit(new(TypeKey, null, Lookups.Of(ModuleDataPlan.Empty.StaticInitializerGuards)), writer, indices);

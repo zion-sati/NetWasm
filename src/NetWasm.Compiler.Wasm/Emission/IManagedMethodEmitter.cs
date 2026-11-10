@@ -39,5 +39,6 @@ internal interface IManagedMethodEmitter
         bool eliminateArrayStoreChecks = false,
         OptionalFunctionIndex managedThrowFunction = default,
         bool inlineSmallBlocks = false,
-        bool inlineArrayData = false);
+        bool inlineArrayData = false,
+        bool conditionalAllocationRoots = false);
 }

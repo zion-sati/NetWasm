@@ -204,7 +204,7 @@ public sealed class StaticFieldInstructionEmitterTests
         var actualProgram = program ?? StaticProgram.For(CliValueKind.I4);
         return new(actualProgram, layouts, layouts, layouts,
             new AddressInstructionEmitter(layouts),
-            new StaticInitializationEmitter(actualProgram, actualProgram, new AddressInstructionEmitter(layouts)),
+            new StaticInitializationEmitter(new StaticInitializerGuardResolver(actualProgram, actualProgram), new AddressInstructionEmitter(layouts)),
             new NoInitializedFields());
     }
 

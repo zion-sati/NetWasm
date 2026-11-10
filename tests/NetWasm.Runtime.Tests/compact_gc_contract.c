@@ -71,6 +71,8 @@ static void deep_chain_with_and_without_a_stack(void)
     (void)allocate(gc, 1, &reference);
     netwasm_gc_collect(gc);
     assert(netwasm_gc_object_count(gc) == 5000);
+    /* Compact allocates from free lists: nothing outside it bumps a run. */
+    assert(netwasm_gc_allocation_runs(gc) == NULL);
     netwasm_gc_destroy(gc);
 
     head = 0;

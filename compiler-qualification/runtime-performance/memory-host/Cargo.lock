@@ -720,6 +720,7 @@ dependencies = [
 name = "netwasm-memory-host"
 version = "0.1.0"
 dependencies = [
+ "tokio",
  "wasmtime",
  "wasmtime-wasi",
 ]
@@ -1211,6 +1212,7 @@ dependencies = [
  "async-trait",
  "bitflags",
  "bumpalo",
+ "bytes",
  "cc",
  "encoding_rs",
  "futures",

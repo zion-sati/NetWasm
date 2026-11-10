@@ -12,7 +12,7 @@ using static CompilerTestSupport;
 // optimization breaks code that only some program reaches.
 // Unoptimized, a call outside NetWasm's profile is reported as unsupported and
 // left out; any other failure, at any preset, fails the test.
-public sealed partial class PublicSurfaceCompilationTests
+public sealed partial class PublicSurfaceCompilationTests(ITestOutputHelper output)
 {
     private const int Chunks = 16;
 
@@ -29,6 +29,10 @@ public sealed partial class PublicSurfaceCompilationTests
         DiagnosticCode.NativeInterop, DiagnosticCode.GenericExpansion,
     ];
 
+    // A reachable CoreLib method without a body that no compiler intrinsic supplies is a
+    // CoreLib and compiler mismatch, not code outside the profile.
+    private const string MissingBody = "has no CIL body and is not a declared runtime intrinsic";
+
     public static TheoryData<int> ChunkNumbers() => [.. Enumerable.Range(0, Chunks)];
 
     [Theory]
@@ -37,13 +41,15 @@ public sealed partial class PublicSurfaceCompilationTests
     {
         using var assets = TestAssets.Create();
         var calls = PublicSurfaceProgram.Calls(assets.CoreLib, chunk, Chunks).ToList();
-        var outside = new List<string>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         while (Compile(assets, calls, FinalWasmOptimization.None) is { } failure)
         {
             var call = Culprit(assets, calls, FinalWasmOptimization.None, failure);
-            Assert.True(failure.Diagnostic is { } diagnostic && ProfileBoundaries.Contains(diagnostic.Code),
+            Assert.True(failure.Diagnostic is { } diagnostic && ProfileBoundaries.Contains(diagnostic.Code) &&
+                !failure.Message.Contains(MissingBody, StringComparison.Ordinal),
                 $"unoptimized, {calls[call]}{Environment.NewLine}{failure.Message}");
-            outside.Add($"{calls[call]} -> {failure.Message}");
+            output.WriteLine($"{clock.Elapsed:mm\\:ss} outside the profile ({(failure.Call is null ? "found by halving" : "named")}): " +
+                $"{calls[call]} -> {FirstLine(failure.Message)}");
             calls.RemoveAt(call);
         }
         Assert.NotEmpty(calls);
@@ -54,6 +60,7 @@ public sealed partial class PublicSurfaceCompilationTests
             {
                 Assert.Fail($"{preset}, {calls[Culprit(assets, calls, preset, failure)]}{Environment.NewLine}{failure.Message}");
             }
+            output.WriteLine($"{clock.Elapsed:mm\\:ss} {calls.Count} calls compiled at {preset}");
         }
     }
 

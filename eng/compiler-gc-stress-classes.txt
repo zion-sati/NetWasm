@@ -3,6 +3,7 @@
 # One fully qualified class per line; GcStressClassListTests keeps the list complete.
 NetWasm.Compiler.Tests.ArraySetValueLinkedCompilationTests
 NetWasm.Compiler.Tests.BoundedArrayCompilationTests
+NetWasm.Compiler.Tests.Correctness.ActivatorSemanticsTests
 NetWasm.Compiler.Tests.Correctness.AddressExposureCorpusTests
 NetWasm.Compiler.Tests.Correctness.AddressInductionCorpusTests
 NetWasm.Compiler.Tests.Correctness.AggregateReferenceLaneGcTests

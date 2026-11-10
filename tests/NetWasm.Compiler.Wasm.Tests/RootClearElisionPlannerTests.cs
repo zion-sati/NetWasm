@@ -52,6 +52,46 @@ public sealed class RootClearElisionPlannerTests
         Assert.Empty(plan[(2, false)]);
     }
 
+    // An allocation that bumps its run inline clears dead slots only when it calls
+    // the collector, so afterwards a slot is known zero only if it was before.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConditionalAllocationsKeepOnlyZeroFactsFromBeforeThem(bool conditional)
+    {
+        var other = new RootSource(RootSourceKind.Local, 1);
+        var context = TwoSlots(Context([new(0, [other], []), new(1, [], []), new(2, [], [])]), conditional);
+        var plan = _planner.Plan(Method([I(0, CilOperation.Call), I(1, CilOperation.NewObject),
+            I(2, CilOperation.Call)]), context);
+        Assert.Equal([0], plan[(1, false)]);
+        Assert.Equal(!conditional, plan[(2, false)].Contains(1));
+    }
+
+    // The constructor call's publication follows the allocation's on both paths,
+    // but may skip only the slots that were zero before an inline allocation.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConstructorPublicationAfterAConditionalAllocationSkipsOnlyEarlierZeros(bool conditional)
+    {
+        var other = new RootSource(RootSourceKind.Local, 1);
+        var context = TwoSlots(Context([new(0, [other], []), new(1, [], [Source]), new(2, [], [])]), conditional);
+        var plan = _planner.Plan(Method([I(0, CilOperation.Call), I(1, CilOperation.NewObject),
+            I(2, CilOperation.Call)]), context);
+        Assert.Equal(!conditional, plan[(1, true)].Contains(1));
+        Assert.Contains(1, plan[(2, false)]);
+    }
+
+    private static MethodEmissionContext TwoSlots(MethodEmissionContext context, bool conditional) =>
+        context with
+        {
+            RootMap = context.RootMap with
+            {
+                Slots = context.RootMap.Slots.Add(new RootSource(RootSourceKind.Local, 1), 1),
+            },
+            ConditionalAllocationRoots = conditional,
+        };
+
     [Fact]
     public void FactsDoNotCrossBlockEntries()
     {

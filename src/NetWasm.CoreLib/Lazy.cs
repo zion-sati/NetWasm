@@ -117,16 +117,7 @@ namespace System
             var factory = _factory;
             try
             {
-                var value = factory is null ? Activator.CreateInstance<T>() : factory();
-                // Activator is intentionally reflection-free in the current
-                // CoreLib profile. Value types can still use their zero value;
-                // reference-type default construction needs the missing
-                // reflection/runtime constructor capability.
-                if (factory is null && value is null)
-                {
-                    throw new PlatformNotSupportedException(
-                        "Lazy<T> default construction requires runtime constructor activation.");
-                }
+                var value = factory is null ? CreateViaDefaultConstructor() : factory();
                 _value = value;
                 _isValueCreated = true;
                 _factory = null;
@@ -134,7 +125,9 @@ namespace System
             }
             catch (Exception exception)
             {
-                if (_mode != LazyThreadSafetyMode.PublicationOnly)
+                // As upstream, only a value factory's exception is cached; a failed parameterless
+                // construction is tried again on the next access.
+                if (_mode != LazyThreadSafetyMode.PublicationOnly && factory is not null)
                 {
                     _factory = null;
                     _exception = ExceptionDispatchInfo.Capture(exception);
@@ -144,6 +137,18 @@ namespace System
             finally
             {
                 _initializing = false;
+            }
+        }
+
+        private static T CreateViaDefaultConstructor()
+        {
+            try
+            {
+                return Activator.CreateInstance<T>();
+            }
+            catch (MissingMethodException)
+            {
+                throw new MissingMemberException(SR.Lazy_CreateValue_NoParameterlessCtorForT);
             }
         }
 

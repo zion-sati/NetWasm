@@ -38,6 +38,8 @@ FUNCTIONS = {
     'transaction': 'Program::Aggregate',
     'object-graph': 'Program::ObjectGraph',
     'ui-churn': 'Program::UiChurn',
+    'binary-trees': 'Program::BinaryTrees',
+    'nullable-boxes': 'Program::NullableBoxes',
     'conversions': 'Scenarios::Conversions',
     'constant-strings': 'Scenarios::ConstantStrings',
     'sparse-set': 'Scenarios::SparseSet',

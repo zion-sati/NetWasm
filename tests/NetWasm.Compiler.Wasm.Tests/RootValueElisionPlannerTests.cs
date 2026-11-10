@@ -48,6 +48,26 @@ public sealed class RootValueElisionPlannerTests
         Assert.Empty(plan[2]);
     }
 
+    // An allocation that bumps its run inline publishes only when it calls the
+    // collector, so afterwards a slot keeps only a value it already held.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConditionalAllocationsKeepOnlyValuesPublishedBeforeThem(bool conditional)
+    {
+        var other = new RootSource(RootSourceKind.Argument, 1);
+        var context = Context([new(0, [Source], []), new(1, [Source, other], []), new(2, [Source, other], [])]);
+        context = context with
+        {
+            RootMap = context.RootMap with { Slots = context.RootMap.Slots.Add(other, 1) },
+            ConditionalAllocationRoots = conditional,
+        };
+        var plan = _planner.Plan(Method([I(0, CilOperation.Call), I(1, CilOperation.NewObject), I(2, CilOperation.Call)]), context);
+        Assert.Equal([0], plan[1]);
+        Assert.Contains(0, plan[2]);
+        Assert.Equal(!conditional, plan[2].Contains(1));
+    }
+
     [Fact]
     public void FactsDoNotCrossBlockEntries()
     {

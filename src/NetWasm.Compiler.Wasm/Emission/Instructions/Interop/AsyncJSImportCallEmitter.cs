@@ -3,6 +3,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 using NetWasm.Compiler.Wasm.Emission.Methods;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
@@ -25,8 +26,7 @@ internal sealed class AsyncJSImportCallEmitter(
         var taskLayout = typeLayouts.GetObjectLayout(binding.TaskType);
 
         EmitAddressConstant(code, taskLayout.Size);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(taskLayout.TypeId)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.Allocate)))));
+        ObjectAllocationCall.EmitAfterSize(code, runtimeImports, instruction.Target.ObjectAllocation, taskLayout);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(context.ObjectTemporary))));
         EmitReferenceFailure(code, context.ObjectTemporary, request.Instruction.Context.ManagedThrowFunction);
 

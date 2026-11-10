@@ -7,6 +7,9 @@ namespace System
 {
     internal static partial class SR
     {
+        internal const string Acc_CreateAbst = "Cannot create an abstract class.";
+        internal const string Acc_CreateInterface = "Cannot create an instance of an interface.";
+        internal const string Activator_CannotCreateInstance = "Cannot dynamically create an instance of type '{0}'. Reason: {1}";
         internal const string Arg_AmbiguousMatchException_Attribute = "Multiple custom attributes of the same type '{0}' found.";
         internal const string Arg_AmbiguousMatchException_MemberInfo = "Ambiguous match found for '{0} {1}'.";
         internal const string Arg_ArrayPlusOffTooSmall = "Destination array is not long enough to copy all the items in the collection. Check array index and length.";
@@ -26,6 +29,8 @@ namespace System
         internal const string Arg_Need2DArray = "Array was not a two-dimensional array.";
         internal const string Arg_Need3DArray = "Array was not a three-dimensional array.";
         internal const string Arg_NeedAtLeast1Rank = "Must provide at least one rank.";
+        internal const string Arg_NoDefCTor = "No parameterless constructor defined for type '{0}'.";
+        internal const string Arg_NoDefCTorWithoutTypeName = "No parameterless constructor defined.";
         internal const string Arg_NonZeroLowerBound = "The lower bound of target array must be zero.";
         internal const string Arg_NullArgumentNullRef = "The method was called with a null array argument.";
         internal const string Arg_RankIndices = "Indices length does not match the array rank.";
@@ -75,6 +80,7 @@ namespace System
         internal const string Argument_InvalidFlag = "Value of flags is invalid.";
         internal const string Argument_InvalidOffLen = "Offset and length were out of bounds for the array or count is greater than the number of elements from index to the end of the source collection.";
         internal const string Argument_InvalidTimeSpanStyles = "An undefined TimeSpanStyles value is being used.";
+        internal const string Argument_NoUninitializedStrings = "Uninitialized Strings cannot be created.";
         internal const string Argument_OverlapAlignmentMismatch = "Overlapping spans have mismatching alignment.";
         internal const string Argument_SearchValues_UnsupportedStringComparison = "SearchValues<string> supports only StringComparison.Ordinal and StringComparison.OrdinalIgnoreCase.";
         internal const string Argument_SpansMustHaveSameLength = "Length of items must be same as length of keys.";
@@ -127,6 +133,7 @@ namespace System
         internal const string InvalidOperation_TimeProviderInvalidTimestampFrequency = "The operation cannot be performed when TimeProvider.TimestampFrequency is zero or negative.";
         internal const string InvalidOperation_TimeProviderNullLocalTimeZone = "The operation cannot be performed when TimeProvider.LocalTimeZone is null.";
         internal const string InvalidOperation_WrongAsyncResultOrEndCalledMultiple = "Either the IAsyncResult object did not come from the corresponding async method on this type, or the End method was called multiple times with the same IAsyncResult.";
+        internal const string Lazy_CreateValue_NoParameterlessCtorForT = "The lazily-initialized type does not have a public, parameterless constructor.";
         internal const string Lock_Enter_WaiterCountOverflow_OutOfMemoryException = "The lock has reached the limit of how many threads may wait for the lock.";
         internal const string Lock_Exit_SynchronizationLockException = "The calling thread does not hold the lock.";
         internal const string NotSupported_CannotCallEqualsOnSpan = "Equals() on Span and ReadOnlySpan is not supported. Use operator== instead.";

@@ -99,6 +99,11 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeArraySetValue,
             RuntimeAbi.RuntimeReportUnhandledException,
             RuntimeAbi.RuntimeObjectClone,
+            RuntimeAbi.RuntimeAllocateObject,
+            RuntimeAbi.RuntimeAllocationRun,
+            RuntimeAbi.RuntimeAllocationSlot,
+            RuntimeAbi.RuntimeAllocationRunsEnabled,
+            RuntimeAbi.RuntimeAllocateObjectFallback,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));

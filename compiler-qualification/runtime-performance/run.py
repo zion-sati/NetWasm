@@ -25,6 +25,8 @@ SCENARIOS = {
     'transaction-full': ('transaction', ['full', '100000', '101']),
     'object-graph': ('gc', ['object-graph', '100000']),
     'ui-churn': ('gc', ['ui-churn', '500']),
+    'binary-trees': ('gc', ['binary-trees', '14']),
+    'nullable-boxes': ('gc', ['nullable-boxes', '2000000']),
     'conversions': ('net11', ['conversions', '12000']),
     'constant-strings': ('net11', ['constant-strings', '100']),
     'sparse-set': ('net11', ['sparse-set', '4000']),

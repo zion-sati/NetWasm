@@ -10,7 +10,6 @@ internal sealed class ArrayGetValueIntrinsicEmitter(
     IRuntimeImportResolver runtimeImports,
     IAddressInstructionEmitter addresses,
     IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots,
     ITypeDescriptorSource descriptors,
     INullableTypeResolver nullableTypes,
     ITypeLayoutProvider types,
@@ -22,7 +21,6 @@ internal sealed class ArrayGetValueIntrinsicEmitter(
         var array = request.Local(0, CliValueKind.ManagedReference);
         var result = request.Local(0, CliValueKind.ManagedReference);
         receivers.Validate(code, array, request.Instruction.Context.ManagedThrowFunction);
-        roots.Emit(request.Instruction, code);
         var elementId = request.Instruction.Context.NumericTemporaryI4;
         var underlying = request.Instruction.Context.NumericTemporaryI4Second;
         var payloadOffset = request.Instruction.Context.ObjectTemporary;

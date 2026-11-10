@@ -15,15 +15,14 @@ public sealed class ArrayElementTypeIntrinsicEmitterTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void ReadsElementIdentityPublishesRootsAndChecksAllocation(WasmTarget target)
+    public void ReadsElementIdentityAndChecksAllocation(WasmTarget target)
     {
         var layout = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var addresses = new RecordingAddresses();
         var exceptions = new RecordingExceptions();
-        var roots = new RecordingRoots();
         var imports = WasmRuntimeImports.CreateCatalog();
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(
-            new ArrayElementTypeIntrinsicEmitter(layout, layout, imports, roots, addresses, exceptions));
+            new ArrayElementTypeIntrinsicEmitter(layout, layout, imports, addresses, exceptions));
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayElementType,
             [CliValueKind.ManagedReference]) with
         { Target = WasmTargetLayout.For(target) };
@@ -32,9 +31,6 @@ public sealed class ArrayElementTypeIntrinsicEmitterTests
         emitter.Emit(request, writer);
 
         var code = writer.ToInstructions();
-        Assert.Same(request.Instruction, roots.Request);
-        Assert.Same(writer, roots.Writer);
-        Assert.Equal(0, roots.InstructionCount);
         Assert.Equal([WasmOpcodes.LocalGet, WasmOpcodes.I32Load, WasmOpcodes.I32Constant, WasmOpcodes.Call,
             WasmOpcodes.LocalTee, WasmOpcodes.If, WasmOpcodes.End], code.Select(item => item.Opcode));
         Assert.Equal((uint)request.Local(0, CliValueKind.ManagedReference), code[0].Operand!.UnsignedValue);
@@ -47,20 +43,6 @@ public sealed class ArrayElementTypeIntrinsicEmitterTests
         Assert.Equal([ManagedExceptionKind.OutOfMemory], exceptions.Kinds);
     }
 
-    private sealed class RecordingRoots : IRootPublicationEmitter
-    {
-        public InstructionEmissionRequest? Request { get; private set; }
-        public IWasmInstructionWriter? Writer { get; private set; }
-        public int InstructionCount { get; private set; }
-
-        public void Emit(InstructionEmissionRequest request, IWasmInstructionWriter code, bool constructorCall = false)
-        {
-            Assert.False(constructorCall);
-            Request = request;
-            Writer = code;
-            InstructionCount = Assert.IsType<RecordingInstructionWriter>(code).ToInstructions().Length;
-        }
-    }
 
     private sealed class RecordingAddresses : IAddressInstructionEmitter
     {

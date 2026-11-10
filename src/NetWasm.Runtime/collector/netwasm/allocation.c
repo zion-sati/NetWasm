@@ -7,6 +7,11 @@
 
 #include <stdlib.h>
 
+/* Empty until collector_initialize publishes NetWasmGC's runs (Compact has none),
+ * so every cursor equals its end and allocation calls the collector. */
+static NetWasmAllocationRun no_allocation_runs[NETWASM_ALLOCATION_RUN_CLASSES][2];
+NetWasmAllocationRun *collector_allocation_runs = &no_allocation_runs[0][0];
+
 static __attribute__((noinline)) void *allocate_slow(size_t bytes, bool contains_references)
 {
     void *result = NULL;

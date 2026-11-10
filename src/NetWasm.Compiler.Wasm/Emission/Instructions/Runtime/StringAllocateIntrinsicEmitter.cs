@@ -10,7 +10,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 internal sealed class StringAllocateIntrinsicEmitter(
     ITypeLayoutProvider types,
     IRuntimeImportResolver imports,
-    IRootPublicationEmitter roots,
     IAddressInstructionEmitter addresses,
     IImplicitExceptionEmitter exceptions) : IRuntimeIntrinsicEmitter
 {
@@ -28,7 +27,6 @@ internal sealed class StringAllocateIntrinsicEmitter(
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         exceptions.Emit(code, ManagedExceptionKind.Overflow, throwFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        roots.Emit(request.Instruction, code);
         // The character the runtime fills the string with.
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)length)));

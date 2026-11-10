@@ -17,33 +17,114 @@ using static EmitterTestSupport;
 
 public sealed class ObjectConstructionEmitterTests
 {
-    [Fact]
-    public void ReferenceConstructionAllocatesCallsConstructorAndProducesReference()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void ReferenceConstructionAllocatesCallsConstructorAndProducesReference(
+        bool containsReferences, bool inlineObjectAllocation)
     {
-        var safepoints = new List<bool>();
+        var publications = new List<(bool ConstructorCall, int At)>();
         var program = new FakeProgram();
-        var layouts = new RecordingLayoutProvider();
-        var emitter = CreateEmitter(layouts, (_, _, constructorCall) =>
-            safepoints.Add(constructorCall));
+        var layouts = new RecordingLayoutProvider { ObjectReferenceOffsets = containsReferences ? [4] : [] };
+        var emitter = CreateEmitter(layouts, (_, code, constructorCall) =>
+            publications.Add((constructorCall, ((RecordingInstructionWriter)code).ToInstructions().Length)));
         var request = CreateInstructionRequest(
             CilOperation.NewObject,
             operand: new CilOperand.Entity(ConstructorKey));
+        if (inlineObjectAllocation)
+            request = WithInlineObjectAllocation(request);
 
         Emit((IInstructionCommandProvider)emitter, request, CreateFunctionIndexResolver(program));
 
-        Assert.Equal([false, false, true], safepoints);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
         Assert.Equal(TypeKey, layouts.ObjectRequest);
-        var calls = Assert.IsType<RecordingInstructionWriter>(GetCodeWriter(request))
-            .ToInstructions()
-            .Where(static instruction => instruction.Opcode == WasmOpcodes.Call)
-            .ToArray();
-        Assert.Contains(
-            calls,
-            instruction => instruction.Operand.UnsignedValue ==
-                (uint)WasmRuntimeImports.CreateCatalog().Resolve(
-                    RuntimeImportSymbol.Allocate,
-                    request.Target.RuntimeImportSelection));
+        // newobj publishes the allocation's roots itself, then the constructor call's.
+        Assert.Equal([false, true], publications.Select(static publication => publication.ConstructorCall));
+        var instructions = CodeOf(request);
+        // allocate(size, type id), or the inline bump's fallback, which can collect.
+        var allocate = CallTo(instructions, request,
+            inlineObjectAllocation ? RuntimeImportSymbol.AllocateObjectFallback : RuntimeImportSymbol.Allocate);
+        Assert.Equal([(WasmOpcodes.I32Constant, 16L), (WasmOpcodes.I32Constant, 9L)], ArgumentsOf(instructions, allocate, 2));
+        var run = CallTo(instructions, request, RuntimeImportSymbol.AllocationRun);
+        if (inlineObjectAllocation)
+        {
+            // Where the collector keeps runs (allocation_runs_enabled),
+            // allocation_run(size, type id, whether the layout has references) and
+            // allocation_slot(size) bump the run inline; only when it is exhausted
+            // does the code leave the inner block to publish the roots and fall back.
+            Assert.True(CallTo(instructions, request, RuntimeImportSymbol.AllocationRunsEnabled) < run);
+            Assert.Equal(
+                [(WasmOpcodes.I32Constant, 16L), (WasmOpcodes.I32Constant, 9L), (WasmOpcodes.I32Constant, containsReferences ? 1L : 0L)],
+                ArgumentsOf(instructions, run, 3));
+            var slot = CallTo(instructions, request, RuntimeImportSymbol.AllocationSlot);
+            Assert.Equal([(WasmOpcodes.I32Constant, 16L)], ArgumentsOf(instructions, slot, 1));
+            var bound = Array.FindIndex(instructions, instruction => instruction.Opcode == WasmOpcodes.I32LessThanUnsigned);
+            Assert.Equal(WasmInstruction.WithOperand(WasmOpcodes.BranchIf, WasmInstructionOperand.Unsigned(0)), instructions[bound + 1]);
+            var slowPath = Array.FindIndex(instructions, bound, instruction => instruction.Opcode == WasmOpcodes.End) + 1;
+            Assert.Equal(WasmInstruction.WithOperand(WasmOpcodes.Branch, WasmInstructionOperand.Unsigned(1)), instructions[slowPath - 2]);
+            Assert.InRange(publications[0].At, slowPath, allocate - 2);
+        }
+        else
+        {
+            Assert.Equal(-1, run);
+            Assert.Equal(0, publications[0].At);
+        }
+    }
+
+    // An inline allocation publishes the instruction's roots first, as an ordinary
+    // one does, where something besides its fallback could collect or see them.
+    [Theory]
+    [InlineData("guard")]
+    [InlineData("handler")]
+    [InlineData("filter-funclet")]
+    [InlineData("filter-environment")]
+    [InlineData("finalizable")]
+    public void InlineAllocationPublishesRootsFirstWhereElseTheyCouldBeNeeded(string reason)
+    {
+        var publications = new List<(bool ConstructorCall, int At)>();
+        var request = WithInlineObjectAllocation(CreateInstructionRequest(
+            CilOperation.NewObject,
+            operand: new CilOperand.Entity(ConstructorKey)));
+        var captured = new CapturedSlot(false, 3);
+        request = reason switch
+        {
+            "handler" => Changed(request with
+            {
+                Context = request.Context with { ActiveExceptionGroup = new(new(0), null, 0, 0, [], [], [], null, null) },
+            }),
+            "filter-funclet" => Changed(request with { Context = request.Context with { IsFilterFunclet = true } }),
+            "filter-environment" => Changed(request with
+            {
+                Context = request.Context with
+                {
+                    FilterEnvironment = new(16, 1, 0, ImmutableDictionary<CapturedSlot, FilterCapture>.Empty.Add(captured,
+                        new(captured, CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference), 0, []))),
+                },
+            }),
+            "finalizable" => Changed(request with
+            {
+                Target = request.Target with
+                {
+                    RuntimeImportSelection = request.Target.RuntimeImportSelection with { IncludeFinalization = true },
+                    FinalizableTypeIds = Lookups.Of(ImmutableHashSet.Create(9)),
+                },
+            }),
+            _ => request,
+        };
+
+        Emit(
+            (IInstructionCommandProvider)CreateEmitter(
+                new RecordingLayoutProvider(),
+                (_, code, constructorCall) =>
+                    publications.Add((constructorCall, ((RecordingInstructionWriter)code).ToInstructions().Length)),
+                initialization: reason == "guard" ? new SilentInitialization() : null,
+                guards: reason == "guard" ? new GuardingResolver() : null),
+            request,
+            CreateFunctionIndexResolver(new FakeProgram()));
+
+        Assert.Equal((false, 0), publications[0]);
+        Assert.Equal(-1, CallTo(CodeOf(request), request, RuntimeImportSymbol.AllocationRun));
     }
 
     [Fact]
@@ -120,8 +201,11 @@ public sealed class ObjectConstructionEmitterTests
         Assert.Null(functionIndices.Constructed);
     }
 
-    [Fact]
-    public void ConstructedReferenceUsesItsInstantiatedObjectLayout()
+    // An inline allocation of a constructed type bumps the run of its own layout.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConstructedReferenceUsesItsInstantiatedObjectLayout(bool inlineObjectAllocation)
     {
         var program = new FakeProgram();
         var layouts = new RecordingLayoutProvider();
@@ -142,6 +226,8 @@ public sealed class ObjectConstructionEmitterTests
         var request = CreateInstructionRequest(
             CilOperation.NewObject,
             operand: new CilOperand.MethodInstance(instance));
+        if (inlineObjectAllocation)
+            request = WithInlineObjectAllocation(request);
 
         Emit(
             (IInstructionCommandProvider)CreateEmitter(layouts, (_, _, _) => { }),
@@ -149,7 +235,8 @@ public sealed class ObjectConstructionEmitterTests
             CreateConstructedResolver(program, instance));
 
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
-        Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request));
+        Assert.Equal(declaringType, layouts.ObjectIdentityRequest);
+        Assert.Equal(inlineObjectAllocation, CallTo(CodeOf(request), request, RuntimeImportSymbol.AllocationRun) >= 0);
     }
 
     [Fact]
@@ -226,10 +313,10 @@ public sealed class ObjectConstructionEmitterTests
     }
 
     [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
+    [InlineData(WasmTarget.Wasm32, false)]
+    [InlineData(WasmTarget.Wasm64, true)]
     public void ValidDelegateConstructorStoresTargetAndMethod(
-        WasmTarget target)
+        WasmTarget target, bool inlineObjectAllocation)
     {
         var program = new FakeProgram();
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
@@ -258,6 +345,8 @@ public sealed class ObjectConstructionEmitterTests
             CilOperation.NewObject,
             [CliValueKind.ManagedReference, CliValueKind.NativeInt],
             new CilOperand.MethodInstance(instance));
+        if (inlineObjectAllocation)
+            request = WithInlineObjectAllocation(request);
 
         Emit(
             (IInstructionCommandProvider)CreateEmitter(
@@ -269,6 +358,11 @@ public sealed class ObjectConstructionEmitterTests
 
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
         Assert.Contains(WasmOpcodes.I32Store, GetCodeBytes(request));
+        // Where the runtime inlines its allocation, a delegate bumps its run and
+        // falls back to allocate; elsewhere it calls allocate.
+        Assert.Equal(inlineObjectAllocation, CallTo(CodeOf(request), request, RuntimeImportSymbol.AllocationRun) >= 0);
+        Assert.True(CallTo(CodeOf(request), request,
+            inlineObjectAllocation ? RuntimeImportSymbol.AllocateObjectFallback : RuntimeImportSymbol.Allocate) >= 0);
         if (target == WasmTarget.Wasm64)
         {
             Assert.Contains(WasmOpcodes.I32WrapI64, GetCodeBytes(request));
@@ -324,10 +418,12 @@ public sealed class ObjectConstructionEmitterTests
     }
 
     // A value of up to 64 bytes zeroes with stores; a larger one fills.
+    // A value type's construction allocates nothing, so it publishes its roots
+    // first whether or not the runtime inlines allocation.
     [Theory]
-    [InlineData(4, false)]
-    [InlineData(80, true)]
-    public void ValueTypeConstructionUsesAnEmptyValueFrameAtZeroOffset(int size, bool fills)
+    [InlineData(4, false, false)]
+    [InlineData(80, true, true)]
+    public void ValueTypeConstructionUsesAnEmptyValueFrameAtZeroOffset(int size, bool fills, bool inlineObjectAllocation)
     {
         var layouts = new RecordingLayoutProvider(valueSize: size);
         var valueType = CliTypeIdentity.Named(
@@ -339,15 +435,19 @@ public sealed class ObjectConstructionEmitterTests
             CilOperation.NewObject,
             operand: new CilOperand.Entity(ConstructorKey),
             context: CreateValueContext(0));
+        if (inlineObjectAllocation)
+            request = WithInlineObjectAllocation(request);
+        var publishedAt = new List<int>();
 
         Emit(
             (IInstructionCommandProvider)CreateEmitter(
                 layouts,
-                (_, _, _) => { },
+                (_, code, _) => publishedAt.Add(((RecordingInstructionWriter)code).ToInstructions().Length),
                 types: new ValueTypeResolver(valueType)),
             request,
             CreateFunctionIndexResolver(new FakeProgram()));
 
+        Assert.Equal(0, publishedAt[0]);
         Assert.Equal([CliValueKind.ValueType], request.Stack);
         var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
         Assert.Equal(fills, instructions.Any(instruction => instruction.Opcode == WasmOpcodes.Prefixed &&
@@ -427,13 +527,59 @@ public sealed class ObjectConstructionEmitterTests
         Assert.DoesNotContain(WasmOpcodes.Call, GetCodeBytes(request));
     }
 
+    private static WasmInstruction[] CodeOf(InstructionEmissionRequest request) =>
+        [.. Assert.IsType<RecordingInstructionWriter>(GetCodeWriter(request)).ToInstructions()];
+
+    // The index of the call to a runtime import in the module's selection, or -1.
+    private static int CallTo(WasmInstruction[] instructions, InstructionEmissionRequest request, RuntimeImportSymbol symbol) =>
+        Array.FindIndex(instructions, instruction => instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue ==
+                (uint)WasmRuntimeImports.CreateCatalog().Resolve(symbol, request.Target.RuntimeImportSelection));
+
+    private static (byte, long)[] ArgumentsOf(WasmInstruction[] instructions, int call, int count)
+    {
+        Assert.True(call >= count);
+        return [.. instructions[(call - count)..call].Select(static instruction =>
+            (instruction.Opcode, (long)instruction.Operand.SignedValue))];
+    }
+
+    private static InstructionEmissionRequest Changed(InstructionEmissionRequest changed)
+    {
+        RegisterInstructionWriter(changed, new RecordingInstructionWriter());
+        return changed;
+    }
+
+    // A type whose static initializer guard runs before its allocation. The guard's code is the
+    // initialization emitter's, which writes nothing here.
+    private sealed class GuardingResolver : IStaticInitializerGuardResolver
+    {
+        public bool TryResolve(
+            StaticInitializationEmissionRequest request,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out StaticInitializerGuard? guard)
+        {
+            guard = new(240, null, "guarded") { FunctionIndex = OptionalFunctionIndex.At(42) };
+            return true;
+        }
+    }
+
+    private sealed class SilentInitialization : IStaticInitializationEmitter
+    {
+        public void Emit(StaticInitializationEmissionRequest request,
+            IWasmInstructionWriter code, IFunctionIndexResolver functionIndices)
+        {
+        }
+    }
+
     private static ObjectConstructionEmitter CreateEmitter(
         RecordingLayoutProvider layouts,
         Action<InstructionEmissionRequest, IWasmInstructionWriter, bool> safepoint,
         ITypeClassifier? typeClassifier = null,
-        ICilTypeIdentityResolver? types = null)
+        ICilTypeIdentityResolver? types = null,
+        IStaticInitializationEmitter? initialization = null,
+        IStaticInitializerGuardResolver? guards = null)
     {
         var program = new FakeProgram();
+        var guardResolver = guards ?? new StaticInitializerGuardResolver(program, program);
         IAddressInstructionEmitter addresses = new AddressInstructionEmitter(layouts);
         IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts);
         IRootPublicationEmitter roots = new RecordingRootPublicationEmitter(safepoint);
@@ -443,7 +589,8 @@ public sealed class ObjectConstructionEmitterTests
             exceptions,
             roots,
             new NativeIntegerConstructionEmitter(layouts, conversions),
-            new StaticInitializationEmitter(program, program, addresses));
+            initialization ?? new StaticInitializationEmitter(guardResolver, addresses),
+            guardResolver);
     }
 
     private static void Emit<TProvider>(

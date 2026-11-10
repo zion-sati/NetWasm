@@ -128,6 +128,7 @@ internal static class UnitPlanCodec
         writer.Bool(target.EnableScalarCallPreservation);
         writer.Bool(target.InlineSmallBlockOperations);
         writer.Bool(target.InlineArrayData);
+        writer.Bool(target.InlineObjectAllocation);
         writer.Int(runtimeObjects.StringLengthOffset);
         writer.Int(runtimeObjects.StringDataOffset);
         writer.Int(runtimeObjects.ArrayLengthOffset);
@@ -203,6 +204,7 @@ internal static class UnitPlanCodec
             EnableScalarCallPreservation = reader.Bool(),
             InlineSmallBlockOperations = reader.Bool(),
             InlineArrayData = reader.Bool(),
+            InlineObjectAllocation = reader.Bool(),
         };
         var runtimeObjects = new UnitRuntimeObjectLayout(reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(),
             reader.Int(), reader.Int(), reader.Int(), reader.Int());

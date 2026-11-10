@@ -21,18 +21,21 @@ using System.Runtime.CompilerServices;
 
 namespace System.Runtime.InteropServices
 {
+    // NetWasm: structure marshalling needs compiler intrinsics this platform does not have
+    // (see StructureMarshallingRuntime), so these members stay internal instead of being public
+    // APIs that no program could compile.
     public static partial class Marshal
     {
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the SizeOf<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static int SizeOf(object structure)
+        internal static int SizeOf(object structure)
         {
             ArgumentNullException.ThrowIfNull(structure);
 
             return SizeOfHelper(structure.GetType(), throwIfNotMarshalable: true);
         }
 
-        public static int SizeOf<T>(T structure)
+        internal static int SizeOf<T>(T structure)
         {
             ArgumentNullException.ThrowIfNull(structure);
 
@@ -41,7 +44,7 @@ namespace System.Runtime.InteropServices
 
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the SizeOf<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static int SizeOf(Type t)
+        internal static int SizeOf(Type t)
         {
             ArgumentNullException.ThrowIfNull(t);
 
@@ -53,7 +56,7 @@ namespace System.Runtime.InteropServices
             return SizeOfHelper(t, throwIfNotMarshalable: true);
         }
 
-        public static int SizeOf<T>()
+        internal static int SizeOf<T>()
         {
             Type t = typeof(T);
             if (t.IsGenericType)
@@ -64,10 +67,10 @@ namespace System.Runtime.InteropServices
             return SizeOfHelper(t, throwIfNotMarshalable: true);
         }
 
-        public static IntPtr OffsetOf<T>(string fieldName) => OffsetOf(typeof(T), fieldName);
+        internal static IntPtr OffsetOf<T>(string fieldName) => OffsetOf(typeof(T), fieldName);
 
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static IntPtr OffsetOf(Type t, string fieldName)
+        internal static IntPtr OffsetOf(Type t, string fieldName)
         {
             ArgumentNullException.ThrowIfNull(t);
 
@@ -82,7 +85,7 @@ namespace System.Runtime.InteropServices
 
         [UnconditionalSuppressMessage("AotAnalysis", "IL3050:AotUnfriendlyApi",
             Justification = "AOT compilers can see the T.")]
-        public static void StructureToPtr<T>([DisallowNull] T structure, IntPtr ptr, bool fDeleteOld)
+        internal static void StructureToPtr<T>([DisallowNull] T structure, IntPtr ptr, bool fDeleteOld)
         {
             StructureToPtr((object)structure!, ptr, fDeleteOld);
         }
@@ -93,7 +96,7 @@ namespace System.Runtime.InteropServices
         /// </summary>
         [RequiresDynamicCode("Marshalling code for the object might not be available")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static object? PtrToStructure(IntPtr ptr,
+        internal static object? PtrToStructure(IntPtr ptr,
             [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)]
             Type structureType)
         {
@@ -114,7 +117,7 @@ namespace System.Runtime.InteropServices
             return structure;
         }
 
-        public static T? PtrToStructure<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr ptr)
+        internal static T? PtrToStructure<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr ptr)
         {
             if (ptr == IntPtr.Zero)
             {
@@ -138,7 +141,7 @@ namespace System.Runtime.InteropServices
 
         [UnconditionalSuppressMessage("AotAnalysis", "IL3050:AotUnfriendlyApi",
             Justification = "AOT compilers can see the T.")]
-        public static void DestroyStructure<T>(IntPtr ptr) => DestroyStructure(ptr, typeof(T));
+        internal static void DestroyStructure<T>(IntPtr ptr) => DestroyStructure(ptr, typeof(T));
 
         internal static int SizeOfHelper(Type t, bool throwIfNotMarshalable)
         {
@@ -173,7 +176,7 @@ namespace System.Runtime.InteropServices
 
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the DestroyStructure<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static void DestroyStructure(IntPtr ptr, Type structuretype)
+        internal static void DestroyStructure(IntPtr ptr, Type structuretype)
         {
             ArgumentNullException.ThrowIfNull(ptr);
             ArgumentNullException.ThrowIfNull(structuretype);
@@ -194,7 +197,7 @@ namespace System.Runtime.InteropServices
 
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the StructureToPtr<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static unsafe void StructureToPtr(object structure, IntPtr ptr, bool fDeleteOld)
+        internal static unsafe void StructureToPtr(object structure, IntPtr ptr, bool fDeleteOld)
         {
             ArgumentNullException.ThrowIfNull(structure);
             ArgumentNullException.ThrowIfNull(ptr);

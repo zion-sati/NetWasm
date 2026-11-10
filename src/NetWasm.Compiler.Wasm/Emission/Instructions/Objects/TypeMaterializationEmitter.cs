@@ -18,7 +18,6 @@ internal sealed class TypeMaterializationEmitter(
     IStaticDataLayout staticData,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots,
     ICilTypeOperandResolver types) :
     InstructionCommandProvider
 {
@@ -159,7 +158,6 @@ internal sealed class TypeMaterializationEmitter(
         CliTypeIdentity? constrainedType = null)
     {
         ArgumentNullException.ThrowIfNull(request);
-        roots.Emit(request, code);
         Materialize(
             code,
             request.Stack,

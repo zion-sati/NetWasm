@@ -181,38 +181,7 @@ public sealed class MethodSpecializerTests
     }
 
     [Fact]
-    public void ActivatorRuleRejectsReferenceTypesWithoutConstructors()
-    {
-        var createdType = CliTypeIdentity.Named(
-            new AssemblyIdentity("in-memory"),
-            "Fixtures",
-            "Reference",
-            false);
-        var target = Target("CreateInstance", 122, "System.Activator", [createdType], genericArity: 1);
-
-        var error = Assert.Throws<CompilerException>(() => Rewrite(
-            new ActivatorCallRewriter(
-                new FixedTypeDefinitionResolver(new TypeDefinitionModel(
-                    new EntityKey(new AssemblyIdentity("in-memory"), 123),
-                    "Fixtures",
-                    "Reference",
-                    false,
-                    [],
-                    [])),
-                new UnusedMethodRepository(),
-                new UnusedMethodInstanceResolver(),
-                new FixedSymbolFormatter("System.Activator")),
-            Body(new CilInstruction(
-                0,
-                1,
-                CilOperation.Call,
-                new CilOperand.MethodInstance(target)))));
-
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
-    }
-
-    [Fact]
-    public void ActivatorRuleRejectsTypesWithOnlyUnsupportedConstructors()
+    public void ActivatorRuleLeavesTheCallForClassesWithoutParameterlessConstructors()
     {
         var assembly = new AssemblyIdentity("in-memory");
         var createdType = CliTypeIdentity.Named(assembly, "Fixtures", "Reference", false);
@@ -224,15 +193,17 @@ public sealed class MethodSpecializerTests
             ".ctor",
             true,
             MethodSignatureModel.Create(CliValueKind.Void),
-            1);
+            1)
+        { IsPublic = true };
         var parameterizedConstructor = staticConstructor with
         {
             Key = new EntityKey(assembly, 130),
             IsStatic = false,
             Signature = MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4),
         };
+        var body = Body(new CilInstruction(0, 1, CilOperation.Call, new CilOperand.MethodInstance(target)));
 
-        var error = Assert.Throws<CompilerException>(() => Rewrite(
+        var rewritten = Rewrite(
             new ActivatorCallRewriter(
                 new FixedTypeDefinitionResolver(new TypeDefinitionModel(
                     declaringType,
@@ -244,13 +215,114 @@ public sealed class MethodSpecializerTests
                 new MapMethodRepository(staticConstructor, parameterizedConstructor),
                 new UnusedMethodInstanceResolver(),
                 new FixedSymbolFormatter("System.Activator")),
-            Body(new CilInstruction(
-                0,
-                1,
-                CilOperation.Call,
-                new CilOperand.MethodInstance(target)))));
+            body);
 
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
+        Assert.Same(body, rewritten);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void ActivatorRuleLeavesTheCallForInterfacesAndAbstractClasses(bool isInterface, bool isAbstract)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var createdType = CliTypeIdentity.Named(assembly, "Fixtures", "Reference", false);
+        var target = Target("CreateInstance", 131, "System.Activator", [createdType], genericArity: 1);
+        var declaringType = new EntityKey(assembly, 132);
+        var constructor = new MethodDefinitionModel(
+            new EntityKey(assembly, 133),
+            declaringType,
+            ".ctor",
+            false,
+            MethodSignatureModel.Create(CliValueKind.Void),
+            1)
+        { IsPublic = true };
+        var body = Body(new CilInstruction(0, 1, CilOperation.Call, new CilOperand.MethodInstance(target)));
+
+        var rewritten = Rewrite(
+            new ActivatorCallRewriter(
+                new FixedTypeDefinitionResolver(new TypeDefinitionModel(
+                    declaringType,
+                    "Fixtures",
+                    "Reference",
+                    false,
+                    [],
+                    [constructor.Key])
+                { IsInterface = isInterface, IsAbstract = isAbstract }),
+                new MapMethodRepository(constructor),
+                new UnusedMethodInstanceResolver(),
+                new FixedSymbolFormatter("System.Activator")),
+            body);
+
+        Assert.Same(body, rewritten);
+    }
+
+    public static TheoryData<CliTypeIdentity> TypesWithoutConstructors() =>
+    [
+        CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false),
+        CliTypeIdentity.SzArray(CliTypeIdentity.Primitive("i4", CliValueKind.I4)),
+    ];
+
+    [Theory]
+    [MemberData(nameof(TypesWithoutConstructors))]
+    public void ActivatorRuleLeavesTheCallForStringAndArraysWithoutResolvingThem(CliTypeIdentity createdType)
+    {
+        var target = Target("CreateInstance", 134, "System.Activator", [createdType], genericArity: 1);
+        var body = Body(new CilInstruction(0, 1, CilOperation.Call, new CilOperand.MethodInstance(target)));
+
+        var rewritten = Rewrite(
+            new ActivatorCallRewriter(
+                new RejectingTypeDefinitionResolver(),
+                new UnusedMethodRepository(),
+                new UnusedMethodInstanceResolver(),
+                new FixedSymbolFormatter("System.Activator")),
+            body);
+
+        Assert.Same(body, rewritten);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ActivatorRuleThrowsThroughCoreLibForNonPublicParameterlessConstructors(bool isValueType)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var createdType = CliTypeIdentity.Named(assembly, "Fixtures", "Hidden", isValueType);
+        var target = Target("CreateInstance", 135, "System.Activator", [createdType], genericArity: 1);
+        var hiddenKey = new EntityKey(assembly, 136);
+        var activatorKey = new EntityKey(assembly, 137);
+        var constructor = new MethodDefinitionModel(
+            new EntityKey(assembly, 138),
+            hiddenKey,
+            ".ctor",
+            false,
+            MethodSignatureModel.Create(CliValueKind.Void),
+            1);
+        var thrower = new MethodDefinitionModel(
+            new EntityKey(assembly, 139),
+            activatorKey,
+            "CreateInstanceWithNonPublicConstructor",
+            true,
+            MethodSignatureModel.Create(CliValueKind.ManagedReference),
+            0)
+        { GenericArity = 1 };
+        var instances = new SubstitutingMethodInstanceResolver(thrower, CliTypeIdentity.Named(assembly, "System", "Activator", false));
+
+        var rewritten = Rewrite(
+            new ActivatorCallRewriter(
+                new MapTypeDefinitionResolver(
+                    (createdType, new TypeDefinitionModel(hiddenKey, "Fixtures", "Hidden", isValueType, [], [constructor.Key])),
+                    (CliTypeIdentity.Named(assembly, "System", "Activator", false),
+                        new TypeDefinitionModel(activatorKey, "System", "Activator", false, [], [thrower.Key]))),
+                new MapMethodRepository(constructor, thrower),
+                instances,
+                new FixedSymbolFormatter("System.Activator")),
+            Body(new CilInstruction(0, 1, CilOperation.Call, new CilOperand.MethodInstance(target))));
+
+        Assert.Equal(CilOperation.Call, rewritten.Instructions[0].Operation);
+        var instance = Assert.IsType<CilOperand.MethodInstance>(rewritten.Instructions[0].Operand).Value;
+        Assert.Equal(thrower, instance.Definition);
+        Assert.Equal([createdType], instances.ObservedContext!.Value.MethodArguments);
     }
 
     [Fact]
@@ -264,7 +336,8 @@ public sealed class MethodSpecializerTests
             ".ctor",
             false,
             MethodSignatureModel.Create(CliValueKind.Void),
-            1);
+            1)
+        { IsPublic = true };
         var genericType = CliTypeIdentity.GenericInstantiation(
             CliTypeIdentity.Named(assembly, "Fixtures", "Box`1", false),
             [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
@@ -1843,6 +1916,13 @@ public sealed class MethodSpecializerTests
         ITypeDefinitionResolver
     {
         public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity) => definition;
+    }
+
+    private sealed class MapTypeDefinitionResolver(
+        params (CliTypeIdentity Identity, TypeDefinitionModel Definition)[] definitions) : ITypeDefinitionResolver
+    {
+        public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity) =>
+            definitions.Single(entry => entry.Identity.CanonicalName == identity.CanonicalName).Definition;
     }
 
     private sealed class RejectingTypeDefinitionResolver : ITypeDefinitionResolver

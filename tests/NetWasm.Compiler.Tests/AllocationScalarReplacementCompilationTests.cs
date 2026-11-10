@@ -314,6 +314,6 @@ public sealed partial class AllocationScalarReplacementCompilationTests
     [GeneratedRegex(@"\n\s*\(func ")]
     private static partial Regex FunctionHeader();
 
-    [GeneratedRegex(@"\(import ""[^""]+"" ""(?:allocate|allocate_finalizable)"" \(func (\$\S+)")]
+    [GeneratedRegex(@"\(import ""[^""]+"" ""(?:allocate|allocate_object|allocate_object_fallback|allocate_finalizable)"" \(func (\$\S+)")]
     private static partial Regex AllocateImport();
 }

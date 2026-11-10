@@ -81,6 +81,9 @@ internal sealed record MethodEmissionContext(
     // runtime keeps them at, without reading the array's data pointer.
     public bool InlineArrayData { get; init; }
     public int CopySourceTemporary { get; init; } = -1;
+    // Whether newobj may publish its roots only when its inline allocation
+    // calls the collector, so later root elisions cannot rely on it.
+    public bool ConditionalAllocationRoots { get; init; }
 
     public ImmutableDictionary<int, int> AnchorLocals { get; init; } = [];
     public ImmutableDictionary<RootSource, int> AuthoritativeRootSlots { get; init; } = [];

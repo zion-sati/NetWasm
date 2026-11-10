@@ -66,6 +66,14 @@ typedef struct {
     size_t reference_count;
     const size_t *value_reference_offsets;
     size_t value_reference_count;
+#if NETWASM_ALLOCATION_RUNS
+    /* The allocation run (collector_allocation.h) that an object of this type
+     * may take its slot from: its index plus one, or 0 when it calls the
+     * allocator (finalizable or not small). Collectors without runs leave
+     * them out, so their type table keeps its size. */
+    u32 allocation_run;
+    u32 allocation_slot;
+#endif
 } TypeDescriptor;
 
 /* The frame arenas as they stood at a point managed code may later catch an
@@ -1077,6 +1085,14 @@ void register_type(
     entry->assignable_type_id_count = assignable_type_id_count;
     entry->has_finalizer = has_finalizer;
     entry->is_interface = is_interface;
+#if NETWASM_ALLOCATION_RUNS
+    if (!has_finalizer && size < NETWASM_ALLOCATION_RUN_LIMIT) {
+        size_t slot = NETWASM_ALLOCATION_SLOT((size_t)size);
+        entry->allocation_slot = (u32)slot;
+        entry->allocation_run = (u32)((slot / NETWASM_ALLOCATION_ALIGNMENT - 1) * 2 +
+            (entry->reference_count != 0 ? 1u : 0u)) + 1;
+    }
+#endif
     entry->registered = 1;
 }
 
@@ -1534,7 +1550,49 @@ static void frame_marks_restore(const FrameMarks *marks)
     stack_trace_frame_top = marks->stack_trace;
 }
 
-static netwasm_reference_t allocate_registered(
+/* Takes `bytes` (below NETWASM_ALLOCATION_RUN_LIMIT) of zeroed storage from the
+ * run for its size and tracing into *object, or returns false when that run is
+ * exhausted or the collector keeps no runs. The caller stores the type word.
+ * The result is the run's bound check itself, so an inlined caller branches once. */
+static inline bool allocate_from_run(size_t bytes, bool contains_references, uintptr_t *object)
+{
+#if NETWASM_ALLOCATION_RUNS
+    size_t slot = NETWASM_ALLOCATION_SLOT(bytes);
+    NetWasmAllocationRun *run = &collector_allocation_runs[
+        (slot / NETWASM_ALLOCATION_ALIGNMENT - 1) * 2 + (contains_references ? 1u : 0u)];
+    uintptr_t start = (uintptr_t)run->cursor;
+    uintptr_t next = start + slot;
+    if (next > (uintptr_t)run->end) {
+        return false;
+    }
+    run->cursor = (unsigned char *)next;
+#ifndef NETWASM_RUNTIME_PACK
+    allocation_count++;
+#endif
+    *object = start;
+    return true;
+#else
+    (void)bytes;
+    (void)contains_references;
+    (void)object;
+    return false;
+#endif
+}
+
+/* Whether a test build's allocation hooks are set; they apply on the
+ * allocator's slow path only, so a hooked allocation does not take a run. */
+static inline bool allocation_hooks_active(void)
+{
+#ifdef NETWASM_RUNTIME_PACK
+    return false;
+#else
+    return collect_before_allocation || fail_next_allocation || track_allocations;
+#endif
+}
+
+/* Out of line, so allocate's run fast path stays small enough to inline into
+ * managed callers. */
+static __attribute__((noinline)) netwasm_reference_t allocate_registered(
     netwasm_address_t size,
     u32 type_id)
 {
@@ -1568,9 +1626,132 @@ static netwasm_reference_t allocate_registered(
 NETWASM_EXPORT("allocate")
 netwasm_reference_t allocate(netwasm_address_t size, u32 type_id)
 {
-    if (type_id >= type_capacity || type_descriptors[type_id].has_finalizer) {
+    if (type_id >= type_capacity) {
         __builtin_trap();
     }
+#if NETWASM_ALLOCATION_RUNS
+    const TypeDescriptor *entry = &type_descriptors[type_id];
+    u32 run_index = entry->allocation_run;
+#ifndef NETWASM_RUNTIME_PACK
+    /* The compiler passes the registered size and never a finalizable type
+     * here; test builds check it, and their allocation hooks take the slow path. */
+    if (entry->has_finalizer || (entry->registered && size != entry->size)) {
+        __builtin_trap();
+    }
+    if (allocation_hooks_active()) {
+        run_index = 0;
+    }
+#endif
+    if (run_index != 0) {
+        NetWasmAllocationRun *run = &collector_allocation_runs[run_index - 1];
+        uintptr_t object = (uintptr_t)run->cursor;
+        uintptr_t next = object + entry->allocation_slot;
+        if (next <= (uintptr_t)run->end) {
+            run->cursor = (unsigned char *)next;
+            *(u32 *)object = type_id;
+#ifndef NETWASM_RUNTIME_PACK
+            allocation_count++;
+#endif
+            return (netwasm_reference_t)object;
+        }
+    }
+#else
+    if (type_descriptors[type_id].has_finalizer) {
+        __builtin_trap();
+    }
+#endif
+    return allocate_registered(size, type_id);
+}
+
+/* Allocates an object of a non-finalizable type whose size and references the
+ * caller knows: compiled newobj, boxing and delegate construction. Inlined
+ * with constant arguments, the run is a constant and the allocation reads only
+ * its cursor and end. */
+NETWASM_EXPORT("allocate_object")
+netwasm_reference_t allocate_object(netwasm_address_t size, u32 type_id, u32 contains_references)
+{
+#if NETWASM_ALLOCATION_RUNS
+    if ((size_t)size < NETWASM_ALLOCATION_RUN_LIMIT) {
+#ifndef NETWASM_RUNTIME_PACK
+        /* The compiler passes the registered size and whether the registered
+         * layout has references; test builds check both. */
+        size_t slot = NETWASM_ALLOCATION_SLOT((size_t)size);
+        if (type_id >= type_capacity || !type_descriptors[type_id].registered ||
+            type_descriptors[type_id].allocation_run !=
+                (slot / NETWASM_ALLOCATION_ALIGNMENT - 1) * 2 + (contains_references != 0) + 1) {
+            __builtin_trap();
+        }
+        if (allocation_hooks_active()) {
+            return allocate(size, type_id);
+        }
+#endif
+        uintptr_t object;
+        if (allocate_from_run((size_t)size, contains_references != 0, &object)) {
+            *(u32 *)object = type_id;
+            return (netwasm_reference_t)object;
+        }
+    }
+#else
+    (void)contains_references;
+#endif
+    /* Out of line, so the inlined fast path stays a bump. */
+    return allocate_registered(size, type_id);
+}
+
+/* The run that compiled newobj at O1 to O3 bumps inline for an object of `bytes`,
+ * with allocation_slot: when cursor + slot <= end it takes the slot at cursor and
+ * stores the type id, and otherwise publishes its roots and calls allocate. A
+ * collector without runs, an object too large for one, and a test build's
+ * allocation hooks get an exhausted run. Neither function collects; inlined with
+ * constant arguments, each folds to a constant or one load. */
+static NetWasmAllocationRun exhausted_allocation_run;
+
+NETWASM_EXPORT("allocation_run")
+NetWasmAllocationRun *allocation_run(netwasm_address_t size, u32 type_id, u32 contains_references)
+{
+#if NETWASM_ALLOCATION_RUNS
+    if ((size_t)size < NETWASM_ALLOCATION_RUN_LIMIT) {
+        size_t slot = NETWASM_ALLOCATION_SLOT((size_t)size);
+        size_t index = (slot / NETWASM_ALLOCATION_ALIGNMENT - 1) * 2 + (contains_references != 0);
+#ifndef NETWASM_RUNTIME_PACK
+        /* The compiler passes the registered size and whether the registered
+         * layout has references; test builds check both. */
+        if (type_id >= type_capacity || !type_descriptors[type_id].registered ||
+            type_descriptors[type_id].allocation_run != index + 1) {
+            __builtin_trap();
+        }
+        if (allocation_hooks_active()) {
+            return &exhausted_allocation_run;
+        }
+#endif
+        return &collector_allocation_runs[index];
+    }
+#endif
+    (void)size;
+    (void)type_id;
+    (void)contains_references;
+    return &exhausted_allocation_run;
+}
+
+NETWASM_EXPORT("allocation_slot")
+netwasm_address_t allocation_slot(netwasm_address_t size)
+{
+    return (netwasm_address_t)NETWASM_ALLOCATION_SLOT((size_t)size);
+}
+
+/* Whether this build's collector keeps runs, a constant once inlined, so the
+ * inline bump folds away for collectors without them (Compact, Bump, stress). */
+NETWASM_EXPORT("allocation_runs_enabled")
+u32 allocation_runs_enabled(void)
+{
+    return NETWASM_ALLOCATION_RUNS;
+}
+
+/* The inline bump's fallback: the allocator itself, so once inlined the bump's
+ * slow path calls it directly. */
+NETWASM_EXPORT("allocate_object_fallback")
+netwasm_reference_t allocate_object_fallback(netwasm_address_t size, u32 type_id)
+{
     return allocate_registered(size, type_id);
 }
 
@@ -1924,7 +2105,7 @@ netwasm_reference_t get_type_object(u32 semantic_type_id, u32 facade_type_id)
 /* An array is one allocation: its fields, then its elements from
    NETWASM_ARRAY_INLINE_DATA_OFFSET. An empty array keeps one spare word so its
    data pointer stays inside the allocation for any collector. */
-static netwasm_reference_t allocate_inline_array(
+static NETWASM_ALLOCATION_SLOW_PATH netwasm_reference_t allocate_inline_array_slow(
     u32 type_id,
     u32 element_type_id,
     u32 length,
@@ -1963,17 +2144,51 @@ static netwasm_reference_t allocate_inline_array(
     return array;
 }
 
+/* A small array takes its slot from a run. With a constant element size, as
+   the compiler passes, the inlined bound and size fold to constants. */
+static inline netwasm_reference_t allocate_inline_array(
+    u32 type_id,
+    u32 element_type_id,
+    u32 length,
+    size_t element_size,
+    bool contains_references)
+{
+#if NETWASM_ALLOCATION_RUNS
+    size_t room = NETWASM_ALLOCATION_RUN_LIMIT - NETWASM_ARRAY_INLINE_DATA_OFFSET -
+        NETWASM_OBJECT_REFERENCE_SIZE;
+    if ((element_size == 0 || length <= room / element_size) && !allocation_hooks_active()) {
+        size_t bytes = NETWASM_ARRAY_INLINE_DATA_OFFSET + (size_t)length * element_size +
+            (length == 0 ? NETWASM_OBJECT_REFERENCE_SIZE : 0);
+        uintptr_t array;
+        if (allocate_from_run(bytes, contains_references && length != 0, &array)) {
+            type_data_kinds[type_id] = NETWASM_OBJECT_DATA_ARRAY;
+            *(u32 *)array = type_id;
+            *(u32 *)(array + NETWASM_ARRAY_LENGTH_OFFSET) = length;
+            *(netwasm_reference_t *)(array + NETWASM_ARRAY_DATA_POINTER_OFFSET) =
+                (netwasm_reference_t)(array + NETWASM_ARRAY_INLINE_DATA_OFFSET);
+            *(u32 *)(array + NETWASM_ARRAY_ELEMENT_TYPE_ID_OFFSET) = element_type_id;
+            return (netwasm_reference_t)array;
+        }
+    }
+#endif
+    return allocate_inline_array_slow(type_id, element_type_id, length, element_size,
+        contains_references);
+}
+
 NETWASM_EXPORT("allocate_reference_array")
 netwasm_reference_t allocate_reference_array(
     u32 length,
     u32 type_id,
     u32 element_type_id)
 {
+#ifndef NETWASM_RUNTIME_PACK
+    /* The compiler passes registered array and element types. */
     if (type_id >= type_capacity || !type_descriptors[type_id].registered ||
         type_descriptors[type_id].size != NETWASM_ARRAY_OBJECT_SIZE ||
         element_type_id >= type_capacity || !type_descriptors[element_type_id].registered) {
         __builtin_trap();
     }
+#endif
     if ((size_t)length > SIZE_MAX / sizeof(netwasm_reference_t)) {
         return 0;
     }
@@ -1990,20 +2205,27 @@ netwasm_reference_t allocate_value_array(
     u32 element_size)
 {
     TypeDescriptor *element;
+#ifndef NETWASM_RUNTIME_PACK
+    /* The compiler passes registered types and the element's registered size. */
     if (type_id >= type_capacity || !type_descriptors[type_id].registered ||
         type_descriptors[type_id].size != NETWASM_ARRAY_OBJECT_SIZE ||
         element_type_id >= type_capacity) {
         __builtin_trap();
     }
+#endif
     element = &type_descriptors[element_type_id];
+#ifndef NETWASM_RUNTIME_PACK
     if (!element->registered || !element->value_registered ||
-        element->value_size != element_size ||
-        (element->value_size != 0 && (size_t)length > SIZE_MAX / element->value_size)) {
+        element->value_size != element_size) {
+        __builtin_trap();
+    }
+#endif
+    if (element_size != 0 && (size_t)length > SIZE_MAX / element_size) {
         __builtin_trap();
     }
     collect_for_allocation_test();
     return allocate_inline_array(type_id, element_type_id, length,
-        element->value_size, element->value_contains_references != 0);
+        element_size, element->value_contains_references != 0);
 }
 
 NETWASM_EXPORT("allocate_rectangular_array")
@@ -2687,8 +2909,8 @@ void array_clear(netwasm_reference_t array, u32 index, u32 length)
         element->value_size);
 }
 
-NETWASM_EXPORT("allocate_string")
-netwasm_reference_t allocate_string(u32 value, u32 length, u32 type_id)
+static NETWASM_ALLOCATION_SLOW_PATH netwasm_reference_t allocate_string_slow(
+    u32 value, u32 length, u32 type_id)
 {
     netwasm_address_t byte_count;
     netwasm_reference_t string;
@@ -2731,6 +2953,43 @@ netwasm_reference_t allocate_string(u32 value, u32 length, u32 type_id)
     track((void *)(uintptr_t)string);
     allocation_root = 0;
     return string;
+}
+
+/* A short string takes its slot from a run; the runtime inlines this at O1 to
+   O3, so CoreLib's string allocation bumps the run without a call. */
+NETWASM_EXPORT("allocate_string")
+netwasm_reference_t allocate_string(u32 value, u32 length, u32 type_id)
+{
+#if NETWASM_ALLOCATION_RUNS
+    if (length < (NETWASM_ALLOCATION_RUN_LIMIT - NETWASM_STRING_DATA_OFFSET) / sizeof(uint16_t)) {
+#ifndef NETWASM_RUNTIME_PACK
+        if (type_id >= type_capacity || !type_descriptors[type_id].registered ||
+            type_descriptors[type_id].size != netwasm_align_address(
+                NETWASM_STRING_MIN_OBJECT_SIZE,
+                NETWASM_OBJECT_REFERENCE_SIZE)) {
+            __builtin_trap();
+        }
+        if (allocation_hooks_active()) {
+            return allocate_string_slow(value, length, type_id);
+        }
+#endif
+        uintptr_t string;
+        if (allocate_from_run(
+                NETWASM_STRING_DATA_OFFSET + (size_t)length * sizeof(uint16_t), false, &string)) {
+            type_data_kinds[type_id] = NETWASM_OBJECT_DATA_STRING;
+            *(u32 *)string = type_id;
+            *(u32 *)(string + NETWASM_STRING_LENGTH_OFFSET) = length;
+            if (value != 0) {
+                uint16_t *characters = (uint16_t *)(string + NETWASM_STRING_DATA_OFFSET);
+                for (u32 index = 0; index < length; index++) {
+                    characters[index] = (uint16_t)value;
+                }
+            }
+            return (netwasm_reference_t)string;
+        }
+    }
+#endif
+    return allocate_string_slow(value, length, type_id);
 }
 
 /* Shallow cloning preserves managed fields but allocates independent collector,

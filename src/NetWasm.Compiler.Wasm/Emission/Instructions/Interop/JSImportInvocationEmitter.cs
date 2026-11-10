@@ -76,7 +76,10 @@ internal sealed class JSImportInvocationEmitter(
             invocation.ArgumentBase,
             invocation.Consumed,
             callback,
-            new InteropMarshallingTarget(invocation.Target.InteropImports),
+            new InteropMarshallingTarget(invocation.Target.InteropImports)
+            {
+                ObjectAllocation = invocation.Target.ObjectAllocation,
+            },
             invocation.Offset), code);
     }
 

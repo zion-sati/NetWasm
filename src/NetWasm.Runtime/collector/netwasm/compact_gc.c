@@ -449,6 +449,8 @@ bool netwasm_gc_contains(const NetWasmGc *gc, uintptr_t address)
 bool netwasm_gc_is_collecting(const NetWasmGc *gc) { return gc != NULL && gc->collecting; }
 uint64_t netwasm_gc_collection_count(const NetWasmGc *gc) { return gc == NULL ? 0 : gc->collections; }
 uint64_t netwasm_gc_total_allocated_bytes(const NetWasmGc *gc) { return gc == NULL ? 0 : gc->allocated_bytes; }
+/* Compact allocates from free lists, so code outside it always calls in. */
+NetWasmGcRun *netwasm_gc_allocation_runs(NetWasmGc *gc) { (void)gc; return NULL; }
 uint64_t netwasm_gc_live_bytes(const NetWasmGc *gc) { return gc == NULL ? 0 : gc->occupied_bytes; }
 uint64_t netwasm_gc_reserved_bytes(const NetWasmGc *gc) { return gc == NULL ? 0 : gc->backing_bytes; }
 size_t netwasm_gc_object_count(const NetWasmGc *gc) { return gc == NULL ? 0 : gc->object_count; }

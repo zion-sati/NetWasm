@@ -3,6 +3,7 @@ using System;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Analysis;
+using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Emission;
@@ -238,6 +239,11 @@ internal sealed class CompilationEmissionBuilder(
             InlineArrayData =
                 preparation.OptimizationSettings.InlineArrayData ==
                 InlineArrayDataPolicy.Inline,
+            // allocate_object's extra argument pays only where the runtime's
+            // inline hints are kept, so the inlined allocation bumps a constant run.
+            InlineObjectAllocation =
+                preparation.OptimizationSettings.RuntimeInlineAnnotations ==
+                WasmInlineAnnotationSelection.Preserve,
             InlineMulticastDispatch =
                 preparation.OptimizationSettings.MulticastDispatch ==
                 MulticastDispatchPolicy.Inline,

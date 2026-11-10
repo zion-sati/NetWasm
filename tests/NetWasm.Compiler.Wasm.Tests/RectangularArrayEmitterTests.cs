@@ -467,7 +467,6 @@ public sealed class RectangularArrayEmitterTests
         bool bounded)
     {
         var layouts = new RecordingLayoutProvider();
-        var roots = new List<int>();
         var elementType = elementKind == CliValueKind.ManagedReference
             ? CliTypeIdentity.Named(Assembly, "Test", "Reference", false)
             : CliTypeIdentity.Primitive("i4", CliValueKind.I4);
@@ -496,12 +495,10 @@ public sealed class RectangularArrayEmitterTests
             layouts,
             CreateTypeOperands(new FakeProgram()),
             WasmRuntimeImports.CreateCatalog(),
-            exceptions,
-            new RecordingRootPublicationEmitter(value => roots.Add(value.Instruction.Offset)));
+            exceptions);
 
         Emit(emitter, request);
 
-        Assert.Equal([0], roots);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
         Assert.Equal(bounded ? 2 : 0,
             exceptions.Kinds.Count(kind => kind == ManagedExceptionKind.ArgumentOutOfRange));

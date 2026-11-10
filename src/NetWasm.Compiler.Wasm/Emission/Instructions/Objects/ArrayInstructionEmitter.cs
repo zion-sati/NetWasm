@@ -19,7 +19,6 @@ internal sealed class ArrayInstructionEmitter(
     ICilTypeOperandResolver types,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots,
     IArrayLengthAdapter lengths,
     IArrayIndexAdapter indexes,
     IArrayElementAddressEmitter elementAddresses,
@@ -52,7 +51,6 @@ internal sealed class ArrayInstructionEmitter(
 
     private void EmitNewArray(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
-        roots.Emit(request, code);
         var lengthSlot = request.Stack.Count - 1;
         var lengthLocal = lengths.Adapt(request, code, lengthSlot);
         var elementType = types.Resolve(request.Instruction, request.Header.MethodInstance);

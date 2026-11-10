@@ -16,6 +16,8 @@ internal sealed class CollectingRuntimeImports(IRuntimeImportResolver runtimeImp
     {
         RuntimeImportSymbol.Allocate,
         RuntimeImportSymbol.AllocateFinalizable,
+        RuntimeImportSymbol.AllocateObject,
+        RuntimeImportSymbol.AllocateObjectFallback,
         RuntimeImportSymbol.AllocateReferenceArray,
         RuntimeImportSymbol.AllocateValueArray,
         RuntimeImportSymbol.AllocateRectangularArray,
