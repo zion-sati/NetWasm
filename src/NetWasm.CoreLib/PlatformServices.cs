@@ -271,10 +271,12 @@ namespace System.Runtime.InteropServices
         // code ends the process with that code, which wasi:cli/run's result cannot carry.
         internal static void RunProcessExit() => RunProcessExit(Environment.ExitCode);
 
+        // A world without wasi:cli/exit leaves an int Main's result to wasi:cli/run's result,
+        // which carries only success or failure.
         internal static void RunProcessExit(int exitCode)
         {
             Output.WasiOutputStreamResource.EndOpened();
-            if (exitCode != 0)
+            if (exitCode != 0 && PlatformWorld.ImportsProcessExit())
             {
                 ProcessExit.Exit(exitCode);
             }

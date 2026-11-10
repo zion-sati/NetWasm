@@ -1187,7 +1187,7 @@ try {
     } catch (error) {
       if (error instanceof ProcessExit) {
         hostPhase = "exit";
-        observations.push(createValue(error.code));
+        observations.push(createValue(callbackEntry ? entryResult(error.code) : error.code));
       } else {
         observations.push(createException(error));
       }
@@ -1263,6 +1263,14 @@ function readTraceRecords() {
     });
   }
   return records;
+}
+
+// The process exits with the low eight bits of an asynchronous Main's result, which the entry
+// still holds; the oracle observes the whole result when the exit carried it, and otherwise the
+// code of an exit the program asked for itself.
+function entryResult(code) {
+  var result = application.exports["netwasm.entry.exit_code"]();
+  return (result & 255) === code ? result : code;
 }
 
 function createValue(value) {

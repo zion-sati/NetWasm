@@ -22,6 +22,11 @@ namespace System.Runtime.InteropServices
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static bool ImportsMonotonicClock() => true;
 
+        // True when the selected world imports wasi:cli/exit, whose exit-with-code ends the process
+        // with a code that wasi:cli/run's result cannot carry.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static bool ImportsProcessExit() => true;
+
         // True when the program has a synchronous WIT export, inside which a blocking wait
         // throws.
         [MethodImpl(MethodImplOptions.NoInlining)]

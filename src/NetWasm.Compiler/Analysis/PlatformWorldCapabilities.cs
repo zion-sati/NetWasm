@@ -16,6 +16,8 @@ public sealed record PlatformWorldCapabilities(bool EventLoop, bool MonotonicClo
 {
     internal const string MonotonicClockInterface = "wasi:clocks/monotonic-clock@0.3.2";
 
+    internal const string ExitInterface = "wasi:cli/exit@0.3.2";
+
     // A module a JavaScript host runs (a raw build): the host runs its event loop and can
     // complete a task through a JavaScript promise the program awaits.
     public bool HostEventLoop { get; init; }
@@ -23,6 +25,10 @@ public sealed record PlatformWorldCapabilities(bool EventLoop, bool MonotonicClo
     // Whether the program has WASI, so that NetWasm's WASI 0.3 platform services are the
     // defaults; a plain core module has none.
     public bool Wasi { get; init; } = true;
+
+    // Whether the selected world imports wasi:cli/exit, whose exit-with-code ends a process with
+    // a non-zero code; without it an int Main's result goes to wasi:cli/run's result.
+    public bool ProcessExit { get; init; }
 
     // The program's declared platform (NetWasmPlatformAttribute), or null for the default one.
     public PlatformServices.DeclaredPlatform? DeclaredPlatform { get; init; }
@@ -35,7 +41,10 @@ public sealed record PlatformWorldCapabilities(bool EventLoop, bool MonotonicClo
             component,
             component && Declares(contract, MonotonicClockInterface, "now"),
             contract.Exports.Any(export => export.Kind is
-                CanonicalAbiFunctionKind.Function or CanonicalAbiFunctionKind.ExportedResourceDestructor));
+                CanonicalAbiFunctionKind.Function or CanonicalAbiFunctionKind.ExportedResourceDestructor))
+        {
+            ProcessExit = component && Declares(contract, ExitInterface, "exit-with-code"),
+        };
     }
 
     private static bool Declares(ComponentBoundaryContract contract, string interfaceName, string function) =>

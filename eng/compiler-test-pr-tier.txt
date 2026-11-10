@@ -303,6 +303,7 @@ NetWasm.Compiler.Tests.PayForPlayFormattingCompilationTests
 NetWasm.Compiler.Tests.PlatformWorldCallRewriterTests
 NetWasm.Compiler.Tests.PrimitiveCompilationTests
 NetWasm.Compiler.Tests.PrimitiveDifferentialCompilationTests
+NetWasm.Compiler.Tests.ProcessExitWorldCompilationTests
 NetWasm.Compiler.Tests.PureCallReuserTests
 NetWasm.Compiler.Tests.QuotientReuseCompilationTests
 NetWasm.Compiler.Tests.ReachabilityMarkersTests
@@ -342,6 +343,7 @@ NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests
 NetWasm.Compiler.Tests.Utf8DecimalParsingCompilationTests
 NetWasm.Compiler.Tests.ValueTaskCompilationTests
 NetWasm.Compiler.Tests.VectorMathFunctionCompilationTests
+NetWasm.Compiler.Tests.WasiAsyncImportBindingCompilationTests
 NetWasm.Compiler.Tests.WeakReferenceCompatibilityCompilationTests
 NetWasm.Compiler.Tests.WholeLocalBlockCopyFolderBodyTests
 NetWasm.Compiler.Tests.WholeLocalBlockCopyFolderTests

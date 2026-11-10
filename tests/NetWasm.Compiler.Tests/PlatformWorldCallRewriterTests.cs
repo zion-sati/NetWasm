@@ -66,6 +66,20 @@ public sealed class PlatformWorldCallRewriterTests
         Assert.True(new PlatformWorldCapabilities(false, false, false).Wasi);
     }
 
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 0)]
+    public void ReplacesTheProcessExitSwitchWithWhetherTheWorldImportsExit(bool processExit, int expected)
+    {
+        var rewritten = new PlatformWorldCallRewriter(
+            new FixedMethodResolver(Switch("ImportsProcessExit")),
+            new Symbols(),
+            new PlatformWorldCapabilities(true, true, true) { ProcessExit = processExit }).Rewrite(Body(CilOperation.Call));
+
+        Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
+        Assert.False(new PlatformWorldCapabilities(true, true, true).ProcessExit);
+    }
+
     [Fact]
     public void RejectsNullBody()
     {
@@ -128,6 +142,23 @@ public sealed class PlatformWorldCallRewriterTests
         Assert.Equal(new PlatformWorldCapabilities(true, false, false), PlatformWorldCapabilities.From(
             Contract(Import("wait-for", "wasi:clocks/monotonic-clock@0.3.2"))));
         Assert.Throws<ArgumentNullException>(() => PlatformWorldCapabilities.From(null!));
+    }
+
+    // A component ends its process with a non-zero code through wasi:cli/exit's exit-with-code
+    // when its world imports the interface, whether or not reachable code binds it.
+    [Fact]
+    public void AProcessExitsWithItsCodeWhenTheWorldImportsExit()
+    {
+        var exitWithCode = Import("exit-with-code", "wasi:cli/exit@0.3.2");
+        Assert.False(PlatformWorldCapabilities.From(Contract()).ProcessExit);
+        Assert.False(PlatformWorldCapabilities.From(
+            ComponentBoundaryContract.Empty with { Imports = [exitWithCode] }).ProcessExit);
+        Assert.True(PlatformWorldCapabilities.From(
+            Contract(exitWithCode with { HasManagedBinding = false })).ProcessExit);
+        Assert.False(PlatformWorldCapabilities.From(
+            Contract(Import("exit", "wasi:cli/exit@0.3.2"))).ProcessExit);
+        Assert.False(PlatformWorldCapabilities.From(
+            Contract(Import("exit-with-code", "wasi:cli/exit@0.2.11"))).ProcessExit);
     }
 
     // A synchronous export or an exported resource's destructor is where a blocking wait must
