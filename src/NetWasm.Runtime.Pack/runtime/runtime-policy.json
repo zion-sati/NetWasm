@@ -43,6 +43,7 @@
       { "module": "$root", "name": "[waitable-join]", "parameters": ["i32", "i32"], "results": [], "required": false },
       { "module": "$root", "name": "[waitable-set-wait]", "parameters": ["i32", "ptr"], "results": ["i32"], "required": false },
       { "module": "{prefix}|wasi:cli/exit@0.3", "name": "exit", "parameters": ["i32"], "results": [], "required": false },
+      { "module": "{prefix}|wasi:cli/exit@0.3", "name": "exit-with-code", "parameters": ["i32"], "results": [], "required": false },
       { "module": "{prefix}|wasi:random/random@0.3", "name": "get-random-u64", "parameters": [], "results": ["i64"], "required": false }
     ]
   },

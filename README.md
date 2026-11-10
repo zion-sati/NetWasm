@@ -279,14 +279,16 @@ profile.
 NetWasm 1.0 means a useful, documented and stable smaller platform. It does not
 mean “desktop .NET, but in Wasm.” The main themes are:
 
-- WASI 0.3, with broader WASI coverage (done in NetWasm 0.12.0);
+- ✅ WASI 0.3, with broader WASI coverage (NetWasm 0.12.0);
 - globalization modes and optional culture data;
 - expression-tree completion;
-- a faster incremental development loop (done in NetWasm 0.11.0);
+- ✅ a faster incremental development loop (NetWasm 0.11.0);
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.12.0:** components target WASI 0.3, so ordinary .NET file,
+**New in NetWasm 0.12.1:** a program ends with the exit code desktop .NET gives it, and
+`Environment.Exit`, `Environment.ExitCode` and `Environment.FailFast` work.
+[Release notes](docs/releases/0.12.1.md). NetWasm 0.12.0 made components target WASI 0.3, so ordinary .NET file,
 socket and `HttpClient` code runs on the Component Model, and an HTTP service
 is one `Handle` method that Wasmtime, Spin and wasmCloud run unchanged.
 NetWasmGC allocates small objects inline, so a binary-trees benchmark takes

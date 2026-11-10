@@ -65,6 +65,6 @@ export function createRuntimeContractImports(target, getMemory, getExports) {
     [`${prefix}|wasi:cli/stderr@0.3`]: { 'write-via-stream': unexpected },
     'wasi:cli/stdout@0.3.2': standardStream,
     'wasi:cli/stderr@0.3.2': standardStream,
-    [`${prefix}|wasi:cli/exit@0.3`]: { exit: unexpected },
+    [`${prefix}|wasi:cli/exit@0.3`]: { exit: unexpected, 'exit-with-code': unexpected },
   };
 }

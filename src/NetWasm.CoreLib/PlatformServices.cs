@@ -161,6 +161,7 @@ namespace System.Runtime.InteropServices
         private static IClock? _clock;
         private static IRandomSource? _random;
         private static IProcessEnvironment? _processEnvironment;
+        private static IProcessExit? _processExit;
         private static IFileSystem? _fileSystem;
         private static INetwork? _network;
         private static IManagedEntryPointArgumentSource? _managedEntryPointArguments;
@@ -182,6 +183,8 @@ namespace System.Runtime.InteropServices
         internal static IRandomSource Random => _random ??= Platform.Random;
 
         internal static IProcessEnvironment ProcessEnvironment => _processEnvironment ??= Platform.ProcessEnvironment;
+
+        internal static IProcessExit ProcessExit => _processExit ??= Platform.ProcessExit;
 
         internal static IFileSystem FileSystem => _fileSystem ??= Platform.FileSystem;
 
@@ -262,9 +265,39 @@ namespace System.Runtime.InteropServices
             }
         }
 
-        // A process entry calls this after Main returns: it ends the standard streams the
-        // process opened, as an operating system closes a process's descriptors at exit.
-        internal static void RunProcessExit() => Output.WasiOutputStreamResource.EndOpened();
+        // A process entry calls one of these after Main returns: an int Main's result is the exit
+        // code, any other Main's is Environment.ExitCode. The standard streams the process opened
+        // end, as an operating system closes a process's descriptors at exit, and a non-zero exit
+        // code ends the process with that code, which wasi:cli/run's result cannot carry.
+        internal static void RunProcessExit() => RunProcessExit(Environment.ExitCode);
+
+        internal static void RunProcessExit(int exitCode)
+        {
+            Output.WasiOutputStreamResource.EndOpened();
+            if (exitCode != 0)
+            {
+                ProcessExit.Exit(exitCode);
+            }
+        }
+
+        // Environment.Exit: the process ends here, whatever the code.
+        [Diagnostics.CodeAnalysis.DoesNotReturn]
+        internal static void ExitProcess(int exitCode)
+        {
+            Output.WasiOutputStreamResource.EndOpened();
+            ProcessExit.Exit(exitCode);
+            throw new Diagnostics.UnreachableException("The platform returned from its process exit.");
+        }
+
+        // Environment.FailFast: the report goes to standard error, bypassing Console, and the process
+        // ends as an abort ends .NET on Linux, with exit status 134. An exit, unlike an exception,
+        // cannot be caught.
+        [Diagnostics.CodeAnalysis.DoesNotReturn]
+        internal static void FailProcess(string report)
+        {
+            StandardStreams.WriteError(Text.Encoding.UTF8.GetBytes(report));
+            ExitProcess(134);
+        }
 
         private static ComponentExportTask? _exportTask;
 

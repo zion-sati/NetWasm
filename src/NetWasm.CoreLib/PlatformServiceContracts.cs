@@ -22,6 +22,9 @@ namespace System.Runtime.InteropServices.WebAssembly
         // The command line, the environment and the initial current directory.
         public virtual IProcessEnvironment ProcessEnvironment => new UnsupportedProcessEnvironment();
 
+        // Environment.Exit, and a Main whose exit code is not zero.
+        public virtual IProcessExit ProcessExit => new UnsupportedProcessExit();
+
         // Task.Delay, timers and the other delayed work of a program without the Component Model's
         // event loop. A program with WASI runs its timers on that loop and may not provide these.
         public virtual ITimerScheduler Timers => new UnsupportedTimerScheduler();
@@ -45,6 +48,10 @@ namespace System.Runtime.InteropServices.WebAssembly
         }
 
         private sealed class UnsupportedProcessEnvironment : PlatformProcessEnvironment
+        {
+        }
+
+        private sealed class UnsupportedProcessExit : PlatformProcessExit
         {
         }
 
@@ -74,6 +81,7 @@ namespace System.Runtime.InteropServices.WebAssembly
             new Cryptography.WasiCryptographicallySecureRandomByteFiller(new Cryptography.WasiRandomBytesInvoker());
 
         public override IProcessEnvironment ProcessEnvironment => new WasiProcessEnvironment();
+        public override IProcessExit ProcessExit => new WasiProcessExit();
 
         public override IFileSystem FileSystem => new global::System.Runtime.InteropServices.FileSystem.WasiFileSystem();
 
@@ -143,6 +151,12 @@ namespace System.Runtime.InteropServices.WebAssembly
         string? GetInitialDirectory();
     }
 
+    public interface IProcessExit
+    {
+        // Ends the process with the exit code, zero for success; it does not return.
+        void Exit(int exitCode);
+    }
+
     public interface ITimerScheduler
     {
         // Calls the callback once the delay has passed, unless the returned schedule is disposed.
@@ -181,6 +195,11 @@ namespace System.Runtime.InteropServices.WebAssembly
         public virtual KeyValuePair<string, string>[] GetVariables() => throw PlatformServiceErrors.Unavailable("The environment", "ProcessEnvironment");
 
         public virtual string? GetInitialDirectory() => throw PlatformServiceErrors.Unavailable("The working directory", "ProcessEnvironment");
+    }
+
+    public abstract class PlatformProcessExit : IProcessExit
+    {
+        public virtual void Exit(int exitCode) => throw PlatformServiceErrors.Unavailable("Process exit", "ProcessExit");
     }
 
     public abstract class PlatformTimerScheduler : ITimerScheduler

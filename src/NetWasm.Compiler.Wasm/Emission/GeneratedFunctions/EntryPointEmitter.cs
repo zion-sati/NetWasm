@@ -110,9 +110,15 @@ internal sealed class EntryPointEmitter(
                 code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
                     WasmInstructionOperand.Unsigned((uint)resultLocal)));
             }
-            // The process is exiting: CoreLib ends the standard streams it opened.
+            // The process is exiting: CoreLib ends the standard streams it opened and, given an
+            // int Main's result, exits with it when it is not zero.
             if (processExit is { } exit)
             {
+                if (hasResult)
+                {
+                    code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                        WasmInstructionOperand.Unsigned((uint)resultLocal)));
+                }
                 code.Instructions.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.Call,
                     WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(exit))));

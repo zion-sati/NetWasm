@@ -152,6 +152,21 @@ var lowerBytes = bytes => {
 };
 var lowerText = value => lowerBytes(new TextEncoder().encode(value));
 var environmentEntries = () => Object.entries(hostConfiguration.environment ?? {});
+// A process exit ends the run, and its exit code is the program's result, as desktop
+// .NET reports an int Main's.
+class ProcessExit {
+  constructor(code) {
+    this.code = code;
+  }
+}
+var wasiExit = {
+  exit(isError) {
+    throw new ProcessExit(isError ? 1 : 0);
+  },
+  "exit-with-code"(code) {
+    throw new ProcessExit(code);
+  },
+};
 var wasiEnvironment = {
   "get-environment"(result) {
     wasiEnvironmentReads++;
@@ -1129,6 +1144,7 @@ try {
         "netwasm.host.v1": host,
         "$root": componentBuiltIns,
         [`${canonicalPrefix}|wasi:cli/environment@0.3`]: wasiEnvironment,
+        [`${canonicalPrefix}|wasi:cli/exit@0.3`]: wasiExit,
         [`${canonicalPrefix}|wasi:filesystem/preopens@0.3`]: wasiPreopens,
         [`${canonicalPrefix}|wasi:filesystem/types@0.3`]: wasiFilesystem,
         "wasi:filesystem/types@0.3.2": wasiFilesystemBuiltIns,
@@ -1167,19 +1183,14 @@ try {
         value = exitCode();
       }
       hostPhase = "completed";
-      observations.push({
-        kind: "value",
-        value: typeof value === "bigint" ? { i64: value.toString() } : value,
-        exceptionTypeId: null,
-        trace: readTrace(),
-        traceRecords: readTraceRecords(),
-        wasiEnvironmentReads,
-        wasiPreopenReads,
-        wasiEnvironmentResult,
-        wasiEnvironmentLength,
-      });
+      observations.push(createValue(value));
     } catch (error) {
-      observations.push(createException(error));
+      if (error instanceof ProcessExit) {
+        hostPhase = "exit";
+        observations.push(createValue(error.code));
+      } else {
+        observations.push(createException(error));
+      }
     }
     process.stderr.write(`NETWASM_PROGRESS ${inputIndex + 1}/${inputs.length}\n`);
   }
@@ -1252,6 +1263,20 @@ function readTraceRecords() {
     });
   }
   return records;
+}
+
+function createValue(value) {
+  return {
+    kind: "value",
+    value: typeof value === "bigint" ? { i64: value.toString() } : value,
+    exceptionTypeId: null,
+    trace: readTrace(),
+    traceRecords: readTraceRecords(),
+    wasiEnvironmentReads,
+    wasiPreopenReads,
+    wasiEnvironmentResult,
+    wasiEnvironmentLength,
+  };
 }
 
 function createException(error) {

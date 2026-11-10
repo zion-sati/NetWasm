@@ -55,6 +55,23 @@ namespace System.Runtime.InteropServices
         public string? GetInitialDirectory() =>
             (_directory ??= FileSystem.WasiFileSystemComposition.CreateWorkingDirectorySource()).GetInitialDirectory();
     }
+
+    internal sealed class WasiProcessExit : IProcessExit
+    {
+        // exit carries success; exit-with-code any other status, truncated to the eight bits a
+        // process status has, as on Linux. Neither returns to a conforming host's caller.
+        public void Exit(int exitCode)
+        {
+            if (exitCode == 0)
+            {
+                CommandLine.WasiExitImports.Exit(0);
+            }
+            else
+            {
+                CommandLine.WasiExitImports.ExitWithCode((byte)exitCode);
+            }
+        }
+    }
 }
 
 namespace System.Runtime.InteropServices.FileSystem
