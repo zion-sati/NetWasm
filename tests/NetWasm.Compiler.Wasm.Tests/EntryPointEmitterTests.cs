@@ -181,6 +181,34 @@ public sealed class EntryPointEmitterTests
                 body[index + 2] == WasmOpcodes.Call && body[index + 3] == 32);
     }
 
+    // An int Main hands its result to the process exit, which exits with it when it is not zero.
+    [Fact]
+    public void ProcessEntryHandsAnIntMainsResultToTheProcessExit()
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var entry = new FakeProgram().GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliValueKind.I4),
+        };
+        var exit = new EntityKey(Assembly, 0x06000098);
+
+        var body = CreateEmitter(layouts, imports).Emit(
+            entry,
+            initialization: TestRuntimeInitialization.Create(512),
+            hasFinalizers: false,
+            new PreflightIndices(exit),
+            reportTerminalExceptions: false,
+            processExit: exit);
+
+        Assert.Contains(
+            Enumerable.Range(0, body.Length - 7),
+            index => body[index] == WasmOpcodes.Call && body[index + 1] == 30 &&
+                body[index + 2] == WasmOpcodes.LocalSet && body[index + 3] == 0 &&
+                body[index + 4] == WasmOpcodes.LocalGet && body[index + 5] == 0 &&
+                body[index + 6] == WasmOpcodes.Call && body[index + 7] == 32);
+    }
+
     // A callback-lifted entry's callback runs after its start initialized the runtime, so its
     // body is the entry's without the initialization.
     [Fact]

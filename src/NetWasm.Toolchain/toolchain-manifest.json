@@ -169,7 +169,7 @@
       "id": "wit.package-manifest",
       "version": "1",
       "relativePath": "tools/wit-packages/wit-package-manifest.json",
-      "sha256": "5377b17cf0ff7516d40b9a361374aaab2afdaef8444d4d352f038bceedeba33b"
+      "sha256": "eb6f4836846e1b660cfc836fccbfb5fa04ebb9afc6bca73ed00e1d9142971108"
     },
     {
       "id": "wit.command-package",
@@ -187,7 +187,7 @@
       "id": "wit.compiler-package",
       "version": "1.0.0",
       "relativePath": "tools/wit-packages/compiler.wit.wasm",
-      "sha256": "9c5e5a5dba5467aa7170959a8a3794b09d3a448df84208d0f322e4d29f4353e0"
+      "sha256": "3c728b414eac4a8ca45671e15c8a690e4be5b8362c3dce3bdf83c1680bd0b23f"
     },
     {
       "id": "jco.package",

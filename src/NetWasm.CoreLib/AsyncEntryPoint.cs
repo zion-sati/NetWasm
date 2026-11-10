@@ -30,7 +30,8 @@ namespace System.Runtime.InteropServices
                 s_task, eventCode, waitable, unchecked((uint)payload)));
         }
 
-        // Main's exit code once Start or Callback returned EXIT; zero for a Task.
+        // Main's exit code once Start or Callback returned EXIT: a Task<int>'s result, or
+        // Environment.ExitCode for a Task. A non-zero one has already ended the process.
         internal static int ExitCode() => s_exitCode;
 
         private static int Finish(int code)
@@ -44,9 +45,10 @@ namespace System.Runtime.InteropServices
                 else
                 {
                     s_task!.GetAwaiter().GetResult();
+                    s_exitCode = Environment.ExitCode;
                 }
 
-                PlatformServices.RunProcessExit();
+                PlatformServices.RunProcessExit(s_exitCode);
             }
 
             return code;

@@ -459,19 +459,21 @@ public sealed class EntryPointContractCoverageTests
             repository));
     }
 
-    // A managed executable's entry ends the process through CoreLib's one
-    // parameterless RunProcessExit; any other entry has no process to end.
+    // A managed executable's entry ends the process through CoreLib's RunProcessExit: the one
+    // taking an int Main's result, or the parameterless one for any other Main; any other entry
+    // has no process to end.
     [Fact]
-    public void ManagedExecutableRequiresExactlyOneProcessExit()
+    public void ManagedExecutableRequiresExactlyOneMatchingProcessExit()
     {
         var coreLib = new AssemblyIdentity("System.Private.CoreLib");
         var platformTypeKey = new EntityKey(coreLib, 0x02000001);
-        MethodDefinitionModel Exit(int token, string name = "RunProcessExit", bool isStatic = true) => new(
+        MethodDefinitionModel Exit(int token, string name = "RunProcessExit", bool isStatic = true,
+            CliValueKind result = CliValueKind.Void, params CliValueKind[] parameters) => new(
             new EntityKey(coreLib, 0x06000000 + token),
             platformTypeKey,
             name,
             isStatic,
-            MethodSignatureModel.Create(CliValueKind.Void),
+            MethodSignatureModel.Create(result, parameters),
             0);
         var type = new TypeDefinitionModel(
             platformTypeKey,
@@ -481,19 +483,31 @@ public sealed class EntryPointContractCoverageTests
             [],
             []);
         var exit = Exit(1);
-        var others = new[] { Exit(2, "Other"), Exit(3, isStatic: false) };
+        var exitWithCode = Exit(4, parameters: CliValueKind.I4);
+        var others = new[]
+        {
+            Exit(2, "Other"), Exit(3, isStatic: false), Exit(5, result: CliValueKind.I4),
+            Exit(6, parameters: CliValueKind.I8),
+        };
         var resolver = new ManagedExecutableExitResolver();
-        var single = new ArgumentFactoryRepository(
-            type with { Methods = [exit.Key, .. others.Select(method => method.Key)] },
-            [exit, .. others]);
+        var both = new ArgumentFactoryRepository(
+            type with { Methods = [exit.Key, exitWithCode.Key, .. others.Select(method => method.Key)] },
+            [exit, exitWithCode, .. others]);
 
-        Assert.Equal(exit.Key, resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, single, single));
-        Assert.Null(resolver.Resolve(CompilerEntryPointKind.RawFunction, single, single));
-        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, null!, single));
-        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, single, null!));
+        Assert.Equal(exit.Key, resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, CliValueKind.Void, both, both));
+        Assert.Equal(exit.Key, resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, CliValueKind.ManagedReference, both, both));
+        Assert.Equal(exitWithCode.Key, resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, CliValueKind.I4, both, both));
+        Assert.Null(resolver.Resolve(CompilerEntryPointKind.RawFunction, CliValueKind.I4, both, both));
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, CliValueKind.Void, null!, both));
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, CliValueKind.Void, both, null!));
+        var parameterlessOnly = new ArgumentFactoryRepository(
+            type with { Methods = [exit.Key] }, [exit]);
+        var failure = Assert.Throws<CompilerException>(() =>
+            resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, CliValueKind.I4, parameterlessOnly, parameterlessOnly));
+        Assert.Contains("taking (I4)", failure.Message);
         var missing = new ArgumentFactoryRepository(type);
         Assert.Throws<CompilerException>(() =>
-            resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, missing, missing));
+            resolver.Resolve(CompilerEntryPointKind.ManagedExecutable, CliValueKind.Void, missing, missing));
     }
 
     [Fact]

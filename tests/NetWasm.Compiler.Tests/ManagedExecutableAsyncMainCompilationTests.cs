@@ -84,8 +84,8 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
     }
 
     // An asynchronous Main is a callback-lifted wasi:cli/run (and diagnostics' run) whatever it
-    // returns or throws. Wasmtime drives it: a completed Main returns ok, or err for a non-zero
-    // exit code, and a fault or cancellation is written and returns err.
+    // returns or throws. Wasmtime drives it: a completed Main returns ok, or exits with a non-zero
+    // exit code through wasi:cli/exit, and a fault or cancellation is written and returns err.
     [Theory]
     [MemberData(nameof(ComponentConfigurations))]
     public async Task AsynchronousMainCompletesAsACallbackLiftedRun(
@@ -113,49 +113,12 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
                 }
             }
             """;
-        var assembly = CompileExecutable(assets, optimize, source);
-        var entry = ReadEntryPoint(assembly);
-        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly, [assets.CoreLib], entry.TypeName, entry.MethodName, [], WasmTarget.Wasm32,
-            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform/platform@1.0.0",
-            EntryMethodToken: entry.Token,
-            EntryPointKind: CompilerEntryPointKind.ManagedExecutable,
-            StructuredDiagnostics: true));
-        var application = Path.Combine(assets.Directory, "application.wasm");
-        var runtime = Path.Combine(assets.Directory, "runtime.wasm");
-        var layout = Path.Combine(assets.Directory, "runtime-layout.json");
-        var component = Path.Combine(assets.Directory, "managed.component.wasm");
-        File.WriteAllBytes(application, compilation.ApplicationModule);
-        File.WriteAllText(layout, JsonSerializer.Serialize(new
-        {
-            schemaVersion = 2,
-            target = "wasm32",
-            applicationStaticDataEnd = compilation.StaticDataEnd,
-        }));
-        await RunComponentTool("bash", assets.Root,
-            Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
-            "--runtime-layout", layout, "--output", runtime,
-            "--target", "wasm32", "--configuration", "release");
-        var wit = Path.Combine(assets.Directory, "wit");
-        var toolchain = Path.Combine(assets.Root, "src", "NetWasm.Toolchain");
-        // The diagnostic command world over the toolchain command package's dependencies, wasi:cli
-        // among them, as the toolchain stages it.
-        CopyWitDirectory(Path.Combine(toolchain, "wit", "deps"), Path.Combine(wit, "deps"));
-        File.Copy(Path.Combine(toolchain, "diagnostic-wit", "world.wit"), Path.Combine(wit, "world.wit"));
+        var component = await PackageCommand(assets, optimize, source, new(
+            hasArguments ? ManagedExecutableParameterShape.StringArray : ManagedExecutableParameterShape.None,
+            returnsExitCode ? ManagedExecutableReturnShape.ExitCode : ManagedExecutableReturnShape.Void,
+            ManagedExecutableCompletionShape.Asynchronous));
         using var services = new ServiceCollection().AddNetWasmCompiler()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
-        var world = services.GetRequiredService<IWitDocumentReader>().Read(wit)
-            .SelectWorld("netwasm:component/diagnostic-command@1.0.0");
-        var worldSpecifier = services.GetRequiredService<IWitWorldSpecifierFormatter>().Format(world);
-        services.GetRequiredService<IComponentPackager>().Package(new(
-            application, wit, worldSpecifier, component,
-            ComponentTarget.Wasm32Wasi02, runtime,
-            new(hasArguments ? ManagedExecutableParameterShape.StringArray : ManagedExecutableParameterShape.None,
-                returnsExitCode ? ManagedExecutableReturnShape.ExitCode : ManagedExecutableReturnShape.Void,
-                ManagedExecutableCompletionShape.Asynchronous),
-            FinalWasmOptimization.None,
-            StructuredDiagnostics: true));
         var wasmTools = services.GetRequiredService<IWasmTools>();
         var validation = wasmTools.Run("validate", component, "--features", "all");
         Assert.True(validation.ExitCode == 0, validation.StandardError);
@@ -167,9 +130,59 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
 
         var (exitCode, error) = await RunWasmtime(assets.Root, component);
 
-        var succeeds = expectedStatus == 1 && !returnsExitCode;
-        Assert.True(exitCode == (succeeds ? 0 : 1), $"exit code {exitCode}: {error}");
+        // A Task<int> Main's code is the exit code, as on desktop .NET; a fault exits 1.
+        var expectedExitCode = expectedStatus == 1 ? returnsExitCode ? 17 : 0 : 1;
+        Assert.True(exitCode == expectedExitCode, $"exit code {exitCode}: {error}");
         Assert.Equal(expectedStatus != 1, error.Contains("Unhandled exception #", StringComparison.Ordinal));
+    }
+
+    // How a program ends, as desktop .NET ends it on Linux and macOS: an int Main's result and
+    // Environment.ExitCode are the exit code, truncated to a process status's eight bits;
+    // Environment.Exit ends the process at once, whatever the code; and FailFast reports on standard
+    // error and ends the process as an abort does, with status 134, before any catch can run.
+    public static TheoryData<string, bool, string, int, string, string> ProcessExitCases => new()
+    {
+        { "int", false, "System.Console.WriteLine(\"main\"); return 3;", 3, "main\n", "" },
+        { "int", false, "return 259;", 3, "", "" },
+        { "int", false, "System.Environment.ExitCode = 9; return 0;", 0, "", "" },
+        { "void", false, "System.Environment.ExitCode = 7;", 7, "", "" },
+        { "void", false, "System.Console.WriteLine(\"before\"); System.Environment.Exit(5); System.Console.WriteLine(\"after\");", 5, "before\n", "" },
+        { "void", false, "System.Environment.ExitCode = 9; System.Environment.Exit(0);", 0, "", "" },
+        { "void", false, "try { System.Environment.FailFast(\"boom\"); } catch { System.Console.WriteLine(\"caught\"); }", 134, "", "Process terminated.\nboom\n" },
+        // The exception reads as NetWasm's Exception.ToString does, without a runtime type name
+        // (docs/diagnostics.md); desktop .NET writes "System.InvalidOperationException: inner".
+        { "void", false, "System.Environment.FailFast(null, new System.InvalidOperationException(\"inner\"));", 134, "",
+            "Process terminated.\nRuntime operation halted by call to System.Environment.FailFast(). (0x80131623)\ninner\n" },
+        { "System.Threading.Tasks.Task", true, "await System.Threading.Tasks.Task.Yield(); System.Environment.ExitCode = 6;", 6, "", "" },
+        { "System.Threading.Tasks.Task", true, "await System.Threading.Tasks.Task.Yield(); System.Environment.Exit(8);", 8, "", "" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ProcessExitCases))]
+    public async Task ProgramsEndWithTheExitCodeDesktopDotNetReports(
+        string returnType, bool asynchronous, string body, int expectedExitCode, string expectedOutput, string expectedError)
+    {
+        using var assets = TestAssets.Create();
+        var source = $$"""
+            namespace ManagedExecutableAsyncMainFixture;
+            internal static class Program
+            {
+                public static {{(asynchronous ? "async " : "")}}{{returnType}} Main()
+                {
+                    {{body}}
+                }
+            }
+            """;
+        var component = await PackageCommand(assets, true, source, new(
+            ManagedExecutableParameterShape.None,
+            returnType == "int" ? ManagedExecutableReturnShape.ExitCode : ManagedExecutableReturnShape.Void,
+            asynchronous ? ManagedExecutableCompletionShape.Asynchronous : ManagedExecutableCompletionShape.Synchronous));
+
+        var (exitCode, output, error) = await RunWasmtimeWithOutput(assets.Root, component);
+
+        Assert.True(exitCode == expectedExitCode, $"exit code {exitCode}: {error}");
+        Assert.Equal(expectedOutput, output);
+        Assert.Equal(expectedError, error);
     }
 
     // Generated WASI 0.3 bindings in a command: a sent stream (stdout's write-via-stream) and
@@ -1143,6 +1156,57 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         await process.WaitForExitAsync();
         await output;
         return (process.ExitCode, await error);
+    }
+
+    // A managed executable packaged as the SDK packages a command with structured diagnostics: its
+    // application and NetWasm's runtime under the diagnostic command world.
+    private static async Task<string> PackageCommand(
+        TestAssets assets,
+        bool optimize,
+        string source,
+        ManagedExecutableEntryPointAbi entryPoint)
+    {
+        var assembly = CompileExecutable(assets, optimize, source);
+        var entry = ReadEntryPoint(assembly);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], entry.TypeName, entry.MethodName, [], WasmTarget.Wasm32,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EntryMethodToken: entry.Token,
+            EntryPointKind: CompilerEntryPointKind.ManagedExecutable,
+            StructuredDiagnostics: true));
+        var application = Path.Combine(assets.Directory, "application.wasm");
+        var runtime = Path.Combine(assets.Directory, "runtime.wasm");
+        var layout = Path.Combine(assets.Directory, "runtime-layout.json");
+        var component = Path.Combine(assets.Directory, "managed.component.wasm");
+        File.WriteAllBytes(application, compilation.ApplicationModule);
+        File.WriteAllText(layout, JsonSerializer.Serialize(new
+        {
+            schemaVersion = 2,
+            target = "wasm32",
+            applicationStaticDataEnd = compilation.StaticDataEnd,
+        }));
+        await RunComponentTool("bash", assets.Root,
+            Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
+            "--runtime-layout", layout, "--output", runtime,
+            "--target", "wasm32", "--configuration", "release");
+        var wit = Path.Combine(assets.Directory, "wit");
+        var toolchain = Path.Combine(assets.Root, "src", "NetWasm.Toolchain");
+        // The diagnostic command world over the toolchain command package's dependencies, wasi:cli
+        // among them, as the toolchain stages it.
+        CopyWitDirectory(Path.Combine(toolchain, "wit", "deps"), Path.Combine(wit, "deps"));
+        File.Copy(Path.Combine(toolchain, "diagnostic-wit", "world.wit"), Path.Combine(wit, "world.wit"));
+        using var services = new ServiceCollection().AddNetWasmCompiler()
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        var world = services.GetRequiredService<IWitDocumentReader>().Read(wit)
+            .SelectWorld("netwasm:component/diagnostic-command@1.0.0");
+        var worldSpecifier = services.GetRequiredService<IWitWorldSpecifierFormatter>().Format(world);
+        services.GetRequiredService<IComponentPackager>().Package(new(
+            application, wit, worldSpecifier, component,
+            ComponentTarget.Wasm32Wasi02, runtime, entryPoint,
+            FinalWasmOptimization.None,
+            StructuredDiagnostics: true));
+        return component;
     }
 
     private static void CopyWitDirectory(string source, string destination, bool recursive = true)

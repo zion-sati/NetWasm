@@ -31,7 +31,7 @@
       "sourceManifest": "../compiler-wit/wit-manifest.json",
       "sourceManifestSha256": "11867fdc30eaf8c9bea94eb118149ce46da20cfa6b93b8012546175c2224a014",
       "file": "compiler.wit.wasm",
-      "sha256": "9c5e5a5dba5467aa7170959a8a3794b09d3a448df84208d0f322e4d29f4353e0"
+      "sha256": "3c728b414eac4a8ca45671e15c8a690e4be5b8362c3dce3bdf83c1680bd0b23f"
     }
   ]
 }

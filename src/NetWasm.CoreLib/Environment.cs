@@ -50,6 +50,26 @@ namespace System
         // Like .NET Core, NetWasm does not run finalizers during shutdown.
         public static bool HasShutdownStarted => false;
 
+        // The process's exit code once Main returns, unless an int Main returns its own.
+        public static int ExitCode { get; set; }
+
+        // Ends the process with the exit code, whatever it is, through the program's platform.
+        [Diagnostics.CodeAnalysis.DoesNotReturn]
+        public static void Exit(int exitCode) =>
+            Runtime.InteropServices.PlatformServices.ExitProcess(exitCode);
+
+        [Diagnostics.CodeAnalysis.DoesNotReturn]
+        public static void FailFast(string? message) => FailFast(message, null);
+
+        // .NET's report of a fail-fast on standard error, without the call stack NetWasm does not
+        // capture: the message, or .NET's text for none, then the exception.
+        [Diagnostics.CodeAnalysis.DoesNotReturn]
+        public static void FailFast(string? message, Exception? exception) =>
+            Runtime.InteropServices.PlatformServices.FailProcess(
+                "Process terminated." + NewLineConst +
+                (message ?? "Runtime operation halted by call to System.Environment.FailFast(). (0x80131623)") +
+                NewLineConst + (exception is null ? string.Empty : exception + NewLineConst));
+
         public static string MachineName => throw new PlatformNotSupportedException();
 
         public static string UserName => throw new PlatformNotSupportedException();

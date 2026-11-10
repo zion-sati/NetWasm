@@ -139,6 +139,7 @@
     <Compile Include="Runtime/InteropServices/CommandLine/IWasiCommandLineInvoker.cs" />
     <Compile Include="Runtime/InteropServices/CommandLine/WasiCommandLineArgumentSource.cs" />
     <Compile Include="Runtime/InteropServices/CommandLine/WasiCommandLineImports.cs" />
+    <Compile Include="Runtime/InteropServices/CommandLine/WasiExitImports.cs" />
     <Compile Include="Runtime/InteropServices/CommandLine/WasiCommandLineInvoker.cs" />
     <Compile Include="Runtime/InteropServices/TimeZones/LocalTimeBasis.cs" />
     <Compile Include="Runtime/InteropServices/TimeZones/LocalTimeOffset.cs" />

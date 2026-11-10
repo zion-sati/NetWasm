@@ -111,8 +111,8 @@ internal sealed class CompilationPreparationBuilder(
         var argumentFactory = entry.EntryPoint is { } entryPoint
             ? _argumentFactories.Resolve(options.EntryPointKind, entryPoint, types, methods)
             : null;
-        var exit = entry.EntryPoint is not null
-            ? _exits.Resolve(options.EntryPointKind, types, methods)
+        var exit = entry.EntryPoint is { } exitingEntryPoint
+            ? _exits.Resolve(options.EntryPointKind, exitingEntryPoint.Signature.ReturnType, types, methods)
             : null;
         var reachabilityRoots = _stackTraceRoots.Provide(
             options.EmitStackTrace,
