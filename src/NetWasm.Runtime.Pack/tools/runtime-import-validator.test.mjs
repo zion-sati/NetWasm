@@ -21,6 +21,7 @@ function importsFor(target) {
     ['$root', '[waitable-join]'],
     ['$root', '[waitable-set-wait]'],
     [`${prefix}|wasi:cli/exit@0.3`, 'exit'],
+    [`${prefix}|wasi:cli/exit@0.3`, 'exit-with-code'],
     [`${prefix}|wasi:random/random@0.3`, 'get-random-u64'],
   ].map(([module, name]) => ({ module, name, kind: 'function' }));
 }

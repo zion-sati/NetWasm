@@ -421,6 +421,10 @@ internal static class CompilerTestSupport
             "if(wide){view.setBigUint64(base,BigInt(address),true);" +
             "view.setBigUint64(base+8,BigInt(count),true);}" +
             "else{view.setUint32(base,address,true);view.setUint32(base+4,count,true);}}};" +
+            // A process exit ends the run, and its exit code is the program's result.
+            "class ProcessExit{constructor(code){this.code=code;}}" +
+            "const wasiExit={exit:isError=>{throw new ProcessExit(isError?1:0);}," +
+            "'exit-with-code':code=>{throw new ProcessExit(code);}};" +
             "const wasiEnvironment={'get-environment':result=>{" +
             "environmentReads++;" +
             "const view=new DataView(memory.buffer);view.setUint32(result,0,true);" +
@@ -442,6 +446,7 @@ internal static class CompilerTestSupport
             "'cm32p2|wasi:random/random@0.3':wasiRandom," +
             "'cm64p2|wasi:random/random@0.3':wasiRandom," +
             "'cm32p2|wasi:cli/environment@0.3':wasiEnvironment," +
+            "'cm32p2|wasi:cli/exit@0.3':wasiExit," +
             "'cm32p2|wasi:filesystem/preopens@0.3':unusedWasiFilesystem," +
             "'cm32p2|wasi:filesystem/types@0.3':unusedWasiFilesystem," +
             "'wasi:filesystem/types@0.3.2':unusedWasiFilesystem})" +
@@ -459,7 +464,8 @@ internal static class CompilerTestSupport
             "if(staticRootRegistrations!==firstEntryStaticRoots)" +
             "throw Error(`static roots re-registered: ${firstEntryStaticRoots} after the first entry, ${staticRootRegistrations} in total`);}" +
             "process.stdout.write(String(result));})" +
-            ".catch(e=>{const type=lastException?new DataView(memory.buffer).getInt32(lastException,true):0;" +
+            ".catch(e=>{if(e instanceof ProcessExit){process.stdout.write(String(e.code));return;}" +
+            "const type=lastException?new DataView(memory.buffer).getInt32(lastException,true):0;" +
             "const terminalWasmTrap=e instanceof WebAssembly.RuntimeError;" +
             "process.stderr.write(`terminal exception type=${terminalExceptionType} message=${terminalExceptionMessage}\\nterminal wasm trap=${terminalWasmTrap}\\nmanaged exception pointer=${lastException} type=${type}\\n${e.stack}\\n`);" +
             "process.exitCode=1;});";
