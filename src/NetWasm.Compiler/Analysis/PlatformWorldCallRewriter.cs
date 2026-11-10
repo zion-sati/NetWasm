@@ -34,6 +34,7 @@ internal sealed class PlatformWorldCallRewriter(
             {
                 "ImportsEventLoop" => world.EventLoop,
                 "ImportsMonotonicClock" => world.MonotonicClock,
+                "ImportsProcessExit" => world.ProcessExit,
                 "HasSynchronousExports" => world.SynchronousExports,
                 "HasHostEventLoop" => world.HostEventLoop,
                 "ProvidesWasi" => world.Wasi,

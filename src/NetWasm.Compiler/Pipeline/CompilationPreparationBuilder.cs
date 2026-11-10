@@ -156,6 +156,7 @@ internal sealed class CompilationPreparationBuilder(
             {
                 EventLoop = false,
                 MonotonicClock = false,
+                ProcessExit = false,
                 HostEventLoop = false,
                 Wasi = false,
             };
