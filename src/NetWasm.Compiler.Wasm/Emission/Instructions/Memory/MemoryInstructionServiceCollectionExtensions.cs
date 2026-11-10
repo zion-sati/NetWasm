@@ -9,6 +9,7 @@ internal static class MemoryInstructionServiceCollectionExtensions
     public static IServiceCollection AddWasmMemoryInstructions(
         this IServiceCollection services)
     {
+        services.AddSingleton<IStaticInitializerGuardResolver, StaticInitializerGuardResolver>();
         services.AddSingleton<IStaticInitializationEmitter, StaticInitializationEmitter>();
         services.AddSingleton<IMethodInitializationTriggerClassifier, MethodInitializationTriggerClassifier>();
         services.AddSingleton<IStaticFieldInitializationClassifier, StaticFieldInitializationClassifier>();

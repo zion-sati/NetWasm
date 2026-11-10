@@ -183,6 +183,40 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeObjectClone,
             WasmFunctionType.Create(CliValueKind.ManagedReference, CliValueKind.ManagedReference))),
+        new(RuntimeImportSymbol.AllocateObject, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeAllocateObject,
+            WasmFunctionType.Create(
+                CliValueKind.ManagedReference,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4,
+                CliValueKind.I4))),
+        // The run that compiled code bumps inline, and its slot size. Neither collects.
+        new(RuntimeImportSymbol.AllocationRun, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeAllocationRun,
+            WasmFunctionType.Create(
+                CliValueKind.ManagedAddress,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.AllocationSlot, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeAllocationSlot,
+            WasmFunctionType.Create(CliValueKind.ManagedAddress, CliValueKind.ManagedAddress))),
+        // Whether the collector keeps runs at all; a constant once inlined.
+        new(RuntimeImportSymbol.AllocationRunsEnabled, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeAllocationRunsEnabled,
+            WasmFunctionType.Create(CliValueKind.I4))),
+        // The inline bump's fallback, which refills the run and can collect.
+        new(RuntimeImportSymbol.AllocateObjectFallback, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeAllocateObjectFallback,
+            WasmFunctionType.Create(
+                CliValueKind.ManagedReference,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4))),
     ];
 
     private static RuntimeImportBinding[] CreateLegacyBindings() =>

@@ -330,7 +330,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
             WasmInstructionOperand.Unsigned((uint)source)));
         _nullableBoxes.Emit(code, underlying, source,
             request.Local(0, CliValueKind.ManagedReference), request.Instruction.Context.ManagedThrowFunction,
-            request.Instruction.Context.VectorScratch);
+            request.Instruction.Target.ObjectAllocation, request.Instruction.Context.VectorScratch);
     }
 
     private void EmitArguments(

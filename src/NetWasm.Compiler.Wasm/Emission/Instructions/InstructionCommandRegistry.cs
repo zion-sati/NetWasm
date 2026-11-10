@@ -59,6 +59,7 @@ internal sealed class InstructionCommand : IInstructionCommand
 
     public CilOperation Operation { get; }
     public InstructionFamily Family { get; }
+    public bool PublishesRoots { get; init; }
 
     public void Emit(
         InstructionEmissionRequest request, IWasmInstructionWriter code,

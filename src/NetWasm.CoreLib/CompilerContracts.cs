@@ -500,9 +500,10 @@ namespace System.Runtime.CompilerServices
         {
         }
 
-        // The handle is a semantic type ID; the compiler runs that type's static-initializer
-        // guard, compiling the initializers of types whose handles the program names.
-        public static void RunClassConstructor(RuntimeTypeHandle type)
+        // NetWasm: RunClassConstructor and GetUninitializedObject need compiler intrinsics this
+        // platform does not have (see RuntimeHelpersRuntime), so they stay internal instead
+        // of being public APIs that no program could compile. The handle is a semantic type ID.
+        internal static void RunClassConstructor(RuntimeTypeHandle type)
         {
             if (type.Value == IntPtr.Zero)
                 throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized);
@@ -520,7 +521,7 @@ namespace System.Runtime.CompilerServices
 
         // Native AOT's checks and order. The compiler allocates zeroed storage for the types the
         // program names or already allocates; IsCOMObject and IsFunctionPointer never hold here.
-        public static object GetUninitializedObject(
+        internal static object GetUninitializedObject(
             [Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
                 Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors |
                 Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors)]

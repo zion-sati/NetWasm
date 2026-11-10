@@ -21,7 +21,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void OwnsCompleteArrayInstructionFamily()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
 
         var expected = (CilOperation[])
         [
@@ -38,9 +38,9 @@ public sealed class ArrayInstructionEmitterTests
     }
 
     [Fact]
-    public void NewArrayPublishesRootsAndProducesManagedReference()
+    public void NewArrayProducesManagedReference()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out var safepoints);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var request = CreateRequest(
             CilOperation.NewArray,
             [CliValueKind.I4],
@@ -48,7 +48,6 @@ public sealed class ArrayInstructionEmitterTests
 
         Emit((IInstructionCommandProvider)emitter, request);
 
-        Assert.Single(safepoints);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
         Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request));
     }
@@ -56,7 +55,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void NewArrayUsesValueArrayAllocationForValueElements()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -77,7 +76,7 @@ public sealed class ArrayInstructionEmitterTests
     public void InitializeArrayDataStoresSmallDataAsConstants()
     {
         var layouts = new RecordingLayoutProvider();
-        var emitter = CreateEmitter(layouts, out _);
+        var emitter = CreateEmitter(layouts);
         var request = CreateRequest(
             CilOperation.InitializeArrayData,
             [CliValueKind.ManagedReference],
@@ -101,7 +100,7 @@ public sealed class ArrayInstructionEmitterTests
     public void InitializeArrayDataCopiesLargeDataFromItsField()
     {
         var layouts = new RecordingLayoutProvider();
-        var emitter = CreateEmitter(layouts, out _);
+        var emitter = CreateEmitter(layouts);
         var request = CreateRequest(
             CilOperation.InitializeArrayData,
             [CliValueKind.ManagedReference],
@@ -131,7 +130,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ArrayLengthReplacesReferenceWithInt32()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var request = CreateRequest(
             CilOperation.LoadArrayLength,
             [CliValueKind.ManagedReference]);
@@ -145,7 +144,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void LengthLeavesTheNullCheckToTheLoopEntryThatMadeIt()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var slot = new ArrayReferenceSlot(false, 0);
         var request = CreateRequest(
             CilOperation.LoadArrayLength,
@@ -171,7 +170,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ReferenceStorePerformsRuntimeAssignabilityCheck()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var request = CreateRequest(
             CilOperation.StoreArrayElementReference,
             [
@@ -192,7 +191,7 @@ public sealed class ArrayInstructionEmitterTests
     public void ReferenceStoreAcceptsTheElementTypeOrObjectBeforeTheHierarchyCheck()
     {
         var layouts = new RecordingLayoutProvider();
-        var emitter = CreateEmitter(layouts, out _);
+        var emitter = CreateEmitter(layouts);
         var request = CreateRequest(
             CilOperation.StoreArrayElementReference,
             [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedReference]);
@@ -218,7 +217,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ReferenceLoadReplacesArrayAndIndexWithReference()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var request = CreateRequest(
             CilOperation.LoadArrayElementReference,
             [CliValueKind.ManagedReference, CliValueKind.I4]);
@@ -232,7 +231,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ElementLoadUsesTypedLoadForReferenceElements()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -252,7 +251,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ElementLoadCopiesValueElementsWithoutTemporaryOffset()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -278,7 +277,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ElementLoadCopiesValueElementsWithTemporaryOffset()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -309,7 +308,7 @@ public sealed class ArrayInstructionEmitterTests
         var layouts = new RecordingLayoutProvider(
             memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32);
         var exceptions = new RecordingArrayExceptions();
-        var emitter = CreateEmitter(layouts, out _, exceptions);
+        var emitter = CreateEmitter(layouts, exceptions);
         var value = CliTypeIdentity.Named(Assembly, "Test", "Value", true);
         var context = CreateMethodEmissionContext() with
         {
@@ -349,7 +348,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ElementAddressLoadReplacesArrayAndIndexWithAddress()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -368,7 +367,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ElementStoreCopiesValueElementsWithMemoryCopy()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -388,7 +387,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void ElementStoreUsesTypedStoreForScalarElements()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
         var request = CreateRequest(
             CilOperation.StoreArrayElement,
@@ -404,7 +403,7 @@ public sealed class ArrayInstructionEmitterTests
     [Fact]
     public void GenericReferenceElementStorePerformsRuntimeElementCheck()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var emitter = CreateEmitter(new RecordingLayoutProvider());
         var elementType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -487,14 +486,11 @@ public sealed class ArrayInstructionEmitterTests
         RegisterInstructionWriter(readonlyRequest, readonlyWriter);
 
         Emit((IInstructionCommandProvider)CreateEmitter(
-            new RecordingLayoutProvider(),
-            out _), mutable);
+            new RecordingLayoutProvider()), mutable);
         Emit((IInstructionCommandProvider)CreateEmitter(
-            new RecordingLayoutProvider(),
-            out _), readonlyRequest);
+            new RecordingLayoutProvider()), readonlyRequest);
         Emit((IInstructionCommandProvider)CreateEmitter(
-            new RecordingLayoutProvider(),
-            out _), missing);
+            new RecordingLayoutProvider()), missing);
 
         Assert.Equal(
             CountManagedThrows(GetCodeBytes(readonlyRequest)) + 1,
@@ -516,16 +512,11 @@ public sealed class ArrayInstructionEmitterTests
 
     private static ArrayInstructionEmitter CreateEmitter(
         RecordingLayoutProvider layouts,
-        out List<int> safepoints,
         IImplicitExceptionEmitter? exceptionEmitter = null)
     {
-        safepoints = [];
-        var observedSafepoints = safepoints;
         IImplicitExceptionEmitter exceptions = exceptionEmitter ??
             new ImplicitExceptionEmitter(layouts);
         IAddressInstructionEmitter addresses = new AddressInstructionEmitter(layouts);
-        IRootPublicationEmitter roots = new RecordingRootPublicationEmitter(
-            request => observedSafepoints.Add(request.Instruction.Offset));
         IArrayLengthAdapter lengths = new ArrayLengthAdapter(layouts, exceptions);
         IArrayIndexAdapter indexes = new ArrayIndexAdapter(
             layouts,
@@ -535,7 +526,6 @@ public sealed class ArrayInstructionEmitterTests
         return new ArrayInstructionEmitter(layouts, addresses, layouts, layouts, layouts, CreateTypeOperands(new FakeProgram()),
             WasmRuntimeImports.CreateCatalog(),
             exceptions,
-            roots,
             lengths,
             indexes,
             new ArrayElementAddressEmitter(layouts, addresses),

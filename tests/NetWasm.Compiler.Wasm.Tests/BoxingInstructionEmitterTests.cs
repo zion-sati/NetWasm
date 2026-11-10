@@ -4,6 +4,7 @@ using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission;
+using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Methods;
@@ -15,21 +16,30 @@ using static EmitterTestSupport;
 
 public sealed class BoxingInstructionEmitterTests
 {
-    [Fact]
-    public void BoxAllocatesAndProducesManagedReference()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BoxAllocatesAndProducesManagedReference(bool inlineObjectAllocation)
     {
-        var safepoints = 0;
-        var emitter = AsProvider(CreateEmitter(_ => safepoints++));
+        // A box whose payload holds references takes a traced run.
+        var emitter = AsProvider(CreateEmitter(WasmTarget.Wasm32, references: inlineObjectAllocation));
         var request = CreateRequest(
             CilOperation.Box,
             CliValueKind.I4,
             CliTypeIdentity.FromStackKind(CliValueKind.I4));
+        if (inlineObjectAllocation)
+            request = WithInlineObjectAllocation(request);
 
         Emit(emitter, request);
 
-        Assert.Equal(1, safepoints);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
-        Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request));
+        AssertAllocatesKnownObject(request);
+        if (inlineObjectAllocation)
+        {
+            var code = Assert.IsType<RecordingInstructionWriter>(GetCodeWriter(request)).ToInstructions();
+            var call = code.ToList().FindIndex(instruction => instruction.Opcode == WasmOpcodes.Call);
+            Assert.Equal(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(1)), code[call - 1]);
+        }
     }
 
     [Theory]
@@ -119,15 +129,13 @@ public sealed class BoxingInstructionEmitterTests
     [Fact]
     public void BoxReferenceReturnsTheExistingManagedReference()
     {
-        var safepoints = 0;
         var request = CreateRequest(
             CilOperation.Box,
             CliValueKind.ManagedReference,
             ReferenceType());
 
-        Emit(AsProvider(CreateEmitter(_ => safepoints++)), request);
+        Emit(AsProvider(CreateEmitter()), request);
 
-        Assert.Equal(1, safepoints);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
         Assert.Empty(GetCodeBytes(request));
     }
@@ -186,15 +194,12 @@ public sealed class BoxingInstructionEmitterTests
         AssertPayloadOffset(request, target, constantOpcode, 12);
     }
 
-    private static BoxingInstructionEmitter CreateEmitter(
-        Action<InstructionEmissionRequest>? safepoint = null)
-        => CreateEmitter(WasmTarget.Wasm32, safepoint);
+    private static BoxingInstructionEmitter CreateEmitter()
+        => CreateEmitter(WasmTarget.Wasm32);
 
-    private static BoxingInstructionEmitter CreateEmitter(
-        WasmTarget target,
-        Action<InstructionEmissionRequest>? safepoint = null)
+    private static BoxingInstructionEmitter CreateEmitter(WasmTarget target, bool references = false)
     {
-        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target)) { ObjectReferenceOffsets = references ? [4] : [] };
         var addresses = new AddressInstructionEmitter(layouts);
         var runtimeImports = WasmRuntimeImports.CreateCatalog();
         var exceptions = new ImplicitExceptionEmitter(layouts);
@@ -213,7 +218,6 @@ public sealed class BoxingInstructionEmitterTests
         return new BoxingInstructionEmitter(layouts, addresses, layouts, layouts, types,
             runtimeImports,
             exceptions,
-            new RecordingRootPublicationEmitter(safepoint ?? (_ => { })),
             new NullableTypeResolver(),
             new NullableBoxEmitter(
                 layouts,

@@ -23,7 +23,7 @@ public sealed class TypeMaterializationEmitterTests
             CilOperation.MaterializeType,
             [CliValueKind.I4],
             maxStack: 1);
-        var emitter = CreateEmitter(new RecordingRootPublicationEmitter(_ => { }));
+        var emitter = CreateEmitter();
         var command = ((IInstructionCommandProvider)emitter).Commands.Single(item =>
             item.Operation == CilOperation.MaterializeType);
 
@@ -37,20 +37,17 @@ public sealed class TypeMaterializationEmitterTests
     [Theory]
     [InlineData(CilOperation.MaterializeType, CliValueKind.I4)]
     [InlineData(CilOperation.GetObjectType, CliValueKind.ManagedReference)]
-    public void CommandsPublishRootsAndMaterializeManagedTypeReferences(
+    public void CommandsMaterializeManagedTypeReferences(
         CilOperation operation,
         CliValueKind inputKind)
     {
-        var rootsPublished = false;
-        var emitter = CreateEmitter(new RecordingRootPublicationEmitter(_ =>
-            rootsPublished = true));
+        var emitter = CreateEmitter();
         var request = CreateInstructionRequest(operation, [inputKind], maxStack: 1);
         var command = ((IInstructionCommandProvider)emitter).Commands.Single(item =>
             item.Operation == operation);
 
         command.Emit(request, GetCodeWriter(request), CreateFunctionIndexResolver());
 
-        Assert.True(rootsPublished);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
     }
 
@@ -62,8 +59,7 @@ public sealed class TypeMaterializationEmitterTests
     public void ConstantMaterializationLoadsTheStaticTypeObject(WasmTarget target)
     {
         var type = CliTypeIdentity.Named(Assembly, "Test", "Named", isValueType: false);
-        var rootsPublished = false;
-        var emitter = CreateEmitter(new RecordingRootPublicationEmitter(_ => rootsPublished = true), target,
+        var emitter = CreateEmitter(target,
             typeObjects: ImmutableDictionary<string, int>.Empty.Add(type.CanonicalName, 512));
         var request = CreateInstructionRequest(CilOperation.MaterializeType, [CliValueKind.I4],
             new CilOperand.TypeIdentity(type), maxStack: 1);
@@ -73,7 +69,6 @@ public sealed class TypeMaterializationEmitterTests
         command.Emit(request, GetCodeWriter(request), CreateFunctionIndexResolver());
 
         var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
-        Assert.False(rootsPublished);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
         Assert.Equal(target == WasmTarget.Wasm32
                 ? WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(512))
@@ -90,9 +85,7 @@ public sealed class TypeMaterializationEmitterTests
     {
         var type = CliTypeIdentity.Named(Assembly, "Test", "Leaf", isValueType: false);
         var imports = WasmRuntimeImports.CreateCatalog();
-        var rootsPublished = false;
-        var emitter = CreateEmitter(new RecordingRootPublicationEmitter(_ => rootsPublished = true),
-            typeObjects: ImmutableDictionary<string, int>.Empty.Add(type.CanonicalName, 768));
+        var emitter = CreateEmitter(typeObjects: ImmutableDictionary<string, int>.Empty.Add(type.CanonicalName, 768));
         var request = CreateInstructionRequest(CilOperation.GetObjectType, [CliValueKind.ManagedReference],
             new CilOperand.ExactType(type), maxStack: 1);
         var command = ((IInstructionCommandProvider)emitter).Commands.Single(item =>
@@ -101,7 +94,6 @@ public sealed class TypeMaterializationEmitterTests
         command.Emit(request, GetCodeWriter(request), CreateFunctionIndexResolver());
 
         var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
-        Assert.False(rootsPublished);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
         Assert.Equal(WasmOpcodes.If, instructions[2].Opcode);
         Assert.Contains(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(768)), instructions);
@@ -119,7 +111,7 @@ public sealed class TypeMaterializationEmitterTests
     public void DynamicObjectTypeReadsTheTypeObjectCacheBeforeAskingTheRuntime(WasmTarget target)
     {
         var imports = WasmRuntimeImports.CreateCatalog();
-        var emitter = CreateEmitter(new RecordingRootPublicationEmitter(_ => { }), target, typeObjectCache: 1024);
+        var emitter = CreateEmitter(target, typeObjectCache: 1024);
         var request = CreateInstructionRequest(CilOperation.GetObjectType, [CliValueKind.ManagedReference], maxStack: 1);
         var command = ((IInstructionCommandProvider)emitter).Commands.Single(item =>
             item.Operation == CilOperation.GetObjectType);
@@ -143,7 +135,7 @@ public sealed class TypeMaterializationEmitterTests
     public void ConstantMaterializationWithoutAStaticTypeObjectIsACompilerError()
     {
         var type = CliTypeIdentity.Named(Assembly, "Test", "Named", isValueType: false);
-        var emitter = CreateEmitter(new RecordingRootPublicationEmitter(_ => { }));
+        var emitter = CreateEmitter();
         var request = CreateInstructionRequest(CilOperation.MaterializeType, [CliValueKind.I4],
             new CilOperand.TypeIdentity(type), maxStack: 1);
         var command = ((IInstructionCommandProvider)emitter).Commands.Single(item =>
@@ -157,7 +149,7 @@ public sealed class TypeMaterializationEmitterTests
     [Fact]
     public void CommandsRejectMissingRequests()
     {
-        var emitter = CreateEmitter(new RecordingRootPublicationEmitter(_ => { }));
+        var emitter = CreateEmitter();
 
         foreach (var command in ((IInstructionCommandProvider)emitter).Commands)
         {
@@ -171,23 +163,19 @@ public sealed class TypeMaterializationEmitterTests
     [Theory]
     [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32Multiply, WasmOpcodes.I32Load)]
     [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64Multiply, WasmOpcodes.I64Load)]
-    public void TypeFactsLookupUsesBoundedTargetWidthTableWithoutPublishingRoots(
+    public void TypeFactsLookupUsesBoundedTargetWidthTable(
         WasmTarget target,
         byte multiply,
         byte load)
     {
-        var rootsPublished = false;
         var request = CreateInstructionRequest(
             CilOperation.GetTypeFacts,
             [CliValueKind.I4],
             maxStack: 1);
-        var emitter = CreateEmitter(
-            new RecordingRootPublicationEmitter(_ => rootsPublished = true),
-            target);
+        var emitter = CreateEmitter(target);
 
         emitter.Emit(request);
 
-        Assert.False(rootsPublished);
         Assert.Equal([CliValueKind.NativeInt], request.Stack);
         var bytes = GetCodeBytes(request);
         Assert.Contains(WasmOpcodes.I32LessThanUnsigned, bytes);
@@ -205,9 +193,7 @@ public sealed class TypeMaterializationEmitterTests
             CilOperation.GetTypeFacts,
             [CliValueKind.I4],
             maxStack: 1);
-        var emitter = CreateEmitter(
-            new RecordingRootPublicationEmitter(_ => { }),
-            typeFacts: false);
+        var emitter = CreateEmitter(typeFacts: false);
 
         var exception = Assert.Throws<CompilerException>(() => emitter.Emit(request));
 
@@ -233,9 +219,7 @@ public sealed class TypeMaterializationEmitterTests
             [CliValueKind.ManagedAddress],
             new CilOperand.TypeIdentity(constrainedType),
             CreateMethodEmissionContext(1));
-        var emitter = CreateEmitter(
-            new RecordingRootPublicationEmitter(_ => { }),
-            target);
+        var emitter = CreateEmitter(target);
 
         emitter.Emit(request);
 
@@ -250,7 +234,6 @@ public sealed class TypeMaterializationEmitterTests
     }
 
     private static TypeMaterializationEmitter CreateEmitter(
-        IRootPublicationEmitter roots,
         WasmTarget target = WasmTarget.Wasm32,
         bool typeFacts = true,
         ImmutableDictionary<string, int>? typeObjects = null,
@@ -274,7 +257,6 @@ public sealed class TypeMaterializationEmitterTests
             layouts,
             imports,
             new ImplicitExceptionEmitter(layouts),
-            roots,
             new CilTypeOperandResolver(new NoTypeIdentities()));
     }
 

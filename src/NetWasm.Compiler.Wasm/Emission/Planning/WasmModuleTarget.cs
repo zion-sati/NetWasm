@@ -54,6 +54,7 @@ internal sealed record WasmModuleTarget(
         EnableScalarCallPreservation = Request.EnableScalarCallPreservation,
         InlineSmallBlockOperations = Request.InlineSmallBlockOperations,
         InlineArrayData = Request.InlineArrayData,
+        InlineObjectAllocation = Request.InlineObjectAllocation,
         RootMaps = Lookups.Of(Request.Methods.Values.Select(method =>
                 (ManagedMethodBodyKey.Resolve(method), Request.RootMaps[method.Header.Method.Key]))
             .Concat(Request.ConstructedMethods.Select(pair =>
@@ -92,6 +93,8 @@ internal sealed record InstructionModuleTarget(
     public bool EnableScalarCallPreservation { get; init; }
     public bool InlineSmallBlockOperations { get; init; }
     public bool InlineArrayData { get; init; }
+    public bool InlineObjectAllocation { get; init; }
+    public ObjectAllocationPolicy ObjectAllocation => new(RuntimeImportSelection, InlineObjectAllocation);
     public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
     public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
     public IEntryLookup<string, MethodRootMap> RootMaps { get; init; } = Lookups.NoEntries<string, MethodRootMap>();

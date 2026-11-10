@@ -13,10 +13,30 @@ namespace System
 
     public static class Activator
     {
+        // The compiler turns this call into construction for a value type or for a class with a
+        // public parameterless constructor, and into CreateInstanceWithNonPublicConstructor<T>
+        // for a class whose parameterless constructor is not public. Any other T reaches this
+        // body, which throws what .NET's Activator throws for it.
         public static T CreateInstance<T>()
         {
-            return default(T)!;
+            if (typeof(T) != typeof(string) && !typeof(T).IsInterface && !typeof(T).IsAbstract &&
+                typeof(T).IsSubclassOf(typeof(Delegate)))
+            {
+                throw new ArgumentException(
+                    SR.Format(SR.Activator_CannotCreateInstance, typeof(T), SR.NotSupported_Type));
+            }
+            throw new MissingMethodException(SR.Format(
+                SR.Activator_CannotCreateInstance,
+                typeof(T),
+                typeof(T) == typeof(string) ? SR.Argument_NoUninitializedStrings :
+                typeof(T).IsInterface ? SR.Acc_CreateInterface :
+                typeof(T).IsAbstract ? SR.Acc_CreateAbst :
+                typeof(T).HasElementType ? SR.NotSupported_Type :
+                SR.Arg_NoDefCTorWithoutTypeName));
         }
+
+        internal static T CreateInstanceWithNonPublicConstructor<T>() =>
+            throw new MissingMethodException(SR.Format(SR.Arg_NoDefCTor, typeof(T)));
     }
 
     public static class Console

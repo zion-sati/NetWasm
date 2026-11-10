@@ -28,8 +28,11 @@ python3 compiler-qualification/runtime-performance/run.py \
   collections inside the timed region. `transaction-full` also times creating
   the transactions, normalizing every account and growing the containers from
   empty, so allocation and collection are part of its timing.
-- `gc`: `object-graph` builds a retained graph of small objects, and `ui-churn`
-  replaces a slice of a retained array every frame.
+- `gc`: `object-graph` builds a retained graph of small objects, `ui-churn`
+  replaces a slice of a retained array every frame, and `binary-trees` is the
+  Computer Language Benchmarks Game's binary-trees at depth 14: millions of
+  small short-lived objects allocated with `newobj` and no strings.
+  `nullable-boxes` boxes a `Nullable<int>` into a ring of retained slots.
 - `net11`: one scenario per .NET 11 code generation item: saturating
   floating-point conversions to small integers, constant string and UTF-8
   comparisons after inlining, a sparse constant set, `i + 1 < length` loop
@@ -128,9 +131,11 @@ a sample's startup does not load every core, and `summary.json` keeps each
 row's per-sample times.
 
 Peak capacity comes from `memory-host`, a small Wasmtime host pinned to the
-same Wasmtime release as the test hosts. It runs the WASI command like
-`wasmtime run` and follows every linear memory's creation and growth through a
-resource limiter. Linear memory never shrinks, so the total is the
+same Wasmtime release as the test hosts. It runs a WASI 0.3 command (NetWasm)
+or WASI 0.2 command (Mono AOT) like `wasmtime run` and follows every linear memory's creation and growth through a
+resource limiter. The guest's program name is the component's file name rather
+than its path, since arguments occupy linear memory and a path's length could
+move a peak by a page. Linear memory never shrinks, so the total is the
 whole-invocation peak: not live managed bytes and not host RSS. Each cell runs
 twice and must report the same capacity. `cargo test` in `memory-host` checks
 the accounting against Wasmtime's own memory sizes. The harness builds the host

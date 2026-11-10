@@ -28,6 +28,30 @@ public sealed class CilInstructionDispatcherTests
         Assert.Equal(["roots", "command", "anchors"], calls);
     }
 
+    // A command that publishes its own roots, as newobj does, gets no publication
+    // from the dispatcher.
+    [Fact]
+    public void CommandsThatPublishTheirOwnRootsAreNotPublishedFor()
+    {
+        var calls = new List<string>();
+        var command = new InstructionCommand(
+            CilOperation.Nop,
+            InstructionFamily.ConstantsStackLocalsArguments,
+            (_, _) => calls.Add("command"))
+        {
+            PublishesRoots = true,
+        };
+        var dispatcher = new CilInstructionDispatcher(
+            new InstructionCommandRegistry([command], [CilOperation.Nop]),
+            new RecordingRootPublicationEmitter(_ => calls.Add("roots")),
+            new RecordingStackStorageAnchorEmitter(_ => calls.Add("anchors")));
+        var request = CreateInstructionRequest(CilOperation.Nop, maxStack: 0);
+
+        dispatcher.Emit(request, GetCodeWriter(request), CreateFunctionIndexResolver());
+
+        Assert.Equal(["command", "anchors"], calls);
+    }
+
     [Fact]
     public void FailedCommandsDoNotUpdateBackingAnchors()
     {

@@ -941,6 +941,13 @@ var runtimeValues = {
   suppress_finalize: zero,
   initialize_finalization: zero,
   allocate_finalizable: allocate,
+  allocate_object: allocate,
+  // No runs: address zero holds an exhausted run (the first KiB is unused), so
+  // every inline allocation takes its slow path.
+  allocation_run: zeroAddress,
+  allocation_slot: (size) => size,
+  allocation_runs_enabled: () => 0,
+  allocate_object_fallback: allocate,
   weak_handle_new(target) {
     weakHandles.push(target);
     return weakHandles.length - 1;

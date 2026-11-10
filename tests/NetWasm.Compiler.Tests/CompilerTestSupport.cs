@@ -348,7 +348,10 @@ internal static class CompilerTestSupport
             "if(accepted){f.targetClause=clause+1;return;}}}};" +
             "const runtime={memory,initialize:staticEnd=>{" +
             "if(!initialized){heap=(Number(staticEnd)+3)&~3;initialized=true;}},allocate," +
-            "allocate_finalizable:allocate," +
+            "allocate_finalizable:allocate,allocate_object:allocate," +
+            // No runs: address zero holds an exhausted run (the first KiB is unused).
+            $"allocation_run:()=>{zeroAddressText},allocation_slot:size=>size,allocation_runs_enabled:z," +
+            "allocate_object_fallback:allocate," +
             "initialize_finalization:z," +
             "component_realloc:componentReallocate,component_free:z," +
             "native_alloc:nativeAlloc,native_realloc:nativeRealloc,native_free:p=>nativeSizes.delete(p)," +

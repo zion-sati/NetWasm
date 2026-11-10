@@ -6,6 +6,12 @@
   "nativeStackSizeBytes": 65536,
   "defaultInitialHeapSizeBytes": 65536,
   "inlineIntents": [
+    { "export": "allocate_object", "preference": "Aggressive" },
+    { "export": "allocate_object_fallback", "preference": "Aggressive" },
+    { "export": "allocate_string", "preference": "Aggressive" },
+    { "export": "allocation_run", "preference": "Aggressive" },
+    { "export": "allocation_runs_enabled", "preference": "Aggressive" },
+    { "export": "allocation_slot", "preference": "Aggressive" },
     { "export": "root_frame_enter", "preference": "Aggressive" },
     { "export": "root_frame_leave", "preference": "Aggressive" },
     { "export": "value_frame_enter", "preference": "Aggressive" },

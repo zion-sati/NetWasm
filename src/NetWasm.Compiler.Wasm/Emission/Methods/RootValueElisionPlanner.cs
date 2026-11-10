@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 
@@ -48,7 +49,13 @@ internal sealed class RootValueElisionPlanner : IRootValueElisionPlanner
                     var proof = skips.ToImmutable();
                     result[instruction.Offset] = result.TryGetValue(instruction.Offset, out var existing)
                         ? existing.Intersect(proof) : proof;
-                    published = next;
+                    // An allocation that bumps its run inline publishes only when it
+                    // calls the collector, so a slot keeps a known value afterwards
+                    // only if it held that value before.
+                    published = context.ConditionalAllocationRoots && instruction.Operation == CilOperation.NewObject
+                        ? next.Where(pair => published.TryGetValue(pair.Key, out var before) && before == pair.Value)
+                            .ToDictionary(pair => pair.Key, pair => pair.Value)
+                        : next;
                 }
                 RootSource? assigned = instruction.Operation switch
                 {

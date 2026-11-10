@@ -15,14 +15,17 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 
 public sealed class NullableBoxEmitterTests
 {
+    // The box is allocated through allocate_object where the runtime inlines it,
+    // through allocate elsewhere.
     [Theory]
-    [InlineData(WasmTarget.Wasm32, false)]
-    [InlineData(WasmTarget.Wasm64, false)]
-    [InlineData(WasmTarget.Wasm32, true)]
-    [InlineData(WasmTarget.Wasm64, true)]
+    [InlineData(WasmTarget.Wasm32, false, false)]
+    [InlineData(WasmTarget.Wasm64, false, true)]
+    [InlineData(WasmTarget.Wasm32, true, true)]
+    [InlineData(WasmTarget.Wasm64, true, false)]
     public void AddressEmissionLeavesNullUnlessTheSourceHasAValue(
         WasmTarget target,
-        bool aggregate)
+        bool aggregate,
+        bool inlineObjectAllocation)
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var emitter = ThroughContract(CreateEmitter(layouts));
@@ -31,7 +34,9 @@ public sealed class NullableBoxEmitterTests
             ? CliTypeIdentity.Named(Assembly, "Test", "Value", true)
             : CliTypeIdentity.Primitive("i4", CliValueKind.I4);
 
-        emitter.Emit(writer, underlyingType, sourceAddressLocal: 2, targetLocal: 3, OptionalFunctionIndex.At(7), new VectorScratch(8, 9));
+        var selection = new RuntimeImportSelection(WasmModuleProfile.CoreApplication, IncludeTerminalExceptionReporter: true);
+        emitter.Emit(writer, underlyingType, sourceAddressLocal: 2, targetLocal: 3, OptionalFunctionIndex.At(7),
+            new ObjectAllocationPolicy(selection, inlineObjectAllocation), new VectorScratch(8, 9));
 
         var instructions = writer.ToInstructions();
         Assert.Equal(
@@ -52,8 +57,8 @@ public sealed class NullableBoxEmitterTests
 
         var allocation = Assert.Single(instructions.Where(instruction =>
             instruction.Opcode == WasmOpcodes.Call &&
-            instruction.Operand.UnsignedValue == (uint)WasmRuntimeImports.CreateCatalog()
-                .Resolve(RuntimeImportSymbol.Allocate)));
+            instruction.Operand.UnsignedValue == (uint)WasmRuntimeImports.CreateCatalog().Resolve(
+                inlineObjectAllocation ? RuntimeImportSymbol.AllocateObject : RuntimeImportSymbol.Allocate, selection)));
         Assert.True(instructions.IndexOf(allocation) > 4);
         Assert.Equal(underlyingType, layouts.ObjectIdentityRequest);
         Assert.DoesNotContain(instructions, instruction =>
@@ -90,7 +95,7 @@ public sealed class NullableBoxEmitterTests
             writer,
             CliTypeIdentity.Primitive("i4", CliValueKind.I4),
             sourceAddressLocal: 2,
-            targetLocal: 2, OptionalFunctionIndex.At(7), new VectorScratch(8, 9)));
+            targetLocal: 2, OptionalFunctionIndex.At(7), default, new VectorScratch(8, 9)));
 
         Assert.Equal("targetLocal", error.ParamName);
         Assert.Empty(writer.ToInstructions());
@@ -112,7 +117,7 @@ public sealed class NullableBoxEmitterTests
             request.Context.StackLocals, 0, CliValueKind.ManagedReference, layouts.Target);
 
         emitter.Emit(directWriter, underlyingType, request.Context.ObjectTemporary, targetLocal, OptionalFunctionIndex.At(7),
-            request.Context.VectorScratch);
+            request.Target.ObjectAllocation, request.Context.VectorScratch);
         Assert.Equal(originalStack, request.Stack);
         emitter.Emit(request, GetCodeWriter(request), underlyingType);
 

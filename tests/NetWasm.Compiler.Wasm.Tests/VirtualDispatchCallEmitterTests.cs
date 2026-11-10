@@ -47,6 +47,7 @@ public sealed class VirtualDispatchCallEmitterTests
             Classified.Add(method);
             return method == selected;
         }
+
         public void Emit(StaticInitializationEmissionRequest request, IWasmInstructionWriter code,
             IFunctionIndexResolver functionIndices) => Requests.Add(request);
     }
@@ -763,7 +764,7 @@ public sealed class VirtualDispatchCallEmitterTests
         valueTypeEquals ?? new RecordingValueTypeEqualsEmitter(),
         valueTypeHashCode ?? new RecordingValueTypeHashCodeEmitter(),
         new ConstrainedReferenceReceiverEmitter(layouts),
-        initialization ?? new StaticInitializationEmitter(new FakeProgram(), new FakeProgram(),
+        initialization ?? new StaticInitializationEmitter(new StaticInitializerGuardResolver(new FakeProgram(), new FakeProgram()),
             new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(layouts)),
         initializationTriggers ?? new MethodInitializationTriggerClassifier(new FakeProgram()));
 

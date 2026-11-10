@@ -37,6 +37,7 @@ internal static class UnitTargetFingerprint
         answer.Add(target.EnableScalarCallPreservation);
         answer.Add(target.InlineSmallBlockOperations);
         answer.Add(target.InlineArrayData);
+        answer.Add(target.InlineObjectAllocation);
         answer.Add(target.CollectManagedMethodMemoryMetrics);
         answer.Add(target.EnableAddressTakenAggregatePromotion);
         // Runtime imports and helpers.

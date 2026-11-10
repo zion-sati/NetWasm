@@ -41,6 +41,7 @@ public sealed class StaticInitializerFunctionEmitterTests
         Assert.True(stores[1] > Array.FindIndex(code.ToArray(), i => i.Opcode == WasmOpcodes.Call && i.Operand.UnsignedValue == 71));
         Assert.DoesNotContain((uint)imports.Resolve(RuntimeImportSymbol.HandleNew), calls);
         Assert.DoesNotContain((uint)imports.Resolve(RuntimeImportSymbol.Allocate), calls);
+        Assert.DoesNotContain((uint)imports.Resolve(RuntimeImportSymbol.AllocateObject), calls);
         Assert.Equal(target == WasmTarget.Wasm64 ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant, code[0].Opcode);
         Assert.Equal(240L, target == WasmTarget.Wasm64 ? code[0].Operand.Signed64Value : code[0].Operand.SignedValue);
         Assert.Equal(WasmOpcodes.Return, code[8].Opcode);

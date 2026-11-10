@@ -15,8 +15,9 @@ internal sealed class CilInstructionDispatcher(
         IFunctionIndexResolver functionIndices)
     {
         ArgumentNullException.ThrowIfNull(request);
-        roots.Emit(request, code);
-        commands.Resolve(request.Instruction.Operation).Emit(request, code, functionIndices);
+        var command = commands.Resolve(request.Instruction.Operation);
+        if (!command.PublishesRoots) roots.Emit(request, code);
+        command.Emit(request, code, functionIndices);
         anchors.Emit(request, code);
     }
 }

@@ -66,7 +66,9 @@ public sealed class SafepointCheckedWriterFactoryTests
         var full = new RuntimeImportSelection(WasmModuleProfile.CoreApplication, true, IncludeStackTrace: true,
             IncludeExceptionCapture: true, IncludeEphemeronHandles: true, IncludeFinalization: true,
             IncludeWeakHandles: true, IncludeRandomSeed: true);
-        var lean = full with { IncludeStackTrace = false, IncludeExceptionCapture = false, IncludeEphemeronHandles = false };
+        // Leaving out the stack trace imports moves the finalizer safepoint's full-module
+        // index onto an import that does not collect in the lean module.
+        var lean = full with { IncludeStackTrace = false };
         var fullIndex = (uint)Imports.Resolve(RuntimeImportSymbol.FinalizerSafepoint, full);
         var leanIndex = (uint)Imports.Resolve(RuntimeImportSymbol.FinalizerSafepoint, lean);
         Assert.NotEqual(fullIndex, leanIndex);

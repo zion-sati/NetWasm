@@ -45,6 +45,7 @@ public sealed class StaticInitializationFailureEmitterTests
         Assert.Equal(valid ? 1 : 0, execution.FilterSearches);
         Assert.DoesNotContain(code, instruction => instruction.Opcode == WasmOpcodes.Call &&
             (instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.Allocate) ||
+             instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.AllocateObject) ||
              instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameEnter) ||
              instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.HandleRelease)));
     }

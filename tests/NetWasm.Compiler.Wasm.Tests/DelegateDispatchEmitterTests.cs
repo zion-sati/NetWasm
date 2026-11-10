@@ -276,7 +276,7 @@ public sealed class DelegateDispatchEmitterTests
             new ImplicitExceptionEmitter(layouts),
             new DelegateInvocationTargetSelector(),
             initialization ?? (IStaticInitializationEmitter)new StaticInitializationEmitter(
-                new FakeProgram(), new FakeProgram(), new AddressInstructionEmitter(layouts)),
+                new StaticInitializerGuardResolver(new FakeProgram(), new FakeProgram()), new AddressInstructionEmitter(layouts)),
             initialization ?? (IMethodInitializationTriggerClassifier)new MethodInitializationTriggerClassifier(new FakeProgram()),
             roots ?? new RecordingRoots());
 

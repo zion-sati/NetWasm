@@ -41,9 +41,14 @@ internal sealed class RootClearElisionPlanner : IRootClearElisionPlanner
                     // follow either phase. Never assume its active slots stayed zero.
                     var inactive = all.Except(normalLive).Except(constructorLive);
                     Record((instruction.Offset, false), zero.Intersect(inactive));
+                    // An allocation that bumps its run inline publishes only when it
+                    // calls the collector: a slot is zero afterwards only if it was
+                    // before. The constructor call's publication runs either way.
+                    var conditional = context.ConditionalAllocationRoots &&
+                        instruction.Operation == CilOperation.NewObject;
                     if (!point.ConstructorCallRoots.IsEmpty)
-                        Record((instruction.Offset, true), inactive);
-                    zero = inactive;
+                        Record((instruction.Offset, true), conditional ? zero.Intersect(inactive) : inactive);
+                    zero = conditional && point.ConstructorCallRoots.IsEmpty ? zero.Intersect(inactive) : inactive;
                 }
                 RootSource? assigned = instruction.Operation switch
                 {

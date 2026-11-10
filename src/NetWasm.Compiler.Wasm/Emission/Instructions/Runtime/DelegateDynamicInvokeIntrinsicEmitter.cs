@@ -349,6 +349,7 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
             underlying,
             request.Instruction.Context.ObjectTemporary,
             resultLocal, request.Instruction.Context.ManagedThrowFunction,
+            request.Instruction.Target.ObjectAllocation,
             request.Instruction.Context.VectorScratch);
     }
 

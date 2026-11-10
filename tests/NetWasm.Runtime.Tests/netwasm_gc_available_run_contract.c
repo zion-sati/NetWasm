@@ -71,7 +71,8 @@ int main(void)
     /* Live bytes count whole slots, which always extend past the object. */
     size_t slot = (32 + _Alignof(max_align_t)) / _Alignof(max_align_t) * _Alignof(max_align_t);
     assert(netwasm_gc_live_bytes(gc) == (hits + 1) * slot);
-    assert(netwasm_gc_total_allocated_bytes(gc) == (hits + 1) * 32);
+    /* So do allocated bytes: a run counts the slots it handed out. */
+    assert(netwasm_gc_total_allocated_bytes(gc) == (hits + 1) * slot);
     assert(netwasm_gc_collection_count(gc) == 0);
     assert_miss(gc, 1, 32, NULL);
     void *refilled = NULL;
@@ -107,6 +108,40 @@ int main(void)
     root = 0;
     netwasm_gc_collect(gc);
     assert(netwasm_gc_object_count(gc) == 0);
+
+    /* Code outside the collector bumps a class's run directly. */
+    NetWasmGcRun *runs = netwasm_gc_allocation_runs(gc);
+    assert(runs != NULL && netwasm_gc_allocation_runs(NULL) == NULL);
+    assert(NETWASM_ALLOCATION_SLOT(32) == slot);
+    {
+        NetWasmGcRun *run = &runs[(slot / NETWASM_ALLOCATION_ALIGNMENT - 1) * 2 + 0];
+        void *opened = NULL;
+        assert(test_allocate(gc, 1, 32, NULL, &opened) == NETWASM_GC_OK);
+        root = (uintptr_t)opened;
+        uint64_t total = netwasm_gc_total_allocated_bytes(gc);
+        size_t taken = 0;
+        while ((uintptr_t)run->cursor + slot <= (uintptr_t)run->end) {
+            unsigned char *object = run->cursor;
+            run->cursor += slot;
+            for (size_t i = 0; i < slot; i++) assert(object[i] == 0);
+            memset(object, 0x5a, 32);
+            taken++;
+        }
+        assert(taken > 0);
+        assert(netwasm_gc_object_count(gc) == taken + 1);
+        assert(netwasm_gc_total_allocated_bytes(gc) == total + taken * slot);
+        /* The exhausted run refills on the next allocation, which counts it. */
+        void *after = NULL;
+        assert(test_allocate(gc, 1, 32, NULL, &after) == NETWASM_GC_OK);
+        assert(netwasm_gc_total_allocated_bytes(gc) == total + (taken + 1) * slot);
+        netwasm_gc_collect(gc);
+        assert(netwasm_gc_object_count(gc) == 1);
+        assert(netwasm_gc_contains(gc, root));
+        assert(netwasm_gc_total_allocated_bytes(gc) == total + (taken + 1) * slot);
+        root = 0;
+        netwasm_gc_collect(gc);
+        assert(netwasm_gc_object_count(gc) == 0);
+    }
     netwasm_gc_destroy(gc);
     assert(allocations == releases);
     return 0;

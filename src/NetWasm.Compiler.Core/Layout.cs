@@ -252,6 +252,11 @@ public static class RuntimeAbi
     public const string RuntimeBeginThrow = "begin_throw";
     public const string RuntimeBeginRethrow = "begin_rethrow";
     public const string RuntimeAllocate = "allocate";
+    public const string RuntimeAllocateObject = "allocate_object";
+    public const string RuntimeAllocationRun = "allocation_run";
+    public const string RuntimeAllocationSlot = "allocation_slot";
+    public const string RuntimeAllocationRunsEnabled = "allocation_runs_enabled";
+    public const string RuntimeAllocateObjectFallback = "allocate_object_fallback";
     public const string RuntimeAllocateFinalizable = "allocate_finalizable";
     public const string RuntimeCollect = "collect";
     public const string RuntimeAllocateReferenceArray = "allocate_reference_array";

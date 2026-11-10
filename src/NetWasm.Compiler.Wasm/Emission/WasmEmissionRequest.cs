@@ -102,6 +102,9 @@ public sealed record WasmEmissionRequest(
     public bool InlineSmallBlockOperations { get; init; }
     // One-dimensional array elements are addressed at their inline offset.
     public bool InlineArrayData { get; init; }
+    // Objects of known layout are allocated through allocate_object, which the
+    // runtime inlines.
+    public bool InlineObjectAllocation { get; init; }
     // Each delegate type's multicast function dispatches its entries itself rather than
     // calling the type's invoke function.
     public bool InlineMulticastDispatch { get; init; }

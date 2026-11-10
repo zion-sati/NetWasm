@@ -79,6 +79,34 @@ internal static class EmitterTestSupport
                 "Instruction test requests must use the recording instruction writer.");
     }
 
+    // The request in a module whose runtime inlines allocate_object (O1 to O3).
+    internal static InstructionEmissionRequest WithInlineObjectAllocation(InstructionEmissionRequest request)
+    {
+        var inlined = request with { Target = request.Target with { InlineObjectAllocation = true } };
+        RegisterInstructionWriter(inlined, new RecordingInstructionWriter());
+        return inlined;
+    }
+
+    // An object of known layout is allocated through allocate_object where the
+    // runtime inlines it, and allocate elsewhere. allocate_object follows the
+    // optional runtime imports, so its index depends on the module's import
+    // selection, which the test selection narrows.
+    internal static void AssertAllocatesKnownObject(InstructionEmissionRequest request)
+    {
+        var catalog = WasmRuntimeImports.CreateCatalog();
+        var symbol = request.Target.InlineObjectAllocation
+            ? RuntimeImportSymbol.AllocateObject
+            : RuntimeImportSymbol.Allocate;
+        var selected = catalog.Resolve(symbol, request.Target.RuntimeImportSelection);
+        Assert.Equal(
+            request.Target.InlineObjectAllocation,
+            catalog.Resolve(symbol) != selected);
+        Assert.Contains(
+            Assert.IsType<RecordingInstructionWriter>(GetCodeWriter(request)).ToInstructions(),
+            instruction => instruction.Opcode == WasmOpcodes.Call &&
+                instruction.Operand.UnsignedValue == (uint)selected);
+    }
+
     internal static IWasmInstructionWriter GetCodeWriter(
         InstructionEmissionRequest request) =>
         Writers.TryGetValue(request, out var writer)
@@ -920,16 +948,18 @@ internal sealed class RecordingLayoutProvider(
     public int TypeObjectCount { get; init; }
     public int TypeObjectSize { get; init; }
 
+    public ImmutableArray<int> ObjectReferenceOffsets { get; init; } = [];
+
     public ObjectLayout GetObjectLayout(EntityKey type)
     {
         ObjectRequest = type;
-        return new ObjectLayout(9, 16, []);
+        return new ObjectLayout(9, 16, ObjectReferenceOffsets);
     }
 
     public ObjectLayout GetObjectLayout(CliTypeIdentity type)
     {
         ObjectIdentityRequest = type;
-        return new ObjectLayout(9, 16, []);
+        return new ObjectLayout(9, 16, ObjectReferenceOffsets);
     }
 
     public bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout)

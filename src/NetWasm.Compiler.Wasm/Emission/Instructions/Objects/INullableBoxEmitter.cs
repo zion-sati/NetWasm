@@ -19,5 +19,6 @@ internal interface INullableBoxEmitter
         int sourceAddressLocal,
         int targetLocal,
         OptionalFunctionIndex throwFunction,
+        ObjectAllocationPolicy allocation,
         VectorScratch scratch);
 }

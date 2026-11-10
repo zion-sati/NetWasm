@@ -16,8 +16,7 @@ internal sealed class RectangularArrayAllocationEmitter(
     IValueLayoutProvider values,
     ICilTypeOperandResolver types,
     IRuntimeImportResolver runtimeImports,
-    IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots) : InstructionCommandProvider
+    IImplicitExceptionEmitter exceptions) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -33,7 +32,6 @@ internal sealed class RectangularArrayAllocationEmitter(
 
     private void Emit(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
-        roots.Emit(request, code);
         var arrayType = types.Resolve(request.Instruction, request.Header.MethodInstance);
         var elementType = arrayType.ElementType!;
         var bounded = request.Instruction.Operation == CilOperation.NewBoundedRectangularArray;

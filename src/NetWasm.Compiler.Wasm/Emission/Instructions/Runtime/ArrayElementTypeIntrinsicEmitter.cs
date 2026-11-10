@@ -8,14 +8,12 @@ internal sealed class ArrayElementTypeIntrinsicEmitter(
     IRuntimeObjectLayout objects,
     ITypeLayoutProvider types,
     IRuntimeImportResolver imports,
-    IRootPublicationEmitter roots,
     IAddressInstructionEmitter addresses,
     IImplicitExceptionEmitter exceptions) : IRuntimeIntrinsicEmitter
 {
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
         var local = request.Local(0, CliValueKind.ManagedReference);
-        roots.Emit(request.Instruction, code);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load,
             WasmInstructionOperand.Memory(2, (uint)objects.ArrayElementTypeIdOffset)));

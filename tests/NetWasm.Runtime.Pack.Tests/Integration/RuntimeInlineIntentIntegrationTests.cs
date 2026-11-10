@@ -16,8 +16,9 @@ namespace NetWasm.Runtime.Pack.Tests.Integration;
 public sealed class RuntimeInlineIntentIntegrationTests
 {
     private static readonly string[] ExpectedExports =
-        ["root_frame_enter", "root_frame_leave", "value_frame_enter", "value_frame_enter_mapped", "value_frame_leave",
-         "value_frame_leave_mapped"];
+        ["allocate_object", "allocate_object_fallback", "allocate_string", "allocation_run",
+         "allocation_runs_enabled", "allocation_slot", "root_frame_enter", "root_frame_leave", "value_frame_enter",
+         "value_frame_enter_mapped", "value_frame_leave", "value_frame_leave_mapped"];
 
     [Theory]
     [InlineData("wasm32")]

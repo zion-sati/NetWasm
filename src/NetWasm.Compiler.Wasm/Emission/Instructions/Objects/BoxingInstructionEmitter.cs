@@ -18,7 +18,6 @@ internal sealed class BoxingInstructionEmitter(
     ICilTypeOperandResolver types,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots,
     INullableTypeResolver nullableTypes,
     INullableBoxEmitter nullableBoxes,
     IUnboxEmitter unboxes) :
@@ -39,7 +38,6 @@ internal sealed class BoxingInstructionEmitter(
 
     private void EmitBox(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
-        roots.Emit(request, code);
         var slot = request.Stack.Count - 1;
         var type = types.Resolve(request.Instruction, request.Header.MethodInstance);
         if (!type.IsValueType)
@@ -63,9 +61,7 @@ internal sealed class BoxingInstructionEmitter(
         var payloadOffset = WasmTargetLayout.Align(
             layouts.Target.ObjectHeaderSize,
             value.Alignment);
-        addresses.Emit(code, boxed.Size);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(boxed.TypeId)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.Allocate)))));
+        ObjectAllocationCall.Emit(code, addresses, runtimeImports, request.Target, boxed);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
         EmitAllocationFailureCheck(code, request.Context.ObjectTemporary, request.Context.ManagedThrowFunction);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));

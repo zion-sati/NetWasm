@@ -8,15 +8,13 @@ internal sealed class ObjectCloneIntrinsicEmitter(
     IArrayReceiverValidator receivers,
     IRuntimeImportResolver runtimeImports,
     IAddressInstructionEmitter addresses,
-    IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots) : IRuntimeIntrinsicEmitter
+    IImplicitExceptionEmitter exceptions) : IRuntimeIntrinsicEmitter
 {
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
         var array = request.Local(0, CliValueKind.ManagedReference);
         var result = request.Local(0, CliValueKind.ManagedReference);
         receivers.Validate(code, array, request.Instruction.Context.ManagedThrowFunction);
-        roots.Emit(request.Instruction, code);
         Get(code, array);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
