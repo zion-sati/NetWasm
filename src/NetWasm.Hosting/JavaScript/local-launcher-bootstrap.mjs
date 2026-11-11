@@ -18,7 +18,7 @@ import { createExecutionRequestValidator } from "./execution-request-validator.m
 import { createLocalDirectoryGrants } from "./local-directory-grants.mjs";
 import { createLocalLauncher } from "./local-launcher.mjs";
 import { createLocalLauncherCommand } from "./local-launcher-command.mjs";
-import { createLocalNodeHttpLoader } from "./local-node-http-loader.mjs";
+import { createLocalNodeNetworkLoader } from "./local-node-network-loader.mjs";
 import { adaptCommandProcessResult } from "./command-process-result.mjs";
 import { describeFailureCause } from "./execution-result.mjs";
 import { createStandaloneChannels, readStandaloneArguments } from "./local-standalone-channels.mjs";
@@ -50,7 +50,7 @@ export async function runLocalNetWasmLauncher(createExecution, launcherPath) {
       selectProviderKind,
     }),
   });
-  const loadNetwork = createLocalNodeHttpLoader({
+  const loadNetwork = createLocalNodeNetworkLoader({
     hashBytes,
     importModule: value => import(value),
     readFile,

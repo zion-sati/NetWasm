@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PIN_PATH = ROOT / "eng/toolchain.json"
 CHUNK = 1024 * 1024
 DOWNLOAD_ATTEMPTS = 4
+RENAME_ATTEMPTS = 10
 MAX_RETRY_DELAY_SECONDS = 30
 TRANSIENT_HTTP_STATUSES = frozenset((408, 429, 500, 502, 503, 504))
 
@@ -60,6 +61,20 @@ def retry_delay(error: BaseException, attempt: int) -> float:
             except ValueError:
                 pass
     return min(max(delay, 0), MAX_RETRY_DELAY_SECONDS)
+
+
+def rename_when_released(source: Path, target: Path) -> None:
+    """Moves a staged directory into place. Windows refuses while a file in it is still
+    open, as a virus scanner keeps executables open for a moment after they are written or
+    run, so a refused move waits for the scanner to let go."""
+    for attempt in range(RENAME_ATTEMPTS):
+        try:
+            source.rename(target)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt + 1 == RENAME_ATTEMPTS:
+                raise
+            time.sleep(min(0.25 * 2**attempt, 8))
 
 
 def is_transient_download_error(error: BaseException) -> bool:
@@ -554,7 +569,7 @@ def stage(
         manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
         if probe_native:
             probe(temporary, rid, pins)
-        temporary.rename(output)
+        rename_when_released(temporary, output)
         return manifest
     except BaseException:
         shutil.rmtree(temporary)

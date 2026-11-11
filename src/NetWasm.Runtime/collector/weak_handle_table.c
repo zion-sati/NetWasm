@@ -26,11 +26,13 @@ static void grow(NetWasmWeakHandleTable *table)
     uintptr_t *slots = collector_allocate_metadata(capacity * sizeof(uintptr_t));
     uint8_t *lifetimes = collector_allocate_metadata(capacity * sizeof(uint8_t));
     uint8_t *occupied = collector_allocate_metadata(capacity * sizeof(uint8_t));
-    if (slots == NULL || lifetimes == NULL || occupied == NULL) abort();
+    uint32_t *next_free = collector_allocate_metadata(capacity * sizeof(uint32_t));
+    if (slots == NULL || lifetimes == NULL || occupied == NULL || next_free == NULL) abort();
 
     memset(slots, 0, capacity * sizeof(uintptr_t));
     memset(lifetimes, 0, capacity * sizeof(uint8_t));
     memset(occupied, 0, capacity * sizeof(uint8_t));
+    memset(next_free, 0, capacity * sizeof(uint32_t));
 
     for (uint32_t index = 0; index < table->capacity; index++) {
         if (table->slots[index] != 0) {
@@ -42,14 +44,17 @@ static void grow(NetWasmWeakHandleTable *table)
         slots[index] = table->slots[index];
         lifetimes[index] = table->lifetimes[index];
         occupied[index] = table->occupied[index];
+        next_free[index] = table->next_free[index];
     }
 
     collector_release_metadata(table->slots);
     collector_release_metadata(table->lifetimes);
     collector_release_metadata(table->occupied);
+    collector_release_metadata(table->next_free);
     table->slots = slots;
     table->lifetimes = lifetimes;
     table->occupied = occupied;
+    table->next_free = next_free;
     table->capacity = capacity;
 
     for (uint32_t index = 0; index < table->capacity; index++) {
@@ -62,11 +67,18 @@ uint32_t weak_handle_table_create(
     uintptr_t target,
     bool track_resurrection)
 {
-    uint32_t index = 0;
-    while (index < table->capacity && table->occupied[index] != 0) index++;
-    if (index == table->capacity) grow(table);
+    /* Released handles are reused first, so creating one costs the same however many live. */
+    uint32_t index;
+    if (table->free_head != 0) {
+        index = table->free_head - 1;
+        table->free_head = table->next_free[index];
+    } else {
+        if (table->next_index == table->capacity) grow(table);
+        index = table->next_index++;
+    }
 
     table->occupied[index] = 1;
+    table->next_free[index] = 0;
     table->slots[index] = target;
     table->lifetimes[index] = track_resurrection
         ? NETWASM_WEAK_REFERENCE_AFTER_FINALIZATION
@@ -110,4 +122,6 @@ void weak_handle_table_release(NetWasmWeakHandleTable *table, uint32_t handle)
     table->slots[index] = 0;
     table->lifetimes[index] = 0;
     table->occupied[index] = 0;
+    table->next_free[index] = table->free_head;
+    table->free_head = handle;
 }

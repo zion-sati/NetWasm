@@ -10,6 +10,23 @@ index 44f3a5e..862353a 100644
                      }
                  }
              ",
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs b/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
+index 06890ab..f4aceb8 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
+@@ -2775,7 +2775,11 @@ impl AsyncStreamIntrinsic {
+                               }}
+                               drainPendingValues();
+ 
+-                              while (count > 0 && !pendingValues.done) {{
++                              // Values the host already supplied complete the read at once. Waiting on
++                              // an asynchronous source for more would hold them until the peer sends
++                              // again, and a cancelled read would strand them here.
++                              while (count > 0 && !pendingValues.done
++                                  && (values.length === 0 || pendingValues.sourceIsSync)) {{
+                                   const appended = await pendingValues.readSource();
+                                   if (readEnd.hasPendingEvent()) {{ return bail(); }}
+                                   if (!hasPendingReadBuffer()) {{ return bail(); }}
 diff --git a/crates/js-component-bindgen/src/transpile_bindgen.rs b/crates/js-component-bindgen/src/transpile_bindgen.rs
 index 5a2dd91..4f66a45 100644
 --- a/crates/js-component-bindgen/src/transpile_bindgen.rs

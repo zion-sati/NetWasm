@@ -74,11 +74,17 @@ public sealed class JcoToolchainPathResolver : IJcoToolchainPathResolver
         }
 
         var packageLock = resolved[ToolchainPlatformAssetIds.JcoPackageLock];
-        var nodeHttpProvider = new NodeHttpProviderPaths(
+        var nodeHttpProvider = new NodeProviderPaths(
             Path.GetDirectoryName(packageLock.AbsolutePath)!,
             ResolveAsset(ToolchainPlatformAssetIds.Preview3ShimHttp, ref packageId, ref packageVersion)
                 .AbsolutePath,
             [.. ToolchainPlatformAssetIds.NodeHttpProviderFiles.Select(id =>
+                ResolveAsset(id, ref packageId, ref packageVersion).AbsolutePath)]);
+        var nodeSocketsProvider = new NodeProviderPaths(
+            Path.GetDirectoryName(packageLock.AbsolutePath)!,
+            ResolveAsset(ToolchainPlatformAssetIds.Preview3ShimSockets, ref packageId, ref packageVersion)
+                .AbsolutePath,
+            [.. ToolchainPlatformAssetIds.NodeSocketsProviderFiles.Select(id =>
                 ResolveAsset(id, ref packageId, ref packageVersion).AbsolutePath)]);
 
         var integrity = resolved[ToolchainPlatformAssetIds.JcoClosureIntegrity];
@@ -99,7 +105,8 @@ public sealed class JcoToolchainPathResolver : IJcoToolchainPathResolver
             integrity.AbsolutePath,
             resolved[ToolchainPlatformAssetIds.JcoNotices].AbsolutePath,
             resolved[ToolchainPlatformAssetIds.JcoClosurePolicy].AbsolutePath,
-            nodeHttpProvider);
+            nodeHttpProvider,
+            nodeSocketsProvider);
     }
 
     // Every jco asset belongs to the first one's Toolchain package identity.

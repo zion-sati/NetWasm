@@ -46,11 +46,14 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
         Assert.Equal(PathFor("compiler.wit.wasm"), task.CompilerWitPackagePath);
         Assert.Equal(PathFor("inspect.mjs"), task.RawInspectionCommandPath);
         Assert.Equal(PathFor("jco.mjs"), task.JcoPath);
-        Assert.Equal("1.41.0+netwasm.1", task.JcoVersion);
+        Assert.Equal("1.41.0+netwasm.2", task.JcoVersion);
         Assert.Equal("0.13.0", task.Preview3ShimVersion);
         Assert.Equal(PathFor("jco"), task.NodeHttpProviderRoot);
         Assert.Equal(PathFor("http.js"), task.NodeHttpProviderEntryPath);
         Assert.Equal($"{PathFor("package.json")};{PathFor("client.js")}", task.NodeHttpProviderFiles);
+        Assert.Equal(PathFor("jco-sockets"), task.NodeSocketsProviderRoot);
+        Assert.Equal(PathFor("sockets.js"), task.NodeSocketsProviderEntryPath);
+        Assert.Equal($"{PathFor("package.json")};{PathFor("tcp.js")}", task.NodeSocketsProviderFiles);
         Assert.Equal(PathFor("zoneinfo"), task.TimeZoneSourceRoot);
         Assert.Equal("2026c", task.TimeZoneDataVersion);
         Assert.Equal(PathFor("bundle.mjs"), task.HostingBundleCommandPath);
@@ -113,7 +116,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
 
         Assert.Equal(1, first.Calls);
         Assert.Equal(("cache.json", "stamp"), (cache.WrittenPath, cache.WrittenStamp));
-        Assert.Equal(34, cache.Outputs!.Count);
+        Assert.Equal(37, cache.Outputs!.Count);
         var second = new RecordingResolver(CreateEnvironment());
         var cached = new NetWasmResolveBuildEnvironmentTask(second, new FixedStamper("stamp"), cache, cache)
         {
@@ -268,7 +271,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                 new(
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",
-                    "1.41.0+netwasm.1",
+                    "1.41.0+netwasm.2",
                     "0.13.0",
                     node.AbsolutePath,
                     nodeCompatibility.Version,
@@ -280,7 +283,11 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                     new(
                         PathFor("jco"),
                         PathFor("http.js"),
-                        [PathFor("package.json"), PathFor("client.js")])),
+                        [PathFor("package.json"), PathFor("client.js")]),
+                    new(
+                        PathFor("jco-sockets"),
+                        PathFor("sockets.js"),
+                        [PathFor("package.json"), PathFor("tcp.js")])),
                 new(
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",

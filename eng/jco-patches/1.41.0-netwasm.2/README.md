@@ -1,15 +1,18 @@
 # Jco 1.41.0 NetWasm patch
 
-This patch exposes `_util.isComponentError` in Jco's generated JavaScript, a
-predicate for genuine declared-result errors. It uses module-private identity
-rather than trusting error properties. Jco 1.41.0 already keeps exact
-component export names, which earlier versions of this patch preserved. The
-patch is based on Jco tag `jco-v1.41.0` at commit
-`04fe1e247df7c53a09ac047b30f24fa2386aa7c8` and is proposed upstream in
-bytecodealliance/jco#2425.
+This patch makes two changes to Jco's generated JavaScript. It exposes
+`_util.isComponentError`, a predicate for genuine declared-result errors that
+uses module-private identity rather than trusting error properties (proposed
+upstream in bytecodealliance/jco#2425). It also completes a stream read with
+the values the host already supplied: Jco's host injection drained them into
+the read and then waited on an asynchronous source for more, so a read whose
+buffered values were fewer than its size waited until the source produced
+again, and a read cancelled meanwhile stranded them (reported upstream in
+bytecodealliance/jco#2435). The patch is based on Jco
+tag `jco-v1.41.0` at commit `04fe1e247df7c53a09ac047b30f24fa2386aa7c8`.
 
 The authoritative build recipe lives in `NetWasm.NativeTools` at commit
-`2225aafb8aff42d3e4b648b453727897f0c16404`. It pins the upstream source,
+`15413d3c7a696cc0c6fe2fa56a160a1fea7ba0c8`. It pins the upstream source,
 patch, tool versions and release identity, applies deterministic Rust path
 remapping, runs the bindgen crate's tests, exercises the built module against a
 declared-error component, and rejects build-machine paths before packaging.

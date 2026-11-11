@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <time.h>
 
 static unsigned root_registrations;
 static unsigned root_unregistrations;
@@ -46,6 +47,23 @@ void collector_unpin_reference(uintptr_t *slot)
     unpins++;
 }
 
+/* A released handle is reused at once, so creating one costs the same however many live;
+ * scanning for a free slot made creating n handles quadratic. */
+static void creation_cost_does_not_grow_with_live_handles(void)
+{
+    enum { COUNT = 100000 };
+    NetWasmStrongHandleTable table = {0};
+    clock_t start = clock();
+    for (uint32_t handle = 1; handle <= COUNT; handle++)
+        assert(strong_handle_table_create(&table, handle) == handle);
+    for (uint32_t handle = COUNT; handle != 0; handle--) {
+        strong_handle_table_release(&table, handle);
+        assert(strong_handle_table_create(&table, handle) == handle);
+    }
+    assert(strong_handle_table_count(&table) == COUNT);
+    assert(clock() - start < CLOCKS_PER_SEC);
+}
+
 int main(void)
 {
     NetWasmStrongHandleTable table = {0};
@@ -85,5 +103,6 @@ int main(void)
     assert(strong_handle_table_get(&table, 0) == 0);
     assert(strong_handle_table_get(&table, table.capacity + 1) == 0);
     assert(strong_handle_table_count(&table) == 1);
+    creation_cost_does_not_grow_with_live_handles();
     return 0;
 }

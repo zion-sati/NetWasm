@@ -292,6 +292,69 @@ test("waitable sets join, leave and report events in the order they occur", asyn
   assert.equal(model.root["[context-get-0]"](), 42);
 });
 
+// A set reports the members that have an event without visiting the rest: idle waits, such as
+// open connections' reads, made each event cost time in proportion to them.
+test("taking an event costs the same however many members wait", async () => {
+  const { model, event } = instance();
+  const set = model.root["[waitable-set-new]"]();
+  const idle = 100_000;
+  const active = 20_000;
+  for (let index = 0; index < idle; index++) {
+    model.root["[waitable-join]"](model.callAsync(() => new Promise(() => {}), () => {}) >> 4, set);
+  }
+  const subtasks = [];
+  for (let index = 0; index < active; index++) {
+    const subtask = model.callAsync(() => Promise.resolve(index), () => {}) >> 4;
+    model.root["[waitable-join]"](subtask, set);
+    subtasks.push(subtask);
+  }
+  await settle();
+  const start = performance.now();
+  for (const subtask of subtasks) {
+    assert.equal(model.root["[waitable-set-poll]"](set, 0), 1);
+    assert.deepEqual(event(0), [subtask, 2]);
+    model.root["[waitable-join]"](subtask, 0);
+    model.root["[subtask-drop]"](subtask);
+  }
+  assert.ok(performance.now() - start < 1000, `took ${performance.now() - start} ms`);
+  assert.equal(model.root["[waitable-set-poll]"](set, 0), 0);
+});
+
+// The host reads what the guest wrote in order: shifting a queue of many writes, or copying
+// the rest of a large chunk the guest reads a little at a time, cost time in proportion to
+// what was left.
+test("streams move each chunk and byte once however much is queued", async () => {
+  const { model, write, read, split } = instance();
+  const [readable, writable] = split(model.stream.new(bytes));
+  const reader = model.liftStream(readable);
+  const writes = 200_000;
+  let start = performance.now();
+  for (let index = 0; index < writes; index++) {
+    write(100, [index & 0xff]);
+    model.stream.write(bytes, writable, 100, 1);
+  }
+  let sum = 0;
+  for (let index = 0; index < writes; index++) sum += (await reader.next()).value[0];
+  assert.ok(performance.now() - start < 2000, `took ${performance.now() - start} ms`);
+  assert.equal(sum, Array.from({ length: writes }, (_, index) => index & 0xff).reduce((a, b) => a + b));
+  model.stream.dropWritable(writable);
+  assert.deepEqual(await reader.next(), { done: true, value: undefined });
+
+  const large = new Uint8Array(32 * 1024 * 1024).map((_, index) => index & 0xff);
+  const supplied = model.lowerStream([large], bytes);
+  start = performance.now();
+  let offset = 0;
+  for (;;) {
+    const status = model.stream.read(bytes, supplied, 1000, 4096);
+    if (status === 1) break;
+    const length = status >> 4;
+    assert.equal(read(1000, 1)[0], offset & 0xff);
+    offset += length;
+  }
+  assert.ok(performance.now() - start < 2000, `took ${performance.now() - start} ms`);
+  assert.equal(offset, large.length);
+});
+
 test("drives a callback-lifted export through its events until it exits", async () => {
   const { model } = instance();
   const set = model.root["[waitable-set-new]"]();

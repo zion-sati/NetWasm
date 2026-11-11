@@ -16,10 +16,12 @@ public sealed record JcoToolchainPaths(
     string ClosureIntegrityPath,
     string NoticesPath,
     string ClosurePolicyPath,
-    NodeHttpProviderPaths NodeHttpProvider);
+    NodeProviderPaths NodeHttpProvider,
+    NodeProviderPaths NodeSocketsProvider);
 
-// The Node.js wasi:http client's files, under Root as a deployment lays them out.
-public sealed record NodeHttpProviderPaths(
+// A Node.js WASI implementation's files (the wasi:http client, or wasi:sockets), under Root as a deployment lays
+// them out.
+public sealed record NodeProviderPaths(
     string Root,
     string EntryPointPath,
     ImmutableArray<string> FilePaths);

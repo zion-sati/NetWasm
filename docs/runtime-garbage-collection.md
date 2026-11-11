@@ -112,6 +112,11 @@ sizes, exact memory-use limits or promises of pause-free allocation. Budgets
 adapt to retained memory after collection. Most applications should leave
 collection to the runtime rather than repeatedly calling `GC.Collect()`.
 
+A call into the module never collects on its own, however much the module keeps
+alive between calls. The finalizers of objects a collection finds unreachable
+run when the call that collected returns, or for an asynchronous program when
+its event loop's turn ends, and at once in `GC.WaitForPendingFinalizers()`.
+
 Bump starts with a 256 KiB allocation chunk, acquired lazily. Subsequent normal
 chunks grow geometrically up to 4 MiB; individual large requests can require
 larger backing allocations. Memory grows until the instance is discarded or

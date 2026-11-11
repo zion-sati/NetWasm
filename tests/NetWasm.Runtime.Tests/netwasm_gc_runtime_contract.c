@@ -13,7 +13,9 @@
 #include "netwasm/runtime_state.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 void runtime_initialize_libc(void) { }
 
@@ -25,6 +27,8 @@ typedef struct {
 
 static RecordedLayout recorded[256];
 static size_t recorded_count;
+/* Bulk tests allocate more objects than the record holds, all of them eight atomic bytes. */
+static bool unrecorded_objects_are_atomic;
 
 void collector_object_layout(const void *object, NetWasmCollectorLayout *layout)
 {
@@ -34,7 +38,8 @@ void collector_object_layout(const void *object, NetWasmCollectorLayout *layout)
             return;
         }
     }
-    assert(!"object has no recorded layout");
+    assert(unrecorded_objects_are_atomic && "object has no recorded layout");
+    *layout = (NetWasmCollectorLayout){.fixed_bytes = 8};
 }
 
 static void *allocate_with_layout(NetWasmCollectorLayout layout)
@@ -171,6 +176,154 @@ static void lifetime_contract(void)
     assert(netwasm_gc_object_count(netwasm_gc_runtime) == 0);
 }
 
+/* A finalizer may suppress another object queued beside its own, as GC.SuppressFinalize can. */
+static void suppressed_queued_finalizers_are_no_longer_pending(void)
+{
+    uintptr_t first = (uintptr_t)allocate_atomic(8);
+    uintptr_t second = (uintptr_t)allocate_atomic(8);
+    size_t before = finalized;
+    assert(!collector_has_pending_finalizers());
+    collector_register_finalizer((void *)first, finalize, &finalized, NULL, NULL);
+    collector_register_finalizer((void *)second, finalize, &finalized, NULL, NULL);
+    assert(!collector_has_pending_finalizers());
+    collector_collect();
+    assert(collector_has_pending_finalizers());
+    collector_register_finalizer((void *)first, NULL, NULL, NULL, NULL);
+    assert(collector_has_pending_finalizers());
+    collector_register_finalizer((void *)second, NULL, NULL, NULL, NULL);
+    assert(!collector_has_pending_finalizers());
+    assert(collector_invoke_finalizers() == 0);
+    assert(finalized == before);
+    collector_collect();
+    assert(!collector_has_pending_finalizers());
+    assert(netwasm_gc_object_count(netwasm_gc_runtime) == 0);
+}
+
+static size_t counted;
+
+static void count_finalization(void *object, void *context)
+{
+    (void)object;
+    (void)context;
+    counted++;
+}
+
+static NetWasmCollectorFinalizer reregistering_finalizer;
+static size_t reregistrations;
+
+/* ReRegisterForFinalize from its own finalizer: the object finalizes again later. */
+static void reregister_once(void *object, void *context)
+{
+    counted++;
+    if (reregistrations++ == 0)
+        collector_register_finalizer(object, reregistering_finalizer, context, NULL, NULL);
+}
+
+static uintptr_t suppressed_by_finalizer;
+
+static void suppress_other(void *object, void *context)
+{
+    (void)object;
+    (void)context;
+    counted++;
+    collector_register_finalizer((void *)suppressed_by_finalizer, NULL, NULL, NULL, NULL);
+}
+
+static void finalizers_reregister_and_suppress_while_running(void)
+{
+    counted = 0;
+    reregistering_finalizer = reregister_once;
+    uintptr_t again = (uintptr_t)allocate_atomic(8);
+    collector_register_finalizer((void *)again, reregister_once, NULL, NULL, NULL);
+    collector_collect();
+    assert(collector_invoke_finalizers() == 1 && counted == 1);
+    assert(!collector_has_pending_finalizers());
+    collector_collect();
+    assert(collector_invoke_finalizers() == 1 && counted == 2);
+
+    /* The first queued finalizer suppresses the second, which never runs. */
+    uintptr_t first = (uintptr_t)allocate_atomic(8);
+    suppressed_by_finalizer = (uintptr_t)allocate_atomic(8);
+    collector_register_finalizer((void *)first, suppress_other, NULL, NULL, NULL);
+    collector_register_finalizer((void *)suppressed_by_finalizer, count_finalization, NULL, NULL, NULL);
+    collector_collect();
+    assert(collector_invoke_finalizers() == 1 && counted == 3);
+    assert(!collector_has_pending_finalizers());
+    collector_collect();
+    assert(netwasm_gc_object_count(netwasm_gc_runtime) == 0);
+}
+
+static void weak_and_ephemeron_registrations_are_per_slot(void)
+{
+    frame_root = (uintptr_t)allocate_atomic(8);
+    uintptr_t other = (uintptr_t)allocate_atomic(8);
+    uintptr_t slot = 0;
+    assert(collector_register_short_weak_reference(&slot, other));
+    assert(collector_register_short_weak_reference(&slot, frame_root));
+    assert(slot == frame_root);
+    assert(collector_register_weak_reference(&slot, frame_root, NETWASM_WEAK_REFERENCE_AFTER_FINALIZATION));
+    assert(collector_unregister_weak_reference(&slot, NETWASM_WEAK_REFERENCE_BEFORE_FINALIZATION) == 1);
+    assert(collector_unregister_weak_reference(&slot, NETWASM_WEAK_REFERENCE_BEFORE_FINALIZATION) == 0);
+    assert(collector_unregister_weak_reference(&slot, NETWASM_WEAK_REFERENCE_AFTER_FINALIZATION) == 1);
+
+    uintptr_t key = frame_root;
+    uintptr_t value = other;
+    uintptr_t elsewhere = 0;
+    assert(collector_register_ephemeron(&key, &value));
+    assert(collector_register_ephemeron(&key, &value));
+    collector_unregister_ephemeron(&key, &elsewhere);
+    collector_collect();
+    assert(netwasm_gc_contains(netwasm_gc_runtime, other));
+    collector_unregister_ephemeron(&key, &value);
+    frame_root = 0;
+    collector_collect();
+    assert(netwasm_gc_object_count(netwasm_gc_runtime) == 0);
+}
+
+/* Registering, suppressing, releasing and finalizing cost the same however many entries are
+ * alive; lists searched from their head made each of them grow with the live count. */
+static void registry_costs_do_not_grow_with_their_entries(void)
+{
+    enum { COUNT = 50000 };
+    uintptr_t *objects = calloc(COUNT, sizeof(uintptr_t));
+    uintptr_t *weak = calloc(COUNT, sizeof(uintptr_t));
+    uintptr_t *keys = calloc(COUNT, sizeof(uintptr_t));
+    uintptr_t *values = calloc(COUNT, sizeof(uintptr_t));
+    assert(objects != NULL && weak != NULL && keys != NULL && values != NULL);
+    unrecorded_objects_are_atomic = true;
+    collector_register_root_range(objects, objects + COUNT);
+    for (size_t index = 0; index < COUNT; index++)
+        objects[index] = (uintptr_t)collector_allocate_object(8, false);
+    counted = 0;
+    clock_t start = clock();
+    for (size_t index = 0; index < COUNT; index++) {
+        collector_register_finalizer((void *)objects[index], count_finalization, NULL, NULL, NULL);
+        assert(collector_register_short_weak_reference(&weak[index], objects[index]));
+        keys[index] = objects[index];
+        values[index] = objects[(index + 1) % COUNT];
+        assert(collector_register_ephemeron(&keys[index], &values[index]));
+    }
+    /* Newest first, the far end of a list kept in registration order. */
+    for (size_t index = COUNT; index-- > 0;) {
+        if (index % 2 == 0)
+            collector_register_finalizer((void *)objects[index], NULL, NULL, NULL, NULL);
+        assert(collector_unregister_weak_reference(&weak[index], NETWASM_WEAK_REFERENCE_BEFORE_FINALIZATION));
+        collector_unregister_ephemeron(&keys[index], &values[index]);
+    }
+    collector_unregister_root_range(objects, objects + COUNT);
+    collector_collect();
+    assert(collector_invoke_finalizers() == COUNT / 2 && counted == COUNT / 2);
+    assert(clock() - start < CLOCKS_PER_SEC);
+    assert(!collector_has_pending_finalizers());
+    collector_collect();
+    assert(netwasm_gc_object_count(netwasm_gc_runtime) == 0);
+    unrecorded_objects_are_atomic = false;
+    free(objects);
+    free(weak);
+    free(keys);
+    free(values);
+}
+
 static void stores_hash_and_metrics(void)
 {
     uintptr_t source[3] = {1, 2, 3};
@@ -216,6 +369,10 @@ int main(void)
     allocation_and_roots();
     layouts_and_ranges();
     lifetime_contract();
+    suppressed_queued_finalizers_are_no_longer_pending();
+    finalizers_reregister_and_suppress_while_running();
+    weak_and_ephemeron_registrations_are_per_slot();
+    registry_costs_do_not_grow_with_their_entries();
     stores_hash_and_metrics();
     atomic_allocations_are_zeroed_after_reclamation();
     collector_clear_roots();

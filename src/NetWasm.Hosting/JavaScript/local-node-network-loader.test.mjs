@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createLocalNodeHttpLoader } from "./local-node-http-loader.mjs";
+import { createLocalNodeNetworkLoader } from "./local-node-network-loader.mjs";
 
 const shim = "node_modules/@bytecodealliance/preview3-shim";
 const entryPath = `${shim}/dist/nodejs/http.js`;
@@ -14,9 +14,20 @@ const entrySource = [
   "export const types = { Fields: class Fields {}, tag };",
   "export const client = { calls: 0, send(request) { this.calls++; return [request, this.calls]; } };",
 ].join("\n");
+const socketsPath = `${shim}/dist/nodejs/sockets.js`;
+const socketsSource = [
+  'import { family } from "./sockets/address.js";',
+  "export class TcpSocket {}",
+  "export class UdpSocket {}",
+  "export const types = { TcpSocket, UdpSocket, family };",
+  "export const ipNameLookup = { prefix: 'resolved ', async resolveAddresses(name) { return this.prefix + name; } };",
+].join("\n");
 const files = {
   [`${shim}/package.json`]: '{"type":"module"}',
   [`${shim}/dist/nodejs/http/client.js`]: 'export const tag = "client";',
+};
+const socketFiles = {
+  [`${shim}/dist/nodejs/sockets/address.js`]: 'export const family = "ipv4";',
 };
 
 test("loads and binds the deployment's verified Node.js HTTP client", async () => {
@@ -29,6 +40,57 @@ test("loads and binds the deployment's verified Node.js HTTP client", async () =
     const { send } = network.modules["wasi:http/client@0.3.2"];
     assert.deepEqual(send("request"), ["request", 1]);
   });
+});
+
+test("loads and binds the deployment's verified Node.js sockets beside its HTTP client", async () => {
+  await withDeployment({ artifacts: () => [...defaultArtifacts(), ...socketArtifacts()] },
+    async ({ manifestPath, load }) => {
+      const network = await load(manifestPath);
+      assert.deepEqual(Object.keys(network.modules), [
+        "wasi:http/types@0.3.2", "wasi:http/client@0.3.2",
+        "wasi:sockets/types@0.3.2", "wasi:sockets/ip-name-lookup@0.3.2",
+      ]);
+      const types = network.modules["wasi:sockets/types@0.3.2"];
+      assert.equal(Object.isFrozen(types), true);
+      assert.equal(typeof types.TcpSocket, "function");
+      assert.equal(typeof types.UdpSocket, "function");
+      assert.equal(types.family, "ipv4");
+      const { resolveAddresses } = network.modules["wasi:sockets/ip-name-lookup@0.3.2"];
+      assert.equal(await resolveAddresses("example.test"), "resolved example.test");
+    });
+});
+
+test("loads sockets alone for a deployment that imports no HTTP", async () => {
+  const artifacts = () => [
+    ...socketArtifacts(),
+    artifact(`${shim}/package.json`, "node-network-provider-file", files[`${shim}/package.json`], "application/json"),
+    application(),
+  ];
+  await withDeployment({ artifacts }, async ({ manifestPath, load }) => {
+    const network = await load(manifestPath);
+    assert.deepEqual(Object.keys(network.modules),
+      ["wasi:sockets/types@0.3.2", "wasi:sockets/ip-name-lookup@0.3.2"]);
+  });
+});
+
+test("rejects sockets whose entry point is duplicated or whose module lacks the WASI sockets shape", async () => {
+  const entry = artifact(socketsPath, "node-sockets-provider", socketsSource);
+  await withDeployment({ artifacts: () => [application(), entry, { ...entry, relativePath: `${shim}/other.js` }] },
+    async ({ manifestPath, load }) => {
+      await assert.rejects(() => load(manifestPath), /sockets entry point is invalid/);
+    });
+  for (const value of [
+    null,
+    { types: null, ipNameLookup: { resolveAddresses() {} } },
+    { types: { TcpSocket() {} }, ipNameLookup: { resolveAddresses() {} } },
+    { types: { TcpSocket() {}, UdpSocket() {} }, ipNameLookup: null },
+    { types: { TcpSocket() {}, UdpSocket() {} }, ipNameLookup: { resolveAddresses: 1 } },
+  ]) {
+    await withDeployment({ artifacts: () => [...socketArtifacts(), application()], importModule: async () => value },
+      async ({ manifestPath, load }) => {
+        await assert.rejects(() => load(manifestPath), /sockets is incompatible/);
+      });
+  }
 });
 
 test("gives a deployment without an HTTP client no network", async () => {
@@ -107,13 +169,13 @@ test("rejects malformed options and manifest paths", async () => {
   const actions = { hashBytes() {}, importModule() {}, readFile() {}, realPath() {} };
   for (const value of [null, 1, [], {}, { ...actions, extra() {} },
     Object.create(actions), { ...actions, [Symbol("extra")]: true }]) {
-    assert.throws(() => createLocalNodeHttpLoader(value), TypeError);
+    assert.throws(() => createLocalNodeNetworkLoader(value), TypeError);
   }
   const accessor = { ...actions };
   Object.defineProperty(accessor, "readFile", { enumerable: true, get: () => () => {} });
-  assert.throws(() => createLocalNodeHttpLoader(accessor), TypeError);
-  assert.throws(() => createLocalNodeHttpLoader({ ...actions, readFile: 1 }), /'readFile' action/);
-  const load = createLocalNodeHttpLoader(actions);
+  assert.throws(() => createLocalNodeNetworkLoader(accessor), TypeError);
+  assert.throws(() => createLocalNodeNetworkLoader({ ...actions, readFile: 1 }), /'readFile' action/);
+  const load = createLocalNodeNetworkLoader(actions);
   for (const path of [null, "", "relative.json", "/tmp/../tmp/deployment.json", "/tmp/a\0b"]) {
     await assert.rejects(() => load(path), /canonical and absolute/);
   }
@@ -127,9 +189,16 @@ function defaultArtifacts() {
   return [
     artifact(entryPath, "node-http-provider", entrySource),
     ...Object.entries(files).map(([path, text]) => artifact(
-      path, "node-http-provider-file", text,
+      path, "node-network-provider-file", text,
       path.endsWith(".json") ? "application/json" : "text/javascript")),
     application(),
+  ];
+}
+
+function socketArtifacts() {
+  return [
+    artifact(socketsPath, "node-sockets-provider", socketsSource),
+    ...Object.entries(socketFiles).map(([path, text]) => artifact(path, "node-network-provider-file", text)),
   ];
 }
 
@@ -138,15 +207,17 @@ function application() {
 }
 
 async function withDeployment(overrides, action) {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "netwasm-node-http-")));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "netwasm-node-network-")));
   try {
-    for (const [path, text] of Object.entries({ ...files, [entryPath]: entrySource, "app.wasm": "wasm" })) {
+    for (const [path, text] of Object.entries({
+      ...files, ...socketFiles, [entryPath]: entrySource, [socketsPath]: socketsSource, "app.wasm": "wasm",
+    })) {
       await mkdir(join(root, path, ".."), { recursive: true });
       await writeFile(join(root, path), text);
     }
     const manifestPath = join(root, "deployment.json");
     await writeFile(manifestPath, JSON.stringify(manifest((overrides.artifacts ?? defaultArtifacts)())));
-    const load = createLocalNodeHttpLoader({
+    const load = createLocalNodeNetworkLoader({
       hashBytes: sha256,
       importModule: overrides.importModule ?? (value => import(value)),
       readFile: overrides.readFile ?? readFile,

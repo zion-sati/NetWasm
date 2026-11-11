@@ -340,6 +340,33 @@ class HostToolsPackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Cached host-tool archive digest mismatch"):
             stage.acquire(source, cache)
 
+    # Windows refuses to move the staged directory while a scanner still holds an executable
+    # in it open, as Windows Arm64 CI did once right after the native probe ran them.
+    def test_staged_directory_move_waits_for_windows_to_release_it(self):
+        refused = PermissionError(5, "Access is denied")
+        with tempfile.TemporaryDirectory() as directory:
+            source, target = Path(directory, "stage"), Path(directory, "output")
+            with patch.object(stage.Path, "rename", side_effect=[refused, refused, None]) as rename, \
+                    patch.object(stage.os, "name", "nt"), patch.object(stage.time, "sleep") as sleep:
+                stage.rename_when_released(source, target)
+            self.assertEqual(rename.call_count, 3)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [0.25, 0.5])
+
+            with patch.object(stage.Path, "rename", side_effect=refused) as rename, \
+                    patch.object(stage.os, "name", "nt"), patch.object(stage.time, "sleep") as sleep:
+                with self.assertRaises(PermissionError):
+                    stage.rename_when_released(source, target)
+            self.assertEqual(rename.call_count, stage.RENAME_ATTEMPTS)
+            self.assertEqual(sleep.call_count, stage.RENAME_ATTEMPTS - 1)
+            self.assertEqual(max(call.args[0] for call in sleep.call_args_list), 8)
+
+            with patch.object(stage.Path, "rename", side_effect=refused) as rename, \
+                    patch.object(stage.os, "name", "posix"), patch.object(stage.time, "sleep") as sleep:
+                with self.assertRaises(PermissionError):
+                    stage.rename_when_released(source, target)
+            self.assertEqual(rename.call_count, 1)
+            sleep.assert_not_called()
+
     def test_download_retries_transient_http_failure_and_authenticates_github(self):
         payload = b"pinned input"
         source = {

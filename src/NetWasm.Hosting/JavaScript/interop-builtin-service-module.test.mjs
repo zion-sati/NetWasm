@@ -152,6 +152,24 @@ function createFixture() {
 }
 
 // CoreLib reads and builds JavaScript values through these, each behind a handle.
+// JavaScript can collect many managed objects at once; CoreLib takes each back in turn, which
+// shifting the queue made cost time in proportion to those left.
+test("taking a collected handle costs the same however many wait", () => {
+  let collect;
+  class Registry {
+    constructor(callback) { collect = callback; }
+    register() {}
+  }
+  const values = createJavaScriptValueServices(createInteropHandleTable(), Registry);
+  const count = 200_000;
+  for (let handle = 1; handle <= count; handle++) collect(BigInt(handle));
+  const start = performance.now();
+  let total = 0n;
+  for (let handle = values.value_collected(); handle !== 0n; handle = values.value_collected()) total += handle;
+  assert.ok(performance.now() - start < 1000, `took ${performance.now() - start} ms`);
+  assert.equal(total, BigInt(count) * BigInt(count + 1) / 2n);
+});
+
 test("serves the JavaScript values CoreLib converts", () => {
   const handles = createInteropHandleTable();
   const registered = [];

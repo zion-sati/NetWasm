@@ -23,6 +23,13 @@ try {
   await Promise.resolve();
   check(notifications.page.join() === "7" && notifications.worker.join() === "7",
     "Notifications differ between hosts.");
+  // Issue #216: each page call collected, twice with the event loop's turn after it, once the
+  // module had finalization. Calls that allocate nothing must leave collection to allocation.
+  check(page.finalizes() === 1, "The module's finalizer did not run.");
+  const collections = page.collections();
+  for (let i = 0; i < 10_000; i++) page.twice(i);
+  const collected = page.collections() - collections;
+  check(collected < 100, `10,000 twice() calls collected ${collected} times.`);
   // Report the cost of one int(int) call on each host (median of five runs).
   const median = values => values.sort((a, b) => a - b)[2];
   const pageRuns = [];

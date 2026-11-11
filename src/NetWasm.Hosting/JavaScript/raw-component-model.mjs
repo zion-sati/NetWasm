@@ -68,23 +68,24 @@ export function createRawComponentModel(options) {
   const leave = waitable => {
     const set = table.get(waitable.set);
     set?.members.delete(waitable);
+    set?.ready.delete(waitable);
     waitable.set = null;
   };
-  // A waitable holds at most one pending event; the set it joined reports it.
+  // A waitable holds at most one pending event; the set it joined reports it. Each set keeps
+  // its members with an event apart, so taking one costs the same however many wait.
   const raise = (waitable, code, payload) => {
     waitable.event = { code, index: waitable.handle, payload };
+    if (waitable.set !== null) table.get(waitable.set).ready.add(waitable);
     notify();
   };
   const takeEvent = setHandle => {
     const set = get(setHandle, ["waitable-set"]);
-    for (const waitable of set.members) {
-      if (waitable.event !== null) {
-        const event = waitable.event;
-        waitable.event = null;
-        return event;
-      }
-    }
-    return null;
+    const waitable = set.ready.values().next().value;
+    if (waitable === undefined) return null;
+    set.ready.delete(waitable);
+    const event = waitable.event;
+    waitable.event = null;
+    return event;
   };
   const writeEvent = (address, event) => {
     const view = new DataView(memory().buffer);
@@ -98,7 +99,7 @@ export function createRawComponentModel(options) {
   };
 
   const root = Object.freeze({
-    "[waitable-set-new]": () => add({ kind: "waitable-set", members: new Set(), set: null }),
+    "[waitable-set-new]": () => add({ kind: "waitable-set", members: new Set(), ready: new Set(), set: null }),
     // A raw host cannot suspend the guest, so a wait for an operation that has not completed
     // reports no event (which a blocking host never does), and the guest's synchronous API
     // throws PlatformNotSupportedException instead of the host trapping.
@@ -124,7 +125,10 @@ export function createRawComponentModel(options) {
       const set = get(setHandle, ["waitable-set"]);
       set.members.add(waitable);
       waitable.set = set.handle;
-      if (waitable.event !== null) notify();
+      if (waitable.event !== null) {
+        set.ready.add(waitable);
+        notify();
+      }
     },
     "[subtask-drop]"(handle) {
       const subtask = get(handle, ["subtask"]);
@@ -172,7 +176,7 @@ export function createRawComponentModel(options) {
   }
 
   function newPair(kind, codec) {
-    const shared = { kind, codec: readCodec(codec), buffer: [], ended: false, readerGone: false };
+    const shared = { kind, codec: readCodec(codec), buffer: chunkQueue(), ended: false, readerGone: false };
     const readable = add({ kind: `${kind}-readable`, shared, set: null, event: null, pending: null });
     const writable = add({ kind: `${kind}-writable`, shared, set: null, event: null });
     shared.readable = readable;
@@ -189,7 +193,7 @@ export function createRawComponentModel(options) {
       const { shared } = writable;
       if (shared.readerGone) return copyDropped;
       const length = Number(count);
-      shared.buffer.push(readElements(memory(), shared.codec, address, length));
+      enqueue(shared.buffer, readElements(memory(), shared.codec, address, length));
       shared.wake?.();
       return (length << 4) | copyCompleted;
     },
@@ -267,14 +271,16 @@ export function createRawComponentModel(options) {
     const { shared } = readable;
     let copied = 0;
     for (;;) {
-      if (shared.buffer.length === 0 && !shared.ended && copied < count) pullSynchronously(shared);
-      if (copied === count || shared.buffer.length === 0) break;
-      const chunk = shared.buffer[0];
+      if (queued(shared.buffer) === 0 && !shared.ended && copied < count) pullSynchronously(shared);
+      if (copied === count || queued(shared.buffer) === 0) break;
+      const chunk = shared.buffer.items[shared.buffer.head];
       const take = Math.min(count - copied, chunk.length);
-      writeElements(memory(), shared.codec, address, copied, chunk.slice(0, take));
+      writeElements(memory(), shared.codec, address, copied, part(chunk, 0, take));
       copied += take;
-      if (take === chunk.length) shared.buffer.shift();
-      else shared.buffer[0] = chunk.slice(take);
+      // A partly read chunk keeps its rest as a view, so reading a large chunk in small pieces
+      // copies each byte once.
+      if (take === chunk.length) dequeue(shared.buffer);
+      else shared.buffer.items[shared.buffer.head] = part(chunk, take, chunk.length);
     }
     if (copied === 0) return shared.ended ? copyDropped : null;
     return (copied << 4) | copyCompleted;
@@ -316,9 +322,9 @@ export function createRawComponentModel(options) {
     const { shared } = readable;
     const next = () => new Promise(resolve => {
       const attempt = () => {
-        if (shared.buffer.length !== 0) {
+        if (queued(shared.buffer) !== 0) {
           shared.wake = undefined;
-          resolve({ done: false, value: shared.buffer.shift() });
+          resolve({ done: false, value: dequeue(shared.buffer) });
         } else if (shared.ended || shared.readerGone || closed) {
           shared.wake = undefined;
           resolve({ done: true, value: undefined });
@@ -330,12 +336,12 @@ export function createRawComponentModel(options) {
     });
     const release = () => {
       shared.readerGone = true;
-      shared.buffer.length = 0;
+      shared.buffer = chunkQueue();
       shared.wake?.();
     };
     // A synchronous provider takes what the guest has written so far at once.
-    const drain = () => shared.buffer.length !== 0
-      ? shared.buffer.shift()
+    const drain = () => queued(shared.buffer) !== 0
+      ? dequeue(shared.buffer)
       : shared.ended || shared.readerGone || closed ? null : undefined;
     return Object.freeze({
       read: next,
@@ -502,6 +508,38 @@ function readCodec(codec) {
   return codec;
 }
 
+// A stream's chunks in order. Taking one advances a head index instead of shifting the array,
+// which costs time in proportion to the chunks behind it once there are many.
+function chunkQueue() {
+  return { items: [], head: 0 };
+}
+
+function queued(queue) {
+  return queue.items.length - queue.head;
+}
+
+function enqueue(queue, chunk) {
+  queue.items.push(chunk);
+}
+
+function dequeue(queue) {
+  const chunk = queue.items[queue.head];
+  queue.items[queue.head++] = undefined;
+  if (queue.head === queue.items.length) {
+    queue.items = [];
+    queue.head = 0;
+  } else if (queue.head >= 1024 && queue.head * 2 >= queue.items.length) {
+    queue.items = queue.items.slice(queue.head);
+    queue.head = 0;
+  }
+  return chunk;
+}
+
+// Bytes are viewed, not copied; other elements are few per chunk.
+function part(chunk, start, end) {
+  return chunk instanceof Uint8Array ? chunk.subarray(start, end) : chunk.slice(start, end);
+}
+
 function readElements(memory, codec, address, count) {
   const start = Number(address);
   if (codec.bytes) return new Uint8Array(memory.buffer, start, count).slice();
@@ -529,9 +567,9 @@ function accept(shared, result) {
   // time, since an element may itself be an array.
   if (shared.codec.bytes) {
     const bytes = value instanceof Uint8Array ? value : Uint8Array.from(value);
-    if (bytes.length !== 0) shared.buffer.push(bytes);
+    if (bytes.length !== 0) enqueue(shared.buffer, bytes);
   } else {
-    shared.buffer.push([value]);
+    enqueue(shared.buffer, [value]);
   }
 }
 

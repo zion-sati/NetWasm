@@ -198,6 +198,9 @@
       <Output TaskParameter="NodeHttpProviderRoot" PropertyName="_NetWasmNodeHttpProviderRoot" />
       <Output TaskParameter="NodeHttpProviderEntryPath" PropertyName="_NetWasmNodeHttpProviderEntryPath" />
       <Output TaskParameter="NodeHttpProviderFiles" PropertyName="_NetWasmNodeHttpProviderFiles" />
+      <Output TaskParameter="NodeSocketsProviderRoot" PropertyName="_NetWasmNodeSocketsProviderRoot" />
+      <Output TaskParameter="NodeSocketsProviderEntryPath" PropertyName="_NetWasmNodeSocketsProviderEntryPath" />
+      <Output TaskParameter="NodeSocketsProviderFiles" PropertyName="_NetWasmNodeSocketsProviderFiles" />
       <Output TaskParameter="TimeZoneSourceRoot" PropertyName="NetWasmTimeZoneSourceRoot" />
       <Output TaskParameter="TimeZoneDataVersion" PropertyName="NetWasmTimeZoneDataVersion" />
       <Output TaskParameter="HostingBundleCommandPath" PropertyName="NetWasmHostingBundleCommandPath" />
@@ -817,23 +820,39 @@
                                               Condition="'$(NetWasmRawWasm)' == 'true'" />
     </ItemGroup>
 
-    <!-- A deployment that imports wasi:http carries the Node.js client the launcher gives it,
-         so the folder runs with node alone, wherever it is copied. -->
+    <!-- A deployment that imports wasi:http or wasi:sockets carries the Node.js implementation the launcher gives
+         it, so the folder runs with node alone, wherever it is copied. The two share supporting files, which the
+         deployment holds once. -->
     <ItemGroup>
       <_NetWasmDeploymentHttpClientImport Include="@(_NetWasmDeploymentRequiredImportModule)"
                                           Condition="'%(_NetWasmDeploymentRequiredImportModule.Identity)' == 'wasi:http/client@0.3.2'" />
+      <_NetWasmDeploymentSocketsImport Include="@(_NetWasmDeploymentRequiredImportModule)"
+                                       Condition="$([System.String]::Copy('%(_NetWasmDeploymentRequiredImportModule.Identity)').StartsWith('wasi:sockets/'))" />
     </ItemGroup>
     <ItemGroup Condition="'@(_NetWasmDeploymentHttpClientImport)' != ''">
-      <_NetWasmNodeHttpProviderFile Include="$([MSBuild]::Unescape('$(_NetWasmNodeHttpProviderFiles)'))" />
-      <_NetWasmNodeHttpProviderFile Include="$([MSBuild]::Unescape('$(_NetWasmNodeHttpProviderEntryPath)'))">
-        <Role>node-http-provider</Role>
-      </_NetWasmNodeHttpProviderFile>
-      <_NetWasmDeploymentArtifact Include="@(_NetWasmNodeHttpProviderFile)">
-        <RelativePath>$([MSBuild]::MakeRelative('$([MSBuild]::Unescape('$(_NetWasmNodeHttpProviderRoot)'))/', '%(_NetWasmNodeHttpProviderFile.FullPath)').Replace('\', '/'))</RelativePath>
-        <Role Condition="'%(_NetWasmNodeHttpProviderFile.Role)' == ''">node-http-provider-file</Role>
-        <MediaType Condition="'%(_NetWasmNodeHttpProviderFile.Extension)' == '.js'">text/javascript</MediaType>
-        <MediaType Condition="'%(_NetWasmNodeHttpProviderFile.Extension)' == '.json'">application/json</MediaType>
-        <MediaType Condition="'%(_NetWasmNodeHttpProviderFile.Extension)' == ''">text/plain</MediaType>
+      <_NetWasmNodeNetworkProviderFile Include="$([MSBuild]::Unescape('$(_NetWasmNodeHttpProviderFiles)'))"
+                                       ProviderRoot="$([MSBuild]::Unescape('$(_NetWasmNodeHttpProviderRoot)'))"
+                                       KeepDuplicates="false" />
+      <_NetWasmNodeNetworkProviderFile Include="$([MSBuild]::Unescape('$(_NetWasmNodeHttpProviderEntryPath)'))"
+                                       ProviderRoot="$([MSBuild]::Unescape('$(_NetWasmNodeHttpProviderRoot)'))"
+                                       Role="node-http-provider" />
+    </ItemGroup>
+    <ItemGroup Condition="'@(_NetWasmDeploymentSocketsImport)' != ''">
+      <_NetWasmNodeNetworkProviderFile Include="$([MSBuild]::Unescape('$(_NetWasmNodeSocketsProviderFiles)'))"
+                                       ProviderRoot="$([MSBuild]::Unescape('$(_NetWasmNodeSocketsProviderRoot)'))"
+                                       KeepDuplicates="false" />
+      <_NetWasmNodeNetworkProviderFile Include="$([MSBuild]::Unescape('$(_NetWasmNodeSocketsProviderEntryPath)'))"
+                                       ProviderRoot="$([MSBuild]::Unescape('$(_NetWasmNodeSocketsProviderRoot)'))"
+                                       Role="node-sockets-provider" />
+    </ItemGroup>
+    <!-- Batching an empty list still evaluates the metadata once, with empty values. -->
+    <ItemGroup Condition="'@(_NetWasmNodeNetworkProviderFile)' != ''">
+      <_NetWasmDeploymentArtifact Include="@(_NetWasmNodeNetworkProviderFile)">
+        <RelativePath>$([MSBuild]::MakeRelative('%(_NetWasmNodeNetworkProviderFile.ProviderRoot)/', '%(_NetWasmNodeNetworkProviderFile.FullPath)').Replace('\', '/'))</RelativePath>
+        <Role Condition="'%(_NetWasmNodeNetworkProviderFile.Role)' == ''">node-network-provider-file</Role>
+        <MediaType Condition="'%(_NetWasmNodeNetworkProviderFile.Extension)' == '.js'">text/javascript</MediaType>
+        <MediaType Condition="'%(_NetWasmNodeNetworkProviderFile.Extension)' == '.json'">application/json</MediaType>
+        <MediaType Condition="'%(_NetWasmNodeNetworkProviderFile.Extension)' == ''">text/plain</MediaType>
       </_NetWasmDeploymentArtifact>
     </ItemGroup>
 

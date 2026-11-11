@@ -220,8 +220,10 @@ export function createWorkerSessionClient(options) {
 
   function dispatch() {
     if (state !== "ready") return;
-    while (queued.length !== 0) {
-      const request = queued.shift();
+    // Sends in order without shifting the queue, which costs time in proportion to what is left.
+    let sent = 0;
+    while (sent < queued.length) {
+      const request = queued[sent++];
       inFlight.set(request.requestId, request);
       try {
         worker.postMessage({
@@ -231,10 +233,12 @@ export function createWorkerSessionClient(options) {
           arguments: request.arguments,
         });
       } catch (cause) {
+        queued.splice(0, sent);
         fail(cause);
         return;
       }
     }
+    queued.length = 0;
     // Disposal lets every accepted call finish, abandoned ones included.
     if (disposeRequested && !closeSent && inFlight.size === 0) {
       closeSent = true;

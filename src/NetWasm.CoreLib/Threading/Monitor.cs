@@ -107,17 +107,39 @@ public static class Monitor
         return false;
     }
 
-    // A synchronous waiter requires another managed thread to release or pulse
-    // the monitor. The single-reactor profile cannot provide that contract.
-    public static bool Wait(object obj) => throw BlockingNotSupported();
-    public static bool Wait(object obj, int millisecondsTimeout) => throw BlockingNotSupported();
-    public static bool Wait(object obj, TimeSpan timeout) => throw BlockingNotSupported();
+    // As on .NET 11's single-threaded runtimes (dotnet/runtime v11.0.0, #135987), a wait
+    // that does not block returns at once: nothing else can pulse the monitor, so it reports
+    // a timeout. A wait that would block needs another managed thread to pulse it.
+    public static bool Wait(object obj) => Wait(obj, Timeout.Infinite);
+
+    public static bool Wait(object obj, int millisecondsTimeout)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        if (millisecondsTimeout < Timeout.Infinite)
+            throw new ArgumentOutOfRangeException(nameof(millisecondsTimeout));
+        if (!IsEntered(obj))
+            throw new SynchronizationLockException();
+        if (millisecondsTimeout != 0)
+            throw BlockingNotSupported();
+        return false;
+    }
+
+    public static bool Wait(object obj, TimeSpan timeout) =>
+        Wait(obj, MillisecondsTimeoutFromTimeSpan(timeout));
     public static bool Wait(object obj, int millisecondsTimeout, bool exitContext) =>
-        throw BlockingNotSupported();
+        Wait(obj, millisecondsTimeout);
     public static bool Wait(object obj, TimeSpan timeout, bool exitContext) =>
-        throw BlockingNotSupported();
-    public static void Pulse(object obj) => throw BlockingNotSupported();
-    public static void PulseAll(object obj) => throw BlockingNotSupported();
+        Wait(obj, MillisecondsTimeoutFromTimeSpan(timeout));
+
+    // Pulsing wakes the monitor's waiters, and a single reactor never has one waiting.
+    public static void Pulse(object obj) => RequireEntered(obj);
+    public static void PulseAll(object obj) => RequireEntered(obj);
+
+    private static void RequireEntered(object obj)
+    {
+        if (!IsEntered(obj))
+            throw new SynchronizationLockException();
+    }
 
     private static void Acquire(object obj)
     {
@@ -147,7 +169,7 @@ public static class Monitor
     }
 
     private static PlatformNotSupportedException BlockingNotSupported() => new(
-        "Blocking monitor wait and pulse operations require managed threads.");
+        "A monitor wait that blocks requires managed threads.");
 
     private sealed class LockState(object target, LockState? next)
     {
