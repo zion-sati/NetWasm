@@ -12,6 +12,10 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- xUnit v3 test projects are executables. Microsoft.NET.Test.Sdk makes them so only from
+         its package targets, which restore does not import, so restore would leave out the
+         app host pack whenever the SDK has none installed for net10.0, as with the .NET 11 SDK. -->
+    <OutputType Condition="$(MSBuildProjectName.EndsWith('.Tests'))">Exe</OutputType>
     <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">None</NetWasmOptimization>
   </PropertyGroup>
   <ItemGroup>
