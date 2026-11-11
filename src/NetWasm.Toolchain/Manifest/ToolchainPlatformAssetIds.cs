@@ -39,6 +39,14 @@ public static class ToolchainPlatformAssetIds
     public const string Preview3ShimStream = "preview3-shim.stream";
     public const string Preview3ShimHttpWorker = "preview3-shim.http-worker";
     public const string Preview3ShimResourceWorker = "preview3-shim.resource-worker";
+    public const string Preview3ShimSockets = "preview3-shim.sockets";
+    public const string Preview3ShimSocketsAddress = "preview3-shim.sockets-address";
+    public const string Preview3ShimSocketsError = "preview3-shim.sockets-error";
+    public const string Preview3ShimSocketsIpNameLookup = "preview3-shim.sockets-ip-name-lookup";
+    public const string Preview3ShimSocketsTcp = "preview3-shim.sockets-tcp";
+    public const string Preview3ShimSocketsUdp = "preview3-shim.sockets-udp";
+    public const string Preview3ShimTcpWorker = "preview3-shim.tcp-worker";
+    public const string Preview3ShimUdpWorker = "preview3-shim.udp-worker";
     public const string JcoEntryPoint = "jco.entrypoint";
     public const string JcoPackageLock = "jco.package-lock";
     public const string JcoClosureIntegrity = "jco.closure-integrity";
@@ -117,6 +125,25 @@ public static class ToolchainPlatformAssetIds
         Preview3ShimFuture,
         Preview3ShimStream,
         Preview3ShimHttpWorker,
+        Preview3ShimResourceWorker,
+    ];
+
+    // The Node.js wasi:sockets implementation a deployment that imports wasi:sockets carries: preview3-shim's
+    // sockets entry point and, as its supporting files, the package description, license, the TCP, UDP and name
+    // lookup modules, and the workers that own the host sockets.
+    public static ImmutableArray<string> NodeSocketsProviderFiles { get; } =
+    [
+        Preview3ShimPackage,
+        Preview3ShimLicense,
+        Preview3ShimSocketsAddress,
+        Preview3ShimSocketsError,
+        Preview3ShimSocketsIpNameLookup,
+        Preview3ShimSocketsTcp,
+        Preview3ShimSocketsUdp,
+        Preview3ShimFuture,
+        Preview3ShimStream,
+        Preview3ShimTcpWorker,
+        Preview3ShimUdpWorker,
         Preview3ShimResourceWorker,
     ];
 

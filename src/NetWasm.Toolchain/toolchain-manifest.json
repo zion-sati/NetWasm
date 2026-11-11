@@ -274,6 +274,54 @@
       "sha256": "9e27a9f1db8e5925fc5e1f42bd706eaae93967de5c46d3ade5c9640b4018bd03"
     },
     {
+      "id": "preview3-shim.sockets",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/sockets.js",
+      "sha256": "5f5c85f6a073ac9a167c3826a15accc9e926fd8cef2a6a01dea6e16722087e65"
+    },
+    {
+      "id": "preview3-shim.sockets-address",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/sockets/address.js",
+      "sha256": "b4706e439490eec567c8cc85851ee13f09cda1b946a06e08c1363247d51db335"
+    },
+    {
+      "id": "preview3-shim.sockets-error",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/sockets/error.js",
+      "sha256": "1d7244811c924b4cf7d22b1a7e9ad9452ed5d333d76cfdeca4e221f3fcaff4f0"
+    },
+    {
+      "id": "preview3-shim.sockets-ip-name-lookup",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/sockets/ip-name-lookup.js",
+      "sha256": "3bcf962bd2cdf69960eec469cb3705cef4ab01d5ab8a7b2095fcf36d66248490"
+    },
+    {
+      "id": "preview3-shim.sockets-tcp",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/sockets/tcp.js",
+      "sha256": "c8104027ea01fe251da567b2d1dc018aeec6c886d7ae2012070e51ca436e7286"
+    },
+    {
+      "id": "preview3-shim.sockets-udp",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/sockets/udp.js",
+      "sha256": "ebc8e0a3651f086d771f1e2d5adb55df918ba46aa2dec5b0aa89104048683de5"
+    },
+    {
+      "id": "preview3-shim.tcp-worker",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/workers/tcp-worker.bundle.js",
+      "sha256": "4d27c78a8db10f3dfc1f11286b6d7b2da9d4fcf1cfe2fd1a16a7f94b099203aa"
+    },
+    {
+      "id": "preview3-shim.udp-worker",
+      "version": "0.13.0",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview3-shim/dist/nodejs/workers/udp-worker.bundle.js",
+      "sha256": "2e2908ce5069fd5c0e47d0f3230e28839cdc073643cad369a0024eef46eecc07"
+    },
+    {
       "id": "jco.entrypoint",
       "version": "1.41.0",
       "relativePath": "tools/jco/node_modules/@bytecodealliance/jco/dist/api.js",
@@ -289,7 +337,7 @@
       "id": "jco.closure-integrity",
       "version": "1",
       "relativePath": "tools/jco/closure-integrity.json",
-      "sha256": "dd0b7bab782c8d8343870d71ad60e7be9fb8fed0d07ab47eb91f4a12f845526d"
+      "sha256": "fbbc383e5ef9b7384018061b026bcb7323a27bd53485a480903ffaef8f30c40c"
     },
     {
       "id": "jco.notices",
@@ -305,9 +353,9 @@
     },
     {
       "id": "jco.bindgen-patch",
-      "version": "1.41.0+netwasm.1",
+      "version": "1.41.0+netwasm.2",
       "relativePath": "tools/jco/patch-provenance.json",
-      "sha256": "41da27ed94a57735a5eb72962cf06798a01caa5f936517cd93393d1238568d06"
+      "sha256": "b3be396f8329be4a013681e2605d647898db701304c8f89a5a54e444d0e86f03"
     },
     {
       "id": "hosting-bundle.command",

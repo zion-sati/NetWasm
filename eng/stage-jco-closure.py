@@ -58,7 +58,7 @@ BINDGEN_PATCH_TARGET = (
     "node_modules/@bytecodealliance/jco-transpile/vendor/"
     "js-component-bindgen-component.core.wasm"
 )
-PATCHED_JCO_VERSION = "1.41.0+netwasm.1"
+PATCHED_JCO_VERSION = "1.41.0+netwasm.2"
 UPSTREAM_JCO_VERSION = "1.41.0"
 ACCEPTED_INVOCATION = [
     "transpile",

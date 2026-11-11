@@ -87,6 +87,9 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
     [Output] public string NodeHttpProviderRoot { get; private set; } = string.Empty;
     [Output] public string NodeHttpProviderEntryPath { get; private set; } = string.Empty;
     [Output] public string NodeHttpProviderFiles { get; private set; } = string.Empty;
+    [Output] public string NodeSocketsProviderRoot { get; private set; } = string.Empty;
+    [Output] public string NodeSocketsProviderEntryPath { get; private set; } = string.Empty;
+    [Output] public string NodeSocketsProviderFiles { get; private set; } = string.Empty;
     [Output] public string TimeZoneSourceRoot { get; private set; } = string.Empty;
     [Output] public string TimeZoneDataVersion { get; private set; } = string.Empty;
     [Output] public string HostingBundleCommandPath { get; private set; } = string.Empty;
@@ -124,6 +127,9 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
         (nameof(NodeHttpProviderRoot), task => task.NodeHttpProviderRoot, (task, value) => task.NodeHttpProviderRoot = value),
         (nameof(NodeHttpProviderEntryPath), task => task.NodeHttpProviderEntryPath, (task, value) => task.NodeHttpProviderEntryPath = value),
         (nameof(NodeHttpProviderFiles), task => task.NodeHttpProviderFiles, (task, value) => task.NodeHttpProviderFiles = value),
+        (nameof(NodeSocketsProviderRoot), task => task.NodeSocketsProviderRoot, (task, value) => task.NodeSocketsProviderRoot = value),
+        (nameof(NodeSocketsProviderEntryPath), task => task.NodeSocketsProviderEntryPath, (task, value) => task.NodeSocketsProviderEntryPath = value),
+        (nameof(NodeSocketsProviderFiles), task => task.NodeSocketsProviderFiles, (task, value) => task.NodeSocketsProviderFiles = value),
         (nameof(TimeZoneSourceRoot), task => task.TimeZoneSourceRoot, (task, value) => task.TimeZoneSourceRoot = value),
         (nameof(TimeZoneDataVersion), task => task.TimeZoneDataVersion, (task, value) => task.TimeZoneDataVersion = value),
         (nameof(HostingBundleCommandPath), task => task.HostingBundleCommandPath, (task, value) => task.HostingBundleCommandPath = value),
@@ -192,6 +198,9 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
             NodeHttpProviderRoot = result.Toolchain.Jco.NodeHttpProvider.Root;
             NodeHttpProviderEntryPath = result.Toolchain.Jco.NodeHttpProvider.EntryPointPath;
             NodeHttpProviderFiles = string.Join(';', result.Toolchain.Jco.NodeHttpProvider.FilePaths);
+            NodeSocketsProviderRoot = result.Toolchain.Jco.NodeSocketsProvider.Root;
+            NodeSocketsProviderEntryPath = result.Toolchain.Jco.NodeSocketsProvider.EntryPointPath;
+            NodeSocketsProviderFiles = string.Join(';', result.Toolchain.Jco.NodeSocketsProvider.FilePaths);
             TimeZoneSourceRoot = result.Toolchain.TimeZones.SourceRoot;
             TimeZoneDataVersion = result.Toolchain.TimeZones.DataVersion;
             HostingBundleCommandPath = result.Toolchain.HostingBundle.CommandPath;

@@ -215,6 +215,61 @@ public sealed partial class SdkToolchainContractTests
             instance.GetItems("_NetWasmExecutionArgument").Select(item => item.EvaluatedInclude));
     }
 
+    // A deployment carries the Node.js network providers its wasi:http and wasi:sockets imports
+    // need, their shared files once; a program that imports neither carries none and still
+    // publishes (an empty provider list once failed the build, #220).
+    [Theory]
+    [InlineData("", "")]
+    [InlineData("wasi:http/client@0.3.2", "http.js=node-http-provider;shared.js;lib/http-only.js")]
+    [InlineData("wasi:sockets/types@0.3.2;wasi:sockets/ip-name-lookup@0.3.2",
+        "sockets.js=node-sockets-provider;shared.js;workers/tcp.js")]
+    [InlineData("wasi:http/client@0.3.2;wasi:sockets/types@0.3.2",
+        "http.js=node-http-provider;sockets.js=node-sockets-provider;shared.js;lib/http-only.js;workers/tcp.js")]
+    public void DeploymentCarriesTheNodeNetworkProvidersItsImportsNeed(string imports, string expected)
+    {
+        XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
+        var deployment = Assert.Single(LoadSdkTarget("NetWasm.Toolchain.targets").Descendants(ns + "Target"),
+            target => (string?)target.Attribute("Name") == "NetWasmSdkPrepareLocalDeployment");
+        string[] networkItems =
+        [
+            "_NetWasmDeploymentHttpClientImport", "_NetWasmDeploymentSocketsImport", "_NetWasmNodeNetworkProviderFile",
+        ];
+        var groups = deployment.Elements(ns + "ItemGroup")
+            .Where(group => group.Elements().Any(item => networkItems.Contains(item.Name.LocalName) ||
+                (string?)item.Attribute("Include") == "@(_NetWasmNodeNetworkProviderFile)"))
+            .ToArray();
+        Assert.Equal(4, groups.Length);
+
+        var root = Path.Combine(Path.GetTempPath(), "netwasm-node-providers");
+        string File(string name) => Path.Combine(root, name);
+        var project = new XDocument(new XElement(ns + "Project",
+            new XElement(ns + "PropertyGroup",
+                new XElement(ns + "_NetWasmNodeHttpProviderRoot", root),
+                new XElement(ns + "_NetWasmNodeHttpProviderEntryPath", File("http.js")),
+                new XElement(ns + "_NetWasmNodeHttpProviderFiles", $"{File("shared.js")};{File("lib/http-only.js")}"),
+                new XElement(ns + "_NetWasmNodeSocketsProviderRoot", root),
+                new XElement(ns + "_NetWasmNodeSocketsProviderEntryPath", File("sockets.js")),
+                new XElement(ns + "_NetWasmNodeSocketsProviderFiles", $"{File("shared.js")};{File("workers/tcp.js")}")),
+            new XElement(ns + "ItemGroup", imports.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Select(module => new XElement(ns + "_NetWasmDeploymentRequiredImportModule", new XAttribute("Include", module)))),
+            new XElement(ns + "Target", new XAttribute("Name", "Network"), groups.Select(group => new XElement(group)))));
+        using var reader = project.CreateReader();
+        using var projects = new Microsoft.Build.Evaluation.ProjectCollection();
+        var instance = new Microsoft.Build.Evaluation.Project(reader, null, null, projects).CreateProjectInstance();
+
+        Assert.True(instance.Build("Network", Array.Empty<Microsoft.Build.Framework.ILogger>()));
+        var artifacts = instance.GetItems("_NetWasmDeploymentArtifact")
+            .Select(item => (Path: item.GetMetadataValue("RelativePath"), Role: item.GetMetadataValue("Role")))
+            .OrderBy(item => item.Path, StringComparer.Ordinal)
+            .ToArray();
+        var wanted = expected.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(entry => entry.Split('='))
+            .Select(parts => (Path: parts[0], Role: parts.Length > 1 ? parts[1] : "node-network-provider-file"))
+            .OrderBy(item => item.Path, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(wanted, artifacts);
+    }
+
     [Theory]
     [InlineData("NetWasmSdkPrepareLocalDeployment", "NetWasmWriteExecutionRequestTask")]
     [InlineData("NetWasmSdkJsModuleSite", "NetWasmWritePageHostEntryTask")]
@@ -284,7 +339,7 @@ public sealed partial class SdkToolchainContractTests
     [InlineData("10.0.300-preview.7.25380.1", "win-x64", "win-x64", "dotnet.microsoft.com/download")]
     [InlineData("10.0.303", "linux-x64", "linux-x64", null)]
     [InlineData("10.0.403", "rhel.9-x64", "linux-x64", null)]
-    [InlineData("11.0.100-rc.3.26522.148", "osx-arm64", "osx-arm64", null)]
+    [InlineData("11.0.100", "osx-arm64", "osx-arm64", null)]
     public void SdkVersionValidationStopsSdksThatCannotRestoreTheFramework(
         string sdkVersion, string sdkRid, string portableRid, string? advice)
     {

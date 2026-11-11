@@ -120,8 +120,11 @@ public sealed class LockCompilationTests
         Assert.Equal(44, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
     }
 
+    // .NET 11 GA (dotnet/runtime#135987): a wait that does not block times out at once and
+    // pulsing is allowed; only a wait that would block is unsupported, and each requires the
+    // monitor to be held.
     [Fact]
-    public void BlockingMonitorOperationsArePlatformUnsupported()
+    public void OnlyAMonitorWaitThatBlocksIsPlatformUnsupported()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource(
@@ -133,15 +136,20 @@ public sealed class LockCompilationTests
             {
                 public static int Run(int input)
                 {
-                    try
-                    {
-                        System.Threading.Monitor.Wait(new object());
-                    }
-                    catch (System.PlatformNotSupportedException)
-                    {
-                        return input + 1;
-                    }
-                    return 0;
+                    var gate = new object();
+                    var result = 0;
+                    try { System.Threading.Monitor.Wait(gate, 0); }
+                    catch (System.Threading.SynchronizationLockException) { result |= 1; }
+                    try { System.Threading.Monitor.Pulse(gate); }
+                    catch (System.Threading.SynchronizationLockException) { result |= 2; }
+                    System.Threading.Monitor.Enter(gate);
+                    if (!System.Threading.Monitor.Wait(gate, 0)) result |= 4;
+                    System.Threading.Monitor.PulseAll(gate);
+                    try { System.Threading.Monitor.Wait(gate); }
+                    catch (System.PlatformNotSupportedException) { result |= 8; }
+                    if (System.Threading.Monitor.IsEntered(gate)) result |= 16;
+                    System.Threading.Monitor.Exit(gate);
+                    return input + result;
                 }
             }
             """);
@@ -153,7 +161,7 @@ public sealed class LockCompilationTests
             "Run",
             []));
 
-        Assert.Equal(42, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
+        Assert.Equal(41 + 31, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
     }
 
     [Fact]

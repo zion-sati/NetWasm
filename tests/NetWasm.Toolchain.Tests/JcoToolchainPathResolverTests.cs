@@ -30,11 +30,13 @@ public sealed class JcoToolchainPathResolverTests
                 .. ToolchainPlatformAssetIds.JcoClosure,
                 ToolchainPlatformAssetIds.Preview3ShimHttp,
                 .. ToolchainPlatformAssetIds.NodeHttpProviderFiles,
+                ToolchainPlatformAssetIds.Preview3ShimSockets,
+                .. ToolchainPlatformAssetIds.NodeSocketsProviderFiles,
             ],
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
         Assert.Equal("0.1.0-preview.23", result.PackageVersion);
-        Assert.Equal("1.41.0+netwasm.1", result.JcoVersion);
+        Assert.Equal("1.41.0+netwasm.2", result.JcoVersion);
         Assert.Equal("0.13.0", result.Preview3ShimVersion);
         Assert.Equal(NodePath, result.NodePath);
         Assert.Equal(new Version(25, 0), result.NodeVersion);
@@ -50,6 +52,13 @@ public sealed class JcoToolchainPathResolverTests
         Assert.Equal(
             ToolchainPlatformAssetIds.NodeHttpProviderFiles.Select(AssetPath),
             result.NodeHttpProvider.FilePaths);
+        Assert.Equal(Path.Combine(PackageRoot, "tools", "jco"), result.NodeSocketsProvider.Root);
+        Assert.Equal(
+            AssetPath(ToolchainPlatformAssetIds.Preview3ShimSockets),
+            result.NodeSocketsProvider.EntryPointPath);
+        Assert.Equal(
+            ToolchainPlatformAssetIds.NodeSocketsProviderFiles.Select(AssetPath),
+            result.NodeSocketsProvider.FilePaths);
         Assert.Equal(PackageRoot, closureVerifier.PackageRoot);
         Assert.Equal(
             "tools/jco/closure-integrity.json",
@@ -297,7 +306,7 @@ public sealed class JcoToolchainPathResolverTests
         {
             ToolchainPlatformAssetIds.JcoPackage => "1.41.0",
             ToolchainPlatformAssetIds.JcoEntryPoint => "1.41.0",
-            ToolchainPlatformAssetIds.JcoBindgenPatch => "1.41.0+netwasm.1",
+            ToolchainPlatformAssetIds.JcoBindgenPatch => "1.41.0+netwasm.2",
             ToolchainPlatformAssetIds.Preview3ShimPackage => "0.13.0",
             _ when id.StartsWith("preview3-shim.", StringComparison.Ordinal) => "0.13.0",
             _ => "1",

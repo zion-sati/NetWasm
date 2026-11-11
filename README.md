@@ -286,9 +286,10 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.12.2:** a call into a program costs the same however much it keeps
-alive: calls no longer collect garbage on their own, and finalizers, weak references, GC
-handles and pending asynchronous work are tracked in constant time.
+**New in NetWasm 0.12.2:** `dotnet run` and NetWasm's other Node.js hosts run programs
+that use sockets, and a call into a program costs the same however much it keeps alive:
+calls no longer collect garbage on their own, and finalizers, weak references, GC handles
+and pending asynchronous work are tracked in constant time.
 [Release notes](docs/releases/0.12.2.md). NetWasm 0.12.1 ends a program with the exit code
 desktop .NET gives it, and adds `Environment.Exit`, `Environment.ExitCode` and
 `Environment.FailFast`. [Release notes](docs/releases/0.12.1.md). NetWasm 0.12.0 made components target WASI 0.3, so ordinary .NET file,

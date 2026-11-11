@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "sdk10MinimumVersion": "10.0.303",
   "sdk10BuildVersion": "10.0.403",
-  "sdk11Version": "11.0.100-rc.3.26522.148",
-  "roslynVersion": "5.12.0-1.26522.148",
-  "roslynCommit": "5254d8bcf59917edc1e1abc33bdf2442b77b1c70",
-  "browserRuntimeFrameworkVersion": "11.0.0-rc.3.26522.148",
-  "browserWorkloadManifestVersion": "11.0.100-rc.3.26522.148",
-  "desktopOracleFrameworkVersion": "11.0.0-rc.3.26522.148"
+  "sdk11Version": "11.0.100",
+  "roslynVersion": "5.12.0-1.26529.118",
+  "roslynCommit": "297acf930fb0f5c07fd4e51d78e521b4ad2e5d1f",
+  "browserRuntimeFrameworkVersion": "11.0.0",
+  "browserWorkloadManifestVersion": "11.0.100",
+  "desktopOracleFrameworkVersion": "11.0.0"
 }
