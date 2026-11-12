@@ -10,6 +10,10 @@ using static EmitterTestSupport;
 
 public sealed class RootClearElisionPlannerTests
 {
+    [Fact]
+    public void RejectsAMissingReader() =>
+        Assert.Throws<ArgumentNullException>(() => new RootClearElisionPlanner(null!));
+
     private readonly IRootClearElisionPlanner _planner =
         Assert.IsAssignableFrom<IRootClearElisionPlanner>(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()));
     private static readonly RootSource Source = new(RootSourceKind.Local, 0);

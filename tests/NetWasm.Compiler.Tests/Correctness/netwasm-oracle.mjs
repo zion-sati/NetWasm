@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { readExceptionClause } from "./exception-metadata.mjs";
 import { createRefreshableDataView } from "./refreshable-data-view.mjs";
 import { createDeclaredOracleImports } from "./declared-oracle-imports.mjs";
+import { readRuntimeTypeTable } from "./runtime-type-table.cjs";
 
 var [modulePath, inputText, target = "wasm32", staticDataEndOrConfiguration,
   explicitHostConfigurationPath] =
@@ -503,13 +504,6 @@ var registerTypeObjects = (first, count, stride) => {
   }
 };
 // A reference bitmap's bit i is bit i % 8 of its byte i / 8, whatever its word size.
-var bitmapHasReferences = (bitmap, bits) => {
-  var view = createRefreshableDataView(memory);
-  for (var bit = 0; bit < bits; bit++) {
-    if ((view.getUint8(asNumber(plus(bitmap, bit >> 3))) >> (bit & 7)) & 1) return true;
-  }
-  return false;
-};
 var allocateArray = (
   length,
   type,
@@ -837,24 +831,23 @@ var runtimeValues = {
   native_aligned_alloc: nativeAlignedAlloc,
   native_aligned_realloc: nativeAlignedRealloc,
   native_aligned_free(address) { nativeSizes.delete(address); },
-  register_type(type, base, size, bitmap, bitmapBits, assignableTypes,
-      assignableTypeCount, hasFinalizer, isInterface) {
-    typeBases.set(type, base);
-    typeSizes.set(type, Number(size));
-    const ids = new Set();
-    const view = createRefreshableDataView(memory);
-    for (var index = 0; index < assignableTypeCount; index++) {
-      ids.add(view.getInt32(asNumber(plus(assignableTypes, index * 4)), true));
+  // The runtime type table (RuntimeTypeTableEncoder): decoded once, as the runtime does.
+  register_types(table) {
+    for (const entry of readRuntimeTypeTable(new Uint8Array(memory.buffer), asNumber(table))) {
+      typeBases.set(entry.type, entry.base);
+      typeSizes.set(entry.type, entry.size);
+      typeAssignable.set(entry.type, entry.assignable);
+      if (entry.isInterface) typeInterfaces.add(entry.type);
+      typeReferences.set(entry.type, entry.references);
+      if (entry.value) {
+        valueTypeSizes.set(entry.type, entry.value.size);
+        valueTypePayloadOffsets.set(entry.type, entry.value.payload);
+        valueTypeReferences.set(entry.type, entry.value.references);
+      }
     }
-    typeAssignable.set(type, ids);
-    if (isInterface) typeInterfaces.add(type);
-    typeReferences.set(type, bitmapHasReferences(bitmap, bitmapBits));
   },
-  register_value_type(type, size, boxedPayloadOffset, bitmap, bitmapBits) {
-    valueTypeSizes.set(type, Number(size));
-    valueTypePayloadOffsets.set(type, Number(boxedPayloadOffset));
-    valueTypeReferences.set(type, bitmapHasReferences(bitmap, bitmapBits));
-  },
+  type_base_id(type) { return typeBases.get(type) || 0; },
+  type_is_assignable: isTypeAssignable,
   register_static_root: zero,
   root_frame_enter: rootEnter,
   root_frame_leave: zero,

@@ -160,17 +160,15 @@ public sealed class TypeMaterializationEmitterTests
         }
     }
 
+    // The type table's address, at the target's address width: CoreLib reads the table in place.
     [Theory]
-    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32Multiply, WasmOpcodes.I32Load)]
-    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64Multiply, WasmOpcodes.I64Load)]
-    public void TypeFactsLookupUsesBoundedTargetWidthTable(
-        WasmTarget target,
-        byte multiply,
-        byte load)
+    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32Constant)]
+    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64Constant)]
+    public void TypeFactsPushTheTypeTableAddress(WasmTarget target, byte constant)
     {
         var request = CreateInstructionRequest(
             CilOperation.GetTypeFacts,
-            [CliValueKind.I4],
+            [],
             maxStack: 1);
         var emitter = CreateEmitter(target);
 
@@ -178,12 +176,9 @@ public sealed class TypeMaterializationEmitterTests
 
         Assert.Equal([CliValueKind.NativeInt], request.Stack);
         var bytes = GetCodeBytes(request);
-        Assert.Contains(WasmOpcodes.I32LessThanUnsigned, bytes);
-        Assert.Contains(multiply, bytes);
-        Assert.Contains(load, bytes);
-        Assert.Equal(
-            target == WasmTarget.Wasm64,
-            bytes.Contains(WasmOpcodes.I64ExtendI32Unsigned));
+        Assert.Equal(constant, bytes[0]);
+        Assert.DoesNotContain(WasmOpcodes.I32Load, bytes);
+        Assert.DoesNotContain(WasmOpcodes.I64Load, bytes);
     }
 
     [Fact]
@@ -191,7 +186,7 @@ public sealed class TypeMaterializationEmitterTests
     {
         var request = CreateInstructionRequest(
             CilOperation.GetTypeFacts,
-            [CliValueKind.I4],
+            [],
             maxStack: 1);
         var emitter = CreateEmitter(typeFacts: false);
 
@@ -244,8 +239,7 @@ public sealed class TypeMaterializationEmitterTests
                 ? WasmTargetLayout.Wasm32
                 : WasmTargetLayout.Wasm64)
         {
-            TypeFactsTableAddress = typeFacts ? 160 : 0,
-            TypeFactsTableCount = typeFacts ? 16 : 0,
+            TypeTableAddress = typeFacts ? 160 : 0,
             TypeObjectAddresses = Lookups.Of(typeObjects ?? ImmutableDictionary<string, int>.Empty),
             TypeObjectCacheAddress = typeObjectCache,
         };

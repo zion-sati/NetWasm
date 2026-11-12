@@ -374,7 +374,6 @@ internal static class EmitterTestSupport
         IRuntimeImportResolver runtimeImports) => new RuntimeInitializerFunctionEmitter(
             layouts,
             layouts,
-            layouts,
             runtimeImports,
             CreateAddressInstructions(layouts),
             CreateRuntimeCoreInitializer(layouts, runtimeImports),
@@ -932,7 +931,7 @@ internal sealed class RecordingLayoutProvider(
     public int GetExceptionObject(ManagedExceptionKind kind) => 300 + (int)kind * 4;
     public int StaticDataEnd => 256;
     public ImmutableArray<TypeDescriptorLayout> TypeDescriptors =>
-        [new(TypeKey, 9, 0, 16, 128, 4, null)];
+        [new(TypeKey, 9, 0, 16, [], null)];
     public ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors => [];
     public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
     public ImmutableArray<EnumMetadataLayout> EnumMetadata => [];
@@ -940,8 +939,7 @@ internal sealed class RecordingLayoutProvider(
     public ImmutableArray<DataSegment> DataSegments => [];
     public int DeclaringTypeIdOffset => 24;
     public int RequiresDeclaringTypeOffset => 28;
-    public int TypeFactsTableAddress { get; init; } = 160;
-    public int TypeFactsTableCount { get; init; } = 16;
+    public int TypeTableAddress { get; init; } = 160;
     public IEntryLookup<string, int> TypeObjectAddresses { get; init; } = Lookups.NoEntries<string, int>();
     public int TypeObjectTableAddress { get; init; }
     public int TypeObjectCacheAddress { get; init; }

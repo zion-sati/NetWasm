@@ -1,630 +1,225 @@
-using System.Buffers.Binary;
-using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Tests;
 
+// A type's flag word in the runtime type table: CoreLib's flags, the array rank and the TypeCode.
 public sealed class RuntimeTypeFactsEncodingTests
 {
     private static readonly AssemblyIdentity Assembly = new("type-facts");
 
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void EncodesClassificationTypeCodeAndRelationshipsAtTargetWidth(
-        WasmTarget targetKind)
+    [Fact]
+    public void AnEnumIsASealedValueTypeDefinitionWithItsUnderlyingTypeCode()
     {
-        var target = WasmTargetLayout.For(targetKind);
-        var state = new ManagedStaticDataBuildState();
-        var identity = CliTypeIdentity.Named(
-            Assembly,
-            "Fixtures",
-            "Number",
-            isValueType: true,
-            CliValueKind.I4);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "Fixtures",
-            "Number",
-            IsValueType: true,
-            [],
-            [])
+        var definition = Definition("Fixtures", "Number", isValueType: true) with
         {
             IsEnum = true,
             IsSealed = true,
             EnumUnderlyingType = CliTypeIdentity.Primitive("u2", CliValueKind.I4),
         };
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            target,
-            identity,
-            definition,
-            typeId: 7,
-            baseTypeId: 3,
-            assignableTypeIdsAddress: 88,
-            assignableTypeIdCount: 2);
+        var word = Word(CliTypeIdentity.Named(Assembly, "Fixtures", "Number", isValueType: true, CliValueKind.I4), definition);
 
-        var address = state.TypeFacts[7];
-        var data = Assert.Single(state.Segments).Data;
-        Assert.Equal(address, Assert.Single(state.Segments).Address);
-        Assert.Equal(RuntimeTypeFactsEncoding.Size(target), data.Length);
-        Assert.Equal(
-            (int)(RuntimeTypeFactsFlags.ValueType |
-                  RuntimeTypeFactsFlags.Enum |
-                  RuntimeTypeFactsFlags.Sealed),
-            ReadInt32(data, RuntimeTypeFactsEncoding.FlagsOffset));
-        Assert.Equal(8, ReadInt32(data, RuntimeTypeFactsEncoding.TypeCodeOffset));
-        Assert.Equal(3, ReadInt32(data, RuntimeTypeFactsEncoding.BaseTypeIdOffset));
-        Assert.Equal(2, ReadInt32(data, RuntimeTypeFactsEncoding.AssignableTypeCountOffset));
-        Assert.Equal(
-            88,
-            ReadAddress(data, RuntimeTypeFactsEncoding.AssignableTypeIdsOffset, target));
-        Assert.Equal(
-            0,
-            ReadAddress(data, RuntimeTypeFactsEncoding.DelegateInvokeOffset(target), target));
-        Assert.Equal(
-            0,
-            ReadInt32(data, RuntimeTypeFactsEncoding.GenericArgumentCountOffset(target)));
-        Assert.Equal(
-            0,
-            ReadAddress(
-                data,
-                RuntimeTypeFactsEncoding.GenericArgumentTypeIdsOffset(target),
-                target));
+        Assert.Equal(RuntimeTypeFactsFlags.ValueType | RuntimeTypeFactsFlags.Enum | RuntimeTypeFactsFlags.Sealed |
+            RuntimeTypeFactsFlags.TypeDefinition, Flags(word));
+        Assert.Equal(8, TypeCode(word));
+        Assert.Equal(0, Rank(word));
+    }
+
+    // A generic parameter is a class unless its owner gives it the struct constraint, which makes it a
+    // value type; its variance and special constraints take the rank field, as it has no rank. An owner
+    // without parameter data, or none at all, leaves them clear.
+    [Theory]
+    [InlineData(-1, 0, false)]
+    [InlineData(0, 0, false)]
+    [InlineData(1, 0x04, false)]
+    [InlineData(2, 0x18, true)]
+    [InlineData(3, 0x01, false)]
+    [InlineData(5, 0, false)]
+    public void AGenericParameterTakesItsOwnersAttributes(int index, int attributes, bool valueType)
+    {
+        var owner = Definition("Fixtures", "Holder`5", isValueType: false) with
+        {
+            GenericArity = 5,
+            GenericParameterAttributes = [0, 0x04, 0x18, 0x01, 0x20],
+        };
+
+        var word = Word(CliTypeIdentity.ScopedGenericParameter("owner", method: false, index: Math.Max(index, 0)),
+            definition: null, index < 0 ? null : owner);
+
+        Assert.Equal(RuntimeTypeFactsFlags.ContainsGenericParameters | RuntimeTypeFactsFlags.GenericTypeParameter |
+            (valueType ? RuntimeTypeFactsFlags.ValueType : RuntimeTypeFactsFlags.Class), Flags(word));
+        Assert.Equal(attributes, Rank(word));
     }
 
     [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void EncodesGenericArgumentMetadataAtTargetWidth(WasmTarget targetKind)
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ARefStructIsByRefLike(bool byRefLike)
     {
-        var target = WasmTargetLayout.For(targetKind);
-        var state = new ManagedStaticDataBuildState();
-        var identity = CliTypeIdentity.Named(
-            Assembly,
-            "Fixtures",
-            "Box`1",
-            isValueType: false);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "Fixtures",
-            "Box`1",
-            IsValueType: false,
-            [],
-            []);
+        var identity = CliTypeIdentity.Named(Assembly, "Fixtures", "Window", isValueType: true);
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            target,
-            identity,
-            definition,
-            typeId: 7,
-            baseTypeId: 3,
-            assignableTypeIdsAddress: 0,
-            assignableTypeIdCount: 0,
-            genericArgumentTypeIdsAddress: 96,
-            genericArgumentCount: 2);
+        var word = Word(identity, Definition("Fixtures", "Window", isValueType: true) with { IsByRefLike = byRefLike });
 
-        var data = Assert.Single(state.Segments).Data;
-        Assert.Equal(
-            2,
-            ReadInt32(data, RuntimeTypeFactsEncoding.GenericArgumentCountOffset(target)));
-        Assert.Equal(
-            96,
-            ReadAddress(
-                data,
-                RuntimeTypeFactsEncoding.GenericArgumentTypeIdsOffset(target),
-                target));
-    }
-
-    [Fact]
-    public void EncodesMetadataOnlyGenericParameterWithoutDefinitionFlags()
-    {
-        var state = new ManagedStaticDataBuildState();
-
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            CliTypeIdentity.ScopedGenericParameter("owner", method: false, index: 0),
-            definition: null,
-            typeId: 7,
-            baseTypeId: 0,
-            assignableTypeIdsAddress: 0,
-            assignableTypeIdCount: 0);
-
-        var flags = (RuntimeTypeFactsFlags)ReadInt32(
-            Assert.Single(state.Segments).Data,
-            RuntimeTypeFactsEncoding.FlagsOffset);
-        Assert.Equal(RuntimeTypeFactsFlags.ContainsGenericParameters, flags);
-    }
-
-    [Theory]
-    [InlineData(0, 96)]
-    [InlineData(1, 0)]
-    [InlineData(-1, 0)]
-    public void RejectsInconsistentGenericArgumentMetadata(int count, int address)
-    {
-        var exception = Assert.Throws<CompilerException>(() =>
-            RuntimeTypeFactsEncoding.Add(
-                new ManagedStaticDataBuildState(),
-                WasmTargetLayout.Wasm32,
-                CliTypeIdentity.Named(Assembly, "Fixtures", "Box`1", false),
-                new TypeDefinitionModel(
-                    new EntityKey(Assembly, 1),
-                    "Fixtures",
-                    "Box`1",
-                    IsValueType: false,
-                    [],
-                    []),
-                typeId: 7,
-                baseTypeId: 0,
-                assignableTypeIdsAddress: 0,
-                assignableTypeIdCount: 0,
-                genericArgumentTypeIdsAddress: address,
-                genericArgumentCount: count));
-
-        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
+        Assert.Equal(byRefLike, (Flags(word) & RuntimeTypeFactsFlags.ByRefLike) != 0);
     }
 
     [Fact]
     public void RejectsMissingDefinitionForDefinitionBackedIdentity()
     {
-        var exception = Assert.Throws<CompilerException>(() =>
-            RuntimeTypeFactsEncoding.Add(
-                new ManagedStaticDataBuildState(),
-                WasmTargetLayout.Wasm32,
-                CliTypeIdentity.Named(Assembly, "Fixtures", "Box`1", false),
-                definition: null,
-                typeId: 7,
-                baseTypeId: 0,
-                assignableTypeIdsAddress: 0,
-                assignableTypeIdCount: 0));
+        var exception = Assert.Throws<CompilerException>(() => Word(
+            CliTypeIdentity.Named(Assembly, "Fixtures", "Box`1", false), definition: null));
 
         Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
     }
 
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void EncodesDelegateInvokeDescriptorAtTargetWidth(WasmTarget targetKind)
-    {
-        var target = WasmTargetLayout.For(targetKind);
-        var state = new ManagedStaticDataBuildState();
-        var identity = CliTypeIdentity.Named(
-            Assembly,
-            "Fixtures",
-            "Callback",
-            isValueType: false);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "Fixtures",
-            "Callback",
-            IsValueType: false,
-            [],
-            []);
-
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            target,
-            identity,
-            definition,
-            typeId: 7,
-            baseTypeId: 0,
-            assignableTypeIdsAddress: 0,
-            assignableTypeIdCount: 0,
-            delegateInvokeAddress: 4096);
-
-        Assert.Equal(
-            4096,
-            ReadAddress(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.DelegateInvokeOffset(target),
-                target));
-    }
-
     [Fact]
-    public void EncodesNullableOnlyForClosedNullableIdentity()
+    public void AClosedNullableIsAConstructedValueTypeAndNoTypeDefinition()
     {
-        var state = new ManagedStaticDataBuildState();
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "System",
-            "Nullable`1",
-            IsValueType: true,
-            [],
-            [])
-        {
-            GenericArity = 1,
-            IsSealed = true,
-        };
+        var definition = Definition("System", "Nullable`1", isValueType: true) with { GenericArity = 1, IsSealed = true };
         var identity = CliTypeIdentity.GenericInstantiation(
-            CliTypeIdentity.Named(
-                Assembly,
-                definition.Namespace,
-                definition.Name,
-                isValueType: true),
+            CliTypeIdentity.Named(Assembly, "System", "Nullable`1", isValueType: true),
             [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            identity,
-            definition,
-            typeId: 7,
-            baseTypeId: 3,
-            assignableTypeIdsAddress: 0,
-            assignableTypeIdCount: 0);
-
-        Assert.Equal(
-            (int)(RuntimeTypeFactsFlags.ValueType |
-                  RuntimeTypeFactsFlags.GenericType |
-                  RuntimeTypeFactsFlags.Sealed |
-                  RuntimeTypeFactsFlags.Nullable),
-            ReadInt32(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.FlagsOffset));
+        Assert.Equal(RuntimeTypeFactsFlags.ValueType | RuntimeTypeFactsFlags.GenericType |
+            RuntimeTypeFactsFlags.Sealed | RuntimeTypeFactsFlags.Nullable, Flags(Word(identity, definition)));
     }
 
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, true)]
-    public void EncodesAbstractOnlyForDefinitionBackedIdentities(
-        bool abstractDefinition,
-        bool expected)
+    public void AbstractFollowsTheDefinition(bool abstractDefinition, bool expected)
     {
-        var state = new ManagedStaticDataBuildState();
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "Fixtures",
-            "Base",
-            IsValueType: false,
-            [],
-            [])
-        {
-            IsAbstract = abstractDefinition,
-        };
+        var definition = Definition("Fixtures", "Base", isValueType: false) with { IsAbstract = abstractDefinition };
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            CliTypeIdentity.Named(
-                Assembly,
-                definition.Namespace,
-                definition.Name,
-                isValueType: false),
-            definition,
-            typeId: 7,
-            baseTypeId: 3,
-            assignableTypeIdsAddress: 0,
-            assignableTypeIdCount: 0);
+        var flags = Flags(Word(CliTypeIdentity.Named(Assembly, "Fixtures", "Base", isValueType: false), definition));
 
-        var flags = (RuntimeTypeFactsFlags)ReadInt32(
-            Assert.Single(state.Segments).Data,
-            RuntimeTypeFactsEncoding.FlagsOffset);
         Assert.Equal(expected, (flags & RuntimeTypeFactsFlags.Abstract) != 0);
     }
 
     [Theory]
-    [InlineData("primitive:bool", 3)]
-    [InlineData("primitive:char", 4)]
-    [InlineData("primitive:i1", 5)]
-    [InlineData("primitive:u1", 6)]
-    [InlineData("primitive:i2", 7)]
-    [InlineData("primitive:u2", 8)]
-    [InlineData("primitive:i4", 9)]
-    [InlineData("primitive:u4", 10)]
-    [InlineData("primitive:i8", 11)]
-    [InlineData("primitive:u8", 12)]
-    [InlineData("primitive:f4", 13)]
-    [InlineData("primitive:f8", 14)]
-    [InlineData("primitive:string", 18)]
-    public void EncodesEveryPrimitiveTypeCode(string canonicalName, int expected)
+    [InlineData("bool", CliValueKind.I4, 3)]
+    [InlineData("char", CliValueKind.I4, 4)]
+    [InlineData("i1", CliValueKind.I4, 5)]
+    [InlineData("u1", CliValueKind.I4, 6)]
+    [InlineData("i2", CliValueKind.I4, 7)]
+    [InlineData("u2", CliValueKind.I4, 8)]
+    [InlineData("i4", CliValueKind.I4, 9)]
+    [InlineData("u4", CliValueKind.I4, 10)]
+    [InlineData("i8", CliValueKind.I8, 11)]
+    [InlineData("u8", CliValueKind.I8, 12)]
+    [InlineData("f4", CliValueKind.F4, 13)]
+    [InlineData("f8", CliValueKind.F8, 14)]
+    [InlineData("string", CliValueKind.ManagedReference, 18)]
+    public void EveryPrimitiveHasItsTypeCode(string name, CliValueKind kind, int expected)
     {
-        var state = new ManagedStaticDataBuildState();
-        var identity = Primitive(canonicalName);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "System",
-            "Primitive",
-            identity.IsValueType,
-            [],
-            []);
+        var identity = CliTypeIdentity.Primitive(name, kind, isValueType: name != "string");
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            identity,
-            definition,
-            1,
-            0,
-            0,
-            0);
-
-        Assert.Equal(
-            expected,
-            ReadInt32(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.TypeCodeOffset));
+        Assert.Equal(expected, TypeCode(Word(identity, Definition("System", "Primitive", identity.IsValueType))));
     }
 
     [Theory]
-    [InlineData("System.DBNull", false, 2)]
-    [InlineData("System.Decimal", true, 15)]
-    [InlineData("System.DateTime", true, 16)]
-    public void EncodesSpecialNamedTypeCodes(
-        string fullName,
-        bool isValueType,
-        int expected)
+    [InlineData("System", "DBNull", false, 2)]
+    [InlineData("System", "Decimal", true, 15)]
+    [InlineData("System", "DateTime", true, 16)]
+    public void SpecialNamedTypesHaveTheirTypeCodes(string @namespace, string name, bool isValueType, int expected)
     {
-        var separator = fullName.LastIndexOf('.');
-        var identity = CliTypeIdentity.Named(
-            Assembly,
-            fullName[..separator],
-            fullName[(separator + 1)..],
-            isValueType);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            fullName[..separator],
-            fullName[(separator + 1)..],
-            isValueType,
-            [],
-            []);
-        var state = new ManagedStaticDataBuildState();
+        var word = Word(CliTypeIdentity.Named(Assembly, @namespace, name, isValueType),
+            Definition(@namespace, name, isValueType));
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            identity,
-            definition,
-            1,
-            0,
-            0,
-            0);
-
-        Assert.Equal(
-            expected,
-            ReadInt32(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.TypeCodeOffset));
+        Assert.Equal(expected, TypeCode(word));
     }
 
     [Theory]
-    [InlineData(false, (int)(RuntimeTypeFactsFlags.ByReference |
-                             RuntimeTypeFactsFlags.Class))]
-    [InlineData(true, (int)(RuntimeTypeFactsFlags.Pointer |
-                            RuntimeTypeFactsFlags.Class))]
-    public void EncodesManagedAddressAndPointerFlags(
-        bool unmanaged,
-        int expected)
+    [InlineData(false, (int)(RuntimeTypeFactsFlags.ByReference | RuntimeTypeFactsFlags.Class))]
+    [InlineData(true, (int)(RuntimeTypeFactsFlags.Pointer | RuntimeTypeFactsFlags.Class))]
+    public void ByReferenceAndPointerTypesTakeNoDefinitionFlags(bool unmanaged, int expected)
     {
-        var element = CliTypeIdentity.Named(
-            Assembly,
-            "Fixtures",
-            "Value",
-            isValueType: true);
-        var identity = unmanaged
-            ? CliTypeIdentity.UnmanagedPointer(element)
-            : CliTypeIdentity.ManagedByReference(element);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "Fixtures",
-            "Value",
-            IsValueType: true,
-            [],
-            [])
+        var element = CliTypeIdentity.Named(Assembly, "Fixtures", "Value", isValueType: true);
+        var definition = Definition("Fixtures", "Value", isValueType: true) with
         {
             IsEnum = true,
             IsInterface = true,
             IsSealed = true,
             EnumUnderlyingType = CliTypeIdentity.Primitive("u2", CliValueKind.I4),
         };
-        var state = new ManagedStaticDataBuildState();
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            identity,
-            definition,
-            1,
-            0,
-            0,
-            0);
+        var word = Word(unmanaged ? CliTypeIdentity.UnmanagedPointer(element) : CliTypeIdentity.ManagedByReference(element),
+            definition);
 
-        Assert.Equal(
-            expected,
-            ReadInt32(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.FlagsOffset));
-        Assert.Equal(
-            1,
-            ReadInt32(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.TypeCodeOffset));
+        Assert.Equal(expected, (int)Flags(word));
+        Assert.Equal(1, TypeCode(word));
     }
 
     [Theory]
-    [InlineData(
-        "i4",
-        CliValueKind.I4,
-        true,
-        (int)(RuntimeTypeFactsFlags.ValueType | RuntimeTypeFactsFlags.Sealed))]
-    [InlineData(
-        "string",
-        CliValueKind.ManagedReference,
-        false,
-        (int)(RuntimeTypeFactsFlags.Class | RuntimeTypeFactsFlags.Sealed))]
-    public void EncodesDefinitionBackedPrimitiveFlags(
-        string name,
-        CliValueKind stackKind,
-        bool isValueType,
-        int expected)
+    [InlineData("i4", CliValueKind.I4, true,
+        (int)(RuntimeTypeFactsFlags.ValueType | RuntimeTypeFactsFlags.Sealed | RuntimeTypeFactsFlags.TypeDefinition))]
+    [InlineData("string", CliValueKind.ManagedReference, false,
+        (int)(RuntimeTypeFactsFlags.Class | RuntimeTypeFactsFlags.Sealed | RuntimeTypeFactsFlags.TypeDefinition))]
+    public void APrimitiveIsADefinitionBackedTypeDefinition(
+        string name, CliValueKind kind, bool isValueType, int expected)
     {
-        var identity = CliTypeIdentity.Primitive(name, stackKind, isValueType);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "System",
-            isValueType ? "Int32" : "String",
-            isValueType,
-            [],
-            [])
-        {
-            IsSealed = true,
-        };
-        var state = new ManagedStaticDataBuildState();
+        var definition = Definition("System", isValueType ? "Int32" : "String", isValueType) with { IsSealed = true };
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            identity,
-            definition,
-            1,
-            0,
-            0,
-            0);
-
-        Assert.Equal(
-            expected,
-            ReadInt32(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.FlagsOffset));
+        Assert.Equal(expected, (int)Flags(Word(CliTypeIdentity.Primitive(name, kind, isValueType), definition)));
     }
 
     [Theory]
-    [InlineData(0, (int)RuntimeTypeFactsFlags.ContainsGenericParameters)]
-    [InlineData(1, (int)(RuntimeTypeFactsFlags.ContainsGenericParameters |
-                         RuntimeTypeFactsFlags.GenericTypeDefinition |
-                         RuntimeTypeFactsFlags.GenericType |
-                         RuntimeTypeFactsFlags.Class))]
-    [InlineData(2, (int)RuntimeTypeFactsFlags.Interface)]
-    [InlineData(3, (int)RuntimeTypeFactsFlags.Class)]
-    public void EncodesGenericParameterAndReferenceClassificationFlags(
-        int kind,
-        int expected)
+    [InlineData(0, (int)(RuntimeTypeFactsFlags.ContainsGenericParameters | RuntimeTypeFactsFlags.GenericTypeParameter |
+        RuntimeTypeFactsFlags.Class))]
+    [InlineData(1, (int)(RuntimeTypeFactsFlags.ContainsGenericParameters | RuntimeTypeFactsFlags.GenericTypeDefinition |
+        RuntimeTypeFactsFlags.GenericType | RuntimeTypeFactsFlags.Class | RuntimeTypeFactsFlags.TypeDefinition))]
+    [InlineData(2, (int)(RuntimeTypeFactsFlags.Interface | RuntimeTypeFactsFlags.TypeDefinition))]
+    [InlineData(3, (int)(RuntimeTypeFactsFlags.Class | RuntimeTypeFactsFlags.TypeDefinition))]
+    [InlineData(4, (int)(RuntimeTypeFactsFlags.ContainsGenericParameters | RuntimeTypeFactsFlags.GenericMethodParameter |
+        RuntimeTypeFactsFlags.Class))]
+    public void GenericParametersDefinitionsInterfacesAndClassesAreClassified(int kind, int expected)
     {
+        var name = kind == 1 ? "Box`1" : kind == 2 ? "IMarker" : "Reference";
         var identity = kind switch
         {
             0 => CliTypeIdentity.GenericParameter(method: false, 0),
-            _ => CliTypeIdentity.Named(
-                Assembly,
-                "Fixtures",
-                kind == 1 ? "Box`1" : kind == 2 ? "IMarker" : "Reference",
-                isValueType: false),
+            4 => CliTypeIdentity.GenericParameter(method: true, 0),
+            _ => CliTypeIdentity.Named(Assembly, "Fixtures", name, isValueType: false),
         };
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "Fixtures",
-            kind == 1 ? "Box`1" : kind == 2 ? "IMarker" : "Reference",
-            IsValueType: false,
-            [],
-            [])
+        var definition = Definition("Fixtures", name, isValueType: false) with
         {
             GenericArity = kind == 1 ? 1 : 0,
             IsInterface = kind == 2,
         };
-        var state = new ManagedStaticDataBuildState();
 
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            identity,
-            definition,
-            1,
-            0,
-            0,
-            0);
-
-        Assert.Equal(
-            expected,
-            ReadInt32(
-                Assert.Single(state.Segments).Data,
-                RuntimeTypeFactsEncoding.FlagsOffset));
+        Assert.Equal(expected, (int)Flags(Word(identity, definition)));
     }
 
-    [Fact]
-    public void RejectsDuplicateSemanticTypeIdsWithRuntimeContract()
+    // GetArrayRank reads the rank from the word: a vector has rank 1, a rectangular array its rank.
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(1, false)]
+    [InlineData(3, false)]
+    public void ArraysCarryTheirRank(int rank, bool vector)
     {
-        var state = new ManagedStaticDataBuildState();
-        var identity = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
-        var definition = new TypeDefinitionModel(
-            new EntityKey(Assembly, 1),
-            "System",
-            "Int32",
-            IsValueType: true,
-            [],
-            []);
-        RuntimeTypeFactsEncoding.Add(
-            state,
-            WasmTargetLayout.Wasm32,
-            identity,
-            definition,
-            1,
-            0,
-            0,
-            0);
+        var element = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var identity = vector ? CliTypeIdentity.SzArray(element) : CliTypeIdentity.Array(element, rank);
 
-        var exception = Assert.Throws<CompilerException>(() =>
-            RuntimeTypeFactsEncoding.Add(
-                state,
-                WasmTargetLayout.Wasm32,
-                identity,
-                definition,
-                1,
-                0,
-                0,
-                0));
+        var word = Word(identity, Definition("System", "Array", isValueType: false) with { IsAbstract = true });
 
-        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
+        Assert.Equal(rank, Rank(word));
+        Assert.Equal(vector, (Flags(word) & RuntimeTypeFactsFlags.SzArray) != 0);
+        Assert.Equal(0, (int)(Flags(word) & RuntimeTypeFactsFlags.TypeDefinition));
     }
 
-    private static CliTypeIdentity Primitive(string canonicalName) => canonicalName switch
-    {
-        "primitive:bool" => CliTypeIdentity.Primitive("bool", CliValueKind.I4),
-        "primitive:char" => CliTypeIdentity.Primitive("char", CliValueKind.I4),
-        "primitive:i1" => CliTypeIdentity.Primitive("i1", CliValueKind.I4),
-        "primitive:u1" => CliTypeIdentity.Primitive("u1", CliValueKind.I4),
-        "primitive:i2" => CliTypeIdentity.Primitive("i2", CliValueKind.I4),
-        "primitive:u2" => CliTypeIdentity.Primitive("u2", CliValueKind.I4),
-        "primitive:i4" => CliTypeIdentity.Primitive("i4", CliValueKind.I4),
-        "primitive:u4" => CliTypeIdentity.Primitive("u4", CliValueKind.I4),
-        "primitive:i8" => CliTypeIdentity.Primitive("i8", CliValueKind.I8),
-        "primitive:u8" => CliTypeIdentity.Primitive("u8", CliValueKind.I8),
-        "primitive:f4" => CliTypeIdentity.Primitive("f4", CliValueKind.F4),
-        "primitive:f8" => CliTypeIdentity.Primitive("f8", CliValueKind.F8),
-        "primitive:string" => CliTypeIdentity.Primitive(
-            "string",
-            CliValueKind.ManagedReference,
-            isValueType: false),
-        _ => throw new InvalidOperationException(canonicalName),
-    };
+    private static uint Word(CliTypeIdentity identity, TypeDefinitionModel? definition, TypeDefinitionModel? owner = null) =>
+        RuntimeTypeFactsEncoding.Word(identity, definition, owner);
 
-    private static int ReadInt32(ImmutableArray<byte> data, int offset) =>
-        BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan().Slice(offset));
+    private static RuntimeTypeFactsFlags Flags(uint word) =>
+        (RuntimeTypeFactsFlags)(word & ~(0x3fu << RuntimeTypeFactsEncoding.ArrayRankShift) &
+            ((1u << RuntimeTypeFactsEncoding.TypeCodeShift) - 1));
 
-    private static long ReadAddress(
-        ImmutableArray<byte> data,
-        int offset,
-        WasmTargetLayout target) => target.AddressSize == sizeof(int)
-        ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan().Slice(offset))
-        : BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan().Slice(offset));
+    private static int Rank(uint word) => (int)(word >> RuntimeTypeFactsEncoding.ArrayRankShift & 0x3f);
 
-    private sealed class TypeDefinitions(params TypeDefinitionModel[] definitions) :
-        ITypeDefinitionResolver
-    {
-        private readonly Dictionary<string, TypeDefinitionModel> _definitions =
-            definitions.ToDictionary(
-                definition => definition.FullName,
-                StringComparer.Ordinal);
+    private static int TypeCode(uint word) => (int)(word >> RuntimeTypeFactsEncoding.TypeCodeShift);
 
-        public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity) =>
-            _definitions[identity.FullName ?? identity.ElementType?.FullName ??
-                identity.CanonicalName switch
-                {
-                    "primitive:i4" => "System.Int32",
-                    _ => throw new InvalidOperationException(identity.CanonicalName),
-                }];
-    }
-
+    private static TypeDefinitionModel Definition(string @namespace, string name, bool isValueType) =>
+        new(new EntityKey(Assembly, 1), @namespace, name, isValueType, [], []);
 }

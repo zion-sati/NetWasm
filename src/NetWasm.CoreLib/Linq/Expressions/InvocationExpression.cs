@@ -68,6 +68,7 @@ namespace System.Linq.Expressions
                 expression,
                 nameof(expression));
             Type delegateType;
+            LambdaExpression? lambda = expression as LambdaExpression;
             if (expression is UnaryExpression
                 {
                     NodeType: ExpressionType.Quote,
@@ -75,6 +76,7 @@ namespace System.Linq.Expressions
                 })
             {
                 delegateType = quotedLambda.Type;
+                lambda = quotedLambda;
             }
             else
             {
@@ -93,7 +95,10 @@ namespace System.Linq.Expressions
                     "The invoked expression must have a concrete delegate type.",
                     nameof(expression));
             }
-            MethodInfo invoke = delegateType.GetDelegateInvokeMethod();
+            // A lambda names its delegate type when compiling; another expression's delegate type
+            // is known only at run time, without Invoke metadata.
+            MethodInfo invoke = lambda?.InvokeMethod ??
+                throw System.Runtime.CompilerServices.DelegateMetadata.UnknownDelegateType();
             Expression[] argumentArray = ExpressionValidation.CopyExpressions(
                 arguments,
                 nameof(arguments));

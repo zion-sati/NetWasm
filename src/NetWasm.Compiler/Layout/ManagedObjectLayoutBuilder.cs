@@ -252,7 +252,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         TypeDefinitionModel type,
         ObjectLayout layout)
     {
-        if (type.FullName is not ("System.Array" or "System.String" or "System.Type"))
+        if (type.FullName is not ("System.Array" or "System.String" or RuntimeTypeObjects.ClassName))
         {
             return;
         }

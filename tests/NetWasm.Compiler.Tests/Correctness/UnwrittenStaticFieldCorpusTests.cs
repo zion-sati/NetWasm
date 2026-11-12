@@ -9,7 +9,9 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // against desktop: a field a static constructor initializes, one written through a ref, by
 // Interlocked, by a lambda, through an out argument, by an override reached only by dispatch, by
 // Volatile.Write and in one generic instantiation; and a type's static constructor must still run
-// when an unwritten field of it is first read.
+// when an unwritten field of it is first read, including a BeforeFieldInit type's field initializers
+// when that read is the first thing a method does (an event nothing subscribes to, as
+// Activity.SetCurrent reads CurrentChanged).
 public sealed class UnwrittenStaticFieldCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Namespace = "NetWasm.Correctness.UnwrittenStatics";
@@ -58,6 +60,7 @@ public sealed class UnwrittenStaticFieldCorpusTests(CorrectnessTestRunner runner
                 8 => Generics(),
                 9 => InitializedType.Value + Marker.Ran,
                 10 => Environment.ExitCode,
+                11 => FieldInitializers.Raise(),
                 _ => throw new ArgumentOutOfRangeException(nameof(input)),
             };
 
@@ -122,6 +125,27 @@ public sealed class UnwrittenStaticFieldCorpusTests(CorrectnessTestRunner runner
             public static int Ran;
         }
 
+        // No explicit static constructor, so the type is BeforeFieldInit: its field initializers run
+        // at the first access to its statics, which here is the unwritten event's load at Raise's entry.
+        public static class FieldInitializers
+        {
+            private static readonly object s_value = new object();
+
+            public static event EventHandler? Changed;
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            public static int Raise()
+            {
+                EventHandler? handler = Changed;
+                if (handler is null)
+                {
+                    return s_value is null ? -1 : 11;
+                }
+                handler(null, EventArgs.Empty);
+                return 12;
+            }
+        }
+
         // An explicit static constructor runs at the first access to the type's statics.
         public static class InitializedType
         {
@@ -142,7 +166,7 @@ public sealed class UnwrittenStaticFieldCorpusTests(CorrectnessTestRunner runner
             "UnwrittenStaticFieldCorpus" + optimization,
             Namespace,
             Source,
-            [.. Enumerable.Range(0, 11)])
+            [.. Enumerable.Range(0, 12)])
         {
             Optimization = optimization,
             ExecuteWasm64 = true,
@@ -165,7 +189,7 @@ public sealed class UnwrittenStaticFieldCorpusTests(CorrectnessTestRunner runner
 
         Assert.Equal(0, StaticLoads(folded, "Unwritten"));
         Assert.Equal(1, StaticLoads(kept, "Unwritten"));
-        foreach (var input in Enumerable.Range(0, 11))
+        foreach (var input in Enumerable.Range(0, 12))
         {
             Assert.Equal(
                 CompilerTestSupport.ExecuteWithStandardWasiNode(kept.ApplicationModule, assets.Directory, input, target, kept.StaticDataEnd),

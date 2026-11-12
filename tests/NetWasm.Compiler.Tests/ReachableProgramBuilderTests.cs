@@ -112,14 +112,10 @@ public sealed class ReachableProgramBuilderTests
         var ledger = new ReachabilityLedgerFactory().Create();
         ledger.MethodDescriptors.Add(method.CanonicalName, method);
         ledger.FieldDescriptors.Add(field.CanonicalName, field);
-        ledger.DelegateInvokeDescriptors.Add(declaringType.CanonicalName, method);
-        ledger.RequiresDelegateInvoke = true;
         ledger.RequiresGenericArguments = true;
         var snapshot = ReachabilityLedgerSnapshot.From(ledger);
         ledger.MethodDescriptors.Clear();
         ledger.FieldDescriptors.Clear();
-        ledger.DelegateInvokeDescriptors.Clear();
-        ledger.RequiresDelegateInvoke = false;
         ledger.RequiresGenericArguments = false;
 
         var program = new ReachableProgramBuilder(
@@ -134,13 +130,9 @@ public sealed class ReachableProgramBuilderTests
 
         Assert.Same(snapshot.MethodDescriptors, program.MethodDescriptors);
         Assert.Same(snapshot.FieldDescriptors, program.FieldDescriptors);
-        Assert.Same(
-            snapshot.DelegateInvokeDescriptors,
-            program.DelegateInvokeDescriptors);
         Assert.True(program.RequiresGenericArguments);
         Assert.Same(method, Assert.Single(program.MethodDescriptors).Value);
         Assert.Same(field, Assert.Single(program.FieldDescriptors).Value);
-        Assert.Same(method, Assert.Single(program.DelegateInvokeDescriptors).Value);
     }
 
     [Fact]

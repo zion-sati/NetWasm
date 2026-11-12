@@ -1,5 +1,5 @@
 using System;
-using System.Buffers.Binary;
+using System.Collections.Immutable;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Analysis;
@@ -13,10 +13,8 @@ internal sealed class AssignableTypeMetadataBuilder(
     ITypeDefinitionResolver typeDefinitions,
     ITypeRelationshipClassifier relationships,
     ITypeRelationshipKeyResolver relationshipKeys,
-    ManagedTypeLayouts types,
-    ManagedStaticDataBuildState state) : IAssignableTypeMetadataBuilder
+    ManagedTypeLayouts types) : IAssignableTypeMetadataBuilder
 {
-    private const int TypeIdSize = sizeof(int);
 
     private readonly (CliTypeIdentity Type, int TypeId)[] _runtimeAssignableTypes =
         types.Objects
@@ -33,7 +31,7 @@ internal sealed class AssignableTypeMetadataBuilder(
     private Dictionary<string, List<(CliTypeIdentity Type, int TypeId)>>? _targetsByKey;
     private readonly List<(CliTypeIdentity Type, int TypeId)> _unboundedTargets = [];
 
-    public AssignableTypeMetadataLayout Build(CliTypeIdentity candidate)
+    public ImmutableArray<int> Build(CliTypeIdentity candidate)
     {
         if (candidate.Shape is CliTypeShape.ManagedByReference or
             CliTypeShape.UnmanagedPointer ||
@@ -41,35 +39,17 @@ internal sealed class AssignableTypeMetadataBuilder(
             candidate.Shape == CliTypeShape.Named &&
             typeDefinitions.ResolveTypeIdentity(candidate).GenericArity != 0)
         {
-            return default;
+            return [];
         }
 
         // A candidate classifies only the runtime types filed under the keys it reaches.
-        var typeIds = Targets(candidate)
+        return [.. Targets(candidate)
             .Where(target => relationships
                 .Classify(candidate, target.Type)
                 .IsAssignmentCompatible)
             .Select(target => target.TypeId)
             .Distinct()
-            .Order()
-            .ToArray();
-        if (typeIds.Length == 0)
-        {
-            return default;
-        }
-
-        state.Cursor = ManagedTypeLayoutCompiler.Align(state.Cursor, TypeIdSize);
-        var address = state.Cursor;
-        var data = new byte[typeIds.Length * TypeIdSize];
-        for (var index = 0; index < typeIds.Length; index++)
-        {
-            BinaryPrimitives.WriteInt32LittleEndian(
-                data.AsSpan(index * TypeIdSize, TypeIdSize),
-                typeIds[index]);
-        }
-        state.Segments.Add(new DataSegment(address, [.. data]));
-        state.Cursor += data.Length;
-        return new AssignableTypeMetadataLayout(address, typeIds.Length);
+            .Order()];
     }
 
     private IEnumerable<(CliTypeIdentity Type, int TypeId)> Targets(CliTypeIdentity candidate)

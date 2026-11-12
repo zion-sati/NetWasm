@@ -9,7 +9,7 @@ public sealed class ReachabilityMarkersTests
 
     [Theory]
     [InlineData("System", "Type", "get_Name", false)]
-    [InlineData("System", "Type", "GetDelegateInvokeMethod", true)]
+    [InlineData("System", "Type", "GetDelegateInvokeMethod", false)]
     [InlineData("System", "Type", "GetGenericArguments", true)]
     [InlineData("System.Reflection", "MemberInfo", "get_Name", true)]
     [InlineData("System", "Type", "get_IsValueType", false)]
@@ -20,7 +20,6 @@ public sealed class ReachabilityMarkersTests
         var instance = Method(ns, type, method);
 
         Assert.Equal(marker, ReachabilityMarkers.IsMarker(instance));
-        Assert.Equal(method == "GetDelegateInvokeMethod" && type == "Type", ReachabilityMarkers.RequiresDelegateInvoke(instance));
         Assert.Equal(method == "GetGenericArguments" && type == "Type", ReachabilityMarkers.RequiresGenericArguments(instance));
         Assert.Equal(method == "get_Name" && type == "MemberInfo", ReachabilityMarkers.RequiresMemberNames(instance));
     }

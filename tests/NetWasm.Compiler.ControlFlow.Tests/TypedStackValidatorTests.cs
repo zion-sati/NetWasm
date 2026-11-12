@@ -135,28 +135,21 @@ public sealed class TypedStackValidatorTests
     }
 
     [Fact]
-    public void TypeFactsConsumesSemanticTypeIdAndProducesNativeAddress()
+    // The type table's address: CoreLib reads every type's facts from it in place.
+    public void TypeFactsProducesTheTypeTableAddress()
     {
         var body = Body(
             CliValueKind.NativeInt,
             1,
             [],
-            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
-            I(1, CilOperation.GetTypeFacts),
-            I(2, CilOperation.Return));
+            I(0, CilOperation.GetTypeFacts),
+            I(1, CilOperation.Return));
 
         var validated = Validate(body);
 
         Assert.Same(body, validated.Graph.MethodBody);
-        Assert.Equal(CliValueKind.I4, Assert.Single(validated.InstructionEntryStacks[1]));
-        Assert.Equal(CliValueKind.NativeInt, Assert.Single(validated.InstructionEntryStacks[2]));
-        AssertDiagnostic(() => Validate(body with
-        {
-            Instructions = [
-                I(0, CilOperation.LoadNull),
-                I(1, CilOperation.GetTypeFacts),
-                I(2, CilOperation.Return)],
-        }), "expected I4");
+        Assert.Empty(validated.InstructionEntryStacks[0]);
+        Assert.Equal(CliValueKind.NativeInt, Assert.Single(validated.InstructionEntryStacks[1]));
     }
 
     [Theory]

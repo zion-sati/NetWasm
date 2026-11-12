@@ -7,9 +7,12 @@ namespace NetWasm.Compiler.Layout;
 
 internal sealed class ManagedStaticDataBuilderFactory(
     IExceptionTypeNameResolver exceptionTypeNames,
-    IAssignableTypeMetadataBuilderFactory assignableTypeMetadata) :
+    IAssignableTypeMetadataBuilderFactory assignableTypeMetadata,
+    IImplementedInterfaceResolverFactory implementedInterfaces) :
     IManagedStaticDataBuilderFactory
 {
+    private readonly IImplementedInterfaceResolverFactory _implementedInterfaces = implementedInterfaces ??
+        throw new ArgumentNullException(nameof(implementedInterfaces));
     private readonly IExceptionTypeNameResolver _exceptionTypeNames = exceptionTypeNames ??
         throw new System.ArgumentNullException(nameof(exceptionTypeNames));
     private readonly IAssignableTypeMetadataBuilderFactory _assignableTypeMetadata =
@@ -18,7 +21,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
     internal ManagedStaticDataBuilderFactory(IExceptionTypeNameResolver exceptionTypeNames) :
         this(
             exceptionTypeNames,
-            new EmptyAssignableTypeMetadataBuilderFactory())
+            new EmptyAssignableTypeMetadataBuilderFactory(),
+            new EmptyImplementedInterfaceResolverFactory())
     {
     }
 
@@ -35,7 +39,6 @@ internal sealed class ManagedStaticDataBuilderFactory(
     {
         ArgumentNullException.ThrowIfNull(metadata);
         var state = new ManagedStaticDataBuildState();
-        var bitmaps = new StaticReferenceBitmapBuilder();
         var objectLayouts = new ObjectLayoutResolver(typeDefinitions, types);
         var assignableTypes = _assignableTypeMetadata.Create(
             metadata,
@@ -43,8 +46,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
             typeDefinitions,
             identities,
             identityBaseTypes,
-            types,
-            state);
+            types);
         return new ManagedStaticDataBuilder(
             types,
             state,
@@ -56,9 +58,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 objectLayouts,
                 program,
                 types,
-                types.Target,
                 state,
-                bitmaps,
                 assignableTypes),
             new ConstructedTypeDescriptorBuilder(
                 typeFinder,
@@ -66,23 +66,21 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 identityBaseTypes,
                 objectLayouts,
                 types,
-                types.Target,
                 state,
-                bitmaps,
                 assignableTypes,
-                program.RequiresTypeFacts,
-                program.DelegateInvokeDescriptors,
                 program.Finalizers),
             new ValueTypeDescriptorBuilder(
                 typeRepository,
                 identities,
                 types,
                 types.Target,
-                state,
-                bitmaps),
+                state),
             new RuntimeGenericArgumentMetadataBuilder(
                 program,
                 state),
+            new RuntimeTypeTableBuilder(program, types.Target, state, identities,
+                new RuntimeTypeAssemblyResolver(typeDefinitions), _implementedInterfaces.Create(metadata),
+                new RuntimeTypeTableEncoder()),
             new MemberDescriptorDataBuilder(
                 typeFinder,
                 typeDefinitions,

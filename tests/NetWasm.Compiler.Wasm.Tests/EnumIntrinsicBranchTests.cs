@@ -1794,13 +1794,13 @@ public sealed class EnumIntrinsicBranchTests
 
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => _boxedType is null
             ? [
-                new(EnumTypeKey, 7, 0, 32, 0, 0, null),
-                new(AlgorithmsTypeKey, 23, 0, 32, 0, 0, null),
+                new(EnumTypeKey, 7, 0, 32, [], null),
+                new(AlgorithmsTypeKey, 23, 0, 32, [], null),
             ]
             : [
-                new(EnumTypeKey, 7, 0, 32, 0, 0, null),
-                new(BoxedTypeKey, 19, 0, 32, 0, 0, null),
-                new(AlgorithmsTypeKey, 23, 0, 32, 0, 0, null),
+                new(EnumTypeKey, 7, 0, 32, [], null),
+                new(BoxedTypeKey, 19, 0, 32, [], null),
+                new(AlgorithmsTypeKey, 23, 0, 32, [], null),
             ];
 
         public void Validate(

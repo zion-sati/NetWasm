@@ -2,10 +2,11 @@ namespace System
 {
     using System.Collections.Generic;
 
-    // NetWasm: a program carries no type names (issue 225). Its type-symbols sidecar supplies them by runtime type ID
-    // when the program is built with NetWasmTypeNames and its host provides the file; without them a type reads as
-    // its ID, type#<id>, as a stack frame without a symbol reads method#<id>. There are no assemblies at run time, so
-    // an assembly name always reads AssemblyNameUnavailable.
+    // NetWasm: a program carries no type or assembly names (issue 225). Its type-symbols sidecar supplies them, a type's
+    // by runtime type ID and an assembly's as the display text of the entry just past the type IDs by the index the
+    // type table gives it, when the program is built with NetWasmTypeNames and its host provides the file; without
+    // them a type reads as its ID, type#<id>, as a stack frame without a symbol reads method#<id>, and an assembly
+    // name reads AssemblyNameUnavailable.
     internal static class TypeSymbols
     {
         internal const string AssemblyNameUnavailable = "<Assembly name unavailable>";
@@ -13,6 +14,12 @@ namespace System
         private static Dictionary<int, TypeSymbol>? s_symbols;
 
         internal static void Install(Dictionary<int, TypeSymbol> symbols) => s_symbols = symbols;
+
+        // Whether the program loaded type names, which looking a type up by name needs.
+        internal static bool Available => s_symbols is not null;
+
+        internal static PlatformNotSupportedException NamesUnavailable() => new(
+            "Looking a type up by name needs type names: build with NetWasmTypeNames to load them from the type-symbols sidecar.");
 
         internal static TypeSymbol? Find(int typeId) =>
             s_symbols is { } symbols && symbols.TryGetValue(typeId, out var symbol) ? symbol : null;

@@ -51,11 +51,11 @@ internal sealed class TypeObjectDataBuilder(
             return;
         }
 
-        var facade = _types.Objects.TryGetValue(_typeFinder.FindType("System.Type").Key, out var layout)
+        var facade = _types.Objects.TryGetValue(_typeFinder.FindType(RuntimeTypeObjects.ClassName).Key, out var layout)
             ? layout
             : throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.RuntimeContract,
-                "object layout for 'System.Type' was not generated"));
+                $"object layout for '{RuntimeTypeObjects.ClassName}' was not generated"));
         var size = ManagedTypeLayoutCompiler.Align(facade.Size, _target.ObjectReferenceAlignment);
         _state.Cursor = ManagedTypeLayoutCompiler.Align(_state.Cursor, _target.ObjectReferenceAlignment);
         _state.TypeObjectTableAddress = _state.Cursor;

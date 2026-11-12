@@ -105,6 +105,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.IsReferenceOrContainsReferences,
                 ("System.Runtime.CompilerServices.RuntimeHelpers", "ObjectContainsReferences") =>
                     RuntimeIntrinsic.ObjectContainsReferences,
+                ("System.Type", "InternalGetBaseTypeId") => RuntimeIntrinsic.TypeBaseId,
+                ("System.Type", "InternalIsTypeAssignable") => RuntimeIntrinsic.TypeIsAssignable,
                 ("System.Runtime.CompilerServices.Unsafe", "Add") =>
                     RuntimeIntrinsic.UnsafeAdd,
                 ("System.Runtime.CompilerServices.Unsafe", "As")

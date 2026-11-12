@@ -356,6 +356,10 @@ public sealed class ManagedAssembly : IDisposable
                                 CliGenericVariance.Contravariant,
                             _ => CliGenericVariance.Invariant,
                         })],
+                    GenericParameterAttributes = [.. genericParameters
+                        .Select(handle => (int)Reader.GetGenericParameter(handle).Attributes & 0x3F)],
+                    Attributes = (int)definition.Attributes,
+                    IsByRefLike = HasByRefLikeAttribute(definition),
                     IsInterface = (definition.Attributes & TypeAttributes.Interface) != 0,
                     IsAbstract = (definition.Attributes & TypeAttributes.Abstract) != 0,
                     IsSealed = (definition.Attributes & TypeAttributes.Sealed) != 0,
@@ -364,6 +368,9 @@ public sealed class ManagedAssembly : IDisposable
                     EnumUnderlyingType = enumUnderlyingType,
                     EnumMembers = enumMembers,
                     IsFlagsEnum = isEnum && HasFlagsAttribute(definition),
+                    DeclaringType = definition.GetDeclaringType().IsNil
+                        ? null
+                        : new EntityKey(typeKey.Assembly, MetadataTokens.GetToken(definition.GetDeclaringType())),
                 });
         }
 
@@ -471,6 +478,12 @@ public sealed class ManagedAssembly : IDisposable
             .Select(handle => Reader.GetCustomAttribute(handle))
             .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
                 "System.Diagnostics.StackTraceHiddenAttribute");
+
+    private bool HasByRefLikeAttribute(TypeDefinition definition) =>
+        definition.GetCustomAttributes()
+            .Select(handle => Reader.GetCustomAttribute(handle))
+            .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
+                "System.Runtime.CompilerServices.IsByRefLikeAttribute");
 
     private bool HasFlagsAttribute(TypeDefinition definition) =>
         definition.GetCustomAttributes()

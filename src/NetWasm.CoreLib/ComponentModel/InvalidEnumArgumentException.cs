@@ -3,6 +3,7 @@
 
 namespace System.ComponentModel;
 
+[Serializable]
 public class InvalidEnumArgumentException : ArgumentException
 {
     public InvalidEnumArgumentException() :

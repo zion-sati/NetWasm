@@ -366,136 +366,6 @@ public sealed class WholeProgramAnalyzerDirectTests
     }
 
     [Fact]
-    public void DelegateInvokeDemandRetainsClosedDescriptorWithoutItsBody()
-    {
-        var fixture = new ClosureFixture { DemandDelegateInvoke = true };
-
-        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
-
-        var snapshot = fixture.ProgramBuilder.Snapshot!;
-        Assert.True(snapshot.RequiresDelegateInvoke);
-        Assert.True(snapshot.RequiresTypeFacts);
-        var invoke = Assert.Single(snapshot.DelegateInvokeDescriptors).Value;
-        Assert.Equal(fixture.DelegateType, invoke.DeclaringType);
-        Assert.Equal("Invoke", invoke.Definition.Name);
-        Assert.Contains(invoke.CanonicalName, snapshot.MethodDescriptors);
-        Assert.DoesNotContain(
-            snapshot.MethodInstances.Values,
-            candidate => candidate.Definition.Key == invoke.Definition.Key);
-    }
-
-    [Fact]
-    public void DelegateInvokeDemandSpecializesClosedGenericSignature()
-    {
-        var fixture = new ClosureFixture(genericDelegate: true)
-        {
-            DemandDelegateInvoke = true,
-        };
-
-        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
-
-        var invoke = Assert.Single(
-            fixture.ProgramBuilder.Snapshot!.DelegateInvokeDescriptors).Value;
-        Assert.Equal(CliTypeShape.GenericInstantiation, invoke.DeclaringType.Shape);
-        Assert.Equal(CliValueKind.I4, invoke.Signature.ReturnSignatureType.StackKind);
-        Assert.Equal(
-            CliValueKind.I4,
-            Assert.Single(invoke.Signature.ParameterSignatureTypes).StackKind);
-        Assert.False(invoke.Signature.ReturnSignatureType.ContainsGenericParameters);
-        Assert.DoesNotContain(
-            invoke.Signature.ParameterSignatureTypes,
-            parameter => parameter.ContainsGenericParameters);
-    }
-
-    [Fact]
-    public void DelegateInvokeDemandFollowsTheProductionHierarchyClosure()
-    {
-        var fixture = new ClosureFixture(genericDelegate: true)
-        {
-            DemandDelegateInvoke = true,
-            UseProductionDelegateHierarchy = true,
-        };
-
-        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
-
-        var snapshot = fixture.ProgramBuilder.Snapshot!;
-        Assert.True(snapshot.RequiresDelegateInvoke);
-        Assert.Equal(2, snapshot.DelegateInvokeDescriptors.Count);
-        Assert.DoesNotContain(
-            snapshot.DelegateInvokeDescriptors.Keys,
-            key => key.Contains("System.Delegate", StringComparison.Ordinal) ||
-                   key.Contains("System.MulticastDelegate", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            snapshot.DelegateInvokeDescriptors.Keys,
-            key => key == fixture.DelegateDefinitionType.CanonicalName);
-        Assert.Equal(
-            [CliValueKind.I4, CliValueKind.I8],
-            snapshot.DelegateInvokeDescriptors.Values
-                .Select(method => method.Signature.ReturnSignatureType.StackKind)
-                .Order()
-                .ToArray());
-        Assert.All(
-            snapshot.DelegateInvokeDescriptors.Values,
-            invoke => Assert.DoesNotContain(
-                snapshot.MethodInstances.Values,
-                candidate => candidate.CanonicalName == invoke.CanonicalName));
-        Assert.DoesNotContain(
-            snapshot.ConstructedStaticInitializers,
-            identity => identity.Contains("Callback", StringComparison.Ordinal));
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(2)]
-    public void DelegateInvokeDemandRejectsMissingOrDuplicateInvoke(int invokeCount)
-    {
-        var fixture = new ClosureFixture
-        {
-            DemandDelegateInvoke = true,
-            DelegateInvokeCount = invokeCount,
-        };
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            fixture.CreateBuilder().Build(fixture.Entry, []));
-
-        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
-    }
-
-    [Fact]
-    public void DelegateInvokeDemandIgnoresStaticAndDifferentlyNamedMethods()
-    {
-        var fixture = new ClosureFixture
-        {
-            DemandDelegateInvoke = true,
-            IncludeNonInstanceInvokeCandidates = true,
-        };
-
-        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
-
-        Assert.Equal(
-            "Invoke",
-            Assert.Single(
-                fixture.ProgramBuilder.Snapshot!.DelegateInvokeDescriptors)
-                .Value.Definition.Name);
-    }
-
-    [Fact]
-    public void DelegateWithoutInvokeDemandRetainsNoDescriptorFacts()
-    {
-        var fixture = new ClosureFixture();
-
-        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
-
-        var snapshot = fixture.ProgramBuilder.Snapshot!;
-        Assert.Contains(fixture.DelegateType, snapshot.AllocatedTypes);
-        Assert.False(snapshot.RequiresDelegateInvoke);
-        Assert.Empty(snapshot.DelegateInvokeDescriptors);
-        Assert.DoesNotContain(
-            snapshot.MethodDescriptors.Values,
-            method => method.Definition.Name == "Invoke");
-    }
-
-    [Fact]
     public void NativeCallbackAndOpenGenericFactsReachTheirDedicatedLedgers()
     {
         var fixture = new ClosureFixture
@@ -507,21 +377,6 @@ public sealed class WholeProgramAnalyzerDirectTests
         _ = fixture.CreateBuilder().Build(fixture.Entry, []);
 
         Assert.Single(fixture.ProgramBuilder.Snapshot!.NativeCallbacks);
-    }
-
-    [Fact]
-    public void RepeatedDelegateInvokePublicationRejectsContradictoryFacts()
-    {
-        var fixture = new ClosureFixture
-        {
-            DemandDelegateInvoke = true,
-            ContradictoryDelegateInvokeFacts = true,
-        };
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            fixture.CreateBuilder().Build(fixture.Entry, []));
-
-        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
     }
 
     [Fact]
@@ -683,17 +538,9 @@ public sealed class WholeProgramAnalyzerDirectTests
         internal readonly EntityKey MethodKey = new(Assembly, 1);
         internal readonly EntityKey FieldKey = new(Assembly, 200);
         internal readonly EntityKey DelegateTypeKey = new(Assembly, 101);
-        internal readonly EntityKey SystemDelegateTypeKey = new(Assembly, 102);
-        internal readonly EntityKey MulticastDelegateTypeKey = new(Assembly, 103);
         internal readonly CliTypeIdentity TargetType = CliTypeIdentity.Named(
             Assembly, "Fixtures", "Target", false);
         internal readonly CliTypeIdentity DelegateType;
-        internal readonly CliTypeIdentity SecondDelegateType;
-        internal readonly CliTypeIdentity SystemDelegateType = CliTypeIdentity.Named(
-            Assembly, "System", "Delegate", false);
-        internal readonly CliTypeIdentity MulticastDelegateType = CliTypeIdentity.Named(
-            Assembly, "System", "MulticastDelegate", false);
-        internal CliTypeIdentity DelegateDefinitionType => _delegateDefinitionType;
         internal readonly CliTypeIdentity RuntimeType = CliTypeIdentity.Named(
             Assembly, "Fixtures", "Runtime", false);
         internal readonly CliTypeIdentity RuntimePropertyInfoType = CliTypeIdentity.Named(
@@ -727,11 +574,6 @@ public sealed class WholeProgramAnalyzerDirectTests
         internal bool DescriptorOnly { get; init; }
         internal bool IncludePropertyDescriptor { get; init; }
         internal bool DemandMemberNames { get; init; }
-        internal bool DemandDelegateInvoke { get; init; }
-        internal int DelegateInvokeCount { get; init; } = 1;
-        internal bool ContradictoryDelegateInvokeFacts { get; init; }
-        internal bool IncludeNonInstanceInvokeCandidates { get; init; }
-        internal bool UseProductionDelegateHierarchy { get; init; }
         internal bool IncludeNativeCallback { get; init; }
         internal bool IncludeOpenGenericRuntimeType { get; init; }
         internal int NonTriggeringCall { get; init; }
@@ -758,33 +600,15 @@ public sealed class WholeProgramAnalyzerDirectTests
         private readonly MethodDefinitionModel _propertyGetter;
         private readonly MethodDefinitionModel _propertySetter;
         private readonly MethodDefinitionModel _delegateInvoke;
-        private readonly MethodDefinitionModel _duplicateDelegateInvoke;
-        private readonly MethodDefinitionModel _staticDelegateInvoke;
-        private readonly MethodDefinitionModel _delegateHelper;
         private readonly CliTypeIdentity _delegateDefinitionType;
-        private readonly bool _genericDelegate;
         private readonly PropertyDefinitionModel _property;
         private readonly FieldDefinitionModel _field;
         private readonly TypeDefinitionModel _targetDefinition;
 
-        internal ClosureFixture(bool genericDelegate = false)
+        internal ClosureFixture()
         {
-            _genericDelegate = genericDelegate;
-            _delegateDefinitionType = CliTypeIdentity.Named(
-                Assembly,
-                "Fixtures",
-                genericDelegate ? "Callback`1" : "Callback",
-                false);
-            DelegateType = genericDelegate
-                ? CliTypeIdentity.GenericInstantiation(
-                    _delegateDefinitionType,
-                    [CliTypeIdentity.FromStackKind(CliValueKind.I4)])
-                : _delegateDefinitionType;
-            SecondDelegateType = genericDelegate
-                ? CliTypeIdentity.GenericInstantiation(
-                    _delegateDefinitionType,
-                    [CliTypeIdentity.FromStackKind(CliValueKind.I8)])
-                : DelegateType;
+            _delegateDefinitionType = CliTypeIdentity.Named(Assembly, "Fixtures", "Callback", false);
+            DelegateType = _delegateDefinitionType;
             Entry = new(
                 MethodKey,
                 TargetTypeKey,
@@ -834,9 +658,7 @@ public sealed class WholeProgramAnalyzerDirectTests
                 false,
                 MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4),
                 1);
-            var delegateParameter = genericDelegate
-                ? CliTypeIdentity.GenericParameter(method: false, 0)
-                : CliTypeIdentity.FromStackKind(CliValueKind.I4);
+            var delegateParameter = CliTypeIdentity.FromStackKind(CliValueKind.I4);
             _delegateInvoke = new(
                 new EntityKey(Assembly, 10),
                 DelegateTypeKey,
@@ -848,20 +670,6 @@ public sealed class WholeProgramAnalyzerDirectTests
                 IsPublic = true,
                 IsVirtual = true,
                 IsAbstract = true,
-            };
-            _duplicateDelegateInvoke = _delegateInvoke with
-            {
-                Key = new EntityKey(Assembly, 11),
-            };
-            _staticDelegateInvoke = _delegateInvoke with
-            {
-                Key = new EntityKey(Assembly, 12),
-                IsStatic = true,
-            };
-            _delegateHelper = _delegateInvoke with
-            {
-                Key = new EntityKey(Assembly, 13),
-                Name = "InvokeHelper",
             };
             _property = new(
                 new EntityKey(Assembly, 300),
@@ -907,22 +715,7 @@ public sealed class WholeProgramAnalyzerDirectTests
                 _initializer,
                 _propertyGetter,
                 propertySetter,
-                _delegateInvoke,
-                _duplicateDelegateInvoke,
-                _staticDelegateInvoke,
-                _delegateHelper);
-            if (ContradictoryDelegateInvokeFacts)
-            {
-                methods = new ChangingMethodRepository(
-                    methods,
-                    _delegateInvoke.Key,
-                    _delegateInvoke with
-                    {
-                        Signature = MethodSignatureModel.Create(
-                            CliValueKind.I8,
-                            CliValueKind.I4),
-                    });
-            }
+                _delegateInvoke);
             var field = new FieldInstanceModel(_field, TargetType, _field.SignatureType);
             var target = MethodInstance;
             if (NonTriggeringCall != 0)
@@ -1016,24 +809,6 @@ public sealed class WholeProgramAnalyzerDirectTests
             {
                 instructions = instructions with { RequiresMemberNames = true };
             }
-            if (DemandDelegateInvoke)
-            {
-                instructions = instructions with { RequiresDelegateInvoke = true };
-            }
-            if (UseProductionDelegateHierarchy)
-            {
-                instructions = instructions with
-                {
-                    RuntimeTypes = instructions.RuntimeTypes
-                        .Add(_delegateDefinitionType)
-                        .Add(DelegateType)
-                        .Add(SecondDelegateType),
-                    ConstructedTypes = instructions.ConstructedTypes
-                        .Add(DelegateType)
-                        .Add(SecondDelegateType),
-                    AllocatedTypes = instructions.AllocatedTypes.Add(SecondDelegateType),
-                };
-            }
             if (IncludeNativeCallback)
             {
                 var callback = target with
@@ -1080,30 +855,13 @@ public sealed class WholeProgramAnalyzerDirectTests
             }
             var methodAnalyzer = new FixedMethodAnalyzer(instructions, CatchTypeIdentity);
             var definition = _targetDefinition with { IsBeforeFieldInit = BeforeFieldInit };
-            var delegateMethods = DelegateInvokeCount switch
-            {
-                0 => ImmutableArray<EntityKey>.Empty,
-                1 => [_delegateInvoke.Key],
-                2 => [_delegateInvoke.Key, _duplicateDelegateInvoke.Key],
-                _ => throw new InvalidOperationException(
-                    "The in-memory delegate Invoke count is unsupported."),
-            };
-            if (IncludeNonInstanceInvokeCandidates)
-            {
-                delegateMethods = ImmutableArray.Create(
-                    _delegateHelper.Key,
-                    _staticDelegateInvoke.Key).AddRange(delegateMethods);
-            }
             var delegateDefinition = new TypeDefinitionModel(
                 DelegateTypeKey,
                 "Fixtures",
-                _genericDelegate ? "Callback`1" : "Callback",
+                "Callback",
                 false,
                 [],
-                delegateMethods)
-            {
-                GenericArity = _genericDelegate ? 1 : 0,
-            };
+                [_delegateInvoke.Key]);
             ITypeDefinitionResolver typeDefinitions = new FixedTypeDefinitionResolver(
                 definition,
                 TargetType,
@@ -1116,44 +874,6 @@ public sealed class WholeProgramAnalyzerDirectTests
                 TargetType,
                 RuntimePropertyInfoType);
             IDelegateTypeRecognizer delegateTypes = new DelegateRecognizer(DelegateType);
-            if (UseProductionDelegateHierarchy)
-            {
-                var delegateBaseDefinition = new TypeDefinitionModel(
-                    SystemDelegateTypeKey,
-                    "System",
-                    "Delegate",
-                    false,
-                    [],
-                    []);
-                var multicastDelegateDefinition = new TypeDefinitionModel(
-                    MulticastDelegateTypeKey,
-                    "System",
-                    "MulticastDelegate",
-                    false,
-                    [],
-                    []);
-                typeDefinitions = new DelegateHierarchyTypeDefinitionResolver(
-                    typeDefinitions,
-                    _delegateDefinitionType,
-                    delegateDefinition,
-                    SystemDelegateType,
-                    delegateBaseDefinition,
-                    MulticastDelegateType,
-                    multicastDelegateDefinition);
-                baseTypes = new DelegateHierarchyBaseTypeResolver(
-                    _delegateDefinitionType,
-                    MulticastDelegateType,
-                    SystemDelegateType);
-                typeIdentities = new DelegateHierarchyTypeIdentityResolver(
-                    typeIdentities,
-                    DelegateTypeKey,
-                    _delegateDefinitionType,
-                    MulticastDelegateTypeKey,
-                    MulticastDelegateType,
-                    SystemDelegateTypeKey,
-                    SystemDelegateType);
-                delegateTypes = new DelegateTypeRecognizer(typeDefinitions, baseTypes);
-            }
             var typeRepository = new FixedTypeRepository(definition);
             var fieldRepository = new FixedFieldRepository(_field);
             var typeFinder = new FixedTypeFinder();
@@ -1239,7 +959,7 @@ public sealed class WholeProgramAnalyzerDirectTests
                 missing == 27 ? null! : new TestNullableTypeResolver(NullableTypes),
                 missing == 28 ? null! : new MethodInitializationTriggerClassifier(typeRepository),
                 missing == 29 ? null! : new NoIntrinsicAddressBodyPlanner(),
-                missing == 30 ? null! : new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions));
+                missing == 30 ? null! : new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities));
 
             MethodInstanceModel Descriptor(
                 int token,
@@ -1436,36 +1156,6 @@ public sealed class WholeProgramAnalyzerDirectTests
         }
     }
 
-    private sealed class DelegateHierarchyTypeDefinitionResolver(
-        ITypeDefinitionResolver inner,
-        CliTypeIdentity delegateDefinitionType,
-        TypeDefinitionModel delegateDefinition,
-        CliTypeIdentity systemDelegateType,
-        TypeDefinitionModel systemDelegateDefinition,
-        CliTypeIdentity multicastDelegateType,
-        TypeDefinitionModel multicastDelegateDefinition) : ITypeDefinitionResolver
-    {
-        public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity)
-        {
-            var definitionIdentity = identity.Shape == CliTypeShape.GenericInstantiation
-                ? identity.ElementType!
-                : identity;
-            if (definitionIdentity.Equals(delegateDefinitionType))
-            {
-                return delegateDefinition;
-            }
-            if (definitionIdentity.Equals(systemDelegateType))
-            {
-                return systemDelegateDefinition;
-            }
-            if (definitionIdentity.Equals(multicastDelegateType))
-            {
-                return multicastDelegateDefinition;
-            }
-            return inner.ResolveTypeIdentity(identity);
-        }
-    }
-
     private sealed class FixedTypeIdentityResolver(
         CliTypeIdentity type,
         CliTypeIdentity runtimePropertyInfoType) : ITypeIdentityResolver
@@ -1476,25 +1166,6 @@ public sealed class WholeProgramAnalyzerDirectTests
                 "System.Reflection.RuntimePropertyInfo".GetHashCode())
                 ? runtimePropertyInfoType
                 : type;
-    }
-
-    private sealed class DelegateHierarchyTypeIdentityResolver(
-        ITypeIdentityResolver inner,
-        EntityKey delegateDefinitionKey,
-        CliTypeIdentity delegateDefinitionType,
-        EntityKey multicastDelegateKey,
-        CliTypeIdentity multicastDelegateType,
-        EntityKey systemDelegateKey,
-        CliTypeIdentity systemDelegateType) : ITypeIdentityResolver
-    {
-        public CliTypeIdentity GetTypeIdentity(EntityKey key) =>
-            key == delegateDefinitionKey
-                ? delegateDefinitionType
-                : key == multicastDelegateKey
-                    ? multicastDelegateType
-                    : key == systemDelegateKey
-                        ? systemDelegateType
-                        : inner.GetTypeIdentity(key);
     }
 
     private sealed class FixedMethodInstanceResolver(
@@ -1535,27 +1206,6 @@ public sealed class WholeProgramAnalyzerDirectTests
                 definition.Signature.Substitute(
                     context.TypeArguments,
                     context.MethodArguments));
-        }
-    }
-
-    private sealed class ChangingMethodRepository(
-        IMethodRepository inner,
-        EntityKey changingKey,
-        MethodDefinitionModel changed) : IMethodRepository
-    {
-        private int _changingCalls;
-
-        public MethodDefinitionModel GetMethod(EntityKey key)
-        {
-            if (key != changingKey)
-            {
-                return inner.GetMethod(key);
-            }
-            if (++_changingCalls <= 2)
-            {
-                return inner.GetMethod(key);
-            }
-            return changed;
         }
     }
 
@@ -1746,24 +1396,6 @@ public sealed class WholeProgramAnalyzerDirectTests
     private sealed class EmptyBaseTypeResolver : IBaseTypeResolver
     {
         public CliTypeIdentity? Resolve(CliTypeIdentity type) => null;
-    }
-
-    private sealed class DelegateHierarchyBaseTypeResolver(
-        CliTypeIdentity delegateDefinitionType,
-        CliTypeIdentity multicastDelegateType,
-        CliTypeIdentity systemDelegateType) : IBaseTypeResolver
-    {
-        public CliTypeIdentity? Resolve(CliTypeIdentity type)
-        {
-            var definitionIdentity = type.Shape == CliTypeShape.GenericInstantiation
-                ? type.ElementType!
-                : type;
-            return definitionIdentity.Equals(delegateDefinitionType)
-                ? multicastDelegateType
-                : definitionIdentity.Equals(multicastDelegateType)
-                    ? systemDelegateType
-                    : null;
-        }
     }
 
     private sealed class ReachabilityProgramRecorder : IReachableProgramBuilder

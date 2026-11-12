@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Symbols;
@@ -15,21 +16,33 @@ public interface IRuntimeTypeSymbolTableBuilder
     RuntimeTypeSymbolTable Build(
         ITypeDescriptorSource descriptors,
         ITypeIdentityResolver identities,
-        ITypeDefinitionResolver definitions);
+        ITypeDefinitionResolver definitions,
+        ImmutableArray<AssemblyIdentity> assemblies,
+        IAssemblyIdentityFormatter assemblyNames,
+        IRuntimeTypeAssemblyResolver assemblyOf);
 }
 
 // Names every type the program gives a runtime type ID: class, constructed, value and metadata (generic
-// parameter) descriptors. An exception type is one whose base types reach System.Exception.
+// parameter) descriptors; and every assembly Type.Assembly can report, by its type table index, in the entry
+// whose ID is the largest type ID + 1 + that index, with its display name. An exception type is one whose base
+// types reach System.Exception.
 public sealed class RuntimeTypeSymbolTableBuilder : IRuntimeTypeSymbolTableBuilder
 {
     public RuntimeTypeSymbolTable Build(
         ITypeDescriptorSource descriptors,
         ITypeIdentityResolver identities,
-        ITypeDefinitionResolver definitions)
+        ITypeDefinitionResolver definitions,
+        ImmutableArray<AssemblyIdentity> assemblies,
+        IAssemblyIdentityFormatter assemblyNames,
+        IRuntimeTypeAssemblyResolver assemblyOf)
     {
         ArgumentNullException.ThrowIfNull(descriptors);
         ArgumentNullException.ThrowIfNull(identities);
         ArgumentNullException.ThrowIfNull(definitions);
+        ArgumentNullException.ThrowIfNull(assemblyNames);
+        ArgumentNullException.ThrowIfNull(assemblyOf);
+        if (assemblies.IsDefault)
+            throw new ArgumentException("The runtime assemblies must be initialized.", nameof(assemblies));
 
         var types = new SortedDictionary<int, CliTypeIdentity>();
         var baseTypeIds = new Dictionary<int, int>();
@@ -66,8 +79,15 @@ public sealed class RuntimeTypeSymbolTableBuilder : IRuntimeTypeSymbolTableBuild
                 genericParameterNames[descriptor.Type] = name;
         }
 
+        var capacity = types.Count == 0 ? 1 : types.Keys.Max() + 1;
         var symbols = types
-            .Select(pair => RuntimeTypeNameFormatter.Format(pair.Key, pair.Value, definitions, genericParameterNames))
+            .Select(pair => RuntimeTypeNameFormatter.Format(pair.Key, pair.Value, definitions, genericParameterNames,
+                argument => assemblyNames.Format(assemblyOf.Resolve(argument))))
+            .Concat(assemblies.Select((assembly, index) =>
+            {
+                var name = assemblyNames.Format(assembly);
+                return new RuntimeTypeSymbol(capacity + index + 1, name, null, null, name);
+            }))
             .ToImmutableArray();
         var exceptionTypeIds = exceptionTypeId == 0
             ? ImmutableHashSet<int>.Empty

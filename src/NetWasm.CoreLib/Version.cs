@@ -13,6 +13,7 @@ namespace System;
 
 // A Version object contains four hierarchical numeric components. Build and
 // revision may be unspecified, represented internally by -1.
+[Serializable]
 public sealed class Version : ICloneable,
     IComparable,
     IComparable<Version?>,

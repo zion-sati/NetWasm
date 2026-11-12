@@ -47,17 +47,17 @@ public enum ManagedExceptionKind
     InvalidOperation,
     NotSupported,
 }
+// A type's runtime registration: its object layout's reference offsets, in bytes, and the type
+// IDs a cast to it accepts.
 public readonly record struct TypeDescriptorLayout(
     EntityKey Type,
     int TypeId,
     int BaseTypeId,
     int ObjectSize,
-    int BitmapAddress,
-    int BitmapBitCount,
+    ImmutableArray<int> ReferenceOffsets,
     MethodInstanceModel? Finalizer)
 {
-    public int AssignableTypeIdsAddress { get; init; }
-    public int AssignableTypeIdCount { get; init; }
+    public ImmutableArray<int> AssignableTypeIds { get; init; } = [];
     public bool IsInterface { get; init; }
 }
 public readonly record struct ConstructedTypeDescriptorLayout(
@@ -65,12 +65,10 @@ public readonly record struct ConstructedTypeDescriptorLayout(
     int TypeId,
     int BaseTypeId,
     int ObjectSize,
-    int BitmapAddress,
-    int BitmapBitCount,
+    ImmutableArray<int> ReferenceOffsets,
     MethodInstanceModel? Finalizer)
 {
-    public int AssignableTypeIdsAddress { get; init; }
-    public int AssignableTypeIdCount { get; init; }
+    public ImmutableArray<int> AssignableTypeIds { get; init; } = [];
     public bool IsInterface { get; init; }
 }
 public readonly record struct ValueTypeDescriptorLayout(
@@ -78,8 +76,7 @@ public readonly record struct ValueTypeDescriptorLayout(
     int TypeId,
     int Size,
     int BoxedPayloadOffset,
-    int BitmapAddress,
-    int BitmapBitCount);
+    ImmutableArray<int> ReferenceOffsets);
 public readonly record struct MetadataTypeDescriptorLayout(
     CliTypeIdentity Type,
     int TypeId)
@@ -125,8 +122,9 @@ public interface IStaticDataLayout
     int StaticDataEnd { get; }
     ImmutableArray<int> StaticRootAddresses { get; }
     ImmutableArray<DataSegment> DataSegments { get; }
-    int TypeFactsTableAddress => 0;
-    int TypeFactsTableCount => 0;
+    // The runtime type table: every registered type's runtime information, which the runtime
+    // decodes once at startup and CoreLib reads in place.
+    int TypeTableAddress => 0;
 
     // Each type's static Type object by canonical name, which typeof uses
     // instead of asking the runtime.
@@ -231,8 +229,9 @@ public static class RuntimeAbi
     public const string HostInteropCopyBytes = "interop_copy_bytes";
     public const string RuntimeInitialize = "initialize";
     public const string RuntimeInitializeFinalization = "initialize_finalization";
-    public const string RuntimeRegisterType = "register_type";
-    public const string RuntimeRegisterValueType = "register_value_type";
+    public const string RuntimeRegisterTypes = "register_types";
+    public const string RuntimeTypeBaseId = "type_base_id";
+    public const string RuntimeTypeIsAssignable = "type_is_assignable";
     public const string RuntimeRegisterStaticRoot = "register_static_root";
     public const string RuntimeRootFrameEnter = "root_frame_enter";
     public const string RuntimeRootFrameLeave = "root_frame_leave";

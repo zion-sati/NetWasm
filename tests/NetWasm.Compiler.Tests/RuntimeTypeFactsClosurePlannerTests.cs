@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Tests;
 
@@ -15,8 +16,9 @@ public sealed class RuntimeTypeFactsClosurePlannerTests
     public void InvalidDependenciesAndUninitializedSeedsAreRejected()
     {
         var fixture = new Fixture();
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(null!, fixture));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, null!));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(null!, fixture, fixture));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, null!, fixture));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, fixture, null!));
         Assert.Throws<ArgumentException>(() => Plan(fixture.Create(), default, false));
         Assert.Empty(Plan(fixture.Create(), [], true));
         Assert.Empty(fixture.BaseRequests);
@@ -82,6 +84,58 @@ public sealed class RuntimeTypeFactsClosurePlannerTests
         Assert.Equal([Argument], fixture.BaseRequests);
     }
 
+    // DeclaringType can return the enclosing definition of any registered nested type, and that
+    // definition's own enclosing one; without the demand they stay out.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DeclaringDemandRetainsEveryEnclosingDefinition(bool declaring)
+    {
+        var fixture = new Fixture();
+        fixture.Nested[Argument] = Parent;
+        fixture.Nested[Parent] = Box;
+        fixture.Open.Add(Box);
+
+        var roots = Plan(fixture.Create(), [Argument], false, declaring);
+
+        Assert.Equal(declaring, roots.ToHashSet().SetEquals([Parent, Box]));
+        Assert.Equal(!declaring, roots.IsEmpty);
+    }
+
+    // GetGenericTypeDefinition can return the open definition of any registered instantiation.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DefinitionDemandRetainsEveryInstantiationsDefinition(bool definitions)
+    {
+        var fixture = new Fixture();
+        fixture.Open.Add(Box);
+        var closed = CliTypeIdentity.GenericInstantiation(Box, [Argument]);
+
+        var roots = Plan(fixture.Create(), [closed], false, includeGenericDefinitions: definitions);
+
+        Assert.Equal(definitions, roots.Contains(Box));
+        Assert.Equal(!definitions, roots.IsEmpty);
+    }
+
+    // GetElementType can return the element of any registered array, pointer or by-reference type.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ElementDemandRetainsEveryElement(bool elements)
+    {
+        var fixture = new Fixture();
+        var array = CliTypeIdentity.Array(Argument, 2);
+        var pointer = CliTypeIdentity.UnmanagedPointer(Parent);
+        var reference = CliTypeIdentity.ManagedByReference(Box);
+        var list = CliTypeIdentity.SzArray(array);
+
+        var roots = Plan(fixture.Create(), [list, pointer, reference], false, includeElementTypes: elements);
+
+        Assert.Equal(elements, roots.ToHashSet().SetEquals([array, Argument, Parent, Box]));
+        Assert.Equal(!elements, roots.IsEmpty);
+    }
+
     [Fact]
     public void DuplicateSeedsAndHierarchyCyclesTerminate()
     {
@@ -94,23 +148,38 @@ public sealed class RuntimeTypeFactsClosurePlannerTests
     }
 
     private static ImmutableArray<CliTypeIdentity> Plan<TPlanner>(TPlanner planner,
-        ImmutableArray<CliTypeIdentity> seeds, bool includeGenericArguments)
-        where TPlanner : IRuntimeTypeFactsClosurePlanner => planner.Plan(seeds, includeGenericArguments);
+        ImmutableArray<CliTypeIdentity> seeds, bool includeGenericArguments, bool includeDeclaringTypes = false,
+        bool includeGenericDefinitions = false, bool includeElementTypes = false)
+        where TPlanner : IRuntimeTypeFactsClosurePlanner =>
+        planner.Plan(seeds, includeGenericArguments, includeDeclaringTypes, includeGenericDefinitions, includeElementTypes);
 
     private static CliTypeIdentity Named(string name) => CliTypeIdentity.Named(Assembly, "Fixture", name, false);
 
-    private sealed class Fixture : IBaseTypeResolver, ITypeDefinitionResolver
+    private sealed class Fixture : IBaseTypeResolver, ITypeDefinitionResolver, ITypeIdentityResolver
     {
         internal Dictionary<CliTypeIdentity, CliTypeIdentity> Bases { get; } = [];
+        internal Dictionary<CliTypeIdentity, CliTypeIdentity> Nested { get; } = [];
         internal HashSet<CliTypeIdentity> Open { get; } = [];
         internal List<CliTypeIdentity> BaseRequests { get; } = [];
-        internal RuntimeTypeFactsClosurePlanner Create() => new RuntimeTypeFactsClosurePlanner(this, this);
+        private readonly List<CliTypeIdentity> _keys = [];
+        internal RuntimeTypeFactsClosurePlanner Create() => new RuntimeTypeFactsClosurePlanner(this, this, this);
+        public CliTypeIdentity GetTypeIdentity(EntityKey type) => _keys[type.MetadataToken];
         public CliTypeIdentity? Resolve(CliTypeIdentity type)
         {
             BaseRequests.Add(type);
             return Bases.GetValueOrDefault(type);
         }
         public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity type) =>
-            new(new(Assembly, 1), "Fixture", "Type", false, [], []) { GenericArity = Open.Contains(type) ? 1 : 0 };
+            new(new(Assembly, 1), "Fixture", "Type", false, [], [])
+            {
+                GenericArity = Open.Contains(type) ? 1 : 0,
+                DeclaringType = Nested.TryGetValue(type, out var declaring) ? Key(declaring) : null,
+            };
+
+        private EntityKey Key(CliTypeIdentity type)
+        {
+            _keys.Add(type);
+            return new EntityKey(Assembly, _keys.Count - 1);
+        }
     }
 }

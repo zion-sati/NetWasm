@@ -356,16 +356,10 @@ internal sealed class ReachabilityClosureBuilder(
                 EnqueueInstance(plan.Target);
                 if (plan.IsSupported)
                 {
-                    state.RequiresDelegateInvoke = true;
                     AddAllocatedType(plan.DelegateType);
                     AddConstructedType(plan.DelegateType);
                     AddCallable(plan.Target);
                 }
-            }
-            if (state.RequiresDelegateInvoke)
-            {
-                state.RequiresTypeFacts = true;
-                AddDelegateInvokeDescriptors();
             }
             var memberDescriptorPlan = _memberDescriptors.Build(
                 new MemberDescriptorPlanningRequest(
@@ -462,7 +456,8 @@ internal sealed class ReachabilityClosureBuilder(
             {
                 Methods = plannedExecutions.ToImmutable(),
             };
-            if (state.RequiresGenericArguments)
+            if (state.RequiresGenericArguments || state.RequiresDeclaringTypes || state.RequiresGenericDefinitions ||
+                state.RequiresElementTypes || state.RequiresTypeAttributes || state.RequiresInterfaces)
             {
                 state.RequiresTypeFacts = true;
             }
@@ -489,8 +484,13 @@ internal sealed class ReachabilityClosureBuilder(
             bool HasMemberExecutionDemand,
             bool HasDynamicInvokeDemand,
             bool RequiresTypeFacts,
-            bool RequiresDelegateInvoke,
             bool RequiresGenericArguments,
+            bool RequiresDeclaringTypes,
+            bool RequiresGenericDefinitions,
+            bool RequiresAssemblies,
+            bool RequiresElementTypes,
+            bool RequiresTypeAttributes,
+            bool RequiresInterfaces,
             bool RequiresMemberNames)
             CaptureClosureStamp() => (
             types.Count,
@@ -510,8 +510,13 @@ internal sealed class ReachabilityClosureBuilder(
             state.MemberExecution.UnsupportedTarget is not null,
             state.MemberExecution.DelegateInvocation is not null,
             state.RequiresTypeFacts,
-            state.RequiresDelegateInvoke,
             state.RequiresGenericArguments,
+            state.RequiresDeclaringTypes,
+            state.RequiresGenericDefinitions,
+            state.RequiresAssemblies,
+            state.RequiresElementTypes,
+            state.RequiresTypeAttributes,
+            state.RequiresInterfaces,
             state.RequiresMemberNames);
 
         void EnsureModuleInitialized(AssemblyIdentity assembly)
@@ -561,8 +566,13 @@ internal sealed class ReachabilityClosureBuilder(
         void ApplyInstructions(ReachabilityInstructionAnalysis analysis)
         {
             state.RequiresTypeFacts |= analysis.RequiresTypeFacts;
-            state.RequiresDelegateInvoke |= analysis.RequiresDelegateInvoke;
             state.RequiresGenericArguments |= analysis.RequiresGenericArguments;
+            state.RequiresDeclaringTypes |= analysis.RequiresDeclaringTypes;
+            state.RequiresGenericDefinitions |= analysis.RequiresGenericDefinitions;
+            state.RequiresAssemblies |= analysis.RequiresAssemblies;
+            state.RequiresElementTypes |= analysis.RequiresElementTypes;
+            state.RequiresTypeAttributes |= analysis.RequiresTypeAttributes;
+            state.RequiresInterfaces |= analysis.RequiresInterfaces;
             state.RequiresMemberNames |= analysis.RequiresMemberNames;
             foreach (var type in analysis.RuntimeTypes)
             {
@@ -1016,67 +1026,14 @@ internal sealed class ReachabilityClosureBuilder(
             }
         }
 
-        void AddDelegateInvokeDescriptors()
-        {
-            var candidates = types
-                .Select(_typeIdentities.GetTypeIdentity)
-                .Concat(constructedTypes)
-                .Concat(allocatedTypes)
-                .Where(type => !type.ContainsGenericParameters)
-                .Distinct()
-                .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)
-                .ToArray();
-            foreach (var type in candidates)
-            {
-                if (!_delegateTypes.Recognize(type))
-                {
-                    continue;
-                }
-                var definition = _typeDefinitions.ResolveTypeIdentity(type);
-                if (definition.FullName is
-                        "System.Delegate" or "System.MulticastDelegate" ||
-                    type.Shape == CliTypeShape.Named && definition.GenericArity > 0)
-                {
-                    continue;
-                }
-                var invokeDefinitions = definition.Methods
-                    .Select(_methodRepository.GetMethod)
-                    .Where(method => method.Name == "Invoke" && !method.IsStatic)
-                    .Take(2)
-                    .ToArray();
-                if (invokeDefinitions.Length != 1)
-                {
-                    throw new CompilerException(new CompilerDiagnostic(
-                        DiagnosticCode.RuntimeContract,
-                        $"delegate type '{type.CanonicalName}' must define exactly one " +
-                        "instance Invoke method"));
-                }
-                var invoke = type.Shape == CliTypeShape.GenericInstantiation
-                    ? ConstructedInstance(invokeDefinitions[0], type.TypeArguments)
-                    : DirectInstance(invokeDefinitions[0]);
-                if (state.DelegateInvokeDescriptors.TryGetValue(
-                        type.CanonicalName,
-                        out var existing))
-                {
-                    if (!existing.HasEquivalentDescriptorFacts(invoke))
-                    {
-                        throw new CompilerException(new CompilerDiagnostic(
-                            DiagnosticCode.RuntimeContract,
-                            $"delegate type '{type.CanonicalName}' has contradictory " +
-                            "Invoke descriptors"));
-                    }
-                    continue;
-                }
-                state.DelegateInvokeDescriptors.Add(type.CanonicalName, invoke);
-                AddMethodDescriptor(invoke);
-            }
-        }
-
         void AddTypeFactsClosure()
         {
             var required = _typeFactsClosure.Plan(
                 [.. types.Select(_typeIdentities.GetTypeIdentity), .. constructedTypes],
-                state.RequiresGenericArguments);
+                state.RequiresGenericArguments,
+                state.RequiresDeclaringTypes,
+                state.RequiresGenericDefinitions,
+                state.RequiresElementTypes);
             foreach (var type in required)
             {
                 AddRuntimeType(type);

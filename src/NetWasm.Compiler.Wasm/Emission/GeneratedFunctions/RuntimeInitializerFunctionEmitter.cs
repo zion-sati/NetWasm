@@ -9,7 +9,6 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 // registrations scale with the program's types, so no entry carries its own copy.
 internal sealed class RuntimeInitializerFunctionEmitter(
     ITargetLayout layouts,
-    ITypeDescriptorSource descriptors,
     IStaticDataLayout staticData,
     IRuntimeImportResolver runtimeImports,
     IAddressInstructionEmitter addresses,
@@ -114,67 +113,12 @@ internal sealed class RuntimeInitializerFunctionEmitter(
 
     private void RegisterState(GeneratedFunctionWriterLease code, RuntimeInitializationPlan plan)
     {
-        foreach (var descriptor in descriptors.TypeDescriptors)
-        {
-            EmitTypeDescriptor(
-                code,
-                descriptor.TypeId,
-                descriptor.BaseTypeId,
-                descriptor.ObjectSize,
-                descriptor.BitmapAddress,
-                descriptor.BitmapBitCount,
-                descriptor.AssignableTypeIdsAddress,
-                descriptor.AssignableTypeIdCount,
-                descriptor.Finalizer is not null,
-                descriptor.IsInterface);
-        }
-        foreach (var descriptor in descriptors.ConstructedTypeDescriptors)
-        {
-            EmitTypeDescriptor(
-                code,
-                descriptor.TypeId,
-                descriptor.BaseTypeId,
-                descriptor.ObjectSize,
-                descriptor.BitmapAddress,
-                descriptor.BitmapBitCount,
-                descriptor.AssignableTypeIdsAddress,
-                descriptor.AssignableTypeIdCount,
-                descriptor.Finalizer is not null,
-                descriptor.IsInterface);
-        }
-        foreach (var descriptor in descriptors.MetadataTypeDescriptors)
-        {
-            // Metadata-only identities can be materialized as System.Type objects but
-            // are never valid allocation types. A zero-sized descriptor registers the
-            // semantic ID without adding a managed object layout.
-            EmitTypeDescriptor(
-                code,
-                descriptor.TypeId,
-                baseTypeId: 0,
-                objectSize: 0,
-                bitmapAddress: 0,
-                bitmapBitCount: 0,
-                assignableTypeIdsAddress: 0,
-                assignableTypeIdCount: 0,
-                hasFinalizer: false,
-                isInterface: false);
-        }
-        foreach (var descriptor in descriptors.ValueTypeDescriptors)
-        {
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(descriptor.TypeId)));
-            addresses.Emit(code.Instructions, descriptor.Size);
-            addresses.Emit(code.Instructions, descriptor.BoxedPayloadOffset);
-            addresses.Emit(code.Instructions, descriptor.BitmapAddress);
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(descriptor.BitmapBitCount)));
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                    RuntimeImportSymbol.RegisterValueType))));
-        }
+        // One table registers every type; the runtime keeps what its hot paths read.
+        addresses.Emit(code.Instructions, staticData.TypeTableAddress);
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.Call,
+            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+                RuntimeImportSymbol.RegisterTypes))));
         foreach (var address in staticData.StaticRootAddresses)
         {
             addresses.Emit(code.Instructions, address);
@@ -225,44 +169,5 @@ internal sealed class RuntimeInitializerFunctionEmitter(
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)initializer.FunctionIndex)));
-    }
-
-    private void EmitTypeDescriptor(
-        GeneratedFunctionWriterLease code,
-        int typeId,
-        int baseTypeId,
-        int objectSize,
-        int bitmapAddress,
-        int bitmapBitCount,
-        int assignableTypeIdsAddress,
-        int assignableTypeIdCount,
-        bool hasFinalizer,
-        bool isInterface)
-    {
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(typeId)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(baseTypeId)));
-        addresses.Emit(code.Instructions, objectSize);
-        addresses.Emit(code.Instructions, bitmapAddress);
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(bitmapBitCount)));
-        addresses.Emit(code.Instructions, assignableTypeIdsAddress);
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(assignableTypeIdCount)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(hasFinalizer ? 1 : 0)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(isInterface ? 1 : 0)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                RuntimeImportSymbol.RegisterType))));
     }
 }

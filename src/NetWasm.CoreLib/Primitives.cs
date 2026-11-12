@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 
 namespace System
 {
+    [Serializable]
     public abstract class ValueType
     {
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -20,6 +21,7 @@ namespace System
         public override extern int GetHashCode();
     }
 
+    [Serializable]
     public abstract class Enum : ValueType, IComparable, IConvertible, IFormattable, ISpanFormattable
     {
         // Enum storage is not an object graph in NetWasm. These narrow calls
@@ -500,6 +502,7 @@ namespace System
     {
     }
 
+    [Serializable]
     public partial struct Boolean : IComparable, IComparable<bool>, IConvertible, IEquatable<bool>,
         IParsable<bool>, ISpanParsable<bool>
     {

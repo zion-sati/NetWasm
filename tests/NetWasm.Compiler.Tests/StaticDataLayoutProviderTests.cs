@@ -17,8 +17,7 @@ public sealed class StaticDataLayoutProviderTests
             ImmutableDictionary<string, StringLayout>.Empty.Add("hello", layout),
             [], [segment], [], [], [], [32])
         {
-            TypeFactsTableAddress = 128,
-            TypeFactsTableCount = 3,
+            TypeTableAddress = 128,
         };
         var factory = new StaticDataLayoutProviderFactory();
         var provider = ((IStaticDataLayoutProviderFactory)factory).Create(
@@ -28,8 +27,7 @@ public sealed class StaticDataLayoutProviderTests
         Assert.Equal(256, provider.StaticDataEnd);
         Assert.Equal(32, Assert.Single(provider.StaticRootAddresses));
         Assert.Equal(segment, Assert.Single(provider.DataSegments));
-        Assert.Equal(128, provider.TypeFactsTableAddress);
-        Assert.Equal(3, provider.TypeFactsTableCount);
+        Assert.Equal(128, provider.TypeTableAddress);
         Assert.IsNotAssignableFrom<IMemberDescriptorLayout>(provider);
         var error = Assert.Throws<CompilerException>(() =>
             provider.GetStringLayout("missing"));

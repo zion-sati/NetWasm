@@ -42,9 +42,6 @@ internal sealed class ReachabilityLedger
         ImmutableDictionary.CreateBuilder<string, FieldInstanceModel>(StringComparer.Ordinal);
     internal ImmutableDictionary<string, PropertyInstanceModel>.Builder PropertyDescriptors { get; } =
         ImmutableDictionary.CreateBuilder<string, PropertyInstanceModel>(StringComparer.Ordinal);
-    internal ImmutableDictionary<string, MethodInstanceModel>.Builder DelegateInvokeDescriptors
-    { get; } =
-        ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
     internal ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Builder
         ObjectArrayDelegateAdapters
     { get; } = ImmutableDictionary.CreateBuilder<
@@ -55,8 +52,13 @@ internal sealed class ReachabilityLedger
     internal ImmutableHashSet<string>.Builder NamedMemberDescriptors { get; } =
         ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
     internal bool RequiresTypeFacts { get; set; }
-    internal bool RequiresDelegateInvoke { get; set; }
     internal bool RequiresGenericArguments { get; set; }
+    internal bool RequiresDeclaringTypes { get; set; }
+    internal bool RequiresGenericDefinitions { get; set; }
+    internal bool RequiresAssemblies { get; set; }
+    internal bool RequiresElementTypes { get; set; }
+    internal bool RequiresTypeAttributes { get; set; }
+    internal bool RequiresInterfaces { get; set; }
     internal bool RequiresMemberNames { get; set; }
     internal ImmutableHashSet<EntityKey>.Builder Types { get; } =
         ImmutableHashSet.CreateBuilder<EntityKey>();

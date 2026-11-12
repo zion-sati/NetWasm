@@ -73,8 +73,7 @@ public sealed class LayoutProviderContractTests
         Assert.Equal(56, exceptionObjects.GetExceptionObject(
             ManagedExceptionKind.NullReference));
         Assert.Equal(64, staticDataProvider.StaticDataEnd);
-        Assert.Equal(0, staticDataProvider.TypeFactsTableAddress);
-        Assert.Equal(0, staticDataProvider.TypeFactsTableCount);
+        Assert.Equal(0, staticDataProvider.TypeTableAddress);
         Assert.IsType<MemberDescriptorLayoutProvider>(memberDescriptors);
         Assert.IsNotAssignableFrom<IMemberDescriptorLayout>(staticDataProvider);
     }

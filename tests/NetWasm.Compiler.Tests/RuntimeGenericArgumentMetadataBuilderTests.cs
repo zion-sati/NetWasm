@@ -230,11 +230,7 @@ public sealed class RuntimeGenericArgumentMetadataBuilderTests
         int typeId) => new(
         identity,
         definition,
-        typeId,
-        BaseTypeId: 0,
-        AssignableTypeIdsAddress: 0,
-        AssignableTypeIdCount: 0,
-        DelegateInvokeDescriptor: null);
+        typeId);
 
     private static ReachableProgram Program(
         bool requiresGenericArguments = false) => new(

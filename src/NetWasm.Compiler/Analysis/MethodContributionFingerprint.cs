@@ -78,8 +78,11 @@ internal static class MethodContributionFingerprint
         Set(15);
         foreach (var type in analysis.CatchTypes) names.Add(type.ToString());
         Set(16);
-        Int(hash, (facts.RequiresTypeFacts ? 1 : 0) | (facts.RequiresDelegateInvoke ? 2 : 0) |
-            (facts.RequiresGenericArguments ? 4 : 0) | (facts.RequiresMemberNames ? 8 : 0));
+        Int(hash, (facts.RequiresTypeFacts ? 1 : 0) |
+            (facts.RequiresGenericArguments ? 4 : 0) | (facts.RequiresMemberNames ? 8 : 0) |
+            (facts.RequiresDeclaringTypes ? 16 : 0) | (facts.RequiresGenericDefinitions ? 32 : 0) |
+            (facts.RequiresAssemblies ? 64 : 0) | (facts.RequiresElementTypes ? 128 : 0) |
+            (facts.RequiresTypeAttributes ? 256 : 0) | (facts.RequiresInterfaces ? 512 : 0));
         // Whether the body allocates by itself: with the methods it calls, that decides which
         // methods allocate, and so every caller's safepoints.
         var allocates = false;

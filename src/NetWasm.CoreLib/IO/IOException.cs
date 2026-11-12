@@ -6,6 +6,7 @@ namespace System.IO
     // HResults used by the desktop implementation. The exception base types
     // are supplied by NetWasm.CoreLib; keeping these values here avoids a
     // dependency on the platform exception/resource tables.
+    [Serializable]
     public class IOException : SystemException
     {
         private const int CorEIo = unchecked((int)0x80131620);
@@ -34,6 +35,7 @@ namespace System.IO
         }
     }
 
+    [Serializable]
     public class EndOfStreamException : IOException
     {
         private const int CorEEndOfStream = unchecked((int)0x80070026);

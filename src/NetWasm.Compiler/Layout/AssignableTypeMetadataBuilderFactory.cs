@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -13,8 +14,7 @@ internal interface IAssignableTypeMetadataBuilderFactory
         ITypeDefinitionResolver typeDefinitions,
         ITypeIdentityResolver identities,
         IMetadataIdentityBaseTypeResolver identityBaseTypes,
-        ManagedTypeLayouts types,
-        ManagedStaticDataBuildState state);
+        ManagedTypeLayouts types);
 }
 
 internal sealed class AssignableTypeMetadataBuilderFactory(
@@ -36,8 +36,7 @@ internal sealed class AssignableTypeMetadataBuilderFactory(
         ITypeDefinitionResolver typeDefinitions,
         ITypeIdentityResolver identities,
         IMetadataIdentityBaseTypeResolver identityBaseTypes,
-        ManagedTypeLayouts types,
-        ManagedStaticDataBuildState state)
+        ManagedTypeLayouts types)
     {
         var interfaces = _implementedInterfaces.Create(metadata);
         var baseTypes = new LayoutBaseTypeResolver(typeFinder, identities, identityBaseTypes);
@@ -52,8 +51,7 @@ internal sealed class AssignableTypeMetadataBuilderFactory(
             typeDefinitions,
             relationshipClassifier,
             _relationshipKeys.Create(typeFinder, typeDefinitions, identities, interfaces, baseTypes),
-            types,
-            state);
+            types);
     }
 }
 
@@ -65,7 +63,18 @@ internal sealed class EmptyAssignableTypeMetadataBuilder : IAssignableTypeMetada
     {
     }
 
-    public AssignableTypeMetadataLayout Build(CliTypeIdentity candidate) => default;
+    public ImmutableArray<int> Build(CliTypeIdentity candidate) => [];
+}
+
+// Null object: a type implements no interfaces, for layouts built without metadata relationships.
+internal sealed class EmptyImplementedInterfaceResolverFactory : IImplementedInterfaceResolverFactory
+{
+    public IImplementedInterfaceResolver Create(MetadataCompilationSnapshot snapshot) => new Resolver();
+
+    private sealed class Resolver : IImplementedInterfaceResolver
+    {
+        public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type) => [];
+    }
 }
 
 internal sealed class EmptyAssignableTypeMetadataBuilderFactory :
@@ -77,7 +86,6 @@ internal sealed class EmptyAssignableTypeMetadataBuilderFactory :
         ITypeDefinitionResolver typeDefinitions,
         ITypeIdentityResolver identities,
         IMetadataIdentityBaseTypeResolver identityBaseTypes,
-        ManagedTypeLayouts types,
-        ManagedStaticDataBuildState state) =>
+        ManagedTypeLayouts types) =>
         EmptyAssignableTypeMetadataBuilder.Instance;
 }

@@ -43,9 +43,19 @@ internal sealed record ReachabilityInstructionAnalysis(
 
     public bool RequiresTypeFacts { get; init; }
 
-    public bool RequiresDelegateInvoke { get; init; }
-
     public bool RequiresGenericArguments { get; init; }
+
+    public bool RequiresDeclaringTypes { get; init; }
+
+    public bool RequiresGenericDefinitions { get; init; }
+
+    public bool RequiresAssemblies { get; init; }
+
+    public bool RequiresElementTypes { get; init; }
+
+    public bool RequiresTypeAttributes { get; init; }
+
+    public bool RequiresInterfaces { get; init; }
 
     public bool RequiresMemberNames { get; init; }
 }

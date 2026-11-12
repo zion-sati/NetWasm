@@ -38,7 +38,7 @@ internal static class UnitAnswerCodec
         switch (kind)
         {
             case UnitQueryKind.StaticDataEnd:
-            case UnitQueryKind.TypeFactsTable:
+            case UnitQueryKind.TypeTable:
             case UnitQueryKind.TypeObjectTable:
             case UnitQueryKind.MethodDescriptorAddress:
             case UnitQueryKind.FieldDescriptorAddress:
@@ -211,18 +211,18 @@ internal static class UnitAnswerCodec
                 Array(writer, (ImmutableArray<TypeDescriptorLayout>)value, static (writer, descriptor) =>
                 {
                     writer.Entity(descriptor.Type);
-                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize, descriptor.BitmapAddress,
-                        descriptor.BitmapBitCount, descriptor.Finalizer, descriptor.AssignableTypeIdsAddress,
-                        descriptor.AssignableTypeIdCount, descriptor.IsInterface);
+                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize,
+                        descriptor.ReferenceOffsets, descriptor.Finalizer, descriptor.AssignableTypeIds,
+                        descriptor.IsInterface);
                 });
                 break;
             case UnitQueryKind.ConstructedTypeDescriptors:
                 Array(writer, (ImmutableArray<ConstructedTypeDescriptorLayout>)value, static (writer, descriptor) =>
                 {
                     writer.Type(descriptor.Type);
-                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize, descriptor.BitmapAddress,
-                        descriptor.BitmapBitCount, descriptor.Finalizer, descriptor.AssignableTypeIdsAddress,
-                        descriptor.AssignableTypeIdCount, descriptor.IsInterface);
+                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize,
+                        descriptor.ReferenceOffsets, descriptor.Finalizer, descriptor.AssignableTypeIds,
+                        descriptor.IsInterface);
                 });
                 break;
             case UnitQueryKind.ValueTypeDescriptors:
@@ -232,8 +232,7 @@ internal static class UnitAnswerCodec
                     writer.Int(descriptor.TypeId);
                     writer.Int(descriptor.Size);
                     writer.Int(descriptor.BoxedPayloadOffset);
-                    writer.Int(descriptor.BitmapAddress);
-                    writer.Int(descriptor.BitmapBitCount);
+                    writer.Ints(descriptor.ReferenceOffsets);
                 });
                 break;
             case UnitQueryKind.MetadataTypeDescriptors:
@@ -316,7 +315,7 @@ internal static class UnitAnswerCodec
         switch (kind)
         {
             case UnitQueryKind.StaticDataEnd:
-            case UnitQueryKind.TypeFactsTable:
+            case UnitQueryKind.TypeTable:
             case UnitQueryKind.TypeObjectTable:
             case UnitQueryKind.MethodDescriptorAddress:
             case UnitQueryKind.FieldDescriptorAddress:
@@ -477,11 +476,10 @@ internal static class UnitAnswerCodec
                 value = Array(reader, static reader =>
                 {
                     var type = reader.Entity();
-                    var (typeId, baseTypeId, size, bitmap, bits, finalizer) = Descriptor(reader);
-                    return new TypeDescriptorLayout(type, typeId, baseTypeId, size, bitmap, bits, finalizer)
+                    var (typeId, baseTypeId, size, references, finalizer) = Descriptor(reader);
+                    return new TypeDescriptorLayout(type, typeId, baseTypeId, size, references, finalizer)
                     {
-                        AssignableTypeIdsAddress = reader.Int(),
-                        AssignableTypeIdCount = reader.Int(),
+                        AssignableTypeIds = reader.Ints(),
                         IsInterface = reader.Bool(),
                     };
                 });
@@ -490,18 +488,17 @@ internal static class UnitAnswerCodec
                 value = Array(reader, static reader =>
                 {
                     var type = reader.Type()!;
-                    var (typeId, baseTypeId, size, bitmap, bits, finalizer) = Descriptor(reader);
-                    return new ConstructedTypeDescriptorLayout(type, typeId, baseTypeId, size, bitmap, bits, finalizer)
+                    var (typeId, baseTypeId, size, references, finalizer) = Descriptor(reader);
+                    return new ConstructedTypeDescriptorLayout(type, typeId, baseTypeId, size, references, finalizer)
                     {
-                        AssignableTypeIdsAddress = reader.Int(),
-                        AssignableTypeIdCount = reader.Int(),
+                        AssignableTypeIds = reader.Ints(),
                         IsInterface = reader.Bool(),
                     };
                 });
                 break;
             case UnitQueryKind.ValueTypeDescriptors:
                 value = Array(reader, static reader => new ValueTypeDescriptorLayout(
-                    reader.Type()!, reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int()));
+                    reader.Type()!, reader.Int(), reader.Int(), reader.Int(), reader.Ints()));
                 break;
             case UnitQueryKind.MetadataTypeDescriptors:
                 value = Array(reader, static reader => new MetadataTypeDescriptorLayout(reader.Type()!, reader.Int()));
@@ -606,30 +603,27 @@ internal static class UnitAnswerCodec
         return set.ToImmutable();
     }
 
-    private static void Descriptor(UnitModelWriter writer, int typeId, int baseTypeId, int size, int bitmap, int bits,
-        MethodInstanceModel? finalizer, int assignable, int assignableCount, bool isInterface)
+    private static void Descriptor(UnitModelWriter writer, int typeId, int baseTypeId, int size,
+        ImmutableArray<int> references, MethodInstanceModel? finalizer, ImmutableArray<int> assignable, bool isInterface)
     {
         writer.Int(typeId);
         writer.Int(baseTypeId);
         writer.Int(size);
-        writer.Int(bitmap);
-        writer.Int(bits);
+        writer.Ints(references);
         writer.Bool(finalizer is not null);
         if (finalizer is not null) writer.Method(finalizer);
-        writer.Int(assignable);
-        writer.Int(assignableCount);
+        writer.Ints(assignable);
         writer.Bool(isInterface);
     }
 
-    private static (int TypeId, int BaseTypeId, int Size, int Bitmap, int Bits, MethodInstanceModel? Finalizer) Descriptor(
-        UnitModelReader reader)
+    private static (int TypeId, int BaseTypeId, int Size, ImmutableArray<int> References, MethodInstanceModel? Finalizer)
+        Descriptor(UnitModelReader reader)
     {
         var typeId = reader.Int();
         var baseTypeId = reader.Int();
         var size = reader.Int();
-        var bitmap = reader.Int();
-        var bits = reader.Int();
-        return (typeId, baseTypeId, size, bitmap, bits, reader.Bool() ? reader.Method() : null);
+        var references = reader.Ints();
+        return (typeId, baseTypeId, size, references, reader.Bool() ? reader.Method() : null);
     }
 
     private static void Object(UnitModelWriter writer, ObjectLayout layout)

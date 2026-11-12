@@ -382,6 +382,13 @@ internal sealed class ManagedAggregateSsaPlanner : IManagedAggregateSsaPlanner
     // frame already holds a lane's value (stored or reloaded there since, on every path, and not
     // written in a lane since) the store is left out, so the frame holds what it held. A loop's phi
     // is held where each incoming edge holds its input.
+    // Whether two exits hold the same value in every lane, so a block's facts stopped changing.
+    internal static bool HoldsTheSame(
+        ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue> prior,
+        ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue> exit) =>
+        prior.Count == exit.Count &&
+        prior.All(pair => exit.TryGetValue(pair.Key, out var value) && value == pair.Value);
+
     private static ImmutableArray<ManagedAggregateSsaMaterialization> ElideHeldStores(
         ImmutableArray<ManagedAggregateSsaMaterialization> materializations,
         ImmutableArray<StructuredBlockId> materializationBlocks,
@@ -403,8 +410,7 @@ internal sealed class ManagedAggregateSsaPlanner : IManagedAggregateSsaPlanner
             var held = Held(block).ToBuilder();
             foreach (var index in inBlock[block]) Hold(held, materializations[index]);
             var exit = held.ToImmutable();
-            if (exits.TryGetValue(block, out var prior) && prior.Count == exit.Count &&
-                prior.All(pair => exit.TryGetValue(pair.Key, out var value) && value == pair.Value))
+            if (exits.TryGetValue(block, out var prior) && HoldsTheSame(prior, exit))
             {
                 continue;
             }

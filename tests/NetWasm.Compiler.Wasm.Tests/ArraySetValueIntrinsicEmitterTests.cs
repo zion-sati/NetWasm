@@ -61,7 +61,7 @@ public sealed class ArraySetValueIntrinsicEmitterTests
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => [];
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
         public ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors => nullable
-            ? [new(Underlying, 12, 0, 16, 0, 0, null), new(Nullable, 27, 0, 16, 0, 0, null)]
+            ? [new(Underlying, 12, 0, 16, [], null), new(Nullable, 27, 0, 16, [], null)]
             : [];
     }
     private sealed class NullableResolver : INullableTypeResolver

@@ -40,8 +40,7 @@ public sealed class UnitQueryReplayerTests
         { nameof(UnitQueryKind.StaticDataEnd), "" },
         { nameof(UnitQueryKind.StaticRootAddresses), "" },
         { nameof(UnitQueryKind.DataSegments), "" },
-        { nameof(UnitQueryKind.TypeFactsTable), "address" },
-        { nameof(UnitQueryKind.TypeFactsTable), "count" },
+        { nameof(UnitQueryKind.TypeTable), "address" },
         { nameof(UnitQueryKind.TypeObjectAddress), "Program::Point" },
         { nameof(UnitQueryKind.TypeObjectTable), "address" },
         { nameof(UnitQueryKind.TypeObjectTable), "cache" },
@@ -256,8 +255,7 @@ public sealed class UnitQueryReplayerTests
         public int StaticDataEnd => 256;
         public ImmutableArray<int> StaticRootAddresses => [32];
         public ImmutableArray<DataSegment> DataSegments => [new(16, [1, 2])];
-        public int TypeFactsTableAddress => 512;
-        public int TypeFactsTableCount => 4;
+        public int TypeTableAddress => 512;
         public IEntryLookup<string, int> TypeObjectAddresses => Lookups.Of(new Dictionary<string, int> { ["Program::Point"] = 128 });
         public int TypeObjectTableAddress => 1024;
         public int TypeObjectCacheAddress => 2048;

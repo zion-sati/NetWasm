@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 
 namespace System.Collections.Generic
 {
+    [Serializable]
     public abstract class EqualityComparer<T> : IEqualityComparer<T>, System.Collections.IEqualityComparer
     {
         private static readonly EqualityComparer<T> s_default = CreateDefaultComparer();
@@ -136,6 +137,7 @@ namespace System.Collections.Generic
             HashCode.Combine(_equals.GetHashCode(), _getHashCode.GetHashCode());
     }
 
+    [Serializable]
     public sealed class GenericEqualityComparer<T> : EqualityComparer<T> where T : IEquatable<T>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -210,6 +212,7 @@ namespace System.Collections.Generic
         }
     }
 
+    [Serializable]
     public sealed class NullableEqualityComparer<T> : EqualityComparer<T?> where T : struct
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -285,6 +288,7 @@ namespace System.Collections.Generic
         }
     }
 
+    [Serializable]
     public sealed class ObjectEqualityComparer<T> : EqualityComparer<T>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -359,6 +363,7 @@ namespace System.Collections.Generic
         }
     }
 
+    [Serializable]
     public sealed class ByteEqualityComparer : EqualityComparer<byte>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -387,6 +392,7 @@ namespace System.Collections.Generic
 #endif
     }
 
+    [Serializable]
     public sealed class EnumEqualityComparer<T> : EqualityComparer<T> where T : struct, Enum
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

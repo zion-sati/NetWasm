@@ -50,14 +50,13 @@ public sealed class FinalizationPlanBuilderTests
         var finalizer = Finalizer();
         var descriptors = new DescriptorSource
         {
-            Direct = [new(TypeKey, 7, 0, 16, 0, 0, finalizer)],
+            Direct = [new(TypeKey, 7, 0, 16, [], finalizer)],
             Constructed = [new(
                 finalizer.DeclaringType,
                 11,
                 0,
                 16,
-                0,
-                0,
+                [],
                 finalizer)],
         };
 

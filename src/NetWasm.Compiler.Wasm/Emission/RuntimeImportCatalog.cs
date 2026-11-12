@@ -10,7 +10,7 @@ internal enum RuntimeImportSymbol
     Initialize,
     Allocate,
     Collect,
-    RegisterType,
+    RegisterTypes,
     RegisterStaticRoot,
     RootFrameEnter,
     RootFrameLeave,
@@ -29,7 +29,7 @@ internal enum RuntimeImportSymbol
     ExceptionFrameLeave,
     ExceptionFrameUnwind,
     ExceptionFrameTargetClause,
-    RegisterValueType,
+    TypeBaseId,
     AllocateValueArray,
     AllocateRectangularArray,
     AllocateBoundedRectangularArray,
@@ -99,6 +99,7 @@ internal enum RuntimeImportSymbol
     AllocationSlot,
     AllocationRunsEnabled,
     AllocateObjectFallback,
+    TypeIsAssignable,
 }
 
 internal readonly record struct RuntimeImportBinding(

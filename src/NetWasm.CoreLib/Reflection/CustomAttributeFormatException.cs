@@ -3,6 +3,7 @@
 
 namespace System.Reflection
 {
+    [Serializable]
     public class CustomAttributeFormatException : FormatException
     {
         private const string DefaultMessage = "Binary format of the specified custom attribute was invalid.";

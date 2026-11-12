@@ -1109,65 +1109,6 @@ public sealed class ReachabilityInstructionAnalyzerTests
     }
 
     [Fact]
-    public void DelegateInvokeReaderRecordsIndependentDescriptorDemand()
-    {
-        var assembly = new AssemblyIdentity("in-memory");
-        var callerTypeKey = new EntityKey(assembly, 0x02000001);
-        var typeKey = new EntityKey(assembly, 0x02000002);
-        var callerType = CliTypeIdentity.Named(
-            assembly,
-            "Fixtures",
-            "Target",
-            isValueType: false);
-        var runtimeType = CliTypeIdentity.Named(
-            assembly,
-            "System",
-            "Type",
-            isValueType: false);
-        var methodInfo = CliTypeIdentity.Named(
-            assembly,
-            "System.Reflection",
-            "MethodInfo",
-            isValueType: false);
-        var caller = Method(0x06000001, "Run", callerTypeKey);
-        var readerDefinition = new MethodDefinitionModel(
-            new EntityKey(assembly, 0x06000002),
-            typeKey,
-            "GetDelegateInvokeMethod",
-            IsStatic: false,
-            MethodSignatureModel.Create(methodInfo),
-            1);
-        var reader = new MethodInstanceModel(
-            readerDefinition,
-            runtimeType,
-            [],
-            readerDefinition.Signature);
-        var analyzer = new ReachabilityInstructionAnalyzer(
-            new UnusedTypeFinder(),
-            new UnusedTypeIdentityResolver(),
-            new SingleCalledMethodResolver(reader),
-            new UnusedTypeOperandResolver(),
-            new DispatchSiteKeyBuilder(),
-            new UnusedDelegateMethodClassifier(),
-            new NullableTypeResolver(),
-            new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator(),
-            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver(), new NullableTypeResolver()), new NoIntrinsics());
-
-        var result = analyzer.Analyze(new ReachabilityInstructionRequest(
-            Instance(caller, callerType),
-            new CilMethodBody(
-                caller,
-                1,
-                [],
-                [Instruction(0, CilOperation.Call, new CilOperand.None())])));
-
-        Assert.True(result.RequiresDelegateInvoke);
-        Assert.False(result.RequiresTypeFacts);
-        Assert.False(result.RequiresMemberNames);
-    }
-
-    [Fact]
     public void GenericArgumentQueryRecordsIndependentMetadataDemand()
     {
         var assembly = new AssemblyIdentity("in-memory");
@@ -1218,7 +1159,6 @@ public sealed class ReachabilityInstructionAnalyzerTests
 
         Assert.True(result.RequiresGenericArguments);
         Assert.False(result.RequiresTypeFacts);
-        Assert.False(result.RequiresDelegateInvoke);
     }
 
     [Fact]

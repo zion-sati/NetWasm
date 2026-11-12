@@ -24,7 +24,7 @@ public sealed class RuntimeInitializerFunctionEmitterTests
             Call(runtimeImports.Resolve(RuntimeImportSymbol.Initialize)),
             Calls(wasm32));
         Assert.Contains(
-            Call(runtimeImports.Resolve(RuntimeImportSymbol.RegisterType)),
+            Call(runtimeImports.Resolve(RuntimeImportSymbol.RegisterTypes)),
             Calls(wasm32));
         Assert.Contains(
             Call(runtimeImports.Resolve(RuntimeImportSymbol.RegisterStaticRoot)),
@@ -49,7 +49,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
             IncludeFinalization: includeFinalization);
 
         new InitializerHarness(
-            new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([]),
             imports,
             new RecordingAddressEmitter(),
@@ -81,7 +80,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
             IncludeTerminalExceptionReporter: true);
 
         new InitializerHarness(
-            new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([]) { TypeObjectTableAddress = 640, TypeObjectCount = count, TypeObjectSize = 8 },
             imports,
             new RecordingAddressEmitter(),
@@ -107,93 +105,24 @@ public sealed class RuntimeInitializerFunctionEmitterTests
     }
 
     [Fact]
-    public void InitializesEveryDescriptorFamilyAndStaticRootThroughFocusedActions()
+    public void RegistersEveryTypeThroughOneTableCallAndEachStaticRoot()
     {
-        var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
-        var finalizer = new MethodInstanceModel(
-            method,
-            CliTypeIdentity.Named(
-                EmitterTestSupport.Assembly,
-                "Test",
-                "Type",
-                false),
-            [],
-            method.Signature);
-        var descriptors = new FixedTypeDescriptorSource(
-            [
-                new(EmitterTestSupport.TypeKey, 1, 0, 16, 100, 3, null),
-                new(EmitterTestSupport.TypeKey, 2, 1, 20, 104, 4, finalizer),
-            ],
-            [new(CliTypeIdentity.FromStackKind(CliValueKind.I4), 3, 0, 24, 108, 5, null)],
-            [new(CliTypeIdentity.FromStackKind(CliValueKind.I8), 4, 8, 8, 112, 6)],
-            [new(CliTypeIdentity.ScopedGenericParameter("owner", false, 0), 5)]);
-        var staticData = new FixedStaticDataLayout([200, 204]);
+        var staticData = new FixedStaticDataLayout([200, 204]) { TypeTableAddress = 300 };
         var imports = new RecordingRuntimeImportResolver();
         var addresses = new RecordingAddressEmitter();
         var core = new RecordingRuntimeCoreInitializer();
-        var initializer = new InitializerHarness(
-            descriptors,
-            staticData,
-            imports,
-            addresses,
-            core);
+        var initializer = new InitializerHarness(staticData, imports, addresses, core);
         var code = new GeneratedFunctionWriterFactory().Create();
 
         initializer.Initialize(code, TestRuntimeInitialization.Create(512));
 
         Assert.Equal(512, core.StaticDataEnd);
-        Assert.Equal(4, imports.Symbols.Count(symbol =>
-            symbol == RuntimeImportSymbol.RegisterType));
-        Assert.Single(imports.Symbols, symbol =>
-            symbol == RuntimeImportSymbol.RegisterValueType);
+        Assert.Single(imports.Symbols, symbol => symbol == RuntimeImportSymbol.RegisterTypes);
         Assert.Equal(2, imports.Symbols.Count(symbol =>
             symbol == RuntimeImportSymbol.RegisterStaticRoot));
+        Assert.Contains(300, addresses.Constants);
         Assert.Contains(200, addresses.Constants);
         Assert.Contains(204, addresses.Constants);
-    }
-
-    [Fact]
-    public void TypeRegistrationEmitsInterfaceTraitAfterFinalizerTrait()
-    {
-        var descriptors = new FixedTypeDescriptorSource(
-            [new TypeDescriptorLayout(
-                EmitterTestSupport.TypeKey,
-                7,
-                0,
-                16,
-                100,
-                3,
-                null)
-            {
-                IsInterface = true,
-            }],
-            [],
-            []);
-        var imports = WasmRuntimeImports.CreateCatalog();
-        var code = new GeneratedFunctionWriterFactory().Create();
-        var writer = new EmitterTestSupport.RecordingInstructionWriter();
-        var recordingCode = new GeneratedFunctionWriterLease(
-            code.Bytes,
-            code.Snapshots,
-            writer);
-
-        new InitializerHarness(
-            descriptors,
-            new FixedStaticDataLayout([]),
-            imports,
-            new RecordingAddressEmitter(),
-            new RecordingRuntimeCoreInitializer()).Initialize(
-                recordingCode,
-                TestRuntimeInitialization.Create(512));
-
-        var instructions = writer.ToInstructions();
-        var registerType = (uint)imports.Resolve(RuntimeImportSymbol.RegisterType);
-        var callIndex = Enumerable.Range(0, instructions.Length).Single(index =>
-            instructions[index].Opcode == WasmOpcodes.Call &&
-            instructions[index].Operand.UnsignedValue == registerType);
-        Assert.True(callIndex >= 2);
-        Assert.Equal(0, instructions[callIndex - 2].Operand.SignedValue);
-        Assert.Equal(1, instructions[callIndex - 1].Operand.SignedValue);
     }
 
     [Fact]
@@ -216,7 +145,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
             code.Snapshots,
             instructionWriter);
         new InitializerHarness(
-            new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([]),
             imports,
             addresses,
@@ -267,7 +195,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         var addresses = new RecordingAddressEmitter();
         var code = new GeneratedFunctionWriterFactory().Create();
         new InitializerHarness(
-            new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([]),
             WasmRuntimeImports.CreateCatalog(),
             addresses,
@@ -300,7 +227,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         };
 
         new InitializerHarness(
-            new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([]),
             WasmRuntimeImports.CreateCatalog(),
             addresses,
@@ -335,7 +261,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         };
 
         new InitializerHarness(
-            new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([200]),
             imports,
             new AddressInstructionEmitter(layouts),
@@ -394,11 +319,7 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         };
 
         new InitializerHarness(
-            new FixedTypeDescriptorSource(
-                [new(EmitterTestSupport.TypeKey, 1, 0, 16, 100, 3, null)],
-                [],
-                [new(CliTypeIdentity.FromStackKind(CliValueKind.I8), 4, 8, 8, 112, 6)]),
-            new FixedStaticDataLayout([200, 204]),
+            new FixedStaticDataLayout([200, 204]) { TypeTableAddress = 280 },
             imports,
             new AddressInstructionEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target))),
             new RecordingRuntimeCoreInitializer()).Initialize(recordingCode, plan);
@@ -426,15 +347,14 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         var stores = Enumerable.Range(0, instructions.Length)
             .Where(index => instructions[index].Opcode == WasmOpcodes.I32Store)
             .ToArray();
-        var registrations = CallsTo(RuntimeImportSymbol.RegisterType)
-            .Concat(CallsTo(RuntimeImportSymbol.RegisterValueType))
+        var registrations = CallsTo(RuntimeImportSymbol.RegisterTypes)
             .Concat(CallsTo(RuntimeImportSymbol.RegisterStaticRoot))
             .ToArray();
 
         Assert.True(IsAddress(instructions[load - 1], 320));
         Assert.Equal(WasmOpcodes.I32EqualZero, instructions[load + 1].Opcode);
         Assert.Equal(load + 2, guardIf);
-        Assert.Equal(4, registrations.Length);
+        Assert.Equal(3, registrations.Length);
         Assert.All(registrations, index => Assert.InRange(index, guardIf + 1, stores[0] - 1));
         Assert.Equal(2, stores.Length);
         Assert.True(IsAddress(instructions[stores[0] - 2], 320));
@@ -468,7 +388,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
 
     // Runs the emitter against the test's writer so its instructions can be inspected.
     private sealed class InitializerHarness(
-        ITypeDescriptorSource descriptors,
         IStaticDataLayout staticData,
         IRuntimeImportResolver imports,
         IAddressInstructionEmitter addresses,
@@ -478,7 +397,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         public void Initialize(GeneratedFunctionWriterLease code, RuntimeInitializationPlan plan) =>
             new RuntimeInitializerFunctionEmitter(
                 new RecordingLayoutProvider(target ?? WasmTargetLayout.Wasm32),
-                descriptors,
                 staticData,
                 imports,
                 addresses,
@@ -491,26 +409,12 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         public GeneratedFunctionWriterLease Create() => code;
     }
 
-    private sealed class FixedTypeDescriptorSource(
-        ImmutableArray<TypeDescriptorLayout> types,
-        ImmutableArray<ConstructedTypeDescriptorLayout> constructedTypes,
-        ImmutableArray<ValueTypeDescriptorLayout> valueTypes,
-        ImmutableArray<MetadataTypeDescriptorLayout> metadataTypes = default) :
-        ITypeDescriptorSource
-    {
-        public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => types;
-        public ImmutableArray<ConstructedTypeDescriptorLayout>
-            ConstructedTypeDescriptors => constructedTypes;
-        public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => valueTypes;
-        public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors =>
-            metadataTypes.IsDefault ? [] : metadataTypes;
-    }
-
     private sealed class FixedStaticDataLayout(ImmutableArray<int> roots) : IStaticDataLayout
     {
         public int StaticDataEnd => 0;
         public ImmutableArray<int> StaticRootAddresses => roots;
         public ImmutableArray<DataSegment> DataSegments => [];
+        public int TypeTableAddress { get; init; }
         public int TypeObjectTableAddress { get; init; }
         public int TypeObjectCount { get; init; }
         public int TypeObjectSize { get; init; }

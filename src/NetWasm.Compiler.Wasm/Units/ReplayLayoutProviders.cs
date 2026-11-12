@@ -62,9 +62,8 @@ internal sealed class ReplayStaticDataLayout(UnitAnswers answers) : IStaticDataL
 
     public ImmutableArray<DataSegment> DataSegments => answers.Get<ImmutableArray<DataSegment>>(UnitQueryKind.DataSegments, "");
 
-    public int TypeFactsTableAddress => answers.Get<int>(UnitQueryKind.TypeFactsTable, "address");
+    public int TypeTableAddress => answers.Get<int>(UnitQueryKind.TypeTable, "address");
 
-    public int TypeFactsTableCount => answers.Get<int>(UnitQueryKind.TypeFactsTable, "count");
 
     public IEntryLookup<string, int> TypeObjectAddresses { get; } =
         new ReplayLookup<string, int>(answers, UnitQueryKind.TypeObjectAddress, static key => key);

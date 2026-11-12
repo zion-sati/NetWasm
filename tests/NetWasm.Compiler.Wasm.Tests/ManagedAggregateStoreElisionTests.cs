@@ -11,6 +11,29 @@ using static EmitterTestSupport;
 // holds a lane's value: stored or reloaded there on every path since, and not written in the lane.
 public sealed class ManagedAggregateStoreElisionTests
 {
+    // A block's held values stopped changing only when its exit holds the same value in every lane.
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    public void HeldValuesSettleOnlyWhenEveryLaneHoldsTheSameValue(int change, bool same)
+    {
+        var first = new ManagedAggregateSsaLane(new(ManagedAggregateStorageKind.Local, 0), 0);
+        var second = new ManagedAggregateSsaLane(new(ManagedAggregateStorageKind.Local, 0), 4);
+        var prior = ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue>.Empty
+            .Add(first, new(1)).Add(second, new(2));
+        var exit = change switch
+        {
+            0 => prior,
+            1 => prior.Remove(second),
+            2 => prior.Remove(second).Add(new(new(ManagedAggregateStorageKind.Argument, 0), 4), new(2)),
+            _ => prior.SetItem(second, new(3)),
+        };
+
+        Assert.Equal(same, ManagedAggregateSsaPlanner.HoldsTheSame(prior, exit));
+    }
+
     private static readonly ManagedAggregateStorageId Pair = new(ManagedAggregateStorageKind.Local, 0);
 
     [Fact]

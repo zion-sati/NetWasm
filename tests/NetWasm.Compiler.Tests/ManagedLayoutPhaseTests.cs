@@ -99,18 +99,6 @@ public sealed class ManagedLayoutPhaseTests
     }
 
     [Fact]
-    public void BitmapBuilderWritesTargetSizedReferenceWordsThroughItsContract()
-    {
-        var builder = As<IStaticReferenceBitmapBuilder>(new StaticReferenceBitmapBuilder());
-
-        var wasm32 = BuildBitmap(builder, [0, 4], 2, sizeof(uint));
-        var wasm64 = BuildBitmap(builder, [0, 8], 2, sizeof(ulong));
-
-        Assert.Equal(0b11u, BitConverter.ToUInt32(wasm32));
-        Assert.Equal(0b11UL, BitConverter.ToUInt64(wasm64));
-    }
-
-    [Fact]
     public void StaticFieldStoragePublishesRvaDataAndRejectsOversizedInitializers()
     {
         var assembly = new AssemblyIdentity("StaticFieldDataTests");
@@ -562,11 +550,9 @@ public sealed class ManagedLayoutPhaseTests
         var entityBases = new BaseTypes();
         var identityBases = new BaseTypes();
         var program = EmptyProgram();
-        var bitmaps = new StaticReferenceBitmapBuilder();
         var valueResolver = new FixedValueLayoutResolver();
         var exceptionNames = new ExceptionTypeNameResolver();
         var objectLayouts = new RecordingObjectLayoutBuilder();
-        var buildPhase = new RecordingStaticBuildPhase();
         var objectPhase = new RecordingBuildPhase();
         var resolvePhase = new RecordingResolvePhase();
         var offsetPhase = new RecordingDelegateOffsetPhase();
@@ -576,24 +562,19 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ObjectLayoutResolver(definitions, null!));
 
         ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            null!, definitions, identityBases, layoutResolver, types, target, staticState, bitmaps));
+            null!, definitions, identityBases, layoutResolver, types, staticState));
         ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, null!, identityBases, layoutResolver, types, target, staticState, bitmaps));
+            finder, null!, identityBases, layoutResolver, types, staticState));
         ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, definitions, null!, layoutResolver, types, target, staticState, bitmaps));
+            finder, definitions, null!, layoutResolver, types, staticState));
         ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, definitions, identityBases, null!, types, target, staticState, bitmaps));
+            finder, definitions, identityBases, null!, types, staticState));
         ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, definitions, identityBases, layoutResolver, null!, target, staticState, bitmaps));
+            finder, definitions, identityBases, layoutResolver, null!, staticState));
         ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, definitions, identityBases, layoutResolver, types, null!, staticState, bitmaps));
+            finder, definitions, identityBases, layoutResolver, types, null!));
         ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, definitions, identityBases, layoutResolver, types, target, null!, bitmaps));
-        ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, definitions, identityBases, layoutResolver, types, target, staticState, null!));
-        ThrowsNull(() => new ConstructedTypeDescriptorBuilder(
-            finder, definitions, identityBases, layoutResolver, types, target, staticState,
-            bitmaps, null!));
+            finder, definitions, identityBases, layoutResolver, types, staticState, null!));
 
         ThrowsNull(() => new DelegateFieldOffsetResolver(null!, fields, typeState));
         ThrowsNull(() => new DelegateFieldOffsetResolver(finder, null!, typeState));
@@ -654,52 +635,9 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, null!, new ExplicitValueLayoutResolver()));
         ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, null!));
 
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            null!, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, null!, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, null!, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, null!, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, null!, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, null!, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, null!,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            null!, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, null!, buildPhase, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, null!, buildPhase, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, null!, buildPhase, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, null!, buildPhase));
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, null!));
-        var nullTargetTypes = types with { Target = null! };
-        ThrowsNull(() => new ManagedStaticDataBuilder(
-            nullTargetTypes, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
-            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
-
         ThrowsNull(() => new ManagedStaticDataBuilderFactory(null!));
-        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, null!));
+        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, null!, new EmptyImplementedInterfaceResolverFactory()));
+        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, new EmptyAssignableTypeMetadataBuilderFactory(), null!));
         ThrowsNull(() => new ManagedTypeLayoutBuildState(null!));
         ThrowsNull(() => new ManagedTypeLayoutCompiler(
             null!, target, objectPhase, resolvePhase, resolvePhase, objectPhase,
@@ -756,26 +694,22 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new StringDataBuilder(finder, program, types, null!, staticState));
         ThrowsNull(() => new StringDataBuilder(finder, program, types, target, null!));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            null!, definitions, identityBases, layoutResolver, program, types, target, staticState, bitmaps));
+            null!, definitions, identityBases, layoutResolver, program, types, staticState));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, null!, identityBases, layoutResolver, program, types, target, staticState, bitmaps));
+            identities, null!, identityBases, layoutResolver, program, types, staticState));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, null!, layoutResolver, program, types, target, staticState, bitmaps));
+            identities, definitions, null!, layoutResolver, program, types, staticState));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, identityBases, null!, program, types, target, staticState, bitmaps));
+            identities, definitions, identityBases, null!, program, types, staticState));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, identityBases, layoutResolver, null!, types, target, staticState, bitmaps));
+            identities, definitions, identityBases, layoutResolver, null!, types, staticState));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, identityBases, layoutResolver, program, null!, target, staticState, bitmaps));
+            identities, definitions, identityBases, layoutResolver, program, null!, staticState));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, identityBases, layoutResolver, program, types, null!, staticState, bitmaps));
+            identities, definitions, identityBases, layoutResolver, program, types, null!));
         ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, identityBases, layoutResolver, program, types, target, null!, bitmaps));
-        ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, identityBases, layoutResolver, program, types, target, staticState, null!));
-        ThrowsNull(() => new TypeDescriptorBuilder(
-            identities, definitions, identityBases, layoutResolver, program, types, target,
-            staticState, bitmaps, null!));
+            identities, definitions, identityBases, layoutResolver, program, types,
+            staticState, null!));
         ThrowsNull(() => new ValueLayoutResolver(
             null!, fields, new ExplicitValueLayoutResolver(), target,
             new ManagedValueLayoutState()));
@@ -790,17 +724,15 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ValueLayoutResolver(
             definitions, fields, new ExplicitValueLayoutResolver(), target, null!));
         ThrowsNull(() => new ValueTypeDescriptorBuilder(
-            null!, valueStorageIdentities, types, target, staticState, bitmaps));
+            null!, valueStorageIdentities, types, target, staticState));
         ThrowsNull(() => new ValueTypeDescriptorBuilder(
-            typeRepository, null!, types, target, staticState, bitmaps));
+            typeRepository, null!, types, target, staticState));
         ThrowsNull(() => new ValueTypeDescriptorBuilder(
-            typeRepository, valueStorageIdentities, null!, target, staticState, bitmaps));
+            typeRepository, valueStorageIdentities, null!, target, staticState));
         ThrowsNull(() => new ValueTypeDescriptorBuilder(
-            typeRepository, valueStorageIdentities, types, null!, staticState, bitmaps));
+            typeRepository, valueStorageIdentities, types, null!, staticState));
         ThrowsNull(() => new ValueTypeDescriptorBuilder(
-            typeRepository, valueStorageIdentities, types, target, null!, bitmaps));
-        ThrowsNull(() => new ValueTypeDescriptorBuilder(
-            typeRepository, valueStorageIdentities, types, target, staticState, null!));
+            typeRepository, valueStorageIdentities, types, target, null!));
         ThrowsNull(() => new ValueTypeLayoutResolver(null!, fields, identities, valueResolver, typeState, []));
         ThrowsNull(() => new ValueTypeLayoutResolver(typeRepository, null!, identities, valueResolver, typeState, []));
         ThrowsNull(() => new ValueTypeLayoutResolver(typeRepository, fields, null!, valueResolver, typeState, []));
@@ -824,11 +756,9 @@ public sealed class ManagedLayoutPhaseTests
         var entityBases = new BaseTypes();
         var identityBases = new BaseTypes();
         var program = EmptyProgram();
-        var bitmaps = new StaticReferenceBitmapBuilder();
         var valueResolver = new FixedValueLayoutResolver();
         var exceptionNames = new ExceptionTypeNameResolver();
         var objectLayouts = new RecordingObjectLayoutBuilder();
-        var buildPhase = new RecordingStaticBuildPhase();
         var objectPhase = new RecordingBuildPhase();
         var resolvePhase = new RecordingResolvePhase();
         var offsetPhase = new RecordingDelegateOffsetPhase();
@@ -932,11 +862,12 @@ public sealed class ManagedLayoutPhaseTests
             phase,
             phase,
             phase,
+            phase,
             phase);
 
         builder.Build();
 
-        Assert.Equal(11, phase.Calls);
+        Assert.Equal(12, phase.Calls);
     }
 
     [Fact]
@@ -1158,12 +1089,11 @@ public sealed class ManagedLayoutPhaseTests
                 new TypeDefinitions([]),
                 new RejectingTypeRelationshipClassifier(),
                 UnboundedTypeRelationshipKeys.Instance,
-                EmptyLayouts(target),
-                new ManagedStaticDataBuildState()));
+                EmptyLayouts(target)));
 
         var layout = builder.Build(modifier);
 
-        Assert.Equal(default, layout);
+        Assert.Empty(layout);
     }
 
     [Theory]
@@ -1206,16 +1136,13 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             new ObjectLayoutResolver(definitions, types),
             types,
-            target,
-            state,
-            new StaticReferenceBitmapBuilder()));
+            state));
 
         Assert.Equal(2, state.ConstructedTypeDescriptors.Count);
         Assert.All(state.ConstructedTypeDescriptors, descriptor =>
         {
             Assert.Equal(0, descriptor.BaseTypeId);
-            Assert.Equal(0, descriptor.AssignableTypeIdsAddress);
-            Assert.Equal(0, descriptor.AssignableTypeIdCount);
+            Assert.Empty(descriptor.AssignableTypeIds);
             Assert.False(descriptor.IsInterface);
             Assert.Null(descriptor.Finalizer);
         });
@@ -1247,18 +1174,12 @@ public sealed class ManagedLayoutPhaseTests
         BuildValueTypeDescriptors(new ValueTypeDescriptorBuilder(
             new TypeRepository([definition]),
             new MappingIdentities(new Dictionary<EntityKey, CliTypeIdentity> { [key] = identity }),
-            types, target, state, new UnusedReferenceBitmapBuilder()));
+            types, target, state));
 
         Assert.Empty(state.ValueTypeDescriptors);
         Assert.Empty(state.Segments);
         Assert.Equal(initialCursor, state.Cursor);
         Assert.Equal(descriptor, types.Objects[key]);
-    }
-
-    private sealed class UnusedReferenceBitmapBuilder : IStaticReferenceBitmapBuilder
-    {
-        public byte[] Build(ImmutableArray<int> referenceOffsets, int bitCount, int referenceSize) =>
-            throw new InvalidOperationException("Metadata-only definitions have no value bitmap.");
     }
 
     [Fact]
@@ -1289,8 +1210,7 @@ public sealed class ManagedLayoutPhaseTests
                 new Dictionary<EntityKey, CliTypeIdentity> { [key] = identity }),
             types,
             target,
-            state,
-            new StaticReferenceBitmapBuilder()).Build();
+            state).Build();
 
         Assert.Empty(state.ValueTypeDescriptors);
         Assert.Empty(state.Segments);
@@ -1318,8 +1238,7 @@ public sealed class ManagedLayoutPhaseTests
             new UnusedTypeIdentities(),
             types,
             target,
-            state,
-            new StaticReferenceBitmapBuilder()));
+            state));
 
         Assert.Empty(state.ValueTypeDescriptors);
         Assert.Empty(state.Segments);
@@ -1341,7 +1260,7 @@ public sealed class ManagedLayoutPhaseTests
             secondPrivateKey,
             "<PrivateImplementationDetails>",
             false);
-        var canonicalType = Definition(canonicalTypeKey, "System.Type", false);
+        var canonicalType = Definition(canonicalTypeKey, RuntimeTypeObjects.ClassName, false);
         var definitions = new[]
         {
             firstPrivate,
@@ -1364,7 +1283,7 @@ public sealed class ManagedLayoutPhaseTests
 
         Assert.Equal(3, state.Objects.Count);
         Assert.Single(state.ObjectsByName);
-        Assert.Equal(canonicalLayout, state.ObjectsByName["System.Type"]);
+        Assert.Equal(canonicalLayout, state.ObjectsByName[RuntimeTypeObjects.ClassName]);
         Assert.DoesNotContain("<PrivateImplementationDetails>", state.ObjectsByName);
     }
 
@@ -1545,7 +1464,6 @@ public sealed class ManagedLayoutPhaseTests
             valueDefinition,
             Definition(new EntityKey(assembly, 99), "System.Exception", false),
         ]);
-        var bitmaps = As<IStaticReferenceBitmapBuilder>(new StaticReferenceBitmapBuilder());
         var target = types.Target;
         var valueStorageIdentities = As<ITypeIdentityResolver>(
             new TypeIdentities(assembly, "Tests.Value", valueKey));
@@ -1581,9 +1499,7 @@ public sealed class ManagedLayoutPhaseTests
             objectLayoutResolver,
             program,
             types,
-            target,
-            state,
-            bitmaps)));
+            state)));
         BuildConstructedTypeDescriptors(As<IConstructedTypeDescriptorBuilder>(
             new ConstructedTypeDescriptorBuilder(
             finder,
@@ -1591,17 +1507,14 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             objectLayoutResolver,
             types,
-            target,
-            state,
-            bitmaps)));
+            state)));
         BuildValueTypeDescriptors(As<IValueTypeDescriptorBuilder>(
             new ValueTypeDescriptorBuilder(
             metadata,
             valueStorageIdentities,
             types,
             target,
-            state,
-            bitmaps)));
+            state)));
         var enumTypes = new[]
         {
             CliTypeIdentity.Primitive("i1", CliValueKind.I4),
@@ -1700,9 +1613,7 @@ public sealed class ManagedLayoutPhaseTests
             new ObjectLayoutResolver(typeDefinitions, types),
             EmptyProgram(),
             types,
-            types.Target,
-            state,
-            new StaticReferenceBitmapBuilder());
+            state);
 
         builder.Build();
 
@@ -1788,9 +1699,7 @@ public sealed class ManagedLayoutPhaseTests
             identityBases,
             new ObjectLayoutResolver(typeDefinitions, types),
             types,
-            types.Target,
-            new ManagedStaticDataBuildState(),
-            new StaticReferenceBitmapBuilder());
+            new ManagedStaticDataBuildState());
 
         builder.Build();
 
@@ -1808,9 +1717,7 @@ public sealed class ManagedLayoutPhaseTests
             identityBases,
             new ObjectLayoutResolver(typeDefinitions, missingArrayTypes),
             missingArrayTypes,
-            types.Target,
-            new ManagedStaticDataBuildState(),
-            new StaticReferenceBitmapBuilder());
+            new ManagedStaticDataBuildState());
         Assert.Throws<CompilerException>(missingArray.Build);
 
         var missingBaseTypes = types with
@@ -1829,14 +1736,12 @@ public sealed class ManagedLayoutPhaseTests
                 }),
             new ObjectLayoutResolver(typeDefinitions, missingBaseTypes),
             missingBaseTypes,
-            types.Target,
-            new ManagedStaticDataBuildState(),
-            new StaticReferenceBitmapBuilder());
+            new ManagedStaticDataBuildState());
         Assert.Throws<CompilerException>(missingBase.Build);
     }
 
     [Fact]
-    public void ConstructedTypeDescriptorCarriesDemandedDelegateInvokeIdentity()
+    public void ConstructedTypeDescriptorRecordsItsTypeForTheTypeTable()
     {
         var assembly = new AssemblyIdentity("ConstructedDelegateDescriptorTests");
         var typeKey = new EntityKey(assembly, 1);
@@ -1856,11 +1761,6 @@ public sealed class ManagedLayoutPhaseTests
             IsStatic: false,
             MethodSignatureModel.Create(parameter, parameter),
             RelativeVirtualAddress: 0);
-        var invoke = new MethodInstanceModel(
-            invokeDefinition,
-            constructed,
-            [],
-            invokeDefinition.Signature.Substitute([argument]));
         var definition = new TypeDefinitionModel(
             typeKey,
             "Tests",
@@ -1893,34 +1793,14 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             new ObjectLayoutResolver(definitions, types),
             types,
-            types.Target,
             state,
-            new StaticReferenceBitmapBuilder(),
-            EmptyAssignableTypeMetadataBuilder.Instance,
-            requiresTypeFacts: true,
-            delegateInvokeDescriptors:
-                ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(
-                    constructed.CanonicalName,
-                    invoke)).Build();
+            EmptyAssignableTypeMetadataBuilder.Instance).Build();
 
-        Assert.Equal(
-            invoke.CanonicalName,
-            Assert.Single(state.PendingTypeFacts).DelegateInvokeDescriptor);
-
-        var stateWithoutInvoke = new ManagedStaticDataBuildState();
-        new ConstructedTypeDescriptorBuilder(
-            new TypeFinder([definition]),
-            definitions,
-            new BaseTypes(),
-            new ObjectLayoutResolver(definitions, types),
-            types,
-            types.Target,
-            stateWithoutInvoke,
-            new StaticReferenceBitmapBuilder(),
-            EmptyAssignableTypeMetadataBuilder.Instance,
-            requiresTypeFacts: true).Build();
-        var factsWithoutInvoke = Assert.Single(stateWithoutInvoke.PendingTypeFacts);
-        Assert.Null(factsWithoutInvoke.DelegateInvokeDescriptor);
+        var facts = Assert.Single(state.PendingTypeFacts);
+        Assert.Equal(constructed, facts.Identity);
+        Assert.Equal(definition, facts.Definition);
+        Assert.Equal(layout.TypeId, facts.TypeId);
+        Assert.Empty(facts.GenericArgumentTypeIds);
     }
 
     [Fact]
@@ -2034,9 +1914,7 @@ public sealed class ManagedLayoutPhaseTests
             new ObjectLayoutResolver(typeDefinitions, types),
             EmptyProgram(),
             types,
-            types.Target,
-            state,
-            new StaticReferenceBitmapBuilder()).Build();
+            state).Build();
 
         Assert.Equal(1, state.TypeDescriptors.Single(item => item.Type == derivedKey).BaseTypeId);
         Assert.True(state.TypeDescriptors.Single(item => item.Type == interfaceKey).IsInterface);
@@ -2046,7 +1924,7 @@ public sealed class ManagedLayoutPhaseTests
     }
 
     [Fact]
-    public void NamedTypeDescriptorCarriesDemandedDelegateInvokeIdentity()
+    public void NamedTypeDescriptorRecordsItsTypeForTheTypeTable()
     {
         var assembly = new AssemblyIdentity("NamedDelegateDescriptorTests");
         var typeKey = new EntityKey(assembly, 1);
@@ -2063,11 +1941,6 @@ public sealed class ManagedLayoutPhaseTests
             IsStatic: false,
             MethodSignatureModel.Create(CliValueKind.I4),
             RelativeVirtualAddress: 0);
-        var invoke = new MethodInstanceModel(
-            invokeDefinition,
-            identity,
-            [],
-            invokeDefinition.Signature);
         var definition = new TypeDefinitionModel(
             typeKey,
             "Tests",
@@ -2088,14 +1961,8 @@ public sealed class ManagedLayoutPhaseTests
         };
         var definitions = new TypeDefinitions([definition]);
         var state = new ManagedStaticDataBuildState();
-        var program = EmptyProgram() with
-        {
-            RequiresTypeFacts = true,
-            DelegateInvokeDescriptors =
-                ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(
-                    identity.CanonicalName,
-                    invoke),
-        };
+        // Every registered type goes in the type table, whether or not a type query is reachable.
+        var program = EmptyProgram();
 
         new TypeDescriptorBuilder(
             new MappingIdentities(
@@ -2105,33 +1972,12 @@ public sealed class ManagedLayoutPhaseTests
             new ObjectLayoutResolver(definitions, types),
             program,
             types,
-            types.Target,
-            state,
-            new StaticReferenceBitmapBuilder()).Build();
+            state).Build();
 
-        Assert.Equal(
-            invoke.CanonicalName,
-            Assert.Single(state.PendingTypeFacts).DelegateInvokeDescriptor);
-
-        var stateWithoutInvoke = new ManagedStaticDataBuildState();
-        new TypeDescriptorBuilder(
-            new MappingIdentities(
-                new Dictionary<EntityKey, CliTypeIdentity> { [typeKey] = identity }),
-            definitions,
-            new BaseTypes(),
-            new ObjectLayoutResolver(definitions, types),
-            program with
-            {
-                DelegateInvokeDescriptors =
-                    ImmutableDictionary<string, MethodInstanceModel>.Empty,
-            },
-            types,
-            types.Target,
-            stateWithoutInvoke,
-            new StaticReferenceBitmapBuilder(),
-            EmptyAssignableTypeMetadataBuilder.Instance).Build();
-        var factsWithoutInvoke = Assert.Single(stateWithoutInvoke.PendingTypeFacts);
-        Assert.Null(factsWithoutInvoke.DelegateInvokeDescriptor);
+        var facts = Assert.Single(state.PendingTypeFacts);
+        Assert.Equal(identity, facts.Identity);
+        Assert.Equal(definition, facts.Definition);
+        Assert.Equal(layout.TypeId, facts.TypeId);
     }
 
     [Theory]
@@ -2224,9 +2070,7 @@ public sealed class ManagedLayoutPhaseTests
             new ObjectLayoutResolver(definitions, types),
             program,
             types,
-            types.Target,
-            staticState,
-            new StaticReferenceBitmapBuilder()).Build();
+            staticState).Build();
         Assert.Equal(typeKey, Assert.Single(staticState.TypeDescriptors).Type);
         Assert.Equal(finalizer, Assert.Single(staticState.TypeDescriptors).Finalizer);
 
@@ -2283,8 +2127,7 @@ public sealed class ManagedLayoutPhaseTests
             new UnusedTypeIdentities(),
             types,
             types.Target,
-            state,
-            new StaticReferenceBitmapBuilder()).Build();
+            state).Build();
         Assert.Equal(constructed, Assert.Single(state.ValueTypeDescriptors).Type);
 
         Assert.Throws<CompilerException>(() => new ValueTypeDescriptorBuilder(
@@ -2295,15 +2138,8 @@ public sealed class ManagedLayoutPhaseTests
                 ValueLayoutState = new ManagedValueLayoutState(),
             },
             types.Target,
-            new ManagedStaticDataBuildState(),
-            new StaticReferenceBitmapBuilder()).Build());
+            new ManagedStaticDataBuildState()).Build());
     }
-
-    private static byte[] BuildBitmap(
-        IStaticReferenceBitmapBuilder builder,
-        ImmutableArray<int> offsets,
-        int bitCount,
-        int wordSize) => builder.Build(offsets, bitCount, wordSize);
 
     private static CliTypeIdentity ResolveTypeIdentity(
         ITypeIdentityResolver resolver,
@@ -2580,6 +2416,7 @@ public sealed class ManagedLayoutPhaseTests
         IConstructedTypeDescriptorBuilder,
         IValueTypeDescriptorBuilder,
         IRuntimeGenericArgumentMetadataBuilder,
+        IRuntimeTypeTableBuilder,
         IMemberDescriptorDataBuilder,
         IStringDataBuilder,
         IExceptionObjectBuilder,

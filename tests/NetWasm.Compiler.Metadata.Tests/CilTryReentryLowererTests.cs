@@ -148,6 +148,23 @@ public sealed class CilTryReentryLowererTests
                 region.HandlerLength)));
     }
 
+    // A catch may enter a try nested in its own only at that try's first instruction: a leave into
+    // the middle of the nested try stays as it is, for the region validator to refuse.
+    [Fact]
+    public void ALeaveIntoTheMiddleOfANestedTryIsNoReentry()
+    {
+        ImmutableArray<CilInstruction> instructions =
+        [
+            I(0, CilOperation.Nop), I(1, CilOperation.Nop), I(2, CilOperation.Leave, 4), I(3, CilOperation.EndFinally),
+            I(4, CilOperation.Leave, 8), I(5, CilOperation.Pop), I(6, CilOperation.Leave, 1), I(7, CilOperation.Nop),
+            I(8, CilOperation.Return),
+        ];
+
+        var lowered = Lower(instructions, [Finally(0, 3, 3, 1), Catch(0, 5, 5, 3)]);
+
+        Assert.Equal(instructions, lowered.Instructions);
+    }
+
     // Only a catch's own try is re-entered: a leave from one try's catch into another try stays as
     // it is, for the region validator to refuse.
     [Fact]

@@ -7,6 +7,7 @@ namespace System
     using Runtime.InteropServices;
     using Runtime.InteropServices.TimeZones;
 
+    [Serializable]
     public readonly struct DateTime : IComparable, IComparable<DateTime>, IEquatable<DateTime>, IConvertible,
         IFormattable, IParsable<DateTime>, ISpanFormattable, ISpanParsable<DateTime>,
         IUtf8SpanFormattable

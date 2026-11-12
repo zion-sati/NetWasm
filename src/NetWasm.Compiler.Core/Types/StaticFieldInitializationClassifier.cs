@@ -24,7 +24,10 @@ public sealed class StaticFieldInitializationClassifier(ITypeRepository types, I
         return IsOwnInstanceMethod(accessor, accessorDeclaringType, owner) ||
             // An access at the body's entry runs before everything else in it,
             // and when its check fails the method leaves before any other access.
-            EntryAccesses(body).Any(entry => entry.Offset != access.Offset && Owner(entry, _fields).Initializes(owner));
+            // Only the entry accesses before this one have run, so of two entry
+            // accesses to one type, the first keeps its check.
+            EntryAccesses(body).TakeWhile(entry => entry.Offset != access.Offset)
+                .Any(entry => Owner(entry, _fields).Initializes(owner));
     }
 
     // ECMA-335 I.8.9.5: a precise type initializes before any of its

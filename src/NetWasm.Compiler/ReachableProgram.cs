@@ -69,9 +69,6 @@ public sealed record ReachableProgram(
     public ImmutableDictionary<string, PropertyInstanceModel> PropertyDescriptors { get; init; } =
         [];
 
-    public ImmutableDictionary<string, MethodInstanceModel> DelegateInvokeDescriptors
-    { get; init; } = [];
-
     public ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
         ObjectArrayDelegateAdapters
     { get; init; } = [];
@@ -85,6 +82,18 @@ public sealed record ReachableProgram(
 
 
     public bool RequiresGenericArguments { get; init; }
+
+    public bool RequiresDeclaringTypes { get; init; }
+
+    public bool RequiresGenericDefinitions { get; init; }
+
+    public bool RequiresAssemblies { get; init; }
+
+    public bool RequiresElementTypes { get; init; }
+
+    public bool RequiresTypeAttributes { get; init; }
+
+    public bool RequiresInterfaces { get; init; }
 
 
     public ImmutableArray<string> ConstructedStaticInitializers { get; init; } = [];

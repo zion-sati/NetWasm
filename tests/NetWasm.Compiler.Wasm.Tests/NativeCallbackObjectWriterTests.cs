@@ -16,6 +16,7 @@ public sealed class NativeCallbackObjectWriterTests
 
         Assert.Empty(writer.Write(NativeCallbackPlan.Empty, [], WasmTarget.Wasm32));
         Assert.Empty(writer.Write(NativeCallbackPlan.Empty, [], WasmTarget.Wasm64));
+        Assert.Empty(writer.Write(NativeCallbackPlan.Empty, default, WasmTarget.Wasm32));
     }
 
     [Theory]

@@ -1,6 +1,7 @@
 namespace System.Reflection;
 
-public class AmbiguousMatchException : SystemException
+[Serializable]
+public sealed class AmbiguousMatchException : SystemException
 {
     public AmbiguousMatchException() { }
 
@@ -22,6 +23,7 @@ public interface ICustomAttributeProvider
 
 public abstract class MemberInfo : ICustomAttributeProvider
 {
+    public virtual bool IsCollectible => true;
     public virtual MemberTypes MemberType => throw Unsupported();
 
     public virtual System.Collections.Generic.IEnumerable<CustomAttributeData> CustomAttributes =>

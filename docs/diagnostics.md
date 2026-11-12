@@ -10,7 +10,7 @@ The size-first Release profile normally leaves those optional features out.
 | --- | --- | --- | --- |
 | `NetWasmStructuredDiagnostics` | `true` | `false` | Structured managed failure reporting for the selected execution contract |
 | `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and the frame names in `<program>.wasm.method-symbols` |
-| `NetWasmTypeNames` | `true` | `false` | Every type's names in `<program>.wasm.type-symbols`, which the program reads; without them a name reads `type#<id>` |
+| `NetWasmTypeNames` | `true` | `false` | Every type's and assembly's names in `<program>.wasm.type-symbols`, which the program reads. Without them a name reads `type#<id>`, an assembly name `<Assembly name unavailable>`, and looking a type up by name (`Type.GetType(string)`, `Assembly.GetType(string)`, `GetNestedType(string)`, `GetInterface(string)`) throws `PlatformNotSupportedException` |
 
 The switches are independent. Enable the desired features explicitly, for
 example for an application that needs rich Release diagnostics:
@@ -74,8 +74,9 @@ still reads them. Each file carries the build ID of the program that
 wrote it. If a file is missing, unreadable, malformed or from another build, the
 program writes one line to standard error, for example
 `NetWasm: skipped /netwasm-sidecars/App.wasm.type-symbols (the host mounts no /netwasm-sidecars directory); type names read as type#<id>.`,
-and runs as if it was built without that file: names read `type#<id>` and
-frames `method#<id>`. Time zone data is different: a `TZ` the program cannot
+and runs as if it was built without that file: names read `type#<id>`, looking
+a type up by name throws `PlatformNotSupportedException`, and frames read
+`method#<id>`. Time zone data is different: a `TZ` the program cannot
 find in its data fails at startup.
 
 ## Compiler diagnostic format

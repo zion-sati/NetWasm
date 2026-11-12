@@ -17,6 +17,12 @@ internal sealed class RootValueElisionPlanner(IStructuredBlockPredecessorReader 
     private readonly IStructuredBlockPredecessorReader _predecessors =
         predecessors ?? throw new ArgumentNullException(nameof(predecessors));
 
+    // Whether two exits hold the same value in every slot.
+    internal static bool HoldTheSameValues(
+        ImmutableDictionary<int, RootSource> left, ImmutableDictionary<int, RootSource> right) =>
+        left.Count == right.Count &&
+        left.All(pair => right.TryGetValue(pair.Key, out var other) && other == pair.Value);
+
     public ImmutableDictionary<int, ImmutableHashSet<int>> Plan(StructuredMethod method, MethodEmissionContext context)
     {
         ArgumentNullException.ThrowIfNull(method);
@@ -31,8 +37,7 @@ internal sealed class RootValueElisionPlanner(IStructuredBlockPredecessorReader 
             : RootFactFlow.Solve(method, _predecessors.Read(method), empty,
                 (left, right) => left.Where(pair => right.TryGetValue(pair.Key, out var other) && other == pair.Value)
                     .ToImmutableDictionary(),
-                (left, right) => left.Count == right.Count && left.All(pair =>
-                    right.TryGetValue(pair.Key, out var other) && other == pair.Value),
+                HoldTheSameValues,
                 (block, published) => Transfer(block, published, record: false));
         foreach (var (id, block) in method.Blocks)
             Transfer(block, entries?[id] ?? empty, record: true);

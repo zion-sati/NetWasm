@@ -39,10 +39,10 @@ internal sealed class ManagedStaticDataBuildState
         new(StringComparer.Ordinal);
     public Dictionary<string, int> PropertyDescriptors { get; } =
         new(StringComparer.Ordinal);
-    public Dictionary<int, int> TypeFacts { get; } = [];
     public List<PendingRuntimeTypeFacts> PendingTypeFacts { get; } = [];
-    public int TypeFactsTableAddress { get; set; }
-    public int TypeFactsTableCount { get; set; }
+    public int TypeTableAddress { get; set; }
+    // The assemblies of the registered types, at their type table index - 1.
+    public ImmutableArray<AssemblyIdentity> RuntimeAssemblies { get; set; } = [];
     public int? MemberDescriptorDeclaringTypeIdOffset { get; set; }
     public int? MemberDescriptorRequiresDeclaringTypeOffset { get; set; }
     public ImmutableArray<int>.Builder StaticRoots { get; } =

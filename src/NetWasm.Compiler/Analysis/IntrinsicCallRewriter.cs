@@ -65,5 +65,5 @@ internal sealed class IntrinsicCallRewriter(
     private static bool IsTypeFactsLookup(MethodInstanceModel method) =>
         method.Definition.IsStatic &&
         method.Signature.ReturnSignatureType.StackKind == CliValueKind.NativeInt &&
-        method.Signature.ParameterSignatureTypes is [{ StackKind: CliValueKind.I4 }];
+        method.Signature.ParameterSignatureTypes.IsEmpty;
 }

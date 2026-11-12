@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRuntimeContractImports } from './runtime-contract-imports.mjs';
+import { registerRuntimeTypes } from "../NetWasm.Compiler.Tests/Correctness/runtime-type-table.cjs";
 
 const [modulePath, target] = process.argv.slice(2);
 assert.ok(target === 'wasm32' || target === 'wasm64');
@@ -23,22 +24,13 @@ for (const kind of ['root', 'value', 'stack-trace', 'root-content', 'value-conte
     const referenceSize = target === 'wasm64' ? 8 : 4;
     const payloadOffset = referenceSize;
     const objectSize = referenceSize * 2;
-    const objectBitmap = 1024;
-    const valueBitmap = 1040;
     const view = new DataView(api.memory.buffer);
-    if (target === 'wasm64') {
-      view.setBigUint64(objectBitmap, 2n, true);
-      view.setBigUint64(valueBitmap, 1n, true);
-    } else {
-      view.setUint32(objectBitmap, 2, true);
-      view.setUint32(valueBitmap, 1, true);
-    }
-    api.register_type(1, 0, address(objectSize), address(objectBitmap), 2,
-      address(0), 0, 0, 0);
-    api.register_value_type(1, address(referenceSize), address(payloadOffset),
-      address(valueBitmap), 1);
-    api.register_type(2, 0, address(referenceSize), address(0), 1,
-      address(0), 0, 0, 0);
+    // A boxed value with a reference in its payload, and the type its reference holds.
+    registerRuntimeTypes(api, [
+      { type: 1, size: objectSize, references: [1],
+        value: { size: referenceSize, payload: payloadOffset, references: [0] } },
+      { type: 2, size: referenceSize },
+    ], address);
 
     const child = api.allocate(address(referenceSize), 2);
     const source = api.allocate(address(objectSize), 1);
@@ -78,7 +70,7 @@ for (const kind of ['root', 'value', 'stack-trace', 'root-content', 'value-conte
     assert.equal(BigInt(api.boxed_value_clone(source)), 0n);
     assert.notEqual(BigInt(api.boxed_value_clone(source)), 0n);
   } else if (kind === 'allocation-test-hooks') {
-    api.register_type(1, 0, address(8), address(0), 0, address(0), 0, 0, 0);
+    registerRuntimeTypes(api, [{ type: 1, size: 8 }], address);
     api.test_track_allocations(1);
     assert.notEqual(BigInt(api.allocate(address(8), 1)), 0n);
     assert.equal(api.test_allocation_count(), 1);

@@ -73,6 +73,29 @@ public sealed class StaticFieldInitializationClassifierTests
         Assert.False(classifier.IsInitializedFor(accessor, null, [entry, read], read));
     }
 
+    // Of two entry accesses to one type (the entry check a BeforeFieldInit type's
+    // first access moves to, then that access folded to the same check), only the
+    // second finds the type initialized: the first runs before anything checked it.
+    [Fact]
+    public void TheFirstOfTwoEntryAccessesToOneTypeKeepsItsCheck()
+    {
+        var classifier = Classifier(isValueType: false, beforeFieldInit: true);
+        var first = Access(0, CilOperation.LoadStaticFieldAddress, Field);
+        var second = Access(2, CilOperation.LoadStaticFieldAddress, Field);
+        var read = Access(4, CilOperation.LoadStaticField, Field);
+        var accessor = Method with { IsStatic = true };
+        ImmutableArray<CilInstruction> body =
+        [
+            first, new(1, 2, CilOperation.Pop, new CilOperand.None()),
+            second, new(3, 4, CilOperation.Pop, new CilOperand.None()),
+            read,
+        ];
+
+        Assert.False(classifier.IsInitializedFor(accessor, null, body, first));
+        Assert.True(classifier.IsInitializedFor(accessor, null, body, second));
+        Assert.True(classifier.IsInitializedFor(accessor, null, body, read));
+    }
+
     // Only a static field's load, store or address names a type to initialize;
     // its owner comes from the field instance or from the field's definition.
     [Fact]

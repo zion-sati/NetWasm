@@ -471,24 +471,20 @@ public sealed class WasmBinaryTests
     {
         var imports = WasmRuntimeImports.CreateCatalog().Imports.ToArray();
         var allocate = imports.Single(import => import.Name == RuntimeAbi.RuntimeAllocate);
-        var registerType = imports.Single(import => import.Name == RuntimeAbi.RuntimeRegisterType);
+        var registerTypes = imports.Single(import => import.Name == RuntimeAbi.RuntimeRegisterTypes);
+        var baseType = imports.Single(import => import.Name == RuntimeAbi.RuntimeTypeBaseId);
+        var assignable = imports.Single(import => import.Name == RuntimeAbi.RuntimeTypeIsAssignable);
         var rootEnter = imports.Single(import => import.Name == RuntimeAbi.RuntimeRootFrameEnter);
 
         Assert.Equal(CliValueKind.ManagedReference, allocate.Type.Result);
         Assert.True(allocate.Type.Parameters.SequenceEqual(
             [CliValueKind.ManagedAddress, CliValueKind.I4]));
-        Assert.True(registerType.Type.Parameters.SequenceEqual(
-            [
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.ManagedAddress,
-                CliValueKind.ManagedAddress,
-                CliValueKind.I4,
-                CliValueKind.ManagedAddress,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I4,
-            ]));
+        // The type table's address, then semantic IDs in and out of the registry.
+        Assert.True(registerTypes.Type.Parameters.SequenceEqual([CliValueKind.ManagedAddress]));
+        Assert.True(baseType.Type.Parameters.SequenceEqual([CliValueKind.I4]));
+        Assert.Equal(CliValueKind.I4, baseType.Type.Result);
+        Assert.True(assignable.Type.Parameters.SequenceEqual([CliValueKind.I4, CliValueKind.I4]));
+        Assert.Equal(CliValueKind.I4, assignable.Type.Result);
         Assert.Equal(CliValueKind.ManagedAddress, rootEnter.Type.Result);
         Assert.True(rootEnter.Type.Parameters.SequenceEqual([CliValueKind.I4]));
     }

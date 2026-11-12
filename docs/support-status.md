@@ -175,18 +175,96 @@ type use it. Each type has its own text, the same however code reaches the type,
 so a dictionary keyed by type name keeps working. Code that needs a readable
 name should use a string it already has, such as a constant or `nameof`.
 
-`NetWasmTypeNames`, on in Debug and off in Release, writes every type's names to
+`NetWasmTypeNames`, on in Debug and off in Release, writes every type's names,
+and the names of the assemblies `Type.Assembly` can return, to
 `<program>.wasm.type-symbols` beside the program, and the program reads them at
 startup (see [program sidecars](diagnostics.md#program-sidecars)). Names then
-form as .NET forms them, except that every assembly name reads
-`<Assembly name unavailable>`: `typeof(List<int>).FullName` is
-``System.Collections.Generic.List`1[[System.Int32, <Assembly name unavailable>]]``
-and its `ToString()` is ``System.Collections.Generic.List`1[System.Int32]``.
-`Assembly.FullName` and `AssemblyName.Name` return
-`<Assembly name unavailable>` in every build.
+form as .NET forms them: `typeof(List<int>).FullName` is
+``System.Collections.Generic.List`1[[System.Int32, NetWasm.CoreLib, Version=…, Culture=neutral, PublicKeyToken=null]]``,
+its `ToString()` is ``System.Collections.Generic.List`1[System.Int32]``, and
+`Assembly.FullName` and `GetName()` read the assembly's display name. CoreLib's
+assembly is `NetWasm.CoreLib`, where .NET's is `System.Private.CoreLib`. Without
+the sidecar an assembly's name reads `<Assembly name unavailable>`.
 
-Looking a type up by its name, as `Type.GetType(string)` does, is outside the
-profile.
+Looking a type up by name needs those names. With them,
+`Type.GetType(string)`, `Assembly.GetType(string)` and `Module.GetType(string)`
+find the program's type whose `FullName` or `AssemblyQualifiedName` is the whole
+string (`Type.GetType("Sample.Order")`), and `GetNestedType(string)` and
+`GetInterface(string)` match by name. Names are matched as written, not parsed,
+and a type nothing in the program uses is not found: the lookup returns `null`,
+or throws `TypeLoadException` with `throwOnError`. Without type names these
+lookups throw `PlatformNotSupportedException`.
+
+### Runtime type information
+
+Every type a program can reach answers, at run time and without the sidecar,
+what .NET 11 answers for its kind (`IsValueType`, `IsEnum`, `IsInterface`,
+`IsClass`, `IsAbstract`, `IsSealed`, `IsArray`, `IsSZArray`, `IsByRef`,
+`IsPointer`, `IsGenericType`, `IsGenericTypeDefinition`,
+`ContainsGenericParameters`, `IsGenericParameter`, `IsTypeDefinition`,
+`IsByRefLike`), `Type.GetTypeCode`, `GetArrayRank()`, `BaseType`,
+`IsAssignableFrom` and `IsAssignableTo`. `Attributes` and the queries built on
+it (`IsPublic`, `IsNotPublic`, the `IsNested*` visibilities, `IsVisible`,
+`IsSerializable`, `IsAutoLayout`, `IsLayoutSequential`, `IsExplicitLayout`,
+`IsAnsiClass`, `IsImport`, `IsSpecialName`) read the type's metadata as .NET
+reports it. `IsFunctionPointer` reads `false` for every type. As on .NET, a
+type's `Type` object is also its `TypeInfo`: `GetTypeInfo()` returns the type
+itself, and `TypeInfo`'s members answer as the `Type` members they forward to.
+
+A type's relations come from the same table. `GetGenericArguments()` and
+`GenericTypeArguments` return its generic arguments (an open definition's
+parameters), `GetGenericTypeDefinition()` its open definition, and
+`GetElementType()` an array's, pointer's or by-reference type's element.
+`DeclaringType`, `ReflectedType` and `IsNested` return its enclosing type: a
+nested type of a generic type reports the open definition, a generic type
+parameter its owner, and an array, pointer, primitive or `Nullable<T>` `null`.
+`GetInterfaces()` and `GetInterface(string)` return the interfaces it
+implements, its own and its base types', and `GetNestedTypes()` and
+`GetNestedType(string)` its nested types, by visibility. A generic parameter
+answers `GenericParameterPosition` and `GenericParameterAttributes`, is a value
+type based on `ValueType` under the `struct` constraint and a class based on
+`Object` otherwise; a class-type constraint does not change its `BaseType`,
+and `GetGenericParameterConstraints()` throws `PlatformNotSupportedException`.
+
+A program cannot create types at run time, so `MakeArrayType`,
+`MakePointerType`, `MakeByRefType` and `MakeGenericType` return the type the
+program has with that element, rank or arguments, and throw
+`PlatformNotSupportedException` for one it does not use.
+
+`Type.Assembly` and `Assembly.GetAssembly(Type)` return one `Assembly` per
+assembly, so assemblies compare and key as on .NET; an array's or constructed
+type's assembly is its element's or definition's.
+`Assembly.GetExecutingAssembly()` returns the calling method's assembly and
+`GetEntryAssembly()` the entry point's. `GetTypes()` lists the assembly's type
+definitions, `DefinedTypes` the same as `TypeInfo`s, and `GetExportedTypes()` its
+visible ones. An assembly answers as a
+NativeAOT one does: its `Location` is empty, and its one module, which
+`Type.Module`, `ManifestModule` and `GetModules()` return, has the name
+`<Unknown>` and the assembly's file name as its `ScopeName` (`<Unknown>` without
+the sidecar). `GetCallingAssembly()`, `Assembly.Load`, manifest resources,
+assembly attributes, referenced assemblies, `ModuleVersionId` and metadata
+tokens are outside the profile.
+
+The lists and lookups (`GetInterfaces`, `GetNestedTypes`, `GetTypes`, the
+`Make*` methods and the name lookups) see the types the program uses: the
+compiler leaves every other type out of the program, so one nothing references
+is not listed or found, and an open generic definition or a generic parameter
+lists no interfaces. Lists come in type ID order, not metadata order. All of
+it comes from one bit-packed table with a few bits per type, and each part past
+a type's kind, base type and assignability is in it only when a program reads
+it.
+
+Member information comes only from what the compiler sees: a `MethodInfo`,
+`PropertyInfo` or `FieldInfo` exists for a member the program names, as an
+expression tree's `x => x.Name` does, and a delegate type's `Invoke` signature
+for a delegate type the program names. So `Delegate.DynamicInvoke` works on a
+value of its own delegate type (`Func<int, int> f; f.DynamicInvoke(1)`). On a
+value typed `Delegate` or `MulticastDelegate`, whose type only the run knows,
+it runs a parameterless `Action`, or a parameterless `Func<T>` whose `T` is a
+reference type, and throws `PlatformNotSupportedException` for any other
+delegate. `Expression.Invoke` of a
+lambda expression works, and of any other delegate-typed expression throws
+`PlatformNotSupportedException`.
 
 ## Complete / supported package profiles
 
@@ -295,8 +373,8 @@ default precise tracing collector, and NetWasmGC the throughput-oriented one.
 
 NetWasm can compile and run wasm64 core modules through the raw-core host
 boundary. It cannot currently produce a wasm64 WebAssembly Component. The
-required external Memory64 Component path—commonly identified by the `cm64p2`
-canonical target name—does not yet provide the complete encoder, validator,
+required external Memory64 Component path, commonly identified by the `cm64p2`
+canonical target name, does not yet provide the complete encoder, validator,
 runtime, and browser-tooling support required to package and execute the
 Component.
 

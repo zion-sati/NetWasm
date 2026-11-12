@@ -40,8 +40,13 @@ internal sealed class ReachabilityInstructionAnalyzer(
         var reachedNativeCallbacks = ImmutableArray.CreateBuilder<MethodInstanceModel>();
         var callSites = ImmutableArray.CreateBuilder<ManagedCallSite>();
         var requiresTypeFacts = false;
-        var requiresDelegateInvoke = false;
         var requiresGenericArguments = false;
+        var requiresDeclaringTypes = false;
+        var requiresGenericDefinitions = false;
+        var requiresAssemblies = false;
+        var requiresElementTypes = false;
+        var requiresTypeAttributes = false;
+        var requiresInterfaces = false;
         var requiresMemberNames = false;
         var instructions = request.Body.Instructions;
         for (var instructionIndex = 0; instructionIndex < instructions.Length; instructionIndex++)
@@ -58,8 +63,13 @@ internal sealed class ReachabilityInstructionAnalyzer(
             if (calledMethod is not null)
             {
                 requiresMemberNames |= ReachabilityMarkers.RequiresMemberNames(calledMethod);
-                requiresDelegateInvoke |= ReachabilityMarkers.RequiresDelegateInvoke(calledMethod);
                 requiresGenericArguments |= ReachabilityMarkers.RequiresGenericArguments(calledMethod);
+                requiresDeclaringTypes |= ReachabilityMarkers.RequiresDeclaringTypes(calledMethod);
+                requiresGenericDefinitions |= ReachabilityMarkers.RequiresGenericDefinitions(calledMethod);
+                requiresAssemblies |= ReachabilityMarkers.RequiresAssemblies(calledMethod);
+                requiresElementTypes |= ReachabilityMarkers.RequiresElementTypes(calledMethod);
+                requiresTypeAttributes |= ReachabilityMarkers.RequiresTypeAttributes(calledMethod);
+                requiresInterfaces |= ReachabilityMarkers.RequiresInterfaces(calledMethod);
                 callSites.Add(managedCallSites.Create(
                     request.Method,
                     request.Body,
@@ -110,7 +120,7 @@ internal sealed class ReachabilityInstructionAnalyzer(
             }
             if (instruction.Operation is CilOperation.MaterializeType or CilOperation.GetObjectType)
             {
-                var typeFacade = typeFinder.FindType("System.Type");
+                var typeFacade = typeFinder.FindType(RuntimeTypeObjects.ClassName);
                 types.Add(typeFacade.Key);
                 allocatedTypes.Add(typeIdentities.GetTypeIdentity(typeFacade.Key));
                 if (instruction.Operation == CilOperation.GetObjectType &&
@@ -319,8 +329,13 @@ internal sealed class ReachabilityInstructionAnalyzer(
             MethodDescriptors = methodDescriptors.ToImmutable(),
             FieldDescriptors = fieldDescriptors.ToImmutable(),
             RequiresTypeFacts = requiresTypeFacts,
-            RequiresDelegateInvoke = requiresDelegateInvoke,
             RequiresGenericArguments = requiresGenericArguments,
+            RequiresDeclaringTypes = requiresDeclaringTypes,
+            RequiresGenericDefinitions = requiresGenericDefinitions,
+            RequiresAssemblies = requiresAssemblies,
+            RequiresElementTypes = requiresElementTypes,
+            RequiresTypeAttributes = requiresTypeAttributes,
+            RequiresInterfaces = requiresInterfaces,
             RequiresMemberNames = requiresMemberNames,
             NativeCallbacks = reachedNativeCallbacks.ToImmutable(),
         };

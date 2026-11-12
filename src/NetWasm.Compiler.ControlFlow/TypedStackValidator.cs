@@ -404,7 +404,6 @@ public sealed class TypedStackValidator(
                 stack.Add(CliValueKind.ManagedReference);
                 return;
             case CilOperation.GetTypeFacts:
-                PopExpected(body, instruction, stack, CliValueKind.I4);
                 stack.Add(CliValueKind.NativeInt);
                 return;
             case CilOperation.MaterializeMethod:

@@ -106,12 +106,17 @@ internal sealed class ReachableProgramBuilder(
             MethodDescriptors = state.MethodDescriptors,
             FieldDescriptors = state.FieldDescriptors,
             PropertyDescriptors = state.PropertyDescriptors,
-            DelegateInvokeDescriptors = state.DelegateInvokeDescriptors,
             ObjectArrayDelegateAdapters = state.ObjectArrayDelegateAdapters,
             MemberExecution = state.MemberExecution,
             NamedMemberDescriptors = state.NamedMemberDescriptors,
             RequiresTypeFacts = state.RequiresTypeFacts,
             RequiresGenericArguments = state.RequiresGenericArguments,
+            RequiresDeclaringTypes = state.RequiresDeclaringTypes,
+            RequiresGenericDefinitions = state.RequiresGenericDefinitions,
+            RequiresAssemblies = state.RequiresAssemblies,
+            RequiresElementTypes = state.RequiresElementTypes,
+            RequiresTypeAttributes = state.RequiresTypeAttributes,
+            RequiresInterfaces = state.RequiresInterfaces,
             ConstructedStaticInitializers = [
                 ..state.ConstructedStaticInitializers
                     .Order(StringComparer.Ordinal)

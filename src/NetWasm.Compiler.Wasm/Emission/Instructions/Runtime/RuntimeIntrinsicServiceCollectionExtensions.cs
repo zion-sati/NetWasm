@@ -51,6 +51,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<GcHandleReleaseIntrinsicEmitter>();
         services.AddSingleton<GcHandleAddressIntrinsicEmitter>();
         services.AddSingleton<ObjectContainsReferencesIntrinsicEmitter>();
+        services.AddSingleton<TypeRegistryIntrinsicEmitter>();
         services.AddSingleton<GcGetMetricIntrinsicEmitter>();
         services.AddSingleton<GcMetricIsSupportedIntrinsicEmitter>();
         services.AddSingleton<GcWaitForPendingFinalizersIntrinsicEmitter>();
@@ -229,6 +230,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<GcHandleReleaseIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleRelease);
         AddRegistration<GcHandleAddressIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleAddress);
         AddRegistration<ObjectContainsReferencesIntrinsicEmitter>(services, RuntimeIntrinsic.ObjectContainsReferences);
+        AddRegistration<TypeRegistryIntrinsicEmitter>(services, RuntimeIntrinsic.TypeBaseId);
+        AddRegistration<TypeRegistryIntrinsicEmitter>(services, RuntimeIntrinsic.TypeIsAssignable);
         AddRegistration<GcGetMetricIntrinsicEmitter>(services, RuntimeIntrinsic.GcGetMetric);
         AddRegistration<GcMetricIsSupportedIntrinsicEmitter>(
             services,

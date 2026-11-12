@@ -225,7 +225,7 @@ public sealed class CompilerHostApplicationTests
                 "<TypeDescriptors>k__BackingField",
                 BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(staticData, ImmutableArray.Create(
-                    new TypeDescriptorLayout(new(new("Fixture"), 1), 17, 0, 16, 0, 0, null)));
+                    new TypeDescriptorLayout(new(new("Fixture"), 1), 17, 0, 16, [], null)));
             typeof(ManagedLayoutSnapshot).GetField(
                 "<StaticData>k__BackingField",
                 BindingFlags.Instance | BindingFlags.NonPublic)!

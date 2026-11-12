@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 namespace System.Collections.ObjectModel
 {
     [CollectionBuilder(typeof(ReadOnlyCollection), "CreateCollection")]
+    [Serializable]
     public class ReadOnlyCollection<T> : IList<T>, IList, IReadOnlyList<T>
     {
         private readonly IList<T> list;

@@ -127,11 +127,9 @@ internal sealed class RecordingStaticDataLayout(
         }
     }
 
-    public int TypeFactsTableAddress =>
-        UnitRecording.Scalar(recorder, UnitQueryKind.TypeFactsTable, "address", inner.TypeFactsTableAddress);
+    public int TypeTableAddress =>
+        UnitRecording.Scalar(recorder, UnitQueryKind.TypeTable, "address", inner.TypeTableAddress);
 
-    public int TypeFactsTableCount =>
-        UnitRecording.Scalar(recorder, UnitQueryKind.TypeFactsTable, "count", inner.TypeFactsTableCount);
 
     public IEntryLookup<string, int> TypeObjectAddresses =>
         _typeObjects ??= new(inner.TypeObjectAddresses, recorder, UnitQueryKind.TypeObjectAddress,
@@ -206,11 +204,9 @@ internal sealed class RecordingTypeDescriptorSource(
                 builder.Add(descriptor.TypeId);
                 builder.Add(descriptor.BaseTypeId);
                 builder.Add(descriptor.ObjectSize);
-                builder.Add(descriptor.BitmapAddress);
-                builder.Add(descriptor.BitmapBitCount);
+                builder.Add(descriptor.ReferenceOffsets);
                 builder.Add(descriptor.Finalizer);
-                builder.Add(descriptor.AssignableTypeIdsAddress);
-                builder.Add(descriptor.AssignableTypeIdCount);
+                builder.Add(descriptor.AssignableTypeIds);
                 builder.Add(descriptor.IsInterface);
             });
             recorder.Record(UnitQueryKind.TypeDescriptors, "", _types.Value, descriptors);
@@ -256,11 +252,9 @@ internal sealed class RecordingTypeDescriptorSource(
                 builder.Add(descriptor.TypeId);
                 builder.Add(descriptor.BaseTypeId);
                 builder.Add(descriptor.ObjectSize);
-                builder.Add(descriptor.BitmapAddress);
-                builder.Add(descriptor.BitmapBitCount);
+                builder.Add(descriptor.ReferenceOffsets);
                 builder.Add(descriptor.Finalizer);
-                builder.Add(descriptor.AssignableTypeIdsAddress);
-                builder.Add(descriptor.AssignableTypeIdCount);
+                builder.Add(descriptor.AssignableTypeIds);
                 builder.Add(descriptor.IsInterface);
             });
             recorder.Record(UnitQueryKind.ConstructedTypeDescriptors, "", _constructed.Value, descriptors);
@@ -279,8 +273,7 @@ internal sealed class RecordingTypeDescriptorSource(
                 builder.Add(descriptor.TypeId);
                 builder.Add(descriptor.Size);
                 builder.Add(descriptor.BoxedPayloadOffset);
-                builder.Add(descriptor.BitmapAddress);
-                builder.Add(descriptor.BitmapBitCount);
+                builder.Add(descriptor.ReferenceOffsets);
             });
             recorder.Record(UnitQueryKind.ValueTypeDescriptors, "", _values.Value, descriptors);
             return descriptors;

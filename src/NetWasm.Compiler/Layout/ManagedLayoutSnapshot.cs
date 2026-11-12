@@ -27,7 +27,7 @@ public sealed class ManagedLayoutSnapshot :
         StaticData = staticData;
         Target = types.Target;
         StringTypeId = GetTypeId("System.String");
-        TypeTypeId = GetTypeId("System.Type");
+        TypeTypeId = GetTypeId(RuntimeTypeObjects.ClassName);
     }
 
     internal ManagedTypeLayouts TypeLayouts { get; }

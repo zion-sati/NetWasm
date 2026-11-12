@@ -14,6 +14,48 @@ public sealed class RootValueElisionPlannerTests
         Assert.IsAssignableFrom<IRootValueElisionPlanner>(new RootValueElisionPlanner(new StructuredBlockPredecessorReader()));
     private static readonly RootSource Source = new(RootSourceKind.Argument, 0);
 
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    public void ExitsHoldTheSameValuesOnlyWhenEverySlotMatches(int change, bool same)
+    {
+        var other = new RootSource(RootSourceKind.Local, 1);
+        var left = ImmutableDictionary<int, RootSource>.Empty.Add(0, Source).Add(1, other);
+        var right = change switch
+        {
+            0 => left,
+            1 => left.Remove(1),
+            2 => left.Remove(1).Add(2, other),
+            _ => left.SetItem(1, Source),
+        };
+
+        Assert.Equal(same, RootValueElisionPlanner.HoldTheSameValues(left, right));
+    }
+
+    [Fact]
+    public void RejectsAMissingReader() =>
+        Assert.Throws<ArgumentNullException>(() => new RootValueElisionPlanner(null!));
+
+    // A loop's block meets its back edge: a value published before the loop and in it, never
+    // assigned, still holds its slot when the block repeats.
+    [Fact]
+    public void ALoopKeepsAValuePublishedOnEveryPathIntoIt()
+    {
+        var context = Context([new(0, [Source], []), new(1, [Source], []), new(3, [Source], [])]);
+        var method = BlockMethods.Of(
+            BlockMethods.Block(0, [I(0, CilOperation.Call)], new StructuredFallthroughExit(new(1))),
+            BlockMethods.Block(1, [I(1, CilOperation.Call)], new StructuredConditionalExit(
+                new(2, CilOperation.BranchIfTrue, 0, CliValueKind.I4, null), new(1), new(2))),
+            BlockMethods.Block(2, [I(3, CilOperation.Call)], new StructuredTerminalExit(I(4, CilOperation.Return))));
+
+        var plan = _planner.Plan(method, context);
+
+        Assert.Equal([0], plan[1]);
+        Assert.Equal([0], plan[3]);
+    }
+
     [Fact]
     public void RepeatedLiveValuesAreSkippedButDeadSlotsMustStillBeCleared()
     {

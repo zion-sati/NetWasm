@@ -1,5 +1,6 @@
 namespace System
 {
+    [Serializable]
     public class Object
     {
         public Object()

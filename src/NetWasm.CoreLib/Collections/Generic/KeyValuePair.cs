@@ -12,6 +12,7 @@ namespace System.Collections.Generic
             (value?.ToString() ?? string.Empty) + "]";
     }
 
+    [Serializable]
     public readonly struct KeyValuePair<TKey, TValue>
     {
         public KeyValuePair(TKey key, TValue value)

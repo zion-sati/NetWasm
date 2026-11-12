@@ -56,11 +56,7 @@ internal sealed class RuntimeGenericArgumentMetadataBuilder(
                     _state.PendingTypeFacts.Add(new PendingRuntimeTypeFacts(
                         argument.Identity,
                         Definition: null,
-                        typeId,
-                        BaseTypeId: 0,
-                        AssignableTypeIdsAddress: 0,
-                        AssignableTypeIdCount: 0,
-                        DelegateInvokeDescriptor: null));
+                        typeId));
                 }
                 argumentTypeIds.Add(typeId);
             }

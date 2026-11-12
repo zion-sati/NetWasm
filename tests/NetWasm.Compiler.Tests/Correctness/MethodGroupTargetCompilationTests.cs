@@ -276,8 +276,10 @@ public sealed class MethodGroupTargetCompilationTests(CorrectnessTestRunner runn
                     Func<int> hash = value.GetHashCode;
                     Func<object?, bool> equals = value.Equals;
                     Func<string?> text = value.ToString;
+                    // A type's name depends on whether the host mounts the type-symbols sidecar, so the
+                    // ToString delegate is checked against the direct call.
                     return (hash() == value.GetHashCode() ? 1 : 0) + (equals(value) ? 10 : 0) + (equals(input) ? 100 : 0) +
-                        text()!.Length * 1000;
+                        (text() == value.ToString() ? 1000 : 0);
                 }
             }
             """,

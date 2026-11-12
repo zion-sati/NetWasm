@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Symbols;
 
@@ -25,8 +26,8 @@ public sealed class RuntimeTypeSymbolTableBuilderTests
         var parameter = CliTypeIdentity.ScopedGenericParameter(Identity(Box).CanonicalName, method: false, 0);
         var descriptors = new Descriptors(
             [Type(Object, 1, 0), Type(Exception, 2, 1), Type(Custom, 3, 2)],
-            [new(boxOfPoint, 6, 1, 0, 0, 0, null), new(CliTypeIdentity.SzArray(Identity(Custom)), 7, 2, 0, 0, 0, null)],
-            [new(Identity(Point), 4, 8, 0, 0, 0)],
+            [new(boxOfPoint, 6, 1, 0, [], null), new(CliTypeIdentity.SzArray(Identity(Custom)), 7, 2, 0, [], null)],
+            [new(Identity(Point), 4, 8, 0, [])],
             [new MetadataTypeDescriptorLayout(parameter, 8) { GenericParameterName = "T" }]);
 
         var table = Build(descriptors);
@@ -71,9 +72,9 @@ public sealed class RuntimeTypeSymbolTableBuilderTests
         Assert.Equal(DiagnosticCode.RuntimeContract, Assert.Throws<CompilerException>(() =>
             Build(new Descriptors([Type(Object, 0, 0)], [], [], []))).Diagnostic.Code);
         Assert.Equal(DiagnosticCode.RuntimeContract, Assert.Throws<CompilerException>(() =>
-            Build(new Descriptors([Type(Object, 1, 0)], [], [new(Identity(Point), 1, 8, 0, 0, 0)], []))).Diagnostic.Code);
+            Build(new Descriptors([Type(Object, 1, 0)], [], [new(Identity(Point), 1, 8, 0, [])], []))).Diagnostic.Code);
         // The same type under the same ID in two descriptor kinds is one entry.
-        Assert.Single(Build(new Descriptors([Type(Point, 4, 0)], [], [new(Identity(Point), 4, 8, 0, 0, 0)], [])).Symbols);
+        Assert.Single(Build(new Descriptors([Type(Point, 4, 0)], [], [new(Identity(Point), 4, 8, 0, [])], [])).Symbols);
     }
 
     [Fact]
@@ -82,16 +83,43 @@ public sealed class RuntimeTypeSymbolTableBuilderTests
         var builder = new RuntimeTypeSymbolTableBuilder();
         var descriptors = new Descriptors([], [], [], []);
 
-        Assert.Throws<ArgumentNullException>(() => builder.Build(null!, new Identities(), new Definitions()));
-        Assert.Throws<ArgumentNullException>(() => builder.Build(descriptors, null!, new Definitions()));
-        Assert.Throws<ArgumentNullException>(() => builder.Build(descriptors, new Identities(), null!));
+        var assemblies = Assemblies();
+        Assert.Throws<ArgumentNullException>(() => builder.Build(null!, new Identities(), new Definitions(), [], new AssemblyNames(), assemblies));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(descriptors, null!, new Definitions(), [], new AssemblyNames(), assemblies));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(descriptors, new Identities(), null!, [], new AssemblyNames(), assemblies));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(descriptors, new Identities(), new Definitions(), [], null!, assemblies));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(descriptors, new Identities(), new Definitions(), [], new AssemblyNames(), null!));
+        Assert.Throws<ArgumentException>(() => builder.Build(descriptors, new Identities(), new Definitions(), default, new AssemblyNames(), assemblies));
+    }
+
+    // An assembly Type.Assembly can report is named in the entry past the type IDs by its table index, and a
+    // closed generic argument's assembly display name stands in its constructed type's full name.
+    [Fact]
+    public void NamesEachAssemblyPastTheTypeIdsAndInGenericFullNames()
+    {
+        var closed = CliTypeIdentity.GenericInstantiation(Identity(Box), [Identity(Point)]);
+        var table = new RuntimeTypeSymbolTableBuilder().Build(
+            new Descriptors([Type(Object, 1, 0), Type(Point, 3, 1)], [new(closed, 4, 1, 8, [], null)], [], []),
+            new Identities(), new Definitions(), [Assembly, new AssemblyIdentity("Other")], new AssemblyNames(), Assemblies());
+
+        Assert.Equal([1, 3, 4, 6, 7], table.Symbols.Select(symbol => symbol.TypeId));
+        Assert.Equal(new RuntimeTypeSymbol(6, "Symbols, Version=1.0.0.0", null, null, "Symbols, Version=1.0.0.0"), table.Symbols[3]);
+        Assert.Equal("Other, Version=1.0.0.0", table.Symbols[4].DisplayName);
+        Assert.Equal("App.Box`1[[App.Point, Symbols, Version=1.0.0.0]]", table.Symbols[2].FullName);
     }
 
     private static RuntimeTypeSymbolTable Build(ITypeDescriptorSource descriptors) =>
-        new RuntimeTypeSymbolTableBuilder().Build(descriptors, new Identities(), new Definitions());
+        new RuntimeTypeSymbolTableBuilder().Build(descriptors, new Identities(), new Definitions(), [], new AssemblyNames(), Assemblies());
+
+    private static IRuntimeTypeAssemblyResolver Assemblies() => new RuntimeTypeAssemblyResolverFactory().Create(new Definitions());
+
+    private sealed class AssemblyNames : IAssemblyIdentityFormatter
+    {
+        public string Format(AssemblyIdentity identity) => identity.Name + ", Version=1.0.0.0";
+    }
 
     private static TypeDescriptorLayout Type(TypeDefinitionModel definition, int typeId, int baseTypeId) =>
-        new(definition.Key, typeId, baseTypeId, 8, 0, 0, null);
+        new(definition.Key, typeId, baseTypeId, 8, [], null);
 
     private static TypeDefinitionModel Definition(int token, string @namespace, string name) =>
         new(new EntityKey(Assembly, token), @namespace, name, IsValueType: false, [], []);

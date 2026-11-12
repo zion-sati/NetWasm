@@ -4,6 +4,7 @@
 
 namespace System
 {
+    [Serializable]
     public readonly struct TimeSpan : IComparable, IComparable<TimeSpan>, IEquatable<TimeSpan>,
         IFormattable, IParsable<TimeSpan>, ISpanFormattable, ISpanParsable<TimeSpan>,
         IUtf8SpanFormattable

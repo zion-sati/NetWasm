@@ -4,14 +4,11 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Layout;
 
+// A registered type, as the runtime type table describes it.
 internal sealed record PendingRuntimeTypeFacts(
     CliTypeIdentity Identity,
     TypeDefinitionModel? Definition,
-    int TypeId,
-    int BaseTypeId,
-    int AssignableTypeIdsAddress,
-    int AssignableTypeIdCount,
-    string? DelegateInvokeDescriptor)
+    int TypeId)
 {
     internal ImmutableArray<int> GenericArgumentTypeIds { get; init; } = [];
 }

@@ -3,15 +3,14 @@ using NetWasm.Compiler.Symbols;
 
 namespace NetWasm.Compiler.Tests.Symbols;
 
-// Names form as .NET forms them, with every assembly name read as <Assembly name unavailable> (issue 225).
+// Names form as .NET forms them, with each generic argument's assembly display name in FullName.
 public sealed class RuntimeTypeNameFormatterTests
 {
-    private const string Unavailable = "<Assembly name unavailable>";
     private static readonly AssemblyIdentity Assembly = new("type-facts");
     private static readonly Dictionary<CliTypeIdentity, string> NoParameterNames = [];
 
     [Fact]
-    public void FormsConstructedArrayNamesWithTheAssemblyUnavailable()
+    public void FormsConstructedArrayNamesWithTheArgumentsAssembly()
     {
         var box = Definition("Box`1", "T");
         var int32 = new TypeDefinitionModel(new EntityKey(Assembly, 2), "System", "Int32", IsValueType: true, [], []);
@@ -22,10 +21,10 @@ public sealed class RuntimeTypeNameFormatterTests
                 7,
                 "Box`1[]",
                 "Fixtures",
-                "Fixtures.Box`1[[System.Int32, " + Unavailable + "]][]",
+                "Fixtures.Box`1[[System.Int32, " + AssemblyName(CliTypeIdentity.Primitive("i4", CliValueKind.I4)) + "]][]",
                 "Fixtures.Box`1[System.Int32][]"),
             RuntimeTypeNameFormatter.Format(
-                7, CliTypeIdentity.SzArray(constructed), new TypeDefinitions(box, int32), NoParameterNames));
+                7, CliTypeIdentity.SzArray(constructed), new TypeDefinitions(box, int32), NoParameterNames, AssemblyName));
     }
 
     [Fact]
@@ -113,13 +112,14 @@ public sealed class RuntimeTypeNameFormatterTests
             3, CliTypeIdentity.SzArray(parameter), new TypeDefinitions(), new Dictionary<CliTypeIdentity, string>
             {
                 [parameter] = "T",
-            });
+            },
+            AssemblyName);
 
         Assert.Equal(new RuntimeTypeSymbol(3, "T[]", null, null, "T[]"), symbol);
     }
 
     [Fact]
-    public void NamesAClosedArrayArgumentWithTheAssemblyUnavailable()
+    public void NamesAClosedArrayArgumentWithItsAssembly()
     {
         var box = Definition("Box`1", "T");
         var sample = Definition("Sample", token: 2);
@@ -127,7 +127,8 @@ public sealed class RuntimeTypeNameFormatterTests
         var symbol = Format(
             CliTypeIdentity.GenericInstantiation(Identity(box), [CliTypeIdentity.SzArray(Identity(sample))]), box, sample);
 
-        Assert.Equal("Fixtures.Box`1[[Fixtures.Sample[], " + Unavailable + "]]", symbol.FullName);
+        Assert.Equal("Fixtures.Box`1[[Fixtures.Sample[], " + AssemblyName(CliTypeIdentity.SzArray(Identity(sample))) + "]]",
+            symbol.FullName);
     }
 
     [Fact]
@@ -143,7 +144,9 @@ public sealed class RuntimeTypeNameFormatterTests
     }
 
     private static RuntimeTypeSymbol Format(CliTypeIdentity identity, params TypeDefinitionModel[] definitions) =>
-        RuntimeTypeNameFormatter.Format(1, identity, new TypeDefinitions(definitions), NoParameterNames);
+        RuntimeTypeNameFormatter.Format(1, identity, new TypeDefinitions(definitions), NoParameterNames, AssemblyName);
+
+    private static string AssemblyName(CliTypeIdentity type) => "Assembly of " + type.CanonicalName;
 
     private static TypeDefinitionModel Definition(string name, params string[] genericParameters) =>
         Definition(name, 1, genericParameters);

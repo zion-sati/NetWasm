@@ -217,6 +217,10 @@ internal static class WasmRuntimeImports
                 CliValueKind.ManagedReference,
                 CliValueKind.ManagedAddress,
                 CliValueKind.I4))),
+        new(RuntimeImportSymbol.TypeIsAssignable, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeTypeIsAssignable,
+            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.I4))),
     ];
 
     private static RuntimeImportBinding[] CreateLegacyBindings() =>
@@ -240,20 +244,10 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeCollect,
             WasmFunctionType.Create(CliValueKind.Void))),
-        new(RuntimeImportSymbol.RegisterType, new WasmFunctionImport(
+        new(RuntimeImportSymbol.RegisterTypes, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
-            RuntimeAbi.RuntimeRegisterType,
-            WasmFunctionType.Create(
-                CliValueKind.Void,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.ManagedAddress,
-                CliValueKind.ManagedAddress,
-                CliValueKind.I4,
-                CliValueKind.ManagedAddress,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I4))),
+            RuntimeAbi.RuntimeRegisterTypes,
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.ManagedAddress))),
         new(RuntimeImportSymbol.RegisterStaticRoot, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeRegisterStaticRoot,
@@ -348,16 +342,10 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeExceptionFrameTargetClause,
             WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4))),
-        new(RuntimeImportSymbol.RegisterValueType, new WasmFunctionImport(
+        new(RuntimeImportSymbol.TypeBaseId, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
-            RuntimeAbi.RuntimeRegisterValueType,
-            WasmFunctionType.Create(
-                CliValueKind.Void,
-                CliValueKind.I4,
-                CliValueKind.ManagedAddress,
-                CliValueKind.ManagedAddress,
-                CliValueKind.ManagedAddress,
-                CliValueKind.I4))),
+            RuntimeAbi.RuntimeTypeBaseId,
+            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4))),
         new(RuntimeImportSymbol.AllocateValueArray, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeAllocateValueArray,

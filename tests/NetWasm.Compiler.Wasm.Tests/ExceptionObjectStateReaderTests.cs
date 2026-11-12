@@ -148,7 +148,7 @@ public sealed class ExceptionObjectStateReaderTests
     private sealed class FixedDescriptorSource : ITypeDescriptorSource
     {
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors =>
-            [new(EmitterTestSupport.TypeKey, 1, 0, 16, 0, 0, null)];
+            [new(EmitterTestSupport.TypeKey, 1, 0, 16, [], null)];
         public ImmutableArray<ConstructedTypeDescriptorLayout>
             ConstructedTypeDescriptors => [];
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];

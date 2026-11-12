@@ -12,9 +12,7 @@ internal sealed class TypeDescriptorBuilder(
     IObjectLayoutResolver objectLayouts,
     ReachableProgram program,
     ManagedTypeLayouts types,
-    WasmTargetLayout target,
     ManagedStaticDataBuildState state,
-    IStaticReferenceBitmapBuilder bitmaps,
     IAssignableTypeMetadataBuilder assignableTypes) : ITypeDescriptorBuilder
 {
     internal TypeDescriptorBuilder(
@@ -24,9 +22,7 @@ internal sealed class TypeDescriptorBuilder(
         IObjectLayoutResolver objectLayouts,
         ReachableProgram program,
         ManagedTypeLayouts types,
-        WasmTargetLayout target,
-        ManagedStaticDataBuildState state,
-        IStaticReferenceBitmapBuilder bitmaps) :
+        ManagedStaticDataBuildState state) :
         this(
             identities,
             typeDefinitions,
@@ -34,9 +30,7 @@ internal sealed class TypeDescriptorBuilder(
             objectLayouts,
             program,
             types,
-            target,
             state,
-            bitmaps,
             EmptyAssignableTypeMetadataBuilder.Instance)
     {
     }
@@ -53,12 +47,8 @@ internal sealed class TypeDescriptorBuilder(
         throw new ArgumentNullException(nameof(program));
     private readonly ManagedTypeLayouts _types = types ??
         throw new ArgumentNullException(nameof(types));
-    private readonly WasmTargetLayout _target = target ??
-        throw new ArgumentNullException(nameof(target));
     private readonly ManagedStaticDataBuildState _state = state ??
         throw new ArgumentNullException(nameof(state));
-    private readonly IStaticReferenceBitmapBuilder _bitmaps = bitmaps ??
-        throw new ArgumentNullException(nameof(bitmaps));
     private readonly IAssignableTypeMetadataBuilder _assignableTypes = assignableTypes ??
         throw new ArgumentNullException(nameof(assignableTypes));
 
@@ -66,49 +56,25 @@ internal sealed class TypeDescriptorBuilder(
     {
         foreach (var (type, layout) in _types.Objects.OrderBy(pair => pair.Value.TypeId))
         {
-            _state.Cursor = ManagedTypeLayoutCompiler.Align(
-                _state.Cursor,
-                _target.ObjectReferenceAlignment);
-            var bitCount = DivideRoundUp(layout.Size, _target.ObjectReferenceSize);
-            var bitmap = _bitmaps.Build(
-                layout.ReferenceOffsets,
-                bitCount,
-                _target.ObjectReferenceSize);
-            var bitmapAddress = _state.Cursor;
-            AddSegment(bitmap);
             var typeIdentity = _identities.GetTypeIdentity(type);
-            var assignableTypes = _assignableTypes.Build(typeIdentity);
             var descriptor = new TypeDescriptorLayout(
                 type,
                 layout.TypeId,
                 GetBaseTypeId(typeIdentity),
                 layout.Size,
-                bitmapAddress,
-                bitCount,
+                layout.ReferenceOffsets,
                 _program.Finalizers.TryGetValue(typeIdentity, out var finalizer)
                     ? finalizer
                     : null)
             {
-                AssignableTypeIdsAddress = assignableTypes.Address,
-                AssignableTypeIdCount = assignableTypes.Count,
+                AssignableTypeIds = _assignableTypes.Build(typeIdentity),
                 IsInterface = _typeDefinitions.ResolveTypeIdentity(typeIdentity).IsInterface,
             };
             _state.TypeDescriptors.Add(descriptor);
-            if (_program.RequiresTypeFacts)
-            {
-                _state.PendingTypeFacts.Add(new PendingRuntimeTypeFacts(
-                    typeIdentity,
-                    _typeDefinitions.ResolveTypeIdentity(typeIdentity),
-                    descriptor.TypeId,
-                    descriptor.BaseTypeId,
-                    descriptor.AssignableTypeIdsAddress,
-                    descriptor.AssignableTypeIdCount,
-                    _program.DelegateInvokeDescriptors.TryGetValue(
-                        typeIdentity.CanonicalName,
-                        out var delegateInvoke)
-                            ? delegateInvoke.CanonicalName
-                            : null));
-            }
+            _state.PendingTypeFacts.Add(new PendingRuntimeTypeFacts(
+                typeIdentity,
+                _typeDefinitions.ResolveTypeIdentity(typeIdentity),
+                descriptor.TypeId));
         }
     }
 
@@ -123,19 +89,5 @@ internal sealed class TypeDescriptorBuilder(
             return 0;
         }
         return _objectLayouts.Resolve(baseType).TypeId;
-    }
-
-    private void AddSegment(byte[] data)
-    {
-        _state.Segments.Add(new DataSegment(_state.Cursor, [.. data]));
-        _state.Cursor += data.Length;
-    }
-
-    private static int DivideRoundUp(int value, int divisor)
-    {
-        checked
-        {
-            return (value + divisor - 1) / divisor;
-        }
     }
 }

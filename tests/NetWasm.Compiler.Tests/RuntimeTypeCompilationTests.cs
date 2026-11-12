@@ -1,4 +1,5 @@
 
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
@@ -259,6 +260,827 @@ public sealed class RuntimeTypeCompilationTests
             descriptor => Assert.Equal(
                 CliTypeShape.GenericTypeParameter,
                 descriptor.Type.Shape));
+    }
+
+    // The type table's flag word carries the array rank, TypeDefinition and the generic parameter
+    // bits; each answer below is .NET 11's.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesRankTypeDefinitionAndGenericParameterFlags(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "RuntimeTypeFlagsFixture",
+            """
+            namespace RuntimeTypeFlagsFixture;
+
+            public sealed class Box<T> { }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    object cube = new int[2, 3, 4];
+                    object vector = new int[1];
+                    int passed = 0;
+                    if (cube.GetType().GetArrayRank() == 3) passed |= 1;
+                    if (vector.GetType().GetArrayRank() == 1) passed |= 2;
+                    if (typeof(int).IsTypeDefinition) passed |= 4;
+                    if (!typeof(Box<int>).IsTypeDefinition) passed |= 8;
+                    if (typeof(Box<>).IsTypeDefinition) passed |= 16;
+                    if (!vector.GetType().IsTypeDefinition) passed |= 32;
+                    System.Type parameter = typeof(Box<>).GetGenericArguments()[0];
+                    if (parameter.IsGenericParameter && parameter.IsGenericTypeParameter &&
+                        !parameter.IsGenericMethodParameter) passed |= 64;
+                    if (!typeof(int).IsGenericParameter) passed |= 128;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "RuntimeTypeFlagsFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+    }
+
+    // DeclaringType from the type table, as .NET 11 answers it: a nested type of a constructed
+    // generic reports the open definition, a generic parameter its owner, and arrays, pointers,
+    // primitives and Nullable<T> nothing.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesDeclaringTypes(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "DeclaringTypesFixture",
+            """
+            namespace DeclaringTypesFixture;
+
+            public sealed class Outer
+            {
+                public sealed class Inner { }
+                public struct Value { }
+            }
+
+            public sealed class GenericOuter<T>
+            {
+                public sealed class Inner { }
+                public sealed class GenericInner<U> { }
+            }
+
+            public static class EntryPoint
+            {
+                public static unsafe int Run(int input)
+                {
+                    object inner = new Outer.Inner();
+                    int passed = 0;
+                    if (inner.GetType().DeclaringType == typeof(Outer) &&
+                        inner.GetType().ReflectedType == typeof(Outer) && inner.GetType().IsNested) passed |= 1;
+                    if (typeof(Outer).DeclaringType == null && !typeof(Outer).IsNested) passed |= 2;
+                    if (typeof(GenericOuter<int>.Inner).DeclaringType == typeof(GenericOuter<>)) passed |= 4;
+                    if (typeof(GenericOuter<int>.GenericInner<string>).DeclaringType == typeof(GenericOuter<>)) passed |= 8;
+                    System.Type parameter = typeof(GenericOuter<>).GetGenericArguments()[0];
+                    if (parameter.DeclaringType == typeof(GenericOuter<>) && parameter.IsNested) passed |= 16;
+                    if (typeof(Outer.Inner[]).DeclaringType == null && typeof(int).DeclaringType == null) passed |= 32;
+                    if (typeof(Outer.Value?).DeclaringType == null && typeof(int*).DeclaringType == null) passed |= 64;
+                    if (typeof(Outer.Value).DeclaringType == typeof(Outer)) passed |= 128;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized,
+            allowUnsafe: true);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "DeclaringTypesFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+        Assert.True(compilation.Program.RequiresDeclaringTypes);
+    }
+
+    // TypeAttributes and the queries built on them answer as .NET 11 does: visibility through nesting,
+    // generic arguments and array elements, layout and string format, and IsSerializable through the
+    // enum and delegate base chains; arrays, pointers and generic parameters take .NET's fixed values.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesTypeAttributes(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "TypeAttributesFixture",
+            """
+            using System;
+            using System.Collections.Generic;
+            using System.Reflection;
+            using System.Runtime.InteropServices;
+
+            namespace TypeAttributesFixture;
+
+            public sealed class Sample
+            {
+                private sealed class Secret { }
+                public sealed class Open { }
+                public static Type SecretType => typeof(Secret);
+            }
+            internal sealed class Hidden { }
+            [StructLayout(LayoutKind.Explicit)] public struct Overlay { [FieldOffset(0)] public int Value; }
+            public enum Color { Red }
+            public delegate int Operation(int value);
+            public interface IShape { }
+
+            public static class EntryPoint
+            {
+                public static unsafe int Run(int input)
+                {
+                    int passed = 0;
+                    Type sample = typeof(Sample);
+                    if (sample.IsPublic && !sample.IsNotPublic && sample.IsAutoLayout && sample.IsAnsiClass && sample.IsVisible &&
+                        (sample.Attributes & TypeAttributes.Sealed) != 0) passed |= 1;
+                    if (Sample.SecretType.IsNestedPrivate && !Sample.SecretType.IsVisible &&
+                        typeof(Sample.Open).IsNestedPublic && typeof(Sample.Open).IsVisible) passed |= 2;
+                    if (typeof(Hidden).IsNotPublic && !typeof(Hidden).IsVisible && !typeof(List<Hidden>).IsVisible &&
+                        !typeof(Hidden[]).IsVisible && typeof(List<int>).IsVisible) passed |= 4;
+                    if (typeof(Overlay).IsExplicitLayout && typeof(int).IsLayoutSequential && !typeof(Overlay).IsSerializable) passed |= 8;
+                    if (typeof(Color).IsSerializable && typeof(Operation).IsSerializable && !typeof(IShape).IsSerializable &&
+                        typeof(int).IsSerializable) passed |= 16;
+                    if (typeof(int[]).Attributes == (TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.Serializable) &&
+                        typeof(int*).Attributes == TypeAttributes.Public) passed |= 32;
+                    Type parameter = typeof(List<>).GetGenericArguments()[0];
+                    if (parameter.Attributes == TypeAttributes.Public && parameter.IsVisible &&
+                        typeof(List<int>).Attributes == typeof(List<>).Attributes) passed |= 64;
+                    if ((typeof(IShape).Attributes & (TypeAttributes.Interface | TypeAttributes.Abstract)) ==
+                        (TypeAttributes.Interface | TypeAttributes.Abstract)) passed |= 128;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized,
+            allowUnsafe: true);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "TypeAttributesFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+        Assert.True(compilation.Program.RequiresTypeAttributes);
+    }
+
+    // MakeArrayType, MakePointerType and MakeGenericType return the type the program has, and throw for
+    // one it does not use; GetNestedTypes lists the program's nested types by visibility, also from a
+    // constructed generic; GetNestedType throws without type names.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesTypeLookups(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "TypeLookupsFixture",
+            """
+            using System;
+            using System.Collections.Generic;
+            using System.Reflection;
+
+            namespace TypeLookupsFixture;
+
+            public sealed class Outer
+            {
+                public sealed class Open { }
+                private sealed class Secret { }
+                public static Type SecretType => typeof(Secret);
+            }
+            public sealed class Holder<T> { public sealed class Item { } }
+            public sealed class Lonely { }
+
+            public static class EntryPoint
+            {
+                public static unsafe int Run(int input)
+                {
+                    int passed = 0;
+                    if (typeof(int).MakeArrayType() == typeof(int[]) && typeof(int).MakeArrayType(2) == typeof(int[,]) &&
+                        typeof(int).MakePointerType() == typeof(int*)) passed |= 1;
+                    if (typeof(List<>).MakeGenericType(typeof(int)) == typeof(List<int>) &&
+                        typeof(Dictionary<,>).MakeGenericType(typeof(string), typeof(int)) == typeof(Dictionary<string, int>)) passed |= 2;
+                    try { typeof(Lonely).MakeArrayType(); } catch (PlatformNotSupportedException) { passed |= 4; }
+                    try { typeof(List<>).MakeGenericType(typeof(int), typeof(int)); } catch (ArgumentException) { passed |= 8; }
+                    try { typeof(int).MakeArrayType(0); } catch (IndexOutOfRangeException) { passed |= 16; }
+                    Type[] open = typeof(Outer).GetNestedTypes();
+                    Type[] all = typeof(Outer).GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic);
+                    if (open.Length == 1 && open[0] == typeof(Outer.Open) && all.Length == 2 &&
+                        Array.IndexOf(all, Outer.SecretType) >= 0) passed |= 32;
+                    if (typeof(Holder<int>).GetNestedTypes()[0] == typeof(Holder<>.Item) && typeof(int[]).GetNestedTypes().Length == 0) passed |= 64;
+                    try { typeof(Outer).GetNestedType(typeof(Outer.Open).Name); } catch (PlatformNotSupportedException) { passed |= 128; }
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized,
+            allowUnsafe: true);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "TypeLookupsFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+    }
+
+    // GetInterfaces lists the program's interfaces a type implements, its own and its base types', and
+    // through interface inheritance, never one it reaches only through variance; a vector its generic
+    // collection interfaces of its own element and System.Array's. GetInterface throws without type names.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesInterfaces(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "InterfacesFixture",
+            """
+            using System;
+            using System.Collections;
+            using System.Collections.Generic;
+
+            namespace InterfacesFixture;
+
+            public interface IShape { }
+            public interface IRound : IShape { }
+            public class Base : IShape { }
+            public sealed class Circle : Base, IRound, IComparable<Circle> { public int CompareTo(Circle? other) => 0; }
+            public sealed class Words : IEnumerable<string>
+            {
+                public IEnumerator<string> GetEnumerator() { yield break; }
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+            public sealed class Plain { }
+
+            public static class EntryPoint
+            {
+                private static bool Has(Type[] types, Type type) => Array.IndexOf(types, type) >= 0;
+
+                public static int Run(int input)
+                {
+                    int passed = 0;
+                    Type[] circle = typeof(Circle).GetInterfaces();
+                    if (circle.Length == 3 && Has(circle, typeof(IShape)) && Has(circle, typeof(IRound)) &&
+                        Has(circle, typeof(IComparable<Circle>))) passed |= 1;
+                    if (typeof(Base).GetInterfaces().Length == 1 && typeof(Base).GetInterfaces()[0] == typeof(IShape)) passed |= 2;
+                    if (typeof(IRound).GetInterfaces().Length == 1 && typeof(IRound).GetInterfaces()[0] == typeof(IShape)) passed |= 4;
+                    Type[] words = typeof(Words).GetInterfaces();
+                    if (Has(words, typeof(IEnumerable<string>)) && Has(words, typeof(IEnumerable)) &&
+                        !Has(words, typeof(IEnumerable<object>))) passed |= 8;
+                    Type[] strings = typeof(string[]).GetInterfaces();
+                    if (Has(strings, typeof(IList<string>)) && Has(strings, typeof(IEnumerable<string>)) && Has(strings, typeof(IList)) &&
+                        !Has(strings, typeof(IEnumerable<object>))) passed |= 16;
+                    if (typeof(Plain).GetInterfaces().Length == 0) passed |= 32;
+                    try { typeof(Circle).GetInterface(typeof(IRound).Name); } catch (PlatformNotSupportedException) { passed |= 64; }
+                    object boxed = new Words();
+                    if (boxed is IEnumerable<object> && Has(boxed.GetType().GetInterfaces(), typeof(IEnumerable<string>))) passed |= 128;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "InterfacesFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+        Assert.True(compilation.Program.RequiresInterfaces);
+    }
+
+    // An assembly's module answers as NativeAOT's does; GetTypes and GetExportedTypes list the program's
+    // types of the assembly; without type names, Type.GetType, Assembly.GetType and Module.GetType throw
+    // PlatformNotSupportedException, also with throwOnError and for the type#<id> a type's name reads.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesAssemblyTypeLookups(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "AssemblyTypesFixture",
+            """
+            using System;
+            using System.Reflection;
+
+            namespace AssemblyTypesFixture;
+
+            public sealed class Sample { }
+            internal sealed class Hidden { }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    Assembly own = typeof(Sample).Assembly;
+                    Assembly core = typeof(int).Assembly;
+                    Module module = typeof(Sample).Module;
+                    int passed = 0;
+                    if (module.Assembly == own && own.ManifestModule == module && own.GetModules().Length == 1 &&
+                        module.Name == "<Unknown>" && module.ScopeName == "<Unknown>" && typeof(int).Module != module) passed |= 1;
+                    try { _ = module.MetadataToken; } catch (InvalidOperationException) { passed |= 2; }
+                    Type[] types = own.GetTypes();
+                    if (Array.IndexOf(types, typeof(Sample)) >= 0 && Array.IndexOf(types, typeof(Hidden)) >= 0 &&
+                        Array.IndexOf(types, typeof(int)) < 0 && Array.IndexOf(core.GetTypes(), typeof(int)) >= 0) passed |= 4;
+                    Type[] exported = own.GetExportedTypes();
+                    if (Array.IndexOf(exported, typeof(Sample)) >= 0 && Array.IndexOf(exported, typeof(Hidden)) < 0) passed |= 8;
+                    try { Type.GetType(typeof(Sample).FullName!); } catch (PlatformNotSupportedException) { passed |= 16; }
+                    try { Type.GetType("NoSuch.Type", throwOnError: true); } catch (PlatformNotSupportedException) { passed |= 32; }
+                    try { own.GetType(typeof(Sample).FullName!); }
+                    catch (PlatformNotSupportedException)
+                    {
+                        try { module.GetType(typeof(Hidden).FullName!); } catch (PlatformNotSupportedException) { passed |= 64; }
+                    }
+                    try { Type.GetType(typeof(Sample).AssemblyQualifiedName!, false, ignoreCase: true); } catch (PlatformNotSupportedException) { passed |= 128; }
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "AssemblyTypesFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+    }
+
+    // IsAssignableTo, IsFunctionPointer, GetEnumValuesAsUnderlyingType and IsCollectible answer as .NET 11's
+    // runtime types and assemblies do.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesTypeConveniences(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "ConveniencesFixture",
+            """
+            using System;
+
+            namespace ConveniencesFixture;
+
+            public enum Level : byte { Low = 1, High = 9 }
+            public class Base { }
+            public sealed class Leaf : Base { }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    int passed = 0;
+                    if (typeof(Leaf).IsAssignableTo(typeof(Base)) && !typeof(Base).IsAssignableTo(typeof(Leaf)) &&
+                        !typeof(Leaf).IsAssignableTo(null)) passed |= 1;
+                    if (!typeof(int).IsFunctionPointer && !typeof(int*).IsUnmanagedFunctionPointer) passed |= 2;
+                    Array values = typeof(Level).GetEnumValuesAsUnderlyingType();
+                    if (values.Length == 2 && values is byte[] bytes && bytes[0] == 1 && bytes[1] == 9) passed |= 4;
+                    try { typeof(int).GetEnumValuesAsUnderlyingType(); } catch (ArgumentException) { passed |= 8; }
+                    if (!typeof(Leaf).Assembly.IsCollectible && !typeof(int).IsCollectible) passed |= 16;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized,
+            allowUnsafe: true);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "ConveniencesFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(31, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+    }
+
+    // Every Type object is a RuntimeType, a TypeInfo, as on .NET 11: GetTypeInfo returns the type itself,
+    // AsType returns it back, TypeInfo's members forward to Type's, Type is abstract, and an assembly's
+    // DefinedTypes are its types.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesTypeInfo(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "TypeInfoFixture",
+            """
+            using System;
+            using System.Collections.Generic;
+            using System.Reflection;
+
+            namespace TypeInfoFixture;
+
+            public interface IShape { }
+            public sealed class Circle : IShape { public sealed class Part { } }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    int passed = 0;
+                    Type type = typeof(Circle);
+                    TypeInfo info = type.GetTypeInfo();
+                    if (ReferenceEquals(info, type) && info.AsType() == type && type is TypeInfo &&
+                        new Circle().GetType().GetTypeInfo() == info) passed |= 1;
+                    if (info.IsSealed && !info.IsValueType && info.IsAssignableFrom(typeof(Circle).GetTypeInfo())) passed |= 2;
+                    foreach (Type implemented in info.ImplementedInterfaces)
+                    {
+                        if (implemented == typeof(IShape)) passed |= 4;
+                    }
+                    if (typeof(List<>).GetTypeInfo().GenericTypeParameters.Length == 1 &&
+                        typeof(List<int>).GetTypeInfo().GenericTypeParameters.Length == 0) passed |= 8;
+                    foreach (TypeInfo nested in info.DeclaredNestedTypes)
+                    {
+                        if (nested == typeof(Circle.Part)) passed |= 16;
+                    }
+                    if (typeof(Type).IsAbstract && typeof(TypeInfo).IsAssignableFrom(type.GetType())) passed |= 32;
+                    foreach (TypeInfo defined in type.Assembly.DefinedTypes)
+                    {
+                        if (defined == info) passed |= 64;
+                    }
+                    if (typeof(int).GetTypeInfo() == typeof(int) && typeof(int[]).GetTypeInfo().AsType() == typeof(int[])) passed |= 128;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "TypeInfoFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+    }
+
+    // Generic parameters and ref structs answer as .NET 11 does: a parameter's position, its variance
+    // and special constraints, a struct-constrained parameter is a value type based on ValueType and
+    // any other a class based on Object; a ref struct is by-ref-like.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesGenericParameterFacts(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "GenericParameterFixture",
+            """
+            using System;
+            using System.Reflection;
+
+            namespace GenericParameterFixture;
+
+            public interface IShape { }
+            public interface IVariant<in TIn, out TOut> { }
+            public sealed class Holder<TFree, TStruct, TClass, TIface, TUnmanaged>
+                where TStruct : struct where TClass : class where TIface : IShape where TUnmanaged : unmanaged { }
+            public ref struct Window { public int Start; }
+            public struct Plain { public int Value; }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    Type[] parameters = typeof(Holder<,,,,>).GetGenericArguments();
+                    int passed = 0;
+                    bool positions = true;
+                    for (int index = 0; index < parameters.Length; index++)
+                    {
+                        positions &= parameters[index].GenericParameterPosition == index;
+                    }
+                    if (positions && parameters.Length == 5) passed |= 1;
+                    if (parameters[0].IsClass && !parameters[0].IsValueType && parameters[0].BaseType == typeof(object)) passed |= 2;
+                    if (!parameters[1].IsClass && parameters[1].IsValueType && parameters[1].BaseType == typeof(ValueType)) passed |= 4;
+                    if (parameters[2].GenericParameterAttributes == GenericParameterAttributes.ReferenceTypeConstraint &&
+                        parameters[1].GenericParameterAttributes == (GenericParameterAttributes.NotNullableValueTypeConstraint |
+                            GenericParameterAttributes.DefaultConstructorConstraint) &&
+                        parameters[4].GenericParameterAttributes == parameters[1].GenericParameterAttributes &&
+                        parameters[0].GenericParameterAttributes == GenericParameterAttributes.None) passed |= 8;
+                    Type[] variant = typeof(IVariant<,>).GetGenericArguments();
+                    if (variant[0].GenericParameterAttributes == GenericParameterAttributes.Contravariant &&
+                        variant[1].GenericParameterAttributes == GenericParameterAttributes.Covariant) passed |= 16;
+                    if (typeof(Window).IsByRefLike && typeof(Span<int>).IsByRefLike && !typeof(Plain).IsByRefLike &&
+                        !typeof(string).IsByRefLike) passed |= 32;
+                    try { _ = typeof(int).GenericParameterPosition; } catch (InvalidOperationException) { passed |= 64; }
+                    if (parameters[3].IsClass && parameters[3].BaseType == typeof(object) && parameters[3].DeclaringMethod == null) passed |= 128;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "GenericParameterFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(255, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+    }
+
+    // GetElementType from the type table, as .NET 11 answers it: an array's, a jagged array's and a
+    // pointer's element, also beside DeclaringType, which shares the slot; nothing for other types.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesElementTypes(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "ElementTypesFixture",
+            """
+            namespace ElementTypesFixture;
+
+            public sealed class Outer
+            {
+                public sealed class Inner { }
+            }
+
+            public static class EntryPoint
+            {
+                public static unsafe int Run(int input)
+                {
+                    int passed = 0;
+                    if (new int[1].GetType().GetElementType() == typeof(int)) passed |= 1;
+                    if (typeof(Outer.Inner[]).GetElementType() == typeof(Outer.Inner) &&
+                        typeof(Outer.Inner[]).DeclaringType == null && typeof(Outer.Inner).DeclaringType == typeof(Outer)) passed |= 2;
+                    if (typeof(int[][]).GetElementType() == typeof(int[]) && typeof(string[,]).GetElementType() == typeof(string)) passed |= 4;
+                    if (typeof(int*).GetElementType() == typeof(int) && new int?[1].GetType().GetElementType() == typeof(int?)) passed |= 8;
+                    if (typeof(int).GetElementType() == null && typeof(Outer).GetElementType() == null) passed |= 16;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized,
+            allowUnsafe: true);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "ElementTypesFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(31, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+        Assert.True(compilation.Program.RequiresElementTypes);
+    }
+
+    // GetGenericTypeDefinition from the type table, as .NET 11 answers it: a constructed type's
+    // open definition, also where code never names the definition, and the definition itself for
+    // a definition. The arguments still read past the definition in the type's generic list.
+    // MakeGenericType on a type that is not a definition throws as .NET's does.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesGenericTypeDefinitions(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "GenericDefinitionsFixture",
+            """
+            using System;
+            using System.Collections.Generic;
+
+            namespace GenericDefinitionsFixture;
+
+            public sealed class Outer<T>
+            {
+                public sealed class Inner<U> { }
+            }
+
+            public sealed class Sample { }
+
+            public static class EntryPoint
+            {
+                // TUnit's data source helper: a Func<T> value runs for its result.
+                private static object? InvokeIfFunc(object? value)
+                {
+                    if (value == null) return null;
+                    var type = value.GetType();
+                    if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Func<>))
+                    {
+                        return ((Delegate)value).DynamicInvoke();
+                    }
+                    return value;
+                }
+
+                public static int Run(int input)
+                {
+                    object list = new List<int>();
+                    object map = new Dictionary<string, int>();
+                    int passed = 0;
+                    if (list.GetType().GetGenericTypeDefinition() == typeof(List<>)) passed |= 1;
+                    Type definition = map.GetType().GetGenericTypeDefinition();
+                    if (definition.IsGenericTypeDefinition && definition.GetGenericArguments().Length == 2 &&
+                        map.GetType().GetGenericArguments()[0] == typeof(string)) passed |= 2;
+                    if (typeof(List<>).GetGenericTypeDefinition() == typeof(List<>)) passed |= 4;
+                    if (typeof(int?).GetGenericTypeDefinition() == typeof(Nullable<>)) passed |= 8;
+                    if (typeof(Outer<int>.Inner<string>).GetGenericTypeDefinition() == typeof(Outer<>.Inner<>)) passed |= 16;
+                    try
+                    {
+                        typeof(int).GetGenericTypeDefinition();
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        passed |= 32;
+                    }
+                    if (InvokeIfFunc(new Func<Sample>(() => new Sample())) is Sample && InvokeIfFunc("text") is "text") passed |= 64;
+                    if (new List<string>().GetType().GetGenericTypeDefinition() != typeof(Dictionary<,>)) passed |= 128;
+                    try { typeof(List<int>).MakeGenericType(typeof(int)); } catch (InvalidOperationException) { passed |= 256; }
+                    try { typeof(List<>).MakeGenericType(null!); } catch (ArgumentNullException) { passed |= 512; }
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "GenericDefinitionsFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(1023, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+        Assert.True(compilation.Program.RequiresGenericDefinitions);
+    }
+
+    // A RuntimeTypeHandle holds its whole type ID through every copy, so a program with more than
+    // 255 types round-trips handles stored in arrays and fields, and builds a lambda whose delegate
+    // type's ID is past 255; the handle was a 1-byte struct whose copies kept only the ID's low byte.
+    [Theory]
+    [InlineData(FinalWasmOptimization.O0, WasmTarget.Wasm32)]
+    [InlineData(FinalWasmOptimization.Oz, WasmTarget.Wasm64)]
+    public void TypeHandlesKeepTheirWholeIdPastTheFirst256Types(FinalWasmOptimization optimization, WasmTarget target)
+    {
+        const int count = 300;
+        var classes = string.Join("\n", Enumerable.Range(0, count).Select(index => $"public sealed class C{index} {{ }}"));
+        // Each class also gives a lambda its delegate type, some of whose IDs pass 255.
+        var handles = string.Join(", ", Enumerable.Range(0, count).Select(index => $"typeof(C{index}).TypeHandle"));
+        var types = string.Join(", ", Enumerable.Range(0, count).Select(index => $"typeof(C{index})"));
+        var lambdas = string.Join(" | ", Enumerable.Range(0, count).Select(index => $"Lambda<C{index}>(input)"));
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "TypeHandlesFixture",
+            "using System;\nusing System.Linq.Expressions;\nnamespace TypeHandlesFixture;\n" + classes + $$"""
+
+            public static class EntryPoint
+            {
+                private static RuntimeTypeHandle s_last;
+
+                // 16 where the lambda's delegate type has an ID past 255, 8 where it does not run.
+                private static int Lambda<T>(int input) where T : new()
+                {
+                    Expression<Func<T, int>> lambda = value => input;
+                    return (typeof(Func<T, int>).TypeHandle.Value > 255 ? 16 : 0) |
+                        (lambda.Compile()(new T()) == input ? 0 : 8);
+                }
+
+                public static int Run(int input)
+                {
+                    RuntimeTypeHandle[] handles = { {{handles}} };
+                    Type[] types = { {{types}} };
+                    int wrong = 0, past255 = 0;
+                    for (int index = 0; index < handles.Length; index++)
+                    {
+                        if (Type.GetTypeFromHandle(handles[index]) != types[index] ||
+                            handles[index].Value != types[index].TypeHandle.Value) wrong |= 1;
+                        if (handles[index].Value > 255) past255++;
+                    }
+                    s_last = handles[handles.Length - 1];
+                    if (Type.GetTypeFromHandle(s_last) != typeof(C{{count - 1}})) wrong |= 2;
+                    var lambdas = {{lambdas}};
+                    if ((lambdas & 16) == 0) wrong |= 4;
+                    return past255 > 0 ? wrong | (lambdas & 8) : -1;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimize: false);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "TypeHandlesFixture.EntryPoint", "Run", [], Target: target,
+            Optimization: optimization));
+
+        Assert.Equal(0, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 7, target, compilation.StaticDataEnd));
+    }
+
+    // Type.Assembly returns one placeholder per assembly, from the type table: equal for types of one
+    // assembly (an array's and a constructed type's are their element's and definition's), different across
+    // assemblies; GetExecutingAssembly is the calling method's and GetEntryAssembly the entry point's.
+    // Without the type-symbols sidecar every assembly name reads as unavailable.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CompilerExecutesTypeAssembly(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "AssembliesFixture",
+            """
+            using System;
+            using System.Collections.Generic;
+            using System.Reflection;
+
+            namespace AssembliesFixture;
+
+            public sealed class Sample { }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    Assembly own = typeof(Sample).Assembly;
+                    Assembly core = typeof(int).Assembly;
+                    int passed = 0;
+                    if (own == typeof(EntryPoint).Assembly && own == typeof(Sample[]).Assembly) passed |= 1;
+                    if (core == typeof(string).Assembly && core == typeof(List<Sample>).Assembly && core != own) passed |= 2;
+                    if (Assembly.GetExecutingAssembly() == own && Assembly.GetEntryAssembly() == own) passed |= 4;
+                    var byAssembly = new Dictionary<Assembly, int> { [own] = 1, [core] = 2 };
+                    if (byAssembly[new Sample().GetType().Assembly] == 1 && byAssembly[(5).GetType().Assembly] == 2) passed |= 8;
+                    if (own.FullName == "<Assembly name unavailable>" && own.GetName().Name == "<Assembly name unavailable>") passed |= 16;
+                    if (typeof(Sample).AssemblyQualifiedName!.EndsWith(", <Assembly name unavailable>", StringComparison.Ordinal)) passed |= 32;
+                    if (own.Equals(typeof(Sample).Assembly) && own.ToString() == own.FullName) passed |= 64;
+                    if (Assembly.GetAssembly(typeof(Sample)) == own && Assembly.GetAssembly(typeof(int)) == core) passed |= 128;
+                    try { Assembly.GetAssembly(null!); } catch (ArgumentNullException) { passed |= 256; }
+            #pragma warning disable SYSLIB0005
+                    if (!own.ReflectionOnly && !own.GlobalAssemblyCache && own.HostContext == 0) passed |= 512;
+            #pragma warning restore SYSLIB0005
+                    if (own.Location.Length == 0 && own.ImageRuntimeVersion == "v4.0.30319") passed |= 1024;
+                    return passed;
+                }
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "AssembliesFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(2047, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+        Assert.True(compilation.Program.RequiresAssemblies);
+    }
+
+    // The type table carries generic arguments, generic definitions (in its shapes), assemblies and
+    // declaring or element types only for a program that can ask for them; every program's table
+    // registers its types.
+    [Theory]
+    [InlineData("typeof(int).IsValueType && input.GetType().IsValueType", false, false, false, false, false)]
+    [InlineData("input.GetType().GetGenericArguments().Length == 0", true, false, false, false, false)]
+    [InlineData("input.GetType().DeclaringType == null", false, true, false, false, false)]
+    [InlineData("!input.GetType().IsGenericType || input.GetType().GetGenericTypeDefinition() == null", false, false, true, false, false)]
+    [InlineData("input.GetType().Assembly == typeof(string).Assembly", false, false, false, true, false)]
+    [InlineData("input.GetType().GetElementType() == null", false, false, false, false, true)]
+    [InlineData("input.GetType().IsPublic", false, false, false, false, false, true)]
+    public void TheTypeTableCarriesOnlyTheSectionsAProgramCanQuery(
+        string query, bool generic, bool declaring, bool definitions, bool assemblies, bool elements, bool attributes = false)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource("TypeTableSections", $$"""
+            public static class EntryPoint
+            {
+                public static int Run(int input) => {{query}} ? input + 1 : 0;
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: WasmTarget.Wasm32));
+        var data = compilation.Layouts.StaticData;
+        var table = new NetWasm.Compiler.Tests.Layout.RuntimeTypeTableReader([.. Assert.Single(data.Segments,
+            segment => segment.Address == data.TypeTableAddress).Data, .. new byte[8]]);
+
+        Assert.Equal(42, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 41, WasmTarget.Wasm32, compilation.StaticDataEnd));
+        Assert.Equal(generic, table.Header(17) != 0);
+        Assert.Equal(declaring || elements, table.Header(19) != 0);
+        Assert.Equal(elements, compilation.Program.RequiresElementTypes);
+        Assert.Equal(attributes, compilation.Program.RequiresTypeAttributes);
+        Assert.Equal(attributes, table.Header(5) > 640 + 32 * table.Header(4));
+        Assert.Equal(definitions, table.DefinitionBits != 0);
+        Assert.Equal(assemblies, table.AssemblyBits != 0);
+        Assert.True(table.Capacity > 1);
     }
 
     [Fact]

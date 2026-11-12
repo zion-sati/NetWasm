@@ -1532,8 +1532,9 @@ public sealed class ExpressionTreeCompilationTests
             target,
             compilation.StaticDataEnd));
         var invoke = Assert.Single(
-            compilation.Program.DelegateInvokeDescriptors.Values,
-            candidate => candidate.DeclaringType.Shape ==
+            compilation.Program.MethodDescriptors.Values,
+            candidate => candidate.Definition.Name == "Invoke" &&
+                candidate.DeclaringType.Shape ==
                     CliTypeShape.GenericInstantiation &&
                 candidate.DeclaringType.ElementType!.FullName == "System.Func`2" &&
                 candidate.DeclaringType.TypeArguments.Length == 2 &&
@@ -2312,8 +2313,9 @@ public sealed class ExpressionTreeCompilationTests
             target,
             compilation.StaticDataEnd));
         var lambdaExpressionInvoke = Assert.Single(
-            compilation.Program.DelegateInvokeDescriptors.Values,
-            candidate => candidate.DeclaringType.Shape ==
+            compilation.Program.MethodDescriptors.Values,
+            candidate => candidate.Definition.Name == "Invoke" &&
+                candidate.DeclaringType.Shape ==
                     CliTypeShape.GenericInstantiation &&
                 candidate.DeclaringType.ElementType!.FullName == "System.Func`1" &&
                 candidate.DeclaringType.TypeArguments.Length == 1 &&

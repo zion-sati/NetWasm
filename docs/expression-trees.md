@@ -117,6 +117,12 @@ tree whose shape is created at runtime.
 
 Delegate adapters and member-execution descriptors remain closed-world compiler
 facts. Only reachable delegate signatures and reachable members are emitted.
+A lambda's delegate type is one the program names, so `Expression<TDelegate>`
+validates and invokes its own `Invoke` signature. Constructing
+`Expression.Invoke` over any other delegate-typed expression, such as a
+parameter or a constant, throws `PlatformNotSupportedException`: only the run
+knows that delegate's type (see
+[runtime type information](support-status.md#runtime-type-information)).
 Expression execution by itself does not require member or type names. A
 reachable read of `MemberInfo.Name` retains the names of the members the program
 demands. A program carries no type names: they read `type#<id>` unless the

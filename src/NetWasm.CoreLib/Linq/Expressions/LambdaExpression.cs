@@ -50,7 +50,10 @@ namespace System.Linq.Expressions
 
         public bool TailCall { get; }
 
-        public Type ReturnType => Type.GetDelegateInvokeMethod().ReturnType;
+        public Type ReturnType => InvokeMethod.ReturnType;
+
+        // The delegate type's Invoke, which the lambda's type names when compiling.
+        internal abstract MethodInfo InvokeMethod { get; }
 
         public Delegate Compile() => Compile(preferInterpretation: false);
 
@@ -89,6 +92,9 @@ namespace System.Linq.Expressions
         }
 
         internal sealed override Type TypeCore => typeof(TDelegate);
+
+        internal sealed override MethodInfo InvokeMethod =>
+            System.Runtime.CompilerServices.DelegateMetadata.GetInvokeMethod<TDelegate>();
 
         public Expression<TDelegate> Update(
             Expression body,
@@ -193,7 +199,7 @@ namespace System.Linq.Expressions
                     nameof(TDelegate));
             }
 
-            MethodInfo invoke = delegateType.GetDelegateInvokeMethod();
+            MethodInfo invoke = System.Runtime.CompilerServices.DelegateMetadata.GetInvokeMethod<TDelegate>();
             ParameterInfo[] signatureParameters = invoke.GetParameters();
             if (signatureParameters.Length != parameters.Length)
             {

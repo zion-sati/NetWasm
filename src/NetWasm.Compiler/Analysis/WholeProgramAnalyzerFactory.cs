@@ -249,7 +249,7 @@ internal sealed class WholeProgramAnalyzerFactory(
             nullableTypes,
             new MethodInitializationTriggerClassifier(typeRepository),
             new IntrinsicAddressBodyPlanner(intrinsics),
-            new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions));
+            new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities));
         return new WholeProgramAnalyzer(reducers.Count == 0
             ? closure
             : new ReducingReachabilityClosureBuilder(closure,

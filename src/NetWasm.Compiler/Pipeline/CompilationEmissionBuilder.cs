@@ -41,7 +41,9 @@ internal sealed class CompilationEmissionBuilder(
     IMethodOutlineProviderFactory outlines,
     IUnitStoreCommitter unitCommitter,
     ITypeIdentityResolverFactory typeIdentities,
-    IRuntimeTypeSymbolTableBuilder typeSymbols) : ICompilationEmissionBuilder
+    IRuntimeTypeSymbolTableBuilder typeSymbols,
+    IAssemblyIdentityFormatterFactory assemblyNames,
+    IRuntimeTypeAssemblyResolverFactory assemblyResolvers) : ICompilationEmissionBuilder
 {
     private readonly IManagedWasmEmitterFactory _emitters = emitters ??
         throw new ArgumentNullException(nameof(emitters));
@@ -90,6 +92,10 @@ internal sealed class CompilationEmissionBuilder(
         throw new ArgumentNullException(nameof(unitCommitter));
     private readonly ITypeIdentityResolverFactory _typeIdentities = typeIdentities ??
         throw new ArgumentNullException(nameof(typeIdentities));
+    private readonly IAssemblyIdentityFormatterFactory _assemblyNames = assemblyNames ??
+        throw new ArgumentNullException(nameof(assemblyNames));
+    private readonly IRuntimeTypeAssemblyResolverFactory _assemblyResolvers = assemblyResolvers ??
+        throw new ArgumentNullException(nameof(assemblyResolvers));
     private readonly IRuntimeTypeSymbolTableBuilder _typeSymbols = typeSymbols ??
         throw new ArgumentNullException(nameof(typeSymbols));
 
@@ -256,7 +262,9 @@ internal sealed class CompilationEmissionBuilder(
                 MulticastDispatchPolicy.Inline,
             SourceLocations = _stackTraceSourceLocations.Read(metadata, options),
         };
-        var typeSymbols = _typeSymbols.Build(layouts.Snapshot, _typeIdentities.Create(metadata), typeDefinitions);
+        var typeSymbols = _typeSymbols.Build(layouts.Snapshot, _typeIdentities.Create(metadata), typeDefinitions,
+            layouts.Snapshot.StaticData.RuntimeAssemblies, _assemblyNames.Create(metadata.Assemblies),
+            _assemblyResolvers.Create(typeDefinitions));
         request = request with
         {
             Sidecars = new WasmSidecarRequest(

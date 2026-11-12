@@ -172,8 +172,11 @@ internal static class CompilerTestSupport
             ? "{initial:1n,address:'i64'}"
             : "{initial:1}";
         var zeroAddressText = target == WasmTarget.Wasm64 ? "0n" : "0";
+        var typeTablePath = System.Text.Json.JsonSerializer.Serialize(Path.Combine(
+            AppContext.BaseDirectory, "Correctness", "runtime-type-table.cjs"));
         var script =
             "const fs=require('node:fs');" +
+            $"const {{readRuntimeTypeTable}}=require({typeTablePath});" +
             $"const memory=new WebAssembly.Memory({memoryDescriptorText});" +
             "let heap=16;let initialized=false;let environmentReads=0;let staticRootRegistrations=0;" +
             "let lastException=0;" +
@@ -182,7 +185,7 @@ internal static class CompilerTestSupport
             "let filterSearchFloor=0;let application=null;" +
             "let nextPollable=1,collectionCount=0,runtimeRandomState=0n;const weakHandles=[0];const gcHandles=[null];" +
             "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),typeInterfaces=new Set(),valueTypeSizes=new Map(),valueTypePayloadOffsets=new Map(),typeReferences=new Map(),valueTypeReferences=new Map(),arrayElementReferences=new Map();const typeObjects=new Map();" +
-            "const bitmapHasReferences=(bitmap,bits)=>{const v=new DataView(memory.buffer),b=Number(bitmap);for(let i=0;i<bits;i++)if((v.getUint8(b+(i>>3))>>(i&7))&1)return true;return false;};const exceptionFrames=[];" +
+            "const exceptionFrames=[];" +
             "const z=()=>0;" +
             "const raw=size=>{const p=heap;heap=(heap+size+3)&~3;" +
             "const pages=Math.ceil(heap/65536);const current=memory.buffer.byteLength/65536;" +
@@ -357,10 +360,11 @@ internal static class CompilerTestSupport
             "native_alloc:nativeAlloc,native_realloc:nativeRealloc,native_free:p=>nativeSizes.delete(p)," +
             "native_aligned_alloc:nativeAlignedAlloc,native_aligned_realloc:nativeAlignedRealloc," +
             "native_aligned_free:p=>nativeSizes.delete(p)," +
-            "register_type:(type,base,size,bitmap,bits,assignables,count,finalizer,isInterface)=>{" +
-            "typeBases.set(type,base);typeSizes.set(type,size);const ids=new Set(),v=new DataView(memory.buffer);" +
-            "for(let i=0;i<count;i++)ids.add(v.getInt32(Number(assignables)+i*4,true));typeAssignable.set(type,ids);if(isInterface)typeInterfaces.add(type);typeReferences.set(type,bitmapHasReferences(bitmap,bits));}," +
-            "register_value_type:(type,size,boxedPayloadOffset,bitmap,bits)=>{valueTypeSizes.set(type,size);valueTypePayloadOffsets.set(type,boxedPayloadOffset);valueTypeReferences.set(type,bitmapHasReferences(bitmap,bits));}," +
+            "register_types:table=>{for(const e of readRuntimeTypeTable(new Uint8Array(memory.buffer),Number(table))){" +
+            "typeBases.set(e.type,e.base);typeSizes.set(e.type,e.size);typeAssignable.set(e.type,e.assignable);" +
+            "if(e.isInterface)typeInterfaces.add(e.type);typeReferences.set(e.type,e.references);" +
+            "if(e.value){valueTypeSizes.set(e.type,e.value.size);valueTypePayloadOffsets.set(e.type,e.value.payload);valueTypeReferences.set(e.type,e.value.references);}}}," +
+            "type_base_id:type=>typeBases.get(type)||0,type_is_assignable:isTypeAssignable," +
             "register_static_root:()=>{staticRootRegistrations++;},root_frame_enter:rootEnter,root_frame_leave:rootLeave," +
             "value_frame_enter:valueEnter,value_frame_enter_mapped:valueEnterMapped,value_frame_leave:valueLeave," +
             "value_frame_leave_mapped:valueLeave," +

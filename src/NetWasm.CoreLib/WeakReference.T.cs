@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 namespace System;
 
 // This class is sealed to mitigate security issues caused by Object::MemberwiseClone.
+[Serializable]
 public sealed class WeakReference<T>
     where T : class?
 {

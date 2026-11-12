@@ -10,6 +10,7 @@ using System.Runtime.Serialization;
 
 namespace System
 {
+    [Serializable]
     public partial class Exception : ISerializable
     {
         private readonly string? _message;
@@ -103,6 +104,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public class SystemException : Exception
     {
         [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
@@ -113,6 +115,7 @@ namespace System
         public SystemException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SYSTEM;
     }
 
+    [Serializable]
     public class PlatformNotSupportedException : NotSupportedException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -125,6 +128,7 @@ namespace System
         public PlatformNotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_PLATFORMNOTSUPPORTED;
     }
 
+    [Serializable]
     public class NotSupportedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -137,6 +141,7 @@ namespace System
         public NotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_NOTSUPPORTED;
     }
 
+    [Serializable]
     public class InvalidOperationException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -149,6 +154,7 @@ namespace System
         public InvalidOperationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDOPERATION;
     }
 
+    [Serializable]
     public partial class ObjectDisposedException : InvalidOperationException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -192,6 +198,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public class OperationCanceledException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -227,6 +234,7 @@ namespace System
         public Threading.CancellationToken CancellationToken => _cancellationToken;
     }
 
+    [Serializable]
     public class NullReferenceException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -239,13 +247,15 @@ namespace System
         public NullReferenceException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_POINTER;
     }
 
-    public class IndexOutOfRangeException : SystemException
+    [Serializable]
+    public sealed class IndexOutOfRangeException : SystemException
     {
         public IndexOutOfRangeException() => HResult = HResults.COR_E_INDEXOUTOFRANGE;
         public IndexOutOfRangeException(string? message) : base(message) => HResult = HResults.COR_E_INDEXOUTOFRANGE;
         public IndexOutOfRangeException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INDEXOUTOFRANGE;
     }
 
+    [Serializable]
     public class ArithmeticException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -258,6 +268,7 @@ namespace System
         public ArithmeticException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ARITHMETIC;
     }
 
+    [Serializable]
     public class DivideByZeroException : ArithmeticException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -270,6 +281,7 @@ namespace System
         public DivideByZeroException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DIVIDEBYZERO;
     }
 
+    [Serializable]
     public class OverflowException : ArithmeticException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -282,6 +294,7 @@ namespace System
         public OverflowException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_OVERFLOW;
     }
 
+    [Serializable]
     public class FormatException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -294,6 +307,7 @@ namespace System
         public FormatException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_FORMAT;
     }
 
+    [Serializable]
     public class InvalidCastException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -307,6 +321,7 @@ namespace System
         public InvalidCastException(string? message, int hResult) : base(message) => HResult = hResult;
     }
 
+    [Serializable]
     public class OutOfMemoryException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -319,6 +334,7 @@ namespace System
         public OutOfMemoryException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_OUTOFMEMORY;
     }
 
+    [Serializable]
     public partial class ArgumentException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -365,6 +381,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public class ArgumentNullException : ArgumentException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -398,6 +415,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public partial class ArgumentOutOfRangeException : ArgumentException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -473,6 +491,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public class ArrayTypeMismatchException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -488,6 +507,7 @@ namespace System
 
 namespace System
 {
+    [Serializable]
     public class AccessViolationException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -496,6 +516,7 @@ namespace System
             throw new System.PlatformNotSupportedException("AccessViolationException formatter deserialization is not available on this NetWasm platform.");
         public AccessViolationException() => HResult = HResults.E_POINTER; public AccessViolationException(string? message) : base(message) => HResult = HResults.E_POINTER; public AccessViolationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_POINTER;
     }
+    [Serializable]
     public class AppDomainUnloadedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -504,6 +525,7 @@ namespace System
             throw new System.PlatformNotSupportedException("AppDomainUnloadedException formatter deserialization is not available on this NetWasm platform.");
         public AppDomainUnloadedException() => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPDOMAINUNLOADED;
     }
+    [Serializable]
     public class ApplicationException : Exception
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -512,6 +534,7 @@ namespace System
             throw new System.PlatformNotSupportedException("ApplicationException formatter deserialization is not available on this NetWasm platform.");
         public ApplicationException() => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message) : base(message) => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPLICATION;
     }
+    [Serializable]
     public class CannotUnloadAppDomainException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -520,6 +543,7 @@ namespace System
             throw new System.PlatformNotSupportedException("CannotUnloadAppDomainException formatter deserialization is not available on this NetWasm platform.");
         public CannotUnloadAppDomainException() => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message) : base(message) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN;
     }
+    [Serializable]
     public class ContextMarshalException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -528,11 +552,17 @@ namespace System
             throw new System.PlatformNotSupportedException("ContextMarshalException formatter deserialization is not available on this NetWasm platform.");
         public ContextMarshalException() => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message) : base(message) => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CONTEXTMARSHAL;
     }
-    public class DataMisalignedException : SystemException { public DataMisalignedException() => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message) : base(message) => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DATAMISALIGNED; }
-    public class ExecutionEngineException : SystemException { public ExecutionEngineException() => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message) : base(message) => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_EXECUTIONENGINE; }
-    public class InsufficientExecutionStackException : SystemException { public InsufficientExecutionStackException() => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; }
-    public class InsufficientMemoryException : OutOfMemoryException { public InsufficientMemoryException() => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; }
-    public class InvalidProgramException : SystemException { public InvalidProgramException() => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDPROGRAM; }
+    [Serializable]
+    public sealed class DataMisalignedException : SystemException { public DataMisalignedException() => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message) : base(message) => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DATAMISALIGNED; }
+    [Serializable]
+    public sealed class ExecutionEngineException : SystemException { public ExecutionEngineException() => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message) : base(message) => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_EXECUTIONENGINE; }
+    [Serializable]
+    public sealed class InsufficientExecutionStackException : SystemException { public InsufficientExecutionStackException() => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; }
+    [Serializable]
+    public sealed class InsufficientMemoryException : OutOfMemoryException { public InsufficientMemoryException() => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; }
+    [Serializable]
+    public sealed class InvalidProgramException : SystemException { public InvalidProgramException() => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDPROGRAM; }
+    [Serializable]
     public class InvalidTimeZoneException : Exception
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -543,6 +573,7 @@ namespace System
         public InvalidTimeZoneException(string? message) : base(message) { }
         public InvalidTimeZoneException(string? message, Exception? innerException) : base(message, innerException) { }
     }
+    [Serializable]
     public class MemberAccessException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -551,6 +582,7 @@ namespace System
             throw new System.PlatformNotSupportedException("MemberAccessException formatter deserialization is not available on this NetWasm platform.");
         public MemberAccessException() => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message) : base(message) => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MEMBERACCESS;
     }
+    [Serializable]
     public class MethodAccessException : MemberAccessException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -559,7 +591,9 @@ namespace System
             throw new System.PlatformNotSupportedException("MethodAccessException formatter deserialization is not available on this NetWasm platform.");
         public MethodAccessException() => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message) : base(message) => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_METHODACCESS;
     }
-    public class MulticastNotSupportedException : SystemException { public MulticastNotSupportedException() => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message) : base(message) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; }
+    [Serializable]
+    public sealed class MulticastNotSupportedException : SystemException { public MulticastNotSupportedException() => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message) : base(message) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; }
+    [Serializable]
     public class NotImplementedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -568,6 +602,7 @@ namespace System
             throw new System.PlatformNotSupportedException("NotImplementedException formatter deserialization is not available on this NetWasm platform.");
         public NotImplementedException() => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message) : base(message) => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_NOTIMPL;
     }
+    [Serializable]
     public class RankException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -576,7 +611,9 @@ namespace System
             throw new System.PlatformNotSupportedException("RankException formatter deserialization is not available on this NetWasm platform.");
         public RankException() => HResult = HResults.COR_E_RANK; public RankException(string? message) : base(message) => HResult = HResults.COR_E_RANK; public RankException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_RANK;
     }
-    public class StackOverflowException : SystemException { public StackOverflowException() => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message) : base(message) => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_STACKOVERFLOW; }
+    [Serializable]
+    public sealed class StackOverflowException : SystemException { public StackOverflowException() => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message) : base(message) => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_STACKOVERFLOW; }
+    [Serializable]
     public class TimeoutException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -585,6 +622,7 @@ namespace System
             throw new System.PlatformNotSupportedException("TimeoutException formatter deserialization is not available on this NetWasm platform.");
         public TimeoutException() => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message) : base(message) => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TIMEOUT;
     }
+    [Serializable]
     public class TimeZoneNotFoundException : Exception
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -595,6 +633,7 @@ namespace System
         public TimeZoneNotFoundException(string? message) : base(message) { }
         public TimeZoneNotFoundException(string? message, Exception? innerException) : base(message, innerException) { }
     }
+    [Serializable]
     public class TypeUnloadedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -603,6 +642,7 @@ namespace System
             throw new System.PlatformNotSupportedException("TypeUnloadedException formatter deserialization is not available on this NetWasm platform.");
         public TypeUnloadedException() => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEUNLOADED;
     }
+    [Serializable]
     public class UnauthorizedAccessException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -612,6 +652,7 @@ namespace System
         public UnauthorizedAccessException() => HResult = HResults.COR_E_UNAUTHORIZEDACCESS; public UnauthorizedAccessException(string? message) : base(message) => HResult = HResults.COR_E_UNAUTHORIZEDACCESS; public UnauthorizedAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_UNAUTHORIZEDACCESS;
     }
 
+    [Serializable]
     public partial class BadImageFormatException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -652,6 +693,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public class DuplicateWaitObjectException : ArgumentException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -674,6 +716,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public class EntryPointNotFoundException : TypeLoadException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -682,6 +725,7 @@ namespace System
             throw new System.PlatformNotSupportedException("EntryPointNotFoundException formatter deserialization is not available on this NetWasm platform.");
         public EntryPointNotFoundException() => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND;
     }
+    [Serializable]
     public class FieldAccessException : MemberAccessException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -690,6 +734,7 @@ namespace System
             throw new System.PlatformNotSupportedException("FieldAccessException formatter deserialization is not available on this NetWasm platform.");
         public FieldAccessException() => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message) : base(message) => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_FIELDACCESS;
     }
+    [Serializable]
     public class DllNotFoundException : TypeLoadException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -699,6 +744,7 @@ namespace System
         public DllNotFoundException() => HResult = HResults.COR_E_DLLNOTFOUND; public DllNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_DLLNOTFOUND; public DllNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DLLNOTFOUND;
     }
 
+    [Serializable]
     public partial class MissingMemberException : MemberAccessException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -726,6 +772,7 @@ namespace System
                 : "Member '" + ClassName + "." + MemberName + "' not found.";
         }
     }
+    [Serializable]
     public class MissingFieldException : MissingMemberException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -741,6 +788,7 @@ namespace System
             ? base.Message
             : "Field '" + ClassName + "." + MemberName + "' not found.";
     }
+    [Serializable]
     public class MissingMethodException : MissingMemberException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -757,6 +805,7 @@ namespace System
             : "Method '" + ClassName + "." + MemberName + "' not found.";
     }
 
+    [Serializable]
     public partial class NotFiniteNumberException : ArithmeticException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -789,6 +838,7 @@ namespace System
         }
     }
 
+    [Serializable]
     public partial class TypeLoadException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -806,6 +856,7 @@ namespace System
             get => base.Message;
         }
     }
+    [Serializable]
     public class TypeAccessException : TypeLoadException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -814,6 +865,7 @@ namespace System
             throw new System.PlatformNotSupportedException("TypeAccessException formatter deserialization is not available on this NetWasm platform.");
         public TypeAccessException() => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message) : base(message) => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEACCESS;
     }
+    [Serializable]
     public sealed partial class TypeInitializationException : SystemException
     {
         private readonly string? _typeName;
@@ -828,7 +880,7 @@ namespace System
 
 namespace System.Diagnostics
 {
-    public class UnreachableException : System.Exception
+    public sealed class UnreachableException : System.Exception
     {
         public UnreachableException() { }
         public UnreachableException(string? message) : base(message) { }
@@ -838,7 +890,8 @@ namespace System.Diagnostics
 
 namespace System.Runtime
 {
-    public class AmbiguousImplementationException : System.Exception
+    [Serializable]
+    public sealed class AmbiguousImplementationException : System.Exception
     {
         public AmbiguousImplementationException() => HResult = System.HResults.COR_E_AMBIGUOUSIMPLEMENTATION;
         public AmbiguousImplementationException(string? message) : base(message) => HResult = System.HResults.COR_E_AMBIGUOUSIMPLEMENTATION;
@@ -848,7 +901,8 @@ namespace System.Runtime
 
 namespace System.Runtime.CompilerServices
 {
-    public partial class RuntimeWrappedException : System.Exception
+    [Serializable]
+    public sealed partial class RuntimeWrappedException : System.Exception
     {
         private readonly object? _wrappedException;
         public RuntimeWrappedException(object? thrownObject)
@@ -862,7 +916,8 @@ namespace System.Runtime.CompilerServices
         }
     }
 
-    public partial class SwitchExpressionException : System.InvalidOperationException
+    [Serializable]
+    public sealed partial class SwitchExpressionException : System.InvalidOperationException
     {
         private readonly object? _unmatchedValue;
         public SwitchExpressionException() { }
@@ -883,6 +938,7 @@ namespace System.Runtime.CompilerServices
 
 namespace System.Runtime.InteropServices
 {
+    [Serializable]
     public class InvalidComObjectException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -891,6 +947,7 @@ namespace System.Runtime.InteropServices
             throw new System.PlatformNotSupportedException("InvalidComObjectException formatter deserialization is not available on this NetWasm platform.");
         public InvalidComObjectException() => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDCOMOBJECT;
     }
+    [Serializable]
     public class InvalidOleVariantTypeException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -899,6 +956,7 @@ namespace System.Runtime.InteropServices
             throw new System.PlatformNotSupportedException("InvalidOleVariantTypeException formatter deserialization is not available on this NetWasm platform.");
         public InvalidOleVariantTypeException() => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE;
     }
+    [Serializable]
     public class MarshalDirectiveException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -907,6 +965,7 @@ namespace System.Runtime.InteropServices
             throw new System.PlatformNotSupportedException("MarshalDirectiveException formatter deserialization is not available on this NetWasm platform.");
         public MarshalDirectiveException() => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message) : base(message) => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MARSHALDIRECTIVE;
     }
+    [Serializable]
     public class SafeArrayRankMismatchException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -915,6 +974,7 @@ namespace System.Runtime.InteropServices
             throw new System.PlatformNotSupportedException("SafeArrayRankMismatchException formatter deserialization is not available on this NetWasm platform.");
         public SafeArrayRankMismatchException() => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message) : base(message) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH;
     }
+    [Serializable]
     public class SafeArrayTypeMismatchException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -927,6 +987,7 @@ namespace System.Runtime.InteropServices
 
 namespace System.Security.Cryptography
 {
+    [Serializable]
     public class CryptographicException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -944,6 +1005,7 @@ namespace System.Security.Cryptography
 
 namespace System.Security
 {
+    [Serializable]
     public partial class SecurityException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -992,6 +1054,7 @@ namespace System.Security
         }
     }
 
+    [Serializable]
     public class VerificationException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -1035,6 +1098,7 @@ namespace System.Runtime.ExceptionServices
 
 namespace System.Collections.Generic
 {
+    [Serializable]
     public class KeyNotFoundException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.

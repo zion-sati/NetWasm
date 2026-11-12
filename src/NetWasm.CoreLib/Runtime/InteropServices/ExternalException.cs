@@ -3,6 +3,7 @@
 
 namespace System.Runtime.InteropServices;
 
+[Serializable]
 public class ExternalException : SystemException
 {
     private const int ErrorFail = unchecked((int)0x80004005);
@@ -21,6 +22,7 @@ public class ExternalException : SystemException
     public virtual int ErrorCode => HResult;
 }
 
+[Serializable]
 public class COMException : ExternalException
 {
     private const int ErrorFail = unchecked((int)0x80004005);

@@ -4,6 +4,7 @@
 
 namespace System.Threading;
 
+[Serializable]
 public class LockRecursionException : Exception
 {
     public LockRecursionException()

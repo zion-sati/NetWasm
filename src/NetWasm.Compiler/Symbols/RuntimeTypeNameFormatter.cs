@@ -1,42 +1,43 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Symbols;
 
-// Forms a type's Name, Namespace, FullName and ToString() text as .NET does. A program has no assemblies at run
-// time, so wherever .NET writes an assembly name (a generic argument's in FullName) the text is
-// AssemblyNameUnavailable.
+// Forms a type's Name, Namespace, FullName and ToString() text as .NET does, with the display name of the
+// assembly .NET writes for each generic argument in FullName.
 internal static class RuntimeTypeNameFormatter
 {
-    internal const string AssemblyNameUnavailable = "<Assembly name unavailable>";
-
     internal static RuntimeTypeSymbol Format(
         int typeId,
         CliTypeIdentity identity,
         ITypeDefinitionResolver definitions,
-        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames)
+        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames,
+        Func<CliTypeIdentity, string> assemblyName)
     {
-        var names = FormatAll(identity, definitions, genericParameterNames);
+        var names = FormatAll(identity, definitions, genericParameterNames, assemblyName);
         return new(typeId, names.Name, names.Namespace, names.FullName, names.DisplayName);
     }
 
     private static Names FormatAll(
         CliTypeIdentity identity,
         ITypeDefinitionResolver definitions,
-        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames) => identity.Shape switch
+        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames,
+        Func<CliTypeIdentity, string> assemblyName) => identity.Shape switch
         {
-            CliTypeShape.SzArray => Append(identity.ElementType!, "[]", definitions, genericParameterNames),
+            CliTypeShape.SzArray => Append(identity.ElementType!, "[]", definitions, genericParameterNames, assemblyName),
             CliTypeShape.Array => Append(
                 identity.ElementType!,
                 identity.ArrayRank == 1 ? "[*]" : "[" + new string(',', identity.ArrayRank - 1) + "]",
                 definitions,
-                genericParameterNames),
-            CliTypeShape.ManagedByReference => Append(identity.ElementType!, "&", definitions, genericParameterNames),
-            CliTypeShape.UnmanagedPointer => Append(identity.ElementType!, "*", definitions, genericParameterNames),
+                genericParameterNames,
+                assemblyName),
+            CliTypeShape.ManagedByReference => Append(identity.ElementType!, "&", definitions, genericParameterNames, assemblyName),
+            CliTypeShape.UnmanagedPointer => Append(identity.ElementType!, "*", definitions, genericParameterNames, assemblyName),
             CliTypeShape.GenericTypeParameter or CliTypeShape.GenericMethodParameter =>
                 GenericParameter(identity, genericParameterNames),
-            CliTypeShape.GenericInstantiation => FormatConstructed(identity, definitions, genericParameterNames),
+            CliTypeShape.GenericInstantiation => FormatConstructed(identity, definitions, genericParameterNames, assemblyName),
             _ => FormatDefinition(definitions.ResolveTypeIdentity(identity)),
         };
 
@@ -55,11 +56,12 @@ internal static class RuntimeTypeNameFormatter
     private static Names FormatConstructed(
         CliTypeIdentity identity,
         ITypeDefinitionResolver definitions,
-        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames)
+        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames,
+        Func<CliTypeIdentity, string> assemblyName)
     {
         var definition = definitions.ResolveTypeIdentity(identity);
         var arguments = identity.TypeArguments
-            .Select(argument => FormatAll(argument, definitions, genericParameterNames))
+            .Select(argument => FormatAll(argument, definitions, genericParameterNames, assemblyName))
             .ToArray();
         var displayName = definition.FullName + "[" +
             string.Join(",", arguments.Select(argument => argument.DisplayName)) + "]";
@@ -67,8 +69,8 @@ internal static class RuntimeTypeNameFormatter
             ? null
             : definition.FullName + "[" + string.Join(
                 ",",
-                arguments.Select(argument =>
-                    "[" + argument.FullName + ", " + AssemblyNameUnavailable + "]")) + "]";
+                identity.TypeArguments.Select((argument, index) =>
+                    "[" + arguments[index].FullName + ", " + assemblyName(argument) + "]")) + "]";
         return new(SimpleName(definition.Name), EmptyToNull(definition.Namespace), fullName, displayName);
     }
 
@@ -76,9 +78,10 @@ internal static class RuntimeTypeNameFormatter
         CliTypeIdentity element,
         string suffix,
         ITypeDefinitionResolver definitions,
-        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames)
+        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames,
+        Func<CliTypeIdentity, string> assemblyName)
     {
-        var names = FormatAll(element, definitions, genericParameterNames);
+        var names = FormatAll(element, definitions, genericParameterNames, assemblyName);
         return new(
             names.Name + suffix,
             names.Namespace,

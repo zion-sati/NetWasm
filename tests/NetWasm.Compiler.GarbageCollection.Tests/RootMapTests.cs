@@ -1965,6 +1965,68 @@ public sealed class RootMapTests
             new RootSource(RootSourceKind.EvaluationStack, 0, 4), safepoint.Roots);
     }
 
+    // A value on the stack at a safepoint whose storage type the analysis could not resolve has no
+    // roots of its own when its backing is covered or completely known; otherwise the method's
+    // roots cannot be stated and compiling it fails.
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public void AnUnresolvedStackValueAtASafepointNeedsAKnownBacking(bool covered, bool complete, bool fails)
+    {
+        var program = new FakeProgram();
+        var pair = CliTypeIdentity.Named(Assembly, "Roots", "Pair", isValueType: true);
+        var definition = Method(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliTypeIdentity.Primitive("void", CliValueKind.Void), pair),
+        };
+        var body = new CilMethodBody(
+            definition,
+            1,
+            [],
+            [
+                I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                I(1, CilOperation.Box, new CilOperand.TypeIdentity(pair)),
+                I(2, CilOperation.Pop),
+                I(3, CilOperation.Return),
+            ])
+        {
+            MethodInstance = Instance(definition, CliTypeIdentity.Named(Assembly, "Roots", "Object", isValueType: false)),
+            LocalSignatureTypes = [],
+        };
+        var structured = CreateStructuredMethod(
+            new TypedStackValidator(program, program, program, new StackTypeCompatibilityValidator())
+                .Validate(CreateGraphBuilder().Build(body)));
+        var storage = new FixedStackStorage(new StackStorageAnalysis(
+            ImmutableDictionary<int, ImmutableArray<StackStorageType>>.Empty.Add(
+                1, [new StackStorageType(null, covered) { CompleteBackingKnown = complete }]),
+            ImmutableDictionary<int, StackStorageTransfer>.Empty));
+        var analyzer = new RootMapAnalyzer(
+            new FakeLayouts(pair),
+            storage,
+            new StackStorageContinuationAnalyzer(),
+            new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
+            CreateRootDecisions(program),
+            CreateCalleeArguments(program),
+            new RootSlotAllocator());
+        var request = new RootMapAnalysisRequest(
+            structured, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()));
+
+        if (fails)
+        {
+            Assert.Equal(DiagnosticCode.InvalidCil,
+                Assert.Throws<CompilerException>(() => analyzer.Analyze(request)).Diagnostic.Code);
+            return;
+        }
+        Assert.DoesNotContain(analyzer.Analyze(request).Safepoints[1].Roots,
+            root => root.Kind == RootSourceKind.EvaluationStack);
+    }
+
+    private sealed class FixedStackStorage(StackStorageAnalysis analysis) : IStackStorageTypeAnalyzer
+    {
+        public StackStorageAnalysis Analyze(ManagedMethodBody method) => analysis;
+    }
+
     [Fact]
     public void AllocationCapabilityCoversDirectStaticFieldsIndirectCallsAndLeafInstances()
     {

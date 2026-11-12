@@ -16,6 +16,7 @@ public abstract partial class Assembly
     public virtual string? FullName => TypeSymbols.AssemblyNameUnavailable;
     public virtual string ImageRuntimeVersion => throw MetadataUnavailable();
     public virtual bool IsDynamic => false;
+    public virtual bool IsCollectible => true;
     public virtual string Location => throw MetadataUnavailable();
     public virtual bool ReflectionOnly => throw MetadataUnavailable();
     public bool IsFullyTrusted => true;
@@ -76,14 +77,16 @@ public abstract partial class Assembly
     public object? CreateInstance(string typeName, bool ignoreCase) => CreateInstance(typeName, ignoreCase, BindingFlags.Public | BindingFlags.Instance, null, null, null, null);
     public virtual object? CreateInstance(string typeName, bool ignoreCase, BindingFlags bindingAttr, Binder? binder, object[]? args, CultureInfo? culture, object[]? activationAttributes) => throw MetadataUnavailable();
 
+    // NetWasm: a type's assembly comes from the type table, as Type.Assembly reads it; there are no modules.
     public static Assembly? GetAssembly(Type type)
     {
         ArgumentNullException.ThrowIfNull(type);
-        throw MetadataUnavailable();
+        return type.Assembly;
     }
     public static Assembly GetCallingAssembly() => throw MetadataUnavailable();
+    // NetWasm: the compiler calls RuntimeAssembly.Of<TDeclaring>() for the calling method's type in its place.
     public static Assembly GetExecutingAssembly() => throw MetadataUnavailable();
-    public static Assembly? GetEntryAssembly() => throw MetadataUnavailable();
+    public static Assembly? GetEntryAssembly() => RuntimeAssembly.FromIndex(RuntimeTypeTable.EntryAssembly());
     public static Assembly LoadFile(string path) => throw MetadataUnavailable();
     public static Assembly LoadFrom(string assemblyFile) => throw MetadataUnavailable();
     public static Assembly LoadFrom(string assemblyFile, byte[]? hashValue, AssemblyHashAlgorithm hashAlgorithm) => throw MetadataUnavailable();

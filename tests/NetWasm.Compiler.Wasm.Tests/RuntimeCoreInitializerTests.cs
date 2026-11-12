@@ -58,10 +58,10 @@ public sealed class RuntimeCoreInitializerTests
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => [];
 
         public ImmutableArray<ConstructedTypeDescriptorLayout>
-            ConstructedTypeDescriptors => [new(ValueType, 7, 0, 4, 0, 0, null)];
+            ConstructedTypeDescriptors => [new(ValueType, 7, 0, 4, [], null)];
 
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors =>
-            [new(ValueType, 9, 4, 4, 0, 0)];
+            [new(ValueType, 9, 4, 4, [])];
 
         public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors =>
             [new(CliTypeIdentity.ScopedGenericParameter("owner", false, 0), 11)];

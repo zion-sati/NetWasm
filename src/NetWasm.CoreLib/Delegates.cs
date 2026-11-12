@@ -361,11 +361,34 @@ namespace System
         public virtual object Clone() =>
             DelegateRuntime.Clone(this) ?? throw new OutOfMemoryException();
 
-        protected virtual object? DynamicInvokeImpl(object?[]? args) =>
-            Runtime.CompilerServices.RuntimeMemberExecution.InvokeDelegate(
-                GetType().GetDelegateInvokeMethod(),
-                this,
-                args);
+        // The compiler calls DelegateMetadata.DynamicInvoke when the call site names the delegate's
+        // type. Through Delegate the type is known only at run time, so only what one fixed signature
+        // runs is supported: a parameterless Action, and a parameterless Func whose result is a
+        // reference, which variance makes a Func<object?>. Any other needs its type's Invoke metadata.
+        protected virtual object? DynamicInvokeImpl(object?[]? args)
+        {
+            if (this is not Action and not Func<object?>)
+            {
+                throw Runtime.CompilerServices.DelegateMetadata.UnknownDelegateType();
+            }
+            if (args is { Length: not 0 })
+            {
+                throw new Reflection.TargetParameterCountException("Parameter count mismatch.");
+            }
+            try
+            {
+                if (this is Action action)
+                {
+                    action();
+                    return null;
+                }
+                return ((Func<object?>)this)();
+            }
+            catch (Exception exception)
+            {
+                throw new Reflection.TargetInvocationException(exception);
+            }
+        }
 
         public object? DynamicInvoke(params object?[]? args) => DynamicInvokeImpl(args);
 

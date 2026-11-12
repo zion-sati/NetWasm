@@ -52,8 +52,6 @@ typedef uintptr_t NetWasmReferenceBitmapWord;
 typedef struct {
     u32 base_type_id;
     netwasm_address_t size;
-    netwasm_address_t bitmap_address;
-    u32 bitmap_bits;
     netwasm_address_t assignable_type_ids_address;
     u32 assignable_type_id_count;
     u32 has_finalizer;
@@ -1050,8 +1048,7 @@ static void *allocate_untraced(size_t bytes)
     return collector_allocate_object(bytes, false);
 }
 
-NETWASM_EXPORT("register_type")
-void register_type(
+static void register_type(
     u32 type_id,
     u32 base_type_id,
     netwasm_address_t size,
@@ -1074,8 +1071,6 @@ void register_type(
         bitmap_address, bitmap_bits, &entry->reference_count);
     entry->size = size;
     entry->base_type_id = base_type_id;
-    entry->bitmap_address = bitmap_address;
-    entry->bitmap_bits = bitmap_bits;
     entry->assignable_type_ids_address = assignable_type_ids_address;
     entry->assignable_type_id_count = assignable_type_id_count;
     entry->has_finalizer = has_finalizer;
@@ -1091,8 +1086,7 @@ void register_type(
     entry->registered = 1;
 }
 
-NETWASM_EXPORT("register_value_type")
-void register_value_type(
+static void register_value_type(
     u32 type_id,
     netwasm_address_t size,
     netwasm_address_t boxed_payload_offset,
@@ -1123,6 +1117,151 @@ void register_value_type(
         }
     }
     entry->value_registered = 1;
+}
+
+/* The runtime type table (RuntimeTypeTableEncoder in the compiler): every registered type's
+   runtime information in one bit stream, least significant bit first, offsets in bits. */
+static u32 type_table_read(netwasm_address_t table, uint64_t offset, u32 width)
+{
+    uint64_t word;
+    if (width == 0) {
+        return 0;
+    }
+    memcpy(&word, (const void *)(uintptr_t)(table + (netwasm_address_t)(offset >> 3)), sizeof(word));
+    word >>= offset & 7;
+    return width == 32 ? (u32)word : (u32)(word & ((UINT64_C(1) << width) - 1));
+}
+
+static u32 type_table_header(netwasm_address_t table, u32 field)
+{
+    return type_table_read(table, (uint64_t)field * 32, 32);
+}
+
+/* Expands pooled reference bitmap index (0: no references) into scratch, one bit per slot. */
+static netwasm_address_t type_table_bitmap(
+    netwasm_address_t table, u32 index, u32 bits, NetWasmReferenceBitmapWord *scratch)
+{
+    size_t word_bits = sizeof(*scratch) * 8;
+    u32 offset_bits = type_table_header(table, 14) & 63;
+    u32 length_bits = type_table_header(table, 14) >> 6 & 63;
+    uint64_t start;
+    u32 length;
+    if (index == 0) {
+        return 0;
+    }
+    start = type_table_header(table, 13) +
+        (uint64_t)type_table_header(table, 12) * offset_bits +
+        type_table_read(table, type_table_header(table, 13) + (uint64_t)(index - 1) * offset_bits, offset_bits);
+    length = type_table_read(table, start, length_bits);
+    for (u32 bit = 0; bit < bits; bit++) {
+        NetWasmReferenceBitmapWord mask = (NetWasmReferenceBitmapWord)1 << (bit % word_bits);
+        if (bit % word_bits == 0) {
+            scratch[bit / word_bits] = 0;
+        }
+        if (bit < length && type_table_read(table, start + length_bits + bit, 1) != 0) {
+            scratch[bit / word_bits] |= mask;
+        }
+    }
+    return (netwasm_address_t)(uintptr_t)scratch;
+}
+
+/* Registers every type of the table: the GC, allocator, boxing and casting read only what this
+   leaves in the registry, and CoreLib reads the table's other fields in place. */
+NETWASM_EXPORT("register_types")
+void register_types(netwasm_address_t table)
+{
+    u32 capacity = type_table_header(table, 1);
+    u32 widths = type_table_header(table, 2);
+    u32 id_bits = widths & 63;
+    u32 shape_index_bits = widths >> 6 & 63;
+    u32 flag_index_bits = widths >> 12 & 63;
+    u32 layout_index_bits = widths >> 18 & 63;
+    u32 shape_bits = widths >> 24 & 63;
+    u32 count_bits = type_table_header(table, 3) & 63;
+    u32 layout_widths = type_table_header(table, 11);
+    u32 size_bits = layout_widths & 63;
+    u32 bitmap_index_bits = layout_widths >> 6 & 63;
+    u32 payload_bits = layout_widths >> 12 & 63;
+    u32 explicit_bases = type_table_header(table, 15);
+    u32 assignable = type_table_header(table, 16);
+    uint64_t explicit_ids = (uint64_t)explicit_bases + capacity;
+    uint64_t lists = (uint64_t)assignable + capacity;
+    u32 largest_size = 0;
+    NetWasmReferenceBitmapWord *scratch;
+    if (capacity > type_capacity) {
+        __builtin_trap();
+    }
+    for (u32 layout = 0; layout < type_table_header(table, 9); layout++) {
+        u32 size = type_table_read(table, type_table_header(table, 10) +
+            (uint64_t)layout * (2 * size_bits + 2 * bitmap_index_bits + payload_bits), size_bits);
+        largest_size = size > largest_size ? size : largest_size;
+    }
+    /* A layout has at most one bitmap bit per reference slot of its object. */
+    scratch = collector_allocate_metadata(
+        (largest_size / sizeof(netwasm_reference_t) / (sizeof(*scratch) * 8) + 1) * sizeof(*scratch));
+    if (scratch == NULL) {
+        __builtin_trap();
+    }
+    for (u32 id = 1; id < capacity; id++) {
+        uint64_t shape = type_table_header(table, 8) + (uint64_t)type_table_read(table,
+            type_table_header(table, 6) + (uint64_t)id * shape_index_bits, shape_index_bits) * shape_bits;
+        u32 flag_index = type_table_read(table, shape, flag_index_bits);
+        u32 base = type_table_read(table, type_table_header(table, 5) + (uint64_t)flag_index * id_bits, id_bits);
+        u32 count = 0;
+        u32 *assignable_ids = NULL;
+        if (type_table_read(table, (uint64_t)explicit_bases + id, 1) != 0) {
+            base = type_table_read(table, explicit_ids, id_bits);
+            explicit_ids += id_bits;
+        }
+        if (type_table_read(table, (uint64_t)assignable + id, 1) != 0) {
+            count = type_table_read(table, lists, count_bits);
+            lists += count_bits;
+            assignable_ids = collector_allocate_metadata(count * sizeof(u32));
+            if (assignable_ids == NULL) {
+                __builtin_trap();
+            }
+            for (u32 index = 0; index < count; index++, lists += id_bits) {
+                assignable_ids[index] = type_table_read(table, lists, id_bits);
+            }
+        }
+        if (flag_index != 0) {
+            u32 flags = type_table_read(table, 640 + (uint64_t)flag_index * 32, 32);
+            uint64_t layout = type_table_header(table, 10) +
+                (uint64_t)type_table_read(table, shape + flag_index_bits, layout_index_bits) *
+                (2 * size_bits + 2 * bitmap_index_bits + payload_bits);
+            u32 size = type_table_read(table, layout, size_bits);
+            u32 bits = (size + sizeof(netwasm_reference_t) - 1) / sizeof(netwasm_reference_t);
+            register_type(id, base, size,
+                type_table_bitmap(table, type_table_read(table, layout + size_bits, bitmap_index_bits), bits, scratch),
+                bits, (netwasm_address_t)(uintptr_t)assignable_ids, count,
+                (flags >> 29) & 1, (flags >> 2) & 1);
+            if ((flags >> 30) & 1) {
+                u32 value_size = type_table_read(table, layout + size_bits + bitmap_index_bits, size_bits);
+                u32 value_bits = (value_size + sizeof(netwasm_reference_t) - 1) / sizeof(netwasm_reference_t);
+                register_value_type(id, value_size,
+                    type_table_read(table, layout + 2 * size_bits + bitmap_index_bits, payload_bits),
+                    type_table_bitmap(table, type_table_read(table,
+                        layout + 2 * size_bits + bitmap_index_bits + payload_bits, bitmap_index_bits),
+                        value_bits, scratch),
+                    value_bits);
+            }
+        }
+    }
+}
+
+/* CoreLib's Type.BaseType and IsAssignableFrom ask the registry casting uses. */
+NETWASM_EXPORT("type_base_id")
+u32 type_base_id(u32 type_id)
+{
+    return type_id < type_capacity && type_descriptors[type_id].registered
+        ? type_descriptors[type_id].base_type_id
+        : 0;
+}
+
+NETWASM_EXPORT("type_is_assignable")
+u32 type_is_assignable(u32 actual_type_id, u32 target_type_id)
+{
+    return is_type_assignable(actual_type_id, target_type_id);
 }
 
 NETWASM_EXPORT("register_static_root")

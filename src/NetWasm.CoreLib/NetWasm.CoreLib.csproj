@@ -1087,6 +1087,9 @@
     <Compile Include="Runtime/CompilerServices/ArrayLoops.cs" />
     <Compile Include="Runtime/CompilerServices/ObjectArrayDelegateAdapter.cs" />
     <Compile Include="Runtime/CompilerServices/RuntimeMemberExecution.cs" />
+    <Compile Include="Runtime/CompilerServices/DelegateMetadata.cs" />
+    <Compile Include="RuntimeTypeTable.cs" />
+    <Compile Include="Reflection/RuntimeAssembly.cs" />
     <Compile Include="Linq/Expressions/Interpreter/Instruction.cs" />
     <Compile Include="Linq/Expressions/Interpreter/InterpretedFrame.cs" />
     <Compile Include="Linq/Expressions/Interpreter/Interpreter.cs" />
