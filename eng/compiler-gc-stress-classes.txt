@@ -183,6 +183,7 @@ NetWasm.Compiler.Tests.Correctness.StaticInitializationFailureTests
 NetWasm.Compiler.Tests.Correctness.StaticInitializationTests
 NetWasm.Compiler.Tests.Correctness.StaticProviderCatalogCompilationTests
 NetWasm.Compiler.Tests.Correctness.StaticTypeObjectTests
+NetWasm.Compiler.Tests.Correctness.StaticVirtualTypeArgumentCompilationTests
 NetWasm.Compiler.Tests.Correctness.StringCompareSplitCorpusTests
 NetWasm.Compiler.Tests.Correctness.StructCopyCorpusTests
 NetWasm.Compiler.Tests.Correctness.StructElementCopyRootingTests

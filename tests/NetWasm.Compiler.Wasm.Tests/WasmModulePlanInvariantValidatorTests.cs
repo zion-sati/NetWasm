@@ -20,7 +20,7 @@ public sealed class WasmModulePlanInvariantValidatorTests
         {
             Definition = first.Method.Definition with { Key = Key(0x0600007e), Name = "Another" },
         };
-        var ordered = new[] { first, first with { Method = secondMethod } }
+        var ordered = new[] { first, first with { Method = secondMethod, Import = first.Import with { Name = "another" } } }
             .OrderBy(import => import.Method.CanonicalName, StringComparer.Ordinal)
             .ToImmutableArray();
         request = request with
@@ -43,6 +43,40 @@ public sealed class WasmModulePlanInvariantValidatorTests
             plan with { NativeImports = new([.. ordered.Reverse()]) }));
 
         Assert.Contains("canonical order", error.Message);
+    }
+
+    // Methods that declare one native symbol share its import, so its one function index.
+    [Fact]
+    public void MethodsDeclaringOneSymbolShareItsFunctionIndex()
+    {
+        var (request, plan) = CreateNativePlan();
+        var first = Assert.Single(plan.NativeImports.Methods);
+        var secondMethod = first.Method with
+        {
+            Definition = first.Method.Definition with { Key = Key(0x0600007e), Name = "Another" },
+        };
+        var ordered = new[] { first, first with { Method = secondMethod } }
+            .OrderBy(import => import.Method.CanonicalName, StringComparer.Ordinal)
+            .ToImmutableArray();
+        request = request with
+        {
+            MethodInstances = request.MethodInstances.ToImmutableDictionary().Add(secondMethod.CanonicalName, secondMethod),
+        };
+        WasmModulePlan Indexed(int second) => plan with
+        {
+            NativeImports = new(ordered),
+            FunctionIndices = plan.FunctionIndices with
+            {
+                ImportedMethods = ordered.Select((import, index) => (import.Method.Definition.Key, index == 0 ? 0 : second))
+                    .ToImmutableDictionary(pair => pair.Key, pair => new WasmFunctionIndex(pair.Item2)),
+            },
+        };
+        var validator = CreateValidator();
+
+        Assert.Single(Indexed(0).NativeImports.Imports);
+        validator.Validate(request, [], Indexed(0));
+        Assert.Contains("does not follow its symbol's position",
+            Assert.Throws<InvalidOperationException>(() => validator.Validate(request, [], Indexed(1))).Message);
     }
 
     [Fact]

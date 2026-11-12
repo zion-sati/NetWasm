@@ -30,12 +30,17 @@ public sealed class StartupPreflightMethodSelectorTests
         Assert.True(result.UsesLocalTime);
     }
 
-    // A component that initializes without a process entry may not wait, so it reads no symbols files;
-    // a raw module's JavaScript host completes the read, so it still loads them.
+    // A module without a process entry initializes in its first export's task; a synchronous WIT
+    // export's task may not wait, so a module with one reads no symbols files. One without (an async
+    // export, or a core function) loads them, and so does a raw module, whose JavaScript host completes
+    // the read.
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    public void AComponentWithoutAProcessEntryLoadsNoSymbols(bool rawModule, bool loadsSymbols)
+    [InlineData(false, null, true)]
+    [InlineData(false, CanonicalAbiFunctionKind.Function, false)]
+    [InlineData(false, CanonicalAbiFunctionKind.ExportedResourceDestructor, false)]
+    [InlineData(true, CanonicalAbiFunctionKind.Function, true)]
+    public void AModuleWithSynchronousExportsLoadsNoSymbolsWhenItInitializes(
+        bool rawModule, CanonicalAbiFunctionKind? export, bool loadsSymbols)
     {
         var repositories = new Repositories(
             Method(LocalTimeKey, PlatformTypeKey, "EnsureLocalTimeReady"),
@@ -46,6 +51,11 @@ public sealed class StartupPreflightMethodSelectorTests
         {
             EntryPointProfile = WasmEntryPointProfile.None,
             UseJavaScriptExportBoundary = rawModule,
+            ComponentContract = export is { } kind
+                ? new("example:component@1", "component", [],
+                    [new("example:component/api@1.0.0", "run", LocalTimeKey, [],
+                        new(CanonicalAbiTypeKind.S32, CliTypeIdentity.FromStackKind(CliValueKind.I4))) { Kind = kind }])
+                : ComponentBoundaryContract.Empty,
         });
 
         Assert.Equal(loadsSymbols ? [TypeSymbolsKey, MethodSymbolsKey, LocalTimeKey] : [LocalTimeKey], result.Methods);

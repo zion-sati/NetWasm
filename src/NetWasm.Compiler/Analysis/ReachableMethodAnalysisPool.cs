@@ -81,7 +81,7 @@ internal sealed class ReachableMethodAnalysisPool : IDisposable
         else if (!slot.IsDone)
         {
             var waitStarted = Stopwatch.GetTimestamp();
-            Wait(slot, static slot => slot.IsDone);
+            ProgressWait.Until(_progress, slot, static slot => slot.IsDone);
             waitTicks += Stopwatch.GetTimestamp() - waitStarted;
         }
         Interlocked.Decrement(ref _finishedAhead);
@@ -105,7 +105,7 @@ internal sealed class ReachableMethodAnalysisPool : IDisposable
         }
         // Workers finish the analysis they hold. The event stays undisposed: a stopping worker
         // sets it after it stops counting, and it holds no handle unless one is asked for.
-        Wait(this, static pool => Volatile.Read(ref pool._activeWorkers) == 0);
+        ProgressWait.Until(_progress, this, static pool => Volatile.Read(ref pool._activeWorkers) == 0);
     }
 
     private void StartWorkers()
@@ -182,21 +182,6 @@ internal sealed class ReachableMethodAnalysisPool : IDisposable
         Interlocked.Increment(ref _finishedAhead);
         slot.Complete();
         _progress.Set();
-    }
-
-    private void Wait<TState>(TState state, Func<TState, bool> condition)
-    {
-        while (!condition(state))
-        {
-            _progress.Reset();
-            // Reset before looking again: a completion after this look sets the event.
-            Interlocked.MemoryBarrier();
-            if (condition(state))
-            {
-                return;
-            }
-            _progress.Wait();
-        }
     }
 
     private sealed class Worker(ReachableMethodAnalysisPool pool, IReachableMethodAnalyzer analyzer)

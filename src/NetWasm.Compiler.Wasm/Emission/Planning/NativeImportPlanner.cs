@@ -32,6 +32,24 @@ internal sealed class NativeImportPlanner(INativeAbiPlanner abi) : INativeImport
                 new(module, plan.Import.EntryPoint,
                     new(plan.Signature.ParameterTypes, plan.Signature.ReturnType))));
         }
-        return new([.. imports.Values.OrderBy(import => import.Method.CanonicalName, StringComparer.Ordinal)]);
+        ImmutableArray<NativeMethodImport> ordered =
+            [.. imports.Values.OrderBy(import => import.Method.CanonicalName, StringComparer.Ordinal)];
+        // Declarations of one native symbol share its import (NativeImportPlan.Imports), so they must agree
+        // on its signature: one Wasm import has one type.
+        var symbols = new Dictionary<(string Module, string Name), NativeMethodImport>();
+        foreach (var import in ordered)
+        {
+            if (!symbols.TryAdd((import.Import.Module, import.Import.Name), import) &&
+                symbols[(import.Import.Module, import.Import.Name)] is var first &&
+                (first.Import.Type.Result != import.Import.Type.Result ||
+                 !first.Import.Type.Parameters.SequenceEqual(import.Import.Type.Parameters)))
+            {
+                throw new CompilerException(new(DiagnosticCode.NativeInterop,
+                    $"'{first.Method.CanonicalName}' and '{import.Method.CanonicalName}' declare the native " +
+                    $"function '{import.Import.Name}' with different C ABI signatures; one native function has one signature.",
+                    import.Method.CanonicalName));
+            }
+        }
+        return new(ordered);
     }
 }

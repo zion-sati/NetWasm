@@ -108,10 +108,47 @@ public sealed class NativeImportPlannerTests
         Assert.Throws<ArgumentNullException>(() => planner.Plan(null!));
     }
 
-    private static MethodInstanceModel Method(int token, string entry, MethodSignatureModel signature)
+    // Declarations of one native symbol bind one function, as on desktop .NET (an IntPtr and a byte*
+    // overload, say): they share its import, while every method keeps its own plan.
+    [Fact]
+    public void DeclarationsOfOneSymbolShareItsImport()
+    {
+        var pointer = Method(1, "get_buffer", MethodSignatureModel.Create(CliValueKind.NativeInt), "GetBuffer");
+        var bytes = Method(2, "get_buffer", MethodSignatureModel.Create(CliValueKind.NativeInt), "GetBufferBytes");
+        var other = Method(3, "other", MethodSignatureModel.Create(CliValueKind.Void));
+
+        var result = new NativeImportPlanner(new RecordingAbiPlanner()).Plan([other, bytes, pointer]);
+
+        Assert.Equal([pointer, bytes, other], result.Methods.Select(import => import.Method));
+        Assert.Equal(["get_buffer", "other"], result.Imports.Select(import => import.Name));
+        Assert.Equal(0, result.ImportPositions[pointer.Definition.Key]);
+        Assert.Equal(0, result.ImportPositions[bytes.Definition.Key]);
+        Assert.Equal(1, result.ImportPositions[other.Definition.Key]);
+    }
+
+    // One Wasm import has one type, so declarations of one symbol must agree on it, in the result and
+    // in each parameter.
+    [Theory]
+    [InlineData(CliValueKind.I8, CliValueKind.I4)]
+    [InlineData(CliValueKind.I4, CliValueKind.I8)]
+    public void DeclarationsOfOneSymbolWithDifferentSignaturesAreRejected(CliValueKind result, CliValueKind parameter)
+    {
+        var first = Method(1, "get_buffer", MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4), "GetBuffer");
+        var second = Method(2, "get_buffer", MethodSignatureModel.Create(result, parameter), "GetBufferWide");
+
+        var error = Assert.Throws<CompilerException>(() =>
+            new NativeImportPlanner(new RecordingAbiPlanner()).Plan([first, second]));
+
+        Assert.Equal(DiagnosticCode.NativeInterop, error.Diagnostic.Code);
+        Assert.Equal(second.CanonicalName, error.Diagnostic.Method);
+        Assert.Contains($"'{first.CanonicalName}' and '{second.CanonicalName}'", error.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("'get_buffer' with different C ABI signatures", error.Diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    private static MethodInstanceModel Method(int token, string entry, MethodSignatureModel signature, string? name = null)
     {
         var assembly = new AssemblyIdentity("Native");
-        var definition = new MethodDefinitionModel(new(assembly, token), new(assembly, 100), entry, true, signature, 0)
+        var definition = new MethodDefinitionModel(new(assembly, token), new(assembly, 100), name ?? entry, true, signature, 0)
         {
             NativeImport = new("mule", entry, MethodImportAttributes.CallingConventionCDecl,
                 false, false, null),

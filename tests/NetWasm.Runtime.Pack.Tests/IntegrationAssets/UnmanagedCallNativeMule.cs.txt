@@ -20,7 +20,8 @@ public struct CalliWrapped
 // [UnmanagedCallersOnly] methods, with scalar, mixed and aggregate C ABI signatures, and its
 // siblings: float, narrow integers, a pointer argument and a struct of one scalar. Each calling
 // convention desktop .NET 11 accepts calls the C ABI: Stdcall, Thiscall, SuppressGCTransition and
-// MemberFunction on pointers, callbacks and DllImports alike.
+// MemberFunction on pointers, callbacks and DllImports alike. Five DllImports declare one native
+// function, as desktop .NET allows, and share its import.
 public static unsafe class EntryPoint
 {
     private static int s_marked;
@@ -39,14 +40,14 @@ public static unsafe class EntryPoint
     private static extern void* SumAddress();
     [DllImport("mule", EntryPoint = "native_mule_calli_wrap_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
     private static extern void* WrapAddress();
-    [DllImport("mule", EntryPoint = "native_mule_calli_twice_stdcall_address", ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
     private static extern void* StdcallTwiceAddress();
-    [DllImport("mule", EntryPoint = "native_mule_calli_twice_thiscall_address", ExactSpelling = true, CallingConvention = CallingConvention.ThisCall)]
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true, CallingConvention = CallingConvention.ThisCall)]
     private static extern void* ThiscallTwiceAddress();
-    [DllImport("mule", EntryPoint = "native_mule_calli_twice_callconv_address", ExactSpelling = true)]
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true)]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvStdcall), typeof(CallConvMemberFunction), typeof(CallConvSuppressGCTransition) })]
     private static extern void* UnmanagedCallConvTwiceAddress();
-    [DllImport("mule", EntryPoint = "native_mule_calli_twice_suppressed_address", ExactSpelling = true), SuppressGCTransition]
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true), SuppressGCTransition]
     private static extern void* SuppressedTwiceAddress();
     [DllImport("mule", EntryPoint = "native_mule_narrow_import", ExactSpelling = true)]
     private static extern short NarrowImport(sbyte signedValue, ushort unsignedValue);

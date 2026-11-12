@@ -29,7 +29,10 @@ internal sealed class WasmModuleEmissionResultBuilder(
             [.. import.Import.Type.Parameters.Select(parameter => WasmValueTypes.FromCli(parameter, target))],
             import.Import.Type.Result == CliValueKind.Void
                 ? null
-                : WasmValueTypes.FromCli(import.Import.Type.Result, target))).ToImmutableArray();
+                : WasmValueTypes.FromCli(import.Import.Type.Result, target)))
+            // Methods that declare one native symbol share its import.
+            .DistinctBy(import => (import.LibraryName, import.EntryPoint))
+            .ToImmutableArray();
         var trampolines = request.NativeImports.CallSites.Trampolines
             .Select(trampoline => trampoline.Symbol)
             .ToImmutableArray();

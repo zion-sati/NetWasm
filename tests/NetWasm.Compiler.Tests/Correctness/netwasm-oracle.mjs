@@ -307,26 +307,30 @@ var wasiFilesystem = {
   },
 };
 var wasiFilesystemBuiltIns = {
-  // open-at's parameters: descriptor, path-flags, path (address, length),
-  // open-flags and descriptor-flags in a 20-byte record.
+  // open-at's parameters: descriptor, path-flags, path (address and length, pointer-sized
+  // at 8), open-flags and descriptor-flags; the result's payload lies at the pointer width.
   "[async-lower][method]descriptor.open-at"(parameters, result) {
     wasiOpenCalls++;
     var view = createRefreshableDataView(memory);
+    var width = memory64 ? 8 : 4;
+    var readAddress = offset => memory64
+      ? Number(view.getBigUint64(asNumber(plus(parameters, offset)), true))
+      : view.getUint32(asNumber(plus(parameters, offset)), true);
     var directoryHandle = view.getInt32(asNumber(parameters), true);
-    var pathAddress = view.getUint32(asNumber(plus(parameters, 8)), true);
-    var pathLength = view.getUint32(asNumber(plus(parameters, 12)), true);
+    var pathAddress = readAddress(8);
+    var pathLength = readAddress(8 + width);
     var path = new TextDecoder().decode(new Uint8Array(memory.buffer, pathAddress, pathLength));
     var suffix = [...sidecarFiles.keys()].find(name => path.endsWith(name));
     if (directoryHandle !== 1 || path.includes("/") || suffix === undefined) {
       view.setUint8(asNumber(result), 1);
-      view.setInt32(asNumber(plus(result, 4)), 44, true);
+      view.setInt32(asNumber(plus(result, width)), 44, true);
       return subtaskReturned;
     }
     sidecarOpens.push(path);
     var descriptor = nextDescriptor++;
     descriptors.set(descriptor, sidecarFiles.get(suffix));
     view.setUint8(asNumber(result), 0);
-    view.setInt32(asNumber(plus(result, 4)), descriptor, true);
+    view.setInt32(asNumber(plus(result, width)), descriptor, true);
     return subtaskReturned;
   },
   "[async-lower][stream-read-0][method]descriptor.read-via-stream"(readable, buffer, length) {

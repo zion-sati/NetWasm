@@ -48,7 +48,7 @@ internal sealed class ModuleImportCollector(
                 canonicalTypes.Plan(
                     function,
                     CanonicalAbiDirection.LoweredImport).CoreType);
-        })).Concat(request.NativeImports.Methods.Select(import => import.Import))
+        })).Concat(request.NativeImports.Imports)
             .Concat(request.NativeCallbacks.AddressedMethods.Select(callback =>
                 new WasmFunctionImport(
                     RuntimeAbi.RuntimeModule,

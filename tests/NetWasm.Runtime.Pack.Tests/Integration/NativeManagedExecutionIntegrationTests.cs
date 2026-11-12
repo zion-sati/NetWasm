@@ -293,7 +293,7 @@ public sealed class NativeManagedExecutionIntegrationTests
             var compilation = NetWasmCompiler.Compile(new(assembly, [coreLib], "NativeMule.EntryPoint", "Run", [], wasmTarget,
                 DiagnosticTracePath: Path.Combine(run, "compiler-trace.json"), DiagnosticLogPath: Path.Combine(run, "compiler.log"),
                 ReferenceAssemblyAliases: generated ? DesktopAliases : null));
-            Assert.Equal(providerlessCallbacks ? 0 : unmanagedCalls ? 12 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :
+            Assert.Equal(providerlessCallbacks ? 0 : unmanagedCalls ? 8 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :
                     aggregateProfile ? 19 : aggregates ? 4 : 14,
                 compilation.NativeImports.Length);
             Assert.DoesNotContain(compilation.NativeImports, import => import.LibraryName == "unused");

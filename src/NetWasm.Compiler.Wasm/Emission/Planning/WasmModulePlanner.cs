@@ -92,7 +92,7 @@ internal sealed class WasmModulePlanner(
         var nativeImportPlan = _nativeImports.Plan(request.MethodInstances.Values);
         var callbackGetterBase = runtimeImportCount + helperImportCount +
             request.JSImportMethods.Length + witImportIdentities.Length +
-            nativeImportPlan.Methods.Length;
+            nativeImportPlan.Imports.Length;
         var callbackPlan = request.NativeCallbacks.Count == 0
             ? NativeCallbackPlan.Empty
             : _callbackPlans.Build(
@@ -105,12 +105,12 @@ internal sealed class WasmModulePlanner(
             CallSites = _callSitePlans.Plan(
                 UnmanagedCallSites(request),
                 runtimeImportCount + helperImportCount + request.JSImportMethods.Length +
-                    witImportIdentities.Length + nativeImportPlan.Methods.Length +
+                    witImportIdentities.Length + nativeImportPlan.Imports.Length +
                     callbackPlan.AddressedMethods.Length),
         };
         var importedFunctionCount = runtimeImportCount + helperImportCount +
             request.JSImportMethods.Length + witImportIdentities.Length +
-            nativeImportPlan.Methods.Length + callbackPlan.AddressedMethods.Length +
+            nativeImportPlan.Imports.Length + callbackPlan.AddressedMethods.Length +
             nativeImportPlan.CallSites.Trampolines.Length;
         var firstManagedImportIndex = runtimeImportCount + helperImportCount;
         var witImportIndices = witImportIdentities
@@ -123,10 +123,10 @@ internal sealed class WasmModulePlanner(
             .Concat(request.WitImportMethods.Select(method => (
                 method.Key,
                 Index: witImportIndices[method.WitImport!.Identity])))
-            .Concat(nativeImportPlan.Methods.Select((import, index) => (
+            .Concat(nativeImportPlan.Methods.Select(import => (
                 import.Method.Definition.Key,
                 Index: new WasmFunctionIndex(firstManagedImportIndex + request.JSImportMethods.Length +
-                    witImportIdentities.Length + index))))
+                    witImportIdentities.Length + nativeImportPlan.ImportPositions[import.Method.Definition.Key]))))
             .ToImmutableDictionary(item => item.Key, item => item.Index);
         var constructedIdentities = request.ConstructedMethods.Keys
             .ToHashSet(StringComparer.Ordinal);

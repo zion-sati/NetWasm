@@ -61,12 +61,20 @@ internal sealed class WasmModulePlanInvariantValidator :
             .ToArray();
         if (!plan.NativeImports.Methods.Select(import => import.Method).SequenceEqual(expectedNativeMethods))
             throw Invalid("native imports do not match reached native methods in canonical order");
+        // Methods that declare one native symbol share its import.
         foreach (var import in plan.NativeImports.Methods)
         {
             if (!plan.FunctionIndices.ImportedMethods.TryGetValue(import.Method.Definition.Key, out var index))
                 throw Invalid("native import has no function index");
-            RequireIndex(index.Value, expected++, indices, "native import");
+            var position = plan.NativeImports.ImportPositions[import.Method.Definition.Key];
+            if (index.Value != expected + position)
+                throw Invalid("native import function index does not follow its symbol's position");
         }
+        for (var position = 0; position < plan.NativeImports.Imports.Length; position++)
+        {
+            RequireIndex(expected + position, expected + position, indices, "native import");
+        }
+        expected += plan.NativeImports.Imports.Length;
         var expectedCallbacks = request.NativeCallbacks.Values
             .OrderBy(method => method.CanonicalName, StringComparer.Ordinal)
             .ToArray();
