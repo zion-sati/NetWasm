@@ -25,6 +25,10 @@ internal static class WasiFileSystemLayout
     // the payload at P.
     internal static nuint SmallResultSize => Pointer * 5;
 
+    // open-at's parameters: descriptor, path-flags at 4, path at 8, open-flags at 8 + 2P and
+    // descriptor-flags after them, P-aligned.
+    internal static nuint OpenAtParametersSize => (Pointer * 3 + 9) & ~(Pointer - 1);
+
     // descriptor-stat: type (4P), link-count, size, then three option<instant> (24 bytes each).
     internal static nuint StatSize => Pointer * 4 + 88;
 

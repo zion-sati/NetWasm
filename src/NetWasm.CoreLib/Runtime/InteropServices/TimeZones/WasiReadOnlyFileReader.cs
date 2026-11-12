@@ -2,6 +2,7 @@ namespace System.Runtime.InteropServices.TimeZones
 {
     using System.Runtime.InteropServices.Streams;
     using System.Runtime.InteropServices.Concurrency;
+    using System.Runtime.InteropServices.FileSystem;
     using System.Runtime.InteropServices.Output;
     using System.Runtime.InteropServices.WebAssembly;
 
@@ -97,11 +98,12 @@ namespace System.Runtime.InteropServices.TimeZones
             return contents;
         }
 
-        // result<_, error-code>: a discriminant byte, then at offset 4 the error-code
-        // variant's discriminant (its other(option<string>) case makes it 20 bytes).
+        // result<_, error-code>: a discriminant byte, then at the pointer size the error-code
+        // variant's discriminant (its other(option<string>) case makes it five pointers).
         private void ThrowOnFailure(int completion)
         {
-            using var result = _allocator.Allocate(WasiReadOnlyFileOpener.ErrorCodeResultSize, 4);
+            var pointer = WasiFileSystemLayout.Pointer;
+            using var result = _allocator.Allocate(WasiFileSystemLayout.SmallResultSize, pointer);
             if (_readResult.Read(completion, result.Address) == Blocked)
             {
                 _awaiter.Await(completion);
@@ -112,7 +114,7 @@ namespace System.Runtime.InteropServices.TimeZones
                 _dropResult.Drop(completion);
                 throw new PlatformNotSupportedException(
                     "WASI filesystem could not read the timezone asset (error-code=" +
-                    CanonicalAbi.ReadByte(result.Address, 4) + ").");
+                    CanonicalAbi.ReadByte(result.Address, pointer) + ").");
             }
         }
     }

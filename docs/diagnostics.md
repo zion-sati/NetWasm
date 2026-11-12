@@ -66,7 +66,10 @@ wasmtime run --dir bin/Debug/netwasm0.1::/netwasm-sidecars bin/Debug/netwasm0.1/
 ```
 
 A program built with `NetWasmTypeNames` or `NetWasmManagedStackTrace` reads its
-symbols files at startup. Each file carries the build ID of the program that
+symbols files at startup. A component without a process entry, such as one that
+only exports WIT functions, starts when it initializes, and the Component Model
+lets no task wait then, so it reads none and its names read `type#<id>`; a
+JavaScript module still reads them. Each file carries the build ID of the program that
 wrote it. If a file is missing, unreadable, malformed or from another build, the
 program writes one line to standard error, for example
 `NetWasm: skipped /netwasm-sidecars/App.wasm.type-symbols (the host mounts no /netwasm-sidecars directory); type names read as type#<id>.`,

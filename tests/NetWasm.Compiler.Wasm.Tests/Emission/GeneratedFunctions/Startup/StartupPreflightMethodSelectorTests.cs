@@ -30,6 +30,28 @@ public sealed class StartupPreflightMethodSelectorTests
         Assert.True(result.UsesLocalTime);
     }
 
+    // A component that initializes without a process entry may not wait, so it reads no symbols files;
+    // a raw module's JavaScript host completes the read, so it still loads them.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void AComponentWithoutAProcessEntryLoadsNoSymbols(bool rawModule, bool loadsSymbols)
+    {
+        var repositories = new Repositories(
+            Method(LocalTimeKey, PlatformTypeKey, "EnsureLocalTimeReady"),
+            Method(MethodSymbolsKey, SidecarsTypeKey, "LoadMethodSymbols"),
+            Method(TypeSymbolsKey, SidecarsTypeKey, "LoadTypeSymbols"));
+
+        var result = CreateSelector(repositories).Select(CreateRequest(LocalTimeKey, MethodSymbolsKey, TypeSymbolsKey) with
+        {
+            EntryPointProfile = WasmEntryPointProfile.None,
+            UseJavaScriptExportBoundary = rawModule,
+        });
+
+        Assert.Equal(loadsSymbols ? [TypeSymbolsKey, MethodSymbolsKey, LocalTimeKey] : [LocalTimeKey], result.Methods);
+        Assert.True(result.UsesLocalTime);
+    }
+
     [Fact]
     public void SymbolsAloneDoNotUseLocalTime()
     {
