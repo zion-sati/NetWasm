@@ -498,7 +498,8 @@ public sealed class TestAssets : IDisposable
         process.WaitForExit();
         if (process.ExitCode != 0)
         {
-            throw new RoslynCompilationException(standardOutput + standardError);
+            throw new RoslynCompilationException(
+                $"exit code {process.ExitCode}{Environment.NewLine}{standardOutput}{standardError}");
         }
     }
 
@@ -558,7 +559,7 @@ public sealed class TestAssets : IDisposable
 public sealed partial class RoslynCompilationException : InvalidOperationException
 {
     public RoslynCompilationException(string compilerOutput)
-        : base("Roslyn rejected the fixture.")
+        : base("Roslyn rejected the fixture:" + Environment.NewLine + compilerOutput)
     {
         DiagnosticCodes = DiagnosticCodePattern()
             .Matches(compilerOutput)
