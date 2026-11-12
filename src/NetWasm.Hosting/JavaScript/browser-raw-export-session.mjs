@@ -131,10 +131,12 @@ export function createBrowserRawExportSession(options) {
         environment: hostRequest.environment,
         runtimeFeatures: manifest.runtimeFeatures,
       });
-      if (selection !== null) {
-        if (filesystem === null) {
-          throw new TypeError("time zone data requires an application that links a filesystem interface");
-        }
+      // A program that links no filesystem interface reads no file beside it: its names read as
+      // IDs without the symbols files, but time zone data it needs cannot reach it.
+      if (selection?.timeZone != null && filesystem === null) {
+        throw new TypeError("time zone data requires an application that links a filesystem interface");
+      }
+      if (selection !== null && filesystem !== null) {
         const materializeSidecars = createBrowserSidecarMaterializer({
           manifestUrl: options.manifestUrl,
           platform: Object.freeze({

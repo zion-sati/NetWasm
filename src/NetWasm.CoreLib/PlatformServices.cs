@@ -147,16 +147,27 @@ namespace System.Runtime.InteropServices
                     new Output.WasiOutputStreamOpener(
                         new Output.WasiStandardOutputStreamCreateInvoker(),
                         new Output.WasiStandardOutputHandOffInvoker()),
-                    new Output.WasiOutputStreamCloser(
+                    CreateOutputStreamCloser(
                         new Output.WasiStandardOutputWritableDropInvoker(),
                         new Output.WasiStandardOutputResultReadInvoker(),
                         new Output.WasiStandardOutputResultDropInvoker(),
-                        awaiter,
-                        new CanonicalBufferAllocator())),
+                        awaiter)),
                 new Output.WasiStandardOutputWriteInvoker(),
                 awaiter,
                 new Concurrency.WasiThreadYieldInvoker());
         }
+
+        // A JavaScript host that runs a raw module's event loop finishes a write after the export
+        // returns; anywhere else the program waits until the host has written its output.
+        private static Output.IWasiOutputStreamCloser CreateOutputStreamCloser(
+            Output.IWasiByteStreamWritableDropInvoker dropWritable,
+            Output.IWasiResultFutureReadInvoker readResult,
+            Output.IWasiResultFutureDropInvoker dropResult,
+            Concurrency.IWaitableEventAwaiter awaiter) =>
+            PlatformWorld.HasHostEventLoop()
+                ? new Output.WasiOutputStreamNonblockingCloser(dropWritable, dropResult)
+                : new Output.WasiOutputStreamCloser(
+                    dropWritable, readResult, dropResult, awaiter, new CanonicalBufferAllocator());
 
         internal static Input.WasiStandardInputReader CreateStandardInput() =>
             new(
@@ -176,12 +187,11 @@ namespace System.Runtime.InteropServices
                     new Output.WasiOutputStreamOpener(
                         new Output.WasiStandardErrorStreamCreateInvoker(),
                         new Output.WasiStandardErrorHandOffInvoker()),
-                    new Output.WasiOutputStreamCloser(
+                    CreateOutputStreamCloser(
                         new Output.WasiStandardErrorWritableDropInvoker(),
                         new Output.WasiStandardErrorResultReadInvoker(),
                         new Output.WasiStandardErrorResultDropInvoker(),
-                        awaiter,
-                        new CanonicalBufferAllocator())),
+                        awaiter)),
                 new Output.WasiStandardErrorWriteInvoker(),
                 awaiter,
                 new Concurrency.WasiThreadYieldInvoker());

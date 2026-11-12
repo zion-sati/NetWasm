@@ -400,6 +400,7 @@
     <Compile Include="Runtime/InteropServices/Output/WasiOutputStreamOpener.cs" />
     <Compile Include="Runtime/InteropServices/Output/IWasiOutputStreamCloser.cs" />
     <Compile Include="Runtime/InteropServices/Output/WasiOutputStreamCloser.cs" />
+    <Compile Include="Runtime/InteropServices/Output/WasiOutputStreamNonblockingCloser.cs" />
     <Compile Include="Runtime/InteropServices/Output/WasiOutputStreamResource.cs" />
     <Compile Include="Runtime/InteropServices/Output/WasiStreamBlockingOutputWriter.cs" />
     <Compile Include="Runtime/InteropServices/ConsoleServices/ConsoleTextWriter.cs" />
