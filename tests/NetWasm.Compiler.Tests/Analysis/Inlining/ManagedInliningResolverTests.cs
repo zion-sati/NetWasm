@@ -873,7 +873,7 @@ public sealed class ManagedInliningResolverTests
                 IsFinal = isFinal,
                 JSImport = import == 1 ? new("leaf", "fixture") : null,
                 WitImport = import == 2 ? new("fixture", "leaf") : null,
-                NativeImport = import == 3 ? new("fixture", "leaf", 0, false, false, false, false) : null,
+                NativeImport = import == 3 ? new("fixture", "leaf", 0, false, false, null) : null,
             };
             Target = new(
                 definition,

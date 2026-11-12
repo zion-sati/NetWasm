@@ -19,7 +19,7 @@ public sealed class DispatcherEliminationTests
         var found = validated.Graph.GetBlockAtOffset(27).Index;
 
         var regions = DraftDescendants(Assert.IsType<StructuredSequenceDraft>(
-            new ReducibleControlFlowStructurer().Structure(validated))).ToArray();
+            new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier()).Structure(validated))).ToArray();
 
         Assert.DoesNotContain(regions, region => region is StructuredDispatcherDraft);
         Assert.Equal(2, regions.OfType<StructuredLoopDraft>().Count(loop => loop.ConditionBlock is not null));
@@ -56,7 +56,7 @@ public sealed class DispatcherEliminationTests
     {
         var body = IrreducibleCycleBody();
 
-        Assert.Null(new ReducibleControlFlowStructurer().Structure(Validate(body)));
+        Assert.Null(new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier()).Structure(Validate(body)));
         Assert.Contains(
             Descendants(StructureWith(body, DispatcherEliminationPolicy.Reducible).Body),
             region => region is StructuredDispatcher);
@@ -77,21 +77,13 @@ public sealed class DispatcherEliminationTests
             ExceptionRegions = [new(CilExceptionRegionKind.Finally, 0, 2, 2, 2, null, null)],
         };
 
-        Assert.Null(new ReducibleControlFlowStructurer().Structure(Validate(body)));
+        Assert.Null(new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier()).Structure(Validate(body)));
     }
 
-    // A conditional branch to the block it falls into has one successor, so
-    // it has no if/else shape.
     [Fact]
-    public void DeclinesABranchToItsOwnFallthrough()
-    {
-        var body = Body(CliValueKind.Void, 1, [],
-            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
-            I(1, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(2)),
-            I(2, CilOperation.Return));
-
-        Assert.Null(new ReducibleControlFlowStructurer().Structure(Validate(body)));
-    }
+    public void RejectsAMissingConditionalBranchClassifier() =>
+        Assert.Equal("conditionalBranches",
+            Assert.Throws<ArgumentNullException>(() => new ReducibleControlFlowStructurer(null!)).ParamName);
 
     [Fact]
     public void DisabledPolicyKeepsTheDispatcher() =>

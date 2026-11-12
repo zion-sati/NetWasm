@@ -15,6 +15,7 @@ namespace System
     // arrays. Rectangular-array construction and typed Get/Set/Address calls
     // are runtime-provided members lowered by the compiler; the managed
     // members below provide the shared System.Array surface.
+    [Serializable]
     public abstract class Array : ICollection, IEnumerable, IList, IStructuralComparable,
         IStructuralEquatable, ICloneable
     {

@@ -10,6 +10,10 @@ public sealed class NativeAbiPlannerTests
         Assembly, "Fixture", "NativeCalls", isValueType: false);
 
     [Theory]
+    [InlineData("i1", CliValueKind.I4)]
+    [InlineData("u1", CliValueKind.I4)]
+    [InlineData("i2", CliValueKind.I4)]
+    [InlineData("u2", CliValueKind.I4)]
     [InlineData("i4", CliValueKind.I4)]
     [InlineData("u4", CliValueKind.I4)]
     [InlineData("i8", CliValueKind.I8)]
@@ -51,10 +55,6 @@ public sealed class NativeAbiPlannerTests
     [Theory]
     [InlineData("bool", CliValueKind.I4)]
     [InlineData("char", CliValueKind.I4)]
-    [InlineData("i1", CliValueKind.I4)]
-    [InlineData("u1", CliValueKind.I4)]
-    [InlineData("i2", CliValueKind.I4)]
-    [InlineData("u2", CliValueKind.I4)]
     [InlineData("object", CliValueKind.ManagedReference)]
     [InlineData("string", CliValueKind.ManagedReference)]
     public void RejectsUnqualifiedPrimitiveAndMarshallingShapes(string name, CliValueKind kind)
@@ -113,7 +113,7 @@ public sealed class NativeAbiPlannerTests
             "Call", true, signature, 0)
         {
             NativeImport = new("fixture", "entry", MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         }, DeclaringType, [], signature);
     }
 

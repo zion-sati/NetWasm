@@ -17,7 +17,7 @@ public sealed class ManagedAssemblyLoaderTests
         var image = CreateNativeImage();
         var images = new RecordingImageReader(image);
         var declaration = new NativeImportDeclaration("selected-library", "selected-entry",
-            MethodImportAttributes.CallingConventionCDecl, false, false, false, false);
+            MethodImportAttributes.CallingConventionCDecl, false, false, null);
         var native = new RecordingNativeReader(declaration);
         var stackKinds = new RecordingStackKindResolver();
         var loader = Assert.IsAssignableFrom<IManagedAssemblyLoader>(

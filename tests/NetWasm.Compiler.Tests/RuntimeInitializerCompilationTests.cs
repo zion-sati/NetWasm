@@ -67,15 +67,15 @@ public sealed partial class RuntimeInitializerCompilationTests
         var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
         Assert.True(printed.ExitCode == 0, printed.StandardError);
 
-        var registerType = RegisterTypeImport().Match(printed.StandardOutput);
-        Assert.True(registerType.Success, "The module imports no register_type.");
+        var registerTypes = RegisterTypesImport().Match(printed.StandardOutput);
+        Assert.True(registerTypes.Success, "The module imports no register_types.");
         var functions = FunctionHeader().Split(printed.StandardOutput).Skip(1)
             .Select(static function => (Name: function[..function.IndexOf(' ')], Body: function))
             .ToArray();
         bool Calls(string body, string callee) =>
             Regex.IsMatch(body, $@"^\s*call {Regex.Escape(callee)}\s*$", RegexOptions.Multiline);
         Assert.Equal(["$runtime.initialize"], functions
-            .Where(function => Calls(function.Body, registerType.Groups[1].Value))
+            .Where(function => Calls(function.Body, registerTypes.Groups[1].Value))
             .Select(static function => function.Name));
         foreach (var export in new[] { "a", "b", "c" })
         {
@@ -90,6 +90,6 @@ public sealed partial class RuntimeInitializerCompilationTests
     [GeneratedRegex(@"\n\s*\(func ")]
     private static partial Regex FunctionHeader();
 
-    [GeneratedRegex(@"\(import ""[^""]+"" ""register_type"" \(func (\$\S+)")]
-    private static partial Regex RegisterTypeImport();
+    [GeneratedRegex(@"\(import ""[^""]+"" ""register_types"" \(func (\$\S+)")]
+    private static partial Regex RegisterTypesImport();
 }

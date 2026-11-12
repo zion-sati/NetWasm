@@ -27,9 +27,7 @@ public sealed class NativeDeclarationValidatorTests
             method.Definition with { NativeImport = import with { EntryPoint = "x\0y" } },
             method.Definition with { NativeImport = import with { IsVarArg = true } },
             method.Definition with { NativeImport = import with { HasMarshalling = true } },
-            method.Definition with { NativeImport = import with { SuppressesGcTransition = true } },
-            method.Definition with { NativeImport = import with { HasCustomCallingConvention = true } },
-            method.Definition with { NativeImport = import with { Attributes = MethodImportAttributes.CallingConventionStdCall } },
+            method.Definition with { NativeImport = import with { UnsupportedCallingConvention = "calling convention 'x' is not supported" } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.SetLastError } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | unchecked((MethodImportAttributes)0x8000) } },
             method.Definition with { NativeImport = import with { Attributes = 0 } },
@@ -38,7 +36,6 @@ public sealed class NativeDeclarationValidatorTests
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.ThrowOnUnmappableCharEnable } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.CharSetAnsi } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.CharSetAuto } },
-            method.Definition with { NativeImport = import with { Attributes = MethodImportAttributes.CallingConventionThisCall } },
             method.Definition with { NativeImport = import with { Attributes = MethodImportAttributes.CallingConventionFastCall } },
             method.Definition with { NativeImport = import with { Attributes = MethodImportAttributes.CallingConventionMask } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.BestFitMappingDisable } },
@@ -62,9 +59,12 @@ public sealed class NativeDeclarationValidatorTests
         Assert.Throws<ArgumentNullException>(() => Validator().Validate(null!));
     }
 
+    // Each convention desktop .NET's 64-bit platforms call as their C convention.
     [Theory]
     [InlineData(MethodImportAttributes.CallingConventionWinApi)]
     [InlineData(MethodImportAttributes.CallingConventionCDecl)]
+    [InlineData(MethodImportAttributes.CallingConventionStdCall)]
+    [InlineData(MethodImportAttributes.CallingConventionThisCall)]
     [InlineData(MethodImportAttributes.CallingConventionCDecl | MethodImportAttributes.ExactSpelling)]
     public void AcceptsOnlyExplicitQualifiedImportSemantics(MethodImportAttributes attributes)
     {
@@ -80,6 +80,21 @@ public sealed class NativeDeclarationValidatorTests
         Assert.Equal(attributes, method.Definition.NativeImport!.Attributes);
     }
 
+    // Desktop .NET fails FastCall, and the reader's reason for an [UnmanagedCallConv] is reported as given.
+    [Theory]
+    [InlineData(MethodImportAttributes.CallingConventionFastCall, null, "calling convention 'CallingConventionFastCall' is not supported")]
+    [InlineData(MethodImportAttributes.CallingConventionWinApi, "calling convention 'S.CallConvSwift' is not supported", "'S.CallConvSwift'")]
+    public void NamesTheConventionItCannotHonour(MethodImportAttributes attributes, string? reason, string named)
+    {
+        var method = Method(CliTypeIdentity.FromStackKind(CliValueKind.Void));
+        var import = method.Definition.NativeImport! with { Attributes = attributes, UnsupportedCallingConvention = reason };
+
+        var error = Assert.Throws<CompilerException>(() => Validator().Validate(
+            method with { Definition = method.Definition with { NativeImport = import } }));
+
+        Assert.Contains(named, error.Diagnostic.Message, StringComparison.Ordinal);
+    }
+
     private static MethodInstanceModel Method(CliTypeIdentity result, params CliTypeIdentity[] parameters)
     {
         var signature = MethodSignatureModel.Create(result, parameters);
@@ -87,7 +102,7 @@ public sealed class NativeDeclarationValidatorTests
             "Call", true, signature, 0)
         {
             NativeImport = new("fixture", "entry", MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         }, DeclaringType, [], signature);
     }
 

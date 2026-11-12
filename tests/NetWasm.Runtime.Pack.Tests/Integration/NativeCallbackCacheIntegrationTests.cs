@@ -221,6 +221,7 @@ public sealed class NativeCallbackCacheIntegrationTests
                 support.Callbacks,
                 support.TemporaryApplicationExports,
                 support.TemporaryRuntimeExports,
+                support.Trampolines,
             },
         }, JsonOptions);
         var layoutPath = Path.Combine(root, "runtime-layout.json");

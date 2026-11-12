@@ -1,0 +1,239 @@
+diff --git a/crates/js-component-bindgen/src/intrinsics/component.rs b/crates/js-component-bindgen/src/intrinsics/component.rs
+index ce10ba4..427c310 100644
+--- a/crates/js-component-bindgen/src/intrinsics/component.rs
++++ b/crates/js-component-bindgen/src/intrinsics/component.rs
+@@ -992,25 +992,45 @@ impl ComponentIntrinsic {
+                             return false;
+                         }}
+ 
++                        // A macrotask runs once the current microtasks have drained, as
++                        // setTimeout(0) does, but without its minimum delay (1 ms in Node.js,
++                        // 4 ms in browsers once timers nest), which a guest that yields often
++                        // would otherwise pay on every yield.
++                        static #nextMacrotask() {{
++                            if (typeof setImmediate === 'function') {{
++                                return new Promise((resolve) => setImmediate(resolve));
++                            }}
++                            if (typeof MessageChannel === 'function') {{
++                                return new Promise((resolve) => {{
++                                    const channel = new MessageChannel();
++                                    channel.port1.onmessage = () => {{ channel.port1.close(); resolve(); }};
++                                    channel.port2.postMessage(null);
++                                }});
++                            }}
++                            return new Promise((resolve) => setTimeout(resolve, 0));
++                        }}
++
+                         async runTickLoop() {{
+                             if (this.#tickLoop !== null) {{ return; }}
+                             this.#tickLoop = 1;
+-                            setTimeout(async () => {{
+-                                let result = this.tick();
+-                                while (result !== {component_async_state_class}.TickResult.DONE) {{
+-                                    if (result === {component_async_state_class}.TickResult.IDLE) {{
+-                                        {check_for_deadlock_fn}();
+-                                    }}
+-                                    // After resuming a task, re-tick as soon as the resumed
+-                                    // slice's microtask continuations have drained (timeout 0)
+-                                    // so queued sibling resumptions aren't charged the idle
+-                                    // polling interval; otherwise poll at the idle cadence.
+-                                    const delay = result === {component_async_state_class}.TickResult.RESUMED ? 0 : 10;
+-                                    await new Promise((resolve) => setTimeout(resolve, delay));
+-                                    result = this.tick();
++                            await {component_async_state_class}.#nextMacrotask();
++                            let result = this.tick();
++                            while (result !== {component_async_state_class}.TickResult.DONE) {{
++                                if (result === {component_async_state_class}.TickResult.IDLE) {{
++                                    {check_for_deadlock_fn}();
+                                 }}
+-                                this.#tickLoop = null;
+-                            }}, 10);
++                                // After resuming a task, re-tick as soon as the resumed
++                                // slice's microtask continuations have drained (the next
++                                // macrotask) so queued sibling resumptions aren't charged the
++                                // idle polling interval; otherwise poll at the idle cadence.
++                                if (result === {component_async_state_class}.TickResult.RESUMED) {{
++                                    await {component_async_state_class}.#nextMacrotask();
++                                }} else {{
++                                    await new Promise((resolve) => setTimeout(resolve, 10));
++                                }}
++                                result = this.tick();
++                            }}
++                            this.#tickLoop = null;
+                         }}
+ 
+                         tick() {{
+diff --git a/crates/js-component-bindgen/src/intrinsics/mod.rs b/crates/js-component-bindgen/src/intrinsics/mod.rs
+index 44f3a5e..862353a 100644
+--- a/crates/js-component-bindgen/src/intrinsics/mod.rs
++++ b/crates/js-component-bindgen/src/intrinsics/mod.rs
+@@ -409,6 +409,7 @@ impl Intrinsic {
+                         const enumerable = typeof value !== 'string';
+                         super(enumerable ? `${String(value)} (see error.payload)` : value);
+                         Object.defineProperty(this, 'payload', { value, enumerable });
++                        componentErrorInstances.add(this);
+                     }
+                 }
+             ",
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs b/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs
+index 23ac34b..00f199f 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs
+@@ -780,6 +780,11 @@ impl AsyncFutureIntrinsic {
+                             if (f) {{ f(result); }}
+                         }}
+ 
++                        whenPendingEvent() {{
++                            if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
++                            return this.#waitable.whenPendingEvent();
++                        }}
++
+                         setPendingEvent(fn) {{
+                             if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
+                             {debug_log_fn}('[{future_end_class}#setPendingEvent()]', {{
+@@ -1158,13 +1163,7 @@ impl AsyncFutureIntrinsic {
+                                       this.setCopyState({future_end_class}.CopyState.ASYNC_COPYING);
+ 
+                                        // Wait for the write to complete
+-                                       await new Promise((resolve) => {{
+-                                           let waitInterval = setInterval(() => {{
+-                                               if (!this.hasPendingEvent()) {{ return; }}
+-                                               clearInterval(waitInterval);
+-                                               resolve();
+-                                           }});
+-                                       }});
++                                       await this.whenPendingEvent();
+ 
+                                        if (!this.hasPendingEvent()) {{
+                                            throw new Error("missing pending event after blocked future read");
+@@ -1218,13 +1217,7 @@ impl AsyncFutureIntrinsic {
+                                       this.setCopyState({future_end_class}.CopyState.ASYNC_COPYING);
+ 
+                                        // Wait for the write to complete
+-                                       await new Promise((resolve) => {{
+-                                           let waitInterval = setInterval(() => {{
+-                                               if (!this.hasPendingEvent()) {{ return; }}
+-                                               clearInterval(waitInterval);
+-                                               resolve();
+-                                           }});
+-                                       }});
++                                       await this.whenPendingEvent();
+ 
+                                        if (!this.hasPendingEvent()) {{
+                                            throw new Error("missing pending event after blocked future write");
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs b/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
+index 06890ab..618f42e 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
+@@ -669,6 +669,11 @@ impl AsyncStreamIntrinsic {
+                             }}
+                         }}
+ 
++                        whenPendingEvent() {{
++                            if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
++                            return this.#waitable.whenPendingEvent();
++                        }}
++
+                         setPendingEvent(fn) {{
+                             if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
+                             {debug_log_fn}('[{stream_end_class}#setPendingEvent()]', {{
+@@ -1403,13 +1408,7 @@ impl AsyncStreamIntrinsic {
+                                     // If the write was blocked, the pending event produced by the
+                                     // read side represents the completed copy.
+ 
+-                                    await new Promise((resolve) => {{
+-                                        let waitInterval = setInterval(async () => {{
+-                                            if (!this.hasPendingEvent()) {{ return; }}
+-                                            clearInterval(waitInterval);
+-                                            resolve();
+-                                        }});
+-                                    }});
++                                    await this.whenPendingEvent();
+ 
+                                     if (!this.hasPendingEvent()) {{
+                                         throw new Error("missing pending event after blocked stream write");
+@@ -1531,13 +1530,7 @@ impl AsyncStreamIntrinsic {
+                                     // If the read was blocked, the pending event produced by the
+                                     // write side represents the completed copy.
+ 
+-                                    await new Promise((resolve) => {{
+-                                        let waitInterval = setInterval(() => {{
+-                                            if (!this.hasPendingEvent()) {{ return; }}
+-                                            clearInterval(waitInterval);
+-                                            resolve();
+-                                        }});
+-                                    }});
++                                    await this.whenPendingEvent();
+ 
+                                     if (!this.hasPendingEvent()) {{
+                                         throw new Error("missing pending event after blocked stream read");
+@@ -2775,7 +2768,11 @@ impl AsyncStreamIntrinsic {
+                               }}
+                               drainPendingValues();
+ 
+-                              while (count > 0 && !pendingValues.done) {{
++                              // Values the host already supplied complete the read at once. Waiting on
++                              // an asynchronous source for more would hold them until the peer sends
++                              // again, and a cancelled read would strand them here.
++                              while (count > 0 && !pendingValues.done
++                                  && (values.length === 0 || pendingValues.sourceIsSync)) {{
+                                   const appended = await pendingValues.readSource();
+                                   if (readEnd.hasPendingEvent()) {{ return bail(); }}
+                                   if (!hasPendingReadBuffer()) {{ return bail(); }}
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs b/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs
+index 6316136..fe7caeb 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs
+@@ -381,12 +381,25 @@ impl WaitableIntrinsic {
+                             return this.#pendingEventFn !== null;
+                         }}
+ 
++                        #pendingEventWaiters = [];
++
++                        // Resolves once an event is pending. A host copy that the other end has yet to
++                        // complete waits on it: polling with a timer would wait for that timer, and a
++                        // guest the scheduler resumes on the next macrotask runs before it fires.
++                        whenPendingEvent() {{
++                            if (this.#pendingEventFn !== null) {{ return Promise.resolve(); }}
++                            return new Promise((resolve) => this.#pendingEventWaiters.push(resolve));
++                        }}
++
+                         setPendingEvent(fn) {{
+                             {debug_log_fn}('[{waitable_class}#setPendingEvent()] args', {{
+                                 waitable: this,
+                                 inSet: this.#waitableSet,
+                             }});
+                             this.#pendingEventFn = fn;
++                            const waiters = this.#pendingEventWaiters;
++                            this.#pendingEventWaiters = [];
++                            for (const resolve of waiters) {{ resolve(); }}
+                         }}
+ 
+                         getPendingEvent() {{
+diff --git a/crates/js-component-bindgen/src/transpile_bindgen.rs b/crates/js-component-bindgen/src/transpile_bindgen.rs
+index 5a2dd91..4f66a45 100644
+--- a/crates/js-component-bindgen/src/transpile_bindgen.rs
++++ b/crates/js-component-bindgen/src/transpile_bindgen.rs
+@@ -955,11 +955,22 @@ impl JsBindgen<'_> {
+             "".into()
+         };
+ 
++        // A declared WIT error reaches the host as a thrown ComponentError. Hosts tell one from
++        // any other exception by module-private identity rather than by its properties.
++        let maybe_component_error_predicate =
++            if self.all_intrinsics.contains(&Intrinsic::ComponentError) {
++                uwriteln!(output, "\nconst componentErrorInstances = new WeakSet();");
++                "isComponentError: value => componentErrorInstances.has(value),"
++            } else {
++                ""
++            };
++
+         uwriteln!(
+             output,
+             r#"
+               export const _util = {{
+                   {maybe_ext_future_class}
++                  {maybe_component_error_predicate}
+               }}
+             "#,
+         );

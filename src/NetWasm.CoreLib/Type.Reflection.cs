@@ -9,16 +9,93 @@ namespace System;
 public partial class Type : IReflect
 {
     public virtual Guid GUID => throw UnsupportedTypeOwnerMetadata();
-    public virtual Assembly Assembly => throw UnsupportedTypeOwnerMetadata();
-    public new virtual Module Module => throw UnsupportedTypeOwnerMetadata();
-    public virtual string? AssemblyQualifiedName => throw UnsupportedTypeOwnerMetadata();
-    public override Type? DeclaringType => throw UnsupportedTypeOwnerMetadata();
+    // The placeholder for the type's assembly, from the type table (see RuntimeAssembly).
+    public virtual Assembly Assembly => RuntimeAssembly.FromIndex(RuntimeTypeTable.Assembly(SemanticTypeId))!;
+    public new virtual Module Module => Assembly.ManifestModule;
+    // NetWasm: the full name with its assembly's name, both from the type-symbols sidecar (issue 225).
+    public virtual string? AssemblyQualifiedName =>
+        FullName is { } fullName ? fullName + ", " + Assembly.FullName : null;
+    // The enclosing type of a nested type, or a generic type parameter's owner, from the type table,
+    // whose slot holds the element for an array, pointer or by-reference type instead.
+    public override Type? DeclaringType
+    {
+        get
+        {
+            if (HasElementType)
+            {
+                return null;
+            }
+            int typeId = RuntimeTypeTable.DeclaringType(SemanticTypeId);
+            return typeId == 0 ? null : GetTypeFromSemanticId(typeId);
+        }
+    }
     public override Type? ReflectedType => DeclaringType;
+    // A program's types are never unloaded.
+    public override bool IsCollectible => false;
     public bool IsNested => DeclaringType != null;
     public override MemberTypes MemberType => (IsPublic || IsNotPublic) ? MemberTypes.TypeInfo : MemberTypes.NestedType;
     public virtual Runtime.InteropServices.StructLayoutAttribute? StructLayoutAttribute => throw UnsupportedTypeOwnerMetadata();
-    public virtual bool IsSerializable => throw UnsupportedTypeOwnerMetadata();
-    public bool IsVisible => throw UnsupportedTypeOwnerMetadata();
+    public virtual bool IsSerializable
+    {
+        get
+        {
+            if ((GetAttributeFlagsImpl() & TypeAttributes.Serializable) != 0)
+                return true;
+
+            Type? underlyingType = UnderlyingSystemType;
+            do
+            {
+                // In all sane cases we only need to compare the direct level base type with
+                // System.Enum and System.MulticastDelegate. However, a generic parameter can
+                // have a base type constraint that is Delegate or even a real delegate type.
+                // Let's maintain compatibility and return true for them.
+                if (underlyingType == typeof(Delegate) || underlyingType == typeof(Enum))
+                    return true;
+
+                underlyingType = underlyingType.BaseType;
+            }
+            while (underlyingType != null);
+
+            return false;
+        }
+    }
+
+    public bool IsVisible
+    {
+        get
+        {
+            if (IsGenericParameter)
+                return true;
+
+            if (HasElementType)
+                return GetElementType()!.IsVisible;
+
+            Type type = this;
+            while (type.IsNested)
+            {
+                if (!type.IsNestedPublic)
+                    return false;
+
+                // this should be null for non-nested types.
+                type = type.DeclaringType!;
+            }
+
+            // Now "type" should be a top level type
+            if (!type.IsPublic)
+                return false;
+
+            if (IsGenericType && !IsGenericTypeDefinition)
+            {
+                foreach (Type t in GetGenericArguments())
+                {
+                    if (!t.IsVisible)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+    }
     public static Binder DefaultBinder =>
         throw new PlatformNotSupportedException("Default runtime reflection binding is not supported on NetWasm.");
 
@@ -27,26 +104,34 @@ public partial class Type : IReflect
 
     public virtual Type GetGenericTypeDefinition()
     {
-        if (!IsGenericType) throw new InvalidOperationException("This type is not generic.");
+        if (!IsGenericType) throw new InvalidOperationException("This operation is only valid on generic types.");
         if (IsGenericTypeDefinition) return this;
-        throw new PlatformNotSupportedException("Generic definition discovery is not supported on NetWasm.");
+        return GetTypeFromSemanticId(RuntimeTypeTable.GenericDefinition(SemanticTypeId));
     }
 
+    // A generic type parameter's place among its owner's parameters, which the type table lists.
     public virtual int GenericParameterPosition
     {
         get
         {
             if (!IsGenericParameter) throw new InvalidOperationException("This type is not a generic parameter.");
-            throw new PlatformNotSupportedException("Generic parameter position metadata is not available on NetWasm.");
+            if (IsGenericMethodParameter || DeclaringType is not { } owner)
+            {
+                throw new PlatformNotSupportedException("Generic method parameter metadata is not available on NetWasm.");
+            }
+            return Array.IndexOf(owner.GetGenericArguments(), this);
         }
     }
 
+    // A generic parameter's variance and special constraints, which the type table keeps where an
+    // array keeps its rank.
     public virtual GenericParameterAttributes GenericParameterAttributes
     {
         get
         {
             if (!IsGenericParameter) throw new InvalidOperationException("This type is not a generic parameter.");
-            throw new PlatformNotSupportedException("Generic parameter attribute metadata is not available on NetWasm.");
+            return (GenericParameterAttributes)((RuntimeTypeTable.Flags(SemanticTypeId) >> RuntimeTypeFactsFlags.ArrayRankShift) &
+                RuntimeTypeFactsFlags.ArrayRankMask);
         }
     }
 
@@ -67,8 +152,8 @@ public partial class Type : IReflect
     }
 
     public TypeAttributes Attributes => GetAttributeFlagsImpl();
-    protected virtual TypeAttributes GetAttributeFlagsImpl() =>
-        throw new PlatformNotSupportedException("Runtime type attribute metadata is not available on NetWasm.");
+    // NetWasm: the type's TypeAttributes from the type table.
+    protected virtual TypeAttributes GetAttributeFlagsImpl() => (TypeAttributes)RuntimeTypeTable.Attributes(SemanticTypeId);
 
     public bool IsImport => (GetAttributeFlagsImpl() & TypeAttributes.Import) != 0;
     public bool IsSpecialName => (GetAttributeFlagsImpl() & TypeAttributes.SpecialName) != 0;
@@ -198,13 +283,56 @@ public partial class Type : IReflect
     }
 
     public Type? GetInterface(string name) => GetInterface(name, false);
+    // NetWasm: matched by the Name, or FullName where the name has a namespace, that the type-symbols
+    // sidecar supplies; unavailable without the names.
     public virtual Type? GetInterface(string name, bool ignoreCase)
     {
         ArgumentNullException.ThrowIfNull(name);
-        throw new PlatformNotSupportedException("Interface discovery is not supported on NetWasm.");
+        if (!TypeSymbols.Available) throw TypeSymbols.NamesUnavailable();
+        StringComparison comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        bool qualified = name.Contains('.');
+        Type? match = null;
+        foreach (Type candidate in GetInterfaces())
+        {
+            if (string.Equals(qualified ? candidate.FullName : candidate.Name, name, comparison))
+            {
+                if (match is not null) throw new AmbiguousMatchException();
+                match = candidate;
+            }
+        }
+        return match;
     }
-    public virtual Type[] GetInterfaces() =>
-        throw new PlatformNotSupportedException("Interface discovery is not supported on NetWasm.");
+
+    // NetWasm: the interfaces the program uses that the type implements, from the type table: its own
+    // and its base types', in type ID order; one nothing in the program uses is not there.
+    public virtual Type[] GetInterfaces()
+    {
+        int[] ids = new int[8];
+        int count = 0;
+        for (Type? type = this; type is not null; type = type.BaseType)
+        {
+            foreach (int id in RuntimeTypeTable.Interfaces(type.SemanticTypeId))
+            {
+                bool seen = false;
+                for (int index = 0; index < count && !seen; index++)
+                {
+                    seen = ids[index] == id;
+                }
+                if (seen)
+                {
+                    continue;
+                }
+                if (count == ids.Length)
+                {
+                    int[] grown = new int[count * 2];
+                    ids.CopyTo(grown, 0);
+                    ids = grown;
+                }
+                ids[count++] = id;
+            }
+        }
+        return TypesOf(ids, count);
+    }
     public virtual InterfaceMapping GetInterfaceMap(Type interfaceType)
     {
         ArgumentNullException.ThrowIfNull(interfaceType);
@@ -526,11 +654,49 @@ public partial class Type : IReflect
 
     public Type? GetNestedType(string name) => GetNestedType(name, DefaultLookup);
 
-    public virtual Type? GetNestedType(string name, BindingFlags bindingAttr) => throw UnsupportedMemberLookup();
+    // NetWasm: matched by the Name the type-symbols sidecar supplies; unavailable without the names.
+    public virtual Type? GetNestedType(string name, BindingFlags bindingAttr)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        if (!TypeSymbols.Available) throw TypeSymbols.NamesUnavailable();
+        StringComparison comparison = (bindingAttr & BindingFlags.IgnoreCase) != 0 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        Type? match = null;
+        foreach (Type nested in GetNestedTypes(bindingAttr))
+        {
+            if (string.Equals(nested.Name, name, comparison))
+            {
+                if (match is not null) throw new AmbiguousMatchException();
+                match = nested;
+            }
+        }
+        return match;
+    }
 
     public Type[] GetNestedTypes() => GetNestedTypes(DefaultLookup);
 
-    public virtual Type[] GetNestedTypes(BindingFlags bindingAttr) => throw UnsupportedMemberLookup();
+    // NetWasm: the nested type definitions the program has whose declaring type is this type's
+    // definition, from the type table, in type ID order; one nothing in the program uses is not there.
+    public virtual Type[] GetNestedTypes(BindingFlags bindingAttr)
+    {
+        bool publicTypes = (bindingAttr & BindingFlags.Public) != 0;
+        bool nonPublicTypes = (bindingAttr & BindingFlags.NonPublic) != 0;
+        if (HasElementType || IsGenericParameter || !publicTypes && !nonPublicTypes)
+        {
+            return [];
+        }
+        int owner = IsGenericType && !IsGenericTypeDefinition ? GetGenericTypeDefinition().SemanticTypeId : SemanticTypeId;
+        int[] ids = new int[RuntimeTypeTable.Capacity()];
+        int count = 0;
+        for (int id = 1; id < ids.Length; id++)
+        {
+            if ((RuntimeTypeTable.Flags(id) & RuntimeTypeFactsFlags.TypeDefinition) != 0 && RuntimeTypeTable.DeclaringType(id) == owner &&
+                (GetTypeFromSemanticId(id).IsNestedPublic ? publicTypes : nonPublicTypes))
+            {
+                ids[count++] = id;
+            }
+        }
+        return TypesOf(ids, count);
+    }
 
     public PropertyInfo? GetProperty(string name) => GetProperty(name, DefaultLookup);
 
@@ -582,7 +748,7 @@ public partial class Type : IReflect
     public virtual object? InvokeMember(string name, BindingFlags invokeAttr, Binder? binder, object? target, object?[]? args, ParameterModifier[]? modifiers, CultureInfo? culture, string[]? namedParameters) =>
         throw UnsupportedMemberLookup();
 
-    private const BindingFlags DefaultLookup = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public;
+    internal const BindingFlags DefaultLookup = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public;
 
     private static PlatformNotSupportedException UnsupportedMemberLookup() => new(
         "Runtime member lookup is unavailable because reflection metadata is not deployed.");

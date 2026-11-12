@@ -26,7 +26,8 @@ internal sealed record CompilerNativeCallbackSupport(
     string Sha256,
     ImmutableArray<WasmNativeCallbackDescriptor> Callbacks,
     ImmutableArray<string> TemporaryApplicationExports,
-    ImmutableArray<string> TemporaryRuntimeExports);
+    ImmutableArray<string> TemporaryRuntimeExports,
+    ImmutableArray<string> Trampolines);
 
 internal sealed record CompilerMetadataSidecar(
     int SchemaVersion,

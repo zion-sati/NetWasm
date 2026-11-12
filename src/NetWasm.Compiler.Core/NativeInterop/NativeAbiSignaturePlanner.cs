@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.Collections.Immutable;
 
@@ -5,10 +6,11 @@ namespace NetWasm.Compiler.Core.NativeInterop;
 
 public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggregates) : INativeAbiSignaturePlanner
 {
+    // The signature headers of an unmanaged function pointer the C ABI calls: C, StdCall and ThisCall
+    // (0x01 to 0x03), and Unmanaged, whose return type's modifiers name its CallConv types.
     private const byte CdeclFunctionPointerHeader = 0x01;
+    private const byte ThiscallFunctionPointerHeader = 0x03;
     private const byte UnmanagedFunctionPointerHeader = 0x09;
-    private const string CallConvCdecl =
-        "System.Runtime.CompilerServices.CallConvCdecl";
 
     private readonly INativeAggregateAbiPlanner _aggregates =
         aggregates ?? throw new ArgumentNullException(nameof(aggregates));
@@ -61,7 +63,7 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
 
         if (!isReturn && kind == NativeAbiSignatureKind.Import &&
             type.Shape == CliTypeShape.ManagedByReference &&
-            type.ElementType!.Shape == CliTypeShape.Primitive && IsScalar(type.ElementType))
+            type.ElementType!.Shape == CliTypeShape.Primitive && NativeAbiScalars.IsBlittable(type.ElementType))
             return new(NativeAbiValueKind.Scalar, type, CliTypeIdentity.FromStackKind(CliValueKind.NativeInt));
 
         if (!isReturn && kind == NativeAbiSignatureKind.Import &&
@@ -75,7 +77,7 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
         }
 
         if (type.Shape == CliTypeShape.Primitive &&
-            (IsScalar(type) || isReturn && type.StackKind == CliValueKind.Void))
+            (NativeAbiScalars.IsBlittable(type) || isReturn && type.StackKind == CliValueKind.Void))
             return new(type.StackKind == CliValueKind.Void ? NativeAbiValueKind.Void : NativeAbiValueKind.Scalar,
                 type, type.StackKind == CliValueKind.Void ? null : type);
 
@@ -88,11 +90,6 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
             methodName));
     }
 
-    private static bool IsScalar(CliTypeIdentity type) =>
-        type.CanonicalName is "primitive:i4" or "primitive:u4" or
-            "primitive:i8" or "primitive:u8" or "primitive:f4" or "primitive:f8" or
-            "primitive:nativeint" or "primitive:nativeuint";
-
     private void ValidateFunctionPointer(
         CliTypeIdentity type,
         string methodName)
@@ -101,24 +98,25 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
         if (type.ContainsGenericParameters || pointer.GenericArity != 0 ||
             pointer.RequiredParameterCount !=
             pointer.Signature.ParameterSignatureTypes.Length ||
-            pointer.Header is not (CdeclFunctionPointerHeader or
+            pointer.Header is not (>= CdeclFunctionPointerHeader and <= ThiscallFunctionPointerHeader or
                 UnmanagedFunctionPointerHeader))
         {
             throw UnsupportedFunctionPointer(methodName);
         }
 
+        // The C ABI reads no modifier; an optional one names a CallConv type.
         var returnType = pointer.Signature.ReturnSignatureType;
-        var conventionCount = 0;
+        var conventions = new List<string?>();
         while (returnType.Shape == CliTypeShape.Modified)
         {
-            if (returnType.CustomModifier!.FullName != CallConvCdecl ||
-                ++conventionCount != 1)
+            if (!returnType.IsRequiredModifier)
             {
-                throw UnsupportedFunctionPointer(methodName);
+                conventions.Add(returnType.CustomModifier!.FullName);
             }
             returnType = returnType.ElementType!;
         }
-        if (pointer.Header == CdeclFunctionPointerHeader && conventionCount != 0)
+        if (pointer.Header == UnmanagedFunctionPointerHeader &&
+            UnmanagedCallingConventions.Unsupported(conventions) is not null)
         {
             throw UnsupportedFunctionPointer(methodName);
         }
@@ -134,6 +132,6 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
     private static CompilerException UnsupportedFunctionPointer(string methodName) =>
         new(new(
             DiagnosticCode.NativeInterop,
-            "Native function-pointer parameters require a closed, fixed-arity Cdecl scalar callback signature.",
+            "Native function-pointer parameters require a closed, fixed-arity scalar callback signature the C ABI calls: unmanaged, Cdecl, Stdcall or Thiscall.",
             methodName));
 }

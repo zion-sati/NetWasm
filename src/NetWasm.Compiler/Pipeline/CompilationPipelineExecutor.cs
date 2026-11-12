@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using NetWasm.Compiler.Diagnostics;
-using NetWasm.Compiler.ExceptionTypes;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.StackTraces;
@@ -30,8 +30,7 @@ internal sealed class CompilationPipelineExecutor(
     IHostInteropManifestBuilder interopManifests,
     ICompilationComplexityStage complexity,
     ICompilerProgressReporter progress,
-    ICompilationDiagnosticBindingStage diagnosticBinding,
-    ICompilationStackTraceArtifactBinder stackTraceArtifacts,
+    ICompilationSymbolSidecarBinder symbolSidecars,
     ISymbolFormatterFactory symbols,
     ICompilationMetricsRequestFactory metricsRequests,
     ICompilationInputDetector inputDetector,
@@ -83,10 +82,8 @@ internal sealed class CompilationPipelineExecutor(
         throw new ArgumentNullException(nameof(complexity));
     private readonly ICompilerProgressReporter _progress = progress ??
         throw new ArgumentNullException(nameof(progress));
-    private readonly ICompilationDiagnosticBindingStage _diagnosticBinding = diagnosticBinding ??
-        throw new ArgumentNullException(nameof(diagnosticBinding));
-    private readonly ICompilationStackTraceArtifactBinder _stackTraceArtifacts =
-        stackTraceArtifacts ?? throw new ArgumentNullException(nameof(stackTraceArtifacts));
+    private readonly ICompilationSymbolSidecarBinder _symbolSidecars =
+        symbolSidecars ?? throw new ArgumentNullException(nameof(symbolSidecars));
     private readonly ISymbolFormatterFactory _symbols = symbols ??
         throw new ArgumentNullException(nameof(symbols));
     private readonly ICompilationMetricsRequestFactory _metricsRequests = metricsRequests ??
@@ -104,13 +101,10 @@ internal sealed class CompilationPipelineExecutor(
     private ModuleCompilationResult? Serve(CompilerOptions options, MetadataCompilationSnapshot metadata,
         CompilationInputObservation inputs, EarlyCutoffEmission served)
     {
-        if (served is not { Module: { } patched, Kept: { } kept, Facts: { } facts }) return null;
-        DiagnosticArtifactBundle? diagnostics = null;
-        if (options.EmitExceptionTypeMap)
-        {
-            if (facts.ExceptionTypes is not { } exceptionTypes) return null;
-            diagnostics = _diagnosticBinding.Bind(patched, exceptionTypes, metadata, options);
-        }
+        // The patched module names its types and methods as the last compile did, so the last compile's
+        // sidecars and build ID still describe it.
+        if (served is not { Module: { } patched, Kept: { } kept, Facts: { TypeSymbols: { } typeSymbols } facts })
+            return null;
         _keptCompiles.Commit(inputs.Directory, kept with { Module = patched });
         _inputRecorder.Record(inputs with { Report = inputs.Report + served.Account });
         _emissionArtifacts.WriteEmission(options, patched);
@@ -120,8 +114,11 @@ internal sealed class CompilationPipelineExecutor(
             RuntimeFeatures = facts.RuntimeFeatures,
             EntryPointToken = facts.EntryPointToken,
             SynchronousEntry = facts.SynchronousEntry,
-            DiagnosticArtifacts = diagnostics,
-            StackTraceSymbols = served.StackTraceSymbols,
+            TypeSymbols = new(SymbolSidecarKind.Type, typeSymbols),
+            // A sidecar is never empty (its header alone is 80 bytes); kept facts may read a missing one as empty.
+            MethodSymbols = facts.MethodSymbols is { Length: > 0 } methodSymbols
+                ? new(SymbolSidecarKind.Method, methodSymbols)
+                : null,
             PatchedLastCompile = true,
         };
     }
@@ -292,7 +289,7 @@ internal sealed class CompilationPipelineExecutor(
 
                 stage = "result projection and binding";
                 metrics?.Stages.Start(CompilerMetricStage.ResultProjectionAndBinding);
-                var result = _stackTraceArtifacts.Bind(
+                var result = _symbolSidecars.Bind(
                     new CompilationResult(
                         emitted.Result.Module,
                         mappedProgram,
@@ -305,11 +302,9 @@ internal sealed class CompilationPipelineExecutor(
                         RuntimeFeatures = emitted.Result.RuntimeFeatures,
                         NativeCallbackSupport = emitted.Result.NativeCallbackSupport,
                     },
+                    emitted.TypeSymbols,
+                    emitted.Result.BuildId,
                     emitted.Result.StackTraceSymbols,
-                    options);
-                result = _diagnosticBinding.Bind(
-                    result,
-                    metadata,
                     options);
                 metrics?.Counters.Count("functionImports", result.FunctionImports.Length);
                 metrics?.Counters.Count("runtimeFeatures", result.RuntimeFeatures.Length);

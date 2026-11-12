@@ -108,7 +108,8 @@ internal static class RuntimePackTestData
                     : RuntimeNativeValueType.I32],
             RuntimeNativeValueType.I32)],
         ["__netwasm_application_callback_0"],
-        ["__netwasm_callback_address_0"]);
+        ["__netwasm_callback_address_0"],
+        []);
 
     public static RuntimeMemoryLayout Layout(string target = "wasm32") => target == "wasm64"
         ? new(65_552, 179_904, 262_144, 8_589_934_592)

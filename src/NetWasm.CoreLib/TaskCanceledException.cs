@@ -7,6 +7,7 @@ using System.Threading;
 
 namespace System.Threading.Tasks
 {
+    [Serializable]
     public class TaskCanceledException : OperationCanceledException
     {
         private readonly Task? _task;

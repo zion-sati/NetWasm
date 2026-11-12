@@ -177,12 +177,13 @@ Wasm component is the program.
   do not enter the artifact.
 - **A smaller platform contract.** NetWasm supports portable APIs instead of
   reproducing every desktop runtime assumption.
-- **No broad runtime reflection.** Runtime type names, dynamic assembly loading
-  and the `dynamic` keyword are outside the profile.
+- **No broad runtime reflection.** A program carries no type names (they read
+  `type#<id>` unless the build ships them in a sidecar), and dynamic assembly
+  loading and the `dynamic` keyword are outside the profile.
 - **Generated boundaries.** JSON, DI, WIT and native interop use known contracts
   rather than runtime discovery.
-- **Optional data and diagnostics.** Timezone data, rich stack traces and other
-  deployment data are included only when selected.
+- **Optional data and diagnostics.** Timezone data, type names, rich stack
+  traces and other deployment data are included only when selected.
 - **One collector.** Only the chosen allocation strategy is linked.
 
 This is a new .NET platform, not desktop .NET squeezed into a Wasm sandbox.
@@ -286,7 +287,11 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.12.2:** `dotnet run` and NetWasm's other Node.js hosts run programs
+**New in NetWasm 0.13.0:** programs no longer carry type names, which read `type#<id>` unless a
+file beside the program supplies them; calls through unmanaged function pointers; async programs
+about half the size and the program that prints 42 23% smaller; and console output that
+JavaScript hosts no longer lose. [Release notes](docs/releases/0.13.0.md). NetWasm 0.12.2 lets
+`dotnet run` and NetWasm's other Node.js hosts run programs
 that use sockets, and a call into a program costs the same however much it keeps alive:
 calls no longer collect garbage on their own, and finalizers, weak references, GC handles
 and pending asynchronous work are tracked in constant time.

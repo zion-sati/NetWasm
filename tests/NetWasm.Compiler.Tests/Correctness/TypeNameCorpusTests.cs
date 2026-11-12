@@ -1,27 +1,60 @@
-using System.Linq;
 using NetWasm.Compiler.ComponentModel;
+using NetWasm.Compiler.Core;
+using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-// A program that reads type names gets the name facts it reads at every
-// optimization level, however far inlining folds the readers into it, including
-// a name read in a catch block. Each case returns a hash of the names it read.
-public sealed class TypeNameCorpusTests(CorrectnessTestRunner runner)
+// A program that reads type names gets the names .NET forms at every optimization level, however
+// far inlining folds the readers into it, including a name read in a catch block. Names come from
+// the type-symbols sidecar, which a NetWasmTypeNames program in the platform world reads at startup
+// (issue 225). Each case hashes the names it read; Matches sets a bit for each case whose hash is the
+// one desktop .NET computes (pinned in the source, from running it on .NET).
+public sealed class TypeNameCorpusTests
 {
     [Theory]
-    [InlineData(FinalWasmOptimization.Oz)]
-    [InlineData(FinalWasmOptimization.O3)]
-    public void TypeNamesMatchDesktopAtEveryOptimizationLevel(FinalWasmOptimization optimization) =>
-        runner.Run(new(
-            "TypeNameCorpus",
-            "NetWasm.Correctness.TypeNames",
-            Source,
-            [.. Enumerable.Range(0, 9)])
+    [InlineData(FinalWasmOptimization.Oz, WasmTarget.Wasm32)]
+    [InlineData(FinalWasmOptimization.O3, WasmTarget.Wasm32)]
+    [InlineData(FinalWasmOptimization.O3, WasmTarget.Wasm64)]
+    public void TypeNamesMatchDesktopAtEveryOptimizationLevel(FinalWasmOptimization optimization, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+
+        Assert.Equal(0x1ff, executor.Execute(new CompilationScenario(
+            "TypeNameCorpus", Source, "NetWasm.Correctness.TypeNames.EntryPoint", true, target, 0, [])
         {
+            EntryMethodName = "Matches",
+            Exports = [new("run", "NetWasm.Correctness.TypeNames.EntryPoint", "Matches")],
+            WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            EmitTypeNames = true,
             Optimization = optimization,
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+        }));
+    }
+
+    // Without the sidecar (a host that does not mount it, or a program built without names) every
+    // read still succeeds: a name, full name or display name reads type#<id>, a namespace is null.
+    [Theory]
+    [InlineData(true, FinalWasmOptimization.Oz, WasmTarget.Wasm32)]
+    [InlineData(false, FinalWasmOptimization.O3, WasmTarget.Wasm32)]
+    [InlineData(true, FinalWasmOptimization.O3, WasmTarget.Wasm64)]
+    public void TypeNamesReadTypeIdsWithoutTheSidecar(bool emitTypeNames, FinalWasmOptimization optimization, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+
+        Assert.Equal(0x1ff, executor.Execute(new CompilationScenario(
+            "TypeNameFallbacks", Source, "NetWasm.Correctness.TypeNames.EntryPoint", true, target, 0, [])
+        {
+            EntryMethodName = "Fallbacks",
+            Exports = [new("run", "NetWasm.Correctness.TypeNames.EntryPoint", "Fallbacks")],
+            WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform/platform@1.0.0",
+            EmitTypeNames = emitTypeNames,
+            LoadStackTraceSymbols = false,
+            Optimization = optimization,
+        }));
+    }
 
     internal const string Source = """
             using System;
@@ -48,7 +81,54 @@ public sealed class TypeNameCorpusTests(CorrectnessTestRunner runner)
                     _ => -1,
                 };
 
-                public static int Trace() => 0;
+                // Each case's hash on desktop .NET.
+                private static readonly int[] Desktop =
+                    [941914538, 25241197, -1873454232, 1474980625, -645004562, 171303406, -209231920, 2122584053, -393104417];
+
+                // Each case whose every name reads type#<id> and whose namespaces are null sets its bit.
+                public static int Fallbacks(int unused)
+                {
+                    var reads = new Func<string?[]>[]
+                    {
+                        () => Array.ConvertAll(new object[] { "s", new int[1], new Version(1, 2), new FormatException() }, value => value.GetType().Name),
+                        () => [typeof(Outer.Inner).Name, typeof(Outer.Inner).FullName],
+                        () => [typeof(List<int>).Name, typeof(Dictionary<string, int>).Name],
+                        () => [new Point().GetType().Name, typeof(Point[]).Name, typeof(int[,]).Name],
+                        () => [typeof(KeyValuePair<int, string>).Name],
+                        () => [Thrown()],
+                        () => [typeof(Outer).ToString()],
+                        () => [typeof(Point).Name, typeof(Point).FullName],
+                        () => Array.ConvertAll(typeof(Dictionary<char, Point>).GetGenericArguments(), argument => argument.Name),
+                    };
+                    var fallbacks = 0;
+                    for (var index = 0; index < reads.Length; index++)
+                    {
+                        var all = true;
+                        foreach (var name in reads[index]()) all &= IsTypeId(name);
+                        if (all && typeof(Outer.Inner).Namespace is null && typeof(Point).Namespace is null) fallbacks |= 1 << index;
+                    }
+                    return fallbacks;
+                }
+
+                private static bool IsTypeId(string? name)
+                {
+                    if (name is null || !name.StartsWith("type#", StringComparison.Ordinal) || name.Length == 5) return false;
+                    for (var index = 5; index < name.Length; index++)
+                    {
+                        if (!char.IsAsciiDigit(name[index])) return false;
+                    }
+                    return true;
+                }
+
+                public static int Matches(int unused)
+                {
+                    var matches = 0;
+                    for (var input = 0; input < Desktop.Length; input++)
+                    {
+                        if (Run(input) == Desktop[input]) matches |= 1 << input;
+                    }
+                    return matches;
+                }
 
                 private static string Names(object[] values)
                 {

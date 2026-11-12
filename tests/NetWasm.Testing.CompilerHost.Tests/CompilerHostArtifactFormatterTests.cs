@@ -21,7 +21,7 @@ public sealed class CompilerHostArtifactFormatterTests
             RuntimeLayoutPath = "layout.json",
             InteropManifestPath = "interop.json",
             EmitStackTrace = true,
-            StackTraceSymbolsPath = "symbols.json",
+            MethodSymbolsPath = "symbols.json",
         };
         var result = Result with
         {
@@ -33,7 +33,7 @@ public sealed class CompilerHostArtifactFormatterTests
         Assert.Equal(["module.wasm", "symbols.json", "layout.json", "interop.json"],
             artifacts.Select(artifact => artifact.Path));
         Assert.Equal(result.ApplicationModule, artifacts[0].Bytes);
-        Assert.Equal(result.StackTraceSymbols!.Bytes, artifacts[1].Bytes);
+        Assert.Equal(result.MethodSymbols!.Bytes, artifacts[1].Bytes);
         using var layout = JsonDocument.Parse(artifacts[2].Bytes.AsMemory());
         Assert.Equal(3, layout.RootElement.EnumerateObject().Count());
         Assert.Equal(2, layout.RootElement.GetProperty("schemaVersion").GetInt32());
@@ -50,7 +50,7 @@ public sealed class CompilerHostArtifactFormatterTests
     [Fact]
     public void LegacyRequestsNeedNoSidecarsAndSnapshotModuleBytes()
     {
-        var result = Result with { InteropManifest = null!, StackTraceSymbols = null };
+        var result = Result with { InteropManifest = null!, MethodSymbols = null };
 
         var artifact = Assert.Single(((ICompilerHostArtifactFormatter)_formatter).Format(Request, result));
         result.ApplicationModule[0] = 99;
@@ -80,7 +80,7 @@ public sealed class CompilerHostArtifactFormatterTests
     public void RejectsMissingRequestedArtifactData()
     {
         Assert.Throws<InvalidOperationException>(() =>
-            ((ICompilerHostArtifactFormatter)_formatter).Format(Request with { EmitStackTrace = true }, Result with { StackTraceSymbols = null }));
+            ((ICompilerHostArtifactFormatter)_formatter).Format(Request with { EmitStackTrace = true }, Result with { MethodSymbols = null }));
         Assert.Throws<ArgumentNullException>(() =>
             ((ICompilerHostArtifactFormatter)_formatter).Format(Request with { InteropManifestPath = "interop.json" }, Result with { InteropManifest = null! }));
         Assert.Throws<ArgumentNullException>(() =>
@@ -116,7 +116,7 @@ public sealed class CompilerHostArtifactFormatterTests
         Assert.ThrowsAny<ArgumentException>(() => ((ICompilerHostArtifactFormatter)_formatter).Format(Request with
         {
             EmitStackTrace = true,
-            StackTraceSymbolsPath = path,
+            MethodSymbolsPath = path,
         }, Result));
     }
 
@@ -128,7 +128,7 @@ public sealed class CompilerHostArtifactFormatterTests
     {
         Assert.Throws<ArgumentException>(() => ((ICompilerHostArtifactFormatter)_formatter).Format(Request with { RuntimeLayoutPath = path }, Result));
         Assert.Throws<ArgumentException>(() => ((ICompilerHostArtifactFormatter)_formatter).Format(Request with { InteropManifestPath = path }, Result));
-        Assert.Throws<ArgumentException>(() => ((ICompilerHostArtifactFormatter)_formatter).Format(Request with { EmitStackTrace = true, StackTraceSymbolsPath = path }, Result));
+        Assert.Throws<ArgumentException>(() => ((ICompilerHostArtifactFormatter)_formatter).Format(Request with { EmitStackTrace = true, MethodSymbolsPath = path }, Result));
     }
 
     private static CompilationRequest Request => new(
@@ -139,6 +139,6 @@ public sealed class CompilerHostArtifactFormatterTests
         [0, 97, 115, 109], null!, null!,
         new(1, "wasm32", new(0, 1, 0), new(4, 8, 12, 8, 16, 0, 4), [], []), 1234)
     {
-        StackTraceSymbols = new([1, 2, 3], "application/json", "symbols.json", "hash"),
+        MethodSymbols = new(NetWasm.Compiler.Symbols.SymbolSidecarKind.Method, [1, 2, 3]),
     };
 }

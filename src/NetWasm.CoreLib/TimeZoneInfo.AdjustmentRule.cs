@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace System
 {
+    [Serializable]
     public sealed partial class TimeZoneInfo
     {
         [Serializable]

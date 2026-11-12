@@ -35,7 +35,12 @@ public sealed record WasmNativeCallbackSupportArtifact(
     string Sha256,
     ImmutableArray<WasmNativeCallbackDescriptor> Callbacks,
     ImmutableArray<string> TemporaryApplicationExports,
-    ImmutableArray<string> TemporaryRuntimeExports);
+    ImmutableArray<string> TemporaryRuntimeExports)
+{
+    // The unmanaged calli trampolines the object defines (issue 226), which follow the
+    // callback getters among the temporary runtime exports.
+    public ImmutableArray<string> Trampolines { get; init; } = [];
+}
 
 public sealed record WasmModuleEmissionResult(
     byte[] Module,
@@ -49,6 +54,8 @@ public sealed record WasmModuleEmissionResult(
     public ImmutableArray<string> ImportModules { get; init; } = [];
     public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
     public WasmNativeCallbackSupportArtifact? NativeCallbackSupport { get; init; }
+    // Binds the module to its symbols sidecars (issue 225).
+    public string BuildId { get; init; } = "";
 }
 
 internal interface IWasmModuleEmitter

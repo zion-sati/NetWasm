@@ -37,8 +37,11 @@ internal sealed class WasmModulePlanner(
     IWasmModulePlanInvariantValidator invariants,
     INativeImportPlanner nativeImports,
     INativeCallbackPlanBuilder callbackPlans,
+    INativeCallSitePlanner callSitePlans,
     IFinalizationPlanBuilder finalizationPlans) : IWasmModulePlanner
 {
+    private readonly INativeCallSitePlanner _callSitePlans = callSitePlans ??
+        throw new ArgumentNullException(nameof(callSitePlans));
     private readonly INativeImportPlanner _nativeImports = nativeImports ??
         throw new ArgumentNullException(nameof(nativeImports));
     private readonly INativeCallbackPlanBuilder _callbackPlans = callbackPlans ??
@@ -89,16 +92,26 @@ internal sealed class WasmModulePlanner(
         var nativeImportPlan = _nativeImports.Plan(request.MethodInstances.Values);
         var callbackGetterBase = runtimeImportCount + helperImportCount +
             request.JSImportMethods.Length + witImportIdentities.Length +
-            nativeImportPlan.Methods.Length;
+            nativeImportPlan.Imports.Length;
         var callbackPlan = request.NativeCallbacks.Count == 0
             ? NativeCallbackPlan.Empty
             : _callbackPlans.Build(
                 request.NativeCallbacks,
                 request.AddressedNativeCallbacks,
                 callbackGetterBase);
+        // The trampolines unmanaged calli sites call follow the callback getters.
+        nativeImportPlan = nativeImportPlan with
+        {
+            CallSites = _callSitePlans.Plan(
+                UnmanagedCallSites(request),
+                runtimeImportCount + helperImportCount + request.JSImportMethods.Length +
+                    witImportIdentities.Length + nativeImportPlan.Imports.Length +
+                    callbackPlan.AddressedMethods.Length),
+        };
         var importedFunctionCount = runtimeImportCount + helperImportCount +
             request.JSImportMethods.Length + witImportIdentities.Length +
-            nativeImportPlan.Methods.Length + callbackPlan.AddressedMethods.Length;
+            nativeImportPlan.Imports.Length + callbackPlan.AddressedMethods.Length +
+            nativeImportPlan.CallSites.Trampolines.Length;
         var firstManagedImportIndex = runtimeImportCount + helperImportCount;
         var witImportIndices = witImportIdentities
             .Select((identity, index) => (Identity: identity, Index: new WasmFunctionIndex(
@@ -110,10 +123,10 @@ internal sealed class WasmModulePlanner(
             .Concat(request.WitImportMethods.Select(method => (
                 method.Key,
                 Index: witImportIndices[method.WitImport!.Identity])))
-            .Concat(nativeImportPlan.Methods.Select((import, index) => (
+            .Concat(nativeImportPlan.Methods.Select(import => (
                 import.Method.Definition.Key,
                 Index: new WasmFunctionIndex(firstManagedImportIndex + request.JSImportMethods.Length +
-                    witImportIdentities.Length + index))))
+                    witImportIdentities.Length + nativeImportPlan.ImportPositions[import.Method.Definition.Key]))))
             .ToImmutableDictionary(item => item.Key, item => item.Index);
         var constructedIdentities = request.ConstructedMethods.Keys
             .ToHashSet(StringComparer.Ordinal);
@@ -180,7 +193,8 @@ internal sealed class WasmModulePlanner(
         var delegateInvokes = request.Methods.Values
             .Concat(request.ConstructedMethods.Values)
             .SelectMany(method => method.Header.Instructions)
-            .Where(instruction => instruction.Operation == CilOperation.CallVirtual)
+            .Where(instruction => instruction.Operation is CilOperation.CallVirtual or CilOperation.Call or
+                CilOperation.LoadFunction or CilOperation.LoadVirtualFunction)
             .Select(GetMethodInstance)
             .Where(method =>
                 method.Definition.Name == "Invoke" &&
@@ -243,6 +257,17 @@ internal sealed class WasmModulePlanner(
                     ? OptionalFunctionIndex.At(managedThrowFunction + 1)
                     : OptionalFunctionIndex.Missing,
                 DelegateMulticastHelpers = delegateMulticastHelperIndices,
+                DelegateInvokeMethods = delegateInvokes
+                    .Where(method => !method.IsConstructed)
+                    .ToImmutableDictionary(
+                        method => method.Definition.Key,
+                        method => delegateInvokeHelperIndices[method.DeclaringType.CanonicalName]),
+                ConstructedDelegateInvokeMethods = delegateInvokes
+                    .Where(method => method.IsConstructed)
+                    .ToImmutableDictionary(
+                        method => method.CanonicalName,
+                        method => delegateInvokeHelperIndices[method.DeclaringType.CanonicalName],
+                        StringComparer.Ordinal),
             },
             interopImports)
         {
@@ -253,6 +278,16 @@ internal sealed class WasmModulePlanner(
         invariants.Validate(request, methodEmissions, plan);
         return plan;
     }
+
+    private static IEnumerable<NativeCallSiteUse> UnmanagedCallSites(WasmEmissionRequest request) =>
+        request.Methods.Values
+            .Concat(request.ConstructedMethods.Values)
+            .SelectMany(method => method.Header.Instructions
+                .Where(instruction => instruction.Operand is CilOperand.CallSite { Unmanaged: true })
+                .Select(instruction => new NativeCallSiteUse(
+                    ((CilOperand.CallSite)instruction.Operand).Signature,
+                    method.Header.MethodInstance?.CanonicalName ?? method.Header.Method.Name,
+                    instruction.Offset)));
 
     private static bool RequiresEphemeronHandles(HashSet<RuntimeIntrinsic> called) =>
         called.Any(static intrinsic => intrinsic is RuntimeIntrinsic.EphemeronHandleCreate or

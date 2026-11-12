@@ -141,10 +141,7 @@ test("composes imports, binds one managed boundary, and closes pending work", as
     },
     diagnosticArtifacts: null,
     managedExceptionReporting: reporting(),
-    stackTraceSymbols: {
-      schemaVersion: 1,
-      methods: [{ id: 7, name: "Managed.Entry" }],
-    },
+    stackTraceSymbols: [{ id: 7, name: "Managed.Entry" }],
   });
   assert.equal(Object.isFrozen(raw), true);
   assert.equal(raw.consumeTerminalEvent(), undefined);
@@ -241,7 +238,7 @@ test("copies a faulted export payload without terminal reporting and keeps the i
         resultExport: "result", completeExport: "complete", completionResult: "exception-handle-v1" },
     ] }),
     runtimeModules: {},
-    stackTraceSymbols: { schemaVersion: 1, methods: [{ id: 7, name: "Program.Fail in Program.cs:line 12" }] },
+    stackTraceSymbols: [{ id: 7, name: "Program.Fail in Program.cs:line 12" }],
     managedExceptionReporting: {
       reportImmediate() { assert.fail("caught export reported as terminal"); },
       reportEnriched() { assert.fail("caught export enriched as terminal"); },
@@ -542,7 +539,7 @@ test("routes function diagnostic artifacts through configured reporting", async 
   fixture.report(1, 0, 0);
   await settleReporting();
   assert.equal(immediate[0].message, null);
-  assert.match(enriched[0].artifactError, /invalid diagnostic artifact manifest/);
+  assert.match(enriched[0].artifactError, /type-symbols sidecar must be bytes/);
   fixture.close();
 });
 
@@ -565,8 +562,8 @@ test("uses default diagnostic reporting for deployed artifact objects", async ()
     assert.match(messages[0], /<no stored message>/);
     assert.match(messages[1], /a \(message truncated by host policy\)/);
     assert.match(messages[1], /\nat$/);
-    assert.match(messages[2], /unavailable/);
-    assert.match(messages[3], /unavailable/);
+    assert.match(messages[2], /type#2/);
+    assert.match(messages[3], /type#2/);
     assert.match(messages[3], /\nat$/);
     fixture.close();
   } finally {
@@ -669,7 +666,7 @@ test("binds a direct import to a call that returns its result", () => {
     },
     diagnosticArtifacts: null,
     managedExceptionReporting: reporting(),
-    stackTraceSymbols: { schemaVersion: 1, methods: [] },
+    stackTraceSymbols: [],
   });
   const noted = [];
   assert.equal(raw.imports.consumer.scale(-1 >>> 1, 2), 0xffff_fffe);
@@ -687,7 +684,7 @@ test("binds an import module's functions unchanged", () => {
     consumerModules,
     diagnosticArtifacts: null,
     managedExceptionReporting: reporting(),
-    stackTraceSymbols: { schemaVersion: 1, methods: [] },
+    stackTraceSymbols: [],
   });
   const raw = prepare({ host_ui: { create_node: createNode } });
   assert.strictEqual(raw.imports.host_ui.create_node, createNode);

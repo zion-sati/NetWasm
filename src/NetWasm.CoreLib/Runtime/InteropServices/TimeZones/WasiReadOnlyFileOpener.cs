@@ -1,13 +1,12 @@
 namespace System.Runtime.InteropServices.TimeZones
 {
+    using System.Runtime.InteropServices.FileSystem;
     using System.Runtime.InteropServices.WebAssembly;
     using System.Text;
 
     internal sealed class WasiReadOnlyFileOpener(
         IWasiDescriptorOpenInvoker invoker) : IReadOnlyFileOpener
     {
-        internal const nuint ErrorCodeResultSize = 20;
-
         private readonly IWasiDescriptorOpenInvoker _invoker =
             invoker ?? throw new ArgumentNullException();
 
@@ -18,17 +17,18 @@ namespace System.Runtime.InteropServices.TimeZones
                 throw new ArgumentNullException();
             }
             using var path = LowerString(relativePath);
-            // result<descriptor, error-code>: a discriminant byte, then at offset 4 the
-            // descriptor or the error-code variant, whose other(option<string>) case makes
-            // the whole result 20 bytes.
-            var result = CanonicalAbi.Allocate(ErrorCodeResultSize, 4);
+            // result<descriptor, error-code>: a discriminant byte, then at the pointer size the
+            // descriptor or the error-code variant, whose other(option<string>) case makes the
+            // whole result five pointers.
+            var pointer = WasiFileSystemLayout.Pointer;
+            var result = CanonicalAbi.Allocate(WasiFileSystemLayout.SmallResultSize, pointer);
             try
             {
                 _invoker.Invoke(directoryHandle, path.Address, path.Length, result);
                 return CanonicalAbi.ReadByte(result, 0) switch
                 {
-                    0 => CanonicalAbi.ReadInt32(result, 4),
-                    1 => throw Failure("open", CanonicalAbi.ReadByte(result, 4)),
+                    0 => CanonicalAbi.ReadInt32(result, pointer),
+                    1 => throw Failure("open", CanonicalAbi.ReadByte(result, pointer)),
                     _ => throw new PlatformNotSupportedException(
                         "WASI filesystem returned an invalid open result."),
                 };

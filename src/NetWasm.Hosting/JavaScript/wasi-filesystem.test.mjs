@@ -213,6 +213,8 @@ test("a read-only grant and mounted files refuse every change", async () => {
       preopens: Object.freeze([Object.freeze({ access: "readOnly", guestPath: "/data", hostPath: root })]),
     }));
     filesystem.mountReadOnlyFile({ guestPath: "/zones/z", bytes: Uint8Array.of(1) });
+    assert.throws(() => filesystem.mountReadOnlyFile({ guestPath: "/data/z", bytes: Uint8Array.of(1) }),
+      /collides with an existing preopen/);
     const [[directory], [zones]] = filesystem.preopens.getDirectories();
     for (const target of [directory, zones]) {
       assert.deepEqual(await target.createDirectoryAt("x"), error("read-only"));
@@ -240,14 +242,18 @@ test("mounts read-only files until the guest first lists its directories", async
   contents[0] = 9;
   const removed = filesystem.mountReadOnlyFile({ guestPath: "/removed/x", bytes: new Uint8Array() });
   removed();
-  assert.throws(() => filesystem.mountReadOnlyFile({ guestPath: "/zones/other", bytes: new Uint8Array() }),
-    /collides/);
+  // A program's sidecars share one mounted directory (issue 225).
+  const other = filesystem.mountReadOnlyFile({ guestPath: "/zones/other", bytes: Uint8Array.of(7) });
+  assert.throws(() => filesystem.mountReadOnlyFile({ guestPath: "/zones/data.bin", bytes: new Uint8Array() }),
+    /already mounted/);
   for (const guestPath of [undefined, "relative", "/", "/a//b", "/a/./b", "/a/../b", "/a\\b"]) {
     assert.throws(() => filesystem.mountReadOnlyFile({ guestPath, bytes: new Uint8Array() }), TypeError);
   }
   assert.throws(() => filesystem.mountReadOnlyFile({ guestPath: "/c/d", bytes: [1] }), TypeError);
+  other();
   const entries = filesystem.preopens.getDirectories();
   assert.deepEqual(entries.map(([, path]) => path), ["/zones"]);
+  assert.deepEqual(await entries[0][0].openAt(noFlags, "other", noFlags, read), error("no-entry"));
   assert.throws(() => filesystem.mountReadOnlyFile({ guestPath: "/late/x", bytes: new Uint8Array() }),
     /setup is closed/);
   const [[directory]] = entries;

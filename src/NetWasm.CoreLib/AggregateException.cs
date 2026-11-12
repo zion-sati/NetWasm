@@ -8,6 +8,7 @@ using System.Collections.ObjectModel;
 
 namespace System
 {
+    [Serializable]
     public class AggregateException : Exception
     {
         private readonly Exception[] _innerExceptions;

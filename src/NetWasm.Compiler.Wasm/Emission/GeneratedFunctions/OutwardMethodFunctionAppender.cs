@@ -113,7 +113,7 @@ internal sealed class OutwardMethodFunctionAppender(
                         request.ReportTerminalExceptions,
                         request.ArgumentFactory,
                         request.EntryCompletion,
-                        request.LocalTimePreflight,
+                        request.StartupPreflights,
                         request.ProcessExit,
                         request.InitializesRuntime)));
             kind = request.SynchronousKind;

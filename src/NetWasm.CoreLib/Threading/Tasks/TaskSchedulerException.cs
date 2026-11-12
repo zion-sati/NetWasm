@@ -3,6 +3,7 @@
 
 namespace System.Threading.Tasks;
 
+[Serializable]
 public class TaskSchedulerException : Exception
 {
     private const string DefaultMessage = "An exception was thrown by a TaskScheduler.";

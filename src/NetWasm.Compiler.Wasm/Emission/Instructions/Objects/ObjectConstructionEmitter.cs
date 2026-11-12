@@ -24,7 +24,8 @@ internal sealed class ObjectConstructionEmitter(
     IRootPublicationEmitter roots,
     INativeIntegerConstructionEmitter nativeIntegerConstructions,
     IStaticInitializationEmitter initialization,
-    IStaticInitializerGuardResolver guards) :
+    IStaticInitializerGuardResolver guards,
+    IDelegateTargetCheckSelector delegateTargets) :
     InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
@@ -211,12 +212,18 @@ internal sealed class ObjectConstructionEmitter(
                 delegateType.CanonicalName,
                 request.Instruction.Offset));
         }
+        var target = GetStackLocal(request.Context, argumentBase, CliValueKind.ManagedReference);
+        if (delegateTargets.Select(request))
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)target)));
+            code.Write(WasmInstruction.NoOperand(layouts.Target.UsesMemory64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+            exceptions.Emit(code, ManagedExceptionKind.Argument, request.Context.ManagedThrowFunction);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        }
         EmitAllocation(request, code, typeLayouts.GetObjectLayout(delegateType), deferRoots);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-            request.Context,
-            argumentBase,
-            CliValueKind.ManagedReference)))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)target)));
         ManagedMemoryEmitter.EmitStoreBySize(
             code,
             layouts.Target,

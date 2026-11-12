@@ -35,6 +35,9 @@ export function createRuntimeContractImports(target, getMemory, getExports) {
       '[waitable-set-wait]': unexpected,
       '[subtask-drop]'() {},
       '[subtask-cancel]': () => 4,
+      // Console output yields to the host after a write it took at once (#224); a test host
+      // runs no other task, so the yield returns at once, not cancelled.
+      '[thread-yield]': () => 0,
     },
     [`${prefix}|wasi:cli/environment@0.3`]: {
       'get-environment'(result) {

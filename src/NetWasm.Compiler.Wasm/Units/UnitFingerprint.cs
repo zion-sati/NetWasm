@@ -201,6 +201,7 @@ internal ref struct UnitFingerprintBuilder
                 break;
             case CilOperand.CallSite site:
                 Add(13);
+                Add(site.Unmanaged);
                 Add(site.Signature.ReturnSignatureType);
                 Add(site.Signature.ParameterSignatureTypes.Length);
                 foreach (var parameter in site.Signature.ParameterSignatureTypes) Add(parameter);

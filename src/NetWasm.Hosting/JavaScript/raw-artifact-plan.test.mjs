@@ -13,10 +13,10 @@ const artifact = (relativePath, role, mediaType, sha256 = digest("a"), schemaVer
 const artifacts = () => [
   artifact("publish/app.wasm", "application", "application/wasm", digest("1")),
   artifact("publish/app.raw-adapter.mjs", "raw-adapter", "text/javascript", digest("2")),
-  artifact("publish/app.exceptions.json", "exception-type-map",
-    "application/vnd.netwasm.exception-types+json;version=2", digest("6"), 2),
-  artifact("publish/app.netwasm.stacktrace.json", "stack-trace-symbols",
-    "application/vnd.netwasm.stack-trace-symbols+json;version=1", digest("7"), 1),
+  artifact("publish/app.wasm.type-symbols", "type-symbols",
+    "application/vnd.netwasm.type-symbols;version=1", digest("6"), 1),
+  artifact("publish/app.wasm.method-symbols", "method-symbols",
+    "application/vnd.netwasm.method-symbols;version=1", digest("7"), 1),
   artifact("publish/runtime-layout.json", "runtime-layout", "application/json", digest("3"), 2),
   artifact("publish/interop.json", "interop-manifest", "application/json", digest("4"), 1),
   artifact("publish/app.wasm.tz-info", "timezone-data", "application/octet-stream", digest("5"), 1),
@@ -28,9 +28,9 @@ test("selects one immutable manifested raw artifact closure", () => {
   assert.equal(Object.isFrozen(plan), true);
   assert.equal(plan.application.role, "application");
   assert.equal(plan.adapter.role, "raw-adapter");
-  assert.equal(plan.exceptionTypeMap.role, "exception-type-map");
+  assert.equal(plan.typeSymbols.role, "type-symbols");
   assert.equal(plan.runtimeLayout.role, "runtime-layout");
-  assert.equal(plan.stackTraceSymbols.role, "stack-trace-symbols");
+  assert.equal(plan.methodSymbols.role, "method-symbols");
   assert.equal(plan.interopManifest.role, "interop-manifest");
   assert.equal(Object.isFrozen(plan.application), true);
   source[4].relativePath = "changed.wasm";
@@ -38,10 +38,10 @@ test("selects one immutable manifested raw artifact closure", () => {
   assert.deepEqual(Object.keys(plan).sort(), [
     "adapter",
     "application",
-    "exceptionTypeMap",
     "interopManifest",
+    "methodSymbols",
     "runtimeLayout",
-    "stackTraceSymbols",
+    "typeSymbols",
   ]);
 });
 
@@ -68,8 +68,8 @@ test("requires every raw role exactly once with its exact media type", () => {
     const duplicate = [...artifacts(), artifact(`duplicate-${role}`, role,
       role === "application" ? "application/wasm"
         : role === "raw-adapter" ? "text/javascript"
-          : role === "exception-type-map"
-            ? "application/vnd.netwasm.exception-types+json;version=2"
+          : role === "type-symbols"
+            ? "application/vnd.netwasm.type-symbols;version=1"
             : "application/json")];
     assert.throws(
       () => createRawArtifactPlan({ deploymentKind: "raw", artifacts: duplicate }),
@@ -85,27 +85,27 @@ test("requires every raw role exactly once with its exact media type", () => {
 
 test("accepts an older raw closure without diagnostics and rejects duplicate sidecars", () => {
   const withoutMap = artifacts().filter(value =>
-    value.role !== "exception-type-map" && value.role !== "stack-trace-symbols");
+    value.role !== "type-symbols" && value.role !== "method-symbols");
   const plan = createRawArtifactPlan({ deploymentKind: "raw", artifacts: withoutMap });
-  assert.equal(plan.exceptionTypeMap, undefined);
-  assert.equal(plan.stackTraceSymbols, undefined);
+  assert.equal(plan.typeSymbols, undefined);
+  assert.equal(plan.methodSymbols, undefined);
 
   const duplicate = artifacts();
   duplicate.push({
-    ...duplicate.find(value => value.role === "exception-type-map"),
-    relativePath: "publish/duplicate.exceptions.json",
+    ...duplicate.find(value => value.role === "type-symbols"),
+    relativePath: "publish/duplicate.wasm.type-symbols",
   });
   assert.throws(
     () => createRawArtifactPlan({ deploymentKind: "raw", artifacts: duplicate }),
-    /exception-type-map/u);
+    /type-symbols/u);
   const duplicateSymbols = artifacts();
   duplicateSymbols.push({
-    ...duplicateSymbols.find(value => value.role === "stack-trace-symbols"),
-    relativePath: "publish/duplicate.stacktrace.json",
+    ...duplicateSymbols.find(value => value.role === "method-symbols"),
+    relativePath: "publish/duplicate.wasm.method-symbols",
   });
   assert.throws(
     () => createRawArtifactPlan({ deploymentKind: "raw", artifacts: duplicateSymbols }),
-    /stack-trace-symbols/u);
+    /method-symbols/u);
 });
 
 test("rejects duplicate paths even when one role is unrelated", () => {

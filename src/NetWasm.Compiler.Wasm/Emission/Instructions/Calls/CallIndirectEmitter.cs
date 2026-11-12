@@ -12,7 +12,9 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
 internal sealed class CallIndirectEmitter(
     ITargetLayout layouts,
-    IImplicitExceptionEmitter exceptions) : InstructionCommandProvider
+    IImplicitExceptionEmitter exceptions,
+    IValueFrameAddressEmitter valueFrames,
+    INativeAbiCallEmitter nativeCalls) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -26,15 +28,32 @@ internal sealed class CallIndirectEmitter(
         InstructionEmissionRequest request, IWasmInstructionWriter code,
         IFunctionIndexResolver functionIndices)
     {
-        var signature = request.Instruction.Operand is CilOperand.CallSite callSite
-            ? callSite.Signature
-            : throw new InvalidOperationException("calli has no call-site signature");
-        if (signature.ReturnSignatureType.StackKind == CliValueKind.ValueType)
+        var callSite = request.Instruction.Operand as CilOperand.CallSite ??
+            throw new InvalidOperationException("calli has no call-site signature");
+        var signature = callSite.Signature;
+        if (callSite.Unmanaged)
         {
-            throw new CompilerException(new CompilerDiagnostic(
-                DiagnosticCode.UnsupportedCil,
-                "calli with a value-type return is not yet supported"));
+            // Native code is called through its pointer by the trampoline for the call's C ABI
+            // signature, the arguments lowered as a DllImport's (issue 226).
+            var native = request.Target.NativeImports.CallSites.For(signature);
+            nativeCalls.Emit(new(
+                request,
+                native.Lowering,
+                request.Stack.Count - signature.ParameterTypes.Length - 1,
+                signature.ParameterTypes.Length + 1,
+                HostCall: false,
+                request.Header.MethodInstance?.CanonicalName ?? request.Header.Method.Name)
+            {
+                Trampoline = native.Trampoline,
+            }, code, functionIndices);
+            return;
         }
+        // A value-type result goes to the call's frame buffer, whose address the managed ABI passes
+        // first and the evaluation stack then holds.
+        var returnsValue = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType;
+        var returnOffset = returnsValue
+            ? request.Context.ValueLayout.TemporaryOffsets[request.Instruction.Offset]
+            : 0;
         var argumentBase = request.Stack.Count - signature.ParameterTypes.Length - 1;
         var functionSlot = argumentBase + signature.ParameterTypes.Length;
         var compatible = request.Target.CallableMethods.Read().Values
@@ -54,6 +73,10 @@ internal sealed class CallIndirectEmitter(
             if (layouts.Target.UsesMemory64) code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Equal));
             else code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+            if (returnsValue)
+            {
+                valueFrames.Emit(code, request.Context, returnOffset);
+            }
             for (var index = 0; index < signature.ParameterTypes.Length; index++)
             {
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
@@ -62,7 +85,7 @@ internal sealed class CallIndirectEmitter(
                     request.Stack[argumentBase + index])))));
             }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(target)))));
-            if (signature.ReturnType != CliValueKind.Void)
+            if (!returnsValue && signature.ReturnType != CliValueKind.Void)
             {
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
                     request.Context,
@@ -77,7 +100,16 @@ internal sealed class CallIndirectEmitter(
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
         request.Stack.RemoveRange(argumentBase, signature.ParameterTypes.Length + 1);
-        if (signature.ReturnType != CliValueKind.Void)
+        if (returnsValue)
+        {
+            valueFrames.Emit(code, request.Context, returnOffset);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
+                request.Context,
+                argumentBase,
+                CliValueKind.ValueType)))));
+            request.Stack.Add(CliValueKind.ValueType);
+        }
+        else if (signature.ReturnType != CliValueKind.Void)
         {
             request.Stack.Add(signature.ReturnType);
         }

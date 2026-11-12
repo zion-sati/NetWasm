@@ -12,16 +12,41 @@ internal interface IRootValueElisionPlanner
     ImmutableDictionary<int, ImmutableHashSet<int>> Plan(StructuredMethod method, MethodEmissionContext context);
 }
 
-internal sealed class RootValueElisionPlanner : IRootValueElisionPlanner
+internal sealed class RootValueElisionPlanner(IStructuredBlockPredecessorReader predecessors) : IRootValueElisionPlanner
 {
+    private readonly IStructuredBlockPredecessorReader _predecessors =
+        predecessors ?? throw new ArgumentNullException(nameof(predecessors));
+
+    // Whether two exits hold the same value in every slot.
+    internal static bool HoldTheSameValues(
+        ImmutableDictionary<int, RootSource> left, ImmutableDictionary<int, RootSource> right) =>
+        left.Count == right.Count &&
+        left.All(pair => right.TryGetValue(pair.Key, out var other) && other == pair.Value);
+
     public ImmutableDictionary<int, ImmutableHashSet<int>> Plan(StructuredMethod method, MethodEmissionContext context)
     {
         ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(context);
         var result = ImmutableDictionary.CreateBuilder<int, ImmutableHashSet<int>>();
-        foreach (var block in method.Blocks.Values)
+        // A slot holding the same stable variable's value at the end of every ordinary predecessor
+        // holds it at a block's entry. Nothing is known at the method's entry, at an opaque block's,
+        // or anywhere when the root frame is entered inside a terminal arm.
+        var empty = ImmutableDictionary<int, RootSource>.Empty;
+        var entries = context.TerminalBranchValueFramePlacement is { Plan.DefersRootFrame: true }
+            ? null
+            : RootFactFlow.Solve(method, _predecessors.Read(method), empty,
+                (left, right) => left.Where(pair => right.TryGetValue(pair.Key, out var other) && other == pair.Value)
+                    .ToImmutableDictionary(),
+                HoldTheSameValues,
+                (block, published) => Transfer(block, published, record: false));
+        foreach (var (id, block) in method.Blocks)
+            Transfer(block, entries?[id] ?? empty, record: true);
+        return result.ToImmutable();
+
+        ImmutableDictionary<int, RootSource> Transfer(
+            StructuredBlockDefinition block, ImmutableDictionary<int, RootSource> entry, bool record)
         {
-            var published = new Dictionary<int, RootSource>();
+            var published = new Dictionary<int, RootSource>(entry);
             var instructions = block.Exit is StructuredTerminalExit terminal
                 ? block.Instructions.Add(terminal.Instruction) : block.Instructions;
             foreach (var instruction in instructions)
@@ -46,9 +71,12 @@ internal sealed class RootValueElisionPlanner : IRootValueElisionPlanner
                             next.Add(slot, source);
                         }
                     }
-                    var proof = skips.ToImmutable();
-                    result[instruction.Offset] = result.TryGetValue(instruction.Offset, out var existing)
-                        ? existing.Intersect(proof) : proof;
+                    if (record)
+                    {
+                        var proof = skips.ToImmutable();
+                        result[instruction.Offset] = result.TryGetValue(instruction.Offset, out var existing)
+                            ? existing.Intersect(proof) : proof;
+                    }
                     // An allocation that bumps its run inline publishes only when it
                     // calls the collector, so a slot keeps a known value afterwards
                     // only if it held that value before.
@@ -66,8 +94,8 @@ internal sealed class RootValueElisionPlanner : IRootValueElisionPlanner
                 if (assigned is { } value && context.RootMap.Slots.TryGetValue(value, out var assignedSlot))
                     published.Remove(assignedSlot);
             }
+            return published.ToImmutableDictionary();
         }
-        return result.ToImmutable();
     }
 
     private static bool IsStable(RootSource source, MethodEmissionContext context) =>

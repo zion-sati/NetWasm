@@ -56,7 +56,7 @@ internal sealed class MethodFrameEntryEmitter(
             {
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                     WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
-                if (source.Kind == RootSourceKind.Argument)
+                if (source.Kind != RootSourceKind.Local)
                     code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                         WasmInstructionOperand.Unsigned((uint)(source.Index + context.ParameterOffset))));
                 else

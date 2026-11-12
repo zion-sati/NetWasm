@@ -7,6 +7,7 @@ using System.Diagnostics;
 
 namespace System;
 
+[Serializable]
 public partial struct Char
 {
     private const byte IsWhiteSpaceFlag = 0x80;

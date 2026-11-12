@@ -124,7 +124,8 @@ internal sealed class MethodAnalysisParts
             calls,
             types,
             factories.DispatchSiteKeys,
-            delegateMethodClassifier);
+            delegateMethodClassifier,
+            intrinsics);
         var specializer = factories.Specializers.Create(
             typeDefinitions,
             typeRepository,

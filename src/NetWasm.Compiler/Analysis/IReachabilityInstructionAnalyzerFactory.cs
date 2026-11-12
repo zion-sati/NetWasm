@@ -11,5 +11,6 @@ internal interface IReachabilityInstructionAnalyzerFactory
         ICalledMethodResolver calledMethods,
         ITypeOperandResolver typeOperands,
         IDispatchSiteKeyBuilder dispatchSiteKeys,
-        IDelegateMethodClassifier delegateMethods);
+        IDelegateMethodClassifier delegateMethods,
+        IRuntimeIntrinsicRegistry intrinsics);
 }

@@ -197,8 +197,9 @@ public static class EntryPoint
         {
             return 6;
         }
-        if (AccessorCache<Model>.LastRootIdentity !=
-            "NetWasm.Tests.ExpressionTrees.FluentValidationSourceAdaptation.Model:")
+        // The cache keys a root by its type's full name, which reads as the type's ID without names
+        // (issue 225) and stays unique per type.
+        if (AccessorCache<Model>.LastRootIdentity != typeof(Model).FullName + ":")
         {
             return 7;
         }

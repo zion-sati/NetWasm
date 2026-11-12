@@ -4,7 +4,13 @@ using System.Runtime.CompilerServices;
 
 namespace System
 {
-    public partial class Type : MemberInfo
+    // NetWasm: every Type object is a RuntimeType, as on .NET, so a type is its own TypeInfo.
+    internal sealed class RuntimeType : TypeInfo
+    {
+        private RuntimeType() { }
+    }
+
+    public abstract partial class Type : MemberInfo
     {
         public static readonly Type[] EmptyTypes = Array.Empty<Type>();
 
@@ -17,7 +23,9 @@ namespace System
             throw new PlatformNotSupportedException("Constructing custom Type metadata providers is not supported on NetWasm.");
         }
 
-        public static Type? GetTypeFromHandle(RuntimeTypeHandle handle) => null;
+        // The compiler lowers every call, this one included, to the handle's type; the body is
+        // what a delegate or function pointer to the method runs.
+        public static Type? GetTypeFromHandle(RuntimeTypeHandle handle) => GetTypeFromHandle(handle);
 
         // RuntimeTypeHandle uses the compiler's 32-bit semantic type identity on
         // both Wasm targets, matching ldtoken and GetTypeFromHandle.
@@ -30,9 +38,8 @@ namespace System
             return o.GetType().TypeHandle;
         }
 
-        internal static Type GetTypeFromSemanticId(int semanticTypeId) =>
-            throw new PlatformNotSupportedException(
-                "Only compiler-emitted semantic type identities are supported.");
+        // Lowered like GetTypeFromHandle.
+        internal static Type GetTypeFromSemanticId(int semanticTypeId) => GetTypeFromSemanticId(semanticTypeId);
         public bool IsValueType => IsValueTypeImpl();
         public bool IsEnum => HasFlag(RuntimeTypeFactsFlags.Enum);
         public bool IsInterface => HasFlag(RuntimeTypeFactsFlags.Interface);
@@ -49,16 +56,15 @@ namespace System
         public bool IsSealed => HasFlag(RuntimeTypeFactsFlags.Sealed);
         public bool IsAbstract => HasFlag(RuntimeTypeFactsFlags.Abstract);
 
-        public unsafe Type[] GetGenericArguments()
+        public Type[] GetGenericArguments()
         {
-            RuntimeTypeFacts facts = GetFacts();
-            if (facts.GenericArgumentCount == 0)
+            int[]? typeIds = RuntimeTypeTable.GenericArguments(SemanticTypeId);
+            if (typeIds is null)
             {
                 return [];
             }
 
-            var arguments = new Type[facts.GenericArgumentCount];
-            int* typeIds = (int*)facts.GenericArgumentTypeIds;
+            var arguments = new Type[typeIds.Length];
             for (int index = 0; index < arguments.Length; index++)
             {
                 arguments[index] = GetTypeFromSemanticId(typeIds[index]);
@@ -72,13 +78,16 @@ namespace System
         {
             get
             {
-                int typeId = GetFacts().BaseTypeId;
+                int typeId = InternalGetBaseTypeId(SemanticTypeId);
                 return typeId == 0 ? null : GetTypeFromSemanticId(typeId);
             }
         }
 
         public static TypeCode GetTypeCode(Type? type) =>
             type is null ? TypeCode.Empty : type.GetTypeCodeImpl();
+
+        public bool IsAssignableTo([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] Type? targetType) =>
+            targetType?.IsAssignableFrom(this) ?? false;
 
         public bool IsAssignableFrom(Type? candidate)
         {
@@ -90,15 +99,8 @@ namespace System
             {
                 return true;
             }
-            while (candidate is not null)
-            {
-                if (this == candidate || candidate.IsAssignableTo(SemanticTypeId))
-                {
-                    return true;
-                }
-                candidate = candidate.BaseType;
-            }
-            return false;
+            // The runtime walks the candidate's base chain and its casting lists, as a cast does.
+            return InternalIsTypeAssignable(candidate.SemanticTypeId, SemanticTypeId) != 0;
         }
 
         public bool IsSubclassOf(Type? type)
@@ -135,19 +137,6 @@ namespace System
                 attributeType,
                 inherit);
 
-        internal MethodInfo GetDelegateInvokeMethod()
-        {
-            nint address = GetFacts().DelegateInvoke;
-            if (address == 0)
-            {
-                throw new InvalidOperationException(
-                    "Compiler-generated delegate Invoke metadata is missing.");
-            }
-            return Runtime.CompilerServices.Unsafe.As<nint, MethodInfo?>(ref address) ??
-                throw new InvalidOperationException(
-                    "Compiler-generated delegate Invoke metadata is invalid.");
-        }
-
         public static bool operator ==(Type? left, Type? right) =>
             object.ReferenceEquals(left, right);
         public static bool operator !=(Type? left, Type? right) =>
@@ -156,77 +145,17 @@ namespace System
             value is Type other && this == other;
         public override int GetHashCode() => SemanticTypeId;
 
-        private bool HasFlag(int flag) => (GetFacts().Flags & flag) != 0;
+        private bool HasFlag(int flag) => (RuntimeTypeTable.Flags(SemanticTypeId) & flag) != 0;
 
-        private unsafe bool IsAssignableTo(int targetTypeId)
-        {
-            RuntimeTypeFacts facts = GetFacts();
-            int* typeIds = (int*)facts.AssignableTypeIds;
-            for (int index = 0; index < facts.AssignableTypeIdCount; index++)
-            {
-                if (typeIds[index] == targetTypeId)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private unsafe RuntimeTypeFacts GetFacts()
-        {
-            nint address = InternalGetFacts(SemanticTypeId);
-            if (address == 0)
-            {
-                throw new InvalidOperationException(
-                    "Compiler-generated runtime type facts are missing.");
-            }
-            return *(RuntimeTypeFacts*)address;
-        }
-
-        private unsafe RuntimeTypeNameFacts GetNameFacts(int requiredPayload)
-        {
-            nint address = GetFacts().NameFacts;
-            if (address == 0)
-            {
-                throw new InvalidOperationException(
-                    "Compiler-generated runtime type-name facts are missing.");
-            }
-            RuntimeTypeNameFacts facts = *(RuntimeTypeNameFacts*)address;
-            if ((facts.Payload & requiredPayload) == 0)
-            {
-                throw new InvalidOperationException(
-                    "Compiler-generated runtime type-name facts are incomplete.");
-            }
-            return facts;
-        }
-
-        private string GetRuntimeName() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.Name).Name) ??
-            throw new InvalidOperationException(
-                "The compiler-generated runtime type name is invalid.");
-
-        private string? GetRuntimeNamespace() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.Namespace).Namespace);
-
-        private string? GetRuntimeFullName() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.FullName).FullName);
-
-        private string GetRuntimeDisplayName() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.DisplayName).DisplayName) ??
-            throw new InvalidOperationException(
-                "The compiler-generated runtime type display name is invalid.");
-
-        private static string? GetString(nint address)
-        {
-            if (address == 0)
-            {
-                return null;
-            }
-            return Runtime.CompilerServices.Unsafe.As<nint, string?>(ref address);
-        }
+        // The runtime type table's address.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern nint InternalGetFacts();
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern nint InternalGetFacts(int semanticTypeId);
+        private static extern int InternalGetBaseTypeId(int semanticTypeId);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int InternalIsTypeAssignable(int candidateTypeId, int targetTypeId);
     }
 
     internal static class RuntimeTypeFactsFlags
@@ -253,47 +182,17 @@ namespace System
         internal const int ArrayRankMask = 0x3f;
     }
 
-    internal static class RuntimeTypeNamePayload
-    {
-        internal const int Name = 1 << 0;
-        internal const int Namespace = 1 << 1;
-        internal const int FullName = 1 << 2;
-        internal const int DisplayName = 1 << 3;
-    }
-
-    internal readonly struct RuntimeTypeFacts
-    {
-        internal readonly int Flags;
-        internal readonly int TypeCode;
-        internal readonly int BaseTypeId;
-        internal readonly int AssignableTypeIdCount;
-        internal readonly nint AssignableTypeIds;
-        internal readonly nint DelegateInvoke;
-        internal readonly nint NameFacts;
-        internal readonly int GenericArgumentCount;
-        internal readonly nint GenericArgumentTypeIds;
-    }
-
-    internal readonly struct RuntimeTypeNameFacts
-    {
-        internal readonly int Payload;
-        internal readonly nint Name;
-        internal readonly nint Namespace;
-        internal readonly nint FullName;
-        internal readonly nint DisplayName;
-    }
 
     public readonly partial struct RuntimeTypeHandle : IEquatable<RuntimeTypeHandle>
     {
-        // Handles are opaque semantic IDs, not dereferenceable host addresses.
-        private int SemanticId
-        {
-            get
-            {
-                var handle = this;
-                return Unsafe.As<RuntimeTypeHandle, int>(ref handle);
-            }
-        }
+        // Handles are opaque semantic IDs, not dereferenceable host addresses: Type.TypeHandle
+        // reinterprets the type's ID as its handle. The ID is the struct's one field, so a copy of
+        // the handle keeps all of it, as the compiler's 4-byte view of the type assumes.
+#pragma warning disable CS0649 // Written only through Type.TypeHandle's reinterpretation.
+        private readonly int _semanticId;
+#pragma warning restore CS0649
+
+        private int SemanticId => _semanticId;
 
         public nint Value => SemanticId;
         public override int GetHashCode() => SemanticId;

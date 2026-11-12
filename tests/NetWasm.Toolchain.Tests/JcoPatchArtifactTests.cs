@@ -12,7 +12,7 @@ public sealed class JcoPatchArtifactTests
     {
         var repository = FindRepositoryRoot();
         var module = File.ReadAllBytes(Path.Combine(repository, "eng", "jco-patches",
-            "1.41.0-netwasm.2", "js-component-bindgen-component.core.wasm"));
+            "1.41.0-netwasm.4", "js-component-bindgen-component.core.wasm"));
 
         Assert.Equal(-1, module.AsSpan().IndexOf(Encoding.UTF8.GetBytes(prefix)));
     }

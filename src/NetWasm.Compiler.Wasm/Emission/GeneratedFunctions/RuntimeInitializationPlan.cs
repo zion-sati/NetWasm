@@ -34,10 +34,11 @@ internal sealed record RuntimeInitializationPlan
     // and static-root registration then runs on the first entry only.
     public int? StateRegistrationGuardAddress { get; init; }
 
-    public int? StackTraceSymbolRegistrationGuardAddress { get; init; }
+    // The sidecar descriptor's address, which the initializer stores in the CoreLib word at
+    // SidecarSlotAddress for CoreLib's sidecar readers.
+    public int? SidecarDescriptorAddress { get; init; }
+    public int? SidecarSlotAddress { get; init; }
 
     // The generated function that holds this initialization; every entry calls it.
     public int? InitializerFunctionIndex { get; init; }
-
-    public ImmutableArray<StackTraceSymbolData> StackTraceSymbols { get; init; } = [];
 }

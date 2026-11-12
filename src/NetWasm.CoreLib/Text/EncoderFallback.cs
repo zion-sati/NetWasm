@@ -100,6 +100,7 @@ public sealed class EncoderExceptionFallbackBuffer : EncoderFallbackBuffer
     public override bool MovePrevious() => false;
 }
 
+[Serializable]
 public sealed class EncoderFallbackException : ArgumentException
 {
     private readonly char _unknown;

@@ -38,6 +38,35 @@ public sealed class FunctionIndexMapTests
         Assert.False(map.TryGetConstructedMethod("missing", out _));
     }
 
+    // A delegate converted from another delegate binds its Invoke, whose address is the
+    // Invoke's type's invoke helper (issue 223): a definition by key, a generic delegate's
+    // by canonical name.
+    [Fact]
+    public void ADelegatesInvokeResolvesToItsTypesInvokeHelper()
+    {
+        var invoke = Key(0x06000030);
+        var map = new FunctionIndexMap(
+            ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(EntryKey, new(30)),
+            ImmutableDictionary<string, WasmFunctionIndex>.Empty.Add("generic", new(31)),
+            ImmutableDictionary<string, WasmFunctionIndex>.Empty
+                .Add("Transform", new(40))
+                .Add("Func`2<int,int>", new(41)),
+            [])
+        {
+            DelegateInvokeMethods = ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(invoke, new(40)),
+            ConstructedDelegateInvokeMethods = ImmutableDictionary<string, WasmFunctionIndex>.Empty
+                .Add("Func`2<int,int>::Invoke", new(41)),
+        };
+
+        Assert.True(map.TryGetMethod(invoke, out var definition));
+        Assert.True(map.TryGetConstructedMethod("Func`2<int,int>::Invoke", out var constructed));
+        Assert.Equal(40, definition.Value);
+        Assert.Equal(41, constructed.Value);
+        Assert.True(map.TryGetConstructedMethod("generic", out var method));
+        Assert.Equal(31, method.Value);
+        Assert.False(map.TryGetConstructedMethod("Func`2<int,int>", out _));
+    }
+
     [Fact]
     public void JSImportForwarderShadowsTheRawImportOnlyForManagedResolution()
     {

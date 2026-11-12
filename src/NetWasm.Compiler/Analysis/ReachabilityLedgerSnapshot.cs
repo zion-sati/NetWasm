@@ -54,9 +54,6 @@ internal sealed record ReachabilityLedgerSnapshot(
     internal ImmutableDictionary<string, PropertyInstanceModel> PropertyDescriptors { get; init; } =
         ImmutableDictionary<string, PropertyInstanceModel>.Empty;
 
-    internal ImmutableDictionary<string, MethodInstanceModel> DelegateInvokeDescriptors
-    { get; init; } = ImmutableDictionary<string, MethodInstanceModel>.Empty;
-
     internal ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
         ObjectArrayDelegateAdapters
     { get; init; } = ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Empty;
@@ -68,11 +65,20 @@ internal sealed record ReachabilityLedgerSnapshot(
 
     internal bool RequiresTypeFacts { get; init; }
 
-    internal bool RequiresDelegateInvoke { get; init; }
-
     internal bool RequiresGenericArguments { get; init; }
 
-    internal RuntimeTypeNamePayload TypeNamePayload { get; init; }
+    internal bool RequiresDeclaringTypes { get; init; }
+
+    internal bool RequiresGenericDefinitions { get; init; }
+
+    internal bool RequiresAssemblies { get; init; }
+
+    internal bool RequiresElementTypes { get; init; }
+
+    internal bool RequiresTypeAttributes { get; init; }
+
+    internal bool RequiresInterfaces { get; init; }
+
 
     internal ImmutableDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
@@ -114,14 +120,17 @@ internal sealed record ReachabilityLedgerSnapshot(
         MethodDescriptors = ledger.MethodDescriptors.ToImmutable(),
         FieldDescriptors = ledger.FieldDescriptors.ToImmutable(),
         PropertyDescriptors = ledger.PropertyDescriptors.ToImmutable(),
-        DelegateInvokeDescriptors = ledger.DelegateInvokeDescriptors.ToImmutable(),
         ObjectArrayDelegateAdapters = ledger.ObjectArrayDelegateAdapters.ToImmutable(),
         MemberExecution = ledger.MemberExecution,
         NamedMemberDescriptors = ledger.NamedMemberDescriptors.ToImmutable(),
         RequiresTypeFacts = ledger.RequiresTypeFacts,
-        RequiresDelegateInvoke = ledger.RequiresDelegateInvoke,
         RequiresGenericArguments = ledger.RequiresGenericArguments,
-        TypeNamePayload = ledger.TypeNamePayload,
+        RequiresDeclaringTypes = ledger.RequiresDeclaringTypes,
+        RequiresGenericDefinitions = ledger.RequiresGenericDefinitions,
+        RequiresAssemblies = ledger.RequiresAssemblies,
+        RequiresElementTypes = ledger.RequiresElementTypes,
+        RequiresTypeAttributes = ledger.RequiresTypeAttributes,
+        RequiresInterfaces = ledger.RequiresInterfaces,
         NativeCallbacks = ledger.NativeCallbacks.ToImmutable(),
     };
 }

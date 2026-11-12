@@ -62,6 +62,17 @@ public sealed class DeploymentManifestValidatorTests
         });
     }
 
+    // Issue 225: a program opens its symbols sidecars by their names beside it.
+    [Fact]
+    public void AcceptsSymbolsSidecarsBesideTheApplication()
+    {
+        var manifest = ManifestFixture.Create();
+        _subject.Validate(manifest with
+        {
+            Artifacts = [.. manifest.Artifacts, SymbolsArtifact(manifest, "type-symbols"), SymbolsArtifact(manifest, "method-symbols")],
+        });
+    }
+
     [Fact]
     public void RejectsNullManifest() => Assert.Throws<ArgumentNullException>(() => _subject.Validate(null!));
 
@@ -76,6 +87,8 @@ public sealed class DeploymentManifestValidatorTests
         var application = valid.Artifacts[0];
         var receipt = valid.Artifacts[1];
         var timeZone = TimeZoneArtifact(valid);
+        var typeSymbols = SymbolsArtifact(valid, "type-symbols");
+        var methodSymbols = SymbolsArtifact(valid, "method-symbols");
         var import = valid.RequiredImports[0];
         var export = valid.Exports[0];
         var data = new TheoryData<DeploymentManifest>
@@ -134,6 +147,12 @@ public sealed class DeploymentManifestValidatorTests
                 RuntimeFeatures = ["local-time"],
                 Artifacts = [application, receipt, timeZone with { SchemaVersion = 2 }],
             },
+            valid with { Artifacts = [application, receipt, typeSymbols, typeSymbols with { RelativePath = "other.wasm.type-symbols" }] },
+            valid with { Artifacts = [application, receipt, methodSymbols, methodSymbols] },
+            valid with { Artifacts = [application, receipt, typeSymbols with { RelativePath = "other.wasm.type-symbols" }] },
+            valid with { Artifacts = [application, receipt, methodSymbols with { MediaType = "application/octet-stream" }] },
+            valid with { Artifacts = [application, receipt, typeSymbols with { SchemaVersion = null }] },
+            valid with { Artifacts = [application, receipt, methodSymbols with { SchemaVersion = 2 }] },
             valid with { RequiredImportModules = default },
             valid with { RequiredImportModules = [] },
             valid with
@@ -206,6 +225,13 @@ public sealed class DeploymentManifestValidatorTests
 
         return data;
     }
+
+    private static DeploymentArtifact SymbolsArtifact(DeploymentManifest manifest, string role) => new(
+        manifest.Artifacts.Single(artifact => artifact.Role == "application").RelativePath + "." + role,
+        role,
+        $"application/vnd.netwasm.{role};version=1",
+        new string('d', 64),
+        1);
 
     private static DeploymentArtifact TimeZoneArtifact(DeploymentManifest manifest) => new(
         manifest.Artifacts.Single(artifact => artifact.Role == "application").RelativePath + ".tz-info",

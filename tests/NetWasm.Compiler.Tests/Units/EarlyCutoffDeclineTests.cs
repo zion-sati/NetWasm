@@ -252,13 +252,13 @@ public sealed class EarlyCutoffDeclineTests
         Assert.True(report.Contains("early cutoff: declined (the stack-trace symbols changed)", StringComparison.Ordinal), report);
     }
 
-    // A compile without an exception type map binds none to the module it is served.
+    // A compile with type names is served with the last compile's names.
     [Fact]
-    public void AnUnchangedCompileWithoutAnExceptionTypeMapIsServed()
+    public void AnUnchangedCompileWithTypeNamesIsServed()
     {
         using var assets = TestAssets.Create();
 
-        var report = Compile(assets, Plain, Plain, _ => { }, options => options with { EmitExceptionTypeMap = false });
+        var report = Compile(assets, Plain, Plain, _ => { }, options => options with { EmitTypeNames = true });
 
         Assert.Contains("early cutoff: nothing changed", report, StringComparison.Ordinal);
     }

@@ -47,6 +47,11 @@ internal sealed record ValueFrameLayout(
 
     public ImmutableDictionary<int, int> CallReceiverOffsets { get; init; } =
         ImmutableDictionary<int, int>.Empty;
+
+    // The value type each newobj constructs in its own temporary, by instruction offset. The
+    // constructor receives the temporary's address and can store references into it.
+    public ImmutableDictionary<int, CliTypeIdentity> ConstructedValueTypes { get; init; } =
+        ImmutableDictionary<int, CliTypeIdentity>.Empty;
 }
 
 internal sealed class ValueFrameLayoutPlanner(
@@ -202,6 +207,7 @@ internal sealed class ValueFrameLayoutPlanner(
         var temporaries = ImmutableDictionary.CreateBuilder<int, int>();
         var memberResults = ImmutableDictionary.CreateBuilder<int, int>();
         var callReceivers = ImmutableDictionary.CreateBuilder<int, int>();
+        var constructedValues = ImmutableDictionary.CreateBuilder<int, CliTypeIdentity>();
         var nativeArguments = ImmutableDictionary.CreateBuilder<(int InstructionOffset, int ParameterIndex), int>();
         var stackRequirements = new Dictionary<int, StackStorageRequirement>();
         var stackAssignments = new Dictionary<int, int>();
@@ -211,7 +217,7 @@ internal sealed class ValueFrameLayoutPlanner(
                          CilOperation.NewRectangularArray or
                          CilOperation.NewBoundedRectangularArray or
                          CilOperation.UnboxAny or CilOperation.Call or
-                         CilOperation.CallVirtual or CilOperation.LoadObject or
+                         CilOperation.CallVirtual or CilOperation.CallIndirect or CilOperation.LoadObject or
                          CilOperation.LoadArgument or CilOperation.LoadLocal or
                          CilOperation.LoadField or CilOperation.LoadStaticField or
                          CilOperation.LoadArrayElement or
@@ -339,6 +345,24 @@ internal sealed class ValueFrameLayoutPlanner(
                 }
                 continue;
             }
+            // A calli returns a value type through the buffer a call does.
+            if (instruction.Operation == CilOperation.CallIndirect)
+            {
+                var callSite = (CilOperand.CallSite)instruction.Operand;
+                var indirectSignature = callSite.Signature;
+                // An unmanaged calli lowers its arguments and result as a DllImport call does.
+                if (callSite.Unmanaged)
+                {
+                    ReserveNativeCall(instruction, (nativeImports ?? NativeImportPlan.Empty)
+                        .CallSites.For(indirectSignature).Lowering);
+                    continue;
+                }
+                if (indirectSignature.ReturnSignatureType.StackKind == CliValueKind.ValueType)
+                {
+                    ReserveUniqueResult(indirectSignature.ReturnSignatureType, instruction.Offset);
+                }
+                continue;
+            }
             if (instruction.Operation is CilOperation.Call or CilOperation.CallVirtual)
             {
                 if (aggregatePromotions.Producers.ContainsKey(instruction.Offset))
@@ -370,6 +394,7 @@ internal sealed class ValueFrameLayoutPlanner(
             if (declaringType.IsValueType)
             {
                 ReserveUniqueResult(declaringType, instruction.Offset);
+                constructedValues.Add(instruction.Offset, declaringType);
             }
         }
 
@@ -459,6 +484,7 @@ internal sealed class ValueFrameLayoutPlanner(
             NativeArgumentOffsets = nativeArguments.ToImmutable(),
             MemberResultOffsets = memberResults.ToImmutable(),
             CallReceiverOffsets = callReceivers.ToImmutable(),
+            ConstructedValueTypes = constructedValues.ToImmutable(),
         };
 
         void ReserveCallResult(CilInstruction instruction)
@@ -533,14 +559,7 @@ internal sealed class ValueFrameLayoutPlanner(
                 if (nativeImports is null || !nativeImports.ByMethod.TryGetValue(calledMethod.Key, out var native))
                     throw new CompilerException(new(DiagnosticCode.CompilerInvariant,
                         "A native call has no published ABI plan.", calledMethod.Name, instruction.Offset));
-                var lowering = native.Abi.Lowering;
-                foreach (var parameter in lowering.Parameters)
-                {
-                    if (parameter.Value.Kind == NativeAbiValueKind.IndirectAggregate)
-                        ReserveNativeArgument(instruction, parameter);
-                }
-                if (lowering.Result.LogicalType.StackKind is CliValueKind.ValueType or CliValueKind.V128)
-                    ReserveNativeResult(instruction, lowering.Result);
+                ReserveNativeCall(instruction, native.Abi.Lowering);
                 return;
             }
             var receiverType = instruction.Operand is CilOperand.MethodInstance receiver
@@ -566,6 +585,17 @@ internal sealed class ValueFrameLayoutPlanner(
                     callSignature.ReturnSignatureType,
                     instruction.Offset);
             }
+        }
+
+        void ReserveNativeCall(CilInstruction instruction, NativeAbiSignaturePlan lowering)
+        {
+            foreach (var parameter in lowering.Parameters)
+            {
+                if (parameter.Value.Kind == NativeAbiValueKind.IndirectAggregate)
+                    ReserveNativeArgument(instruction, parameter);
+            }
+            if (lowering.Result.LogicalType.StackKind is CliValueKind.ValueType or CliValueKind.V128)
+                ReserveNativeResult(instruction, lowering.Result);
         }
 
         void ReserveUniqueResult(CliTypeIdentity type, int instructionOffset)
@@ -651,6 +681,9 @@ internal sealed class ValueFrameLayoutPlanner(
                 CilOperation.LoadRectangularArrayElement => checked(
                     _typeOperands.Resolve(instruction, header.MethodInstance).ArrayRank + 1),
                 CilOperation.Call or CilOperation.CallVirtual => GetCallConsumed(instruction),
+                // An unmanaged calli consumes its arguments and the function pointer (issue 226).
+                CilOperation.CallIndirect =>
+                    ((CilOperand.CallSite)instruction.Operand).Signature.ParameterTypes.Length + 1,
                 _ => throw new InvalidOperationException(
                     $"Instruction '{operation}' does not produce a planned value temporary."),
             };

@@ -35,19 +35,23 @@ for (const target of ['wasm32', 'wasm64']) {
       assert.equal(text(base + width), '/資産');
       return view().getInt32(base, true);
     };
-    // The record CoreLib writes, with 32-bit path fields on either target.
+    // The record CoreLib writes, its path's address and length pointer-sized, and the result
+    // whose payload lies at the pointer width.
+    const writeAddress = (at, value) => width === 8
+      ? view().setBigUint64(at, BigInt(value), true)
+      : view().setUint32(at, value, true);
     const open = (directory, name = '資料.bin', pathFlags = 0, openFlags = 0, flags = 1) => {
       const encoded = new TextEncoder().encode(name);
       new Uint8Array(memory.buffer, 256, encoded.length).set(encoded);
       view().setInt32(128, directory, true);
       view().setUint8(132, pathFlags);
-      view().setUint32(136, 256, true);
-      view().setUint32(140, encoded.length, true);
-      view().setUint8(144, openFlags);
-      view().setUint8(145, flags);
-      for (let offset = 0; offset < 20; offset++) view().setUint8(64 + offset, 0xcc);
+      writeAddress(136, 256);
+      writeAddress(136 + width, encoded.length);
+      view().setUint8(136 + width * 2, openFlags);
+      view().setUint8(137 + width * 2, flags);
+      for (let offset = 0; offset < width * 5; offset++) view().setUint8(64 + offset, 0xcc);
       assert.equal(builtIns['[async-lower][method]descriptor.open-at'](address(128), address(64)), returned);
-      return view().getUint8(64) === 0 ? view().getInt32(68, true) : -view().getUint8(68);
+      return view().getUint8(64) === 0 ? view().getInt32(64 + width, true) : -view().getUint8(64 + width);
     };
     const streamOf = (handle, offset) => {
       types['[method]descriptor.read-via-stream'](handle, BigInt(offset), address(96));
@@ -62,7 +66,7 @@ for (const target of ['wasm32', 'wasm64']) {
     const outcome = future => {
       assert.equal(builtIns['[async-lower][future-read-1][method]descriptor.read-via-stream'](
         future, address(160)), completed);
-      return view().getUint8(160) === 0 ? 'ok' : view().getUint8(164);
+      return view().getUint8(160) === 0 ? 'ok' : view().getUint8(160 + width);
     };
     return { allocations, imports, types, builtIns, directories, open, streamOf, read, outcome };
   }

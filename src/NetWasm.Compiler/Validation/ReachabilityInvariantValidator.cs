@@ -70,7 +70,9 @@ internal sealed class ReachabilityInvariantValidator(
         {
             foreach (var target in pair.Value.Targets)
             {
-                var reachable = IsResolvable(program, target.Method, intrinsics, dispatchImports);
+                // A delegate's Invoke, which ldvirtftn may name, is its type's invoke helper.
+                var reachable = IsResolvable(program, target.Method, intrinsics, dispatchImports) ||
+                    IsDelegateInvoke(types, target.Method);
                 if (!reachable)
                 {
                     throw exceptions.Create(
@@ -115,7 +117,9 @@ internal sealed class ReachabilityInvariantValidator(
             {
                 if (instruction.Operation == CilOperation.CallIndirect)
                 {
-                    if (program.CallableMethods.IsEmpty)
+                    // An unmanaged calli calls native code through its trampoline (issue 226).
+                    if (instruction.Operand is not CilOperand.CallSite { Unmanaged: true } &&
+                        program.CallableMethods.IsEmpty)
                     {
                         throw exceptions.Create(
                             "indirect call has no reachable callable target",
@@ -170,8 +174,9 @@ internal sealed class ReachabilityInvariantValidator(
         });
         foreach (var pair in program.CallableMethods)
         {
+            // A delegate's Invoke is its type's invoke helper, which every bound Invoke has.
             if (pair.Key != pair.Value.CanonicalName ||
-                !IsResolvable(program, pair.Value, intrinsics, imports))
+                !IsResolvable(program, pair.Value, intrinsics, imports) && !IsDelegateInvoke(types, pair.Value))
             {
                 throw exceptions.Create(
                     $"callable method '{pair.Key}' has no canonical reachable target");
@@ -283,6 +288,9 @@ internal sealed class ReachabilityInvariantValidator(
         program.MethodInstances.TryGetValue(method.CanonicalName, out var native) &&
         native.HasEquivalentDescriptorFacts(method) ||
         imports.Contains(method.Definition.Key);
+
+    private static bool IsDelegateInvoke(ITypeClassifier types, MethodInstanceModel method) =>
+        method.Definition.Name == "Invoke" && types.IsDelegateType(method.Definition.DeclaringType);
 
     private static bool IsDelegateRuntimeMethod(
         ITypeClassifier types,

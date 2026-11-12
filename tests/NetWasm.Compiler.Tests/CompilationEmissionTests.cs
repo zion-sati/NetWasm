@@ -17,10 +17,12 @@ public sealed class CompilationEmissionTests
             ImmutableDictionary<EntityKey, StructuredMethod>.Empty,
             ImmutableDictionary<string, StructuredMethod>.Empty);
 
-        var emission = new CompilationEmission(result, lowering);
+        var types = new NetWasm.Compiler.Symbols.RuntimeTypeSymbolTable([], [], []);
+        var emission = new CompilationEmission(result, lowering, types);
 
         Assert.Same(result, emission.Result);
         Assert.Same(lowering, emission.Lowering);
+        Assert.Same(types, emission.TypeSymbols);
     }
 
     [Fact]
@@ -31,7 +33,9 @@ public sealed class CompilationEmissionTests
             ImmutableDictionary<EntityKey, StructuredMethod>.Empty,
             ImmutableDictionary<string, StructuredMethod>.Empty);
 
-        Assert.Throws<ArgumentNullException>(() => new CompilationEmission(null!, lowering));
-        Assert.Throws<ArgumentNullException>(() => new CompilationEmission(result, null!));
+        var types = new NetWasm.Compiler.Symbols.RuntimeTypeSymbolTable([], [], []);
+        Assert.Throws<ArgumentNullException>(() => new CompilationEmission(null!, lowering, types));
+        Assert.Throws<ArgumentNullException>(() => new CompilationEmission(result, null!, types));
+        Assert.Throws<ArgumentNullException>(() => new CompilationEmission(result, lowering, null!));
     }
 }

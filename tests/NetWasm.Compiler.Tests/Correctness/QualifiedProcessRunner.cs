@@ -59,7 +59,8 @@ internal sealed class QualifiedProcessRunner : IQualifiedProcessRunner
             if (!WaitForExit(process, request.Timeout, cancellationToken))
             {
                 var cleanup = Terminate(process);
-                var streams = ReadStreams(standardOutput, standardError);
+                var streams = ReadStreams(
+                    standardOutput, standardError, ForcedTerminationTimeout, CancellationToken.None);
                 stopwatch.Stop();
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -77,7 +78,13 @@ internal sealed class QualifiedProcessRunner : IQualifiedProcessRunner
                 };
             }
 
-            var completedStreams = ReadStreams(standardOutput, standardError);
+            // The pipes close when every process holding them has exited, which a loaded host may
+            // see seconds after the exit itself; only the request's own timeout bounds that.
+            var completedStreams = ReadStreams(
+                standardOutput,
+                standardError,
+                Max(request.Timeout - stopwatch.Elapsed, ForcedTerminationTimeout),
+                cancellationToken);
             if (completedStreams.Failure is not null)
             {
                 stopwatch.Stop();
@@ -228,18 +235,22 @@ internal sealed class QualifiedProcessRunner : IQualifiedProcessRunner
 
     private static ProcessStreamResult ReadStreams(
         Task<string> standardOutput,
-        Task<string> standardError)
+        Task<string> standardError,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
-        if (!Task.WaitAll([standardOutput, standardError], ForcedTerminationTimeout))
+        if (!Task.WaitAll([standardOutput, standardError], (int)timeout.TotalMilliseconds, cancellationToken))
         {
             return new(
                 standardOutput.IsCompletedSuccessfully ? standardOutput.Result : string.Empty,
                 standardError.IsCompletedSuccessfully ? standardError.Result : string.Empty,
                 $"process output pipes did not close within " +
-                $"{ForcedTerminationTimeout.TotalMilliseconds} ms");
+                $"{timeout.TotalMilliseconds:F0} ms");
         }
         return new(standardOutput.Result, standardError.Result, null);
     }
+
+    private static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
 
     private readonly record struct ProcessCleanupResult(
         QualifiedProcessTermination Termination,

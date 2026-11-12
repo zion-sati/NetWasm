@@ -188,6 +188,8 @@ else
     bash tests/end-to-end/component-model/run-http-service.sh
   run_gate env NETWASM_WASI_STREAM_ARTIFACT_DIR="$artifact_dir/wasi-stream" \
     bash tests/end-to-end/component-model/run-wasi-stream.sh
+  run_gate env NETWASM_CONSOLE_STALL_ARTIFACT_DIR="$artifact_dir/console-stall" \
+    bash tests/end-to-end/component-model/run-console-stall.sh
   run_gate env NETWASM_COMPONENT_MIXED_ARTIFACT_DIR="$artifact_dir/mixed-boundary" \
     bash tests/end-to-end/component-model/run-mixed-boundary.sh
   run_gate env NETWASM_LIBRARY_EDGE_ARTIFACT_DIR="$artifact_dir/library-profile-edges" \

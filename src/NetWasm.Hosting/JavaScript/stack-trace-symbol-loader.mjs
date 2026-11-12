@@ -20,5 +20,5 @@ export async function loadStackTraceSymbols(url, fetchImpl = globalThis.fetch) {
     throw new NetWasmHostError(
       `failed to load stack-trace symbol sidecar '${url}': HTTP ${response.status}`);
   }
-  return parseStackTraceSymbols(await response.text());
+  return parseStackTraceSymbols(new Uint8Array(await response.arrayBuffer()));
 }

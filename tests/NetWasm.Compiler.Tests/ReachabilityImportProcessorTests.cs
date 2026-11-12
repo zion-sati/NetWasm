@@ -18,7 +18,7 @@ public sealed class ReachabilityImportClassifierTests
         var method = Method(40, MethodSignatureModel.Create(CliValueKind.I4)) with
         {
             NativeImport = new("mule", "increment", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var planner = new RecordingNativeDeclarationValidator(reject);
         var classifier = Assert.IsAssignableFrom<IReachabilityImportClassifier>(
@@ -76,7 +76,7 @@ public sealed class ReachabilityImportClassifierTests
         var method = Method(41, MethodSignatureModel.Create(CliValueKind.Void)) with
         {
             NativeImport = new("mule", "reset", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var planner = new RecordingNativeDeclarationValidator(false);
         var factory = Assert.IsAssignableFrom<IReachabilityImportClassifierFactory>(
@@ -110,7 +110,7 @@ public sealed class ReachabilityImportClassifierTests
         var method = Method(42, signature) with
         {
             NativeImport = new("mule", "aggregate", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var classifier = Assert.IsAssignableFrom<IReachabilityImportClassifier>(
             new ReachabilityImportClassifier(

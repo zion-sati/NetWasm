@@ -19,7 +19,8 @@ internal sealed class ReachabilityInstructionAnalyzer(
     INullableTypeResolver nullableTypes,
     IManagedCallSiteFactory managedCallSites,
     INativeCallbackDeclarationValidator nativeCallbacks,
-    IDispatchReceiverBoundResolver receiverBounds) : IReachabilityInstructionAnalyzer
+    IDispatchReceiverBoundResolver receiverBounds,
+    IRuntimeIntrinsicRegistry intrinsics) : IReachabilityInstructionAnalyzer
 {
     public ReachabilityInstructionAnalysis Analyze(ReachabilityInstructionRequest request)
     {
@@ -39,10 +40,14 @@ internal sealed class ReachabilityInstructionAnalyzer(
         var reachedNativeCallbacks = ImmutableArray.CreateBuilder<MethodInstanceModel>();
         var callSites = ImmutableArray.CreateBuilder<ManagedCallSite>();
         var requiresTypeFacts = false;
-        var requiresDelegateInvoke = false;
         var requiresGenericArguments = false;
+        var requiresDeclaringTypes = false;
+        var requiresGenericDefinitions = false;
+        var requiresAssemblies = false;
+        var requiresElementTypes = false;
+        var requiresTypeAttributes = false;
+        var requiresInterfaces = false;
         var requiresMemberNames = false;
-        var typeNamePayload = RuntimeTypeNamePayload.None;
         var instructions = request.Body.Instructions;
         for (var instructionIndex = 0; instructionIndex < instructions.Length; instructionIndex++)
         {
@@ -58,9 +63,13 @@ internal sealed class ReachabilityInstructionAnalyzer(
             if (calledMethod is not null)
             {
                 requiresMemberNames |= ReachabilityMarkers.RequiresMemberNames(calledMethod);
-                requiresDelegateInvoke |= ReachabilityMarkers.RequiresDelegateInvoke(calledMethod);
                 requiresGenericArguments |= ReachabilityMarkers.RequiresGenericArguments(calledMethod);
-                typeNamePayload |= ReachabilityMarkers.TypeNamePayload(calledMethod);
+                requiresDeclaringTypes |= ReachabilityMarkers.RequiresDeclaringTypes(calledMethod);
+                requiresGenericDefinitions |= ReachabilityMarkers.RequiresGenericDefinitions(calledMethod);
+                requiresAssemblies |= ReachabilityMarkers.RequiresAssemblies(calledMethod);
+                requiresElementTypes |= ReachabilityMarkers.RequiresElementTypes(calledMethod);
+                requiresTypeAttributes |= ReachabilityMarkers.RequiresTypeAttributes(calledMethod);
+                requiresInterfaces |= ReachabilityMarkers.RequiresInterfaces(calledMethod);
                 callSites.Add(managedCallSites.Create(
                     request.Method,
                     request.Body,
@@ -111,7 +120,7 @@ internal sealed class ReachabilityInstructionAnalyzer(
             }
             if (instruction.Operation is CilOperation.MaterializeType or CilOperation.GetObjectType)
             {
-                var typeFacade = typeFinder.FindType("System.Type");
+                var typeFacade = typeFinder.FindType(RuntimeTypeObjects.ClassName);
                 types.Add(typeFacade.Key);
                 allocatedTypes.Add(typeIdentities.GetTypeIdentity(typeFacade.Key));
                 if (instruction.Operation == CilOperation.GetObjectType &&
@@ -182,6 +191,20 @@ internal sealed class ReachabilityInstructionAnalyzer(
                 constructedTypes.Add(data.ElementType);
                 continue;
             }
+            // A delegate's Invoke is the runtime's: its type's invoke helper, which a call, direct or
+            // virtual, runs and which its address names. A virtual address load keeps its dispatch
+            // site, whose target is the same helper.
+            if (calledMethod is not null &&
+                instruction.Operation is CilOperation.Call or CilOperation.CallVirtual or CilOperation.LoadFunction &&
+                delegateMethods.Classify(calledMethod) == DelegateMethodKind.Invoke)
+            {
+                types.Add(calledMethod.Definition.DeclaringType);
+                if (instruction.Operation == CilOperation.LoadFunction)
+                {
+                    callableMethods.Add(calledMethod);
+                }
+                continue;
+            }
             if (instruction.Operation == CilOperation.LoadFunction && calledMethod is not null)
             {
                 if (calledMethod.Definition.NativeCallback is not null)
@@ -202,23 +225,25 @@ internal sealed class ReachabilityInstructionAnalyzer(
                     "An UnmanagedCallersOnly method cannot be invoked directly from managed code.",
                     calledMethod.CanonicalName));
             }
-            if (instruction.Operation == CilOperation.CallVirtual &&
-                calledMethod is not null &&
-                delegateMethods.Classify(calledMethod) == DelegateMethodKind.Invoke)
-            {
-                types.Add(calledMethod.Definition.DeclaringType);
-                continue;
-            }
             var precedingConstraintType = instructionIndex > 0 &&
                 instructions[instructionIndex - 1].Operation == CilOperation.Constrained
                     ? ((CilOperand.TypeIdentity)instructions[instructionIndex - 1].Operand).Value
                     : null;
-            if (instruction.Operation is CilOperation.CallVirtual or CilOperation.LoadVirtualFunction &&
-                calledMethod is not null &&
-                calledMethod.Definition.IsVirtual &&
-                (!calledMethod.DeclaringType.IsValueType ||
-                    instruction.Operation == CilOperation.LoadVirtualFunction) &&
-                precedingConstraintType?.IsValueType is not true)
+            // A call that names a method whose behaviour depends on its receiver's exact type,
+            // without a constrained prefix that names it (a struct's base.Equals, or the body a
+            // delegate to ValueType.Equals runs), dispatches on the receiver like a virtual call,
+            // but always to the named method (ECMA-335 III.3.19).
+            var receiverTyped = instruction.Operation == CilOperation.Call && calledMethod is not null &&
+                precedingConstraintType is null &&
+                intrinsics.TryGetIntrinsic(calledMethod.Definition.Key, out var intrinsic) &&
+                RuntimeIntrinsicKinds.DependsOnReceiverType(intrinsic);
+            if (calledMethod is not null &&
+                (receiverTyped ||
+                    instruction.Operation is CilOperation.CallVirtual or CilOperation.LoadVirtualFunction &&
+                    calledMethod.Definition.IsVirtual &&
+                    (!calledMethod.DeclaringType.IsValueType ||
+                        instruction.Operation == CilOperation.LoadVirtualFunction) &&
+                    precedingConstraintType?.IsValueType is not true))
             {
                 var declaration = new DispatchDeclaration(
                     request.Method.CanonicalName,
@@ -304,10 +329,14 @@ internal sealed class ReachabilityInstructionAnalyzer(
             MethodDescriptors = methodDescriptors.ToImmutable(),
             FieldDescriptors = fieldDescriptors.ToImmutable(),
             RequiresTypeFacts = requiresTypeFacts,
-            RequiresDelegateInvoke = requiresDelegateInvoke,
             RequiresGenericArguments = requiresGenericArguments,
+            RequiresDeclaringTypes = requiresDeclaringTypes,
+            RequiresGenericDefinitions = requiresGenericDefinitions,
+            RequiresAssemblies = requiresAssemblies,
+            RequiresElementTypes = requiresElementTypes,
+            RequiresTypeAttributes = requiresTypeAttributes,
+            RequiresInterfaces = requiresInterfaces,
             RequiresMemberNames = requiresMemberNames,
-            TypeNamePayload = typeNamePayload,
             NativeCallbacks = reachedNativeCallbacks.ToImmutable(),
         };
 

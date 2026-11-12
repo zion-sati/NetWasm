@@ -153,27 +153,118 @@ Rich exception diagnostics are a build-profile choice, not a promise of desktop
 .NET diagnostic behavior. See [the exception-profile defaults, opt-ins and
 interop payload boundaries](diagnostics.md#managed-exceptions-and-diagnostic-profiles).
 
-SDK Debug builds enable managed stack instrumentation and its deterministic
-symbol sidecar by default; Release builds leave it out unless
-`NetWasmManagedStackTrace=true`. `nwc` enables the same behavior
-with `-stacktracesymbols:<path>`. `Exception.StackTrace` then reports the
-captured managed frames without adding general reflection or type-name metadata
-to the Wasm image. This is diagnostic stack-trace support, not source-level
+SDK Debug builds enable managed stack instrumentation by default and write the
+frame names to `<program>.wasm.method-symbols` beside the program; Release
+builds leave both out unless `NetWasmManagedStackTrace=true`. `nwc` enables the
+same behavior with `-methodsymbols:<path>`. The program reads that file at
+startup (see [program sidecars](diagnostics.md#program-sidecars)), and
+`Exception.StackTrace` then names each captured frame. A frame without a name
+reads `method#<id>`. This is diagnostic stack-trace support, not source-level
 debugging or DWARF; see
 [deferred debug information](#deferred-debug-information-dwarf).
 
 ### Type names
 
-`Type.Name`, `Type.Namespace`, `Type.FullName` and `Type.ToString()` work on
-any `Type` value, including one from `GetType()`. Looking a type up by its name,
-as `Type.GetType(string)` does, is outside the profile.
+A program carries no type names. `Type.Name`, `Type.FullName` and
+`Type.ToString()` return `type#<id>`, the type's runtime type ID in decimal
+(`type#37`), whether the `Type` came from `typeof` or `GetType()`.
+`Type.Namespace` returns `null`, and `Type.AssemblyQualifiedName` returns
+`type#37, <Assembly name unavailable>`. The default `Object.ToString()` returns
+the same text, and `Exception.ToString()` and framework messages that name a
+type use it. Each type has its own text, the same however code reaches the type,
+so a dictionary keyed by type name keeps working. Code that needs a readable
+name should use a string it already has, such as a constant or `nameof`.
 
-The names come from data the compiler generates, and they are not free. The
-first reachable read of one of these members, on any type, adds that form of
-name for every type in the program, together with the runtime type facts the
-names rely on: tens of kilobytes in a small application. Code that must stay
-small, such as an error path every application reaches, should use a string it
-already has, for example a constant or `nameof`.
+`NetWasmTypeNames`, on in Debug and off in Release, writes every type's names,
+and the names of the assemblies `Type.Assembly` can return, to
+`<program>.wasm.type-symbols` beside the program, and the program reads them at
+startup (see [program sidecars](diagnostics.md#program-sidecars)). Names then
+form as .NET forms them: `typeof(List<int>).FullName` is
+``System.Collections.Generic.List`1[[System.Int32, NetWasm.CoreLib, Version=…, Culture=neutral, PublicKeyToken=null]]``,
+its `ToString()` is ``System.Collections.Generic.List`1[System.Int32]``, and
+`Assembly.FullName` and `GetName()` read the assembly's display name. CoreLib's
+assembly is `NetWasm.CoreLib`, where .NET's is `System.Private.CoreLib`. Without
+the sidecar an assembly's name reads `<Assembly name unavailable>`.
+
+Looking a type up by name needs those names. With them,
+`Type.GetType(string)`, `Assembly.GetType(string)` and `Module.GetType(string)`
+find the program's type whose `FullName` or `AssemblyQualifiedName` is the whole
+string (`Type.GetType("Sample.Order")`), and `GetNestedType(string)` and
+`GetInterface(string)` match by name. Names are matched as written, not parsed,
+and a type nothing in the program uses is not found: the lookup returns `null`,
+or throws `TypeLoadException` with `throwOnError`. Without type names these
+lookups throw `PlatformNotSupportedException`.
+
+### Runtime type information
+
+Every type a program can reach answers, at run time and without the sidecar,
+what .NET 11 answers for its kind (`IsValueType`, `IsEnum`, `IsInterface`,
+`IsClass`, `IsAbstract`, `IsSealed`, `IsArray`, `IsSZArray`, `IsByRef`,
+`IsPointer`, `IsGenericType`, `IsGenericTypeDefinition`,
+`ContainsGenericParameters`, `IsGenericParameter`, `IsTypeDefinition`,
+`IsByRefLike`), `Type.GetTypeCode`, `GetArrayRank()`, `BaseType`,
+`IsAssignableFrom` and `IsAssignableTo`. `Attributes` and the queries built on
+it (`IsPublic`, `IsNotPublic`, the `IsNested*` visibilities, `IsVisible`,
+`IsSerializable`, `IsAutoLayout`, `IsLayoutSequential`, `IsExplicitLayout`,
+`IsAnsiClass`, `IsImport`, `IsSpecialName`) read the type's metadata as .NET
+reports it. `IsFunctionPointer` reads `false` for every type. As on .NET, a
+type's `Type` object is also its `TypeInfo`: `GetTypeInfo()` returns the type
+itself, and `TypeInfo`'s members answer as the `Type` members they forward to.
+
+A type's relations come from the same table. `GetGenericArguments()` and
+`GenericTypeArguments` return its generic arguments (an open definition's
+parameters), `GetGenericTypeDefinition()` its open definition, and
+`GetElementType()` an array's, pointer's or by-reference type's element.
+`DeclaringType`, `ReflectedType` and `IsNested` return its enclosing type: a
+nested type of a generic type reports the open definition, a generic type
+parameter its owner, and an array, pointer, primitive or `Nullable<T>` `null`.
+`GetInterfaces()` and `GetInterface(string)` return the interfaces it
+implements, its own and its base types', and `GetNestedTypes()` and
+`GetNestedType(string)` its nested types, by visibility. A generic parameter
+answers `GenericParameterPosition` and `GenericParameterAttributes`, is a value
+type based on `ValueType` under the `struct` constraint and a class based on
+`Object` otherwise; a class-type constraint does not change its `BaseType`,
+and `GetGenericParameterConstraints()` throws `PlatformNotSupportedException`.
+
+A program cannot create types at run time, so `MakeArrayType`,
+`MakePointerType`, `MakeByRefType` and `MakeGenericType` return the type the
+program has with that element, rank or arguments, and throw
+`PlatformNotSupportedException` for one it does not use.
+
+`Type.Assembly` and `Assembly.GetAssembly(Type)` return one `Assembly` per
+assembly, so assemblies compare and key as on .NET; an array's or constructed
+type's assembly is its element's or definition's.
+`Assembly.GetExecutingAssembly()` returns the calling method's assembly and
+`GetEntryAssembly()` the entry point's. `GetTypes()` lists the assembly's type
+definitions, `DefinedTypes` the same as `TypeInfo`s, and `GetExportedTypes()` its
+visible ones. An assembly answers as a
+NativeAOT one does: its `Location` is empty, and its one module, which
+`Type.Module`, `ManifestModule` and `GetModules()` return, has the name
+`<Unknown>` and the assembly's file name as its `ScopeName` (`<Unknown>` without
+the sidecar). `GetCallingAssembly()`, `Assembly.Load`, manifest resources,
+assembly attributes, referenced assemblies, `ModuleVersionId` and metadata
+tokens are outside the profile.
+
+The lists and lookups (`GetInterfaces`, `GetNestedTypes`, `GetTypes`, the
+`Make*` methods and the name lookups) see the types the program uses: the
+compiler leaves every other type out of the program, so one nothing references
+is not listed or found, and an open generic definition or a generic parameter
+lists no interfaces. Lists come in type ID order, not metadata order. All of
+it comes from one bit-packed table with a few bits per type, and each part past
+a type's kind, base type and assignability is in it only when a program reads
+it.
+
+Member information comes only from what the compiler sees: a `MethodInfo`,
+`PropertyInfo` or `FieldInfo` exists for a member the program names, as an
+expression tree's `x => x.Name` does, and a delegate type's `Invoke` signature
+for a delegate type the program names. So `Delegate.DynamicInvoke` works on a
+value of its own delegate type (`Func<int, int> f; f.DynamicInvoke(1)`). On a
+value typed `Delegate` or `MulticastDelegate`, whose type only the run knows,
+it runs a parameterless `Action`, or a parameterless `Func<T>` whose `T` is a
+reference type, and throws `PlatformNotSupportedException` for any other
+delegate. `Expression.Invoke` of a
+lambda expression works, and of any other delegate-typed expression throws
+`PlatformNotSupportedException`.
 
 ## Complete / supported package profiles
 
@@ -213,7 +304,7 @@ profile. The separate library and test packages below are also published.
 | Area | Supported boundary |
 | --- | --- |
 | Bounded custom attribute queries | Type-targeted queries, `DescriptionAttribute`, and user-defined attributes, including closed generics, are available on raw wasm32/wasm64 and component wasm32. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [query profile](custom-attributes.md). |
-| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs, and static scalar/pointer `UnmanagedCallersOnly` callbacks across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction, arbitrary unmanaged `calli`, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
+| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs, static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction, the `Fastcall` and `Swift` calling conventions, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
 
 ## In progress
 
@@ -251,8 +342,8 @@ DWARF is not emitted today. The only planned DWARF mode is deterministic,
 unoptimized Debug output with truthful source line/function data for wasm32 and
 wasm64. Optimized or Release DWARF, reconstruction of optimized-away values,
 and a partial source-debugging experience are intentionally unsupported. The
-managed stack-trace sidecar is separate and remains the available diagnostic
-facility.
+managed stack-trace sidecar (`<program>.wasm.method-symbols`) is separate and
+remains the available diagnostic facility.
 
 The deferred debugger direction includes Rider and Visual Studio breakpoints,
 stepping, call stacks, Locals and a defined read-only Watch subset. The design
@@ -282,8 +373,8 @@ default precise tracing collector, and NetWasmGC the throughput-oriented one.
 
 NetWasm can compile and run wasm64 core modules through the raw-core host
 boundary. It cannot currently produce a wasm64 WebAssembly Component. The
-required external Memory64 Component path—commonly identified by the `cm64p2`
-canonical target name—does not yet provide the complete encoder, validator,
+required external Memory64 Component path, commonly identified by the `cm64p2`
+canonical target name, does not yet provide the complete encoder, validator,
 runtime, and browser-tooling support required to package and execute the
 Component.
 

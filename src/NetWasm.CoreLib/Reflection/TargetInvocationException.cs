@@ -3,6 +3,7 @@
 
 namespace System.Reflection
 {
+    [Serializable]
     public sealed class TargetInvocationException : ApplicationException
     {
         private const string DefaultMessage = "Exception has been thrown by the target of an invocation.";

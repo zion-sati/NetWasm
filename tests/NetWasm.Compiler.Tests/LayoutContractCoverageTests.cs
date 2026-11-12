@@ -93,7 +93,7 @@ public sealed class LayoutContractCoverageTests
             ImmutableDictionary<string, ObjectLayout>.Empty
                 .Add("System.Array", new ObjectLayout(1, 8, []))
                 .Add("System.String", new ObjectLayout(2, 8, []))
-                .Add("System.Type", new ObjectLayout(3, 8, [])),
+                .Add(RuntimeTypeObjects.ClassName, new ObjectLayout(3, 8, [])),
             ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty
                 .Add(constructed, objectLayout),
             state,
@@ -113,9 +113,9 @@ public sealed class LayoutContractCoverageTests
                 ManagedExceptionKind.NullReference,
                 56),
             [dataSegment],
-            [new(TypeKey, 7, 0, 12, 80, 2, null)],
-            [new(constructed, 7, 0, 12, 88, 2, null)],
-            [new(Type, 7, 8, 8, 96, 2)],
+            [new(TypeKey, 7, 0, 12, [4], null)],
+            [new(constructed, 7, 0, 12, [4], null)],
+            [new(Type, 7, 8, 8, [0])],
             [32]);
         var snapshot = new ManagedLayoutSnapshot(types, staticData);
 
@@ -180,7 +180,6 @@ public sealed class LayoutContractCoverageTests
             -1,
             -1,
             -1);
-        var state = new ManagedStaticDataBuildState();
         var builder = new AssignableTypeMetadataBuilder(
             new FixedIdentityResolver(interfaceType),
             new TypeDefinitions([
@@ -189,13 +188,11 @@ public sealed class LayoutContractCoverageTests
             ]),
             new NoTypeRelationships(),
             UnboundedTypeRelationshipKeys.Instance,
-            types,
-            state);
+            types);
 
         var result = builder.Build(Type);
 
-        Assert.Equal(default, result);
-        Assert.Empty(state.Segments);
+        Assert.Empty(result);
     }
 
     [Fact]
@@ -245,19 +242,16 @@ public sealed class LayoutContractCoverageTests
             -1,
             -1,
             -1);
-        var state = new ManagedStaticDataBuildState();
         var builder = new AssignableTypeMetadataBuilder(
             new FixedIdentityResolver(interfaceType),
             new TypeDefinitions([interfaceDefinition, genericDefinition]),
             new ThrowingTypeRelationships(),
             UnboundedTypeRelationshipKeys.Instance,
-            types,
-            state);
+            types);
 
         var result = builder.Build(genericType);
 
-        Assert.Equal(default, result);
-        Assert.Empty(state.Segments);
+        Assert.Empty(result);
     }
 
     [Theory]
@@ -338,7 +332,6 @@ public sealed class LayoutContractCoverageTests
             -1,
             -1,
             -1);
-        var state = new ManagedStaticDataBuildState { Cursor = 2 };
         var builder = new AssignableTypeMetadataBuilder(
             new FixedIdentityResolver(argument),
             new TypeDefinitions([
@@ -356,18 +349,11 @@ public sealed class LayoutContractCoverageTests
                 "filed" => new KeyTable(argument, ["variant", "array"], array, unboundedArray: false),
                 _ => new KeyTable(argument, ["variant"], array, unboundedArray: true),
             },
-            types,
-            state);
+            types);
 
         var result = builder.Build(argument);
 
-        Assert.Equal(new AssignableTypeMetadataLayout(4, 2), result);
-        Assert.Equal(12, state.Cursor);
-        var segment = Assert.Single(state.Segments);
-        Assert.Equal(4, segment.Address);
-        Assert.Equal(
-            (byte[])[7, 0, 0, 0, 9, 0, 0, 0],
-            segment.Data);
+        Assert.Equal([7, 9], result);
     }
 
     [Fact]
@@ -391,10 +377,9 @@ public sealed class LayoutContractCoverageTests
             new TypeDefinitions([Definition(new EntityKey(Assembly, 24), "Coverage.Argument", valueType: false)]),
             new AllTypeRelationships(),
             new KeyTable(argument, ["variant"], array, unboundedArray: false),
-            types,
-            new ManagedStaticDataBuildState());
+            types);
 
-        Assert.Equal(default, builder.Build(argument));
+        Assert.Empty(builder.Build(argument));
     }
 
     // The candidate reaches the named keys; the array target files under "array" unless unbounded.
@@ -539,14 +524,6 @@ public sealed class LayoutContractCoverageTests
 
         Assert.Equal(expected, provider.GetValueLayout(Type));
     }
-    [Fact]
-    public void BitmapBuilderRejectsUnsupportedWordSizes()
-    {
-        var builder = new StaticReferenceBitmapBuilder();
-        Assert.Empty(builder.Build([], 0, sizeof(uint)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => builder.Build([0], 1, 2));
-    }
-
     private static ManagedLayoutSnapshot CreateSnapshot()
     {
         var objectLayout = new ObjectLayout(7, 12, [4]);
@@ -568,7 +545,7 @@ public sealed class LayoutContractCoverageTests
             ImmutableDictionary<string, ObjectLayout>.Empty
                 .Add("System.Array", new ObjectLayout(1, 8, []))
                 .Add("System.String", new ObjectLayout(2, 8, []))
-                .Add("System.Type", new ObjectLayout(3, 8, [])),
+                .Add(RuntimeTypeObjects.ClassName, new ObjectLayout(3, 8, [])),
             ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty
                 .Add(constructed, objectLayout),
             state,
@@ -608,7 +585,7 @@ public sealed class LayoutContractCoverageTests
             "System.Byte", "System.Int16", "System.UInt16", "System.Int32",
             "System.UInt32", "System.Int64", "System.UInt64", "System.Single",
             "System.Double", "System.IntPtr", "System.UIntPtr", "System.String",
-            "System.Object", "System.Array", "System.Type",
+            "System.Object", "System.Array", RuntimeTypeObjects.ClassName,
         };
         var definitions = names.Select((name, index) =>
             Definition(new EntityKey(Assembly, 100 + index), name, false)).ToArray();
@@ -618,12 +595,12 @@ public sealed class LayoutContractCoverageTests
             {
                 "System.Array" => new ObjectLayout(1, 8, []),
                 "System.String" => new ObjectLayout(2, 8, []),
-                "System.Type" => new ObjectLayout(3, 8, []),
+                RuntimeTypeObjects.ClassName => new ObjectLayout(3, 8, []),
                 _ => new ObjectLayout(8, 8, []),
             }).ToImmutableDictionary();
         var byName = objects
             .Where(pair => definitions.Single(definition => definition.Key == pair.Key)
-                .FullName is "System.Array" or "System.String" or "System.Type")
+                .FullName is "System.Array" or "System.String" or RuntimeTypeObjects.ClassName)
             .ToImmutableDictionary(
                 pair => definitions.Single(definition => definition.Key == pair.Key).FullName,
                 pair => pair.Value,

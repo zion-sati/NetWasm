@@ -199,7 +199,7 @@ public sealed class WasmModuleEmissionResultBuilderTests
     {
         var assembly = new AssemblyIdentity("Native");
         var declaration = new NativeImportDeclaration(library, entry, MethodImportAttributes.CallingConventionCDecl,
-            false, false, false, false)
+            false, false, null)
         { HasWasmImportLinkage = wasmImportLinkage };
         var definition = new MethodDefinitionModel(new(assembly, token), new(assembly, 100), entry, true, signature, 0)
         { NativeImport = declaration };

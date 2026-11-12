@@ -23,6 +23,9 @@ internal sealed class UnitModelWriter
 
     internal byte[] ToArray() => _bytes.WrittenSpan.ToArray();
 
+    // The bytes written so far.
+    internal int Length => _bytes.WrittenCount;
+
     internal void Int(int value)
     {
         BinaryPrimitives.WriteInt32LittleEndian(_bytes.GetSpan(4), value);

@@ -5,9 +5,6 @@ namespace NetWasm.Compiler.Core.NativeInterop;
 public sealed class NativeCallbackDeclarationValidator :
     INativeCallbackDeclarationValidator
 {
-    private const string Cdecl =
-        "System.Runtime.CompilerServices.CallConvCdecl";
-
     public void ValidateAddressTarget(MethodInstanceModel method)
     {
         ArgumentNullException.ThrowIfNull(method);
@@ -33,14 +30,18 @@ public sealed class NativeCallbackDeclarationValidator :
                 method,
                 "A native callback cannot also declare another interop boundary.");
         }
-        if (declaration.IsVarArg || declaration.HasUnsupportedNamedArguments ||
-            declaration.CallingConventions.Length > 1 ||
-            declaration.CallingConventions.Length == 1 &&
-            declaration.CallingConventions[0] != Cdecl)
+        if (declaration.IsVarArg || declaration.HasUnsupportedNamedArguments)
         {
             throw Unsupported(
                 method,
-                "Only the default C ABI or Cdecl callback convention is supported.");
+                "A native callback is a fixed-arity method whose [UnmanagedCallersOnly] names only CallConvs and EntryPoint.");
+        }
+        if (UnmanagedCallingConventions.Unsupported(declaration.CallingConventions) is { } unsupported)
+        {
+            throw Unsupported(
+                method,
+                $"The native callback's {unsupported}; a callback is called with the C ABI: the default, " +
+                "Cdecl, Stdcall or Thiscall, with SuppressGCTransition or MemberFunction.");
         }
         if (declaration.EntryPoint is { } entryPoint &&
             (string.IsNullOrWhiteSpace(entryPoint) ||

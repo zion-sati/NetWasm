@@ -17,7 +17,7 @@ namespace NetWasm.Compiler.Wasm.Units;
 /// </summary>
 internal static class UnitAnswerCodec
 {
-    private const byte Format = 2;
+    private const byte Format = 3;
 
     // The answer's encoding, or null for a kind that keeps no value. A site's caller is the
     // key's own ("caller@offset"), so it is written only when it is not.
@@ -29,10 +29,16 @@ internal static class UnitAnswerCodec
         if (value is null) return null;
         var writer = new UnitModelWriter();
         writer.Byte(Format);
+        // A site's answer ends in its target list or matching types, which many sites share; the
+        // offset where that tail starts follows the format, so a segment can store each tail once
+        // without decoding the answer (issue 229).
+        var tail = 0;
+        if (HasSharedTail(kind))
+            writer.Int(0);
         switch (kind)
         {
             case UnitQueryKind.StaticDataEnd:
-            case UnitQueryKind.TypeFactsTable:
+            case UnitQueryKind.TypeTable:
             case UnitQueryKind.TypeObjectTable:
             case UnitQueryKind.MethodDescriptorAddress:
             case UnitQueryKind.FieldDescriptorAddress:
@@ -174,6 +180,7 @@ internal static class UnitAnswerCodec
                     Text(writer, site.Caller, caller);
                     writer.Int(site.IlOffset);
                     writer.Method(site.Declaration);
+                    tail = writer.Length;
                     writer.Int(site.Targets.Length);
                     foreach (var target in site.Targets)
                     {
@@ -188,6 +195,7 @@ internal static class UnitAnswerCodec
                     Text(writer, site.Caller, caller);
                     writer.Int(site.IlOffset);
                     writer.Type(site.TargetType);
+                    tail = writer.Length;
                     writer.Types(site.MatchingTypes);
                 });
                 break;
@@ -203,18 +211,18 @@ internal static class UnitAnswerCodec
                 Array(writer, (ImmutableArray<TypeDescriptorLayout>)value, static (writer, descriptor) =>
                 {
                     writer.Entity(descriptor.Type);
-                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize, descriptor.BitmapAddress,
-                        descriptor.BitmapBitCount, descriptor.Finalizer, descriptor.AssignableTypeIdsAddress,
-                        descriptor.AssignableTypeIdCount, descriptor.IsInterface);
+                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize,
+                        descriptor.ReferenceOffsets, descriptor.Finalizer, descriptor.AssignableTypeIds,
+                        descriptor.IsInterface);
                 });
                 break;
             case UnitQueryKind.ConstructedTypeDescriptors:
                 Array(writer, (ImmutableArray<ConstructedTypeDescriptorLayout>)value, static (writer, descriptor) =>
                 {
                     writer.Type(descriptor.Type);
-                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize, descriptor.BitmapAddress,
-                        descriptor.BitmapBitCount, descriptor.Finalizer, descriptor.AssignableTypeIdsAddress,
-                        descriptor.AssignableTypeIdCount, descriptor.IsInterface);
+                    Descriptor(writer, descriptor.TypeId, descriptor.BaseTypeId, descriptor.ObjectSize,
+                        descriptor.ReferenceOffsets, descriptor.Finalizer, descriptor.AssignableTypeIds,
+                        descriptor.IsInterface);
                 });
                 break;
             case UnitQueryKind.ValueTypeDescriptors:
@@ -224,8 +232,7 @@ internal static class UnitAnswerCodec
                     writer.Int(descriptor.TypeId);
                     writer.Int(descriptor.Size);
                     writer.Int(descriptor.BoxedPayloadOffset);
-                    writer.Int(descriptor.BitmapAddress);
-                    writer.Int(descriptor.BitmapBitCount);
+                    writer.Ints(descriptor.ReferenceOffsets);
                 });
                 break;
             case UnitQueryKind.MetadataTypeDescriptors:
@@ -277,8 +284,22 @@ internal static class UnitAnswerCodec
             default:
                 return null;
         }
-        return writer.ToArray();
+        var bytes = writer.ToArray();
+        if (tail != 0)
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(1), tail);
+        return bytes;
     }
+
+    // Whether answers of the kind carry the offset of a tail many answers share.
+    private static bool HasSharedTail(UnitQueryKind kind) =>
+        kind is UnitQueryKind.DispatchCallSite or UnitQueryKind.TypeTestSite;
+
+    // Where an encoded answer's shared tail starts, or zero when it has none (a site the lookup
+    // did not find, or a kind without one).
+    public static int TailStart(UnitQueryKind kind, ReadOnlySpan<byte> encoded) =>
+        HasSharedTail(kind) && encoded.Length >= 5
+            ? System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(encoded[1..])
+            : 0;
 
     // An answer as Encode wrote it, as the provider returned it.
     public static object Decode(UnitQueryKind kind, string key, ReadOnlySpan<byte> bytes, IMethodRepository methods,
@@ -288,11 +309,13 @@ internal static class UnitAnswerCodec
         var caller = Caller(key);
         var reader = new UnitModelReader(bytes.ToArray(), methods, fields);
         if (reader.Byte() != Format) throw new InvalidDataException("A unit answer is of another format.");
+        if (HasSharedTail(kind))
+            reader.Int();
         object value;
         switch (kind)
         {
             case UnitQueryKind.StaticDataEnd:
-            case UnitQueryKind.TypeFactsTable:
+            case UnitQueryKind.TypeTable:
             case UnitQueryKind.TypeObjectTable:
             case UnitQueryKind.MethodDescriptorAddress:
             case UnitQueryKind.FieldDescriptorAddress:
@@ -453,11 +476,10 @@ internal static class UnitAnswerCodec
                 value = Array(reader, static reader =>
                 {
                     var type = reader.Entity();
-                    var (typeId, baseTypeId, size, bitmap, bits, finalizer) = Descriptor(reader);
-                    return new TypeDescriptorLayout(type, typeId, baseTypeId, size, bitmap, bits, finalizer)
+                    var (typeId, baseTypeId, size, references, finalizer) = Descriptor(reader);
+                    return new TypeDescriptorLayout(type, typeId, baseTypeId, size, references, finalizer)
                     {
-                        AssignableTypeIdsAddress = reader.Int(),
-                        AssignableTypeIdCount = reader.Int(),
+                        AssignableTypeIds = reader.Ints(),
                         IsInterface = reader.Bool(),
                     };
                 });
@@ -466,18 +488,17 @@ internal static class UnitAnswerCodec
                 value = Array(reader, static reader =>
                 {
                     var type = reader.Type()!;
-                    var (typeId, baseTypeId, size, bitmap, bits, finalizer) = Descriptor(reader);
-                    return new ConstructedTypeDescriptorLayout(type, typeId, baseTypeId, size, bitmap, bits, finalizer)
+                    var (typeId, baseTypeId, size, references, finalizer) = Descriptor(reader);
+                    return new ConstructedTypeDescriptorLayout(type, typeId, baseTypeId, size, references, finalizer)
                     {
-                        AssignableTypeIdsAddress = reader.Int(),
-                        AssignableTypeIdCount = reader.Int(),
+                        AssignableTypeIds = reader.Ints(),
                         IsInterface = reader.Bool(),
                     };
                 });
                 break;
             case UnitQueryKind.ValueTypeDescriptors:
                 value = Array(reader, static reader => new ValueTypeDescriptorLayout(
-                    reader.Type()!, reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int()));
+                    reader.Type()!, reader.Int(), reader.Int(), reader.Int(), reader.Ints()));
                 break;
             case UnitQueryKind.MetadataTypeDescriptors:
                 value = Array(reader, static reader => new MetadataTypeDescriptorLayout(reader.Type()!, reader.Int()));
@@ -582,30 +603,27 @@ internal static class UnitAnswerCodec
         return set.ToImmutable();
     }
 
-    private static void Descriptor(UnitModelWriter writer, int typeId, int baseTypeId, int size, int bitmap, int bits,
-        MethodInstanceModel? finalizer, int assignable, int assignableCount, bool isInterface)
+    private static void Descriptor(UnitModelWriter writer, int typeId, int baseTypeId, int size,
+        ImmutableArray<int> references, MethodInstanceModel? finalizer, ImmutableArray<int> assignable, bool isInterface)
     {
         writer.Int(typeId);
         writer.Int(baseTypeId);
         writer.Int(size);
-        writer.Int(bitmap);
-        writer.Int(bits);
+        writer.Ints(references);
         writer.Bool(finalizer is not null);
         if (finalizer is not null) writer.Method(finalizer);
-        writer.Int(assignable);
-        writer.Int(assignableCount);
+        writer.Ints(assignable);
         writer.Bool(isInterface);
     }
 
-    private static (int TypeId, int BaseTypeId, int Size, int Bitmap, int Bits, MethodInstanceModel? Finalizer) Descriptor(
-        UnitModelReader reader)
+    private static (int TypeId, int BaseTypeId, int Size, ImmutableArray<int> References, MethodInstanceModel? Finalizer)
+        Descriptor(UnitModelReader reader)
     {
         var typeId = reader.Int();
         var baseTypeId = reader.Int();
         var size = reader.Int();
-        var bitmap = reader.Int();
-        var bits = reader.Int();
-        return (typeId, baseTypeId, size, bitmap, bits, reader.Bool() ? reader.Method() : null);
+        var references = reader.Ints();
+        return (typeId, baseTypeId, size, references, reader.Bool() ? reader.Method() : null);
     }
 
     private static void Object(UnitModelWriter writer, ObjectLayout layout)

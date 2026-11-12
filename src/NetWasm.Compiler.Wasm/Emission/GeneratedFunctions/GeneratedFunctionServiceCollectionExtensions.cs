@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.LocalTime;
+using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.Startup;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
@@ -8,7 +8,7 @@ internal static class GeneratedFunctionServiceCollectionExtensions
     public static IServiceCollection AddWasmGeneratedFunctionEmission(
         this IServiceCollection services)
     {
-        services.AddLocalTimeGeneratedFunctionEmission();
+        services.AddStartupGeneratedFunctionEmission();
         services.AddSingleton<IStaticInitializerFunctionEmitter, StaticInitializerFunctionEmitter>();
         services.AddSingleton<IStaticInitializationFailureEmitter, StaticInitializationFailureEmitter>();
         services.AddSingleton<IStaticInitializerFunctionAppender, StaticInitializerFunctionAppender>();

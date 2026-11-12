@@ -310,8 +310,8 @@ public sealed class RuntimeFunctionAppenderTests
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => withFinalizers
             ?
             [
-                new(EmitterTestSupport.TypeKey, 2, 0, 0, 0, 0, null),
-                new(EmitterTestSupport.TypeKey, 1, 0, 0, 0, 0,
+                new(EmitterTestSupport.TypeKey, 2, 0, 0, [], null),
+                new(EmitterTestSupport.TypeKey, 1, 0, 0, [],
                     Finalizer(EmitterTestSupport.ConstructorKey)),
             ]
             : [];
@@ -328,8 +328,7 @@ public sealed class RuntimeFunctionAppenderTests
                         3,
                         0,
                         0,
-                        0,
-                        0,
+                        [],
                         Finalizer(EmitterTestSupport.EntryKey)),
                 ]
                 : [];
@@ -386,7 +385,7 @@ public sealed class RuntimeFunctionAppenderTests
             bool reportTerminalExceptions,
             EntityKey? argumentFactory,
             MethodInstanceModel? completion,
-            EntityKey? localTimePreflight,
+            ImmutableArray<EntityKey> startupPreflights,
             EntityKey? processExit,
             bool initializesRuntime)
         {

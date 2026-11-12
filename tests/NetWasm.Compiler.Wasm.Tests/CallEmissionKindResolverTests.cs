@@ -19,7 +19,7 @@ public sealed class CallEmissionKindResolverTests
         var definition = program.GetMethod(EntryKey) with
         {
             NativeImport = new("mule", "run", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var request = CreateRequest(definition, CliTypeIdentity.Named(Assembly, "Test", "Native", false));
         var resolver = Assert.IsAssignableFrom<ICallEmissionKindResolver>(
@@ -143,6 +143,48 @@ public sealed class CallEmissionKindResolverTests
             new CallEmissionKindResolver(program, new FakeIntrinsics()).Resolve(
                 request,
                 new RecordingInstructionWriter()));
+    }
+
+    // ValueType's Equals and GetHashCode depend on the receiver's exact type: a call or callvirt
+    // site that dispatches on its receiver expands them per receiver; without a site (a
+    // constrained call) they expand in place (issue 223's class: a struct's base.Equals).
+    [Theory]
+    [InlineData(CilOperation.Call, true)]
+    [InlineData(CilOperation.CallVirtual, true)]
+    [InlineData(CilOperation.Call, false)]
+    public void DispatchesAReceiverTypedIntrinsicWhereItsSiteDispatches(CilOperation operation, bool site)
+    {
+        var program = new FakeProgram();
+        var method = program.GetMethod(EntryKey) with { Name = "Equals", IsStatic = false };
+        var valueType = CliTypeIdentity.Named(Assembly, "System", "ValueType", isValueType: false);
+        var instance = new MethodInstanceModel(method, valueType, [], method.Signature);
+        var caller = instance with { Definition = method with { Name = "Caller" } };
+        var instruction = CreateInstructionRequest(operation);
+        instruction = instruction with { Header = instruction.Header with { MethodInstance = caller } };
+        if (site)
+        {
+            var model = new DispatchCallSiteModel(caller.CanonicalName, instruction.Instruction.Offset, instance,
+                [new DispatchTargetModel(CliTypeIdentity.Named(Assembly, "Test", "Point", isValueType: true), instance)]);
+            instruction = instruction with
+            {
+                Target = instruction.Target with
+                {
+                    DispatchCallSites = Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(model.Key, model)),
+                },
+            };
+        }
+
+        Assert.Equal(site ? CallEmissionKind.VirtualDispatch : CallEmissionKind.RuntimeIntrinsic, new CallEmissionKindResolver(program, new ValueTypeEqualsIntrinsics(EntryKey))
+            .Resolve(new CallEmissionRequest(instruction, instance, 0, 2), new RecordingInstructionWriter()));
+    }
+
+    private sealed class ValueTypeEqualsIntrinsics(EntityKey method) : IRuntimeIntrinsicRegistry
+    {
+        public bool TryGetIntrinsic(EntityKey key, out RuntimeIntrinsic intrinsic)
+        {
+            intrinsic = RuntimeIntrinsic.ValueTypeEquals;
+            return key == method;
+        }
     }
 
     [Fact]

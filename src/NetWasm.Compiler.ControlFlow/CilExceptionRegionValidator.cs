@@ -137,7 +137,7 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
     }
 
     // Without regions there are no zones or filters: the instructions that need one are
-    // invalid, leave has no region to exit, and every other branch stays where it starts.
+    // invalid, and every branch, leave included, stays where it starts.
     private static void ValidateWithoutRegions(CilMethodBody body)
     {
         foreach (var instruction in body.Instructions)
@@ -147,8 +147,6 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
                 CilOperation.EndFilter => "endfilter appears outside an exception filter",
                 CilOperation.EndFinally => "endfinally appears outside a finally or fault handler",
                 CilOperation.Rethrow => "rethrow appears outside a catch handler",
-                CilOperation.Leave when instruction.Operand is CilOperand.BranchTarget =>
-                    "leave target does not exit to an enclosing exception region",
                 _ => null,
             };
             if (message is not null)
@@ -248,8 +246,9 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
                 instruction.Offset,
                 "leave originates in a filter, finally, or fault region");
         }
-        if (source.Length == 0 || target.Length >= source.Length ||
-            target.Any(zone => !source.Contains(zone)))
+        // leave exits any number of enclosing blocks, none included, where it is a branch that
+        // empties the stack (ECMA-335 III.3.46); it never enters one.
+        if (target.Any(zone => !source.Contains(zone)))
         {
             throw Invalid(
                 body,

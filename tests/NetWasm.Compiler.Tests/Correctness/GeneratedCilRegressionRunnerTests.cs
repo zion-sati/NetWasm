@@ -22,4 +22,20 @@ public sealed class GeneratedCilRegressionRunnerTests
             cil,
             reduction.Reduced.Inputs);
     }
+
+    // A generated program branches to its next block with every conditional branch, the
+    // shape a Debug build emits for an if whose body is a removed call (issue 221); its own
+    // IL runs the same on NetWasm as on desktop .NET.
+    [Fact]
+    public void GeneratedProgramsRunTheirOwnIlAsDesktopDoes()
+    {
+        using var services = CorrectnessTestAssets.CreateServices();
+        var generator = services.GetRequiredService<IRandomCilGenerator>();
+        var serializer = services.GetRequiredService<IGeneratedCilSerializer>();
+        var runner = services.GetRequiredService<IGeneratedCilRegressionRunner>();
+        foreach (var seed in RandomCilFixtureFactory.PilotSeeds.Take(2))
+        {
+            runner.RunRaw(seed, serializer.Serialize(generator.Generate(seed)), RandomCilFixtureFactory.Create(seed).Inputs);
+        }
+    }
 }

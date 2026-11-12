@@ -91,10 +91,10 @@ public sealed class MemberHandleIntrinsicCallRewriterTests
         var caller = Method(Key(0x06000001), CallerType, "Run", 0);
         var signature = malformedPart switch
         {
-            1 => MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4),
-            2 => MethodSignatureModel.Create(CliValueKind.NativeInt),
-            3 => MethodSignatureModel.Create(CliValueKind.NativeInt, CliValueKind.I8),
-            _ => MethodSignatureModel.Create(CliValueKind.NativeInt, CliValueKind.I4),
+            1 => MethodSignatureModel.Create(CliValueKind.I4),
+            2 => MethodSignatureModel.Create(CliValueKind.NativeInt, CliValueKind.I4),
+            3 => MethodSignatureModel.Create(CliValueKind.NativeInt, CliValueKind.I4, CliValueKind.I4),
+            _ => MethodSignatureModel.Create(CliValueKind.NativeInt),
         };
         var definition = new MethodDefinitionModel(
             Key(0x06000015),
@@ -156,9 +156,7 @@ public sealed class MemberHandleIntrinsicCallRewriterTests
                     TypeType,
                     "InternalGetFacts",
                     IsStatic: true,
-                    MethodSignatureModel.Create(
-                        CliValueKind.NativeInt,
-                        CliValueKind.I4),
+                    MethodSignatureModel.Create(CliValueKind.NativeInt),
                     1),
                 _ => throw new InvalidOperationException(),
             };

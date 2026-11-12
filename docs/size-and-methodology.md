@@ -426,9 +426,10 @@ database in each application Wasm. UTC needs no timezone database; selected
 local-time behavior requires the matching asset and host capabilities. See
 [timezone assets](timezone-assets.md).
 
-Debug builds enable managed stack-trace instrumentation and its symbol
+Debug builds enable managed stack-trace instrumentation and its method-symbols
 sidecar. Release omits both unless requested with
-`NetWasmManagedStackTrace=true`. This does not add general reflection or a
-runtime-discoverable type-name catalogue. See the
+`NetWasmManagedStackTrace=true`. Type names live in a type-symbols sidecar too,
+so a program carries none and pays nothing for one `GetType().Name`. Neither adds
+general reflection. See the
 [SDK quickstart](sdk-quickstart.md) and
 [managed stack-trace contract](support-status.md#managed-stack-traces).

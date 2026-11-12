@@ -31,7 +31,7 @@ public sealed class CompilerHostApplicationTests
                 : ImmutableDictionary<string, string>.Empty,
             CollectCompilerMetrics = collectMetrics,
             EmitStackTrace = emitStackTrace,
-            StackTraceSymbolsPath = files.StackTracePath,
+            MethodSymbolsPath = files.StackTracePath,
         };
         var application = CreateApplication(new SuccessfulCompiler(), loader);
 
@@ -225,14 +225,14 @@ public sealed class CompilerHostApplicationTests
                 "<TypeDescriptors>k__BackingField",
                 BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(staticData, ImmutableArray.Create(
-                    new TypeDescriptorLayout(new(new("Fixture"), 1), 17, 0, 16, 0, 0, null)));
+                    new TypeDescriptorLayout(new(new("Fixture"), 1), 17, 0, 16, [], null)));
             typeof(ManagedLayoutSnapshot).GetField(
                 "<StaticData>k__BackingField",
                 BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(layout, staticData);
             return new([0, 97, 115, 109], null!, layout, null!, 7)
             {
-                StackTraceSymbols = new([1, 2, 3], "application/json", "symbols.json", "hash"),
+                MethodSymbols = new(NetWasm.Compiler.Symbols.SymbolSidecarKind.Method, [1, 2, 3]),
             };
         }
     }

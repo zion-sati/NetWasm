@@ -14,7 +14,8 @@ internal sealed class ValueTypeEqualsEmitter(
     ITypeRepository types,
     IMethodRepository methods,
     IReferenceComparisonEmitter references,
-    IValueTypeEqualityFieldPlanner fields) : IValueTypeEqualsEmitter
+    IValueTypeEqualityFieldPlanner fields,
+    IRootPublicationEmitter roots) : IValueTypeEqualsEmitter
 {
     private readonly Lazy<EntityKey> _objectEquals = new(
         () => ResolveObjectEquals(descriptors, types, methods));
@@ -36,6 +37,9 @@ internal sealed class ValueTypeEqualsEmitter(
             layouts.Target.ObjectHeaderSize,
             value.Alignment);
 
+        // A reference field's Equals can allocate: publish the roots first, the compared values
+        // among them, so a collection it starts keeps both alive for the fields after it.
+        roots.Emit(request.Instruction, code);
         WriteI32(code, 0);
         SetLocal(code, result);
         code.Write(WasmInstruction.WithOperand(

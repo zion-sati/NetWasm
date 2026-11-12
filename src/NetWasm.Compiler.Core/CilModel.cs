@@ -155,7 +155,9 @@ public abstract record CilOperand
     public sealed record TypeIdentity(CliTypeIdentity Value) : CilOperand;
     // The one type a GetObjectType's receiver can have, when it is not null.
     public sealed record ExactType(CliTypeIdentity Value) : CilOperand;
-    public sealed record CallSite(MethodSignatureModel Signature) : CilOperand;
+    // A calli's signature. An unmanaged one (delegate* unmanaged) calls native code through the
+    // C ABI, with its arguments lowered as a DllImport's (issue 226).
+    public sealed record CallSite(MethodSignatureModel Signature, bool Unmanaged = false) : CilOperand;
     public sealed record NumericConversion(
         int BitWidth,
         bool DestinationUnsigned,

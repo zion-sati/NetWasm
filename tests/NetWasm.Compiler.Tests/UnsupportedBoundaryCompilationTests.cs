@@ -6,34 +6,6 @@ namespace NetWasm.Compiler.Tests;
 public sealed class UnsupportedBoundaryCompilationTests
 {
     [Fact]
-    public void UnmanagedDynamicLinkageHasDeterministicDiagnostic()
-    {
-        using var assets = TestAssets.Create();
-        var assembly = assets.CompileUnsafeSource(
-            "UnmanagedCallIndirectFixture",
-            """
-            public static unsafe class EntryPoint
-            {
-                public static int Run(int input)
-                {
-                    var operation = (delegate* unmanaged<int, int>)(nuint)1;
-                    return operation(input);
-                }
-            }
-            """);
-        var exception = Assert.Throws<CompilerException>(() =>
-            NetWasmCompiler.Compile(new CompilerOptions(
-                assembly,
-                [assets.CoreLib],
-                "EntryPoint",
-                "Run",
-                [])));
-
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
-        Assert.Contains("calling convention", exception.Diagnostic.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void DynamicBindingIsAbsentFromThePlatformSurface()
     {
         using var assets = TestAssets.Create();

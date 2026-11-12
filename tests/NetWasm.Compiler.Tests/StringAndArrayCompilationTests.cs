@@ -395,7 +395,10 @@ public sealed class StringAndArrayCompilationTests
                         }
                         catch (ArgumentException exception)
                         {
-                            reported = exception.GetType().Name + ":" + exception.ParamName;
+                            // The exception's name, from its type: a program carries no type names (issue 225).
+                            var name = exception is ArgumentOutOfRangeException ? "ArgumentOutOfRangeException"
+                                : exception is ArgumentNullException ? "ArgumentNullException" : "ArgumentException";
+                            reported = name + ":" + exception.ParamName;
                         }
                         if (reported != expected[call])
                             return 10 + call;

@@ -104,7 +104,9 @@ public sealed class StringConstructionCompilationTests
                     }
                     catch (ArgumentException exception)
                     {
-                        checksum = unchecked(checksum * 31 + exception.GetType().Name.Length);
+                        // The exception's name length, from its type: a program carries no type names (issue 225).
+                        checksum = unchecked(checksum * 31 + (exception is ArgumentOutOfRangeException ? 27
+                            : exception is ArgumentNullException ? 21 : 17));
                         foreach (var character in exception.ParamName ?? "") checksum = unchecked(checksum * 31 + character);
                     }
                     catch (OverflowException)

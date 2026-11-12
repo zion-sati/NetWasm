@@ -1,6 +1,6 @@
 import { createRawArtifactPlan } from "./raw-artifact-plan.mjs";
 import { runtimeFeatureIds } from "./runtime-feature-ids.mjs";
-import { parseStackTraceSymbols } from "./stack-trace-symbol-reader.mjs";
+import { readOptionalStackTraceSymbols, readOptionalSymbolSidecar } from "./optional-symbol-sidecars.mjs";
 
 const requestKeys = new Set([
   "artifacts",
@@ -40,6 +40,7 @@ const nativeCallbackSupportKeys = [
   "sha256",
   "temporaryApplicationExports",
   "temporaryRuntimeExports",
+  "trampolines",
 ];
 const nativeCallbackKeys = [
   "applicationExportName",
@@ -76,12 +77,10 @@ export async function loadRawArtifacts(request = {}) {
   const plannedArtifacts = [
     plan.application,
     plan.adapter,
-    ...(plan.exceptionTypeMap === undefined ? [] : [plan.exceptionTypeMap]),
-    ...(plan.stackTraceSymbols === undefined ? [] : [plan.stackTraceSymbols]),
     plan.runtimeLayout,
     plan.interopManifest,
   ];
-  const verifiedArtifacts = await Promise.all(plannedArtifacts.map(async artifact => {
+  const verify = async artifact => {
     throwIfAborted(signal);
     const transportBytes = await readArtifact(artifact, signal);
     throwIfAborted(signal);
@@ -98,24 +97,23 @@ export async function loadRawArtifacts(request = {}) {
       throw new Error("raw artifact integrity check failed");
     }
     return Object.freeze({ artifact, bytes });
-  }));
+  };
+  const [verifiedArtifacts, typeSymbolsArtifact, methodSymbolsArtifact] = await Promise.all([
+    Promise.all(plannedArtifacts.map(verify)),
+    readOptionalSymbolSidecar(plan.typeSymbols, verify, signal),
+    readOptionalSymbolSidecar(plan.methodSymbols, verify, signal),
+  ]);
 
   throwIfAborted(signal);
   const byRole = new Map(verifiedArtifacts.map(value => [value.artifact.role, value]));
   const applicationArtifact = byRole.get("application");
   const adapterArtifact = byRole.get("raw-adapter");
-  const exceptionTypeMapArtifact = byRole.get("exception-type-map");
   const layoutArtifact = byRole.get("runtime-layout");
-  const stackTraceSymbolsArtifact = byRole.get("stack-trace-symbols");
   const interopArtifact = byRole.get("interop-manifest");
   const runtimeLayout = parseRuntimeLayout(layoutArtifact.bytes);
   const interopManifest = parseInteropManifest(interopArtifact.bytes, runtimeLayout.target);
-  const exceptionTypeMap = exceptionTypeMapArtifact === undefined
-    ? undefined
-    : parseExceptionTypeMap(exceptionTypeMapArtifact.bytes);
-  const stackTraceSymbols = stackTraceSymbolsArtifact === undefined
-    ? []
-    : parseStackTraceSymbols(decoder.decode(stackTraceSymbolsArtifact.bytes));
+  // A raw module cannot read its sidecars, so its host registers the method symbols with the runtime.
+  const stackTraceSymbols = readOptionalStackTraceSymbols(methodSymbolsArtifact?.bytes);
   const loadedValues = await Promise.all([
     compileModule(new Uint8Array(applicationArtifact.bytes), applicationArtifact.artifact),
     importModule(new Uint8Array(adapterArtifact.bytes), adapterArtifact.artifact),
@@ -132,19 +130,9 @@ export async function loadRawArtifacts(request = {}) {
     exports: inventory.exports,
   });
 
-  const diagnosticArtifacts = exceptionTypeMapArtifact === undefined
+  const diagnosticArtifacts = typeSymbolsArtifact === undefined
     ? undefined
-    : Object.freeze({
-      manifest: Object.freeze({
-        schemaVersion: 1,
-        buildId: exceptionTypeMap.buildId,
-        wasmSha256: applicationArtifact.artifact.sha256,
-        exceptionTypeMapSha256: exceptionTypeMapArtifact.artifact.sha256,
-      }),
-      wasmBytes: applicationArtifact.bytes,
-      mapBytes: exceptionTypeMapArtifact.bytes,
-      mapMediaType: exceptionTypeMapArtifact.artifact.mediaType,
-    });
+    : Object.freeze({ typeSymbols: typeSymbolsArtifact.bytes });
   return Object.freeze({
     abi,
     adapter,
@@ -287,7 +275,8 @@ function validateNativeCallbackSupport(support) {
   if (typeof support.fileName !== "string" || !support.fileName.endsWith(".o")
       || support.fileName.includes("/") || support.fileName.includes("\\")
       || typeof support.sha256 !== "string" || !digestPattern.test(support.sha256)
-      || !Array.isArray(support.callbacks) || support.callbacks.length === 0
+      || !Array.isArray(support.callbacks) || !Array.isArray(support.trampolines)
+      || support.callbacks.length === 0 && support.trampolines.length === 0
       || !Array.isArray(support.temporaryApplicationExports)
       || !Array.isArray(support.temporaryRuntimeExports)) {
     throw new TypeError("raw native callback support is invalid");
@@ -309,9 +298,10 @@ function validateNativeCallbackSupport(support) {
     .map(callback => callback.applicationExportName);
   const applicationIdentities = support.callbacks
     .map(callback => callback.applicationExportName);
-  const runtimeExports = support.callbacks
+  // The unmanaged calli trampolines follow the callback getters (issue 226).
+  const runtimeExports = [...support.callbacks
     .map(callback => callback.runtimeGetterExportName)
-    .filter(name => name !== null);
+    .filter(name => name !== null), ...support.trampolines];
   const linkerSymbols = support.callbacks.flatMap(callback => [
     callback.runtimeImportSymbol,
     ...(callback.nativeSymbol === callback.runtimeImportSymbol
@@ -320,7 +310,7 @@ function validateNativeCallbackSupport(support) {
     ...(callback.runtimeGetterExportName === null
       ? []
       : [callback.runtimeGetterExportName]),
-  ]);
+  ]).concat(support.trampolines);
   if (!sameUniqueNames(support.temporaryApplicationExports, applicationExports)
       || !sameUniqueNames(support.temporaryRuntimeExports, runtimeExports)
       || new Set(applicationIdentities).size !== applicationIdentities.length
@@ -346,17 +336,6 @@ function parseInteropManifest(bytes, target) {
     throw new TypeError("raw interop manifest does not match the runtime layout");
   }
   return deepFreeze(value);
-}
-
-function parseExceptionTypeMap(bytes) {
-  const value = parseJson(bytes, "exception type map");
-  if (value === null || typeof value !== "object" || Array.isArray(value)
-      || value.schemaVersion !== 2
-      || typeof value.buildId !== "string" || value.buildId.length === 0
-      || !Array.isArray(value.entries)) {
-    throw new TypeError("raw exception type map is invalid");
-  }
-  return value;
 }
 
 function parseJson(bytes, label) {

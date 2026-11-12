@@ -31,7 +31,7 @@ internal sealed class DelegateDispatchEmitter(
     {
         var throwFunction = functionIndices.ManagedThrowFunction;
         var compatible = targets.Select(dispatch.Invoke, dispatch.Program.Bindings);
-        void Invoke(ManagedDelegateBinding binding) => EmitTargetCall(code, dispatch, functionIndices, binding.Target);
+        void Invoke(ManagedDelegateBinding binding) => EmitTargetCall(code, dispatch, functionIndices, binding);
         if (compatible.Length <= DelegateDispatch.SequentialTargets)
         {
             EmitSequentialTargets(code, compatible, functionIndices, throwFunction, Invoke, () =>
@@ -152,8 +152,10 @@ internal sealed class DelegateDispatchEmitter(
     }
 
     private void EmitTargetCall(
-        IWasmInstructionWriter code, DelegateDispatch dispatch, IFunctionIndexResolver functionIndices, MethodInstanceModel target)
+        IWasmInstructionWriter code, DelegateDispatch dispatch, IFunctionIndexResolver functionIndices,
+        ManagedDelegateBinding binding)
     {
+        var target = binding.Target;
         var signature = DelegateInvokeSignature.Of(dispatch.Invoke);
         // A type initializer may allocate before the call reads the delegate
         // and the arguments, so they stay rooted while it runs.
@@ -170,12 +172,12 @@ internal sealed class DelegateDispatchEmitter(
         {
             WriteLocalGet(code, 0);
         }
-        if (!target.Definition.IsStatic)
+        if (binding.PassesTarget)
         {
             WriteLocalGet(code, dispatch.DelegateLocal);
             WriteLoad(code, layouts.Target.UsesMemory64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load,
                 layouts.Target.UsesMemory64 ? 3u : 2u, objects.DelegateTargetOffset);
-            if (target.DeclaringType.IsValueType)
+            if (!target.Definition.IsStatic && target.DeclaringType.IsValueType)
             {
                 var value = values.GetValueLayout(target.DeclaringType);
                 var payload = WasmTargetLayout.Align(layouts.Target.ObjectHeaderSize, value.Alignment);

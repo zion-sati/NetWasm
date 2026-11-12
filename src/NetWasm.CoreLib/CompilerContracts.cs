@@ -5,6 +5,7 @@
 namespace System
 {
     [AttributeUsage(AttributeTargets.All, Inherited = true, AllowMultiple = false)]
+    [Serializable]
     public abstract partial class Attribute
     {
         protected Attribute()

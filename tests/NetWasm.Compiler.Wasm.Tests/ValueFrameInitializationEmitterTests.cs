@@ -224,6 +224,28 @@ public sealed class ValueFrameInitializationEmitterTests
         Assert.Equal(WasmOpcodes.I64Store, instructions[1].Opcode);
     }
 
+    // Mapped words nothing writes before the first safepoint, as a newobj
+    // temporary's, are zeroed at the frame's entry, each range on its own.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32Store)]
+    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64Store)]
+    public void ZeroesTheMappedWordsTheMapClearsAtEntry(WasmTarget target, byte store)
+    {
+        var size = WasmTargetLayout.For(target).ObjectReferenceSize;
+        var addresses = new RecordingValueFrameAddressEmitter();
+        var emitter = CreateEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target)), addresses);
+        var context = CreateContext(new ValueFrameLayout(16 * size, [], [], [], [])) with
+        {
+            ValueFrameReferences = new([0b1010_0000], []) { EntryClears = [(5 * size, size), (7 * size, size)] },
+        };
+        var code = new RecordingInstructionWriter();
+
+        emitter.Initialize(code, CreateHeader([]), context);
+
+        Assert.Equal([5 * size, 7 * size], addresses.Offsets);
+        Assert.Equal(2, code.ToInstructions().Count(instruction => instruction.Opcode == store));
+    }
+
     [Fact]
     public void EmptyLayoutWritesNothingAndRejectsMissingInputs()
     {

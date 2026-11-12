@@ -4,7 +4,12 @@ namespace NetWasm.Compiler.Core.Tests.NativeInterop;
 
 public sealed class NativeAbiSignaturePlannerTests
 {
+    // Narrow integers are blittable, as on desktop .NET, and travel as an i32.
     [Theory]
+    [InlineData("i1", CliValueKind.I4)]
+    [InlineData("u1", CliValueKind.I4)]
+    [InlineData("i2", CliValueKind.I4)]
+    [InlineData("u2", CliValueKind.I4)]
     [InlineData("i4", CliValueKind.I4)]
     [InlineData("u4", CliValueKind.I4)]
     [InlineData("i8", CliValueKind.I8)]
@@ -21,6 +26,7 @@ public sealed class NativeAbiSignaturePlannerTests
             var result = Planner().Plan(MethodSignatureModel.Create(type, type), profile, "callback");
             Assert.Equal(type, result.PhysicalSignature.ReturnSignatureType);
             Assert.Equal(type, Assert.Single(result.PhysicalSignature.ParameterSignatureTypes));
+            Assert.Equal(kind, result.PhysicalSignature.ReturnType);
         }
     }
 
@@ -57,22 +63,27 @@ public sealed class NativeAbiSignaturePlannerTests
         Reject(MethodSignatureModel.Create(byref), NativeAbiSignatureKind.Callback);
     }
 
+    // Each unmanaged pointer desktop .NET 11 calls with its C convention: a C, StdCall or ThisCall
+    // header, or Unmanaged with optional CallConv modifiers. A header's own modifiers, and required
+    // ones ("!"), name no convention.
     [Theory]
-    [InlineData(0x01, false)]
-    [InlineData(0x09, false)]
-    [InlineData(0x09, true)]
-    public void ClosedCdeclFunctionPointersLowerOnlyForImportParameters(
+    [InlineData(0x01)]
+    [InlineData(0x01, "CallConvFastcall")]
+    [InlineData(0x02)]
+    [InlineData(0x03)]
+    [InlineData(0x09)]
+    [InlineData(0x09, "CallConvCdecl")]
+    [InlineData(0x09, "CallConvSuppressGCTransition")]
+    [InlineData(0x09, "CallConvStdcall", "CallConvMemberFunction")]
+    [InlineData(0x09, "!CallConvFastcall")]
+    public void ClosedFunctionPointersLowerOnlyForImportParameters(
         byte header,
-        bool encodedConvention)
+        params string[] modifiers)
     {
         var integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
         var nativeInteger = CliTypeIdentity.FromStackKind(CliValueKind.NativeInt);
-        var callbackReturn = encodedConvention
-            ? CliTypeIdentity.Modified(
-                integer,
-                Convention("CallConvCdecl"),
-                isRequired: false)
-            : integer;
+        var callbackReturn = modifiers.Aggregate(integer, static (type, modifier) =>
+            CliTypeIdentity.Modified(type, Convention(modifier.TrimStart('!')), isRequired: modifier[0] == '!'));
         var functionPointer = CliTypeIdentity.FunctionPointer(new(
             header,
             0,
@@ -104,6 +115,7 @@ public sealed class NativeAbiSignaturePlannerTests
         var invalid = new[]
         {
             CliTypeIdentity.FunctionPointer(new(0x00, 0, 1, validSignature)),
+            CliTypeIdentity.FunctionPointer(new(0x04, 0, 1, validSignature)),
             CliTypeIdentity.FunctionPointer(new(0x05, 0, 1, validSignature)),
             CliTypeIdentity.FunctionPointer(new(0x09, 1, 1, validSignature)),
             CliTypeIdentity.FunctionPointer(new(0x09, 0, 0, validSignature)),
@@ -114,17 +126,17 @@ public sealed class NativeAbiSignaturePlannerTests
                 MethodSignatureModel.Create(
                     CliTypeIdentity.Modified(
                         voidType,
-                        Convention("CallConvSuppressGCTransition"),
+                        Convention("CallConvFastcall"),
                         isRequired: false),
                     integer))),
             CliTypeIdentity.FunctionPointer(new(
-                0x01,
+                0x09,
                 0,
                 1,
                 MethodSignatureModel.Create(
                     CliTypeIdentity.Modified(
                         integer,
-                        Convention("CallConvCdecl"),
+                        Convention("CallConvSwift"),
                         isRequired: false),
                     integer))),
             CliTypeIdentity.FunctionPointer(new(
@@ -170,10 +182,6 @@ public sealed class NativeAbiSignaturePlannerTests
         {
             CliTypeIdentity.Primitive("bool", CliValueKind.I4),
             CliTypeIdentity.Primitive("char", CliValueKind.I4),
-            CliTypeIdentity.Primitive("i1", CliValueKind.I4),
-            CliTypeIdentity.Primitive("u1", CliValueKind.I4),
-            CliTypeIdentity.Primitive("i2", CliValueKind.I4),
-            CliTypeIdentity.Primitive("u2", CliValueKind.I4),
             CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference),
             CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference),
             aggregate,

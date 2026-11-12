@@ -128,10 +128,10 @@ public sealed class EntryPointEmitterTests
                 body[index + 2] == WasmOpcodes.Call && body[index + 3] == 31);
     }
 
-    // The local-time preflight may wait on wasi:filesystem, so the process
-    // entry calls it after runtime initialization and before Main.
+    // The startup preflights may wait on wasi:filesystem, so the process
+    // entry calls them after runtime initialization and before Main.
     [Fact]
-    public void ProcessEntryRunsTheLocalTimePreflightBeforeMain()
+    public void ProcessEntryRunsTheStartupPreflightsBeforeMain()
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
         var imports = WasmRuntimeImports.CreateCatalog();
@@ -147,7 +147,7 @@ public sealed class EntryPointEmitterTests
             hasFinalizers: false,
             new PreflightIndices(preflight),
             reportTerminalExceptions: false,
-            localTimePreflight: preflight);
+            startupPreflights: [preflight]);
 
         Assert.Contains(
             Enumerable.Range(0, body.Length - 3),

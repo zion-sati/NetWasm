@@ -10,6 +10,7 @@ namespace System.Text
     // A linked chunk representation follows the upstream StringBuilder model.
     // Unsupported serialization, reflection and runtime-intrinsic paths are
     // intentionally outside the NetWasm CoreLib profile.
+    [Serializable]
     public sealed partial class StringBuilder
     {
         internal char[] m_ChunkChars;

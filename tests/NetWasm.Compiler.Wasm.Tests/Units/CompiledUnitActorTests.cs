@@ -364,7 +364,8 @@ public sealed class CompiledUnitPublisherTests
 
     // Publishes with the given units carried and captured; the store the change gives.
     private static (UnitStoreChange Change, UnitStore Next) Publish(CompiledUnit[][] segments, string[] carried,
-        CompiledUnit[] captured, Action<CompiledUnitState>? arrange = null)
+        CompiledUnit[] captured, Action<CompiledUnitState>? arrange = null,
+        long segmentCapacity = CompiledUnitPublisher.SegmentCapacity, long sectionLimit = UnitSegmentWriter.SectionLimit)
     {
         var (store, bytes) = UnitActorFixture.Segments(segments);
         var state = new CompiledUnitState("units") { Store = store };
@@ -372,10 +373,10 @@ public sealed class CompiledUnitPublisherTests
         foreach (var unit in captured) state.Captured.Add(unit);
         arrange?.Invoke(state);
 
-        new CompiledUnitPublisher(state).Publish();
+        new CompiledUnitPublisher(state, segmentCapacity, sectionLimit).Publish();
 
         var change = state.Change!.Value;
-        if (change.Segment is { } writer) bytes[change.Sequence] = UnitActorFixture.Pinned(writer);
+        foreach (var segment in change.Segments) bytes[segment.Sequence] = UnitActorFixture.Pinned(segment.Writer);
         return (change, change.Manifest is { } manifest
             ? UnitStore.Over(manifest, sequence => new PinnedUnitSegmentMemory(bytes[sequence]))
             : UnitStore.Empty);
@@ -387,7 +388,7 @@ public sealed class CompiledUnitPublisherTests
         var (change, _) = Publish([[Unit("A"), Unit("B")]], ["A", "B"], []);
 
         Assert.Null(change.Manifest);
-        Assert.Null(change.Segment);
+        Assert.Empty(change.Segments);
         Assert.StartsWith("restored 0 emitted 0 kept 2 in 1 segments;", change.Summary, StringComparison.Ordinal);
     }
 
@@ -397,7 +398,7 @@ public sealed class CompiledUnitPublisherTests
     {
         var (change, next) = Publish([[Unit("A"), Unit("B"), Unit("C"), Unit("D")], [Unit("E")]], ["A", "C", "E"], []);
 
-        Assert.Null(change.Segment);
+        Assert.Empty(change.Segments);
         Assert.Equal([1, 2], change.LiveSequences.Order());
         string[] kept = ["A", "C", "E"], dropped = ["B", "D"];
         Assert.All(kept, identity => Assert.NotNull(next.Find(identity)));
@@ -411,12 +412,43 @@ public sealed class CompiledUnitPublisherTests
         var (change, next) = Publish([[Unit("A"), Unit("B"), Unit("C")], [Unit("D"), Unit("E")]], ["A", "D", "E"],
             [Unit("E", size: 8), Unit("F")]);
 
-        Assert.Equal(3, change.Sequence);
-        Assert.Equal(3, change.Segment!.Count);
+        var added = Assert.Single(change.Segments);
+        Assert.Equal(3, added.Sequence);
+        Assert.Equal(3, added.Writer.Count);
         Assert.Equal([2, 3], change.LiveSequences.Order());
         Assert.Equal(next.Find("F")!.Value.Segment, next.Find("A")!.Value.Segment);
         Assert.Equal(8, next.Segments[next.Find("E")!.Value.Segment]!.Record(next.Find("E")!.Value.Offset).Body.Length);
         Assert.NotEqual(next.Find("D")!.Value.Segment, next.Find("A")!.Value.Segment);
+    }
+
+    // A compile writes as many segments as its units need, each under its own sequence (issue 229):
+    // one reaching the capacity, or declining a unit as full, starts another.
+    [Theory]
+    [InlineData(1, UnitSegmentWriter.SectionLimit, 3)]
+    [InlineData(CompiledUnitPublisher.SegmentCapacity, UnitStoreFormat.FixedRecordSize * 3 / 2, 3)]
+    [InlineData(CompiledUnitPublisher.SegmentCapacity, UnitSegmentWriter.SectionLimit, 1)]
+    public void ACompileWritesAsManySegmentsAsItsUnitsNeed(long segmentCapacity, long sectionLimit, int added)
+    {
+        var (change, next) = Publish([[Unit("A")]], ["A"], [Unit("E"), Unit("F"), Unit("G")],
+            segmentCapacity: segmentCapacity, sectionLimit: sectionLimit);
+
+        Assert.Equal(added, change.Segments.Length);
+        Assert.Equal(Enumerable.Range(2, added), change.Segments.Select(segment => segment.Sequence));
+        Assert.Equal([1, .. Enumerable.Range(2, added)], change.LiveSequences.Order());
+        Assert.All(Published, identity => Assert.NotNull(next.Find(identity)));
+    }
+
+    private static readonly string[] Published = ["A", "E", "F", "G"];
+
+    // A unit that no segment could hold is not kept; the others are.
+    [Fact]
+    public void AUnitNoSegmentCanHoldIsNotKept()
+    {
+        var (change, next) = Publish([[Unit("A")]], ["A"], [Unit("E")], sectionLimit: 1);
+
+        Assert.Empty(change.Segments);
+        Assert.Null(next.Find("E"));
+        Assert.NotNull(next.Find("A"));
     }
 
     // Once the segments would reach their budget, all but the largest merge into the new one.
@@ -427,7 +459,7 @@ public sealed class CompiledUnitPublisherTests
 
         var (change, next) = Publish(segments, [.. segments.Select(segment => segment[0].Identity)], [Unit("New")]);
 
-        Assert.Equal(16, change.Segment!.Count);
+        Assert.Equal(16, Assert.Single(change.Segments).Writer.Count);
         Assert.Equal([6, 17], change.LiveSequences.Order());
         Assert.All(segments, segment => Assert.NotNull(next.Find(segment[0].Identity)));
     }

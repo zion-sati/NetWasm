@@ -91,6 +91,7 @@ function fixture({
   requiredImportModules = [],
   requiredImports = [],
   timeZoneBytes = null,
+  typeSymbolsBytes = null,
 } = {}) {
   const interopManifest = interop(interopImports, interopExports, interopImportModules);
   const artifacts = [
@@ -102,6 +103,10 @@ function fixture({
   if (timeZoneBytes !== null) {
     artifacts.push(artifact(
       "worker.wasm.tz-info", "timezone-data", "application/octet-stream", timeZoneBytes, 1));
+  }
+  if (typeSymbolsBytes !== null) {
+    artifacts.push(artifact("worker.wasm.type-symbols", "type-symbols",
+      "application/vnd.netwasm.type-symbols;version=1", typeSymbolsBytes, 1));
   }
   const manifest = {
     schemaVersion: 1,
@@ -129,7 +134,8 @@ function fixture({
       value.relativePath === "worker.wasm" ? applicationBytes
         : value.relativePath === "worker.raw-adapter.mjs" ? rawAdapter
           : value.relativePath === "runtime-layout.json" ? runtimeLayout
-            : value.relativePath === "interop.json" ? interopManifest : timeZoneBytes]),
+            : value.relativePath === "interop.json" ? interopManifest
+              : value.relativePath === "worker.wasm.type-symbols" ? typeSymbolsBytes : timeZoneBytes]),
   ]);
   const modules = new Map();
   let moduleId = 0;
@@ -250,7 +256,7 @@ test("routes managed exception diagnostics to the worker stderr sink", async () 
   session.exports.report();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(state.outputMessages[0], "Managed exception #7: <no stored message>\n");
-  assert.match(state.outputMessages[1], /Managed exception #7 type: <exception type #7 unavailable>/);
+  assert.match(state.outputMessages[1], /Managed exception #7 type: type#7/);
   await session.close();
 });
 
@@ -410,6 +416,19 @@ test("time zone data without a filesystem scope fails clearly", async () => {
   await assert.rejects(() => state.open({ startup: {
     buildFingerprint, manifestSha256: state.manifestSha256,
   } }), /time zone data requires an application that links a filesystem interface/);
+});
+
+// Every Release build writes the exception types' names beside the program; one that links no
+// filesystem interface cannot read them and runs with type IDs, as without the file.
+test("a program without a filesystem scope opens without mounting its symbols", async () => {
+  const state = fixture({
+    mutateOptions(options) { options.platform.createFilesystemScope = null; },
+    typeSymbolsBytes: encoder.encode("symbols"),
+  });
+  const session = await state.open({ startup: {
+    buildFingerprint, manifestSha256: state.manifestSha256,
+  } });
+  await session.close();
 });
 
 test("rejects browser host filesystem paths", () => {

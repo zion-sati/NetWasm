@@ -15,6 +15,10 @@ internal static class WaitableSetImports
     [ComponentBuiltIn("$root", "[waitable-set-wait]")]
     internal static extern int Wait(int set, nuint eventAddress);
 
+    // Lets the host and other tasks run; returns 1 when the task was cancelled meanwhile.
+    [ComponentBuiltIn("$root", "[thread-yield]")]
+    internal static extern int Yield();
+
     [ComponentBuiltIn("$root", "[subtask-drop]")]
     internal static extern void DropSubtask(int subtask);
 

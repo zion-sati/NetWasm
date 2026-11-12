@@ -13,7 +13,7 @@ public sealed class UnitProviderTests
 {
     private static readonly CliTypeIdentity Point = CliTypeIdentity.Named(
         new AssemblyIdentity("Program"), "", "Point", isValueType: true);
-    private static readonly ImmutableArray<ValueTypeDescriptorLayout> Values = [new(Point, 7, 16, 8, 96, 2)];
+    private static readonly ImmutableArray<ValueTypeDescriptorLayout> Values = [new(Point, 7, 16, 8, [])];
     private static readonly ImmutableArray<MetadataTypeDescriptorLayout> Metadata = [new(Point, 9)];
 
     [Fact]

@@ -1,5 +1,6 @@
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
@@ -46,6 +47,110 @@ public sealed class DelegateDynamicInvokeCompilationTests
         Assert.Equal(baseline.ApplicationModule, unused.ApplicationModule);
         Assert.Null(baseline.Program.MemberExecution.DelegateInvocation);
         Assert.Null(unused.Program.MemberExecution.DelegateInvocation);
+    }
+
+    // DynamicInvoke on a variable of a delegate type carries Invoke metadata and an invocation stub
+    // for that type alone; the program's other delegate types, invoked directly, carry none.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void DynamicInvokeCarriesInvokeMetadataOnlyForTheDelegateTypeItNames(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("DynamicInvokePerType", """
+            public delegate int Twice(int value);
+            public delegate long Widen(int value);
+            public delegate string Describe(int value);
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    Widen widen = value => value;
+                    Describe describe = value => value.ToString();
+                    Twice twice = value => value * 2;
+                    var direct = (int)widen(input) + describe(input).Length;
+                    return (int)twice.DynamicInvoke(input)! + direct - 2 * input - 1;
+                }
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", [], target));
+
+        var invocation = Assert.IsType<DelegateDynamicInvokePlan>(result.Program.MemberExecution.DelegateInvocation);
+        Assert.Equal("Twice", Assert.Single(invocation.Methods.Values).DeclaringType.FullName);
+        Assert.DoesNotContain(result.Program.MethodDescriptors.Values, method =>
+            method.Definition.Name == "Invoke" && method.DeclaringType.FullName is "Widen" or "Describe");
+        Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 41, target, result.StaticDataEnd));
+    }
+
+    // Through Delegate the delegate's type is known only at run time: a parameterless Action, or a
+    // parameterless Func of a reference (a Func<object?> by variance), runs as on .NET, with its
+    // argument count checked and its exceptions wrapped; any other delegate has no Invoke metadata.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void DynamicInvokeThroughDelegateRunsOnlyWhatOneSignatureCovers(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("DynamicInvokeUnknownType", """
+            using System;
+            using System.Reflection;
+
+            public delegate object Factory();
+
+            public static class EntryPoint
+            {
+                private static int _calls;
+
+                private static int Outcome(Delegate callback, object?[]? arguments, Func<object?, bool> expected)
+                {
+                    try
+                    {
+                        return expected(callback.DynamicInvoke(arguments)) ? 1 : 0;
+                    }
+                    catch (TargetInvocationException exception)
+                    {
+                        return exception.InnerException is InvalidOperationException ? 2 : 0;
+                    }
+                    catch (TargetParameterCountException)
+                    {
+                        return 3;
+                    }
+                    catch (PlatformNotSupportedException)
+                    {
+                        return 4;
+                    }
+                }
+
+                public static int Run(int input)
+                {
+                    Action count = () => _calls++;
+                    var outcomes = new[]
+                    {
+                        Outcome(count, null, result => result is null && _calls == 1),
+                        Outcome(new Func<string>(() => "value"), [], result => (string?)result == "value"),
+                        Outcome(count + count, null, result => result is null && _calls == 3),
+                        Outcome(new Func<string>(() => throw new InvalidOperationException()), null, _ => false),
+                        Outcome(count, [input], _ => false),
+                        Outcome(new Func<int>(() => input), null, _ => false),
+                        Outcome(new Factory(() => "value"), null, _ => false),
+                        Outcome(new Func<int, int>(value => value), [input], _ => false),
+                    };
+                    var expected = new[] { 1, 1, 1, 2, 3, 4, 4, 4 };
+                    var passed = 0;
+                    for (var index = 0; index < outcomes.Length; index++)
+                    {
+                        if (outcomes[index] == expected[index]) passed |= 1 << index;
+                    }
+                    return passed;
+                }
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", [], target));
+
+        Assert.Equal(255, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 41, target, result.StaticDataEnd));
     }
 
     [Theory]

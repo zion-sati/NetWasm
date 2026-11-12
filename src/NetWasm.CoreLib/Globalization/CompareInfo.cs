@@ -13,6 +13,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace System.Globalization;
 
+[Serializable]
 public sealed partial class CompareInfo
 {
     internal static readonly CompareInfo Invariant = new();

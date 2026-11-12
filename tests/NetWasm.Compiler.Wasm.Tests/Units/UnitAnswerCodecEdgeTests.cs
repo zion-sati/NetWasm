@@ -60,7 +60,8 @@ public sealed class UnitAnswerCodecEdgeTests
         Assert.Null(UnitAnswerCodec.Encode(UnitQueryKind.TargetPlans, "", new object()));
         Assert.Null(UnitAnswerCodec.Encode(UnitQueryKind.StringTypeId, "", null));
         Assert.Throws<NotSupportedException>(() =>
-            UnitAnswerCodec.Decode(UnitQueryKind.TargetPlans, "", [2], new NoMethods(), new NoFields()));
+            UnitAnswerCodec.Decode(UnitQueryKind.TargetPlans, "", [UnitAnswerCodec.Encode(UnitQueryKind.StringTypeId, "", 7)![0]],
+                new NoMethods(), new NoFields()));
     }
 
     private sealed class NoMethods : IMethodRepository

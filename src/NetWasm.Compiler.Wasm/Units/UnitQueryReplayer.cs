@@ -149,8 +149,8 @@ internal sealed class UnitQueryReplayer(
             case UnitQueryKind.DataSegments:
                 _ = data.DataSegments;
                 return true;
-            case UnitQueryKind.TypeFactsTable:
-                _ = key == "address" ? data.TypeFactsTableAddress : data.TypeFactsTableCount;
+            case UnitQueryKind.TypeTable:
+                _ = data.TypeTableAddress;
                 return true;
             case UnitQueryKind.TypeObjectAddress:
                 _ = data.TypeObjectAddresses.TryGetValue(key, out _);

@@ -397,11 +397,9 @@ public sealed class DiagnosticsProfileIntegrationTests
             yield return literal;
         }
 
-        if (result.DiagnosticArtifacts is { } artifacts)
+        if (result.TypeSymbols is { } types)
         {
-            yield return Encoding.UTF8.GetString(artifacts.Wasm);
-            yield return Encoding.UTF8.GetString(artifacts.ExceptionTypeMap.Bytes);
-            yield return Encoding.UTF8.GetString(artifacts.ManifestBytes);
+            yield return Encoding.Unicode.GetString(types.Bytes);
         }
     }
 

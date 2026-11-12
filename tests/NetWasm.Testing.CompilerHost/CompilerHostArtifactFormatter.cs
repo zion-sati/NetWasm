@@ -29,7 +29,7 @@ internal sealed class CompilerHostArtifactFormatter : ICompilerHostArtifactForma
         Add(request.ModulePath, result.ApplicationModule);
         if (request.EmitStackTrace)
         {
-            Add(request.StackTraceSymbolsPath, result.StackTraceSymbols?.Bytes ??
+            Add(request.MethodSymbolsPath, result.MethodSymbols?.Bytes ??
                 throw new InvalidOperationException("instrumented compilation produced no stack-trace sidecar"));
         }
         if (request.RuntimeLayoutPath is not null)

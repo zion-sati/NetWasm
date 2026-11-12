@@ -6,6 +6,7 @@
 // this ordinary exception contract slice. Messages use invariant resources.
 namespace System.Reflection
 {
+    [Serializable]
     public class InvalidFilterCriteriaException : ApplicationException
     {
         // Retain the standard constructor for derived-library compatibility.

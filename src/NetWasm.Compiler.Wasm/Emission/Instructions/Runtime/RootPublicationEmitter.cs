@@ -72,24 +72,10 @@ internal sealed class RootPublicationEmitter(
             }
             else if (rootsBySlot[rootSlot] is { } source)
             {
+                // An offset source is a reference field of a value held here: in a local's or an
+                // argument's storage, or in an evaluation-stack value's temporary, never null.
                 EmitSourceValue(code, context, source);
-                var guarded = source.IsIndirect &&
-                    (source.Kind is RootSourceKind.StackStorageAnchor or
-                        RootSourceKind.ManagedAddressArgument or RootSourceKind.ManagedAddressLocal ||
-                     source.Kind == RootSourceKind.EvaluationStack && roots.Contains(
-                         new RootSource(RootSourceKind.ManagedAddressEvaluationStack, source.Index)));
-                if (guarded)
-                {
-                    code.Write(WasmInstruction.NoOperand(layouts.Target.UsesMemory64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero));
-                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
-                        WasmInstructionOperand.BlockType(layouts.Target.UsesMemory64 ? (byte)0x7e : (byte)0x7f)));
-                    EmitAddressConstant(code, 0);
-                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-                    EmitSourceValue(code, context, source);
-                    ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target, source.ByteOffset, layouts.Target.ObjectReferenceSize);
-                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-                }
-                else if (source.IsIndirect || source.Kind == RootSourceKind.Local &&
+                if (source.IsIndirect || source.Kind == RootSourceKind.Local &&
                     !context.FilterEnvironment.Captures.ContainsKey(new(false, source.Index)) &&
                     context.ValueLayout.SpilledScalarLocals.Contains(source.Index))
                 {

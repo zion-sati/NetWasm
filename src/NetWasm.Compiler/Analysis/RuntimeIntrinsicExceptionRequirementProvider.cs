@@ -85,8 +85,10 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
 
             RuntimeIntrinsic.UnsafeUnbox => [NullReference, InvalidCast],
 
-            RuntimeIntrinsic.EnumCompareTo or
-            RuntimeIntrinsic.EnumHasFlag => [NullReference, Argument],
+            RuntimeIntrinsic.EnumCompareTo => [NullReference, Argument],
+
+            // HasFlag(null) throws ArgumentNullException, as Enum's own check does.
+            RuntimeIntrinsic.EnumHasFlag => [NullReference, ArgumentNull, Argument],
 
             RuntimeIntrinsic.EnumGetNames or
             RuntimeIntrinsic.EnumGetName or

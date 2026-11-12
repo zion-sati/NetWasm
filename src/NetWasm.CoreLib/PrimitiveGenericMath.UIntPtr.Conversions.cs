@@ -13,6 +13,7 @@ using System.Runtime.CompilerServices;
 
 namespace System;
 
+[Serializable]
 public readonly partial struct UIntPtr
 {
     /// <inheritdoc cref="INumberBase{TSelf}.CreateChecked{TOther}(TOther)" />

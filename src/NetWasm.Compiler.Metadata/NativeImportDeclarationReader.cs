@@ -10,8 +10,6 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
 {
     private const string UnmanagedCallConvAttribute =
         "System.Runtime.InteropServices.UnmanagedCallConvAttribute";
-    private const string CallConvCdecl =
-        "System.Runtime.CompilerServices.CallConvCdecl";
     private const string WasmImportLinkageAttribute =
         "System.Runtime.InteropServices.WasmImportLinkageAttribute";
 
@@ -28,35 +26,20 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
             var parameter = metadata.GetParameter(parameterHandle);
             hasMarshalling |= !parameter.GetMarshallingDescriptor().IsNil;
         }
-        var suppressesGcTransition = false;
-        var hasCustomCallingConvention = false;
         var hasWasmImportLinkage = false;
-        var attributes = import.Attributes;
+        string? unsupportedCallingConvention = null;
         foreach (var handle in method.GetCustomAttributes())
         {
             var attribute = metadata.GetCustomAttribute(handle);
             var name = AttributeName(metadata, attribute);
-            suppressesGcTransition |= name ==
-                "System.Runtime.InteropServices.SuppressGCTransitionAttribute";
             hasWasmImportLinkage |= name == WasmImportLinkageAttribute;
-            if (name == UnmanagedCallConvAttribute)
+            // As on desktop .NET, [UnmanagedCallConv] names the convention only of an import whose
+            // DllImport leaves it Winapi.
+            if (name == UnmanagedCallConvAttribute &&
+                (import.Attributes & MethodImportAttributes.CallingConventionMask) ==
+                    MethodImportAttributes.CallingConventionWinApi)
             {
-                if (TryReadSupportedCallingConvention(
-                    metadata,
-                    attribute,
-                    out var explicitCdecl))
-                {
-                    if (explicitCdecl)
-                    {
-                        attributes = (attributes &
-                            ~MethodImportAttributes.CallingConventionMask) |
-                            MethodImportAttributes.CallingConventionCDecl;
-                    }
-                }
-                else
-                {
-                    hasCustomCallingConvention = true;
-                }
+                unsupportedCallingConvention = ReadUnsupportedCallingConvention(attribute);
             }
         }
         var signature = metadata.GetBlobReader(method.Signature).ReadSignatureHeader();
@@ -64,25 +47,22 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
             import.Module.IsNil ? string.Empty :
                 metadata.GetString(metadata.GetModuleReference(import.Module).Name),
             metadata.GetString(import.Name),
-            attributes,
+            import.Attributes,
             signature.CallingConvention == SignatureCallingConvention.VarArgs,
             hasMarshalling,
-            suppressesGcTransition,
-            hasCustomCallingConvention)
+            unsupportedCallingConvention)
         {
             HasWasmImportLinkage = hasWasmImportLinkage,
         };
     }
 
-    private static bool TryReadSupportedCallingConvention(
-        MetadataReader metadata,
-        CustomAttribute attribute,
-        out bool explicitCdecl)
+    // Why the C ABI cannot honour the conventions an [UnmanagedCallConv] names, or null when it can.
+    private static string? ReadUnsupportedCallingConvention(CustomAttribute attribute)
     {
-        explicitCdecl = false;
+        const string Malformed = "[UnmanagedCallConv] sets more than its CallConvs";
         var value = attribute.DecodeValue(new CustomAttributeTypeNameProvider());
         if (!value.FixedArguments.IsEmpty)
-            return false;
+            return Malformed;
         var conventions = ImmutableArray<string>.Empty;
         var found = false;
         foreach (var argument in value.NamedArguments)
@@ -91,17 +71,14 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
                 argument.Value is not
                     ImmutableArray<CustomAttributeTypedArgument<string>> items)
             {
-                return false;
+                return Malformed;
             }
             conventions = [.. items.Select(item =>
                 CustomAttributeTypeNameProvider.NormalizeSerializedTypeName(
                     item.Value as string ?? string.Empty))];
             found = true;
         }
-        if (!found || conventions.IsEmpty)
-            return true;
-        explicitCdecl = conventions is [CallConvCdecl];
-        return explicitCdecl;
+        return UnmanagedCallingConventions.Unsupported(conventions);
     }
 
     private static string AttributeName(MetadataReader metadata, CustomAttribute attribute)

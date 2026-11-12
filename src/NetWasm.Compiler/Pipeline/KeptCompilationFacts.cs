@@ -9,7 +9,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.ExceptionTypes;
 using NetWasm.Compiler.Wasm;
 
 namespace NetWasm.Compiler.Pipeline;
@@ -17,8 +16,8 @@ namespace NetWasm.Compiler.Pipeline;
 /// <summary>
 /// What a host writes beside a compile's module, kept with the compile so one the early
 /// cutoff serves from it has the same: the options it ran with, its static data end,
-/// interop manifest, function imports, runtime features, entry point, and the exception
-/// types its diagnostics name.
+/// interop manifest, function imports, runtime features, entry point, and its symbols
+/// sidecars.
 /// </summary>
 internal sealed record KeptCompilationFacts(
     string Options,
@@ -28,7 +27,8 @@ internal sealed record KeptCompilationFacts(
     ImmutableArray<string> RuntimeFeatures,
     int? EntryPointToken,
     bool SynchronousEntry,
-    ImmutableArray<ReachableExceptionType>? ExceptionTypes)
+    byte[]? TypeSymbols,
+    byte[]? MethodSymbols)
 {
     public static byte[] Write(KeptCompilationFacts facts) =>
         JsonSerializer.SerializeToUtf8Bytes(facts, KeptCompilationFactsJsonContext.Default.KeptCompilationFacts);
@@ -55,7 +55,8 @@ internal sealed record KeptCompilationFacts(
         result.RuntimeFeatures,
         result.EntryPointToken,
         result.SynchronousEntry,
-        result.DiagnosticArtifacts?.ExceptionTypes);
+        result.TypeSymbols?.Bytes,
+        result.MethodSymbols?.Bytes);
 }
 
 [JsonSerializable(typeof(KeptCompilationFacts))]
@@ -94,7 +95,7 @@ internal static class CompilationOptionsFingerprint
         foreach (var (alias, target) in (options.ReferenceAssemblyAliases ?? ImmutableDictionary<string, string>.Empty)
                      .OrderBy(pair => pair.Key, StringComparer.Ordinal))
             Add("alias", $"{alias}:{target}");
-        Add("exception-map", options.EmitExceptionTypeMap);
+        Add("type-names", options.EmitTypeNames);
         Add("stack-trace", options.EmitStackTrace);
         Add("javascript-boundary", options.UseJavaScriptExportBoundary);
         Add("project", options.ProjectDirectory);

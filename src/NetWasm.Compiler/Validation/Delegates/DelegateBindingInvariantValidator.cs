@@ -49,6 +49,16 @@ internal sealed class DelegateBindingInvariantValidator(
     {
         var invokeParameters = binding.Invoke.Signature.ParameterSignatureTypes;
         var targetParameters = binding.Target.Signature.ParameterSignatureTypes;
+        if (binding.ClosedOverFirstArgument)
+        {
+            if (!binding.Target.Definition.IsStatic || targetParameters.IsEmpty ||
+                targetParameters[0].StackKind != CliValueKind.ManagedReference)
+            {
+                throw _exceptions.Create(
+                    "a delegate closes over the first argument only of a static method that takes a reference");
+            }
+            targetParameters = targetParameters[1..];
+        }
         if (binding.ParameterBindings.Length != invokeParameters.Length ||
             targetParameters.Length != invokeParameters.Length)
         {

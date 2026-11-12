@@ -61,49 +61,18 @@ internal sealed class ConstantStaticFieldRewriter(
         {
             return null;
         }
-        var reference = field.SignatureType is
-        {
-            IsValueType: false, Shape: not (CliTypeShape.GenericTypeParameter or
-            CliTypeShape.GenericMethodParameter or CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer or
-            CliTypeShape.FunctionPointer or CliTypeShape.Modified)
-        };
-        var type = reference ? field.SignatureType : Primitive(field.SignatureType);
-        if (type is null) return null;
+        if (StaticFieldConstantLoads.Storage(field.SignatureType, typeDefinitions) is not { } storage) return null;
+        var (reference, type) = storage;
         var owner = typeDefinitions.ResolveTypeIdentity(typeIdentities.GetTypeIdentity(field.DeclaringType));
         var initialization = _initializers.GetOrAdd(owner.Key, _ => Initializer(owner));
         // A field the constructor does not store first holds zero only where it does nothing else.
         if (!initialization.Constants.TryGetValue(field.Key, out var value))
         {
             if (!initialization.Complete) return null;
-            value = new(reference ? CliValueKind.ManagedReference : type.StackKind is CliValueKind.F4 ? CliValueKind.F8 : type.StackKind, 0, 0);
+            value = new(StaticFieldConstantLoads.StackKind(reference, type), 0, 0);
         }
         initializes = !initialization.Complete;
-        return (reference, type.CanonicalName, value.Kind) switch
-        {
-            (true, _, CliValueKind.ManagedReference) => Load(CilOperation.LoadNull, new CilOperand.None()),
-            (false, "primitive:bool" or "primitive:u1", CliValueKind.I4) => Int32((byte)value.Integer),
-            (false, "primitive:i1", CliValueKind.I4) => Int32((sbyte)value.Integer),
-            (false, "primitive:char" or "primitive:u2", CliValueKind.I4) => Int32((ushort)value.Integer),
-            (false, "primitive:i2", CliValueKind.I4) => Int32((short)value.Integer),
-            (false, "primitive:i4" or "primitive:u4", CliValueKind.I4) => Int32((int)value.Integer),
-            (false, "primitive:i8" or "primitive:u8", CliValueKind.I8) =>
-                Load(CilOperation.LoadInt64, new CilOperand.ConstantI8(value.Integer)),
-            (false, "primitive:f4", CliValueKind.F8) => Load(CilOperation.LoadFloat32, new CilOperand.ConstantF4((float)value.Real)),
-            (false, "primitive:f8", CliValueKind.F8) => Load(CilOperation.LoadFloat64, new CilOperand.ConstantF8(value.Real)),
-            _ => null,
-        };
-    }
-
-    // The primitive type a field of this type holds: its own, or an enum's
-    // underlying type.
-    private CliTypeIdentity? Primitive(CliTypeIdentity type)
-    {
-        if (type.Shape == CliTypeShape.Primitive) return type;
-        if (type.Shape != CliTypeShape.Named || !type.IsValueType) return null;
-        var definition = typeDefinitions.ResolveTypeIdentity(type);
-        return definition.IsEnum && definition.EnumUnderlyingType.Shape == CliTypeShape.Primitive
-            ? definition.EnumUnderlyingType
-            : null;
+        return StaticFieldConstantLoads.Load(reference, type, value.Kind, value.Integer, value.Real);
     }
 
     // The constants the static constructor stores in the owner's static fields
@@ -171,9 +140,8 @@ internal sealed class ConstantStaticFieldRewriter(
         }
     }
 
-    private static CilInstruction Int32(int value) => Load(CilOperation.LoadInt32, new CilOperand.ConstantI4(value));
-
-    private static CilInstruction Load(CilOperation operation, CilOperand operand) => new(0, 1, operation, operand);
+    private static CilInstruction Load(CilOperation operation, CilOperand operand) =>
+        StaticFieldConstantLoads.Instruction(operation, operand);
 
     // A constant as the evaluation stack holds it.
     private readonly record struct Stored(CliValueKind Kind, long Integer, double Real);

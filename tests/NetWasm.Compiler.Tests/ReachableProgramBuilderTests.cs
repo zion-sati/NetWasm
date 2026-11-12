@@ -112,14 +112,10 @@ public sealed class ReachableProgramBuilderTests
         var ledger = new ReachabilityLedgerFactory().Create();
         ledger.MethodDescriptors.Add(method.CanonicalName, method);
         ledger.FieldDescriptors.Add(field.CanonicalName, field);
-        ledger.DelegateInvokeDescriptors.Add(declaringType.CanonicalName, method);
-        ledger.RequiresDelegateInvoke = true;
         ledger.RequiresGenericArguments = true;
         var snapshot = ReachabilityLedgerSnapshot.From(ledger);
         ledger.MethodDescriptors.Clear();
         ledger.FieldDescriptors.Clear();
-        ledger.DelegateInvokeDescriptors.Clear();
-        ledger.RequiresDelegateInvoke = false;
         ledger.RequiresGenericArguments = false;
 
         var program = new ReachableProgramBuilder(
@@ -134,13 +130,9 @@ public sealed class ReachableProgramBuilderTests
 
         Assert.Same(snapshot.MethodDescriptors, program.MethodDescriptors);
         Assert.Same(snapshot.FieldDescriptors, program.FieldDescriptors);
-        Assert.Same(
-            snapshot.DelegateInvokeDescriptors,
-            program.DelegateInvokeDescriptors);
         Assert.True(program.RequiresGenericArguments);
         Assert.Same(method, Assert.Single(program.MethodDescriptors).Value);
         Assert.Same(field, Assert.Single(program.FieldDescriptors).Value);
-        Assert.Same(method, Assert.Single(program.DelegateInvokeDescriptors).Value);
     }
 
     [Fact]
@@ -304,6 +296,41 @@ public sealed class ReachableProgramBuilderTests
         Assert.Equal([target], planner.Targets);
         Assert.Same(binding, Assert.Single(program.DelegateBindings));
         Assert.Same(delegateType, Assert.Single(program.DelegateTypes));
+    }
+
+    // A delegate's Invoke called directly, or bound by a delegate converted from another
+    // (ldftn, ldvirtftn), is planned as an invoke like a callvirt's: its type gets an invoke
+    // helper with the bindings it dispatches to (issue 223).
+    [Theory]
+    [InlineData(ManagedCallOperation.Direct)]
+    [InlineData(ManagedCallOperation.Virtual)]
+    [InlineData(ManagedCallOperation.LoadFunction)]
+    [InlineData(ManagedCallOperation.LoadVirtualFunction)]
+    public void EveryCallOrAddressOfADelegatesInvokeIsPlannedAsAnInvoke(ManagedCallOperation operation)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var delegateType = CliTypeIdentity.Named(assembly, "Tests", "Transform", isValueType: false);
+        var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
+        var invokeDefinition = new MethodDefinitionModel(
+            new EntityKey(assembly, 31), new EntityKey(assembly, 30), "Invoke", false, signature, 1);
+        var invoke = new MethodInstanceModel(invokeDefinition, delegateType, [], signature);
+        var ordinary = new MethodInstanceModel(invokeDefinition with { Name = "Run" }, delegateType, [], signature);
+        var notADelegate = new MethodInstanceModel(invokeDefinition,
+            CliTypeIdentity.Named(assembly, "Tests", "Invoker", isValueType: false), [], signature);
+        var ledger = new ReachabilityLedgerFactory().Create();
+        foreach (var (offset, target) in new[] { (4, invoke), (8, ordinary), (12, notADelegate) })
+        {
+            var key = new ManagedCallSiteKey(new ManagedMethodIdentity("caller"), offset);
+            ledger.ManagedCallSites.Add(key,
+                new ManagedCallSite(key, operation, new ManagedMethodIdentity(target.CanonicalName), target, null));
+        }
+        var planner = new RecordingDelegateBindingPlanner([]);
+
+        _ = new ReachableProgramBuilder(new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), planner).Build(
+            invokeDefinition, [], ReachabilityLedgerSnapshot.From(ledger), new RecognizingDelegateType(delegateType),
+            new EmptyTypeTestPlanner());
+
+        Assert.Equal([invoke], planner.Invokes);
     }
 
     [Fact]

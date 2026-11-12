@@ -1,6 +1,7 @@
 namespace System.Reflection;
 
-public class AmbiguousMatchException : SystemException
+[Serializable]
+public sealed class AmbiguousMatchException : SystemException
 {
     public AmbiguousMatchException() { }
 
@@ -22,6 +23,7 @@ public interface ICustomAttributeProvider
 
 public abstract class MemberInfo : ICustomAttributeProvider
 {
+    public virtual bool IsCollectible => true;
     public virtual MemberTypes MemberType => throw Unsupported();
 
     public virtual System.Collections.Generic.IEnumerable<CustomAttributeData> CustomAttributes =>
@@ -79,15 +81,13 @@ public abstract partial class MethodBase : MemberInfo
 
     public virtual ParameterInfo[] GetParameters() => throw UnsupportedMetadata();
 
-    public static MethodBase GetMethodFromHandle(RuntimeMethodHandle handle) =>
-        throw Unsupported();
+    // The compiler lowers every call, these included, to the handle's method; the bodies are
+    // what a delegate or function pointer to them runs.
+    public static MethodBase GetMethodFromHandle(RuntimeMethodHandle handle) => GetMethodFromHandle(handle);
 
     public static MethodBase GetMethodFromHandle(
         RuntimeMethodHandle handle,
-        RuntimeTypeHandle declaringType) => throw Unsupported();
-
-    private static PlatformNotSupportedException Unsupported() => new(
-        "Only compiler-emitted closed member handles are supported.");
+        RuntimeTypeHandle declaringType) => GetMethodFromHandle(handle, declaringType);
 
     private static PlatformNotSupportedException UnsupportedMetadata() => new(
         "Runtime method metadata is unavailable because its compiler descriptor was not deployed.");
@@ -158,15 +158,12 @@ public abstract partial class FieldInfo : MemberInfo
 
     public virtual bool IsLiteral => (Attributes & FieldAttributes.Literal) != 0;
 
-    public static FieldInfo GetFieldFromHandle(RuntimeFieldHandle handle) =>
-        throw Unsupported();
+    // Lowered like MethodBase.GetMethodFromHandle.
+    public static FieldInfo GetFieldFromHandle(RuntimeFieldHandle handle) => GetFieldFromHandle(handle);
 
     public static FieldInfo GetFieldFromHandle(
         RuntimeFieldHandle handle,
-        RuntimeTypeHandle declaringType) => throw Unsupported();
-
-    private static PlatformNotSupportedException Unsupported() => new(
-        "Only compiler-emitted closed member handles are supported.");
+        RuntimeTypeHandle declaringType) => GetFieldFromHandle(handle, declaringType);
 
     private static PlatformNotSupportedException UnsupportedMetadata() => new(
         "Runtime field metadata is unavailable because its compiler descriptor was not deployed.");

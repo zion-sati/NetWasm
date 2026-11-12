@@ -895,7 +895,7 @@ public sealed class SdkRoutingTests
     }
 
     [Fact]
-    public void ManagedExceptionDiagnosticsArePublishedForEveryDeploymentMode()
+    public void SymbolsSidecarsArePublishedForEveryDeploymentMode()
     {
         var repositoryRoot = FindRepositoryRoot();
         var toolchainTargets = File.ReadAllText(Path.Combine(
@@ -904,21 +904,19 @@ public sealed class SdkRoutingTests
         var compilerTargets = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
-        const string mediaType =
-            "application/vnd.netwasm.stack-trace-symbols+json;version=1";
 
-        Assert.Equal(4,
-            toolchainTargets.Split("<Role>stack-trace-symbols</Role>",
+        // Each sidecar sits beside the program under its name, which the program opens (#225).
+        foreach (var role in new[] { "type-symbols", "method-symbols" })
+        {
+            var mediaType = $"application/vnd.netwasm.{role};version=1";
+            Assert.Equal(4, toolchainTargets.Split($"<Role>{role}</Role>", StringSplitOptions.None).Length - 1);
+            Assert.Equal(4, toolchainTargets.Split($"<MediaType>{mediaType}</MediaType>",
                 StringSplitOptions.None).Length - 1);
-        Assert.Equal(4,
-            toolchainTargets.Split($"<MediaType>{mediaType}</MediaType>",
+            Assert.Equal(4, toolchainTargets.Split($"<RelativePath>$(AssemblyName).wasm.{role}</RelativePath>",
                 StringSplitOptions.None).Length - 1);
-        Assert.Contains($"<MediaType>{mediaType}</MediaType>",
-            compilerTargets,
-            StringComparison.Ordinal);
-        Assert.Equal(4,
-            toolchainTargets.Split("<Role>exception-type-map</Role>",
-                StringSplitOptions.None).Length - 1);
+            Assert.Contains($"<MediaType>{mediaType}</MediaType>", compilerTargets, StringComparison.Ordinal);
+            Assert.Contains($"$(OutputPath)$(AssemblyName).wasm.{role}", compilerTargets, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -1089,6 +1087,7 @@ public sealed class SdkRoutingTests
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedNewObjectNullCheckElimination"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopStrengthReduction"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedRangeBranchFolding"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedUnwrittenStaticFieldFolding"));
     }
 
     [Theory]
@@ -1132,6 +1131,7 @@ public sealed class SdkRoutingTests
     [InlineData("NetWasmManagedNewObjectNullCheckElimination")]
     [InlineData("NetWasmManagedLoopStrengthReduction")]
     [InlineData("NetWasmManagedRangeBranchFolding")]
+    [InlineData("NetWasmManagedUnwrittenStaticFieldFolding")]
     public void PreservesExplicitCompilerReductionSelections(string property)
     {
         using var project = EvaluationProject.Create(
@@ -1198,6 +1198,7 @@ public sealed class SdkRoutingTests
                      "$(NetWasmManagedNewObjectNullCheckElimination)",
                      "$(NetWasmManagedLoopStrengthReduction)",
                      "$(NetWasmManagedRangeBranchFolding)",
+                     "$(NetWasmManagedUnwrittenStaticFieldFolding)",
                  })
         {
             Assert.Contains(value, frontendIdentityContract, StringComparison.Ordinal);
@@ -1250,6 +1251,8 @@ public sealed class SdkRoutingTests
             (string?)compilation.Attribute("ManagedLoopStrengthReduction"));
         Assert.Equal("$(NetWasmManagedRangeBranchFolding)",
             (string?)compilation.Attribute("ManagedRangeBranchFolding"));
+        Assert.Equal("$(NetWasmManagedUnwrittenStaticFieldFolding)",
+            (string?)compilation.Attribute("ManagedUnwrittenStaticFieldFolding"));
         foreach (var value in new[]
                  {
                      "$(_NetWasmCanonicalOptimization)",
@@ -1585,6 +1588,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedNewObjectNullCheckElimination=$(NetWasmManagedNewObjectNullCheckElimination)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopStrengthReduction=$(NetWasmManagedLoopStrengthReduction)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedRangeBranchFolding=$(NetWasmManagedRangeBranchFolding)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedUnwrittenStaticFieldFolding=$(NetWasmManagedUnwrittenStaticFieldFolding)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />

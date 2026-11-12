@@ -34,9 +34,10 @@ internal sealed partial record ManagedStaticData
 
     public int MemberDescriptorRequiresDeclaringTypeOffset { get; init; }
 
-    public int TypeFactsTableAddress { get; init; }
+    public int TypeTableAddress { get; init; }
 
-    public int TypeFactsTableCount { get; init; }
+    // The assemblies Type.Assembly can report, at their type table index - 1; empty where unreachable.
+    public ImmutableArray<AssemblyIdentity> RuntimeAssemblies { get; init; } = [];
 
     // Static Type objects by type canonical name, contiguous from the table address.
     public ImmutableDictionary<string, int> TypeObjects { get; init; } =

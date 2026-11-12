@@ -71,7 +71,7 @@ internal sealed record UnitRuntimeObjectLayout(
 internal static class UnitPlanCodec
 {
     private const uint Magic = 0x4C504E4E; // "NNPL"
-    private const int Version = 6;
+    private const int Version = 8;
 
     public static byte[] Encode(InstructionModuleTarget target, IRuntimeObjectLayout runtimeObjects, UnitProgramFacts program)
     {
@@ -82,7 +82,7 @@ internal static class UnitPlanCodec
         writer.Int(unchecked((int)Magic));
         writer.Int(Version);
         var stackTraces = target.StackTraceMethods;
-        var replayable = target.NativeImports.Methods.IsEmpty && target.NativeCallbacks.Methods.IsEmpty;
+        var replayable = target.NativeImports.IsEmpty && target.NativeCallbacks.Methods.IsEmpty;
         writer.Bool(replayable);
         if (!replayable) return writer.ToArray();
 
@@ -303,6 +303,8 @@ internal static class UnitPlanCodec
         Optional(writer, map.ManagedRethrowFunctionIndex);
         Keyed(writer, map.JSImportForwarders);
         Named(writer, map.DelegateMulticastHelpers.Select(pair => KeyValuePair.Create(pair.Key, pair.Value.Value)));
+        Keyed(writer, map.DelegateInvokeMethods);
+        Named(writer, map.ConstructedDelegateInvokeMethods.Select(pair => KeyValuePair.Create(pair.Key, pair.Value.Value)));
     }
 
     private static FunctionIndexMap Functions(UnitModelReader reader)
@@ -317,6 +319,9 @@ internal static class UnitPlanCodec
             ManagedRethrowFunctionIndex = Optional(reader),
             JSImportForwarders = Keyed(reader),
             DelegateMulticastHelpers = Named(reader).ToImmutableDictionary(
+                pair => pair.Key, pair => new WasmFunctionIndex(pair.Value), StringComparer.Ordinal),
+            DelegateInvokeMethods = Keyed(reader),
+            ConstructedDelegateInvokeMethods = Named(reader).ToImmutableDictionary(
                 pair => pair.Key, pair => new WasmFunctionIndex(pair.Value), StringComparer.Ordinal),
         };
     }
@@ -439,7 +444,8 @@ internal static class UnitPlanCodec
         }
         Address(writer, data.NativeCallbackReadinessAddress);
         Address(writer, data.StateRegistrationGuardAddress);
-        Address(writer, data.StackTraceSymbolRegistrationGuardAddress);
+        Address(writer, data.SidecarDescriptorAddress);
+        Address(writer, data.SidecarSlotAddress);
     }
 
     private static ModuleDataPlan Data(UnitModelReader reader)
@@ -461,7 +467,8 @@ internal static class UnitPlanCodec
             StaticInitializerFunctions = functions,
             NativeCallbackReadinessAddress = Address(reader),
             StateRegistrationGuardAddress = Address(reader),
-            StackTraceSymbolRegistrationGuardAddress = Address(reader),
+            SidecarDescriptorAddress = Address(reader),
+            SidecarSlotAddress = Address(reader),
         };
     }
 

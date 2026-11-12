@@ -87,6 +87,7 @@ public sealed class DecoderExceptionFallbackBuffer : DecoderFallbackBuffer
     public override bool MovePrevious() => false;
 }
 
+[Serializable]
 public sealed class DecoderFallbackException : ArgumentException
 {
     private readonly byte[]? _bytes;

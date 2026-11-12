@@ -13,6 +13,7 @@ using System.Runtime.InteropServices;
 namespace System;
 
 // Represents a Globally Unique Identifier.
+[Serializable]
 public readonly partial struct Guid : IComparable,
     IComparable<Guid>,
     IEquatable<Guid>,

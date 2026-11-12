@@ -285,7 +285,7 @@ public sealed class ManagedMethodEmitterTests
                 new ImplicitExceptionEmitter(layouts)),
             new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),
             new EmptyFloatingCallPlanner(), new AuthoritativeRootSourceSelector(), new AuthoritativeRootLayoutPlanner(),
-            new RootClearElisionPlanner(), new RootValueElisionPlanner(),
+            new RootClearElisionPlanner(new StructuredBlockPredecessorReader()), new RootValueElisionPlanner(new StructuredBlockPredecessorReader()),
             new ValueFrameReferenceMapPlanner(layouts, layouts, types),
             new NetWasm.Compiler.GarbageCollection.RootSlotAllocator());
     }

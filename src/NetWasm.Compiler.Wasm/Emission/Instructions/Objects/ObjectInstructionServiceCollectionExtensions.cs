@@ -33,6 +33,7 @@ internal static class ObjectInstructionServiceCollectionExtensions
         services.AddSingleton<ITypeTestEmitter>(provider =>
             provider.GetRequiredService<TypeTestInstructionEmitter>());
         services.AddInstructionCommandProvider<UnboxAnyInstructionEmitter>();
+        services.AddSingleton<IDelegateTargetCheckSelector, DelegateTargetCheckSelector>();
         services.AddInstructionCommandProvider<ObjectConstructionEmitter>();
         return services;
     }

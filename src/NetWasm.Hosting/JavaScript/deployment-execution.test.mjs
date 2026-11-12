@@ -5,7 +5,7 @@ import { createContractError } from "./contract-error.mjs";
 import { createDeploymentExecution } from "./deployment-execution.mjs";
 import { normalExecutionResult } from "./execution-result.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
-import { executeWithTimeZoneResources } from "./timezone-execution.mjs";
+import { executeWithProgramSidecars } from "./sidecar-execution.mjs";
 
 const digest = "1".repeat(64);
 const stdout = Object.freeze({ write() {} });
@@ -57,14 +57,14 @@ function fixture(overrides = {}) {
       };
     },
     createOutputFinalization,
-    createTimeZoneMaterializer(mount) {
+    createSidecarMaterializer(mount) {
       calls.push(["materializer", mount]);
       return async value => {
         calls.push(["materialize", value]);
         return null;
       };
     },
-    executeWithResources: executeWithTimeZoneResources,
+    executeWithResources: executeWithProgramSidecars,
     async loadManifest(value) {
       calls.push(["manifest", value]);
       return manifest();
@@ -87,7 +87,7 @@ function fixture(overrides = {}) {
       calls.push(["resolve", kind]);
       return strategy;
     },
-    selectTimeZone(value) {
+    selectSidecars(value) {
       calls.push(["timezone", value]);
       return null;
     },
@@ -181,7 +181,7 @@ test("maps contract, host, identity, and mid-validation cancellation failures", 
 
   for (const [overrides, detail] of [
     [{ loadManifest() { throw new Error("private transport"); } }, "Error: private transport"],
-    [{ selectTimeZone() { throw new Error("private selector"); } }, "Error: private selector"],
+    [{ selectSidecars() { throw new Error("private selector"); } }, "Error: private selector"],
     [{ resolveStrategy() { return null; } },
       "TypeError: artifact Strategy resolver returned an invalid action"],
   ]) {

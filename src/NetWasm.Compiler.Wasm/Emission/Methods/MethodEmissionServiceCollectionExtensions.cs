@@ -64,6 +64,7 @@ internal static class MethodEmissionServiceCollectionExtensions
         services.AddSingleton<ManagedMethodEmitter>();
         services.AddSingleton<IAuthoritativeRootSourceSelector, AuthoritativeRootSourceSelector>();
         services.AddSingleton<IAuthoritativeRootLayoutPlanner, AuthoritativeRootLayoutPlanner>();
+        services.AddSingleton<IStructuredBlockPredecessorReader, StructuredBlockPredecessorReader>();
         services.AddSingleton<IRootClearElisionPlanner, RootClearElisionPlanner>();
         services.AddSingleton<IRootValueElisionPlanner, RootValueElisionPlanner>();
         services.AddSingleton<IInstructionCountingWriterFactory,

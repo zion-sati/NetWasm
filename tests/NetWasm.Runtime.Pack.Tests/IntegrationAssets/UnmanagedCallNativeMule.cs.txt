@@ -1,0 +1,127 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct CalliPair
+{
+    public int First;
+    public int Second;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct CalliWrapped
+{
+    public double Value;
+}
+
+// Issue 226: calls through unmanaged function pointers reach native functions and
+// [UnmanagedCallersOnly] methods, with scalar, mixed and aggregate C ABI signatures, and its
+// siblings: float, narrow integers, a pointer argument and a struct of one scalar. Each calling
+// convention desktop .NET 11 accepts calls the C ABI: Stdcall, Thiscall, SuppressGCTransition and
+// MemberFunction on pointers, callbacks and DllImports alike. Five DllImports declare one native
+// function, as desktop .NET allows, and share its import.
+public static unsafe class EntryPoint
+{
+    private static int s_marked;
+
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* TwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_swap_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* SwapAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_mix_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* MixAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_scale_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* ScaleAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_narrow_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* NarrowAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_sum_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* SumAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_wrap_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* WrapAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    private static extern void* StdcallTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true, CallingConvention = CallingConvention.ThisCall)]
+    private static extern void* ThiscallTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvStdcall), typeof(CallConvMemberFunction), typeof(CallConvSuppressGCTransition) })]
+    private static extern void* UnmanagedCallConvTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true), SuppressGCTransition]
+    private static extern void* SuppressedTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_narrow_import", ExactSpelling = true)]
+    private static extern short NarrowImport(sbyte signedValue, ushort unsignedValue);
+
+    public static int Run(int input)
+    {
+        var twice = (delegate* unmanaged<int, int>)TwiceAddress();
+        if (twice(input) != input * 2) return -1;
+        var cdeclTwice = (delegate* unmanaged[Cdecl]<int, int>)TwiceAddress();
+        if (cdeclTwice(input + 1) != (input + 1) * 2) return -2;
+        var swap = (delegate* unmanaged<CalliPair, CalliPair>)SwapAddress();
+        var swapped = swap(new CalliPair { First = input, Second = 7 });
+        if (swapped.First != 7 || swapped.Second != input) return -3;
+        var mix = (delegate* unmanaged<int, double, long, double>)MixAddress();
+        if (mix(input, 0.5, 1L << 40) != input + 0.5 + (1L << 40)) return -4;
+        delegate* unmanaged<int, int> triple = &Triple;
+        if (triple(input) != input * 3) return -5;
+        delegate* unmanaged[Cdecl]<int, void> mark = &Mark;
+        mark(input);
+        if (s_marked != input) return -6;
+        // Siblings: float, narrow integers extended as the C ABI does, a pointer-width argument and
+        // a struct of one scalar, which travels as that scalar.
+        var scale = (delegate* unmanaged<float, float, float>)ScaleAddress();
+        if (scale(input + 0.5f, 3f) != (input + 0.5f) * 3f) return -7;
+        var narrow = (delegate* unmanaged<byte, sbyte, sbyte>)NarrowAddress();
+        if (narrow(250, (sbyte)-(input + 3)) != (sbyte)(250 - (input + 3))) return -8;
+        var values = stackalloc int[] { input, 2, 3 };
+        var sum = (delegate* unmanaged<int*, int, long>)SumAddress();
+        if (sum(values, 3) != (input + 5) * 4294967296L) return -9;
+        var wrap = (delegate* unmanaged<CalliWrapped, CalliWrapped>)WrapAddress();
+        if (wrap(new CalliWrapped { Value = input + 0.25 }).Value != (input + 0.25) * 2) return -10;
+        delegate* unmanaged<float, float> half = &Half;
+        if (half(input + 1f) != (input + 1f) / 2) return -11;
+        // Every convention desktop .NET accepts, each the C ABI.
+        if (((delegate* unmanaged[Stdcall]<int, int>)StdcallTwiceAddress())(input) != input * 2) return -12;
+        if (((delegate* unmanaged[Thiscall]<int, int>)ThiscallTwiceAddress())(input) != input * 2) return -13;
+        if (((delegate* unmanaged[Cdecl, SuppressGCTransition]<int, int>)UnmanagedCallConvTwiceAddress())(input) != input * 2) return -14;
+        if (((delegate* unmanaged<int, int>)SuppressedTwiceAddress())(input) != input * 2) return -15;
+        var memberSwap = (delegate* unmanaged[Stdcall, MemberFunction]<CalliPair, CalliPair>)SwapAddress();
+        swapped = memberSwap(new CalliPair { First = input, Second = 9 });
+        if (swapped.First != 9 || swapped.Second != input) return -16;
+        delegate* unmanaged[Stdcall]<int, int> quadruple = &Quadruple;
+        if (quadruple(input) != input * 4) return -17;
+        delegate* unmanaged[Thiscall, MemberFunction]<int, int> quintuple = &Quintuple;
+        if (quintuple(input) != input * 5) return -18;
+        // A callback declared SuppressGCTransition, called through a pointer that keeps the
+        // transition, as desktop .NET requires of a managed callee.
+        var sextuple = (delegate* unmanaged<int, int>)(void*)(delegate* unmanaged[SuppressGCTransition]<int, int>)&Sextuple;
+        if (sextuple(input) != input * 6) return -19;
+        // Narrow integers are blittable, as on desktop .NET: an import's and a callback's own.
+        if (NarrowImport((sbyte)-(input + 3), 65000) != (short)(-(input + 3) * 2 - 65000)) return -20;
+        delegate* unmanaged<byte, short, ushort> narrowCallback = &NarrowCallback;
+        if (narrowCallback(250, (short)-(input + 300)) != (ushort)(250 - (input + 300))) return -21;
+        return 42;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
+    private static int Quadruple(int value) => value * 4;
+
+    [UnmanagedCallersOnly]
+    private static ushort NarrowCallback(byte value, short delta) => (ushort)(value + delta);
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvThiscall), typeof(CallConvMemberFunction) })]
+    private static int Quintuple(int value) => value * 5;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvSuppressGCTransition) })]
+    private static int Sextuple(int value) => value * 6;
+
+    [UnmanagedCallersOnly]
+    private static float Half(float value) => value / 2;
+
+    [UnmanagedCallersOnly]
+    private static int Triple(int value) => value * 3;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static void Mark(int value) => s_marked = value;
+}

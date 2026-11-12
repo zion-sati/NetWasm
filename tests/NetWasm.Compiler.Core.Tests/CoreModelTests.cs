@@ -312,11 +312,14 @@ public sealed class CoreModelTests
             [CliTypeIdentity.Primitive("i4", CliValueKind.I4)],
             constructedFinalizerDefinition.Signature);
         var descriptor = new TypeDescriptorLayout(
-            TypeKey, 10, 9, 24, 100, 3, finalizer);
+            TypeKey, 10, 9, 24, [8], finalizer);
         var constructed = new ConstructedTypeDescriptorLayout(
-            valueType, 11, 10, 32, 104, 4, constructedFinalizer);
+            valueType, 11, 10, 32, [16, 24], constructedFinalizer)
+        {
+            AssignableTypeIds = [10, 11],
+        };
         var valueDescriptor = new ValueTypeDescriptorLayout(
-            valueType, 12, 8, 4, 108, 2);
+            valueType, 12, 8, 4, [0]);
 
         Assert.Equal(valueType, value.Type);
         Assert.Equal(4, value.Alignment);
@@ -325,15 +328,14 @@ public sealed class CoreModelTests
         Assert.Equal(11, constructed.TypeId);
         Assert.Equal(10, constructed.BaseTypeId);
         Assert.Equal(32, constructed.ObjectSize);
-        Assert.Equal(104, constructed.BitmapAddress);
-        Assert.Equal(4, constructed.BitmapBitCount);
+        Assert.Equal([16, 24], constructed.ReferenceOffsets);
+        Assert.Equal([10, 11], constructed.AssignableTypeIds);
         Assert.Equal(constructedFinalizer, constructed.Finalizer);
         Assert.Equal(valueType, valueDescriptor.Type);
         Assert.Equal(12, valueDescriptor.TypeId);
         Assert.Equal(8, valueDescriptor.Size);
         Assert.Equal(4, valueDescriptor.BoxedPayloadOffset);
-        Assert.Equal(108, valueDescriptor.BitmapAddress);
-        Assert.Equal(2, valueDescriptor.BitmapBitCount);
+        Assert.Equal([0], valueDescriptor.ReferenceOffsets);
     }
 
     [Fact]
@@ -748,8 +750,7 @@ public sealed class CoreModelTests
         Assert.Equal(-1, layout.DelegateInvocationListOffset);
         Assert.Equal(-1, layout.DelegateInvocationCountOffset);
         var staticDataLayout = (IStaticDataLayout)layout;
-        Assert.Equal(0, staticDataLayout.TypeFactsTableAddress);
-        Assert.Equal(0, staticDataLayout.TypeFactsTableCount);
+        Assert.Equal(0, staticDataLayout.TypeTableAddress);
         // A layout without static Type objects has none to name.
         Assert.False(staticDataLayout.TypeObjectAddresses.TryGetValue("Program::Point", out _));
         Assert.Equal(0, staticDataLayout.TypeObjectTableAddress);
@@ -760,7 +761,7 @@ public sealed class CoreModelTests
         Assert.Empty(layout.ValueTypeDescriptors);
 
         var descriptor = new ConstructedTypeDescriptorLayout(
-            constructed, 3, 2, 12, 32, 2, null);
+            constructed, 3, 2, 12, [], null);
         Assert.Equal(constructed, descriptor.Type);
     }
 
@@ -907,13 +908,13 @@ public sealed class CoreModelTests
         Assert.Equal(2, objectLayout.TypeId);
         Assert.Equal(12, objectLayout.Size);
         Assert.Equal(8, Assert.Single(objectLayout.ReferenceOffsets));
-        var descriptor = new TypeDescriptorLayout(TypeKey, 2, 1, 12, 32, 3, null);
+        var descriptor = new TypeDescriptorLayout(TypeKey, 2, 1, 12, [8], null);
         Assert.Equal(TypeKey, descriptor.Type);
         Assert.Equal(2, descriptor.TypeId);
         Assert.Equal(1, descriptor.BaseTypeId);
         Assert.Equal(12, descriptor.ObjectSize);
-        Assert.Equal(32, descriptor.BitmapAddress);
-        Assert.Equal(3, descriptor.BitmapBitCount);
+        Assert.Equal([8], descriptor.ReferenceOffsets);
+        Assert.Empty(descriptor.AssignableTypeIds);
         Assert.Equal(8, new FieldLayout(8).Offset);
         Assert.Equal(16, new StaticFieldLayout(16).Address);
         var stringLayout = new StringLayout(20, 4, 8);
@@ -925,7 +926,9 @@ public sealed class CoreModelTests
         Assert.Equal("netwasm.runtime.v1", RuntimeAbi.RuntimeModule);
         Assert.Equal("netwasm.host.v1", RuntimeAbi.HostModule);
         Assert.Equal("initialize", RuntimeAbi.RuntimeInitialize);
-        Assert.Equal("register_type", RuntimeAbi.RuntimeRegisterType);
+        Assert.Equal("register_types", RuntimeAbi.RuntimeRegisterTypes);
+        Assert.Equal("type_base_id", RuntimeAbi.RuntimeTypeBaseId);
+        Assert.Equal("type_is_assignable", RuntimeAbi.RuntimeTypeIsAssignable);
         Assert.Equal("register_static_root", RuntimeAbi.RuntimeRegisterStaticRoot);
         Assert.Equal("root_frame_enter", RuntimeAbi.RuntimeRootFrameEnter);
         Assert.Equal("root_frame_leave", RuntimeAbi.RuntimeRootFrameLeave);

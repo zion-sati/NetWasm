@@ -77,7 +77,8 @@ internal sealed class CompileCliCommand(
             options.ManagedMulticastInlineDispatch,
             options.ManagedNewObjectNullCheckElimination,
             options.ManagedLoopStrengthReduction,
-            options.ManagedRangeBranchFolding);
+            options.ManagedRangeBranchFolding,
+            options.ManagedUnwrittenStaticFieldFolding);
         var entryPoint = options.Target == NwcTarget.Exe ? _entryPoints.Read(options.Input) : null;
         using var session = _sessions.Create(options.WasmTools);
         var compilation = session.Compile(new CompilerOptions(
@@ -92,7 +93,8 @@ internal sealed class CompileCliCommand(
             options.Wit,
             options.World,
             options.Sources,
-            EmitStackTrace: options.StackTraceSymbols is not null,
+            EmitTypeNames: options.TypeNames,
+            EmitStackTrace: options.MethodSymbols is not null,
             EntryMethodToken: entryPoint?.MetadataToken,
             EntryPointKind: EntryPointKinds[options.Target],
             IntermediateOutputPath: options.IntermediateDirectory,
@@ -124,8 +126,8 @@ internal sealed class CompileCliCommand(
             RuntimeLayoutPath = options.RuntimeLayout,
             InteropManifestPath = options.InteropManifest,
             CompilerMetadataPath = options.CompilerMetadata,
-            ExceptionTypeMapPath = options.ExceptionTypeMap,
-            StackTraceSymbolsPath = options.StackTraceSymbols,
+            TypeSymbolsPath = options.TypeSymbols,
+            MethodSymbolsPath = options.MethodSymbols,
         });
         return 0;
     }

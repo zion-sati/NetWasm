@@ -62,6 +62,41 @@ public sealed class NativeCallbackSupportArtifactValidatorTests
         });
     }
 
+    // Issue 226: an object may define only unmanaged calli trampolines, which follow the getters
+    // among the temporary runtime exports.
+    [Fact]
+    public void ValidatorBindsTrampolinesAfterTheGetters()
+    {
+        var validator = new NativeCallbackSupportArtifactValidator();
+        var valid = CreateArtifact();
+        var getters = valid.TemporaryRuntimeExports;
+
+        validator.Validate(valid with
+        {
+            TemporaryRuntimeExports = [.. getters, "netwasm_calli_ii"],
+            Trampolines = ["netwasm_calli_ii"],
+        });
+        validator.Validate(valid with
+        {
+            Callbacks = [],
+            TemporaryApplicationExports = [],
+            TemporaryRuntimeExports = ["netwasm_calli_ii"],
+            Trampolines = ["netwasm_calli_ii"],
+        });
+        foreach (var invalid in new[]
+        {
+            valid with { Callbacks = [], TemporaryApplicationExports = [], TemporaryRuntimeExports = [] },
+            valid with { Trampolines = default },
+            valid with { Trampolines = ["netwasm_calli_ii"] },
+            valid with { TemporaryRuntimeExports = ["netwasm_calli_ii", .. getters], Trampolines = ["netwasm_calli_ii"] },
+            valid with { TemporaryRuntimeExports = [.. getters, "bad\0name"], Trampolines = ["bad\0name"] },
+            valid with { TemporaryRuntimeExports = [.. getters, .. getters], Trampolines = getters },
+        })
+        {
+            Assert.Throws<InvalidOperationException>(() => validator.Validate(invalid));
+        }
+    }
+
     [Fact]
     public void ValidatorRejectsDuplicateApplicationAndLinkerSymbols()
     {

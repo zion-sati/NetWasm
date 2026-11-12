@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 
 namespace System;
 
+[Serializable]
 public partial struct Single
 {
     /// <inheritdoc cref="INumberBase{TSelf}.CreateChecked{TOther}(TOther)" />

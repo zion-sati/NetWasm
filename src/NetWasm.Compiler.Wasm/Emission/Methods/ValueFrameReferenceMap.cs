@@ -12,13 +12,17 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 // The words of a method's value frame that hold references, one bit a
 // reference-sized word, and the locals and arguments whose frame storage they
 // cover. A collection traces those words as they are when it runs, so it sees
-// what a callee stores through a span or a ref field into them, and a safepoint
-// need not publish them.
+// what a callee stores through a byref, a span or a ref field into them, and a
+// safepoint need not publish them.
 internal sealed record ValueFrameReferenceMap(
     ImmutableArray<ulong> Words,
     ImmutableHashSet<(bool IsArgument, int Index)> Storages)
 {
     public static ValueFrameReferenceMap Empty { get; } = new([], []);
+
+    // The byte ranges of mapped words that nothing writes before the first
+    // safepoint, so the frame's entry zeroes them.
+    public ImmutableArray<(int Offset, int Size)> EntryClears { get; init; } = [];
 
     // A local's or an argument's own storage, as against what a byref it holds
     // addresses.
@@ -58,10 +62,14 @@ internal interface IValueFrameReferenceMapPlanner
         ManagedAggregateSsaPlan? aggregates);
 }
 
-// Maps the frame storage whose memory is the only copy of its value: a local
-// promoted to a Wasm local, an aggregate split into lane locals or a slot a
-// filter captures keeps its own publication, as does a reference the target
-// does not align to its reference size.
+// Maps every frame storage a byref can address, since a callee publishes only
+// the byref, not what it addresses: locals, arguments, filter captures and the
+// temporaries newobj constructs value types in. An aggregate split into lane
+// locals and a slot a filter captures keep their own publication as well,
+// since their current value can be elsewhere; their frame words hold their own
+// type or zero, so a stale word keeps an object alive no longer than the frame,
+// as an untracked local does on CoreCLR. A local promoted to a Wasm local holds
+// no references.
 internal sealed class ValueFrameReferenceMapPlanner(
     ITargetLayout layouts,
     IValueLayoutProvider values,
@@ -78,29 +86,68 @@ internal sealed class ValueFrameReferenceMapPlanner(
         ArgumentNullException.ThrowIfNull(filters);
         var size = layouts.Target.ObjectReferenceSize;
         var bits = new SortedSet<int>();
+        var cleared = new SortedSet<int>();
         var storages = ImmutableHashSet.CreateBuilder<(bool IsArgument, int Index)>();
         foreach (var (index, offset) in layout.LocalOffsets)
         {
             if (!layout.AddressTakenScalarPromotions.PromotedLocals.ContainsKey(index))
-                Add(false, index, offset, header.LocalSignatureTypes[index]);
+                AddStorage(false, index, offset, header.LocalSignatureTypes[index]);
         }
         foreach (var (index, offset) in layout.ArgumentOffsets)
-            Add(true, index, offset, argumentTypes.Resolve(header, index));
+            AddStorage(true, index, offset, argumentTypes.Resolve(header, index));
+        // A captured slot is its local's or argument's storage from the frame's
+        // entry, which zeroes or copies it.
+        foreach (var capture in filters.Captures.Values) Add(capture.Offset, capture.Type, clear: false);
+        // newobj zeroes its temporary only when it runs, after earlier safepoints.
+        foreach (var (instruction, type) in layout.ConstructedValueTypes)
+            Add(layout.TemporaryOffsets[instruction], type, clear: true);
         if (bits.Count == 0) return ValueFrameReferenceMap.Empty;
         var words = new ulong[bits.Max / 64 + 1];
         foreach (var bit in bits) words[bit / 64] |= 1UL << (bit % 64);
-        return new([.. words], storages.ToImmutable());
+        return new([.. words], storages.ToImmutable()) { EntryClears = Runs(cleared, size) };
 
-        void Add(bool isArgument, int index, int offset, CliTypeIdentity type)
+        void AddStorage(bool isArgument, int index, int offset, CliTypeIdentity type)
         {
-            if (filters.Captures.ContainsKey(new(isArgument, index)) || aggregates?.Storages.ContainsKey(new(
-                    isArgument ? ManagedAggregateStorageKind.Argument : ManagedAggregateStorageKind.Local, index)) == true)
+            var aggregate = aggregates?.Storages.ContainsKey(new(
+                isArgument ? ManagedAggregateStorageKind.Argument : ManagedAggregateStorageKind.Local, index)) == true;
+            // An aggregate argument split into lanes is read from the caller's
+            // copy; its own storage is written first at a materialization.
+            if (!Add(offset, type, clear: aggregate && isArgument) || aggregate ||
+                filters.Captures.ContainsKey(new(isArgument, index)))
                 return;
-            var lanes = Lanes(type);
-            if (lanes.IsEmpty || lanes.Any(lane => (offset + lane) % size != 0)) return;
-            foreach (var lane in lanes) bits.Add((offset + lane) / size);
             storages.Add((isArgument, index));
         }
+
+        bool Add(int offset, CliTypeIdentity type, bool clear)
+        {
+            var lanes = Lanes(type);
+            foreach (var lane in lanes)
+            {
+                if ((offset + lane) % size != 0)
+                {
+                    throw new CompilerException(new(DiagnosticCode.CompilerInvariant,
+                        $"A reference in the value frame at offset {offset + lane} is not aligned to {size} bytes.",
+                        header.Method.Name));
+                }
+                bits.Add((offset + lane) / size);
+                if (clear) cleared.Add((offset + lane) / size);
+            }
+            return !lanes.IsEmpty;
+        }
+    }
+
+    // Consecutive words as byte ranges.
+    private static ImmutableArray<(int Offset, int Size)> Runs(SortedSet<int> words, int size)
+    {
+        var runs = ImmutableArray.CreateBuilder<(int Offset, int Size)>();
+        foreach (var word in words)
+        {
+            if (runs.Count != 0 && runs[^1].Offset + runs[^1].Size == word * size)
+                runs[^1] = (runs[^1].Offset, runs[^1].Size + size);
+            else
+                runs.Add((word * size, size));
+        }
+        return runs.ToImmutable();
     }
 
     private ImmutableArray<int> Lanes(CliTypeIdentity type)

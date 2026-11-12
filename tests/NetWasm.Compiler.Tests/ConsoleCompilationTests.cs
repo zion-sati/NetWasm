@@ -292,7 +292,7 @@ public sealed class ConsoleCompilationTests
             {
                 public static void Main(string[] arguments)
                 {
-                    global::System.Console.WriteLine(42);
+                    global::System.Console.WriteLine(42 + arguments.Length);
                 }
             }
             """);
@@ -368,5 +368,52 @@ public sealed class ConsoleCompilationTests
                 InterfaceName: "wasi:cli/environment@0.3.2",
                 FunctionName: "get-arguments",
             });
+    }
+
+    // A Main(string[] args) that never reads args, as top-level statements that ignore them compile,
+    // does not pay for the command line either; one that reads them still does.
+    [Theory]
+    [InlineData("global::System.Console.WriteLine(42);", false)]
+    [InlineData("args = null; global::System.Console.WriteLine(42);", false)]
+    [InlineData("global::System.Console.WriteLine(args.Length);", true)]
+    public void StringArrayManagedExecutablePaysForCommandLineArgumentsOnlyWhenItReadsThem(
+        string body,
+        bool readsArguments)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "ArgumentsConsoleExecutable",
+            $$"""
+            namespace ConsoleExecutableFixture;
+
+            public static class EntryPoint
+            {
+                public static void Main(string[] args)
+                {
+                    {{body}}
+                }
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "ConsoleExecutableFixture.EntryPoint",
+            "Main",
+            [],
+            WasmTarget.Wasm32,
+            WitPath: Path.Combine(
+                assets.Root,
+                "wit",
+                "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
+
+        Assert.Equal(readsArguments, result.Program.WitImportMethods.Any(method =>
+            method.WitImport is
+            {
+                InterfaceName: "wasi:cli/environment@0.3.2",
+                FunctionName: "get-arguments",
+            }));
     }
 }

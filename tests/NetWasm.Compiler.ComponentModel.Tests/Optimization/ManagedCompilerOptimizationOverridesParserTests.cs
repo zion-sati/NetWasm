@@ -10,7 +10,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
         get
         {
             var data = new TheoryData<int, string?>();
-            for (var feature = 0; feature < 29; feature++)
+            for (var feature = 0; feature < 30; feature++)
                 foreach (var value in new string?[] { null, "Auto", "Disabled", "Enabled", "enabled", "", "2" })
                     data.Add(feature, value);
             return data;
@@ -51,7 +51,8 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
             multicastInlineDispatch: feature == 25 ? value : null,
             newObjectNullCheckElimination: feature == 26 ? value : null,
             loopStrengthReduction: feature == 27 ? value : null,
-            rangeBranchFolding: feature == 28 ? value : null);
+            rangeBranchFolding: feature == 28 ? value : null,
+            unwrittenStaticFieldFolding: feature == 29 ? value : null);
         if (value is null or "Auto")
         {
             Assert.Null(Parse());
@@ -121,8 +122,10 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
                 ? ManagedNewObjectNullCheckElimination.Enabled : ManagedNewObjectNullCheckElimination.Disabled),
             27 => new WasmOptimizationOverrides(LoopStrengthReduction: enabled
                 ? ManagedLoopStrengthReduction.Enabled : ManagedLoopStrengthReduction.Disabled),
-            _ => new WasmOptimizationOverrides(RangeBranchFolding: enabled
+            28 => new WasmOptimizationOverrides(RangeBranchFolding: enabled
                 ? ManagedRangeBranchFolding.Enabled : ManagedRangeBranchFolding.Disabled),
+            _ => new WasmOptimizationOverrides(UnwrittenStaticFieldFolding: enabled
+                ? ManagedUnwrittenStaticFieldFolding.Enabled : ManagedUnwrittenStaticFieldFolding.Disabled),
         };
         Assert.Equal(expected, Parse());
     }

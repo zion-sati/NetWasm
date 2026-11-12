@@ -16,10 +16,13 @@ public sealed class NativeCallbackSupportArtifactValidator :
         }
         if (support.ObjectBytes is null || support.ObjectBytes.Length == 0 ||
             string.IsNullOrWhiteSpace(support.Sha256) ||
-            support.Callbacks.IsDefaultOrEmpty ||
+            support.Callbacks.IsDefault ||
+            support.Trampolines.IsDefault ||
+            support.Callbacks.IsEmpty && support.Trampolines.IsEmpty ||
             support.TemporaryApplicationExports.IsDefault ||
             support.TemporaryRuntimeExports.IsDefault ||
             support.Callbacks.Any(InvalidCallback) ||
+            support.Trampolines.Any(InvalidName) ||
             HasDuplicateSymbols(support) ||
             !support.TemporaryApplicationExports.SequenceEqual(
                 support.Callbacks
@@ -30,7 +33,8 @@ public sealed class NativeCallbackSupportArtifactValidator :
             !support.TemporaryRuntimeExports.SequenceEqual(
                 support.Callbacks
                     .Where(callback => callback.RuntimeGetterExportName is not null)
-                    .Select(callback => callback.RuntimeGetterExportName!),
+                    .Select(callback => callback.RuntimeGetterExportName!)
+                    .Concat(support.Trampolines),
                 StringComparer.Ordinal) ||
             support.TemporaryApplicationExports.Distinct(StringComparer.Ordinal).Count() !=
                 support.TemporaryApplicationExports.Length ||
@@ -79,6 +83,7 @@ public sealed class NativeCallbackSupportArtifactValidator :
             .Concat(support.Callbacks
                 .Where(callback => callback.RuntimeGetterExportName is not null)
                 .Select(callback => callback.RuntimeGetterExportName!))
+            .Concat(support.Trampolines)
             .ToArray();
         return applicationExports.Distinct(StringComparer.Ordinal).Count() !=
                 applicationExports.Length ||

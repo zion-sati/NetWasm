@@ -13,6 +13,39 @@ using static EmitterTestSupport;
 
 public sealed class MethodFrameEntryEmitterTests
 {
+    // An authoritative argument's slot takes its parameter at entry, a byref argument's too; an
+    // authoritative local's starts empty (issue: async size, receivers no longer republished).
+    [Fact]
+    public void AuthoritativeArgumentSlotsTakeTheirParametersAtEntry()
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
+        var program = new FakeProgram();
+        var context = CreateMethodEmissionContext() with
+        {
+            ParameterOffset = 3,
+            RootMap = new MethodRootMap(EntryKey, ImmutableDictionary<RootSource, int>.Empty
+                .Add(new(RootSourceKind.ManagedAddressArgument, 0), 0)
+                .Add(new(RootSourceKind.Argument, 1), 1)
+                .Add(new(RootSourceKind.Local, 0), 2), []),
+            AuthoritativeRootSlots = ImmutableDictionary<RootSource, int>.Empty
+                .Add(new(RootSourceKind.ManagedAddressArgument, 0), 0)
+                .Add(new(RootSourceKind.Argument, 1), 1)
+                .Add(new(RootSourceKind.Local, 0), 2),
+        };
+        var code = new RecordingInstructionWriter();
+
+        CreateMethodFrameEntry(program, layouts, WasmRuntimeImports.CreateCatalog()).Emit(
+            code, new StructuredMethodHeader(program.GetMethod(EntryKey), null, 1, [], [], []), context);
+
+        var instructions = code.ToInstructions();
+        var stores = instructions.Select((instruction, index) => (instruction, index))
+            .Where(pair => pair.instruction.Opcode == WasmOpcodes.I32Store).ToArray();
+        Assert.Equal([0u, 4u, 8u], stores.Select(pair => pair.instruction.Operand.Offset));
+        Assert.Equal(3u, instructions[stores[0].index - 1].Operand.UnsignedValue);
+        Assert.Equal(4u, instructions[stores[1].index - 1].Operand.UnsignedValue);
+        Assert.Equal(WasmOpcodes.I32Constant, instructions[stores[2].index - 1].Opcode);
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]

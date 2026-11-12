@@ -3,6 +3,7 @@
 
 namespace System.Reflection
 {
+    [Serializable]
     public sealed class TargetParameterCountException : ApplicationException
     {
         private const string DefaultMessage = "Parameter count mismatch.";

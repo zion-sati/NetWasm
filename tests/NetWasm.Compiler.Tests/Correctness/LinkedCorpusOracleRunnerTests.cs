@@ -67,7 +67,7 @@ public sealed class LinkedCorpusOracleRunnerTests
         Assert.Equal(dependencies.ModuleHash, dependencies.ObservationRequest.ModuleSha256);
         Assert.Equal(dependencies.ManifestHash, dependencies.ObservationRequest.ManifestSha256);
         Assert.Equal(target == WasmTarget.Wasm32, dependencies.CompilerRequest!.DiagnosticTracePath is not null);
-        Assert.Equal(form == CorpusWasmForm.Optimized, dependencies.CompilerRequest.StackTraceSymbolsPath is not null);
+        Assert.Equal(form == CorpusWasmForm.Optimized, dependencies.CompilerRequest.MethodSymbolsPath is not null);
         Assert.Equal(result.RuntimeLayoutPath, dependencies.CompilerRequest.RuntimeLayoutPath);
         Assert.Equal(result.InteropManifestPath, dependencies.CompilerRequest.InteropManifestPath);
         Assert.Equal([
@@ -239,7 +239,7 @@ public sealed class LinkedCorpusOracleRunnerTests
 
         public CorpusCompilerRequest Create(
             CorpusCompilation compilation, WasmTarget target, string? tracePath,
-            string modulePath, string? stackTraceSymbolsPath,
+            string modulePath, string? methodSymbolsPath,
             ImmutableArray<RequestedExport> exports,
             string? runtimeLayoutPath = null, string? interopManifestPath = null)
         {
@@ -248,7 +248,7 @@ public sealed class LinkedCorpusOracleRunnerTests
                 compilation.Fixture.EntryType, compilation.Fixture.WasmEntryMethod,
                 exports, target, tracePath, [], ImmutableDictionary<string, string>.Empty,
                 null, null, modulePath, compilation.Fixture.EmitStackTrace,
-                stackTraceSymbolsPath, runtimeLayoutPath, interopManifestPath);
+                methodSymbolsPath, runtimeLayoutPath, interopManifestPath);
             return CompilerRequest;
         }
 

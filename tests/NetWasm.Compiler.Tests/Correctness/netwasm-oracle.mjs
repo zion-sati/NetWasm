@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { readExceptionClause } from "./exception-metadata.mjs";
 import { createRefreshableDataView } from "./refreshable-data-view.mjs";
 import { createDeclaredOracleImports } from "./declared-oracle-imports.mjs";
+import { readRuntimeTypeTable } from "./runtime-type-table.cjs";
 
 var [modulePath, inputText, target = "wasm32", staticDataEndOrConfiguration,
   explicitHostConfigurationPath] =
@@ -32,14 +33,6 @@ var createTargetMemory = () => new WebAssembly.Memory(memory64
 var hostConfiguration = hostConfigurationPath
   ? JSON.parse(await readFile(hostConfigurationPath, "utf8"))
   : {};
-var stackTraceSymbolDocument = hostConfiguration.stackTraceSymbolsPath
-  ? JSON.parse(await readFile(hostConfiguration.stackTraceSymbolsPath, "utf8"))
-  : null;
-if (stackTraceSymbolDocument &&
-    (stackTraceSymbolDocument.schemaVersion !== 1 ||
-      !Array.isArray(stackTraceSymbolDocument.methods))) {
-  throw new Error("invalid stack-trace symbol sidecar");
-}
 
 var memory = createTargetMemory();
 var heap = 16;
@@ -210,9 +203,42 @@ var wasiEnvironment = {
     writeAddress(view, result, addressSize, argumentList.length);
   },
 };
-var timeZoneAsset = hostConfiguration.timeZoneAssetPath
-  ? await readFile(hostConfiguration.timeZoneAssetPath)
-  : null;
+// The program's sidecars, mounted under /netwasm-sidecars as a NetWasm host mounts them; the oracle serves
+// each by its suffix and records the names the program opened.
+var sidecarFiles = new Map();
+for (var [suffix, path] of [
+  [".tz-info", hostConfiguration.timeZoneAssetPath],
+  [".type-symbols", hostConfiguration.typeSymbolsPath],
+  [".method-symbols", hostConfiguration.methodSymbolsPath],
+]) {
+  if (path) sidecarFiles.set(suffix, await readFile(path));
+}
+var sidecarOpens = [];
+// A host whose program cannot read its sidecars (no Component Model event loop) registers the method-symbols
+// file's frames with the runtime itself, as NetWasm's raw JavaScript host does.
+function readMethodSymbols(bytes) {
+  var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(0, true) !== 0x5953574E || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 2) {
+    throw new Error("invalid method-symbols sidecar");
+  }
+  var count = view.getInt32(72, true);
+  var characters = 80 + count * 12;
+  var symbols = [];
+  for (var entry = 0; entry < count; entry++) {
+    var field = 80 + entry * 12;
+    var offset = view.getInt32(field + 4, true);
+    var length = view.getInt32(field + 8, true);
+    var name = "";
+    for (var index = 0; index < length; index++) {
+      name += String.fromCharCode(view.getUint16(characters + (offset + index) * 2, true));
+    }
+    symbols.push([view.getInt32(field, true), name]);
+  }
+  return symbols;
+}
+var hostMethodSymbols = sidecarFiles.has(".method-symbols") && hostConfiguration.hostRegistersMethodSymbols !== false
+  ? readMethodSymbols(sidecarFiles.get(".method-symbols"))
+  : [];
 // A callback-lifted entry (an asynchronous Main) returns a callback code; the oracle delivers its
 // waitable set's events until EXIT, then reads Main's exit code.
 var callbackEntry = hostConfiguration.callbackEntry === true;
@@ -230,13 +256,13 @@ var wasiPreopens = {
     wasiPreopenReads++;
     var addressSize = memory64 ? 8 : 4;
     var view = createRefreshableDataView(memory);
-    if (!timeZoneAsset) {
+    if (sidecarFiles.size === 0) {
       writeAddress(view, result, 0, asAddress(addressSize));
       writeAddress(view, result, addressSize, 0);
       return;
     }
     var elements = raw(addressSize * 3);
-    var path = new TextEncoder().encode("/netwasm-timezones");
+    var path = new TextEncoder().encode("/netwasm-sidecars");
     view.setInt32(asNumber(elements), 1, true);
     writeAddress(view, elements, addressSize, lowerBytes(path));
     writeAddress(view, elements, addressSize * 2, path.length);
@@ -263,6 +289,8 @@ var componentBuiltIns = {
   },
   "[subtask-drop]"(handle) { componentHandles.delete(handle); forgetWait(handle); },
   "[subtask-cancel]"(handle) { componentHandles.delete(handle); forgetWait(handle); return 4; },
+  // The oracle has no other work to run: a yield returns at once, not cancelled.
+  "[thread-yield]"() { return 0; },
 };
 var subtaskReturned = 2;
 var copyCompleted = 0;
@@ -280,24 +308,30 @@ var wasiFilesystem = {
   },
 };
 var wasiFilesystemBuiltIns = {
-  // open-at's parameters: descriptor, path-flags, path (address, length),
-  // open-flags and descriptor-flags in a 20-byte record.
+  // open-at's parameters: descriptor, path-flags, path (address and length, pointer-sized
+  // at 8), open-flags and descriptor-flags; the result's payload lies at the pointer width.
   "[async-lower][method]descriptor.open-at"(parameters, result) {
     wasiOpenCalls++;
     var view = createRefreshableDataView(memory);
+    var width = memory64 ? 8 : 4;
+    var readAddress = offset => memory64
+      ? Number(view.getBigUint64(asNumber(plus(parameters, offset)), true))
+      : view.getUint32(asNumber(plus(parameters, offset)), true);
     var directoryHandle = view.getInt32(asNumber(parameters), true);
-    var pathAddress = view.getUint32(asNumber(plus(parameters, 8)), true);
-    var pathLength = view.getUint32(asNumber(plus(parameters, 12)), true);
+    var pathAddress = readAddress(8);
+    var pathLength = readAddress(8 + width);
     var path = new TextDecoder().decode(new Uint8Array(memory.buffer, pathAddress, pathLength));
-    if (directoryHandle !== 1 || path !== "netwasm-timezones.nwtz" || !timeZoneAsset) {
+    var suffix = [...sidecarFiles.keys()].find(name => path.endsWith(name));
+    if (directoryHandle !== 1 || path.includes("/") || suffix === undefined) {
       view.setUint8(asNumber(result), 1);
-      view.setInt32(asNumber(plus(result, 4)), 44, true);
+      view.setInt32(asNumber(plus(result, width)), 44, true);
       return subtaskReturned;
     }
+    sidecarOpens.push(path);
     var descriptor = nextDescriptor++;
-    descriptors.set(descriptor, timeZoneAsset);
+    descriptors.set(descriptor, sidecarFiles.get(suffix));
     view.setUint8(asNumber(result), 0);
-    view.setInt32(asNumber(plus(result, 4)), descriptor, true);
+    view.setInt32(asNumber(plus(result, width)), descriptor, true);
     return subtaskReturned;
   },
   "[async-lower][stream-read-0][method]descriptor.read-via-stream"(readable, buffer, length) {
@@ -319,6 +353,32 @@ var wasiFilesystemBuiltIns = {
   "[future-drop-readable-1][method]descriptor.read-via-stream"(future) {
     componentHandles.delete(future);
   },
+};
+// wasi:cli/stderr: the oracle keeps what the program writes, for observations.
+var standardError = "";
+var wasiStderr = {
+  "write-via-stream"(readable) {
+    componentHandles.get(readable).sink = true;
+    return newComponentHandle({ kind: "future" });
+  },
+};
+var wasiStderrBuiltIns = {
+  "[stream-new-0]write-via-stream"() {
+    var readable = newComponentHandle({ kind: "stream" });
+    var writable = newComponentHandle({ kind: "stream-writer", readable });
+    return (BigInt(writable) << 32n) | BigInt(readable);
+  },
+  "[async-lower][stream-write-0]write-via-stream"(_writable, contents, length) {
+    standardError += new TextDecoder().decode(
+      new Uint8Array(memory.buffer, asNumber(contents), Number(length)).slice());
+    return Number(length) * 16 + copyCompleted;
+  },
+  "[stream-drop-writable-0]write-via-stream"(writable) { componentHandles.delete(writable); },
+  "[async-lower][future-read-1]write-via-stream"(_future, result) {
+    createRefreshableDataView(memory).setUint8(asNumber(result), 0);
+    return copyCompleted;
+  },
+  "[future-drop-readable-1]write-via-stream"(future) { componentHandles.delete(future); },
 };
 var wasiSystemClock = {
   now(result) {
@@ -444,13 +504,6 @@ var registerTypeObjects = (first, count, stride) => {
   }
 };
 // A reference bitmap's bit i is bit i % 8 of its byte i / 8, whatever its word size.
-var bitmapHasReferences = (bitmap, bits) => {
-  var view = createRefreshableDataView(memory);
-  for (var bit = 0; bit < bits; bit++) {
-    if ((view.getUint8(asNumber(plus(bitmap, bit >> 3))) >> (bit & 7)) & 1) return true;
-  }
-  return false;
-};
 var allocateArray = (
   length,
   type,
@@ -778,24 +831,23 @@ var runtimeValues = {
   native_aligned_alloc: nativeAlignedAlloc,
   native_aligned_realloc: nativeAlignedRealloc,
   native_aligned_free(address) { nativeSizes.delete(address); },
-  register_type(type, base, size, bitmap, bitmapBits, assignableTypes,
-      assignableTypeCount, hasFinalizer, isInterface) {
-    typeBases.set(type, base);
-    typeSizes.set(type, Number(size));
-    const ids = new Set();
-    const view = createRefreshableDataView(memory);
-    for (var index = 0; index < assignableTypeCount; index++) {
-      ids.add(view.getInt32(asNumber(plus(assignableTypes, index * 4)), true));
+  // The runtime type table (RuntimeTypeTableEncoder): decoded once, as the runtime does.
+  register_types(table) {
+    for (const entry of readRuntimeTypeTable(new Uint8Array(memory.buffer), asNumber(table))) {
+      typeBases.set(entry.type, entry.base);
+      typeSizes.set(entry.type, entry.size);
+      typeAssignable.set(entry.type, entry.assignable);
+      if (entry.isInterface) typeInterfaces.add(entry.type);
+      typeReferences.set(entry.type, entry.references);
+      if (entry.value) {
+        valueTypeSizes.set(entry.type, entry.value.size);
+        valueTypePayloadOffsets.set(entry.type, entry.value.payload);
+        valueTypeReferences.set(entry.type, entry.value.references);
+      }
     }
-    typeAssignable.set(type, ids);
-    if (isInterface) typeInterfaces.add(type);
-    typeReferences.set(type, bitmapHasReferences(bitmap, bitmapBits));
   },
-  register_value_type(type, size, boxedPayloadOffset, bitmap, bitmapBits) {
-    valueTypeSizes.set(type, Number(size));
-    valueTypePayloadOffsets.set(type, Number(boxedPayloadOffset));
-    valueTypeReferences.set(type, bitmapHasReferences(bitmap, bitmapBits));
-  },
+  type_base_id(type) { return typeBases.get(type) || 0; },
+  type_is_assignable: isTypeAssignable,
   register_static_root: zero,
   root_frame_enter: rootEnter,
   root_frame_leave: zero,
@@ -1145,6 +1197,8 @@ try {
         "$root": componentBuiltIns,
         [`${canonicalPrefix}|wasi:cli/environment@0.3`]: wasiEnvironment,
         [`${canonicalPrefix}|wasi:cli/exit@0.3`]: wasiExit,
+        [`${canonicalPrefix}|wasi:cli/stderr@0.3`]: wasiStderr,
+        "wasi:cli/stderr@0.3.2": wasiStderrBuiltIns,
         [`${canonicalPrefix}|wasi:filesystem/preopens@0.3`]: wasiPreopens,
         [`${canonicalPrefix}|wasi:filesystem/types@0.3`]: wasiFilesystem,
         "wasi:filesystem/types@0.3.2": wasiFilesystemBuiltIns,
@@ -1222,8 +1276,7 @@ function resetRuntimeState() {
   typeObjects = new Map();
   exceptionFrames = [];
   stackTraceFrames = [];
-  stackTraceSymbols = new Map((stackTraceSymbolDocument?.methods ?? [])
-    .map(symbol => [symbol.id, symbol.name]));
+  stackTraceSymbols = new Map(hostMethodSymbols);
   stackTraceExceptionFieldOffset = null;
   stackTraceStringTypeId = 0;
   weakHandles = [zeroAddress()];
@@ -1284,6 +1337,8 @@ function createValue(value) {
     wasiPreopenReads,
     wasiEnvironmentResult,
     wasiEnvironmentLength,
+    sidecarOpens,
+    standardError,
   };
 }
 

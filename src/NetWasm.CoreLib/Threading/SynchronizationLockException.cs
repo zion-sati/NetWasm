@@ -4,6 +4,7 @@
 
 namespace System.Threading;
 
+[Serializable]
 public class SynchronizationLockException : SystemException
 {
     public SynchronizationLockException()

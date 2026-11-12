@@ -6,7 +6,6 @@ using NetWasm.Compiler.Browser.Results;
 using NetWasm.Compiler.Browser.Wit;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Diagnostics;
-using NetWasm.Compiler.ExceptionTypes;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Metadata.ManagedExecutables;
 
@@ -26,10 +25,6 @@ public static class BrowserCompiler
         var registrations = new ServiceCollection().AddNetWasmCompiler();
         registrations.AddSingleton<IManagedAssemblyImageReader>(
             new VirtualManagedAssemblyImageReader(request.Inputs));
-        registrations.AddSingleton<ICompilationInputHasher>(
-            new VirtualCompilationInputHasher(
-                request.Inputs,
-                request.WitCoreBindingInventories));
         registrations.AddSingleton<IWitDocumentReader>(
             new VirtualWitDocumentReader(
                 request.NormalizedWitDocuments,

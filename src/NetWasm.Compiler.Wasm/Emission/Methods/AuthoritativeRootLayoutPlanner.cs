@@ -14,7 +14,8 @@ internal sealed class AuthoritativeRootLayoutPlanner : IAuthoritativeRootLayoutP
         ArgumentNullException.ThrowIfNull(sources);
         foreach (var source in sources)
         {
-            if (source.IsIndirect || source.Kind is not (RootSourceKind.Argument or RootSourceKind.Local) ||
+            if (source.IsIndirect ||
+                source.Kind is not (RootSourceKind.Argument or RootSourceKind.Local or RootSourceKind.ManagedAddressArgument) ||
                 !roots.Slots.ContainsKey(source))
                 throw new ArgumentException("Authoritative storage requires a mapped direct reference variable.", nameof(sources));
         }

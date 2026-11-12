@@ -19,12 +19,14 @@ internal static class CallEmissionServiceCollectionExtensions
             ConstrainedReferenceReceiverEmitter>();
         services.AddSingleton<IVirtualDispatchEmissionPlanBuilder,
             VirtualDispatchEmissionPlanBuilder>();
+        services.AddSingleton<IVirtualDispatchCasePlanner, VirtualDispatchCasePlanner>();
         services.AddSingleton<DelegateInvokeCallEmitter>();
         services.AddSingleton<VirtualDispatchCallEmitter>();
         services.AddSingleton<IJSImportInvocationEmitter, JSImportInvocationEmitter>();
         services.AddSingleton<JSImportCallEmitter>();
         services.AddSingleton<AsyncJSImportCallEmitter>();
         services.AddSingleton<DirectCallEmitter>();
+        services.AddSingleton<INativeAbiCallEmitter, NativeAbiCallEmitter>();
         services.AddSingleton<NativeCallEmitter>();
         services.AddSingleton<ICallEmissionKindResolver, CallEmissionKindResolver>();
         services.AddSingleton<CallEmissionRegistration>(provider => new(

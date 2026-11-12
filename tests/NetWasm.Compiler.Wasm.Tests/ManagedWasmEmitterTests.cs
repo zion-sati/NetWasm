@@ -94,7 +94,7 @@ public sealed class ManagedWasmEmitterTests
         byte[] stringLengthLoad = [0x28, 0x02, 0x2c];
         Assert.True(module.AsSpan().IndexOf(fieldStore) >= 0);
         Assert.True(module.AsSpan().IndexOf(stringLengthLoad) >= 0);
-        Assert.True(module.AsSpan().IndexOf("register_type"u8) >= 0);
+        Assert.True(module.AsSpan().IndexOf("register_types"u8) >= 0);
         Assert.True(module.AsSpan().IndexOf("register_static_root"u8) >= 0);
         Assert.True(module.AsSpan().IndexOf("root_frame_enter"u8) >= 0);
         Assert.True(module.AsSpan().IndexOf("root_frame_leave"u8) >= 0);

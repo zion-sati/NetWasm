@@ -404,7 +404,6 @@ public sealed class TypedStackValidator(
                 stack.Add(CliValueKind.ManagedReference);
                 return;
             case CilOperation.GetTypeFacts:
-                PopExpected(body, instruction, stack, CliValueKind.I4);
                 stack.Add(CliValueKind.NativeInt);
                 return;
             case CilOperation.MaterializeMethod:
@@ -554,7 +553,8 @@ public sealed class TypedStackValidator(
                 RequireEmpty(body, instruction, stack);
                 return;
             case CilOperation.Leave:
-                RequireEmpty(body, instruction, stack);
+                // leave empties the evaluation stack (ECMA-335 III.3.46).
+                stack.Clear();
                 return;
             case CilOperation.EndFilter:
                 PopExpected(body, instruction, stack, CliValueKind.I4);
@@ -786,16 +786,17 @@ public sealed class TypedStackValidator(
         CilMethodBody body,
         CilInstruction instruction)
     {
+        // ECMA-335 III.2.1 as augmented for static virtual methods: call, callvirt or ldftn.
         var index = body.Instructions.IndexOf(instruction);
         if (index + 1 >= body.Instructions.Length ||
             body.Instructions[index + 1].Operation is not (
-                CilOperation.Call or CilOperation.CallVirtual or
+                CilOperation.Call or CilOperation.CallVirtual or CilOperation.LoadFunction or
                 CilOperation.GetObjectType))
         {
             throw Invalid(
                 body,
                 instruction,
-                "constrained. must immediately precede call or callvirt");
+                "constrained. must immediately precede call, callvirt or ldftn");
         }
     }
 

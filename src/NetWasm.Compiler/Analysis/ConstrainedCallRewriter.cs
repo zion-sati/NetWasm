@@ -25,7 +25,7 @@ internal sealed class ConstrainedCallRewriter(
         {
             var call = instructions[index];
             if (call.Operation is not (CilOperation.Call or
-                    CilOperation.CallVirtual or CilOperation.LoadVirtualFunction) ||
+                    CilOperation.CallVirtual or CilOperation.LoadFunction) ||
                 instructions[index - 1].Operation != CilOperation.Constrained ||
                 instructions[index - 1].Operand is not CilOperand.TypeIdentity constrained)
             {
@@ -45,11 +45,6 @@ internal sealed class ConstrainedCallRewriter(
             {
                 continue;
             }
-            var concreteType = typeDefinitions.ResolveTypeIdentity(constrainedType);
-            if (!concreteType.IsValueType && !concreteType.IsSealed)
-            {
-                continue;
-            }
             var declaration = call.Operand switch
             {
                 CilOperand.Entity entity => methods.GetMethod(entity.Key),
@@ -57,6 +52,13 @@ internal sealed class ConstrainedCallRewriter(
                 _ => throw new InvalidOperationException(
                     "constrained call has no method operand"),
             };
+            // A static virtual resolves on the named type itself; an instance method on an
+            // unsealed reference type still dispatches on the receiver's runtime type.
+            var concreteType = typeDefinitions.ResolveTypeIdentity(constrainedType);
+            if (!concreteType.IsValueType && !concreteType.IsSealed && !declaration.IsStatic)
+            {
+                continue;
+            }
             var typeArguments = constrainedType.Shape ==
                 CliTypeShape.GenericInstantiation
                     ? constrainedType.TypeArguments
@@ -103,7 +105,7 @@ internal sealed class ConstrainedCallRewriter(
             // prefix receives, as a call through the address does, so only an
             // inherited or default implementation still needs the prefix. An
             // enum declares no methods, so its calls keep it.
-            if (call.Operation == CilOperation.Call ||
+            if (call.Operation is CilOperation.Call or CilOperation.LoadFunction ||
                 directOperation == CilOperation.Call && concreteType.IsValueType &&
                 !implementation.IsStatic && implementation.DeclaringType == concreteType.Key)
             {

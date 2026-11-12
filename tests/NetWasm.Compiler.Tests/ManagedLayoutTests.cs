@@ -98,14 +98,8 @@ public sealed class ManagedLayoutTests
             literalSegment.Data.AsSpan()[12..]));
         var nodeDescriptor = layouts.TypeDescriptors.Single(descriptor =>
             descriptor.Type == node.Key);
-        Assert.Equal(2, nodeDescriptor.BitmapBitCount);
-        var nodeBitmap = layouts.DataSegments.Single(segment =>
-            segment.Address == nodeDescriptor.BitmapAddress);
-        Assert.Equal(sizeof(ulong), nodeBitmap.Data.Length);
-        Assert.Equal(0b10u, BinaryPrimitives.ReadUInt32LittleEndian(
-            nodeBitmap.Data.AsSpan()));
-        Assert.Equal(0b10UL, BinaryPrimitives.ReadUInt64LittleEndian(
-            nodeBitmap.Data.AsSpan()));
+        // Its second 8-byte slot holds a reference.
+        Assert.Equal([8], nodeDescriptor.ReferenceOffsets);
 
     }
 
@@ -258,10 +252,8 @@ public sealed class ManagedLayoutTests
         var descriptor = layouts.TypeDescriptors.Single(candidate => candidate.Type == node.Key);
         Assert.Equal(objectLayout.TypeId, descriptor.TypeId);
         Assert.Equal(20, descriptor.ObjectSize);
-        Assert.Equal(5, descriptor.BitmapBitCount);
-        var bitmap = layouts.DataSegments.Single(
-            candidate => candidate.Address == descriptor.BitmapAddress);
-        Assert.Equal(0b10100u, BinaryPrimitives.ReadUInt32LittleEndian(bitmap.Data.AsSpan()));
+        // References in the third and fifth 4-byte slots.
+        Assert.Equal([8, 16], descriptor.ReferenceOffsets);
         // The image also freezes the OutOfMemoryException thrown when not even
         // a new one fits, and its reference fields are roots as Root is.
         var outOfMemory = CompilerTestSupport.CreateExceptionObjects(layouts)

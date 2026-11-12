@@ -80,7 +80,7 @@ public sealed class StaticInitializerFunctionPlannerTests
     {
         public List<string> Strings { get; } = [];
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors =>
-            [new(TypeKey, 7, 0, 32, 0, 0, null), new(StringTypeKey, 8, 7, 40, 0, 0, null)];
+            [new(TypeKey, 7, 0, 32, [], null), new(StringTypeKey, 8, 7, 40, [], null)];
         public ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors => [];
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
         public TypeDefinitionModel GetTypeDefinition(EntityKey key) => new(key, "System",

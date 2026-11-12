@@ -17,6 +17,8 @@ internal static class NativeAbiTestSupport
             new NativeCallbackDeclarationValidator(),
             ScalarSignaturePlanner());
 
+    public static INativeCallSitePlanner CallSitePlanner() => new NativeCallSitePlanner(ScalarSignaturePlanner());
+
     public static NativeAbiPlan Plan(NativeImportDeclaration import, MethodSignatureModel logical,
         MethodSignatureModel physical) => new(import, new(logical, physical,
             [.. logical.ParameterSignatureTypes.Select((type, index) => new NativeAbiParameterPlan(index, index,

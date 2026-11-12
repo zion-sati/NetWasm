@@ -8,6 +8,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace System.Collections.ObjectModel
 {
+    [Serializable]
     public class ReadOnlyDictionary<TKey, TValue> : IDictionary<TKey, TValue>, IDictionary,
         IReadOnlyDictionary<TKey, TValue> where TKey : notnull
     {

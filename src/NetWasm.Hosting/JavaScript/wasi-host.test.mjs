@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHash } from "node:crypto";
 import { createNetWasmWasiHost } from "./wasi-host.mjs";
+import { symbolSidecar, typeSymbol } from "./symbol-sidecar-reader.test.mjs";
 
 test("WASI host copies immediately and loads diagnostic artifacts lazily", async () => {
   const memory = new WebAssembly.Memory({ initial: 1 });
@@ -60,7 +60,7 @@ test("WASI host default reporting omits absent stack traces", async t => {
 
   assert.deepEqual(messages, [
     "[netwasm:1] managed exception typeId=7: null",
-    "[netwasm:1] resolved exception type: <exception type #7 unavailable>",
+    "[netwasm:1] resolved exception type: type#7",
   ]);
 });
 
@@ -135,27 +135,7 @@ for (const artifactsAvailable of [false, true]) {
   test(`WASI host default reporting with artifacts available: ${artifactsAvailable}`, async t => {
     const memory = new WebAssembly.Memory({ initial: 1 });
     new Uint16Array(memory.buffer, 16, 2).set([0x006f, 0x006b]);
-    const mapBytes = new TextEncoder().encode(JSON.stringify({
-      schemaVersion: 2,
-      buildId: "unit-report",
-      entries: [{
-        typeId: 7,
-        displayName: "ExampleException",
-        canonicalIdentity: "ExampleException, Unit",
-        assemblyIdentity: "Unit",
-      }],
-    }));
-    const wasmBytes = new TextEncoder().encode("unit artifact bytes");
-    const artifacts = {
-      manifest: {
-        schemaVersion: 1,
-        buildId: "unit-report",
-        exceptionTypeMapSha256: createHash("sha256").update(mapBytes).digest("hex"),
-        wasmSha256: createHash("sha256").update(wasmBytes).digest("hex"),
-      },
-      mapBytes,
-      wasmBytes,
-    };
+    const artifacts = { typeSymbols: symbolSidecar(1, [typeSymbol(7, "ExampleException")]) };
     const messages = [];
     let complete;
     const reported = new Promise(resolve => { complete = resolve; });
@@ -180,7 +160,7 @@ for (const artifactsAvailable of [false, true]) {
     await reported;
     assert.deepEqual(messages, [
       "[netwasm:1] managed exception typeId=7: o\nat",
-      `[netwasm:1] resolved exception type: ${artifactsAvailable ? "ExampleException" : "<exception type #7 unavailable>"}\nat`,
+      `[netwasm:1] resolved exception type: ${artifactsAvailable ? "ExampleException" : "type#7"}\nat`,
     ]);
   });
 }

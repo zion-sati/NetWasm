@@ -51,8 +51,8 @@ public sealed class CompilerDependencyInjectionTests
             services.GetRequiredService<ICompilationDiagnosticTraceStage>());
         Assert.IsType<CompilationComplexityStage>(
             services.GetRequiredService<ICompilationComplexityStage>());
-        Assert.IsType<CompilationDiagnosticBindingStage>(
-            services.GetRequiredService<ICompilationDiagnosticBindingStage>());
+        Assert.IsType<NetWasm.Compiler.Symbols.CompilationSymbolSidecarBinder>(
+            services.GetRequiredService<NetWasm.Compiler.Symbols.ICompilationSymbolSidecarBinder>());
         Assert.IsType<ComponentExportMerger>(
             services.GetRequiredService<IComponentExportMerger>());
         Assert.IsType<ComponentReachabilityValidator>(

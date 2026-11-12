@@ -10,6 +10,7 @@ using System.Runtime.Intrinsics.X86;
 
 namespace System
 {
+    [Serializable]
     public partial struct Double
     {
         // `pi / 180` and `180 / pi` are not exactly representable, so each is carried as a

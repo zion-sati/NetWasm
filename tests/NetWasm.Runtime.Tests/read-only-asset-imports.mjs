@@ -43,21 +43,25 @@ export function createReadOnlyAssetImports(target, getMemory, allocate, { mountP
     new Uint8Array(getMemory().buffer, pointer, data.length).set(data);
     return pointer;
   };
-  // A result's error-code lies at offset 4, after its discriminant.
+  const readAddress = pointer => width === 8
+    ? Number(view().getBigUint64(Number(pointer), true))
+    : view().getUint32(Number(pointer), true);
+  // A result's payload, the descriptor or the error-code, lies at the pointer width, after its
+  // discriminant: error-code's other(option<string>) case makes the payload pointer-aligned.
   const fail = (result, code) => {
-    view().setUint8(Number(result) + 4, code);
+    view().setUint8(Number(result) + width, code);
     view().setUint8(Number(result), 1);
   };
-  // The parameters record CoreLib writes: descriptor, path-flags, path (address, length),
-  // open-flags, descriptor-flags.
+  // The parameters record CoreLib writes: descriptor, path-flags, path (address and length,
+  // pointer-sized at offset 8), open-flags, descriptor-flags.
   const open = (parameters, result) => {
     const record = Number(parameters);
     const directory = view().getInt32(record, true);
     const pathFlags = view().getUint8(record + 4);
-    const path = view().getUint32(record + 8, true);
-    const pathLength = view().getUint32(record + 12, true);
-    const openFlags = view().getUint8(record + 16);
-    const flags = view().getUint8(record + 17);
+    const path = readAddress(record + 8);
+    const pathLength = readAddress(record + 8 + width);
+    const openFlags = view().getUint8(record + 8 + width * 2);
+    const flags = view().getUint8(record + 9 + width * 2);
     const kind = descriptors.get(directory);
     if (kind === undefined) fail(result, badDescriptor);
     else if (kind !== 'directory') fail(result, notDirectory);
@@ -73,7 +77,7 @@ export function createReadOnlyAssetImports(target, getMemory, allocate, { mountP
       else {
         const handle = nextHandle++;
         descriptors.set(handle, 'file');
-        view().setInt32(Number(result) + 4, handle, true);
+        view().setInt32(Number(result) + width, handle, true);
         view().setUint8(Number(result), 0);
       }
     }

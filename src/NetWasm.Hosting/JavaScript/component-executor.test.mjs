@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { symbolSidecar, typeSymbol } from "./symbol-sidecar-reader.test.mjs";
 import test from "node:test";
 import { commandComponentContract } from "./canonical-component-binder.mjs";
 import { executeComponent } from "./component-executor.mjs";
@@ -39,19 +39,6 @@ test("executes one exact command adapter and closes its caller scope", async () 
 });
 
 test("reports and classifies a terminal managed command failure", async () => {
-  const encoder = new TextEncoder();
-  const wasmBytes = Uint8Array.of(0, 97, 115, 109);
-  const mapBytes = encoder.encode(JSON.stringify({
-    schemaVersion: 2,
-    buildId: "build",
-    entries: [{
-      typeId: 7,
-      displayName: "System.FormatException",
-      canonicalIdentity: "System.FormatException, System.Private.CoreLib",
-      assemblyIdentity: "System.Private.CoreLib",
-    }],
-  }));
-  const digest = bytes => createHash("sha256").update(bytes).digest("hex");
   const immediate = [];
   const enriched = [];
   const result = await executeComponent({
@@ -70,17 +57,7 @@ test("reports and classifies a terminal managed command failure", async () => {
     })),
     imports: {},
     loadCoreModule,
-    diagnosticArtifacts: {
-      manifest: {
-        schemaVersion: 1,
-        buildId: "build",
-        wasmSha256: digest(wasmBytes),
-        exceptionTypeMapSha256: digest(mapBytes),
-      },
-      wasmBytes,
-      mapBytes,
-      mapMediaType: "application/vnd.netwasm.exception-types+json;version=2",
-    },
+    diagnosticArtifacts: { typeSymbols: symbolSidecar(1, [typeSymbol(7, "System.FormatException")]) },
     managedExceptionReporting: {
       reportImmediate: event => immediate.push(event),
       reportEnriched: event => enriched.push(event),

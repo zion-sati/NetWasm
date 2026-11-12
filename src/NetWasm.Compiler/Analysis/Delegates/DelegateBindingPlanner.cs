@@ -54,7 +54,15 @@ internal sealed class DelegateBindingPlanner(
     {
         var invokeParameters = invoke.Signature.ParameterSignatureTypes;
         var targetParameters = target.Signature.ParameterSignatureTypes;
-        if (invokeParameters.Length != targetParameters.Length)
+        // A static method with one parameter more than the Invoke closes over its first, a
+        // reference the delegate holds as its target.
+        var closed = target.Definition.IsStatic && targetParameters.Length == invokeParameters.Length + 1 &&
+            targetParameters[0].StackKind == CliValueKind.ManagedReference;
+        if (closed)
+        {
+            targetParameters = targetParameters[1..];
+        }
+        else if (invokeParameters.Length != targetParameters.Length)
         {
             return null;
         }
@@ -84,7 +92,10 @@ internal sealed class DelegateBindingPlanner(
                 invoke,
                 target,
                 parameterBindings.ToImmutable(),
-                returnBinding);
+                returnBinding)
+            {
+                ClosedOverFirstArgument = closed,
+            };
     }
 
     private ManagedDelegateValueBinding? BindValue(

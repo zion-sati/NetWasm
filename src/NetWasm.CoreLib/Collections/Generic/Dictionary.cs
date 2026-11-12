@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 namespace System.Collections.Generic
 {
     [TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    [Serializable]
     public class Dictionary<TKey, TValue> : IDictionary<TKey, TValue>, IDictionary, IReadOnlyDictionary<TKey, TValue> where TKey : notnull
     {
         private int[]? _buckets;

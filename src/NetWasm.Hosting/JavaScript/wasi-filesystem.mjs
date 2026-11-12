@@ -1,4 +1,4 @@
-import { createGuestByteReader } from "./output-sink-stream.mjs";
+import { createGuestByteReader, dropGuestStream } from "./output-sink-stream.mjs";
 import { createSyncFuture, createSyncStream, readSyncDrain } from "./sync-values.mjs";
 
 // One execution's wasi:filesystem 0.3 view: the directories the request grants (on hosts
@@ -36,6 +36,8 @@ export function createWasiFilesystem(request) {
   const openFiles = new Set();
   let sealed = false;
   let disposed = false;
+  // The read-only directories mountReadOnlyFile created, which later sidecars may join.
+  const mountedDirectories = new WeakSet();
 
   class Descriptor {
     constructor(key) {
@@ -303,7 +305,7 @@ export function createWasiFilesystem(request) {
       try {
         return openTracked(state.node.host, flags);
       } catch (error) {
-        dropStream(data);
+        dropGuestStream(data);
         return err(errorCode(error));
       }
     };
@@ -321,7 +323,7 @@ export function createWasiFilesystem(request) {
         }
       } catch (error) {
         closeTracked(file);
-        dropStream(data);
+        dropGuestStream(data);
         return err(errorCode(error));
       }
       closeTracked(file);
@@ -336,7 +338,7 @@ export function createWasiFilesystem(request) {
       const read = createGuestByteReader(data);
       for (let chunk = await read(); chunk !== null; chunk = await read()) writeChunk(file, chunk, position);
     } catch (error) {
-      dropStream(data);
+      dropGuestStream(data);
       result = err(errorCode(error));
     }
     closeTracked(file);
@@ -482,21 +484,29 @@ export function createWasiFilesystem(request) {
       },
     }),
     // Mounts one read-only file at an absolute guest path before the guest first asks
-    // for its directories; the release removes it again.
+    // for its directories; files mounted into the same directory share one read-only
+    // preopen (a program's sidecars). The release removes the file, and the preopen
+    // with its last file.
     mountReadOnlyFile({ guestPath, bytes } = {}) {
       if (disposed || sealed) throw new Error("filesystem mount setup is closed");
       assertAbsolutePath(guestPath);
       if (!(bytes instanceof Uint8Array)) throw new TypeError("read-only file contents must be bytes");
       const separator = guestPath.lastIndexOf("/");
       const directory = guestPath.slice(0, separator) || "/";
-      if (entries.has(directory)) throw new TypeError("the read-only mount collides with an existing preopen");
-      const file = Object.freeze({ kind: "file", bytes: new Uint8Array(bytes), readOnly: true });
-      entries.set(directory, Object.freeze({
-        kind: "directory",
-        files: new Map([[guestPath.slice(separator + 1), file]]),
-        readOnly: true,
-      }));
-      return () => { entries.delete(directory); };
+      const name = guestPath.slice(separator + 1);
+      const existing = entries.get(directory);
+      if (existing !== undefined && !mountedDirectories.has(existing)) {
+        throw new TypeError("the read-only mount collides with an existing preopen");
+      }
+      const mounted = existing ?? Object.freeze({ kind: "directory", files: new Map(), readOnly: true });
+      if (mounted.files.has(name)) throw new TypeError("the read-only file is already mounted");
+      mounted.files.set(name, Object.freeze({ kind: "file", bytes: new Uint8Array(bytes), readOnly: true }));
+      mountedDirectories.add(mounted);
+      entries.set(directory, mounted);
+      return () => {
+        mounted.files.delete(name);
+        if (mounted.files.size === 0 && entries.get(directory) === mounted) entries.delete(directory);
+      };
     },
     async dispose() {
       if (disposed) return;
@@ -602,16 +612,6 @@ function settled(value) {
 
 function bytesOf(chunk) {
   return chunk instanceof Uint8Array ? chunk : Uint8Array.from(chunk);
-}
-
-function dropStream(stream) {
-  const dispose = stream?.[Symbol.dispose] ?? stream?.[Symbol.for("dispose")];
-  try {
-    if (typeof dispose === "function") dispose.call(stream);
-    else if (typeof stream?.return === "function") stream.return();
-  } catch {
-    // The guest already let go of the stream.
-  }
 }
 
 function requestsMutation(openFlags, descriptorFlags) {

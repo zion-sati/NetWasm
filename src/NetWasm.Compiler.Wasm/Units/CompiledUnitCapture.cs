@@ -285,10 +285,17 @@ internal sealed class CompiledUnitCapturer(
 /// so the store's size follows the program and each compile writes what it changed. The
 /// change is left on the state for the pipeline to commit through its storage.
 /// </summary>
+// The segment capacity and the section limit default to the format's; tests make them small.
 internal sealed class CompiledUnitPublisher(
-    CompiledUnitState state) : ICompiledUnitPublisher
+    CompiledUnitState state,
+    long segmentCapacity = CompiledUnitPublisher.SegmentCapacity,
+    long sectionLimit = UnitSegmentWriter.SectionLimit) : ICompiledUnitPublisher
 {
     private const int SegmentBudget = 16;
+
+    // A compile starts another segment once one reaches this length, so every segment stays well
+    // inside the format's 32-bit offsets and an array's length, however many units it writes (issue 229).
+    internal const long SegmentCapacity = 1L << 30;
 
     public void Publish()
     {
@@ -309,7 +316,7 @@ internal sealed class CompiledUnitPublisher(
     {
         var carried = new HashSet<UnitLocation>(state.Carried);
         if (state.Captured.IsEmpty && carried.Count == store.Count)
-            return new(0, null, null, new HashSet<int>(), Summary(store.Count, store.Segments.Count));
+            return new([], null, new HashSet<int>(), Summary(store.Count, store.Segments.Count));
         var emitted = state.Captured.OrderBy(unit => unit.Identity, StringComparer.Ordinal).ToArray();
         var emittedIdentities = new HashSet<string>(emitted.Select(unit => unit.Identity), StringComparer.Ordinal)
             .GetAlternateLookup<ReadOnlySpan<char>>();
@@ -341,16 +348,17 @@ internal sealed class CompiledUnitPublisher(
             var largest = remaining.MaxBy(segment => segments[segment]!.Length);
             foreach (var segment in remaining) merge[segment] = segment != largest;
         }
-        var writer = new UnitSegmentWriter();
-        foreach (var unit in emitted) writer.Add(unit);
+        var writers = new List<UnitSegmentWriter> { new(sectionLimit) };
+        foreach (var unit in emitted) Write(writers, unit);
         foreach (var unit in kept)
         {
-            if (merge[unit.Segment]) writer.Add(segments[unit.Segment]!.Record(unit.Offset).ToUnit());
+            if (merge[unit.Segment]) Write(writers, segments[unit.Segment]!.Record(unit.Offset).ToUnit());
         }
+        if (writers[^1].Count == 0) writers.RemoveAt(writers.Count - 1);
         var manifestSegments = new List<UnitManifestSegment>();
         var ordinals = new int[segments.Count];
         Array.Fill(ordinals, -1);
-        var entries = new List<UnitManifestEntry>(kept.Count + writer.Count);
+        var entries = new List<UnitManifestEntry>(kept.Count + writers.Sum(writer => writer.Count));
         foreach (var unit in kept)
         {
             if (merge[unit.Segment]) continue;
@@ -363,17 +371,31 @@ internal sealed class CompiledUnitPublisher(
             entries.Add(new(UnitStoreFormat.HashOf(segment.Record(unit.Offset).Identity),
                 ordinals[unit.Segment], unit.Offset));
         }
-        var sequence = store.NextSequence;
-        if (writer.Count != 0)
+        var added = ImmutableArray.CreateBuilder<UnitStoreSegment>(writers.Count);
+        foreach (var writer in writers)
         {
+            var sequence = store.NextSequence + added.Count;
             var ordinal = manifestSegments.Count;
             manifestSegments.Add(new(sequence, writer.Count, writer.Length));
             foreach (var (hash, offset) in writer.Entries) entries.Add(new(hash, ordinal, offset));
+            added.Add(new(sequence, writer));
         }
-        return new(sequence, writer.Count != 0 ? writer : null,
-            UnitManifestFormat.Write(manifestSegments, entries, sequence + 1),
+        return new(added.ToImmutable(),
+            UnitManifestFormat.Write(manifestSegments, entries, store.NextSequence + added.Count),
             manifestSegments.Select(segment => segment.Sequence).ToHashSet(),
             Summary(entries.Count, manifestSegments.Count));
+    }
+
+    // Adds a unit to the last segment, starting another when that one is at capacity or full; a unit
+    // that fits no segment at all, or that a segment refuses, is not kept.
+    private void Write(List<UnitSegmentWriter> writers, CompiledUnit unit)
+    {
+        if (writers[^1].Count != 0 && writers[^1].Length >= segmentCapacity) writers.Add(new(sectionLimit));
+        if (!writers[^1].Add(unit, out var full) && full && writers[^1].Count != 0)
+        {
+            writers.Add(new(sectionLimit));
+            writers[^1].Add(unit);
+        }
     }
 
     // A plain summary of the compile's reuse.

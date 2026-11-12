@@ -50,9 +50,10 @@ public sealed class StackTraceCompilationTests
                 if (enabled == 3)
                 {
                     var error = Capture(ThrowLeaf);
+                    // Without its method-symbols sidecar a frame reads as its ID (issue 225).
                     return error.StackTrace is not null &&
-                        error.StackTrace.Contains("ThrowLeaf") &&
-                        !error.StackTrace.Contains("method#") ? 0 : -30;
+                        error.StackTrace.Contains("method#") &&
+                        !error.StackTrace.Contains("ThrowLeaf") ? 0 : -30;
                 }
 
                 var nested = Capture(() => Generic<int>.Throw());
@@ -285,7 +286,7 @@ public sealed class StackTraceCompilationTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void InstrumentedBuildUsesEmbeddedSymbolsWithoutSidecar(WasmTarget target)
+    public void InstrumentedBuildReadsMethodIdsWithoutItsSidecar(WasmTarget target)
     {
         using var assets = TestAssets.Create();
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
@@ -312,7 +313,7 @@ public sealed class StackTraceCompilationTests
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm64)]
     [Trait("Issue", "64")]
-    public void PortablePdbDistinguishesLocationsWithinOneMethodWithoutHostSidecar(
+    public void PortablePdbDistinguishesLocationsWithinOneMethod(
         bool optimize,
         WasmTarget target)
     {
@@ -365,7 +366,6 @@ public sealed class StackTraceCompilationTests
             {
                 EmitPortablePdb = true,
                 EmitStackTrace = true,
-                LoadStackTraceSymbols = false,
             });
 
             Assert.Equal(0, result);
@@ -442,7 +442,6 @@ public sealed class StackTraceCompilationTests
         {
             EmitPortablePdb = true,
             EmitStackTrace = true,
-            LoadStackTraceSymbols = false,
             ObserveMethodName = "Observe",
             WitPath = Path.Combine(
                 assets.Root,
@@ -500,7 +499,6 @@ public sealed class StackTraceCompilationTests
             [])
         {
             EmitStackTrace = true,
-            LoadStackTraceSymbols = false,
             WitPath = Path.Combine(
                 assets.Root,
                 "wit",
@@ -560,7 +558,6 @@ public sealed class StackTraceCompilationTests
         {
             EmitPortablePdb = true,
             EmitStackTrace = true,
-            LoadStackTraceSymbols = false,
         });
 
         Assert.Equal(0, result);
@@ -598,7 +595,6 @@ public sealed class StackTraceCompilationTests
             {
                 EmitPortablePdb = true,
                 EmitStackTrace = true,
-                LoadStackTraceSymbols = false,
             }));
 
         Assert.Contains(

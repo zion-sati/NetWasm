@@ -37,12 +37,14 @@ public sealed class WasmModuleTargetFactoryTests
                 new WasmModulePlanInvariantValidator(),
                 new NativeImportPlanner(NativeAbiTestSupport.ScalarPlanner()),
                 NativeAbiTestSupport.CallbackPlanner(),
+            NativeAbiTestSupport.CallSitePlanner(),
                 new FinalizationPlanBuilder(layouts, new FakeIntrinsics())),
             new ModuleDataPlanner(
                 layouts,
                 layouts,
                 new ExceptionGroupEnumerator(),
                 new StructuredExceptionGroupKeyFactory()),
+            new SymbolBuildIdCalculator(),
             new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()),
             new StaticInitializerFunctionPlanner(layouts, program),
             new JSImportForwarderPlanner(program));
@@ -98,12 +100,14 @@ public sealed class WasmModuleTargetFactoryTests
                 new WasmModulePlanInvariantValidator(),
                 new NativeImportPlanner(NativeAbiTestSupport.ScalarPlanner()),
                 NativeAbiTestSupport.CallbackPlanner(),
+            NativeAbiTestSupport.CallSitePlanner(),
                 new FinalizationPlanBuilder(layouts, new FakeIntrinsics())),
             new ModuleDataPlanner(
                 layouts,
                 layouts,
                 new ExceptionGroupEnumerator(),
                 new StructuredExceptionGroupKeyFactory()),
+            new SymbolBuildIdCalculator(),
             new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()),
             new StaticInitializerFunctionPlanner(layouts, program),
             new JSImportForwarderPlanner(program));

@@ -1,15 +1,13 @@
 namespace System.Runtime.InteropServices.TimeZones
 {
     using System.Runtime.InteropServices.Concurrency;
+    using System.Runtime.InteropServices.FileSystem;
     using System.Runtime.InteropServices.WebAssembly;
 
     // Opens a file read-only, following no symlinks, and waits for open-at to
     // return its result<descriptor, error-code>.
     internal sealed class WasiDescriptorOpenInvoker : IWasiDescriptorOpenInvoker
     {
-        // descriptor, path-flags, path (address, length), open-flags,
-        // descriptor-flags: a 20-byte, 4-aligned record.
-        private const nuint ParametersSize = 20;
         private const byte ReadFlag = 1;
 
         private readonly IWasiOpenAtInvoker _openAt;
@@ -28,13 +26,16 @@ namespace System.Runtime.InteropServices.TimeZones
 
         public void Invoke(int directoryHandle, nuint path, nuint pathLength, nuint result)
         {
-            using var parameters = _allocator.Allocate(ParametersSize, 4);
+            // The path's address and length are pointer-sized, so the record is the target's
+            // (wasm64's widens it from 20 to 32 bytes).
+            var pointer = WasiFileSystemLayout.Pointer;
+            using var parameters = _allocator.Allocate(WasiFileSystemLayout.OpenAtParametersSize, pointer);
             CanonicalAbi.WriteInt32(parameters.Address, 0, directoryHandle);
             CanonicalAbi.WriteByte(parameters.Address, 4, 0);
-            CanonicalAbi.WriteInt32(parameters.Address, 8, unchecked((int)path));
-            CanonicalAbi.WriteInt32(parameters.Address, 12, unchecked((int)pathLength));
-            CanonicalAbi.WriteByte(parameters.Address, 16, 0);
-            CanonicalAbi.WriteByte(parameters.Address, 17, ReadFlag);
+            CanonicalAbi.WriteAddress(parameters.Address, 8, path);
+            CanonicalAbi.WriteAddress(parameters.Address, 8 + pointer, pathLength);
+            CanonicalAbi.WriteByte(parameters.Address, 8 + pointer * 2, 0);
+            CanonicalAbi.WriteByte(parameters.Address, 9 + pointer * 2, ReadFlag);
             _subtasks.AwaitReturn(_openAt.Invoke(parameters.Address, result));
         }
     }

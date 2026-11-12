@@ -63,6 +63,7 @@ namespace System
             [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TSelf result);
     }
 
+    [Serializable]
     public class EventArgs
     {
         public EventArgs()

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 
 namespace System.Collections.ObjectModel
 {
+    [Serializable]
     public class Collection<T> : IList<T>, IList, IReadOnlyList<T>
     {
         private readonly IList<T> items;

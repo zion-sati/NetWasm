@@ -647,6 +647,12 @@ public sealed record TypeDefinitionModel(
     public int GenericArity { get; init; }
     public ImmutableArray<string> GenericParameterNames { get; init; } = [];
     public ImmutableArray<CliGenericVariance> GenericParameterVariances { get; init; } = [];
+    // Each generic parameter's GenericParameterAttributes: variance and special constraints.
+    public ImmutableArray<int> GenericParameterAttributes { get; init; } = [];
+    // The definition's TypeAttributes, as Type.Attributes reports them.
+    public int Attributes { get; init; }
+    // A ref struct: the type carries IsByRefLikeAttribute.
+    public bool IsByRefLike { get; init; }
     public bool IsInterface { get; init; }
     public bool IsAbstract { get; init; }
     public bool IsSealed { get; init; }
@@ -656,6 +662,9 @@ public sealed record TypeDefinitionModel(
         CliTypeIdentity.FromStackKind(CliValueKind.ValueType);
     public ImmutableArray<EnumMemberModel> EnumMembers { get; init; } = [];
     public bool IsFlagsEnum { get; init; }
+
+    // The enclosing type definition of a nested type.
+    public EntityKey? DeclaringType { get; init; }
 
     private readonly DerivedString<(string, string)> _fullName = new();
 
@@ -1196,11 +1205,14 @@ public enum RuntimeIntrinsic
     NumericsToVector128,
     NumericsFromVector128,
     ObjectContainsReferences,
+    TypeBaseId,
+    TypeIsAssignable,
     ArrayElementType,
     ArraySetValue,
     PreallocatedOutOfMemoryException,
     ObjectClone,
     JavaScriptHost,
+    StackTraceRegisterSymbol,
 }
 
 public static class RuntimeIntrinsicKinds
@@ -1208,6 +1220,11 @@ public static class RuntimeIntrinsicKinds
     // The portable Vector128<T> and Vector<T> operations lowered to Wasm SIMD.
     public static bool IsSimdVector(RuntimeIntrinsic intrinsic) =>
         intrinsic is >= RuntimeIntrinsic.SimdAdd and <= RuntimeIntrinsic.SimdReinterpret;
+
+    // ValueType's Equals and GetHashCode compare and hash the boxed value's own fields, so what
+    // they do depends on the receiver's exact type, not on the method that names them.
+    public static bool DependsOnReceiverType(RuntimeIntrinsic intrinsic) =>
+        intrinsic is RuntimeIntrinsic.ValueTypeEquals or RuntimeIntrinsic.ValueTypeGetHashCode;
 }
 
 public interface IRuntimeIntrinsicRegistry

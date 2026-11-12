@@ -20,11 +20,18 @@ public partial class Type
 
     protected virtual bool HasElementTypeImpl() => IsArray || IsByRef || IsPointer;
 
-    // Element relationships are not deployed as reflection metadata. A type
-    // without an element has the ordinary null result; do not invent that result
-    // for arrays, pointers or references whose element cannot be queried.
+    // An array's, pointer's or by-reference type's element, from the type table.
+    public virtual bool IsFunctionPointer => false;
+    public virtual bool IsUnmanagedFunctionPointer => false;
+
+    public virtual Array GetEnumValuesAsUnderlyingType()
+    {
+        if (!IsEnum) throw new ArgumentException("Type provided must be an Enum.", "enumType");
+        return Enum.GetValuesAsUnderlyingType(this);
+    }
+
     public virtual Type? GetElementType() => HasElementType
-        ? throw new PlatformNotSupportedException("Runtime element type metadata is not available on NetWasm.")
+        ? GetTypeFromSemanticId(RuntimeTypeTable.ElementType(SemanticTypeId))
         : null;
 
 
@@ -43,7 +50,7 @@ public partial class Type
     protected virtual bool IsByRefImpl() => HasFlag(RuntimeTypeFactsFlags.ByReference);
     protected virtual bool IsPointerImpl() => HasFlag(RuntimeTypeFactsFlags.Pointer);
     protected virtual bool IsValueTypeImpl() => HasFlag(RuntimeTypeFactsFlags.ValueType);
-    protected virtual TypeCode GetTypeCodeImpl() => (TypeCode)GetFacts().TypeCode;
+    protected virtual TypeCode GetTypeCodeImpl() => (TypeCode)(RuntimeTypeTable.Flags(SemanticTypeId) >> 24 & 0x1f);
 
     public bool IsPrimitive => IsPrimitiveImpl();
 
@@ -53,10 +60,37 @@ public partial class Type
 
     public static Type? GetType(string typeName) => GetType(typeName, false, false);
     public static Type? GetType(string typeName, bool throwOnError) => GetType(typeName, throwOnError, false);
+    // NetWasm: the program's type with that FullName or AssemblyQualifiedName, which the type-symbols
+    // sidecar supplies; without the names the lookup is unavailable. A type nothing in the program uses
+    // is not found, and names are matched whole, not parsed.
     public static Type? GetType(string typeName, bool throwOnError, bool ignoreCase)
     {
         ArgumentNullException.ThrowIfNull(typeName);
-        throw new PlatformNotSupportedException("Resolving types by name is not supported on NetWasm.");
+        return FindByName(typeName, throwOnError, ignoreCase, assembly: null);
+    }
+
+    internal static Type? FindByName(string name, bool throwOnError, bool ignoreCase, Reflection.Assembly? assembly)
+    {
+        if (!TypeSymbols.Available)
+        {
+            throw TypeSymbols.NamesUnavailable();
+        }
+        StringComparison comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        int capacity = RuntimeTypeTable.Capacity();
+        for (int id = 1; id < capacity; id++)
+        {
+            if (!RuntimeTypeTable.IsRegistered(id))
+            {
+                continue;
+            }
+            Type type = GetTypeFromSemanticId(id);
+            if ((assembly is null || type.Assembly == assembly) &&
+                (string.Equals(type.FullName, name, comparison) || string.Equals(type.AssemblyQualifiedName, name, comparison)))
+            {
+                return type;
+            }
+        }
+        return throwOnError ? throw new TypeLoadException("Could not load type '" + name + "'.") : null;
     }
 
     public static Type? GetType(string typeName,
@@ -112,16 +146,88 @@ public partial class Type
     public static Type? GetTypeFromProgID(string progID, string? server, bool throwOnError) =>
         throw new PlatformNotSupportedException("COM type lookup is not supported on NetWasm.");
 
-    public virtual Type MakeArrayType() =>
-        throw new PlatformNotSupportedException("Constructing runtime types is not supported on NetWasm.");
-    public virtual Type MakeArrayType(int rank) =>
-        throw new PlatformNotSupportedException("Constructing runtime types is not supported on NetWasm.");
-    public virtual Type MakeByRefType() =>
-        throw new PlatformNotSupportedException("Constructing runtime types is not supported on NetWasm.");
-    public virtual Type MakePointerType() =>
-        throw new PlatformNotSupportedException("Constructing runtime types is not supported on NetWasm.");
-    public virtual Type MakeGenericType(params Type[] typeArguments) =>
-        throw new PlatformNotSupportedException("Constructing runtime types is not supported on NetWasm.");
+    // NetWasm: a program cannot create types, so these return the type the program has, from the type
+    // table, and throw where it has none.
+    public virtual Type MakeArrayType() => WithElement(RuntimeTypeFactsFlags.SzArray, 1);
+
+    public virtual Type MakeArrayType(int rank)
+    {
+        if (rank <= 0) throw new IndexOutOfRangeException();
+        return WithElement(RuntimeTypeFactsFlags.Array, rank, RuntimeTypeFactsFlags.SzArray);
+    }
+
+    public virtual Type MakeByRefType() => WithElement(RuntimeTypeFactsFlags.ByReference, 0);
+
+    public virtual Type MakePointerType() => WithElement(RuntimeTypeFactsFlags.Pointer, 0);
+
+    public virtual Type MakeGenericType(params Type[] typeArguments)
+    {
+        ArgumentNullException.ThrowIfNull(typeArguments);
+        if (!IsGenericTypeDefinition)
+        {
+            throw new InvalidOperationException(this + " is not a GenericTypeDefinition. MakeGenericType may only be called on a type for which Type.IsGenericTypeDefinition is true.");
+        }
+        int[] arguments = new int[typeArguments.Length];
+        for (int index = 0; index < arguments.Length; index++)
+        {
+            arguments[index] = (typeArguments[index] ?? throw new ArgumentNullException(nameof(typeArguments))).SemanticTypeId;
+        }
+        if (arguments.Length != GetGenericArguments().Length)
+        {
+            throw new ArgumentException("The number of generic arguments provided doesn't equal the arity of the generic type definition.", "instantiation");
+        }
+        for (int id = 1; id < RuntimeTypeTable.Capacity(); id++)
+        {
+            if ((RuntimeTypeTable.Flags(id) & (RuntimeTypeFactsFlags.GenericType | RuntimeTypeFactsFlags.GenericTypeDefinition)) ==
+                    RuntimeTypeFactsFlags.GenericType &&
+                RuntimeTypeTable.GenericDefinition(id) == SemanticTypeId &&
+                SameIds(RuntimeTypeTable.GenericArguments(id), arguments))
+            {
+                return GetTypeFromSemanticId(id);
+            }
+        }
+        throw NotInProgram();
+    }
+
+    private static bool SameIds(int[]? left, int[] right)
+    {
+        if (left is null || left.Length != right.Length) return false;
+        for (int index = 0; index < left.Length; index++)
+        {
+            if (left[index] != right[index]) return false;
+        }
+        return true;
+    }
+
+    // The types with the given IDs, in order; the first count of them.
+    internal static Type[] TypesOf(int[] ids, int count)
+    {
+        var types = new Type[count];
+        for (int index = 0; index < count; index++)
+        {
+            types[index] = GetTypeFromSemanticId(ids[index]);
+        }
+        return types;
+    }
+
+    // The program's type of the given kind (and rank, for an array) whose element is this type.
+    private Type WithElement(int kind, int rank, int excluded = 0)
+    {
+        for (int id = 1; id < RuntimeTypeTable.Capacity(); id++)
+        {
+            int flags = RuntimeTypeTable.Flags(id);
+            if ((flags & (kind | excluded)) == kind &&
+                (rank == 0 || (flags >> RuntimeTypeFactsFlags.ArrayRankShift & RuntimeTypeFactsFlags.ArrayRankMask) == rank) &&
+                RuntimeTypeTable.ElementType(id) == SemanticTypeId)
+            {
+                return GetTypeFromSemanticId(id);
+            }
+        }
+        throw NotInProgram();
+    }
+
+    private static PlatformNotSupportedException NotInProgram() =>
+        new("The program does not use this type, and NetWasm cannot create types at run time.");
     public static Type MakeGenericMethodParameter(int position)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(position);
@@ -131,7 +237,7 @@ public partial class Type
     public virtual int GetArrayRank()
     {
         if (!IsArray) throw new ArgumentException("Type must be an array type.");
-        return (GetFacts().Flags >> RuntimeTypeFactsFlags.ArrayRankShift) & RuntimeTypeFactsFlags.ArrayRankMask;
+        return (RuntimeTypeTable.Flags(SemanticTypeId) >> RuntimeTypeFactsFlags.ArrayRankShift) & RuntimeTypeFactsFlags.ArrayRankMask;
     }
 
     public static Type[] GetTypeArray(object[] args)

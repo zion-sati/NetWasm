@@ -21,7 +21,7 @@ internal enum UnitQueryKind
     StaticDataEnd,
     StaticRootAddresses,
     DataSegments,
-    TypeFactsTable,
+    TypeTable,
     TypeObjectAddress,
     TypeObjectTable,
     MethodDescriptorAddress,

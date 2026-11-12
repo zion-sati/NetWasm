@@ -61,10 +61,7 @@ public sealed class RuntimeGenericArgumentMetadataBuilderTests
                 [CliTypeIdentity.GenericParameter(method: false, index: 0)]),
             boxDefinition,
             typeId: 9));
-        var program = Program(
-            requiresGenericArguments: true,
-            typeNamePayload: RuntimeTypeNamePayload.Name |
-                RuntimeTypeNamePayload.DisplayName);
+        var program = Program(requiresGenericArguments: true);
 
         new RuntimeGenericArgumentMetadataBuilder(program, state).Build();
 
@@ -82,7 +79,7 @@ public sealed class RuntimeGenericArgumentMetadataBuilderTests
                 descriptor.Type.Shape));
         var parameters = state.PendingTypeFacts.Skip(3).ToArray();
         Assert.Equal(2, parameters.Length);
-        Assert.All(parameters, parameter => Assert.Equal("T", parameter.Names!.Name));
+        Assert.All(state.MetadataTypeDescriptors, descriptor => Assert.Equal("T", descriptor.GenericParameterName));
         Assert.NotEqual(
             parameters[0].Identity.CanonicalName,
             parameters[1].Identity.CanonicalName);
@@ -192,14 +189,8 @@ public sealed class RuntimeGenericArgumentMetadataBuilderTests
         Assert.Equal(DiagnosticCode.RuntimeContract, invalid.Diagnostic.Code);
     }
 
-    [Theory]
-    [InlineData(RuntimeTypeNamePayload.None, null, null)]
-    [InlineData(RuntimeTypeNamePayload.Name, "T", null)]
-    [InlineData(RuntimeTypeNamePayload.DisplayName, null, "T")]
-    public void OpenParameterNamesHonorTheRequestedPayload(
-        RuntimeTypeNamePayload payload,
-        string? expectedName,
-        string? expectedDisplayName)
+    [Fact]
+    public void OpenParametersKeepTheirDeclaredNameForTheTypeSymbols()
     {
         var state = new ManagedStaticDataBuildState();
         var identity = CliTypeIdentity.Named(Assembly, "Fixtures", "Box`1", false);
@@ -209,38 +200,12 @@ public sealed class RuntimeGenericArgumentMetadataBuilderTests
             typeId: 1));
 
         new RuntimeGenericArgumentMetadataBuilder(
-            Program(requiresGenericArguments: true, typeNamePayload: payload),
+            Program(requiresGenericArguments: true),
             state).Build();
 
-        var names = state.PendingTypeFacts[1].Names;
-        if (payload == RuntimeTypeNamePayload.None)
-        {
-            Assert.Null(names);
-        }
-        else
-        {
-            Assert.Equal(expectedName, names!.Name);
-            Assert.Equal(expectedDisplayName, names.DisplayName);
-        }
-    }
-
-    [Fact]
-    public void MalformedNullGenericParameterNameDoesNotCreateNameMetadata()
-    {
-        var state = new ManagedStaticDataBuildState();
-        var identity = CliTypeIdentity.Named(Assembly, "Fixtures", "Box`1", false);
-        state.PendingTypeFacts.Add(Facts(
-            identity,
-            Definition(1, "Box`1", [null!]),
-            typeId: 1));
-
-        new RuntimeGenericArgumentMetadataBuilder(
-            Program(
-                requiresGenericArguments: true,
-                typeNamePayload: RuntimeTypeNamePayload.Name),
-            state).Build();
-
-        Assert.Null(state.PendingTypeFacts[1].Names);
+        var parameter = Assert.Single(state.MetadataTypeDescriptors);
+        Assert.Equal(state.PendingTypeFacts[1].TypeId, parameter.TypeId);
+        Assert.Equal("T", parameter.GenericParameterName);
     }
 
     [Fact]
@@ -265,16 +230,10 @@ public sealed class RuntimeGenericArgumentMetadataBuilderTests
         int typeId) => new(
         identity,
         definition,
-        typeId,
-        BaseTypeId: 0,
-        AssignableTypeIdsAddress: 0,
-        AssignableTypeIdCount: 0,
-        DelegateInvokeDescriptor: null,
-        Names: null);
+        typeId);
 
     private static ReachableProgram Program(
-        bool requiresGenericArguments = false,
-        RuntimeTypeNamePayload typeNamePayload = RuntimeTypeNamePayload.None) => new(
+        bool requiresGenericArguments = false) => new(
         EntryPoint: null,
         Methods: [],
         Types: [],
@@ -288,7 +247,6 @@ public sealed class RuntimeGenericArgumentMetadataBuilderTests
         ImplicitExceptions: [])
         {
             RequiresGenericArguments = requiresGenericArguments,
-            TypeNamePayload = typeNamePayload,
         };
 
     private static TypeDefinitionModel Definition(

@@ -41,7 +41,7 @@ public sealed class CompileCliOptionsTests
             "-export:add=Example.Math::Add", "-export:sub=Example.Math::Sub", "-platform:wasm64",
             "-optimize:O3", "-pathmap:/src=/_/", "-source:Entry.cs", "-source:Math.cs",
             "-interopmanifest:interop.json", "-runtimelayout:layout.json", "-compilermetadata:metadata.json",
-            "-exceptiontypemap:exceptions.json", "-stacktracesymbols:symbols.json",
+            "-typesymbols:app.wasm.type-symbols", "-methodsymbols:app.wasm.method-symbols", "-typenames+",
             "-callbackobject:callbacks.o", "-wit:contract.wit", "-world:example:test/test",
             "-importmodule:host_ui", "-importmodule:host_gl", "-diagnostictrace:trace.json",
             "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics",
@@ -74,7 +74,8 @@ public sealed class CompileCliOptionsTests
             "-managedmulticastinlinedispatch:Enabled",
             "-managednewobjectnullcheckelimination:Disabled",
             "-managedloopstrengthreduction:Disabled",
-            "-managedrangebranchfolding:Enabled");
+            "-managedrangebranchfolding:Enabled",
+            "-managedunwrittenstaticfieldfolding:Disabled");
 
         Assert.Equal(NwcTarget.Function, options.Target);
         Assert.Equal("Example.Entry", options.EntryType);
@@ -90,8 +91,9 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("interop.json", options.InteropManifest);
         Assert.Equal("layout.json", options.RuntimeLayout);
         Assert.Equal("metadata.json", options.CompilerMetadata);
-        Assert.Equal("exceptions.json", options.ExceptionTypeMap);
-        Assert.Equal("symbols.json", options.StackTraceSymbols);
+        Assert.Equal("app.wasm.type-symbols", options.TypeSymbols);
+        Assert.Equal("app.wasm.method-symbols", options.MethodSymbols);
+        Assert.True(options.TypeNames);
         Assert.Equal("callbacks.o", options.CallbackObject);
         Assert.Equal("contract.wit", options.Wit);
         Assert.Equal("example:test/test", options.World);
@@ -143,6 +145,7 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("Disabled", options.ManagedNewObjectNullCheckElimination);
         Assert.Equal("Disabled", options.ManagedLoopStrengthReduction);
         Assert.Equal("Enabled", options.ManagedRangeBranchFolding);
+        Assert.Equal("Disabled", options.ManagedUnwrittenStaticFieldFolding);
     }
 
     [Theory]

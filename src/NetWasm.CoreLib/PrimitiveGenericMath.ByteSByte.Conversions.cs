@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 
 namespace System;
 
+[Serializable]
 public partial struct Byte
 {
     /// <inheritdoc cref="INumberBase{TSelf}.CreateChecked{TOther}(TOther)" />
@@ -493,6 +494,7 @@ public partial struct Byte
     }
 }
 
+[Serializable]
 public partial struct SByte
 {
     /// <inheritdoc cref="INumberBase{TSelf}.CreateChecked{TOther}(TOther)" />

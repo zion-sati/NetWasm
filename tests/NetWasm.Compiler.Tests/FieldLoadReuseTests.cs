@@ -119,7 +119,12 @@ public sealed class FieldLoadReuseTests
 
             public static class EntryPoint
             {
-                public static int Run(int count) => Probe(new Node { X = count }, new Node(), count > 2);
+                // Holder.S is written, so its reads are field reads, not the default an unwritten field folds to.
+                public static int Run(int count)
+                {
+                    Holder.S = count;
+                    return Probe(new Node { X = count }, new Node(), count > 2);
+                }
 
                 [MethodImpl(MethodImplOptions.NoInlining)]
                 private static int Probe(Node a, Node b, bool c)

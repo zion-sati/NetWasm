@@ -3,6 +3,7 @@
 
 namespace System.IO
 {
+    [Serializable]
     public class DirectoryNotFoundException : IOException
     {
         private const int CorEDirectoryNotFound = unchecked((int)0x80070003);
@@ -47,6 +48,7 @@ namespace System.IO
             : base.ToString() + " Directory name: '" + DirectoryPath + "'.";
     }
 
+    [Serializable]
     public class FileLoadException : IOException
     {
         private const int CorEFileLoad = unchecked((int)0x80131621);
@@ -101,6 +103,7 @@ namespace System.IO
             : base.ToString() + " File name: '" + FileName + "'.";
     }
 
+    [Serializable]
     public class FileNotFoundException : IOException
     {
         private const int CorEFileNotFound = unchecked((int)0x80070002);
@@ -155,6 +158,7 @@ namespace System.IO
             : base.ToString() + " File name: '" + FileName + "'.";
     }
 
+    [Serializable]
     public sealed class InvalidDataException : SystemException
     {
         public InvalidDataException()
@@ -173,6 +177,7 @@ namespace System.IO
         }
     }
 
+    [Serializable]
     public class PathTooLongException : IOException
     {
         private const int CorEPathTooLong = unchecked((int)0x800700CE);

@@ -29,8 +29,15 @@ internal sealed class WasmModuleEmissionResultBuilder(
             [.. import.Import.Type.Parameters.Select(parameter => WasmValueTypes.FromCli(parameter, target))],
             import.Import.Type.Result == CliValueKind.Void
                 ? null
-                : WasmValueTypes.FromCli(import.Import.Type.Result, target))).ToImmutableArray();
-        var callbackObject = callbackObjects.Write(request.NativeCallbacks, module.Target);
+                : WasmValueTypes.FromCli(import.Import.Type.Result, target)))
+            // Methods that declare one native symbol share its import.
+            .DistinctBy(import => (import.LibraryName, import.EntryPoint))
+            .ToImmutableArray();
+        var trampolines = request.NativeImports.CallSites.Trampolines
+            .Select(trampoline => trampoline.Symbol)
+            .ToImmutableArray();
+        var callbackObject = callbackObjects.Write(
+            request.NativeCallbacks, request.NativeImports.CallSites.Trampolines, module.Target);
         var callbackSupport = callbackObject.Length == 0
             ? null
             : new WasmNativeCallbackSupportArtifact(
@@ -54,7 +61,10 @@ internal sealed class WasmModuleEmissionResultBuilder(
                     .Where(callback => !callback.IsNamed)
                     .Select(callback => callback.ThunkExportName)],
                 [.. request.NativeCallbacks.AddressedMethods.Select(callback =>
-                    callback.GetterName!)]);
+                    callback.GetterName!), .. trampolines])
+            {
+                Trampolines = trampolines,
+            };
         return new(
             modules.Build(
                 module.FunctionImports,
@@ -79,6 +89,7 @@ internal sealed class WasmModuleEmissionResultBuilder(
                 .Order(StringComparer.Ordinal)],
             RuntimeFeatures = request.RuntimeFeatures,
             NativeCallbackSupport = callbackSupport,
+            BuildId = request.BuildId,
         };
     }
 }

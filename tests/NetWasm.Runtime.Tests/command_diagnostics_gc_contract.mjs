@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRuntimeContractImports } from './runtime-contract-imports.mjs';
+import { registerRuntimeTypes } from "../NetWasm.Compiler.Tests/Correctness/runtime-type-table.cjs";
 
 const [modulePath, target] = process.argv.slice(2);
 assert.ok(target === 'wasm32' || target === 'wasm64');
@@ -18,7 +19,7 @@ api.initialize(address(65536), 2, 0);
 const referenceSize = memory64 ? 8 : 4;
 const stringObjectSize = memory64 ? 16 : 8;
 const stringDataOffset = memory64 ? 12 : 8;
-api.register_type(1, 0, address(stringObjectSize), address(0), 0, address(0), 0, 0, 0);
+registerRuntimeTypes(api, [{ type: 1, size: stringObjectSize }], address);
 
 const roots = api.root_frame_enter(2);
 const rootView = new DataView(api.memory.buffer);

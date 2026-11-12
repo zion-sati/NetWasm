@@ -6,7 +6,7 @@ namespace NetWasm.Hosting.Deployment;
 /// <summary>Emits an alias-free adapter over the exact pinned jco output shape.</summary>
 public sealed class CanonicalComponentAdapterWriter : ICanonicalComponentAdapterWriter
 {
-    public const string SupportedJcoVersion = "1.41.0+netwasm.2";
+    public const string SupportedJcoVersion = "1.41.0+netwasm.4";
     public const string CommandContract = "wasi-command@0.3.2";
 
     public byte[] Write(CanonicalComponentAdapterRequest request)

@@ -131,15 +131,11 @@ public sealed class ModuleDataPlannerTests
     }
 
     [Fact]
-    public void StackTraceSymbolsReserveOneRegistrationGuardBeforeUtf16Names()
+    public void SidecarDescriptorIsModuleDataTheRuntimeInitializerPublishes()
     {
-        var stackTrace = new StackTraceMethodPlan(
-            ImmutableDictionary<EntityKey, int>.Empty,
-            ImmutableDictionary<string, int>.Empty,
-            [new(7, "Trace")],
-            ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty,
-            29,
-            31);
+        // The descriptor CoreLib reads through its static word (issue 225); frame text is in the
+        // method-symbols sidecar, not the module.
+        var sidecars = new SidecarDescriptor(4000, 3, new string('b', 32), "App.wasm");
 
         var plan = new ModuleDataPlanner(
             new RecordingLayoutProvider(),
@@ -150,24 +146,14 @@ public sealed class ModuleDataPlannerTests
                 [],
                 [],
                 false,
-                stackTrace);
+                sidecars);
 
-        Assert.Equal(256, plan.StackTraceSymbolRegistrationGuardAddress);
-        Assert.Equal(270, plan.StaticDataEnd);
-        Assert.Collection(plan.DataSegments,
-            segment =>
-            {
-                Assert.Equal(256, segment.Address);
-                Assert.True(segment.Data.AsSpan().SequenceEqual("\0\0\0\0"u8));
-            },
-            segment =>
-            {
-                Assert.Equal(260, segment.Address);
-                Assert.Equal("Trace", System.Text.Encoding.Unicode.GetString(
-                    segment.Data.AsSpan()));
-            });
-        Assert.Equal(new StackTraceSymbolData(7, 260, 5),
-            Assert.Single(plan.StackTraceSymbols));
+        Assert.Equal(256, plan.SidecarDescriptorAddress);
+        Assert.Equal(4000, plan.SidecarSlotAddress);
+        var segment = Assert.Single(plan.DataSegments);
+        Assert.Equal(256, segment.Address);
+        Assert.Equal(sidecars.Encode(), segment.Data.ToArray());
+        Assert.Equal(256 + 12 + (32 + 8) * 2, plan.StaticDataEnd);
     }
 
     [Fact]

@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 
 namespace System;
 
+[Serializable]
 public partial struct Int64
 {
     /// <inheritdoc cref="INumberBase{TSelf}.CreateChecked{TOther}(TOther)" />

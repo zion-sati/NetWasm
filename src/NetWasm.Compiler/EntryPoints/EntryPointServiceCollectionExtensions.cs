@@ -24,6 +24,7 @@ internal static class EntryPointServiceCollectionExtensions
             CompilationExportNameValidator>();
         services.AddSingleton<ICompilationExportsResolver, CompilationExportResolver>();
         services.AddSingleton<ICompilationEntryResolver, CompilationEntryResolver>();
+        services.AddSingleton<IArgumentReadDetector, ArgumentReadDetector>();
         services.AddSingleton<IManagedExecutableArgumentFactoryResolver,
             ManagedExecutableArgumentFactoryResolver>();
         services.AddSingleton<IManagedExecutableExitResolver, ManagedExecutableExitResolver>();

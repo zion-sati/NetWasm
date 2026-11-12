@@ -333,7 +333,7 @@ public sealed class FileUnitStoreCommitterTests
     private static string Location() => Path.Combine(Path.GetTempPath(), "netwasm-commit-" + Guid.NewGuid().ToString("N"));
 
     // The manifest keeps sequence 2 alone.
-    private static UnitStoreChange Change() => new(3, null, [1, 2, 3], new HashSet<int> { 2 }, "summary\n");
+    private static UnitStoreChange Change() => new([], [1, 2, 3], new HashSet<int> { 2 }, "summary\n");
 
     private sealed class HoldingDeleter(Dictionary<string, Exception> failures) : IUnitFileDeleter
     {

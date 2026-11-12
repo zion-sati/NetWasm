@@ -10,9 +10,9 @@ internal interface IIntrinsicAddressBodyPlanner
 }
 
 // Call sites expand a runtime intrinsic in place, so it has no function of its own. A delegate
-// or function pointer to it needs one. A method with managed CIL gets that body, as upstream
-// runs it for indirect calls; one without forwards its arguments to itself, and that call site
-// expands the intrinsic.
+// or function pointer to it needs one: a body that forwards its arguments to the intrinsic, whose
+// call site expands it, so an indirect call does exactly what a call does. CoreLib's body for an
+// intrinsic is never used: many are stand-ins that only call sites replace (issue 223's class).
 internal sealed class IntrinsicAddressBodyPlanner(IRuntimeIntrinsicRegistry intrinsics) : IIntrinsicAddressBodyPlanner
 {
     private readonly IRuntimeIntrinsicRegistry _intrinsics =
@@ -25,11 +25,6 @@ internal sealed class IntrinsicAddressBodyPlanner(IRuntimeIntrinsicRegistry intr
         {
             return null;
         }
-        if (method.Definition.HasManagedBody)
-        {
-            return new(method);
-        }
-
         var arguments = method.Definition.WasmParameterTypes.Length;
         var instructions = ImmutableArray.CreateBuilder<CilInstruction>(arguments + 2);
         for (var index = 0; index < arguments; index++)

@@ -31,7 +31,7 @@ public sealed record CompilerOptions(
     string? WitWorld = null,
     ImmutableArray<string> SourcePaths = default,
     ImmutableDictionary<string, string>? ReferenceAssemblyAliases = null,
-    bool EmitExceptionTypeMap = true,
+    bool EmitTypeNames = false,
     bool EmitStackTrace = false,
     int? EntryMethodToken = null,
     CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
@@ -60,6 +60,11 @@ public sealed record CompilerOptions(
     // functions, with no WASI and no Component Model event loop, for engines without the
     // Component Model. Its platform services are the program's bindings or throw.
     public bool PlainCoreModule { get; init; }
+
+    // The program's deployed file name, <assembly>.wasm as the SDK names it, which its sidecars' names
+    // extend (App.wasm.type-symbols) and under which the program opens them.
+    public string ProgramFileName =>
+        System.IO.Path.GetFileNameWithoutExtension(EntryAssemblyPath) + ".wasm";
 }
 
 public sealed partial record CompilationResult(

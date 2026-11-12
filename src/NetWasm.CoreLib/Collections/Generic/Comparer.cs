@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 
 namespace System.Collections.Generic
 {
+    [Serializable]
     public abstract class Comparer<T> : IComparer<T>, System.Collections.IComparer
     {
         private static readonly Comparer<T> s_default = CreateDefaultComparer();
@@ -58,6 +59,7 @@ namespace System.Collections.Generic
         public override int Compare(T? x, T? y) => _comparison(x!, y!);
     }
 
+    [Serializable]
     public sealed class GenericComparer<T> : Comparer<T> where T : IComparable<T>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -80,6 +82,7 @@ namespace System.Collections.Generic
         public override int GetHashCode() => 0;
     }
 
+    [Serializable]
     public sealed class NullableComparer<T> : Comparer<T?> where T : struct
     {
         public override int Compare(T? x, T? y)
@@ -101,6 +104,7 @@ namespace System.Collections.Generic
         public override int GetHashCode() => 0;
     }
 
+    [Serializable]
     public sealed class ObjectComparer<T> : Comparer<T>
     {
         public override int Compare(T? x, T? y)

@@ -440,23 +440,26 @@ public sealed class EntryPointContractCoverageTests
                 CliTypeIdentity.FromStackKind(CliValueKind.Void),
                 stringArray),
         };
-        var resolver = new ManagedExecutableArgumentFactoryResolver();
+        var resolver = new ManagedExecutableArgumentFactoryResolver(new ArgumentReadDetector());
 
         Assert.Equal(factoryKey, resolver.Resolve(
             CompilerEntryPointKind.ManagedExecutable,
             entry,
             repository,
-            repository));
+            repository,
+            EntryBodies.ReadingArguments));
         Assert.Null(resolver.Resolve(
             CompilerEntryPointKind.RawFunction,
             entry,
             repository,
-            repository));
+            repository,
+            EntryBodies.ReadingArguments));
         Assert.Null(resolver.Resolve(
             CompilerEntryPointKind.ManagedExecutable,
             Method("Main", 2, true, CliValueKind.Void, []),
             repository,
-            repository));
+            repository,
+            EntryBodies.ReadingArguments));
     }
 
     // A managed executable's entry ends the process through CoreLib's RunProcessExit: the one
@@ -525,7 +528,7 @@ public sealed class EntryPointContractCoverageTests
                 CliTypeIdentity.FromStackKind(CliValueKind.Void),
                 stringArray),
         };
-        var resolver = new ManagedExecutableArgumentFactoryResolver();
+        var resolver = new ManagedExecutableArgumentFactoryResolver(new ArgumentReadDetector());
         var emptyType = new TypeDefinitionModel(
             platformTypeKey,
             "System.Runtime.InteropServices",
@@ -539,7 +542,8 @@ public sealed class EntryPointContractCoverageTests
             CompilerEntryPointKind.ManagedExecutable,
             entry,
             empty,
-            empty));
+            empty,
+            EntryBodies.ReadingArguments));
 
         var first = ArgumentFactory(coreLib, platformTypeKey, 1, stringArray);
         var second = ArgumentFactory(coreLib, platformTypeKey, 2, stringArray);
@@ -549,7 +553,8 @@ public sealed class EntryPointContractCoverageTests
             CompilerEntryPointKind.ManagedExecutable,
             entry,
             ambiguous,
-            ambiguous));
+            ambiguous,
+            EntryBodies.ReadingArguments));
     }
 
     [Fact]
@@ -594,7 +599,7 @@ public sealed class EntryPointContractCoverageTests
             [],
             [.. candidates.Select(candidate => candidate.Key)]);
         var repository = new ArgumentFactoryRepository(platformType, candidates);
-        var resolver = new ManagedExecutableArgumentFactoryResolver();
+        var resolver = new ManagedExecutableArgumentFactoryResolver(new ArgumentReadDetector());
         var entry = Method("Main", 6, true, CliValueKind.Void, []) with
         {
             Signature = MethodSignatureModel.Create(
@@ -606,7 +611,82 @@ public sealed class EntryPointContractCoverageTests
             CompilerEntryPointKind.ManagedExecutable,
             entry,
             repository,
-            repository));
+            repository,
+            EntryBodies.ReadingArguments));
+    }
+
+    // A Main(string[]) whose body never loads or takes the address of its parameter cannot observe
+    // the array, so it receives the factory that reads nothing; a store alone does not read it.
+    [Fact]
+    public void MainThatNeverReadsItsArgumentsSelectsTheFactoryThatReadsNothing()
+    {
+        var coreLib = new AssemblyIdentity("System.Private.CoreLib");
+        var platformTypeKey = new EntityKey(coreLib, 0x02000001);
+        var stringArray = CliTypeIdentity.SzArray(CliTypeIdentity.Primitive(
+            "string",
+            CliValueKind.ManagedReference,
+            isValueType: false));
+        var reading = ArgumentFactory(coreLib, platformTypeKey, 1, stringArray);
+        var ignoring = ArgumentFactory(coreLib, platformTypeKey, 2, stringArray) with
+        {
+            Name = "IgnoredManagedEntryPointArguments",
+        };
+        var platformType = new TypeDefinitionModel(
+            platformTypeKey,
+            "System.Runtime.InteropServices",
+            "PlatformServices",
+            false,
+            [],
+            [reading.Key, ignoring.Key]);
+        var repository = new ArgumentFactoryRepository(platformType, reading, ignoring);
+        var resolver = new ManagedExecutableArgumentFactoryResolver(new ArgumentReadDetector());
+        var entry = Method("Main", 3, true, CliValueKind.Void, []) with
+        {
+            Signature = MethodSignatureModel.Create(
+                CliTypeIdentity.FromStackKind(CliValueKind.Void),
+                stringArray),
+        };
+        var ret = new CilInstruction(9, 10, CilOperation.Return, new CilOperand.None());
+
+        Assert.Equal(ignoring.Key, resolver.Resolve(
+            CompilerEntryPointKind.ManagedExecutable, entry, repository, repository, new EntryBodies(ret)));
+        Assert.Equal(ignoring.Key, resolver.Resolve(
+            CompilerEntryPointKind.ManagedExecutable, entry, repository, repository, new EntryBodies(
+                new CilInstruction(0, 1, CilOperation.LoadNull, new CilOperand.None()),
+                new CilInstruction(1, 2, CilOperation.StoreArgument, new CilOperand.Index(0)),
+                ret)));
+        Assert.Equal(reading.Key, resolver.Resolve(
+            CompilerEntryPointKind.ManagedExecutable, entry, repository, repository, new EntryBodies(
+                new CilInstruction(0, 2, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+                ret)));
+        Assert.Equal(reading.Key, resolver.Resolve(
+            CompilerEntryPointKind.ManagedExecutable, entry, repository, repository, EntryBodies.ReadingArguments));
+
+        var onlyReading = new ArgumentFactoryRepository(platformType with { Methods = [reading.Key] }, reading);
+        var missing = Assert.Throws<CompilerException>(() => resolver.Resolve(
+            CompilerEntryPointKind.ManagedExecutable, entry, onlyReading, onlyReading, new EntryBodies(ret)));
+        Assert.Contains("IgnoredManagedEntryPointArguments", missing.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(
+            CompilerEntryPointKind.ManagedExecutable, entry, repository, repository, null!));
+        Assert.Throws<ArgumentNullException>(() => new ManagedExecutableArgumentFactoryResolver(null!));
+    }
+
+    [Fact]
+    public void ArgumentReadDetectorFindsLoadsAndAddressesOfTheArgumentOnly()
+    {
+        var detector = new ArgumentReadDetector();
+        var entry = Method("Main", 4, true, CliValueKind.Void, []);
+        CilMethodBody Body(params CilInstruction[] instructions) => new(entry, 1, [], [.. instructions]);
+        var ret = new CilInstruction(9, 10, CilOperation.Return, new CilOperand.None());
+
+        Assert.True(detector.Detect(Body(new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)), ret), 0));
+        Assert.True(detector.Detect(Body(new(0, 2, CilOperation.LoadArgumentAddress, new CilOperand.Index(1)), ret), 1));
+        Assert.False(detector.Detect(Body(new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(1)), ret), 0));
+        Assert.False(detector.Detect(Body(new(0, 2, CilOperation.StoreArgument, new CilOperand.Index(0)), ret), 0));
+        Assert.False(detector.Detect(Body(new(0, 1, CilOperation.LoadNull, new CilOperand.None()), ret), 0));
+        Assert.False(detector.Detect(Body(ret), 0));
+        Assert.Throws<ArgumentNullException>(() => detector.Detect(null!, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => detector.Detect(Body(ret), -1));
     }
 
     [Fact]
@@ -686,6 +766,20 @@ public sealed class EntryPointContractCoverageTests
     {
         public string Format(EntityKey key) => key.ToString();
         public string Format(MethodDefinitionModel method) => method.Name;
+    }
+
+    // An entry body that loads its first argument, or one that never reads it.
+    private sealed class EntryBodies(params CilInstruction[] instructions) : IMethodBodyReader
+    {
+        public static EntryBodies ReadingArguments { get; } = new(
+            new CilInstruction(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            new CilInstruction(1, 2, CilOperation.Return, new CilOperand.None()));
+
+        public CilMethodBody ReadMethodBody(MethodDefinitionModel method) =>
+            new(method, 1, [], [.. instructions]);
+
+        public CilMethodBody ReadMethodBody(MethodInstanceModel method) =>
+            throw new InvalidOperationException("entry points are definitions");
     }
 
     private sealed class ArgumentFactoryRepository(

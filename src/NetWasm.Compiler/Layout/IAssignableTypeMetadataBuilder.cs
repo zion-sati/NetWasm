@@ -1,12 +1,10 @@
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Layout;
 
 internal interface IAssignableTypeMetadataBuilder
 {
-    AssignableTypeMetadataLayout Build(CliTypeIdentity candidate);
+    // The runtime type IDs a cast to the candidate accepts, ascending.
+    ImmutableArray<int> Build(CliTypeIdentity candidate);
 }
-
-internal readonly record struct AssignableTypeMetadataLayout(
-    int Address,
-    int Count);

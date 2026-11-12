@@ -116,6 +116,11 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? RangeBranchFoldingPolicy.Disabled
             : RangeBranchFoldingPolicy.ProvenRanges;
 
+    private static UnwrittenStaticFieldFoldingPolicy UnwrittenStaticFieldFolding(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.O2 or FinalWasmOptimization.O3 or FinalWasmOptimization.Os or FinalWasmOptimization.Oz
+            ? UnwrittenStaticFieldFoldingPolicy.WholeProgram
+            : UnwrittenStaticFieldFoldingPolicy.Disabled;
+
     private static LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
             ? LoopInvariantExpressionHoistingPolicy.Disabled
@@ -191,6 +196,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ? ManagedLoopStrengthReduction.Enabled : ManagedLoopStrengthReduction.Disabled));
             var rangeBranches = resolver.Resolve(preset, new(RangeBranchFolding: enabled
                 ? ManagedRangeBranchFolding.Enabled : ManagedRangeBranchFolding.Disabled));
+            var unwrittenStaticFields = resolver.Resolve(preset, new(UnwrittenStaticFieldFolding: enabled
+                ? ManagedUnwrittenStaticFieldFolding.Enabled : ManagedUnwrittenStaticFieldFolding.Disabled));
             Assert.Equal(baseline with
             {
                 ConstantArgumentPropagation = enabled ? ConstantArgumentPropagationPolicy.Conservative : ConstantArgumentPropagationPolicy.Disabled,
@@ -317,6 +324,11 @@ public sealed class WasmOptimizationSettingsResolverTests
             {
                 RangeBranchFolding = enabled ? RangeBranchFoldingPolicy.ProvenRanges : RangeBranchFoldingPolicy.Disabled,
             }, rangeBranches);
+            Assert.Equal(baseline with
+            {
+                UnwrittenStaticFieldFolding = enabled
+                    ? UnwrittenStaticFieldFoldingPolicy.WholeProgram : UnwrittenStaticFieldFoldingPolicy.Disabled,
+            }, unwrittenStaticFields);
         }
     }
 
@@ -378,6 +390,8 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(LoopStrengthReduction: (ManagedLoopStrengthReduction)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(RangeBranchFolding: (ManagedRangeBranchFolding)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(UnwrittenStaticFieldFolding: (ManagedUnwrittenStaticFieldFolding)255)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
@@ -433,6 +447,8 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(RangeBranchFolding: ManagedRangeBranchFolding.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopInvariantFieldHoisting: ManagedLoopInvariantFieldHoisting.NullChecks)));
         Assert.Equal(resolver.Resolve(FinalWasmOptimization.None), resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Disabled,
@@ -461,7 +477,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 MulticastInlineDispatch: ManagedMulticastInlineDispatch.Disabled,
                 NewObjectNullCheckElimination: ManagedNewObjectNullCheckElimination.Disabled,
                 LoopStrengthReduction: ManagedLoopStrengthReduction.Disabled,
-                RangeBranchFolding: ManagedRangeBranchFolding.Disabled)));
+                RangeBranchFolding: ManagedRangeBranchFolding.Disabled,
+                UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Disabled)));
     }
 
     [Theory]
@@ -550,7 +567,8 @@ public sealed class WasmOptimizationSettingsResolverTests
             MulticastDispatch: MulticastDispatch(preset),
             NewObjectNullCheckElimination: NewObjectNullCheckElimination(preset),
             LoopStrengthReduction: LoopStrengthReduction(preset),
-            RangeBranchFolding: RangeBranchFolding(preset));
+            RangeBranchFolding: RangeBranchFolding(preset),
+            UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
@@ -680,7 +698,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                     MulticastDispatch: MulticastDispatch(preset),
                     NewObjectNullCheckElimination: NewObjectNullCheckElimination(preset),
                     LoopStrengthReduction: LoopStrengthReduction(preset),
-                    RangeBranchFolding: RangeBranchFolding(preset)),
+                    RangeBranchFolding: RangeBranchFolding(preset),
+                    UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }

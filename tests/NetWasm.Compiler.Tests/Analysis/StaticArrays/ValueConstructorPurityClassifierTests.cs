@@ -39,7 +39,7 @@ public sealed class ValueConstructorPurityClassifierTests
                 RelativeVirtualAddress = kind == 2 ? 0 : 1,
                 JSImport = kind == 4 ? new("make", "fixture") : null,
                 WitImport = kind == 5 ? new("fixture", "make") : null,
-                NativeImport = kind == 6 ? new("fixture", "make", 0, false, false, false, false) : null,
+                NativeImport = kind == 6 ? new("fixture", "make", 0, false, false, null) : null,
             },
             Signature = kind == 3 ? MethodSignatureModel.Create(CliValueKind.I8, CliValueKind.I8) : method.Signature,
         };

@@ -15,8 +15,7 @@ internal sealed class StaticDataLayoutProvider(
     public int StaticDataEnd => _snapshot.StaticDataEnd;
     public ImmutableArray<int> StaticRootAddresses => _snapshot.StaticRootAddresses;
     public ImmutableArray<DataSegment> DataSegments => _snapshot.DataSegments;
-    public int TypeFactsTableAddress => _snapshot.StaticData.TypeFactsTableAddress;
-    public int TypeFactsTableCount => _snapshot.StaticData.TypeFactsTableCount;
+    public int TypeTableAddress => _snapshot.StaticData.TypeTableAddress;
     public int TypeObjectTableAddress => _snapshot.StaticData.TypeObjectTableAddress;
     public int TypeObjectCacheAddress => _snapshot.StaticData.TypeObjectCacheAddress;
     public int TypeObjectCount => _snapshot.StaticData.TypeObjectCount;

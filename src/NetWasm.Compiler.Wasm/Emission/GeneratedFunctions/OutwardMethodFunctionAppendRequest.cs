@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -23,6 +24,6 @@ internal sealed record OutwardMethodFunctionAppendRequest(
     EntityKey? ArgumentFactory = null,
     InteropImportPlan? InteropImports = null,
     MethodInstanceModel? EntryCompletion = null,
-    EntityKey? LocalTimePreflight = null,
+    ImmutableArray<EntityKey> StartupPreflights = default,
     EntityKey? ProcessExit = null,
     bool InitializesRuntime = true);

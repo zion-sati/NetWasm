@@ -15,7 +15,7 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeInitialize,
             RuntimeAbi.RuntimeAllocate,
             RuntimeAbi.RuntimeCollect,
-            RuntimeAbi.RuntimeRegisterType,
+            RuntimeAbi.RuntimeRegisterTypes,
             RuntimeAbi.RuntimeRegisterStaticRoot,
             RuntimeAbi.RuntimeRootFrameEnter,
             RuntimeAbi.RuntimeRootFrameLeave,
@@ -34,7 +34,7 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeExceptionFrameLeave,
             RuntimeAbi.RuntimeExceptionFrameUnwind,
             RuntimeAbi.RuntimeExceptionFrameTargetClause,
-            RuntimeAbi.RuntimeRegisterValueType,
+            RuntimeAbi.RuntimeTypeBaseId,
             RuntimeAbi.RuntimeAllocateValueArray,
             RuntimeAbi.RuntimeAllocateRectangularArray,
             RuntimeAbi.RuntimeAllocateBoundedRectangularArray,
@@ -104,6 +104,7 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeAllocationSlot,
             RuntimeAbi.RuntimeAllocationRunsEnabled,
             RuntimeAbi.RuntimeAllocateObjectFallback,
+            RuntimeAbi.RuntimeTypeIsAssignable,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));

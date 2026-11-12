@@ -23,9 +23,10 @@ public sealed class NetWasmCompileTaskTests
             new TaskItem("CoreLib.dll"), new TaskItem("lib dir/Other.dll"), new TaskItem("lib/NetWasm,Version=v0.1/Lib.dll"),
         ];
         task.Sources = [new TaskItem("Program.cs")];
-        task.ExceptionTypeMapPath = "app.exceptions.json";
+        task.TypeSymbolsPath = "app.wasm.type-symbols";
         task.EmitStackTrace = true;
-        task.StackTraceSymbolsPath = "app.stacktrace.json";
+        task.EmitTypeNames = true;
+        task.MethodSymbolsPath = "app.wasm.method-symbols";
         task.WitPath = "app.wit";
         task.WitWorld = "example:app/app";
         task.ImportModules = [new TaskItem("host_ui")];
@@ -53,6 +54,7 @@ public sealed class NetWasmCompileTaskTests
         task.ManagedNewObjectNullCheckElimination = "Disabled";
         task.ManagedLoopStrengthReduction = "Disabled";
         task.ManagedRangeBranchFolding = "Enabled";
+        task.ManagedUnwrittenStaticFieldFolding = "Disabled";
 
         Assert.Equal(
             [
@@ -60,7 +62,8 @@ public sealed class NetWasmCompileTaskTests
                 "-r:CoreLib.dll", "-r:\"lib dir/Other.dll\"", "-r:\"lib/NetWasm,Version=v0.1/Lib.dll\"",
                 "-source:Program.cs", "-runtimelayout:layout.json",
                 "-interopmanifest:interop.json", "-compilermetadata:metadata.json", "-callbackobject:app.callbacks.o",
-                "-exceptiontypemap:app.exceptions.json", "-stacktracesymbols:app.stacktrace.json", "-wit:app.wit",
+                "-typesymbols:app.wasm.type-symbols", "-methodsymbols:app.wasm.method-symbols", "-typenames+",
+                "-wit:app.wit",
                 "-world:example:app/app", "-importmodule:host_ui", "-diagnostictrace:trace.json",
                 "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics+",
                 "-compiledunits-", "-verifycompiledunits+",
@@ -79,6 +82,7 @@ public sealed class NetWasmCompileTaskTests
                 "-managednewobjectnullcheckelimination:Disabled",
                 "-managedloopstrengthreduction:Disabled",
                 "-managedrangebranchfolding:Enabled",
+                "-managedunwrittenstaticfieldfolding:Disabled",
             ],
             Lines(task.ResponseFileCommands));
     }
@@ -104,7 +108,7 @@ public sealed class NetWasmCompileTaskTests
     public void LeavesOptionalOptionsToNwcDefaults()
     {
         var task = CreateTask();
-        task.StackTraceSymbolsPath = "app.stacktrace.json";
+        task.MethodSymbolsPath = "app.wasm.method-symbols";
 
         Assert.Equal(
             [

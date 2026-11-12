@@ -64,12 +64,12 @@ internal sealed class NwcCompilerSession(INetWasmModuleCompiler compiler, IDispo
             result.ApplicationModule,
             result.StaticDataEnd,
             result.InteropManifest,
-            result.StackTraceSymbols,
             options.Target == Core.WasmTarget.Wasm64 ? "wasm64" : "wasm32",
             RuntimeFeatures: result.RuntimeFeatures,
             FunctionImports: result.FunctionImports)
         {
-            ExceptionTypeMap = result.DiagnosticArtifacts?.ExceptionTypeMap,
+            TypeSymbols = result.TypeSymbols,
+            MethodSymbols = result.MethodSymbols,
             NativeImports = result.NativeImports,
             NativeCallbackSupport = result.NativeCallbackSupport,
             SynchronousEntry = result.SynchronousEntry,

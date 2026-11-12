@@ -41,6 +41,7 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             phases,
             phases,
             phases,
+            phases,
             enumBuilder).Build();
 
         Assert.True(enumBuilder.Called);
@@ -68,6 +69,7 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             phases,
             phases,
             phases,
+            phases,
             phases).Build();
 
         Assert.Empty(result.EnumMetadata);
@@ -82,119 +84,25 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         Assert.Empty(data.EnumMetadata);
     }
 
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void BuildPublishesSparseTypeFactsLookupTable(WasmTarget targetKind)
-    {
-        var target = WasmTargetLayout.For(targetKind);
-        var state = new ManagedStaticDataBuildState();
-        state.TypeFacts.Add(2, 64);
-        state.TypeFacts.Add(7, 128);
-        var assembly = new AssemblyIdentity("type-facts");
-        state.TypeDescriptors.Add(new TypeDescriptorLayout(
-            new EntityKey(assembly, 1),
-            2,
-            0,
-            8,
-            0,
-            0,
-            null));
-        state.TypeDescriptors.Add(new TypeDescriptorLayout(
-            new EntityKey(assembly, 2),
-            7,
-            0,
-            8,
-            0,
-            0,
-            null));
-        var phases = new NoOpStaticBuildPhase();
-        var layouts = EmptyLayouts() with { Target = target };
-
-        var result = new ManagedStaticDataBuilder(
-            layouts,
-            state,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases).Build();
-
-        Assert.Equal(8, result.TypeFactsTableCount);
-        Assert.NotEqual(0, result.TypeFactsTableAddress);
-        var table = Assert.Single(
-            result.Segments,
-            segment => segment.Address == result.TypeFactsTableAddress).Data;
-        Assert.Equal(8 * target.AddressSize, table.Length);
-        Assert.Equal(64, ReadAddress(table, 2 * target.AddressSize, target));
-        Assert.Equal(128, ReadAddress(table, 7 * target.AddressSize, target));
-        Assert.Equal(0, ReadAddress(table, 3 * target.AddressSize, target));
-    }
-
+    // The type table describes every registered type, member descriptors included, so it is
+    // built after them; its address is what the runtime initializer and CoreLib read.
     [Fact]
-    public void BuildRejectsTypeFactsThatDoNotMatchReachableDescriptors()
+    public void BuildRunsTheTypeTableAfterMemberDescriptorsAndPublishesItsAddress()
     {
         var state = new ManagedStaticDataBuildState();
-        state.TypeFacts.Add(2, 64);
-        state.TypeDescriptors.Add(new TypeDescriptorLayout(
-            new EntityKey(new AssemblyIdentity("type-facts"), 1),
-            3,
-            0,
-            8,
-            0,
-            0,
-            null));
         var phases = new NoOpStaticBuildPhase();
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            new ManagedStaticDataBuilder(
-                EmptyLayouts(),
-                state,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases).Build());
-
-        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
-    }
-
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void BuildPublishesDelegateInvokeAfterMemberDescriptorStorage(
-        WasmTarget targetKind)
-    {
-        const string descriptor = "Fixtures.Callback::Invoke";
-        const int descriptorAddress = 512;
-        var target = WasmTargetLayout.For(targetKind);
-        var state = PendingDelegateFacts(target, descriptor);
-        var phases = new NoOpStaticBuildPhase();
-        var members = new RecordingMemberDescriptorBuilder(
-            state,
-            descriptor,
-            descriptorAddress);
+        var members = new RecordingMemberDescriptorBuilder();
+        var table = new RecordingTypeTableBuilder(state, members);
 
         var result = new ManagedStaticDataBuilder(
-            EmptyLayouts() with { Target = target },
+            EmptyLayouts(),
             state,
             phases,
             phases,
             phases,
             phases,
             phases,
+            table,
             members,
             phases,
             phases,
@@ -202,122 +110,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             phases,
             phases).Build();
 
-        Assert.False(members.SawPublishedTypeFacts);
-        var factsAddress = state.TypeFacts[2];
-        var facts = Assert.Single(
-            result.Segments,
-            segment => segment.Address == factsAddress).Data;
-        Assert.Equal(
-            descriptorAddress,
-            ReadAddress(
-                facts,
-                RuntimeTypeFactsEncoding.DelegateInvokeOffset(target),
-                target));
-    }
-
-    [Fact]
-    public void BuildRejectsDelegateInvokeWithoutDescriptorStorage()
-    {
-        var target = WasmTargetLayout.Wasm32;
-        var state = PendingDelegateFacts(target, "Fixtures.Callback::Invoke");
-        var phases = new NoOpStaticBuildPhase();
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            new ManagedStaticDataBuilder(
-                EmptyLayouts(),
-                state,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases).Build());
-
-        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
-        Assert.Empty(state.TypeFacts);
-    }
-
-    [Fact]
-    public void BuildPublishesZeroDelegateInvokeWhenNotDemanded()
-    {
-        var target = WasmTargetLayout.Wasm32;
-        var state = PendingDelegateFacts(target, descriptor: null);
-        var phases = new NoOpStaticBuildPhase();
-
-        var result = new ManagedStaticDataBuilder(
-            EmptyLayouts(),
-            state,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases).Build();
-
-        var factsAddress = state.TypeFacts[2];
-        var facts = Assert.Single(
-            result.Segments,
-            segment => segment.Address == factsAddress).Data;
-        Assert.Equal(
-            0,
-            ReadAddress(
-                facts,
-                RuntimeTypeFactsEncoding.DelegateInvokeOffset(target),
-                target));
-    }
-
-    [Fact]
-    public void BuildPublishesDemandedRuntimeTypeNames()
-    {
-        var target = WasmTargetLayout.Wasm32;
-        var state = PendingDelegateFacts(target, descriptor: null);
-        state.Strings.Add("Callback", new StringLayout(512, 8, 8));
-        state.PendingTypeFacts[0] = state.PendingTypeFacts[0] with
-        {
-            Names = new RuntimeTypeNames(
-                RuntimeTypeNamePayload.Name,
-                "Callback",
-                null,
-                null,
-                null),
-        };
-        var phases = new NoOpStaticBuildPhase();
-
-        var result = new ManagedStaticDataBuilder(
-            EmptyLayouts(),
-            state,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases).Build();
-
-        var factsAddress = state.TypeFacts[2];
-        var facts = Assert.Single(
-            result.Segments,
-            segment => segment.Address == factsAddress).Data;
-        var namesAddress = ReadAddress(
-            facts,
-            RuntimeTypeFactsEncoding.NameFactsOffset(target),
-            target);
-        Assert.NotEqual(0, namesAddress);
-        Assert.Contains(result.Segments, segment => segment.Address == namesAddress);
+        Assert.True(table.SawMemberDescriptors);
+        Assert.Equal(777, result.TypeTableAddress);
     }
 
     [Fact]
@@ -326,71 +120,38 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         var types = EmptyLayouts();
         var state = new ManagedStaticDataBuildState();
         var phases = new NoOpStaticBuildPhase();
+        object?[] arguments = [types, state, .. Enumerable.Repeat<object>(phases, 12)];
+        string[] names =
+        [
+            "types", "state", "staticFields", "typeDescriptors", "constructedTypeDescriptors",
+            "valueTypeDescriptors", "genericArguments", "typeTable", "memberDescriptors", "strings",
+            "exceptionObjects", "typeObjects", "enumMetadataCollector", "enumMetadata",
+        ];
 
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            null!, state, phases, phases, phases, phases, phases, phases, phases, phases, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, null!, phases, phases, phases, phases, phases, phases, phases, phases, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, null!, phases, phases, phases, phases, phases, phases, phases, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, null!, phases, phases, phases, phases, phases, phases, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, null!, phases, phases, phases, phases, phases, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, null!, phases, phases, phases, phases, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, null!, phases, phases, phases, phases,
-            phases));
-        var genericArguments = Assert.Throws<ArgumentNullException>(() =>
-            new ManagedStaticDataBuilder(
-                types,
-                state,
-                phases,
-                phases,
-                phases,
-                phases,
-                null!,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases,
-                phases));
-        Assert.Equal("genericArguments", genericArguments.ParamName);
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, phases, null!, phases, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, phases, phases, null!, phases, phases,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, phases, phases, phases, phases, null!,
-            phases));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, phases, phases, phases, phases, phases,
-            null!));
-        Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types with { Target = null! },
-            state,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases));
+        for (var index = 0; index < arguments.Length; index++)
+        {
+            var withNull = (object?[])arguments.Clone();
+            withNull[index] = null;
+            Assert.Equal(names[index], Assert.Throws<ArgumentNullException>(() => Create(withNull)).ParamName);
+        }
+        Assert.Throws<ArgumentNullException>(() => Create([types with { Target = null! }, .. arguments[1..]]));
     }
+
+    private static ManagedStaticDataBuilder Create(object?[] arguments) => new(
+        (ManagedTypeLayouts)arguments[0]!,
+        (ManagedStaticDataBuildState)arguments[1]!,
+        (IStaticFieldStorageBuilder)arguments[2]!,
+        (ITypeDescriptorBuilder)arguments[3]!,
+        (IConstructedTypeDescriptorBuilder)arguments[4]!,
+        (IValueTypeDescriptorBuilder)arguments[5]!,
+        (IRuntimeGenericArgumentMetadataBuilder)arguments[6]!,
+        (IRuntimeTypeTableBuilder)arguments[7]!,
+        (IMemberDescriptorDataBuilder)arguments[8]!,
+        (IStringDataBuilder)arguments[9]!,
+        (IExceptionObjectBuilder)arguments[10]!,
+        (ITypeObjectDataBuilder)arguments[11]!,
+        (IEnumMetadataCollector)arguments[12]!,
+        (IEnumMetadataBuilder)arguments[13]!);
 
     private static ManagedTypeLayouts EmptyLayouts() =>
         new(
@@ -405,54 +166,6 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             -1,
             -1);
 
-    private static ManagedStaticDataBuildState PendingDelegateFacts(
-        WasmTargetLayout target,
-        string? descriptor)
-    {
-        var assembly = new AssemblyIdentity("delegate-facts");
-        var key = new EntityKey(assembly, 1);
-        var identity = CliTypeIdentity.Named(
-            assembly,
-            "Fixtures",
-            "Callback",
-            isValueType: false);
-        var definition = new TypeDefinitionModel(
-            key,
-            "Fixtures",
-            "Callback",
-            IsValueType: false,
-            [],
-            []);
-        var state = new ManagedStaticDataBuildState();
-        state.TypeDescriptors.Add(new TypeDescriptorLayout(
-            key,
-            2,
-            0,
-            target.ObjectHeaderSize,
-            0,
-            0,
-            null));
-        state.PendingTypeFacts.Add(new PendingRuntimeTypeFacts(
-            identity,
-            definition,
-            2,
-            0,
-            0,
-            0,
-            descriptor,
-            null));
-        return state;
-    }
-
-    private static long ReadAddress(
-        ImmutableArray<byte> data,
-        int offset,
-        WasmTargetLayout target) => target.AddressSize == sizeof(int)
-        ? System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(
-            data.AsSpan().Slice(offset))
-        : System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(
-            data.AsSpan().Slice(offset));
-
     private sealed class RecordingEnumMetadataBuilder(
         ManagedStaticDataBuildState state,
         EnumMetadataLayout metadata) : IEnumMetadataBuilder
@@ -466,17 +179,23 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         }
     }
 
-    private sealed class RecordingMemberDescriptorBuilder(
-        ManagedStaticDataBuildState state,
-        string descriptor,
-        int descriptorAddress) : IMemberDescriptorDataBuilder
+    private sealed class RecordingMemberDescriptorBuilder : IMemberDescriptorDataBuilder
     {
-        public bool SawPublishedTypeFacts { get; private set; }
+        public bool Built { get; private set; }
+
+        public void Build() => Built = true;
+    }
+
+    private sealed class RecordingTypeTableBuilder(
+        ManagedStaticDataBuildState state,
+        RecordingMemberDescriptorBuilder members) : IRuntimeTypeTableBuilder
+    {
+        public bool SawMemberDescriptors { get; private set; }
 
         public void Build()
         {
-            SawPublishedTypeFacts = state.TypeFacts.Count != 0;
-            state.MethodDescriptors.Add(descriptor, descriptorAddress);
+            SawMemberDescriptors = members.Built;
+            state.TypeTableAddress = 777;
         }
     }
 
@@ -486,6 +205,7 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         IConstructedTypeDescriptorBuilder,
         IValueTypeDescriptorBuilder,
         IRuntimeGenericArgumentMetadataBuilder,
+        IRuntimeTypeTableBuilder,
         IMemberDescriptorDataBuilder,
         IStringDataBuilder,
         IExceptionObjectBuilder,

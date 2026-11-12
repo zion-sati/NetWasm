@@ -49,6 +49,9 @@ public sealed record WasmEmissionRequest(
 {
     public ImmutableArray<EntityKey> ModuleInitializers { get; init; } = [];
 
+    // The program's sidecars; null for a compile that names none (tests of emission alone).
+    public Planning.WasmSidecarRequest? Sidecars { get; init; }
+
     // CoreLib's conversions, by name, of the values JavaScript boundaries convert.
     public ImmutableDictionary<string, MethodInstanceModel> JavaScriptConversions { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;

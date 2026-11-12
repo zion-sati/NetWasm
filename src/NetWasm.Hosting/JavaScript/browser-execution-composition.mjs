@@ -1,6 +1,6 @@
 import { createBrowserArtifactTransport } from "./browser-artifact-transport.mjs";
 import { createBrowserDeploymentManifestLoader } from "./browser-deployment-manifest-loader.mjs";
-import { createBrowserTimeZoneMaterializer } from "./browser-timezone-materializer.mjs";
+import { createBrowserSidecarMaterializer } from "./browser-sidecar-materializer.mjs";
 import { createBrowserVerifiedModuleImporter } from "./browser-verified-module-importer.mjs";
 import { createContractError } from "./contract-error.mjs";
 import { createDeploymentExecution } from "./deployment-execution.mjs";
@@ -11,8 +11,8 @@ import { createOutputFinalization } from "./output-finalization.mjs";
 import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
-import { executeWithTimeZoneResources } from "./timezone-execution.mjs";
-import { selectTimeZoneSidecar } from "./timezone-sidecar-selector.mjs";
+import { executeWithProgramSidecars } from "./sidecar-execution.mjs";
+import { selectProgramSidecars } from "./program-sidecar-selector.mjs";
 
 const factoryKeys = ["manifestUrl", "platform"];
 const platformKeys = [
@@ -66,7 +66,7 @@ export function createBrowserExecutionComposition(
   const executeDeployment = createDeploymentExecution({
     createFilesystem: options.platform.createFilesystem,
     createOutputFinalization,
-    createTimeZoneMaterializer: mountReadOnlyFile => createBrowserTimeZoneMaterializer({
+    createSidecarMaterializer: mountReadOnlyFile => createBrowserSidecarMaterializer({
       manifestUrl: options.manifestUrl,
       platform: Object.freeze({
         digest: options.platform.digest,
@@ -74,7 +74,7 @@ export function createBrowserExecutionComposition(
         mountReadOnlyFile,
       }),
     }),
-    executeWithResources: executeWithTimeZoneResources,
+    executeWithResources: executeWithProgramSidecars,
     loadManifest: createBrowserDeploymentManifestLoader({
       manifestUrl: options.manifestUrl,
       platform: Object.freeze({
@@ -86,7 +86,7 @@ export function createBrowserExecutionComposition(
     prepareProviders,
     prepareRawInterop,
     resolveStrategy: kind => asContractStrategy(resolveStrategy, kind),
-    selectTimeZone: selectTimeZoneSidecar,
+    selectSidecars: selectProgramSidecars,
     validateRequest: asContractAction(validateRequest),
   });
   return createNetWasmExecutionFacade(executeDeployment);

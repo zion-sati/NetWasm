@@ -7,6 +7,7 @@ namespace System
     using Runtime.InteropServices;
     using Runtime.InteropServices.TimeZones;
 
+    [Serializable]
     public readonly struct DateTimeOffset : IComparable, IComparable<DateTimeOffset>, IEquatable<DateTimeOffset>,
         IFormattable, IParsable<DateTimeOffset>, ISpanFormattable, ISpanParsable<DateTimeOffset>,
         IUtf8SpanFormattable

@@ -23,7 +23,7 @@ internal sealed class WasiOpenAtCall(ISubtaskReturnAwaiter subtasks, ICanonicalB
     public FileSystemError OpenAt(int directory, string path, byte openFlags, byte descriptorFlags, out int descriptor)
     {
         using var lowered = CanonicalAbi.LowerString(path);
-        using var parameters = Allocator.Allocate((P * 2 + 10 + P - 1) & ~(P - 1), P);
+        using var parameters = Allocator.Allocate(Layout.OpenAtParametersSize, P);
         CanonicalAbi.WriteInt32(parameters.Address, 0, directory);
         CanonicalAbi.WriteByte(parameters.Address, 4, 1);
         Layout.WriteString(parameters.Address + 8, lowered);

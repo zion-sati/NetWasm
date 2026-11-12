@@ -56,7 +56,7 @@ public sealed class CilDecoderTests
             new MetadataMethodBodyBlockReader(new FixedSymbols()), new FixedSymbols(),
             new FixedMethodReferences(method), entities,
             new FixedFieldReferences(MetadataActorTestData.Field, false), signatures,
-            new FixedCallSiteSignatures(), new IdentityMetadataStackTypeResolver(), new IdentitySwitchLowerer()));
+            new FixedCallSiteSignatures(), new IdentityMetadataStackTypeResolver(), new IdentitySwitchLowerer(), new CilTryReentryLowerer()));
 
         var body = decoder.Decode(assembly, new MethodInstanceModel(method,
             context.TypeArguments.IsEmpty ? ownerIdentity
@@ -736,7 +736,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer());
+                new IdentitySwitchLowerer(), new CilTryReentryLowerer());
 
             var body = ((ICilDecoder)decoder).Decode(
                 assembly,
@@ -805,7 +805,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer());
+                new IdentitySwitchLowerer(), new CilTryReentryLowerer());
             try
             {
                 _ = ((ICilDecoder)decoder).Decode(
@@ -903,7 +903,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer());
+                new IdentitySwitchLowerer(), new CilTryReentryLowerer());
             try
             {
                 var body = ((ICilDecoder)decoder).Decode(
@@ -1072,11 +1072,13 @@ public sealed class CilDecoderTests
 
     private sealed class FixedCallSiteSignatures : IMetadataCallSiteSignatureResolver
     {
-        public MethodSignatureModel Resolve(
+        public CilOperand.CallSite Resolve(
             MetadataAssemblySnapshot source,
             int metadataToken,
-            CliGenericContext genericContext) =>
-            MethodSignatureModel.Create(CliValueKind.Void);
+            CliGenericContext genericContext,
+            string method,
+            int offset) =>
+            new(MethodSignatureModel.Create(CliValueKind.Void));
     }
 
     private sealed class IdentityMetadataStackTypeResolver : IMetadataStackTypeResolver

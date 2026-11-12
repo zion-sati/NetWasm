@@ -2,7 +2,7 @@ using System.Text.Json;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
-using NetWasm.Compiler.ExceptionTypes;
+using NetWasm.Compiler.Tests.Symbols;
 
 namespace NetWasm.Compiler.Tests;
 
@@ -149,12 +149,7 @@ public sealed class ExceptionTerminationCompilationTests
         {
             ReferencePaths = [assets.Library, assets.CoreLib],
         });
-        var artifacts = Assert.IsType<DiagnosticArtifactBundle>(result.DiagnosticArtifacts);
-        using var map = JsonDocument.Parse(artifacts.ExceptionTypeMap.Bytes);
-        var names = map.RootElement.GetProperty("entries")
-            .EnumerateArray()
-            .Select(entry => entry.GetProperty("displayName").GetString())
-            .ToArray();
+        var names = SymbolSidecarContents.Read(result.TypeSymbols!.Bytes).Texts.ToArray();
 
         Assert.Contains(names, name => name?.Contains("GenericFailure", StringComparison.Ordinal) == true);
         Assert.Contains(names, name => name?.Contains("AsyncFailure", StringComparison.Ordinal) == true);
@@ -179,13 +174,7 @@ public sealed class ExceptionTerminationCompilationTests
             "Program",
             "Main",
             []));
-        var artifacts = Assert.IsType<DiagnosticArtifactBundle>(result.DiagnosticArtifacts);
-        using var map = JsonDocument.Parse(artifacts.ExceptionTypeMap.Bytes);
-
-        Assert.Contains(
-            map.RootElement.GetProperty("entries").EnumerateArray(),
-            entry => entry.GetProperty("displayName").GetString() ==
-                "System.DivideByZeroException");
+        Assert.Contains("System.DivideByZeroException", SymbolSidecarContents.Read(result.TypeSymbols!.Bytes).Texts);
     }
 
     [Fact]
@@ -221,9 +210,8 @@ public sealed class ExceptionTerminationCompilationTests
                     target));
 
                 ValidateWithNode(result.ApplicationModule, assets.Directory);
-                var artifacts = Assert.IsType<DiagnosticArtifactBundle>(result.DiagnosticArtifacts);
-                Assert.Equal(result.ApplicationModule, artifacts.Wasm);
-                Assert.Equal("application.netwasm.exceptions.json", artifacts.ExceptionTypeMap.FileNameHint);
+                Assert.Contains("System.InvalidOperationException",
+                    SymbolSidecarContents.Read(result.TypeSymbols!.Bytes).Texts);
             }
     }
 
@@ -335,7 +323,11 @@ public sealed class ExceptionTerminationCompilationTests
                     if (outer.Source == "fixture") result |= 8;
                     outer.SetCode(input);
                     if (outer.HResult == input) result |= 16;
-                    if (outer.ToString() == "outer ---> inner") result |= 32;
+                    // Upstream's shape: class, message, then the inner exception (issue 225: the class
+                    // reads as the type's ID without names).
+                    if (outer.ToString() == outer.GetType().ToString() + ": outer\n ---> " +
+                        inner.GetType().ToString() + ": inner\n   --- End of inner exception stack trace ---")
+                        result |= 32;
 
                     int cleanup = 0;
                     try
@@ -394,32 +386,22 @@ public sealed class ExceptionTerminationCompilationTests
                 exportName: "invoke"));
         Assert.Contains("terminal exception type=", exportTerminal.Message, StringComparison.Ordinal);
         Assert.Contains("borrowed terminal message", exportTerminal.Message, StringComparison.Ordinal);
-        var artifacts = Assert.IsType<DiagnosticArtifactBundle>(compilation.DiagnosticArtifacts);
-        using var map = JsonDocument.Parse(artifacts.ExceptionTypeMap.Bytes);
-        Assert.Contains(
-            map.RootElement.GetProperty("entries").EnumerateArray(),
-            entry => entry.GetProperty("displayName").GetString() ==
-                "ExceptionObjectFixture.CustomException");
-        Assert.DoesNotContain(
-                    map.RootElement.GetProperty("entries").EnumerateArray(),
-                    entry => entry.GetProperty("canonicalIdentity").GetString()!.Contains(
-                        "ExceptionObjectFixture.UnusedException",
-                        StringComparison.Ordinal));
-        var entries = map.RootElement.GetProperty("entries").EnumerateArray().ToArray();
-        var customEntry = Assert.Single(entries, entry =>
-            entry.GetProperty("displayName").GetString() == "ExceptionObjectFixture.CustomException");
-        var customTypeId = customEntry.GetProperty("typeId").GetInt32();
+        var types = SymbolSidecarContents.Read(compilation.TypeSymbols!.Bytes);
+        // Every compile names its exception types for crash reports, and only those it can throw.
+        Assert.DoesNotContain(types.Texts, name => name!.Contains(
+            "ExceptionObjectFixture.UnusedException", StringComparison.Ordinal));
+        var customTypeId = Assert.Single(types.Entries, entry =>
+            entry.Strings[3] == "ExceptionObjectFixture.CustomException").Id;
         Assert.Contains($"terminal exception type={customTypeId}", terminal.Message, StringComparison.Ordinal);
 
+        // Without its sidecar a host still reports the type by ID.
         var omittedCompilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             [assets.CoreLib],
             "ExceptionObjectFixture.EntryPoint",
             "Run",
             [],
-            EmitExceptionTypeMap: false,
             StructuredDiagnostics: true));
-        Assert.Null(omittedCompilation.DiagnosticArtifacts);
         var omittedTerminal = Assert.ThrowsAny<Exception>(() =>
             ExecuteWithNode(omittedCompilation.ApplicationModule, assets.Directory, -1));
         Assert.Contains("terminal exception type=", omittedTerminal.Message, StringComparison.Ordinal);

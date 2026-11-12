@@ -41,8 +41,7 @@ or `;`. `-platform:wasm32|wasm64` defaults to wasm32 and
 `-optimize:None|O0|O1|O2|O3|Os|Oz` to Oz.
 
 The sidecars are written only when an option names them: `-interopmanifest`,
-`-runtimelayout`, `-compilermetadata`, `-exceptiontypemap` and
-`-stacktracesymbols`. Native callbacks need `-runtimelayout`; their object file
+`-runtimelayout`, `-compilermetadata`, `-typesymbols` and `-methodsymbols`. Native callbacks need `-runtimelayout`; their object file
 is the output's name with `.callbacks.o` unless `-callbackobject:<file>` names
 it. `-wit` and `-world` select the WIT package and world, and `-source` names a
 source file for stack traces. `[JSImport]`/`[JSExport]` declarations describe
@@ -61,10 +60,16 @@ also supplied. Both facilities are disabled by default. See
 [compiler diagnostics](diagnostics.md#compiler-support-bundles) before
 sharing these artifacts.
 
-`-stacktracesymbols:<path>` is opt-in managed stack-trace instrumentation:
-it writes the symbol sidecar needed to resolve captured managed frames. It is
-not DWARF or source-level debug information. See the [support status and
-roadmap](support-status.md#managed-stack-traces).
+`-methodsymbols:<path>` is opt-in managed stack-trace instrumentation: it
+writes the names of captured managed frames to that file. It is not DWARF or
+source-level debug information. See the [support status and
+roadmap](support-status.md#managed-stack-traces). `-typesymbols:<path>` writes
+the exception types' names, which hosts read for crash reports, and
+`-typenames` names every type there and makes the program read them (see
+[type names](support-status.md#type-names)). A program opens these files from
+`/netwasm-sidecars/` under its assembly's name with `.wasm`: one compiled from
+`App.dll` opens `App.wasm.type-symbols` and `App.wasm.method-symbols`, so name
+the files to match. See [program sidecars](diagnostics.md#program-sidecars).
 
 The separate `NetWasm.Wit.Bindings.Tool` package writes reflection-free C#
 bindings; the compiler CLI does not generate C# source, and a `NetWasmWit` item

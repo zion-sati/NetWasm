@@ -137,6 +137,41 @@ public sealed class DelegateDispatchEmitterTests
         Assert.Equal(expected, instructions.Skip(callIndex - expected.Count).Take(expected.Count));
     }
 
+    // A static method closed over its first argument (an extension method's group) takes the
+    // stored object as that argument, as an instance method takes it as this, but never
+    // unboxed, whatever the method's declaring type (issue 223's class).
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void PassesTheStoredObjectAsAClosedStaticsFirstArgument(WasmTarget target)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var callbackType = CallbackType();
+        var invoke = CreateInvoke(callbackType, MethodSignatureModel.Create(CliValueKind.I4));
+        var targetMethod = CreateTarget(MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.ManagedReference),
+            "Extension", isStatic: true, Key(0x06000026), isValueType: true);
+        var values = new FixedValueLayoutProvider(4);
+        var resolver = CreateResolver(callbackType, targetMethod);
+        var code = new RecordingInstructionWriter();
+        var program = new DelegateInvokeTarget(
+            [CreateBinding(invoke, targetMethod) with { ClosedOverFirstArgument = true }],
+            Lookups.NoEntries<string, StaticInitializerGuard>());
+
+        Emit(CreateEmitter(layouts, values), code, Dispatch(invoke, program, resolver));
+
+        var instructions = code.ToInstructions();
+        var callIndex = Assert.Single(Enumerable.Range(0, instructions.Length),
+            index => instructions[index] == Call(resolver.Resolve(targetMethod)));
+        Assert.Equal(
+            [
+                LocalGet(DelegateLocal),
+                WasmInstruction.WithOperand(layouts.Target.UsesMemory64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load,
+                    WasmInstructionOperand.Memory(layouts.Target.UsesMemory64 ? 3u : 2u, (uint)layouts.DelegateTargetOffset)),
+            ],
+            instructions.Skip(callIndex - 2).Take(2));
+        Assert.Null(values.RequestedType);
+    }
+
     // A scalar result is kept in the result local; a value-type result is written through
     // the hidden first parameter, which the target takes first, before the arguments that
     // then start at the third parameter; a void target leaves nothing.

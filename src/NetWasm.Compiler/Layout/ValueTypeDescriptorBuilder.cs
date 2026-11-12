@@ -10,8 +10,7 @@ internal sealed class ValueTypeDescriptorBuilder(
     ITypeIdentityResolver identities,
     ManagedTypeLayouts types,
     WasmTargetLayout target,
-    ManagedStaticDataBuildState state,
-    IStaticReferenceBitmapBuilder bitmaps) : IValueTypeDescriptorBuilder
+    ManagedStaticDataBuildState state) : IValueTypeDescriptorBuilder
 {
     private readonly ITypeRepository _typeRepository = typeRepository ??
         throw new ArgumentNullException(nameof(typeRepository));
@@ -24,8 +23,6 @@ internal sealed class ValueTypeDescriptorBuilder(
         throw new ArgumentNullException(nameof(target));
     private readonly ManagedStaticDataBuildState _state = state ??
         throw new ArgumentNullException(nameof(state));
-    private readonly IStaticReferenceBitmapBuilder _bitmaps = bitmaps ??
-        throw new ArgumentNullException(nameof(bitmaps));
 
     public void Build()
     {
@@ -55,14 +52,6 @@ internal sealed class ValueTypeDescriptorBuilder(
     private void AddValueDescriptor(CliTypeIdentity type, ObjectLayout boxed)
     {
         var value = GetValueLayout(type);
-        _state.Cursor = ManagedTypeLayoutCompiler.Align(
-            _state.Cursor,
-            _target.ObjectReferenceAlignment);
-        var bitCount = DivideRoundUp(value.Size, _target.ObjectReferenceSize);
-        var bitmap = _bitmaps.Build(
-            value.ReferenceOffsets,
-            bitCount,
-            _target.ObjectReferenceSize);
         _state.ValueTypeDescriptors.Add(new ValueTypeDescriptorLayout(
             type,
             boxed.TypeId,
@@ -70,10 +59,7 @@ internal sealed class ValueTypeDescriptorBuilder(
             ManagedTypeLayoutCompiler.Align(
                 _target.ObjectHeaderSize,
                 value.Alignment),
-            _state.Cursor,
-            bitCount));
-        _state.Segments.Add(new DataSegment(_state.Cursor, [.. bitmap]));
-        _state.Cursor += bitmap.Length;
+            value.ReferenceOffsets));
     }
 
     private ValueLayout GetValueLayout(CliTypeIdentity type) =>
@@ -82,12 +68,4 @@ internal sealed class ValueTypeDescriptorBuilder(
             : throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.RuntimeContract,
                 $"value layout for '{type}' was not generated"));
-
-    private static int DivideRoundUp(int value, int divisor)
-    {
-        checked
-        {
-            return (value + divisor - 1) / divisor;
-        }
-    }
 }

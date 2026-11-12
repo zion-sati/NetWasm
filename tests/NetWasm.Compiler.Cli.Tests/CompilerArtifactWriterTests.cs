@@ -2,8 +2,7 @@ using System.Text.Json;
 using NetWasm.Compiler.Cli.Tests.TestSupport;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.ManagedExecutables;
-using NetWasm.Compiler.ExceptionTypes;
-using NetWasm.Compiler.StackTraces;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Wasm;
 using NetWasm.Compiler.Wasm.Emission.NativeInterop;
 
@@ -16,7 +15,7 @@ public sealed class CompilerArtifactWriterTests
     {
         var files = new RecordingFiles();
         var compilation = CliTestData.Compilation(
-            symbols: new StackTraceSymbolArtifact([7, 8], "application/json", "symbols.json", "digest"),
+            methodSymbols: new SymbolSidecarArtifact(SymbolSidecarKind.Method, [7, 8]),
             entryPoint: new(ManagedExecutableParameterShape.StringArray, ManagedExecutableReturnShape.ExitCode),
             runtimeFeatures: [NetWasmRuntimeFeatureIds.LocalTime, NetWasmRuntimeFeatureIds.EphemeronHandles],
             functionImports: [new("host", "call", WasmFunctionType.Create(CliValueKind.I4, CliValueKind.ManagedAddress))],
@@ -26,7 +25,7 @@ public sealed class CompilerArtifactWriterTests
                 new("__Internal", "reset", [], null),
             ]) with
         {
-            ExceptionTypeMap = new ExceptionTypeMapArtifact([1, 2, 3], "application/json", "exceptions.json", "digest"),
+            TypeSymbols = new SymbolSidecarArtifact(SymbolSidecarKind.Type, [1, 2, 3]),
         };
 
         CreateWriter(files).Write(new(compilation, "app.wasm", "app.callbacks.o")
@@ -34,13 +33,13 @@ public sealed class CompilerArtifactWriterTests
             RuntimeLayoutPath = "layout.json",
             InteropManifestPath = "interop.json",
             CompilerMetadataPath = "metadata.json",
-            ExceptionTypeMapPath = "exceptions.json",
-            StackTraceSymbolsPath = "symbols.json",
+            TypeSymbolsPath = "app.wasm.type-symbols",
+            MethodSymbolsPath = "app.wasm.method-symbols",
         });
 
         Assert.Equal(
-            ["delete:app.callbacks.o", "text:layout.json", "text:interop.json", "binary:exceptions.json",
-                "text:metadata.json", "binary:symbols.json", "binary:app.wasm"],
+            ["delete:app.callbacks.o", "text:layout.json", "text:interop.json", "binary:app.wasm.type-symbols",
+                "text:metadata.json", "binary:app.wasm.method-symbols", "binary:app.wasm"],
             files.Operations);
         Assert.Equal(compilation.CoreModule, files.BinaryWrites[^1].Content);
         Assert.Equal([1, 2, 3], files.BinaryWrites[0].Content);
@@ -123,7 +122,11 @@ public sealed class CompilerArtifactWriterTests
         WasmValueType address, string target, string addressName)
     {
         var files = new RecordingFiles();
-        var support = CliTestData.CallbackSupport(address, returnType: null);
+        var support = CliTestData.CallbackSupport(address, returnType: null) with
+        {
+            TemporaryRuntimeExports = ["callback_address", "netwasm_calli_ii"],
+            Trampolines = ["netwasm_calli_ii"],
+        };
 
         CreateWriter(files).Write(new(
             CliTestData.Compilation(target, nativeCallbackSupport: support),
@@ -144,8 +147,12 @@ public sealed class CompilerArtifactWriterTests
             "application_callback",
             Assert.Single(callbacks.GetProperty("temporaryApplicationExports").EnumerateArray()).GetString());
         Assert.Equal(
-            "callback_address",
-            Assert.Single(callbacks.GetProperty("temporaryRuntimeExports").EnumerateArray()).GetString());
+            ["callback_address", "netwasm_calli_ii"],
+            callbacks.GetProperty("temporaryRuntimeExports").EnumerateArray().Select(value => value.GetString()));
+        // Issue 226: the unmanaged calli trampolines the object defines.
+        Assert.Equal(
+            "netwasm_calli_ii",
+            Assert.Single(callbacks.GetProperty("trampolines").EnumerateArray()).GetString());
         var callback = Assert.Single(callbacks.GetProperty("callbacks").EnumerateArray());
         Assert.Equal("runtime_callback", callback.GetProperty("runtimeImportSymbol").GetString());
         Assert.Equal(addressName, callback.GetProperty("parameters")[1].GetString());
@@ -190,21 +197,21 @@ public sealed class CompilerArtifactWriterTests
             {
                 RuntimeLayoutPath = layoutPath ?? "layout.json",
                 CompilerMetadataPath = metadataPath,
-                StackTraceSymbolsPath = symbolsPath,
+                MethodSymbolsPath = symbolsPath,
             },
             "NW1000: compiler output and sidecar paths must be distinct");
 
     [Fact]
-    public void RejectsAMissingExceptionTypeMapBeforeAnyWrite() =>
+    public void RejectsAMissingTypeSymbolsSidecarBeforeAnyWrite() =>
         AssertNoWrites<InvalidOperationException>(
-            new(CliTestData.Compilation(), "app.wasm", "app.callbacks.o") { ExceptionTypeMapPath = "exceptions.json" },
-            "compiler diagnostics did not produce an exception type map");
+            new(CliTestData.Compilation(), "app.wasm", "app.callbacks.o") { TypeSymbolsPath = "app.wasm.type-symbols" },
+            "the compile did not produce its type-symbols sidecar");
 
     [Fact]
     public void RejectsMissingStackTraceSymbolsBeforeAnyWrite() =>
         AssertNoWrites<InvalidOperationException>(
-            new(CliTestData.Compilation(), "app.wasm", "app.callbacks.o") { StackTraceSymbolsPath = "symbols.json" },
-            "stack-trace instrumentation did not produce its symbol sidecar");
+            new(CliTestData.Compilation(), "app.wasm", "app.callbacks.o") { MethodSymbolsPath = "app.wasm.method-symbols" },
+            "stack-trace instrumentation did not produce its method-symbols sidecar");
 
     [Fact]
     public void RejectsMissingInputs()

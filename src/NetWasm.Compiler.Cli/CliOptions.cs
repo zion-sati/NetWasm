@@ -32,7 +32,7 @@ internal sealed record CompileCliOptions(
     public static readonly FrozenSet<string> Names = new[]
     {
         "out", "reference", "r", "target", "entry", "export", "platform", "optimize", "pathmap", "source", "interopmanifest", "runtimelayout", "compilermetadata",
-        "exceptiontypemap", "stacktracesymbols", "callbackobject", "wit", "world", "importmodule",
+        "typesymbols", "methodsymbols", "typenames", "callbackobject", "wit", "world", "importmodule",
         "diagnostictrace", "diagnosticlog", "jsexportboundary", "structureddiagnostics",
         "compiledunits", "verifycompiledunits",
         "projectdirectory", "intermediatedirectory", "wasmtools", "wasmtoolsnode", "wasmtoolscommand",
@@ -48,6 +48,7 @@ internal sealed record CompileCliOptions(
         "managedquotientreuse", "managedintegercheckelimination", "managedloopinvariantexpressionhoisting",
         "managedmulticastinlinedispatch",
         "managednewobjectnullcheckelimination", "managedloopstrengthreduction", "managedrangebranchfolding",
+        "managedunwrittenstaticfieldfolding",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
@@ -56,8 +57,9 @@ internal sealed record CompileCliOptions(
     public string? InteropManifest { get; init; }
     public string? RuntimeLayout { get; init; }
     public string? CompilerMetadata { get; init; }
-    public string? ExceptionTypeMap { get; init; }
-    public string? StackTraceSymbols { get; init; }
+    public string? TypeSymbols { get; init; }
+    public string? MethodSymbols { get; init; }
+    public bool TypeNames { get; init; }
     public string? CallbackObject { get; init; }
     public string? Wit { get; init; }
     public string? World { get; init; }
@@ -109,6 +111,7 @@ internal sealed record CompileCliOptions(
     public string? ManagedNewObjectNullCheckElimination { get; init; }
     public string? ManagedLoopStrengthReduction { get; init; }
     public string? ManagedRangeBranchFolding { get; init; }
+    public string? ManagedUnwrittenStaticFieldFolding { get; init; }
 
     public static CompileCliOptions Parse(NwcArguments arguments)
     {
@@ -151,8 +154,9 @@ internal sealed record CompileCliOptions(
             InteropManifest = options.Single("interopmanifest"),
             RuntimeLayout = options.Single("runtimelayout"),
             CompilerMetadata = options.Single("compilermetadata"),
-            ExceptionTypeMap = options.Single("exceptiontypemap"),
-            StackTraceSymbols = options.Single("stacktracesymbols"),
+            TypeSymbols = options.Single("typesymbols"),
+            MethodSymbols = options.Single("methodsymbols"),
+            TypeNames = options.Toggle("typenames"),
             CallbackObject = options.Single("callbackobject"),
             Wit = options.Single("wit"),
             World = options.Single("world"),
@@ -205,6 +209,7 @@ internal sealed record CompileCliOptions(
             ManagedNewObjectNullCheckElimination = options.Single("managednewobjectnullcheckelimination"),
             ManagedLoopStrengthReduction = options.Single("managedloopstrengthreduction"),
             ManagedRangeBranchFolding = options.Single("managedrangebranchfolding"),
+            ManagedUnwrittenStaticFieldFolding = options.Single("managedunwrittenstaticfieldfolding"),
         };
     }
 

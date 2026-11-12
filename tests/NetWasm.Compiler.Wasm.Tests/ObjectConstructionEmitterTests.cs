@@ -373,6 +373,39 @@ public sealed class ObjectConstructionEmitterTests
         }
     }
 
+    // A delegate closed over an instance method's target throws ArgumentException for a null
+    // target before it allocates, as desktop .NET does (issue 223's class).
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, true)]
+    [InlineData(WasmTarget.Wasm32, false)]
+    [InlineData(WasmTarget.Wasm64, true)]
+    public void ADelegateClosedOverAnInstanceMethodRejectsANullTarget(WasmTarget target, bool selected)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var signature = MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.ManagedReference, CliValueKind.NativeInt);
+        var constructor = new MethodDefinitionModel(ConstructorKey, TypeKey, ".ctor", false, signature, 1);
+        var instance = new MethodInstanceModel(constructor,
+            CliTypeIdentity.Named(Assembly, "Test", "Delegate", isValueType: false), [], signature);
+        var request = CreateInstructionRequest(CilOperation.NewObject,
+            [CliValueKind.ManagedReference, CliValueKind.NativeInt], new CilOperand.MethodInstance(instance));
+
+        Emit((IInstructionCommandProvider)CreateEmitter(layouts, (_, _, _) => { }, new DelegateClassifier(),
+            delegateTargets: new FixedDelegateTargets(selected)), request, CreateFunctionIndexResolver(program));
+
+        var code = CodeOf(request);
+        var tag = RuntimeExceptionGetters.Tag(ManagedExceptionKind.Argument);
+        var check = Array.FindIndex(code, instruction => instruction.Opcode ==
+            (target == WasmTarget.Wasm64 ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant) &&
+            (target == WasmTarget.Wasm64 ? instruction.Operand.Signed64Value : instruction.Operand.SignedValue) == tag);
+        Assert.Equal(selected, check >= 0);
+        if (selected)
+        {
+            Assert.Equal(target == WasmTarget.Wasm64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero, code[check - 2].Opcode);
+            Assert.True(check < CallTo(code, request, RuntimeImportSymbol.Allocate), "the check precedes the allocation");
+        }
+    }
+
     [Theory]
     [InlineData(CliValueKind.I4)]
     [InlineData(CliValueKind.ManagedReference)]
@@ -576,7 +609,8 @@ public sealed class ObjectConstructionEmitterTests
         ITypeClassifier? typeClassifier = null,
         ICilTypeIdentityResolver? types = null,
         IStaticInitializationEmitter? initialization = null,
-        IStaticInitializerGuardResolver? guards = null)
+        IStaticInitializerGuardResolver? guards = null,
+        IDelegateTargetCheckSelector? delegateTargets = null)
     {
         var program = new FakeProgram();
         var guardResolver = guards ?? new StaticInitializerGuardResolver(program, program);
@@ -590,7 +624,13 @@ public sealed class ObjectConstructionEmitterTests
             roots,
             new NativeIntegerConstructionEmitter(layouts, conversions),
             initialization ?? new StaticInitializationEmitter(guardResolver, addresses),
-            guardResolver);
+            guardResolver,
+            delegateTargets ?? new FixedDelegateTargets(false));
+    }
+
+    private sealed class FixedDelegateTargets(bool selected) : IDelegateTargetCheckSelector
+    {
+        public bool Select(InstructionEmissionRequest request) => selected;
     }
 
     private static void Emit<TProvider>(

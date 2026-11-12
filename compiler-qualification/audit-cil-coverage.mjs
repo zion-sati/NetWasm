@@ -73,7 +73,9 @@ function parseDecoder(source) {
        match[2].includes('PrimitiveArrayElement(') ? 'TypeIdentity' : null) ??
       (match[2].includes('ReadBranch(') ? 'BranchTarget' : null) ??
       (match[2].includes('ReadSwitch(') ? 'SwitchTargets' : null) ??
-      (match[2].includes('ReadUserString(') ? 'UserString' : null);
+      (match[2].includes('ReadUserString(') ? 'UserString' : null) ??
+      // The call-site signature resolver returns the CallSite operand itself.
+      (match[2].includes('_callSiteSignatures.Resolve(') ? 'CallSite' : null);
     if (!operand) {
       throw new Error(`decoder opcode ${match[1]} has no identifiable operand form`);
     }

@@ -24,7 +24,7 @@ public sealed class CompiledUnitStoreTests
     private static UnitStoreChange Change(UnitSegmentWriter writer, int sequence = 1)
     {
         var entries = writer.Entries.Select(entry => new UnitManifestEntry(entry.Hash, 0, entry.Offset)).ToArray();
-        return new(sequence, writer,
+        return new([new(sequence, writer)],
             UnitManifestFormat.Write([new(sequence, writer.Count, writer.Length)], entries, sequence + 1),
             new HashSet<int> { sequence }, "summary");
     }
@@ -56,6 +56,22 @@ public sealed class CompiledUnitStoreTests
         Assert.Equal(unit.EnvironmentKey, restored.EnvironmentKey);
         Assert.Equal(unit.BlockEmissionCounts, restored.BlockEmissionCounts);
         Assert.Null(store.Find("Program::Other"));
+    }
+
+    // A unit a segment cannot hold is declined as full, so another segment can take it; one it
+    // already holds or whose answer disagrees is refused (issue 229).
+    [Fact]
+    public void ASegmentDeclinesAUnitAsFullOnlyWhenItDoesNotFit()
+    {
+        Assert.False(new UnitSegmentWriter(sectionLimit: 1).Add(Unit("Program::A", new(3, 4)), out var full));
+        Assert.True(full);
+        var writer = new UnitSegmentWriter();
+        Assert.True(writer.Add(Unit("Program::A", new(3, 4)), out full));
+        Assert.False(full);
+        Assert.False(writer.Add(Unit("Program::A", new(3, 4)), out full));
+        Assert.False(full);
+        Assert.False(writer.Add(Unit("Program::B", new(9, 9)), out full));
+        Assert.False(full);
     }
 
     [Fact]

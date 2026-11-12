@@ -18,7 +18,7 @@ internal sealed record CorpusCompilerRequest(
     string? WitWorld,
     string ModulePath,
     bool EmitStackTrace,
-    string? StackTraceSymbolsPath,
+    string? MethodSymbolsPath,
     string? RuntimeLayoutPath,
     string? InteropManifestPath,
     bool StructuredDiagnostics = false,
@@ -29,7 +29,7 @@ internal interface ICorpusCompilerRequestFactory
 {
     CorpusCompilerRequest Create(
         CorpusCompilation compilation, WasmTarget target, string? tracePath,
-        string modulePath, string? stackTraceSymbolsPath,
+        string modulePath, string? methodSymbolsPath,
         ImmutableArray<RequestedExport> exports,
         string? runtimeLayoutPath = null, string? interopManifestPath = null);
 }
@@ -40,7 +40,7 @@ internal sealed class CorpusCompilerRequestFactory(
 {
     public CorpusCompilerRequest Create(
         CorpusCompilation compilation, WasmTarget target, string? tracePath,
-        string modulePath, string? stackTraceSymbolsPath,
+        string modulePath, string? methodSymbolsPath,
         ImmutableArray<RequestedExport> exports,
         string? runtimeLayoutPath = null, string? interopManifestPath = null)
     {
@@ -75,7 +75,7 @@ internal sealed class CorpusCompilerRequestFactory(
             compilation.Fixture.RequiresReactor
                 ? "netwasm:platform/platform@1.0.0"
                 : null,
-            modulePath, compilation.Fixture.EmitStackTrace, stackTraceSymbolsPath,
+            modulePath, compilation.Fixture.EmitStackTrace, methodSymbolsPath,
             runtimeLayoutPath, interopManifestPath,
             StructuredDiagnostics: true,
             Optimization: compilation.Fixture.Optimization,

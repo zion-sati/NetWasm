@@ -20,6 +20,7 @@ internal static class InstructionEmissionServiceCollectionExtensions
         services.AddWasmMemoryInstructions();
         services.AddWasmObjectInstructions();
 
+        services.AddSingleton<ISolePredecessorResolver, SolePredecessorResolver>();
         services.AddSingleton<ICilTypeIdentityResolver, CilTypeIdentityResolver>();
         services.AddSingleton<ICilTypeOperandResolver, CilTypeOperandResolver>();
         services.AddSingleton<IArgumentTypeResolver, ArgumentTypeResolver>();

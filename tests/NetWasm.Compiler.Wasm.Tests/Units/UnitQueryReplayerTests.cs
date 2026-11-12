@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Wasm.Tests.Units;
@@ -39,8 +40,7 @@ public sealed class UnitQueryReplayerTests
         { nameof(UnitQueryKind.StaticDataEnd), "" },
         { nameof(UnitQueryKind.StaticRootAddresses), "" },
         { nameof(UnitQueryKind.DataSegments), "" },
-        { nameof(UnitQueryKind.TypeFactsTable), "address" },
-        { nameof(UnitQueryKind.TypeFactsTable), "count" },
+        { nameof(UnitQueryKind.TypeTable), "address" },
         { nameof(UnitQueryKind.TypeObjectAddress), "Program::Point" },
         { nameof(UnitQueryKind.TypeObjectTable), "address" },
         { nameof(UnitQueryKind.TypeObjectTable), "cache" },
@@ -164,6 +164,34 @@ public sealed class UnitQueryReplayerTests
         Assert.Equal(UnitQueryStatus.Failed, answer.Status);
     }
 
+    // A delegate's Invoke has no function of its own: its address is its type's invoke helper,
+    // and a replay answers it as the compile that recorded it did, so the unit holding it is
+    // reused (issue 223).
+    [Theory]
+    [InlineData("d:Program:0x06000005", 41)]
+    [InlineData("c:Func`2<int,int>::Invoke", 42)]
+    public void ADelegateInvokeAddressIsFoundAsItsTypesInvokeHelper(string key, int index)
+    {
+        var (replayer, log) = Replayer();
+        var target = EmitterTestSupport.CreateInstructionModuleTarget();
+        target = target with
+        {
+            FunctionIndices = target.FunctionIndices with
+            {
+                DelegateInvokeMethods = ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty
+                    .Add(new(Program, 0x06000005), new(41)),
+                ConstructedDelegateInvokeMethods = ImmutableDictionary<string, WasmFunctionIndex>.Empty
+                    .Add("Func`2<int,int>::Invoke", new(42)),
+            },
+        };
+
+        var answer = replayer.Replay(UnitQueryKind.FunctionAddress, key, Arguments, target);
+
+        Assert.Equal(UnitQueryStatus.Answered, answer.Status);
+        Assert.Contains(new UnitDependency(UnitQueryKind.FunctionAddress, key,
+            UnitTargetViews.FunctionAddressAnswer(true, index)), log.Answers);
+    }
+
     private static (UnitQueryReplayer Replayer, UnitDependencyLog Log) Replayer()
     {
         var log = new UnitDependencyLog();
@@ -227,8 +255,7 @@ public sealed class UnitQueryReplayerTests
         public int StaticDataEnd => 256;
         public ImmutableArray<int> StaticRootAddresses => [32];
         public ImmutableArray<DataSegment> DataSegments => [new(16, [1, 2])];
-        public int TypeFactsTableAddress => 512;
-        public int TypeFactsTableCount => 4;
+        public int TypeTableAddress => 512;
         public IEntryLookup<string, int> TypeObjectAddresses => Lookups.Of(new Dictionary<string, int> { ["Program::Point"] = 128 });
         public int TypeObjectTableAddress => 1024;
         public int TypeObjectCacheAddress => 2048;

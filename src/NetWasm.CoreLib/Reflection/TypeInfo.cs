@@ -10,30 +10,51 @@ public interface IReflectableType
     TypeInfo GetTypeInfo();
 }
 
-// Preserve the upstream hierarchy and value forwarding. Runtime discovery is
-// unavailable; custom metadata construction is rejected by the protected Type ctor.
+// Upstream's TypeInfo: each member forwards to Type's, which answers it or throws. Every Type object
+// is a RuntimeType, a TypeInfo, so GetTypeInfo returns the type itself.
 public abstract class TypeInfo : Type, IReflectableType
 {
+    private const BindingFlags DeclaredOnlyLookup = DefaultLookup | BindingFlags.DeclaredOnly;
+
     protected TypeInfo() { }
     TypeInfo IReflectableType.GetTypeInfo() => this;
     public virtual Type AsType() => this;
     public virtual Type[] GenericTypeParameters => IsGenericTypeDefinition ? GetGenericArguments() : EmptyTypes;
-    public virtual EventInfo? GetDeclaredEvent(string name) => throw Unsupported();
-    public virtual FieldInfo? GetDeclaredField(string name) => throw Unsupported();
-    public virtual MethodInfo? GetDeclaredMethod(string name) => throw Unsupported();
-    public virtual TypeInfo? GetDeclaredNestedType(string name) => throw Unsupported();
-    public virtual PropertyInfo? GetDeclaredProperty(string name) => throw Unsupported();
-    public virtual IEnumerable<MethodInfo> GetDeclaredMethods(string name) => throw Unsupported();
-    public virtual IEnumerable<ConstructorInfo> DeclaredConstructors => throw Unsupported();
-    public virtual IEnumerable<EventInfo> DeclaredEvents => throw Unsupported();
-    public virtual IEnumerable<FieldInfo> DeclaredFields => throw Unsupported();
-    public virtual IEnumerable<MemberInfo> DeclaredMembers => throw Unsupported();
-    public virtual IEnumerable<MethodInfo> DeclaredMethods => throw Unsupported();
-    public virtual IEnumerable<TypeInfo> DeclaredNestedTypes => throw Unsupported();
-    public virtual IEnumerable<PropertyInfo> DeclaredProperties => throw Unsupported();
-    public virtual IEnumerable<Type> ImplementedInterfaces => throw Unsupported();
-    public virtual bool IsAssignableFrom(TypeInfo? typeInfo) => base.IsAssignableFrom(typeInfo);
-    private static PlatformNotSupportedException Unsupported() => new("Runtime type introspection is unavailable on NetWasm.");
+    public virtual EventInfo? GetDeclaredEvent(string name) => GetEvent(name, DeclaredOnlyLookup);
+    public virtual FieldInfo? GetDeclaredField(string name) => GetField(name, DeclaredOnlyLookup);
+    public virtual MethodInfo? GetDeclaredMethod(string name) => GetMethod(name, DeclaredOnlyLookup);
+    public virtual TypeInfo? GetDeclaredNestedType(string name) => GetNestedType(name, DeclaredOnlyLookup)?.GetTypeInfo();
+    public virtual PropertyInfo? GetDeclaredProperty(string name) => GetProperty(name, DeclaredOnlyLookup);
+
+    public virtual IEnumerable<MethodInfo> GetDeclaredMethods(string name)
+    {
+        foreach (MethodInfo method in GetMethods(DeclaredOnlyLookup))
+        {
+            if (method.Name == name)
+                yield return method;
+        }
+    }
+
+    public virtual IEnumerable<ConstructorInfo> DeclaredConstructors => GetConstructors(DeclaredOnlyLookup);
+    public virtual IEnumerable<EventInfo> DeclaredEvents => GetEvents(DeclaredOnlyLookup);
+    public virtual IEnumerable<FieldInfo> DeclaredFields => GetFields(DeclaredOnlyLookup);
+    public virtual IEnumerable<MemberInfo> DeclaredMembers => GetMembers(DeclaredOnlyLookup);
+    public virtual IEnumerable<MethodInfo> DeclaredMethods => GetMethods(DeclaredOnlyLookup);
+
+    public virtual IEnumerable<TypeInfo> DeclaredNestedTypes
+    {
+        get
+        {
+            foreach (Type t in GetNestedTypes(DeclaredOnlyLookup))
+            {
+                yield return t.GetTypeInfo();
+            }
+        }
+    }
+
+    public virtual IEnumerable<PropertyInfo> DeclaredProperties => GetProperties(DeclaredOnlyLookup);
+    public virtual IEnumerable<Type> ImplementedInterfaces => GetInterfaces();
+    public virtual bool IsAssignableFrom([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] TypeInfo? typeInfo) => base.IsAssignableFrom(typeInfo);
 }
 
 public static class IntrospectionExtensions
@@ -49,6 +70,17 @@ public static class IntrospectionExtensions
 
 public abstract partial class Assembly
 {
-    public virtual IEnumerable<TypeInfo> DefinedTypes =>
-        throw new PlatformNotSupportedException("Runtime assembly type introspection is unavailable on NetWasm.");
+    public virtual IEnumerable<TypeInfo> DefinedTypes
+    {
+        get
+        {
+            Type[] types = GetTypes();
+            TypeInfo[] typeinfos = new TypeInfo[types.Length];
+            for (int i = 0; i < types.Length; i++)
+            {
+                typeinfos[i] = types[i].GetTypeInfo();
+            }
+            return typeinfos;
+        }
+    }
 }

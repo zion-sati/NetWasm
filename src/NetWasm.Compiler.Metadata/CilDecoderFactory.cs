@@ -27,5 +27,6 @@ internal sealed class CilDecoderFactory(
             typeSignatures,
             callSiteSignatures,
             stackTypes,
-            new CilSwitchLowerer());
+            new CilSwitchLowerer(),
+            new CilTryReentryLowerer());
 }

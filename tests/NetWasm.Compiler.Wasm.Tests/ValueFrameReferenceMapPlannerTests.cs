@@ -11,9 +11,10 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
 
-// A collection traces the words of a value frame its map names, so the map
-// names each reference in storage whose frame memory holds the only copy, and
-// nothing a Wasm local, a lane local or a filter's copy holds instead.
+// A collection traces the words of a value frame its map names, and a callee
+// publishes only the byrefs it receives, so the map names each reference in
+// storage a byref can address. Storage whose current value can live elsewhere,
+// in lane locals or a filter's environment, keeps its publication as well.
 public sealed class ValueFrameReferenceMapPlannerTests
 {
     private static readonly CliTypeIdentity Reference =
@@ -25,7 +26,7 @@ public sealed class ValueFrameReferenceMapPlannerTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void MapsEveryReferenceInFrameStorageThatIsTheOnlyCopy(WasmTarget target)
+    public void MapsEveryReferenceInFrameStorageAByrefCanAddress(WasmTarget target)
     {
         var size = WasmTargetLayout.For(target).ObjectReferenceSize;
         // Local 0 a reference, 1 a pair whose second word is one, 2 a scalar, 3 a
@@ -50,22 +51,111 @@ public sealed class ValueFrameReferenceMapPlannerTests
 
         var map = Planner(target).Plan(Header([Reference, Pair, Scalar, Reference, Reference, Pair]), layout, filters, aggregates);
 
-        Assert.Equal(new[] { (1UL << 0) | (1UL << 3) | (1UL << 12) }, map.Words.ToArray());
+        Assert.Equal(new[] { (1UL << 0) | (1UL << 3) | (1UL << 6) | (1UL << 9) | (1UL << 12) }, map.Words.ToArray());
         Assert.True(map.Storages.SetEquals([(false, 0), (false, 1), (true, 0)]));
+        // Locals start zeroed and arguments copied.
+        Assert.Empty(map.EntryClears);
     }
 
-    // A reference past the sixty-fourth word needs a further word, and a
-    // reference the target does not align keeps its publication.
-    [Fact]
-    public void LaterWordsHoldLaterReferencesAndUnalignedOnesStayUnmapped()
+    // An aggregate argument split into lanes is read from the caller's copy, so
+    // its own storage is zeroed before the first safepoint can trace it.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AnArgumentSplitIntoLanesIsMappedAndZeroedAtEntry(WasmTarget target)
     {
-        var layout = new ValueFrameLayout(512,
-            ImmutableDictionary<int, int>.Empty.Add(0, 280).Add(1, 0), [], [], []);
+        var size = WasmTargetLayout.For(target).ObjectReferenceSize;
+        var layout = new ValueFrameLayout(4 * size, [], ImmutableDictionary<int, int>.Empty.Add(0, 2 * size), [], []);
+        var aggregates = ManagedAggregateSsaPlan.Empty with
+        {
+            Storages = ImmutableDictionary<ManagedAggregateStorageId, ManagedAggregateStorage>.Empty.Add(
+                new(ManagedAggregateStorageKind.Argument, 0), null!),
+        };
 
-        var map = Planner(WasmTarget.Wasm32).Plan(Header([Reference, Packed]), layout, FilterEnvironmentLayout.Empty, null);
+        var map = Planner(target, Pair).Plan(Header([]), layout, FilterEnvironmentLayout.Empty, aggregates);
+
+        Assert.Equal(new[] { 1UL << 3 }, map.Words.ToArray());
+        Assert.Empty(map.Storages);
+        Assert.Equal(new[] { (3 * size, size) }, map.EntryClears);
+    }
+
+    // A filter's argument capture holds a copy made at the frame's entry; a
+    // captured byref is mapped as the interior pointer it is.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void FilterCapturesAreMappedWhereTheEnvironmentHoldsThem(WasmTarget target)
+    {
+        var size = WasmTargetLayout.For(target).ObjectReferenceSize;
+        var layout = new ValueFrameLayout(8 * size, [], [], [], []);
+        var filters = FilterEnvironmentLayout.Empty with
+        {
+            Captures = ImmutableDictionary<CapturedSlot, FilterCapture>.Empty
+                .Add(new(true, 0), new(new(true, 0), Reference, 4 * size, []))
+                .Add(new(true, 1), new(new(true, 1), CliTypeIdentity.FromStackKind(CliValueKind.ManagedAddress), 5 * size, []))
+                .Add(new(false, 0), new(new(false, 0), Scalar, 6 * size, [])),
+        };
+
+        var map = Planner(target).Plan(Header([Scalar]), layout, filters, null);
+
+        Assert.Equal(new[] { (1UL << 4) | (1UL << 5) }, map.Words.ToArray());
+        Assert.Empty(map.Storages);
+        Assert.Empty(map.EntryClears);
+    }
+
+    // A value type's constructor receives its newobj temporary's address. The
+    // temporary is zeroed only when newobj runs, so the entry zeroes its
+    // references first, adjacent words as one range.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void ConstructedValueTemporariesAreMappedAndZeroedAtEntry(WasmTarget target)
+    {
+        var size = WasmTargetLayout.For(target).ObjectReferenceSize;
+        var layout = new ValueFrameLayout(16 * size, [], [],
+            ImmutableDictionary<int, int>.Empty.Add(3, 2 * size).Add(9, 4 * size).Add(20, 8 * size).Add(30, 12 * size), [])
+        {
+            ConstructedValueTypes = ImmutableDictionary<int, CliTypeIdentity>.Empty
+                .Add(3, Pair).Add(9, Pair).Add(20, Pair).Add(30, Scalar),
+        };
+
+        var map = Planner(target).Plan(Header([]), layout, FilterEnvironmentLayout.Empty, null);
+
+        Assert.Equal(new[] { (1UL << 3) | (1UL << 5) | (1UL << 9) }, map.Words.ToArray());
+        Assert.Empty(map.Storages);
+        Assert.Equal(new[] { (3 * size, size), (5 * size, size), (9 * size, size) }, map.EntryClears);
+        var adjacent = layout with
+        {
+            TemporaryOffsets = ImmutableDictionary<int, int>.Empty.Add(3, 0).Add(9, size),
+            ConstructedValueTypes = ImmutableDictionary<int, CliTypeIdentity>.Empty.Add(3, Reference).Add(9, Reference),
+        };
+        Assert.Equal(new[] { (0, 2 * size) },
+            Planner(target).Plan(Header([]), adjacent, FilterEnvironmentLayout.Empty, null).EntryClears);
+    }
+
+    // A reference past the sixty-fourth word needs a further word.
+    [Fact]
+    public void LaterWordsHoldLaterReferences()
+    {
+        var layout = new ValueFrameLayout(512, ImmutableDictionary<int, int>.Empty.Add(0, 280), [], [], []);
+
+        var map = Planner(WasmTarget.Wasm32).Plan(Header([Reference]), layout, FilterEnvironmentLayout.Empty, null);
 
         Assert.Equal(new[] { 0UL, 1UL << 6 }, map.Words.ToArray());
         Assert.True(map.Storages.SetEquals([(false, 0)]));
+    }
+
+    // Layouts align every reference to its size, so one that is not is a
+    // compiler fault the collector must never trace.
+    [Fact]
+    public void AnUnalignedReferenceIsACompilerFault()
+    {
+        var layout = new ValueFrameLayout(512, ImmutableDictionary<int, int>.Empty.Add(0, 0), [], [], []);
+
+        var fault = Assert.Throws<CompilerException>(() =>
+            Planner(WasmTarget.Wasm32).Plan(Header([Packed]), layout, FilterEnvironmentLayout.Empty, null));
+
+        Assert.Equal(DiagnosticCode.CompilerInvariant, fault.Diagnostic.Code);
     }
 
     // A local's custom modifiers leave the type it holds, here a reference.
@@ -116,8 +206,8 @@ public sealed class ValueFrameReferenceMapPlannerTests
         Assert.Same(rootMap, ValueFrameReferenceMap.Empty.Exclude(rootMap, new RootSlotAllocator()));
     }
 
-    private static ValueFrameReferenceMapPlanner Planner(WasmTarget target) =>
-        new(new RecordingLayoutProvider(WasmTargetLayout.For(target)), new Values(target), new Arguments());
+    private static ValueFrameReferenceMapPlanner Planner(WasmTarget target, CliTypeIdentity? argument = null) =>
+        new(new RecordingLayoutProvider(WasmTargetLayout.For(target)), new Values(target), new Arguments(argument ?? Reference));
 
     private static StructuredMethodHeader Header(ImmutableArray<CliTypeIdentity> locals) =>
         new StructuredMethodHeader(new FakeProgram().GetMethod(EntryKey), null, 1, [], [], []) with
@@ -136,8 +226,8 @@ public sealed class ValueFrameReferenceMapPlannerTests
             new(type, 4, 4, []);
     }
 
-    private sealed class Arguments : IArgumentSignatureTypeResolver
+    private sealed class Arguments(CliTypeIdentity type) : IArgumentSignatureTypeResolver
     {
-        public CliTypeIdentity Resolve(StructuredMethodHeader header, int index) => Reference;
+        public CliTypeIdentity Resolve(StructuredMethodHeader header, int index) => type;
     }
 }

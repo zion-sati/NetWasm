@@ -262,6 +262,15 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedLoopStrengthReduction.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedUnwrittenStaticFieldFolding>
+        UnwrittenStaticFieldFoldingValues =
+        new Dictionary<string, ManagedUnwrittenStaticFieldFolding>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedUnwrittenStaticFieldFolding.Auto,
+            ["Disabled"] = ManagedUnwrittenStaticFieldFolding.Disabled,
+            ["Enabled"] = ManagedUnwrittenStaticFieldFolding.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private static readonly FrozenDictionary<string, ManagedRangeBranchFolding>
         RangeBranchFoldingValues =
         new Dictionary<string, ManagedRangeBranchFolding>(StringComparer.Ordinal)
@@ -351,7 +360,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? multicastInlineDispatch = null,
         string? newObjectNullCheckElimination = null,
         string? loopStrengthReduction = null,
-        string? rangeBranchFolding = null)
+        string? rangeBranchFolding = null,
+        string? unwrittenStaticFieldFolding = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -490,6 +500,11 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? rangeBranchesParsed
             : throw ComponentException.Invalid(
                 "Managed range branch folding must be Auto, Disabled or Enabled.");
+        var unwrittenStaticFieldsValue = UnwrittenStaticFieldFoldingValues.TryGetValue(
+            unwrittenStaticFieldFolding ?? "Auto", out var unwrittenStaticFieldsParsed)
+            ? unwrittenStaticFieldsParsed
+            : throw ComponentException.Invalid(
+                "Managed unwritten static field folding must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -524,7 +539,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                multicastValue == ManagedMulticastInlineDispatch.Auto &&
                newObjectsValue == ManagedNewObjectNullCheckElimination.Auto &&
                strengthReductionValue == ManagedLoopStrengthReduction.Auto &&
-               rangeBranchesValue == ManagedRangeBranchFolding.Auto
+               rangeBranchesValue == ManagedRangeBranchFolding.Auto &&
+               unwrittenStaticFieldsValue == ManagedUnwrittenStaticFieldFolding.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -561,7 +577,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 MulticastInlineDispatch: multicastValue,
                 NewObjectNullCheckElimination: newObjectsValue,
                 LoopStrengthReduction: strengthReductionValue,
-                RangeBranchFolding: rangeBranchesValue);
+                RangeBranchFolding: rangeBranchesValue,
+                UnwrittenStaticFieldFolding: unwrittenStaticFieldsValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>

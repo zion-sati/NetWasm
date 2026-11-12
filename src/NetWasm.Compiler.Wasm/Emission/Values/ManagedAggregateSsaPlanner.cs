@@ -255,6 +255,7 @@ internal sealed class ManagedAggregateSsaPlanner : IManagedAggregateSsaPlanner
         var accessPlans = ImmutableDictionary.CreateBuilder<int, ManagedAggregateSsaAccess>();
         var materializationPlans = ImmutableArray.CreateBuilder<
             ManagedAggregateSsaMaterialization>();
+        var materializationBlocks = new List<StructuredBlockId>();
         foreach (var block in blocks.Values.OrderBy(block => block.Id.Value))
         {
             var state = entryStates[block.Id].ToBuilder();
@@ -279,6 +280,7 @@ internal sealed class ManagedAggregateSsaPlanner : IManagedAggregateSsaPlanner
                             materialization,
                             incoming)
                         { Reloads = reloaded });
+                        materializationBlocks.Add(block.Id);
                         foreach (var value in reloaded)
                         {
                             state[value.Lane] = value.Value;
@@ -360,13 +362,111 @@ internal sealed class ManagedAggregateSsaPlanner : IManagedAggregateSsaPlanner
                 }),
             phis,
             edgeCopies,
-            [.. materializationPlans.Select(materialization => materialization with
-            {
-                Values = Canonicalize(materialization.Values, replacements),
-                Reloads = Canonicalize(materialization.Reloads, replacements),
-            })],
+            ElideHeldStores(
+                [.. materializationPlans.Select(materialization => materialization with
+                {
+                    Values = Canonicalize(materialization.Values, replacements),
+                    Reloads = Canonicalize(materialization.Reloads, replacements),
+                })],
+                [.. materializationBlocks],
+                blocks,
+                request.Method.EntryBlock,
+                predecessors,
+                successors,
+                phis),
             [.. request.Analysis.RootDependencies.Where(dependency =>
                 storages.ContainsKey(dependency.Address.Storage))]);
+    }
+
+    // A materialization stores every lane before a call takes the storage's address, but where the
+    // frame already holds a lane's value (stored or reloaded there since, on every path, and not
+    // written in a lane since) the store is left out, so the frame holds what it held. A loop's phi
+    // is held where each incoming edge holds its input.
+    // Whether two exits hold the same value in every lane, so a block's facts stopped changing.
+    internal static bool HoldsTheSame(
+        ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue> prior,
+        ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue> exit) =>
+        prior.Count == exit.Count &&
+        prior.All(pair => exit.TryGetValue(pair.Key, out var value) && value == pair.Value);
+
+    private static ImmutableArray<ManagedAggregateSsaMaterialization> ElideHeldStores(
+        ImmutableArray<ManagedAggregateSsaMaterialization> materializations,
+        ImmutableArray<StructuredBlockId> materializationBlocks,
+        ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition> blocks,
+        StructuredBlockId entryBlock,
+        Dictionary<StructuredBlockId, ImmutableArray<StructuredBlockId>.Builder> predecessors,
+        ImmutableDictionary<StructuredBlockId, ImmutableArray<StructuredBlockId>> successors,
+        ImmutableArray<ManagedAggregateSsaPhi> phis)
+    {
+        var inBlock = materializationBlocks
+            .Select((block, index) => (Block: block, Index: index))
+            .ToLookup(pair => pair.Block, pair => pair.Index);
+        var phiByLane = phis.ToDictionary(phi => (phi.Block, phi.Lane));
+        // A block's exit is known once some path reaches it; the entry block starts with nothing held.
+        var exits = new Dictionary<StructuredBlockId, ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue>>();
+        var pending = new Queue<StructuredBlockId>([entryBlock]);
+        while (pending.TryDequeue(out var block))
+        {
+            var held = Held(block).ToBuilder();
+            foreach (var index in inBlock[block]) Hold(held, materializations[index]);
+            var exit = held.ToImmutable();
+            if (exits.TryGetValue(block, out var prior) && HoldsTheSame(prior, exit))
+            {
+                continue;
+            }
+            exits[block] = exit;
+            foreach (var successor in successors[block]) pending.Enqueue(successor);
+        }
+
+        var result = materializations.ToBuilder();
+        foreach (var block in blocks.Keys.Where(exits.ContainsKey))
+        {
+            var held = Held(block).ToBuilder();
+            foreach (var index in inBlock[block])
+            {
+                var materialization = materializations[index];
+                result[index] = materialization with
+                {
+                    Values = [.. materialization.Values.Where(value =>
+                        !(held.TryGetValue(value.Lane, out var memory) && memory == value.Value))],
+                };
+                Hold(held, materialization);
+            }
+        }
+        return result.ToImmutable();
+
+        ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue> Held(StructuredBlockId block)
+        {
+            // A block other than the entry is reached through a predecessor that was.
+            if (block == entryBlock) return [];
+            var reached = predecessors[block].Where(exits.ContainsKey).ToArray();
+            var held = ImmutableDictionary.CreateBuilder<ManagedAggregateSsaLane, ManagedAggregateSsaValue>();
+            foreach (var (lane, value) in exits[reached[0]])
+            {
+                if (phiByLane.TryGetValue((block, lane), out var phi))
+                {
+                    if (reached.All(predecessor => exits[predecessor].TryGetValue(lane, out var memory) &&
+                            memory == phi.Incoming[predecessor]))
+                    {
+                        held.Add(lane, phi.Result);
+                    }
+                }
+                else if (reached.All(predecessor =>
+                             exits[predecessor].TryGetValue(lane, out var memory) && memory == value))
+                {
+                    held.Add(lane, value);
+                }
+            }
+            return held.ToImmutable();
+        }
+
+        static void Hold(
+            ImmutableDictionary<ManagedAggregateSsaLane, ManagedAggregateSsaValue>.Builder held,
+            ManagedAggregateSsaMaterialization materialization)
+        {
+            foreach (var value in materialization.Values) held[value.Lane] = value.Value;
+            foreach (var value in materialization.Reloads) held[value.Lane] = value.Value;
+        }
     }
 
     private static Dictionary<ManagedAggregateSsaValue, ManagedAggregateSsaValue>

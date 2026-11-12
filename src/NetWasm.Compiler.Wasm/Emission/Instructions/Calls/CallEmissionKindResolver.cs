@@ -19,19 +19,23 @@ internal sealed class CallEmissionKindResolver(
             return CallEmissionKind.DelegateInvoke;
         }
 
-        if (intrinsics.TryGetIntrinsic(request.Method.Definition.Key, out _))
-        {
-            return CallEmissionKind.RuntimeIntrinsic;
-        }
-
+        // An intrinsic expands in place, unless what it does depends on its receiver's exact type
+        // and the site dispatches on the receiver: then each receiver's case expands it.
         var instruction = request.Instruction;
         var caller = instruction.Header.MethodInstance?.CanonicalName;
-        if (instruction.Instruction.Operation == CilOperation.CallVirtual &&
+        var isIntrinsic = intrinsics.TryGetIntrinsic(request.Method.Definition.Key, out var intrinsic);
+        if (instruction.Instruction.Operation is CilOperation.CallVirtual or CilOperation.Call &&
+            (!isIntrinsic || RuntimeIntrinsicKinds.DependsOnReceiverType(intrinsic)) &&
             caller is not null &&
             instruction.Target.DispatchCallSites.TryGetValue(
                 $"{caller}@{instruction.Instruction.Offset:x8}", out _))
         {
             return CallEmissionKind.VirtualDispatch;
+        }
+
+        if (isIntrinsic)
+        {
+            return CallEmissionKind.RuntimeIntrinsic;
         }
 
         if (instruction.Target.JavaScriptAsyncBindings.ContainsKey(

@@ -12,8 +12,11 @@ internal interface IRootClearElisionPlanner
         StructuredMethod method, MethodEmissionContext context);
 }
 
-internal sealed class RootClearElisionPlanner : IRootClearElisionPlanner
+internal sealed class RootClearElisionPlanner(IStructuredBlockPredecessorReader predecessors) : IRootClearElisionPlanner
 {
+    private readonly IStructuredBlockPredecessorReader _predecessors =
+        predecessors ?? throw new ArgumentNullException(nameof(predecessors));
+
     public ImmutableDictionary<(int Offset, bool ConstructorCall), ImmutableHashSet<int>> Plan(
         StructuredMethod method, MethodEmissionContext context)
     {
@@ -23,10 +26,20 @@ internal sealed class RootClearElisionPlanner : IRootClearElisionPlanner
         var roots = context.RootMap;
         if (roots.SlotCount == 0) return result.ToImmutable();
         var all = Enumerable.Range(0, roots.SlotCount).ToImmutableHashSet();
-        foreach (var block in method.Blocks.Values)
+        // A slot zero at the end of every ordinary predecessor is zero at a block's entry. A root
+        // frame starts with whatever earlier frames left, so nothing is known at the method's entry,
+        // at an opaque block's, or anywhere when the frame is entered inside a terminal arm.
+        var entries = context.TerminalBranchValueFramePlacement is { Plan.DefersRootFrame: true }
+            ? null
+            : RootFactFlow.Solve(method, _predecessors.Read(method), ImmutableHashSet<int>.Empty,
+                (left, right) => left.Intersect(right), (left, right) => left.SetEquals(right),
+                (block, zero) => Transfer(block, zero, record: false));
+        foreach (var (id, block) in method.Blocks)
+            Transfer(block, entries?[id] ?? ImmutableHashSet<int>.Empty, record: true);
+        return result.ToImmutable();
+
+        ImmutableHashSet<int> Transfer(StructuredBlockDefinition block, ImmutableHashSet<int> zero, bool record)
         {
-            // No facts cross block entries, including exception/loop entries.
-            var zero = ImmutableHashSet<int>.Empty;
             var instructions = block.Exit is StructuredTerminalExit terminal
                 ? block.Instructions.Add(terminal.Instruction) : block.Instructions;
             foreach (var instruction in instructions)
@@ -40,13 +53,13 @@ internal sealed class RootClearElisionPlanner : IRootClearElisionPlanner
                     // A repeated publication inside the same instruction may
                     // follow either phase. Never assume its active slots stayed zero.
                     var inactive = all.Except(normalLive).Except(constructorLive);
-                    Record((instruction.Offset, false), zero.Intersect(inactive));
+                    if (record) Record((instruction.Offset, false), zero.Intersect(inactive));
                     // An allocation that bumps its run inline publishes only when it
                     // calls the collector: a slot is zero afterwards only if it was
                     // before. The constructor call's publication runs either way.
                     var conditional = context.ConditionalAllocationRoots &&
                         instruction.Operation == CilOperation.NewObject;
-                    if (!point.ConstructorCallRoots.IsEmpty)
+                    if (record && !point.ConstructorCallRoots.IsEmpty)
                         Record((instruction.Offset, true), conditional ? zero.Intersect(inactive) : inactive);
                     zero = conditional && point.ConstructorCallRoots.IsEmpty ? zero.Intersect(inactive) : inactive;
                 }
@@ -58,9 +71,13 @@ internal sealed class RootClearElisionPlanner : IRootClearElisionPlanner
                 };
                 if (assigned is { } source && context.AuthoritativeRootSlots.TryGetValue(source, out var slot))
                     zero = zero.Remove(slot);
+                // A stored byref argument's slot is written too.
+                if (assigned is { Kind: RootSourceKind.Argument } argument && context.AuthoritativeRootSlots.TryGetValue(
+                        argument with { Kind = RootSourceKind.ManagedAddressArgument }, out var byrefSlot))
+                    zero = zero.Remove(byrefSlot);
             }
+            return zero;
         }
-        return result.ToImmutable();
 
         void Record((int Offset, bool ConstructorCall) site, ImmutableHashSet<int> slots) =>
             result[site] = result.TryGetValue(site, out var existing) ? existing.Intersect(slots) : slots;

@@ -2,7 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/SpanHelpers.ByteMemOps.cs
 // Adaptations: the native memmove and memset that large blocks call are Wasm's memory.copy and memory.fill,
-// and blocks over 64 bytes take them, since a managed loop of 16-byte copies is slower than either.
+// and on NetWasm (NETWASM) blocks over 16 bytes take them: Wasmtime runs either faster than the unrolled
+// copies and stores from 17 bytes, and the 17- to 64-byte and 64-byte-block paths are left out.
 
 #if TARGET_AMD64 || TARGET_ARM64 || (TARGET_32BIT && !TARGET_ARM) || TARGET_LOONGARCH64
 // JIT is guaranteed to unroll blocks up to 64 bytes in size
@@ -52,6 +53,9 @@ namespace System
 
             if (len <= 16)
                 goto MCPY02;
+#if NETWASM
+            goto PInvoke;
+#else
             if (len > 64)
                 goto MCPY05;
 
@@ -112,6 +116,8 @@ namespace System
 #endif
             return;
 
+#endif
+
         MCPY02:
             // Copy the first 8 bytes and then unconditionally copy the last 8 bytes and return.
             if ((len & 24) == 0)
@@ -148,6 +154,7 @@ namespace System
             Unsafe.WriteUnaligned(ref Unsafe.Add(ref destEnd, -2), Unsafe.ReadUnaligned<short>(ref Unsafe.Add(ref srcEnd, -2)));
             return;
 
+#if !NETWASM
         MCPY05:
             // PInvoke to the native version when the copy length exceeds the threshold.
             if (len > MemmoveNativeThreshold)
@@ -228,6 +235,8 @@ namespace System
 #endif
             return;
 
+#endif
+
         BuffersOverlap:
             Debug.Assert(len > 0);
             // If the buffers overlap perfectly, there's no point to copying the data.
@@ -275,6 +284,9 @@ namespace System
 
             if (len <= 16)
                 goto MZER02;
+#if NETWASM
+            goto PInvoke;
+#else
             if (len > 64)
                 goto MZER05;
 
@@ -335,6 +347,8 @@ namespace System
 #endif
             return;
 
+#endif
+
         MZER02:
             // Clear the first 8 bytes and then unconditionally clear the last 8 bytes and return.
             if ((len & 24) == 0)
@@ -371,6 +385,7 @@ namespace System
             Unsafe.WriteUnaligned<short>(ref Unsafe.Add(ref destEnd, -2), 0);
             return;
 
+#if !NETWASM
         MZER05:
             // PInvoke to the native version when the clear length exceeds the threshold.
             if (len > ZeroMemoryNativeThreshold)
@@ -444,6 +459,8 @@ namespace System
             Unsafe.WriteUnaligned<int>(ref Unsafe.Add(ref destEnd, -4), 0);
 #endif
             return;
+
+#endif
 
         PInvoke:
             // Implicit nullchecks

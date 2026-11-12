@@ -20,7 +20,6 @@ public sealed class PipelineActorTests
             typeof(CompilationAnalysis),
             typeof(CompilationAnalysisBuilder),
             typeof(CompilationComplexityStage),
-            typeof(CompilationDiagnosticBindingStage),
             typeof(CompilationDiagnosticTraceStage),
             typeof(CompilationEmissionBuilder),
             typeof(CompilationLayoutBuilder),
@@ -408,6 +407,9 @@ public sealed class PipelineActorTests
                 new SymbolFormatter()));
 
         Assert.Equal(DiagnosticCode.ComponentContract, exception.Diagnostic.Code);
+        Assert.Equal("reachable WIT binding imports 'example:host/first', which the selected world does not " +
+            "import; add `import example:host/first;` to the world, or remove the code that reaches it",
+            exception.Diagnostic.Message);
     }
 
     [Fact]
@@ -437,6 +439,37 @@ public sealed class PipelineActorTests
 
         Assert.Equal(DiagnosticCode.ComponentContract, exception.Diagnostic.Code);
         Assert.Equal("Unit::Run", exception.Diagnostic.Method);
+        Assert.Equal("reachable WIT binding imports function 'missing', which the selected world does not import; " +
+            "add it to the world's imports, or remove the code that reaches it", exception.Diagnostic.Message);
+    }
+
+    // The world is named as it is selected, namespace:package/world@version.
+    [Theory]
+    [InlineData("example:app@1.0.0", "service", "", "missing",
+        "reachable WIT binding exports function 'missing', which world 'example:app/service@1.0.0' does not export; " +
+        "add it to the world's exports, or remove the code that reaches it")]
+    [InlineData("example:app", "service", "example:app/handler", "handle",
+        "reachable WIT binding exports 'example:app/handler', which world 'example:app/service' does not export; " +
+        "add `export example:app/handler;` to the world, or remove the code that reaches it")]
+    public void ReachabilityValidatorNamesWhatTheWorldDoesNotExport(
+        string package, string world, string interfaceName, string function, string message)
+    {
+        var method = ValidationTestData.Program().EntryPoint! with
+        {
+            Key = new EntityKey(ValidationTestData.Assembly, 0x06000005),
+            WitExport = new WitExportDeclaration(interfaceName, function),
+        };
+
+        var exception = Assert.Throws<CompilerException>(() =>
+            new ComponentReachabilityValidator().Validate(
+                ValidationTestData.Program(),
+                [new ProgramExport("cm32p2||missing", method.Key)],
+                new ComponentBoundaryContract(package, world, [],
+                    [Function(ValidationTestData.Program().EntryPoint!.Key)]),
+                new MethodRepository(method),
+                new SymbolFormatter()));
+
+        Assert.Equal(message, exception.Diagnostic.Message);
     }
 
     [Fact]

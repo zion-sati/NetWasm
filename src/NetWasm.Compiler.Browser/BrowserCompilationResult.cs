@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Diagnostics;
-using NetWasm.Compiler.ExceptionTypes;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Wasm;
 using NetWasm.Compiler.Wasm.Emission;
 
@@ -34,5 +34,6 @@ public sealed record BrowserCompilationResult(
     /// identities a structured failure report carries, when the compilation
     /// emitted them.
     /// </summary>
-    public DiagnosticArtifactBundle? DiagnosticArtifacts { get; init; }
+    public SymbolSidecarArtifact? TypeSymbols { get; init; }
+    public SymbolSidecarArtifact? MethodSymbols { get; init; }
 }

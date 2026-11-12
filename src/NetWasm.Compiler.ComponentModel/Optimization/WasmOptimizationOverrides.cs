@@ -66,5 +66,7 @@ public sealed record WasmOptimizationOverrides(
         ManagedLoopStrengthReduction.Auto,
     ManagedRangeBranchFolding RangeBranchFolding =
         ManagedRangeBranchFolding.Auto,
+    ManagedUnwrittenStaticFieldFolding UnwrittenStaticFieldFolding =
+        ManagedUnwrittenStaticFieldFolding.Auto,
     // Lets wasm-opt assume the first KiB of memory is unused; null keeps the preset's default.
     bool? LowMemoryUnused = null);

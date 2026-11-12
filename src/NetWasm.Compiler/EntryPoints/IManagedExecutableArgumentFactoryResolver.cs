@@ -9,5 +9,6 @@ internal interface IManagedExecutableArgumentFactoryResolver
         CompilerEntryPointKind kind,
         MethodDefinitionModel entryPoint,
         ITypeFinder types,
-        IMethodRepository methods);
+        IMethodRepository methods,
+        IMethodBodyReader bodies);
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createRawComponentModel } from "./raw-component-model.mjs";
@@ -286,10 +287,28 @@ test("waitable sets join, leave and report events in the order they occur", asyn
   model.root["[waitable-set-drop]"](first);
   assert.throws(() => model.root["[waitable-join]"](99, second), /invalid Component Model handle 99/);
   assert.throws(() => model.root["[waitable-join]"](second, second), /invalid/);
+  assert.equal(model.root["[thread-yield]"](), 0);
   model.root["[backpressure-inc]"]();
   model.root["[backpressure-dec]"]();
   model.root["[context-set-0]"](42);
   assert.equal(model.root["[context-get-0]"](), 42);
+});
+
+// Every Component Model built-in CoreLib imports from $root has a raw provider: a raw program that
+// imported [thread-yield], which the host lacked, failed to instantiate.
+test("the raw host provides every $root built-in CoreLib imports", () => {
+  const coreLib = new URL("../../NetWasm.CoreLib/", import.meta.url);
+  const imported = new Set();
+  for (const file of readdirSync(coreLib, { recursive: true })) {
+    if (!String(file).endsWith(".cs")) continue;
+    for (const match of readFileSync(new URL(String(file), coreLib), "utf8")
+      .matchAll(/ComponentBuiltIn\("\$root", "([^"]+)"\)/gu)) {
+      imported.add(match[1]);
+    }
+  }
+  assert.ok(imported.has("[thread-yield]"));
+  const { model } = instance();
+  assert.deepEqual([...imported].filter(name => typeof model.root[name] !== "function"), []);
 });
 
 // A set reports the members that have an event without visiting the rest: idle waits, such as

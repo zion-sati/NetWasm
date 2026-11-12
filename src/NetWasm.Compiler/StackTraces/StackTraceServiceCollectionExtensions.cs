@@ -11,13 +11,10 @@ internal static class StackTraceServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IStackTraceReachabilityRootProvider,
             StackTraceReachabilityRootProvider>();
-        services.AddSingleton<IStackTraceSymbolWriter, StackTraceSymbolWriter>();
         services.AddSingleton<ISourceDocumentIdentityFormatter,
             SourceDocumentIdentityFormatter>();
         services.AddSingleton<IStackTraceSourceLocationReader,
             StackTraceSourceLocationReader>();
-        services.AddSingleton<ICompilationStackTraceArtifactBinder,
-            CompilationStackTraceArtifactBinder>();
         return services;
     }
 }

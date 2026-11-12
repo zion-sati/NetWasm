@@ -49,16 +49,14 @@ internal sealed class RuntimeGenericArgumentMetadataBuilder(
 
                     typeId = nextTypeId++;
                     typeIds.Add(argument.Identity, typeId);
-                    _state.MetadataTypeDescriptors.Add(new(argument.Identity, typeId));
+                    _state.MetadataTypeDescriptors.Add(new(argument.Identity, typeId)
+                    {
+                        GenericParameterName = argument.Name,
+                    });
                     _state.PendingTypeFacts.Add(new PendingRuntimeTypeFacts(
                         argument.Identity,
                         Definition: null,
-                        typeId,
-                        BaseTypeId: 0,
-                        AssignableTypeIdsAddress: 0,
-                        AssignableTypeIdCount: 0,
-                        DelegateInvokeDescriptor: null,
-                        Names: GetNames(argument.Name)));
+                        typeId));
                 }
                 argumentTypeIds.Add(typeId);
             }
@@ -124,22 +122,6 @@ internal sealed class RuntimeGenericArgumentMetadataBuilder(
                 method: false,
                 argument.GenericParameterIndex),
             definition.GenericParameterNames[argument.GenericParameterIndex]);
-    }
-
-    private RuntimeTypeNames? GetNames(string? name)
-    {
-        if (_program.TypeNamePayload == RuntimeTypeNamePayload.None || name is null)
-        {
-            return null;
-        }
-        return new(
-            _program.TypeNamePayload,
-            (_program.TypeNamePayload & RuntimeTypeNamePayload.Name) != 0 ? name : null,
-            Namespace: null,
-            FullName: null,
-            (_program.TypeNamePayload & RuntimeTypeNamePayload.DisplayName) != 0
-                ? name
-                : null);
     }
 
     private readonly record struct RuntimeGenericArgument(

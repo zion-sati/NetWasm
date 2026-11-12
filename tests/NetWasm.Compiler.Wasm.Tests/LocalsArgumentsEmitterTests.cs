@@ -50,6 +50,33 @@ public sealed class LocalsArgumentsEmitterTests
             i.Operand.UnsignedValue == (uint)context.RootFrame));
     }
 
+    // A stored authoritative byref argument writes its slot as it updates its local.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AStoredAuthoritativeByrefArgumentWritesItsSlot(WasmTarget target)
+    {
+        var type = CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference);
+        var context = CreateContext() with
+        {
+            AuthoritativeRootSlots = ImmutableDictionary<RootSource, int>.Empty
+                .Add(new(RootSourceKind.ManagedAddressArgument, 0), 1),
+        };
+        var stack = new List<CliValueKind> { CliValueKind.ManagedAddress };
+        var code = new RecordingInstructionWriter();
+
+        Emit(CreateEmitter(WasmTargetLayout.For(target), type),
+            Request(CreateBody(), CilOperation.StoreArgument, 0, stack, context), code);
+
+        Assert.Empty(stack);
+        var instructions = code.ToInstructions();
+        var store = Assert.Single(instructions.Where(i => i.Opcode ==
+            (target == WasmTarget.Wasm32 ? WasmOpcodes.I32Store : WasmOpcodes.I64Store)));
+        Assert.Equal((uint)WasmTargetLayout.For(target).ObjectReferenceSize, store.Operand.Offset);
+        Assert.Contains(instructions, i => i.Opcode == WasmOpcodes.LocalTee &&
+            i.Operand.UnsignedValue == (uint)context.ParameterOffset);
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]

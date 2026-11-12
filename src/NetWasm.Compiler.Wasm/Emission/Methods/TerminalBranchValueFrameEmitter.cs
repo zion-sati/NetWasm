@@ -96,8 +96,8 @@ internal sealed class TerminalBranchValueFrameEmitter(
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                     WasmInstructionOperand.Unsigned((uint)framed.RootFrame)));
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)(source.Index + (source.Kind == RootSourceKind.Argument
-                        ? framed.ParameterOffset : framed.LocalBase)))));
+                    WasmInstructionOperand.Unsigned((uint)(source.Index + (source.Kind == RootSourceKind.Local
+                        ? framed.LocalBase : framed.ParameterOffset)))));
                 ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
                     checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
             }

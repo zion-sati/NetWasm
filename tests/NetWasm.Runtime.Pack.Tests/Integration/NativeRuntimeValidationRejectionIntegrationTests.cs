@@ -122,6 +122,68 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
         fixture.WriteReceipt("simd");
     }
 
+    // Siblings of issue 200, an archive with Wasm SIMD that failed as a tool failure: every other feature clang
+    // emits from C, without its target_features metadata. One inside the static native profile links; one
+    // outside it is refused with the library, the profile and the validator's reason, before any link.
+    public static TheoryData<string, string, string, string?> NativeFeatures => new()
+    {
+        { "sign-extension", "-msign-ext", "int native_probe(void) { volatile int value = 200; return (signed char)value; }", null },
+        { "saturating-float-to-int", "-mnontrapping-fptoint",
+            "int native_probe(void) { volatile float value = 3.5e10f; return (int)value; }", null },
+        { "bulk-memory", "-mbulk-memory", """
+            volatile char native_source[64];
+            char native_target[64];
+            int native_probe(void) {
+                volatile int size = 64;
+                __builtin_memcpy(native_target, (const char *)native_source, size);
+                __builtin_memset(native_target, 7, size / 2);
+                return native_target[3];
+            }
+            """, null },
+        { "threads", "-matomics -mbulk-memory",
+            "int native_probe(void) { static int counter; return __atomic_fetch_add(&counter, 1, __ATOMIC_SEQ_CST); }",
+            "threads support is not enabled" },
+        { "relaxed-simd", "-msimd128 -mrelaxed-simd", """
+            typedef float f32x4 __attribute__((vector_size(16)));
+            volatile f32x4 native_values;
+            int native_probe(void) {
+                f32x4 next = __builtin_wasm_relaxed_madd_f32x4(native_values, native_values, native_values);
+                native_values = next;
+                return (int)next[0];
+            }
+            """, "relaxed SIMD support is not enabled" },
+        { "exceptions", "-mexception-handling", """
+            static int native_thrown;
+            int native_probe(void) { __builtin_wasm_throw(0, &native_thrown); }
+            """, "exceptions" },
+    };
+
+    [Theory]
+    [MemberData(nameof(NativeFeatures))]
+    [Trait("Category", "NativeValidationRejectionIntegration")]
+    public void EachWasmFeatureLinksInsideTheProfileOrIsNamedOutsideIt(string name, string flags, string source, string? reason)
+    {
+        foreach (var target in new[] { "wasm32", "wasm64" })
+        {
+            using var fixture = new Fixture(target, RuntimeWasmOptimization.Oz, "feature-" + name);
+            fixture.Produce(source, target, false, flags);
+
+            if (reason is null)
+            {
+                var materialization = fixture.Materialize();
+                Assert.Equal(new Sha256ArtifactDigestCalculator().Calculate(fixture.Request.OutputPath), materialization.Sha256);
+                fixture.WriteReceipt("feature-" + name);
+                continue;
+            }
+            var error = Assert.Throws<InvalidOperationException>(() => fixture.Materialize());
+            Assert.StartsWith("Native library 'probe' uses WebAssembly beyond NetWasm's static native profile (mvp, ",
+                error.Message, StringComparison.Ordinal);
+            Assert.Contains(reason, error.Message, StringComparison.Ordinal);
+            fixture.AssertUnpublished();
+            fixture.WriteReceipt("feature-" + name);
+        }
+    }
+
     [Theory]
     [InlineData("wasm32", false)]
     [InlineData("wasm32", true)]
@@ -194,8 +256,8 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
             }
         }
 
-        // feature, when given, is a clang flag for a Wasm feature; its target_features metadata is then removed, so
-        // only the instructions themselves can reveal it.
+        // feature, when given, is the clang flags for a Wasm feature, space-separated; its target_features metadata
+        // is then removed, so only the instructions themselves can reveal it.
         public void Produce(string contents, string actualTarget, bool lto, string? feature = null)
         {
             var source = Path.Combine(_cell, "probe.c");
@@ -204,7 +266,7 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
             var arguments = ImmutableArray.Create("--target=" + actualTarget + "-unknown-emscripten", "-O2", "-ffreestanding",
                 "-ffunction-sections", "-fdata-sections", "-c", source, "-o", objectPath);
             if (lto) arguments = arguments.Add("-flto");
-            if (feature is not null) arguments = arguments.Add(feature);
+            if (feature is not null) arguments = arguments.AddRange(feature.Split(' '));
             _commands.Invoke(new(Path.Combine(_producerTools, "clang" + _suffix), arguments, Path.Combine(_cell, "produce.log")));
             if (feature is not null)
                 _commands.Invoke(new(Path.Combine(_producerTools, "llvm-objcopy" + _suffix), ["--remove-section=target_features", objectPath],
