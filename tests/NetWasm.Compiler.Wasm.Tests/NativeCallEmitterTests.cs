@@ -556,7 +556,7 @@ public sealed class NativeCallEmitterTests
         var definition = new MethodDefinitionModel(EntryKey, TypeKey, "Call", true, signature, 0)
         {
             NativeImport = new("mule", "call", MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         return new(definition, CliTypeIdentity.Named(Assembly, "Test", "Native", false), [], signature);
     }

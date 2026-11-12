@@ -35,21 +35,33 @@ public sealed class NativeDeclarationValidator : INativeDeclarationValidator
         {
             throw Unsupported(method, "A native declaration cannot also be a host or component boundary.");
         }
-        if (import.IsVarArg || import.HasMarshalling || import.SuppressesGcTransition ||
-            import.HasCustomCallingConvention)
+        if (import.IsVarArg || import.HasMarshalling)
         {
-            throw Unsupported(method,
-                "Native varargs, runtime marshalling, custom calling conventions and suppressed GC transitions are unsupported.");
+            throw Unsupported(method, "Native varargs and runtime marshalling are unsupported.");
         }
-        var convention = import.Attributes & MethodImportAttributes.CallingConventionMask;
-        var supportedFlags = MethodImportAttributes.CallingConventionMask |
-            MethodImportAttributes.ExactSpelling;
-        if (convention is not (MethodImportAttributes.CallingConventionWinApi or
-            MethodImportAttributes.CallingConventionCDecl) ||
-            (import.Attributes & ~supportedFlags) != 0)
+        // Winapi, Cdecl, StdCall and ThisCall are each the C ABI, as on desktop .NET's 64-bit
+        // platforms (UnmanagedCallingConventions), which fail FastCall. A suppressed GC transition
+        // is a promise the call may ignore, so the call keeps its own.
+        var unsupported = import.UnsupportedCallingConvention ??
+            (import.Attributes & MethodImportAttributes.CallingConventionMask) switch
+            {
+                MethodImportAttributes.CallingConventionWinApi or
+                    MethodImportAttributes.CallingConventionCDecl or
+                    MethodImportAttributes.CallingConventionStdCall or
+                    MethodImportAttributes.CallingConventionThisCall => null,
+                var convention => $"calling convention '{convention}' is not supported",
+            };
+        if (unsupported is not null)
         {
             throw Unsupported(method,
-                "Only the default C ABI or Cdecl with no additional native import semantics is supported.");
+                $"The native import's {unsupported}; a native import is called with the C ABI: " +
+                "Winapi, Cdecl, StdCall or ThisCall, with SuppressGCTransition or MemberFunction.");
+        }
+        if ((import.Attributes & ~(MethodImportAttributes.CallingConventionMask |
+            MethodImportAttributes.ExactSpelling)) != 0)
+        {
+            throw Unsupported(method,
+                "Only the C ABI with no additional native import semantics is supported.");
         }
     }
 

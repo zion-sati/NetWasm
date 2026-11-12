@@ -93,27 +93,80 @@ public sealed class NativeCallbackCompilationTests
         Assert.Equal([getter!, "netwasm_calli_ii"], support.TemporaryRuntimeExports);
     }
 
-    // An unsupported convention is reported where the call is, which the issue's error was not.
+    // Every convention desktop .NET 11 accepts is the C ABI: calls through each, to native code and
+    // to callbacks declared with each, share the (int)->int trampoline.
+    [Fact]
+    public void CompilesACallThroughEachConventionDesktopAccepts()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileUnsafeSource(
+            "ConventionsFixture",
+            """
+            using System.Runtime.CompilerServices;
+            using System.Runtime.InteropServices;
+
+            namespace ConventionsFixture;
+
+            public static unsafe class EntryPoint
+            {
+                public static int Run(int value)
+                {
+                    var native = (void*)(nint)value;
+                    delegate* unmanaged[Stdcall]<int, int> stdcall = &Native.Stdcall;
+                    delegate* unmanaged[Thiscall, MemberFunction]<int, int> thiscall = &Native.Thiscall;
+                    return ((delegate* unmanaged[Stdcall]<int, int>)native)(value) +
+                        ((delegate* unmanaged[Thiscall]<int, int>)native)(value) +
+                        ((delegate* unmanaged[Cdecl, SuppressGCTransition]<int, int>)native)(value) +
+                        ((delegate* unmanaged[Stdcall, MemberFunction]<int, int>)native)(value) +
+                        stdcall(value) + thiscall(value);
+                }
+            }
+
+            public static class Native
+            {
+                [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
+                public static int Stdcall(int value) => value * 2;
+
+                [UnmanagedCallersOnly(CallConvs = [typeof(CallConvThiscall), typeof(CallConvMemberFunction)])]
+                public static int Thiscall(int value) => value * 3;
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "ConventionsFixture.EntryPoint",
+            "Run",
+            [],
+            Target: WasmTarget.Wasm32));
+
+        var support = Assert.IsType<WasmNativeCallbackSupportArtifact>(result.NativeCallbackSupport);
+        Assert.Equal("netwasm_calli_ii", Assert.Single(support.Trampolines));
+        Assert.Equal(2, support.Callbacks.Length);
+    }
+
+    // A convention desktop .NET fails (Fastcall) is reported where the call is, which the issue's
+    // error was not.
     [Fact]
     public void NamesTheMethodAndOffsetOfAnUnsupportedUnmanagedCall()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileUnsafeSource(
-            "StdcallFixture",
+            "FastcallFixture",
             """
-            namespace StdcallFixture;
+            namespace FastcallFixture;
 
             public static unsafe class EntryPoint
             {
                 public static int Run(int value) =>
-                    value == 0 ? 0 : ((delegate* unmanaged[Stdcall]<int, int>)(nint)value)(value);
+                    value == 0 ? 0 : ((delegate* unmanaged[Fastcall]<int, int>)(nint)value)(value);
             }
             """);
 
         var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             [assets.CoreLib],
-            "StdcallFixture.EntryPoint",
+            "FastcallFixture.EntryPoint",
             "Run",
             [],
             Target: WasmTarget.Wasm32)));
@@ -121,6 +174,6 @@ public sealed class NativeCallbackCompilationTests
         Assert.Equal(DiagnosticCode.NativeInterop, error.Diagnostic.Code);
         Assert.Contains("EntryPoint::Run", error.Diagnostic.Method, StringComparison.Ordinal);
         Assert.NotNull(error.Diagnostic.IlOffset);
-        Assert.Contains("'StdCall'", error.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("calling convention 'FastCall' is not supported", error.Diagnostic.Message, StringComparison.Ordinal);
     }
 }

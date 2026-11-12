@@ -114,7 +114,7 @@ public sealed class NativeImportPlannerTests
         var definition = new MethodDefinitionModel(new(assembly, token), new(assembly, 100), entry, true, signature, 0)
         {
             NativeImport = new("mule", entry, MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         return new(definition, CliTypeIdentity.Named(assembly, "Test", "Native", false), [], signature);
     }

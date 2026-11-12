@@ -32,8 +32,7 @@ public sealed class NativeImportDeclarationReaderTests
             MethodImportAttributes.ExactSpelling, declaration.Attributes);
         Assert.Equal(varargs, declaration.IsVarArg);
         Assert.False(declaration.HasMarshalling);
-        Assert.False(declaration.SuppressesGcTransition);
-        Assert.False(declaration.HasCustomCallingConvention);
+        Assert.Null(declaration.UnsupportedCallingConvention);
     }
 
     [Fact]
@@ -57,21 +56,24 @@ public sealed class NativeImportDeclarationReaderTests
     [InlineData("OtherAttribute", true)]
     [InlineData("WasmImportLinkageAttribute", false)]
     [InlineData("WasmImportLinkageAttribute", true)]
-    public void PreservesSuppressionAndNormalizesDefaultConventionAttributes(
+    public void IgnoresSuppressionAndReadsAnEmptyUnmanagedCallConv(
         string attribute, bool localConstructor)
     {
-        using var fixture = Create(attribute: attribute, localConstructor: localConstructor);
+        using var fixture = Create(attribute: attribute, localConstructor: localConstructor, winApi: true);
         var declaration = ((INativeImportDeclarationReader)new NativeImportDeclarationReader()).Read(
             fixture.Reader, fixture.Reader.GetMethodDefinition(fixture.Method));
 
         Assert.NotNull(declaration);
-        Assert.Equal(attribute == "SuppressGCTransitionAttribute", declaration.SuppressesGcTransition);
         Assert.Equal(attribute == "WasmImportLinkageAttribute", declaration.HasWasmImportLinkage);
-        Assert.False(declaration.HasCustomCallingConvention);
+        Assert.Null(declaration.UnsupportedCallingConvention);
     }
 
+    // What desktop .NET 11 does with each: [UnmanagedCallConv] names the convention of a Winapi
+    // import, where Cdecl, Stdcall and Thiscall are its C convention, SuppressGCTransition and
+    // MemberFunction modify it, an unknown type is ignored, and Fastcall, Swift and two base
+    // conventions fail; a DllImport that names its own convention ignores the attribute.
     [Fact]
-    public void NormalizesOnlyDocumentedDefaultAndCdeclUnmanagedCallConvMetadata()
+    public void ReadsTheConventionsUnmanagedCallConvNamesAsDesktopDoes()
     {
         using var assets = TestAssets.Create();
         var path = assets.CompileUnsafeSource(
@@ -80,39 +82,59 @@ public sealed class NativeImportDeclarationReaderTests
             using System.Runtime.CompilerServices;
             using System.Runtime.InteropServices;
 
-            public sealed class UnsupportedConvention { }
+            public sealed class UnknownConvention { }
 
             public static class Native
             {
-                [DllImport("mule", EntryPoint = "default_entry", ExactSpelling = true)]
-                [UnmanagedCallConv]
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv]
                 public static extern int Default(int value);
 
-                [DllImport("mule", EntryPoint = "cdecl_entry", ExactSpelling = true)]
-                [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
                 public static extern int Cdecl(int value);
 
-                [DllImport("mule", EntryPoint = "unsupported_entry", ExactSpelling = true)]
-                [UnmanagedCallConv(CallConvs = new[] { typeof(UnsupportedConvention) })]
-                public static extern int Unsupported(int value);
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+                public static extern int Stdcall(int value);
 
-                [DllImport("mule", EntryPoint = "suppressed_entry", ExactSpelling = true)]
-                [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition) })]
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(CallConvThiscall), typeof(CallConvMemberFunction)])]
+                public static extern int ThiscallMember(int value);
+
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
                 public static extern int Suppressed(int value);
+
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(UnknownConvention)])]
+                public static extern int Unknown(int value);
+
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(CallConvFastcall)])]
+                public static extern int Fastcall(int value);
+
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(CallConvSwift)])]
+                public static extern int Swift(int value);
+
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvStdcall)])]
+                public static extern int Both(int value);
+
+                [DllImport("mule", EntryPoint = "e", ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+                [UnmanagedCallConv(CallConvs = [typeof(CallConvFastcall)])]
+                public static extern int OwnConvention(int value);
             }
             """);
 
         using var assembly = ManagedAssemblyTestFactory.Load(path);
-        var methods = assembly.Methods.Values.ToDictionary(method => method.Name);
+        var methods = assembly.Methods.Values.ToDictionary(method => method.Name, method => method.NativeImport!);
 
-        Assert.False(methods["Default"].NativeImport!.HasCustomCallingConvention);
-        var cdecl = methods["Cdecl"].NativeImport!;
-        Assert.False(cdecl.HasCustomCallingConvention);
-        Assert.Equal(
-            MethodImportAttributes.CallingConventionCDecl,
-            cdecl.Attributes & MethodImportAttributes.CallingConventionMask);
-        Assert.True(methods["Unsupported"].NativeImport!.HasCustomCallingConvention);
-        Assert.True(methods["Suppressed"].NativeImport!.HasCustomCallingConvention);
+        foreach (var supported in new[] { "Default", "Cdecl", "Stdcall", "ThiscallMember", "Suppressed", "Unknown" })
+        {
+            Assert.Null(methods[supported].UnsupportedCallingConvention);
+            Assert.Equal(MethodImportAttributes.CallingConventionWinApi,
+                methods[supported].Attributes & MethodImportAttributes.CallingConventionMask);
+        }
+        Assert.Equal("calling convention 'System.Runtime.CompilerServices.CallConvFastcall' is not supported",
+            methods["Fastcall"].UnsupportedCallingConvention);
+        Assert.Contains("CallConvSwift' is not supported", methods["Swift"].UnsupportedCallingConvention, StringComparison.Ordinal);
+        Assert.Contains("are both named", methods["Both"].UnsupportedCallingConvention, StringComparison.Ordinal);
+        Assert.Null(methods["OwnConvention"].UnsupportedCallingConvention);
+        Assert.Equal(MethodImportAttributes.CallingConventionStdCall,
+            methods["OwnConvention"].Attributes & MethodImportAttributes.CallingConventionMask);
     }
 
     [Fact]
@@ -127,8 +149,7 @@ public sealed class NativeImportDeclarationReaderTests
         Assert.Equal("logical-library", declaration.LibraryName);
         Assert.Equal("native_entry", declaration.EntryPoint);
         Assert.False(declaration.HasMarshalling);
-        Assert.False(declaration.SuppressesGcTransition);
-        Assert.False(declaration.HasCustomCallingConvention);
+        Assert.Null(declaration.UnsupportedCallingConvention);
     }
 
     [Theory]
@@ -142,29 +163,46 @@ public sealed class NativeImportDeclarationReaderTests
         using var fixture = Create(
             attribute: "UnmanagedCallConvAttribute",
             fixedArgument: fixedArgument,
-            namedArgument: namedArgument);
+            namedArgument: namedArgument,
+            winApi: true);
 
         var declaration = new NativeImportDeclarationReader().Read(
             fixture.Reader,
             fixture.Reader.GetMethodDefinition(fixture.Method));
 
         Assert.NotNull(declaration);
-        Assert.True(declaration.HasCustomCallingConvention);
+        Assert.Equal("[UnmanagedCallConv] sets more than its CallConvs", declaration.UnsupportedCallingConvention);
     }
 
+    // A DllImport that names its own convention never reads [UnmanagedCallConv], as on desktop .NET.
     [Fact]
-    public void RejectsNullSerializedCallingConventionType()
+    public void AnImportsOwnConventionIgnoresUnmanagedCallConv()
+    {
+        using var fixture = Create(attribute: "UnmanagedCallConvAttribute", fixedArgument: true);
+
+        var declaration = new NativeImportDeclarationReader().Read(
+            fixture.Reader,
+            fixture.Reader.GetMethodDefinition(fixture.Method));
+
+        Assert.NotNull(declaration);
+        Assert.Null(declaration.UnsupportedCallingConvention);
+    }
+
+    // A null type among CallConvs names no convention, as an unknown type does not.
+    [Fact]
+    public void IgnoresNullSerializedCallingConventionType()
     {
         using var fixture = Create(
             attribute: "UnmanagedCallConvAttribute",
-            nullCallConvention: true);
+            nullCallConvention: true,
+            winApi: true);
 
         var declaration = new NativeImportDeclarationReader().Read(
             fixture.Reader,
             fixture.Reader.GetMethodDefinition(fixture.Method));
 
         Assert.NotNull(declaration);
-        Assert.True(declaration.HasCustomCallingConvention);
+        Assert.Null(declaration.UnsupportedCallingConvention);
     }
 
     private static MetadataFixture Create(
@@ -177,7 +215,8 @@ public sealed class NativeImportDeclarationReaderTests
         bool genericAttribute = false,
         bool fixedArgument = false,
         string? namedArgument = null,
-        bool nullCallConvention = false)
+        bool nullCallConvention = false,
+        bool winApi = false)
     {
         var metadata = new MetadataBuilder();
         var owningModule = metadata.AddModule(0, metadata.GetOrAddString("NativeMetadata"),
@@ -197,8 +236,8 @@ public sealed class NativeImportDeclarationReaderTests
         {
             var library = module ? metadata.AddModuleReference(
                 metadata.GetOrAddString("logical-library")) : default;
-            metadata.AddMethodImport(method, MethodImportAttributes.CallingConventionCDecl |
-                MethodImportAttributes.ExactSpelling,
+            metadata.AddMethodImport(method, (winApi ? MethodImportAttributes.CallingConventionWinApi :
+                MethodImportAttributes.CallingConventionCDecl) | MethodImportAttributes.ExactSpelling,
                 metadata.GetOrAddString("native_entry"), library);
         }
         if (marshalling)

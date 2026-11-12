@@ -2776,7 +2776,7 @@ public sealed class RootMapTests
                 [NativeKey] = Method(NativeKey, rva: 0) with
                 {
                     NativeImport = new("mule", "collect", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                        false, false, false, false),
+                        false, false, null),
                 },
                 [JSImportKey] = Method(JSImportKey) with
                 {

@@ -24,7 +24,7 @@ public sealed class ReachabilityInvariantValidatorTests
             Definition = target.Definition with
             {
                 RelativeVirtualAddress = 0,
-                NativeImport = new("mule", "native_call", MethodImportAttributes.CallingConventionCDecl, false, false, false, false),
+                NativeImport = new("mule", "native_call", MethodImportAttributes.CallingConventionCDecl, false, false, null),
             }
         };
         var program = ProgramWithInstructions(

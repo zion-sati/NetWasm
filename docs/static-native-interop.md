@@ -119,14 +119,15 @@ constructors must not re-enter managed code.
 
 | Shape | Current boundary |
 | --- | --- |
-| Scalars | `int`/`uint`, `long`/`ulong`, `float`/`double`, `nint`/`nuint`, unmanaged pointers, and `void` results |
+| Scalars | `sbyte`/`byte`, `short`/`ushort`, `int`/`uint`, `long`/`ulong`, `float`/`double`, `nint`/`nuint`, unmanaged pointers, and `void` results |
 | By-reference values | Scalar `ref`/`out`; native code must not retain the address |
 | Aggregates | Unmanaged sequential or explicit structs and unions by value, including nested, packed, fixed-buffer, padded, and qualified empty-root layouts |
 | Arrays | Qualified counted input, output, and in-out arrays with explicit count/capacity and call-scoped caller-owned storage |
 | Strings | Source-generated UTF-8 input marshalling, including null, empty, non-ASCII, and embedded NUL |
 | Handles | `SafeHandle` inputs borrowed with call lifetime protection |
-| Callbacks | Static scalar/pointer `UnmanagedCallersOnly` callbacks, named or address-taken, using the default C ABI or Cdecl and explicit registration lifetime |
-| Function pointers | Calls through `delegate* unmanaged` and `delegate* unmanaged[Cdecl]`, to a native function or an `UnmanagedCallersOnly` method, with the shapes above |
+| Callbacks | Static scalar/pointer `UnmanagedCallersOnly` callbacks, named or address-taken, with explicit registration lifetime |
+| Function pointers | Calls through `delegate* unmanaged`, to a native function or an `UnmanagedCallersOnly` method, with the shapes above |
+| Calling conventions | Those .NET accepts on its 64-bit platforms, each the C ABI: the default, `Cdecl`, `Stdcall` and `Thiscall`, with `SuppressGCTransition` or `MemberFunction`, on imports, callbacks and function pointers |
 
 The full layout, ownership, cache, and target-width rules remain in the
 [CoreLib/runtime static-native profile](corelib-runtime.md#static-native-interop).
@@ -206,8 +207,8 @@ reserved.
 
 The static profile does not provide dynamic loading, runtime symbol lookup,
 varargs, broad runtime/reflection marshalling, arbitrary custom marshallers,
-`SetLastError`, `SuppressGCTransition`, native threads, direct C++ ABI, or C++
-exceptions crossing managed frames.
+`SetLastError`, the `Fastcall` and `Swift` calling conventions, native threads,
+direct C++ ABI, or C++ exceptions crossing managed frames.
 
 `SafeHandle` `ref`, `out`, and return construction are unsupported.
 Callback aggregates, arrays, byrefs, handles, callback-valued parameters or

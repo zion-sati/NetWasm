@@ -24,7 +24,7 @@ public sealed class ModuleImportCollectorTests
             RelativeVirtualAddress = 0,
             Signature = signature,
             NativeImport = new("mule", "mixed", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var method = new MethodInstanceModel(definition,
             CliTypeIdentity.Named(EmitterTestSupport.Assembly, "Test", "Native", false), [], signature);

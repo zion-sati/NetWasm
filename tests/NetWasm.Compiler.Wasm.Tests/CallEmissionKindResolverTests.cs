@@ -19,7 +19,7 @@ public sealed class CallEmissionKindResolverTests
         var definition = program.GetMethod(EntryKey) with
         {
             NativeImport = new("mule", "run", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var request = CreateRequest(definition, CliTypeIdentity.Named(Assembly, "Test", "Native", false));
         var resolver = Assert.IsAssignableFrom<ICallEmissionKindResolver>(

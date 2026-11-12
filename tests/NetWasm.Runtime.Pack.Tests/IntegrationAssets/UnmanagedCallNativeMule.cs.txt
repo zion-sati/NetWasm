@@ -18,7 +18,9 @@ public struct CalliWrapped
 
 // Issue 226: calls through unmanaged function pointers reach native functions and
 // [UnmanagedCallersOnly] methods, with scalar, mixed and aggregate C ABI signatures, and its
-// siblings: float, narrow integers, a pointer argument and a struct of one scalar.
+// siblings: float, narrow integers, a pointer argument and a struct of one scalar. Each calling
+// convention desktop .NET 11 accepts calls the C ABI: Stdcall, Thiscall, SuppressGCTransition and
+// MemberFunction on pointers, callbacks and DllImports alike.
 public static unsafe class EntryPoint
 {
     private static int s_marked;
@@ -37,6 +39,17 @@ public static unsafe class EntryPoint
     private static extern void* SumAddress();
     [DllImport("mule", EntryPoint = "native_mule_calli_wrap_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
     private static extern void* WrapAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_stdcall_address", ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    private static extern void* StdcallTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_thiscall_address", ExactSpelling = true, CallingConvention = CallingConvention.ThisCall)]
+    private static extern void* ThiscallTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_callconv_address", ExactSpelling = true)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvStdcall), typeof(CallConvMemberFunction), typeof(CallConvSuppressGCTransition) })]
+    private static extern void* UnmanagedCallConvTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_suppressed_address", ExactSpelling = true), SuppressGCTransition]
+    private static extern void* SuppressedTwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_narrow_import", ExactSpelling = true)]
+    private static extern short NarrowImport(sbyte signedValue, ushort unsignedValue);
 
     public static int Run(int input)
     {
@@ -67,8 +80,40 @@ public static unsafe class EntryPoint
         if (wrap(new CalliWrapped { Value = input + 0.25 }).Value != (input + 0.25) * 2) return -10;
         delegate* unmanaged<float, float> half = &Half;
         if (half(input + 1f) != (input + 1f) / 2) return -11;
+        // Every convention desktop .NET accepts, each the C ABI.
+        if (((delegate* unmanaged[Stdcall]<int, int>)StdcallTwiceAddress())(input) != input * 2) return -12;
+        if (((delegate* unmanaged[Thiscall]<int, int>)ThiscallTwiceAddress())(input) != input * 2) return -13;
+        if (((delegate* unmanaged[Cdecl, SuppressGCTransition]<int, int>)UnmanagedCallConvTwiceAddress())(input) != input * 2) return -14;
+        if (((delegate* unmanaged<int, int>)SuppressedTwiceAddress())(input) != input * 2) return -15;
+        var memberSwap = (delegate* unmanaged[Stdcall, MemberFunction]<CalliPair, CalliPair>)SwapAddress();
+        swapped = memberSwap(new CalliPair { First = input, Second = 9 });
+        if (swapped.First != 9 || swapped.Second != input) return -16;
+        delegate* unmanaged[Stdcall]<int, int> quadruple = &Quadruple;
+        if (quadruple(input) != input * 4) return -17;
+        delegate* unmanaged[Thiscall, MemberFunction]<int, int> quintuple = &Quintuple;
+        if (quintuple(input) != input * 5) return -18;
+        // A callback declared SuppressGCTransition, called through a pointer that keeps the
+        // transition, as desktop .NET requires of a managed callee.
+        var sextuple = (delegate* unmanaged<int, int>)(void*)(delegate* unmanaged[SuppressGCTransition]<int, int>)&Sextuple;
+        if (sextuple(input) != input * 6) return -19;
+        // Narrow integers are blittable, as on desktop .NET: an import's and a callback's own.
+        if (NarrowImport((sbyte)-(input + 3), 65000) != (short)(-(input + 3) * 2 - 65000)) return -20;
+        delegate* unmanaged<byte, short, ushort> narrowCallback = &NarrowCallback;
+        if (narrowCallback(250, (short)-(input + 300)) != (ushort)(250 - (input + 300))) return -21;
         return 42;
     }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
+    private static int Quadruple(int value) => value * 4;
+
+    [UnmanagedCallersOnly]
+    private static ushort NarrowCallback(byte value, short delta) => (ushort)(value + delta);
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvThiscall), typeof(CallConvMemberFunction) })]
+    private static int Quintuple(int value) => value * 5;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvSuppressGCTransition) })]
+    private static int Sextuple(int value) => value * 6;
 
     [UnmanagedCallersOnly]
     private static float Half(float value) => value / 2;

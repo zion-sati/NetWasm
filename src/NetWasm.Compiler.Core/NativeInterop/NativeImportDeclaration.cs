@@ -8,8 +8,8 @@ public sealed record NativeImportDeclaration(
     MethodImportAttributes Attributes,
     bool IsVarArg,
     bool HasMarshalling,
-    bool SuppressesGcTransition,
-    bool HasCustomCallingConvention)
+    // Why the C ABI cannot honour the conventions [UnmanagedCallConv] names, or null when it can.
+    string? UnsupportedCallingConvention)
 {
     // [WasmImportLinkage]: the library name is the Wasm import module, so the
     // host or another module supplies the function rather than a linked archive.

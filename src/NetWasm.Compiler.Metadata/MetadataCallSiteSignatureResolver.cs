@@ -1,13 +1,13 @@
+using System.Collections.Generic;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Metadata;
 
 internal sealed class MetadataCallSiteSignatureResolver : IMetadataCallSiteSignatureResolver
 {
-    private const string CallConvCdecl = "System.Runtime.CompilerServices.CallConvCdecl";
-
     public CilOperand.CallSite Resolve(
         MetadataAssemblySnapshot source,
         int metadataToken,
@@ -32,34 +32,44 @@ internal sealed class MetadataCallSiteSignatureResolver : IMetadataCallSiteSigna
                     source.Reader,
                     source.AssemblyIdentityAliases),
                 genericContext);
-        // An unmanaged pointer uses the platform's C ABI, as a DllImport does: its own convention
-        // (unmanaged, unmanaged[Cdecl]) or Cdecl named once as a modifier of the return type.
+        // A managed pointer keeps its signature, modifiers and all (a ref readonly return's modreq).
         var convention = signature.Header.CallingConvention;
+        if (convention == SignatureCallingConvention.Default)
+        {
+            return new(new MethodSignatureModel(signature.ReturnType, signature.ParameterTypes), false);
+        }
+
+        // An unmanaged pointer is called with the C ABI, which reads no modifier, whichever convention
+        // desktop .NET accepts it names (UnmanagedCallingConventions): its header's (unmanaged[Cdecl],
+        // [Stdcall], [Thiscall]), or with the unmanaged header, the CallConv types the return type's
+        // optional modifiers name.
         var returnType = signature.ReturnType;
-        var modifiers = 0;
+        var conventions = new List<string?>();
         while (returnType.Shape == CliTypeShape.Modified)
         {
-            if (convention != SignatureCallingConvention.Unmanaged ||
-                returnType.CustomModifier!.FullName != CallConvCdecl || ++modifiers != 1)
+            if (!returnType.IsRequiredModifier)
             {
-                throw Unsupported(returnType.CustomModifier!.FullName ?? "a modifier");
+                conventions.Add(returnType.CustomModifier!.FullName);
             }
             returnType = returnType.ElementType!;
         }
-        if (convention is not (SignatureCallingConvention.Default or
-            SignatureCallingConvention.CDecl or SignatureCallingConvention.Unmanaged))
+        var unsupported = convention switch
         {
-            throw Unsupported(convention.ToString());
+            SignatureCallingConvention.CDecl or SignatureCallingConvention.StdCall or
+                SignatureCallingConvention.ThisCall => null,
+            SignatureCallingConvention.Unmanaged => UnmanagedCallingConventions.Unsupported(conventions),
+            _ => $"calling convention '{convention}' is not supported",
+        };
+        if (unsupported is not null)
+        {
+            throw new CompilerException(new CompilerDiagnostic(
+                DiagnosticCode.NativeInterop,
+                $"calli {unsupported}; an unmanaged function pointer is called with the C ABI: unmanaged, " +
+                "unmanaged[Cdecl], [Stdcall] or [Thiscall], with SuppressGCTransition or MemberFunction",
+                method,
+                offset));
         }
 
-        return new(
-            new MethodSignatureModel(returnType, signature.ParameterTypes),
-            convention != SignatureCallingConvention.Default);
-
-        CompilerException Unsupported(string name) => new(new CompilerDiagnostic(
-            DiagnosticCode.NativeInterop,
-            $"calli calling convention '{name}' is not supported; unmanaged function pointers use the default C ABI or Cdecl",
-            method,
-            offset));
+        return new(new MethodSignatureModel(returnType, signature.ParameterTypes), true);
     }
 }

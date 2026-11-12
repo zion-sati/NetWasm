@@ -421,7 +421,7 @@ public sealed class ManagedAssemblyContractTests
     private sealed class NativeFacts : INativeImportDeclarationReader
     {
         public int Calls { get; private set; }
-        public NativeImportDeclaration Declaration { get; } = new("library", "entry", MethodImportAttributes.CallingConventionCDecl, false, false, false, false);
+        public NativeImportDeclaration Declaration { get; } = new("library", "entry", MethodImportAttributes.CallingConventionCDecl, false, false, null);
         public NativeImportDeclaration? Read(MetadataReader metadata, MethodDefinition method)
         {
             Calls++;

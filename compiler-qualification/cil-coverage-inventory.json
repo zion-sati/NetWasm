@@ -633,7 +633,7 @@
       "id": "S32",
       "name": "Caches, parallel compiler work, linking, diagnostics and exclusions",
       "existingEvidence": [
-        "tests/NetWasm.Compiler.Tests/UnsupportedBoundaryCompilationTests.cs#UnmanagedDynamicLinkageHasDeterministicDiagnostic"
+        "tests/NetWasm.Compiler.Tests/NativeCallbackCompilationTests.cs#NamesTheMethodAndOffsetOfAnUnsupportedUnmanagedCall"
       ],
       "gap": "Warm/cold and serial/parallel semantic equivalence, invalidation identity and cancellation, final-link preservation, trace lifetime/no instrumentation effects, exact rejection contracts",
       "priority": "P1",

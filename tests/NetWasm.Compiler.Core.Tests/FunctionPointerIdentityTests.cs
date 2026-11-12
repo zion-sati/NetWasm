@@ -104,7 +104,7 @@ public sealed class FunctionPointerIdentityTests
         var declaring = CliTypeIdentity.Named(assembly, "Example", "Methods", false);
         var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.NativeInt);
         var declaration = new NativeImportDeclaration("library", "entry", MethodImportAttributes.CallingConventionCDecl,
-            false, false, false, false);
+            false, false, null);
         var definition = new MethodDefinitionModel(new(assembly, 1), new(assembly, 2), "Call", true, signature, 0)
         {
             NativeImport = declaration,
@@ -123,8 +123,7 @@ public sealed class FunctionPointerIdentityTests
             declaration with { Attributes = MethodImportAttributes.CallingConventionWinApi },
             declaration with { IsVarArg = true },
             declaration with { HasMarshalling = true },
-            declaration with { SuppressesGcTransition = true },
-            declaration with { HasCustomCallingConvention = true },
+            declaration with { UnsupportedCallingConvention = "calling convention 'x' is not supported" },
         })
         {
             Assert.False(method.HasEquivalentDescriptorFacts(method with

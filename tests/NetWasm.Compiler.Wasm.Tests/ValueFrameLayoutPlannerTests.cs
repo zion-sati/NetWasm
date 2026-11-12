@@ -649,7 +649,7 @@ public sealed class ValueFrameLayoutPlannerTests
         var definition = new MethodDefinitionModel(Key(0x0600007f), TypeKey, "Native", true, signature, 0)
         {
             NativeImport = new("mule", "aggregate", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         return new(definition, CliTypeIdentity.Named(Assembly, "Test", "Native", false), [], signature);
     }

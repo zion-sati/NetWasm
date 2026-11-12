@@ -144,6 +144,9 @@ export function createRawComponentModel(options) {
       subtask.event = null;
       return cancelledBeforeReturned;
     },
+    // A raw host cannot suspend the guest, so a yield returns at once, not cancelled (0), as it
+    // does where the task cannot block.
+    "[thread-yield]": () => 0,
     "[backpressure-inc]"() {},
     "[backpressure-dec]"() {},
     "[context-get-0]": () => contexts[0],

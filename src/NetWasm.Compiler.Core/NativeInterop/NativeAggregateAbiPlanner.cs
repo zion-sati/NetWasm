@@ -46,7 +46,7 @@ public sealed class NativeAggregateAbiPlanner(
         if (type.ContainsGenericParameters)
             throw Unsupported(methodName, "Native aggregate fields must be closed.");
         if (type.Shape == CliTypeShape.UnmanagedPointer ||
-            type.Shape == CliTypeShape.Primitive && IsBlittableScalar(type))
+            type.Shape == CliTypeShape.Primitive && NativeAbiScalars.IsBlittable(type))
         {
             var scalar = _values.GetValueLayout(type);
             ValidateStorage(scalar, methodName);
@@ -124,12 +124,6 @@ public sealed class NativeAggregateAbiPlanner(
             layout.Alignment > 16 || layout.Size % layout.Alignment != 0)
             throw Unsupported(methodName, "Native storage must be reference-free, aligned, and representable in a 16-byte-aligned value frame.");
     }
-
-    private static bool IsBlittableScalar(CliTypeIdentity type) =>
-        type.CanonicalName is "primitive:i1" or "primitive:u1" or
-            "primitive:i2" or "primitive:u2" or "primitive:i4" or "primitive:u4" or
-            "primitive:i8" or "primitive:u8" or "primitive:f4" or "primitive:f8" or
-            "primitive:nativeint" or "primitive:nativeuint";
 
     private static CompilerException Unsupported(string methodName, string message) =>
         new(new(DiagnosticCode.NativeInterop, message, methodName));

@@ -528,7 +528,7 @@ public sealed class WasmModulePlanInvariantValidatorTests
             RelativeVirtualAddress = 0,
             Signature = signature,
             NativeImport = new("mule", "native", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var method = new MethodInstanceModel(definition,
             CliTypeIdentity.Named(Assembly, "Test", "Native", false), [], signature);

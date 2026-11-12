@@ -572,3 +572,14 @@ void *native_mule_calli_scale_address(void) { return (void *)&mule_calli_scale; 
 void *native_mule_calli_narrow_address(void) { return (void *)&mule_calli_narrow; }
 void *native_mule_calli_sum_address(void) { return (void *)&mule_calli_sum; }
 void *native_mule_calli_wrap_address(void) { return (void *)&mule_calli_wrap; }
+
+/* The same function, imported under each calling convention .NET accepts. */
+void *native_mule_calli_twice_stdcall_address(void) { return (void *)&mule_calli_twice; }
+void *native_mule_calli_twice_thiscall_address(void) { return (void *)&mule_calli_twice; }
+void *native_mule_calli_twice_callconv_address(void) { return (void *)&mule_calli_twice; }
+void *native_mule_calli_twice_suppressed_address(void) { return (void *)&mule_calli_twice; }
+
+/* Narrow integers in an import's own signature, extended as the C ABI extends them. */
+short native_mule_narrow_import(signed char signed_value, unsigned short unsigned_value) {
+    return (short)(signed_value * 2 - (int)unsigned_value);
+}

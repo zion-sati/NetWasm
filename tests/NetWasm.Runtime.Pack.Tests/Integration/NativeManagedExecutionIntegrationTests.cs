@@ -293,7 +293,7 @@ public sealed class NativeManagedExecutionIntegrationTests
             var compilation = NetWasmCompiler.Compile(new(assembly, [coreLib], "NativeMule.EntryPoint", "Run", [], wasmTarget,
                 DiagnosticTracePath: Path.Combine(run, "compiler-trace.json"), DiagnosticLogPath: Path.Combine(run, "compiler.log"),
                 ReferenceAssemblyAliases: generated ? DesktopAliases : null));
-            Assert.Equal(providerlessCallbacks ? 0 : unmanagedCalls ? 7 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :
+            Assert.Equal(providerlessCallbacks ? 0 : unmanagedCalls ? 12 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :
                     aggregateProfile ? 19 : aggregates ? 4 : 14,
                 compilation.NativeImports.Length);
             Assert.DoesNotContain(compilation.NativeImports, import => import.LibraryName == "unused");
@@ -305,9 +305,9 @@ public sealed class NativeManagedExecutionIntegrationTests
                 // One trampoline per C ABI signature: (int)->int for twice and Triple, the
                 // aggregate swap's (result, argument) pointers, mix and Mark; scale and Half's
                 // floats, narrow's extended integers, sum's pointer and the one-double struct,
-                // which travels as a double.
+                // which travels as a double. Every other convention shares these signatures.
                 var support = Assert.IsType<WasmNativeCallbackSupportArtifact>(compilation.NativeCallbackSupport);
-                Assert.Equal(3, support.Callbacks.Length);
+                Assert.Equal(7, support.Callbacks.Length);
                 Assert.Equal(["netwasm_calli_dd", "netwasm_calli_didl", "netwasm_calli_ff", "netwasm_calli_fff",
                         "netwasm_calli_ii", "netwasm_calli_iii", "netwasm_calli_lpi", "netwasm_calli_vi", "netwasm_calli_vpp"],
                     support.Trampolines);

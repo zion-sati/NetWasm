@@ -73,7 +73,7 @@ public sealed class ConstantCallEvaluatorTests
             {
                 JSImport = kind == 0 ? new("predicate", "fixture") : null,
                 WitImport = kind == 1 ? new("fixture", "predicate") : null,
-                NativeImport = kind == 2 ? new("fixture", "predicate", 0, false, false, false, false) : null,
+                NativeImport = kind == 2 ? new("fixture", "predicate", 0, false, false, null) : null,
             }
         };
 

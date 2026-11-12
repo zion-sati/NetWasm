@@ -33,7 +33,7 @@ public sealed class PureReferenceComparisonClassifierTests
             {
                 JSImport = kind == 0 ? new("compare", "fixture") : null,
                 WitImport = kind == 1 ? new("fixture", "compare") : null,
-                NativeImport = kind == 2 ? new("fixture", "compare", 0, false, false, false, false) : null,
+                NativeImport = kind == 2 ? new("fixture", "compare", 0, false, false, null) : null,
             }
         };
         Assert.Null(new MethodFacts().Classifier().Classify(method));

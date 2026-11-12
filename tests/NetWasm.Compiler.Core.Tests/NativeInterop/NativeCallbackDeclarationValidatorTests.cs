@@ -4,16 +4,32 @@ namespace NetWasm.Compiler.Core.Tests.NativeInterop;
 
 public sealed class NativeCallbackDeclarationValidatorTests
 {
+    // Each convention desktop .NET 11 accepts on an [UnmanagedCallersOnly] method.
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void AcceptsDefaultAndCdeclStaticAddresses(bool cdecl)
+    [InlineData]
+    [InlineData("CallConvCdecl")]
+    [InlineData("CallConvStdcall")]
+    [InlineData("CallConvThiscall", "CallConvMemberFunction")]
+    [InlineData("CallConvCdecl", "CallConvSuppressGCTransition")]
+    [InlineData("CallConvSuppressGCTransition")]
+    public void AcceptsEachConventionDesktopAccepts(params string[] conventions)
     {
-        var method = Callback(cdecl
-            ? ["System.Runtime.CompilerServices.CallConvCdecl"]
-            : []);
+        var method = Callback([.. conventions.Select(static name => "System.Runtime.CompilerServices." + name)]);
 
         new NativeCallbackDeclarationValidator().ValidateAddressTarget(method);
+    }
+
+    [Theory]
+    [InlineData("calling convention 'System.Runtime.CompilerServices.CallConvFastcall' is not supported", "CallConvFastcall")]
+    [InlineData("are both named", "CallConvCdecl", "CallConvStdcall")]
+    public void NamesTheConventionItCannotHonour(string reason, params string[] conventions)
+    {
+        var method = Callback([.. conventions.Select(static name => "System.Runtime.CompilerServices." + name)]);
+
+        var exception = Assert.Throws<CompilerException>(() =>
+            new NativeCallbackDeclarationValidator().ValidateAddressTarget(method));
+
+        Assert.Contains(reason, exception.Diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -68,8 +84,7 @@ public sealed class NativeCallbackDeclarationValidatorTests
                     System.Reflection.MethodImportAttributes.CallingConventionCDecl,
                     false,
                     false,
-                    false,
-                    false),
+                    null),
             } },
             baseline with { Definition = baseline.Definition with
             {
@@ -99,12 +114,7 @@ public sealed class NativeCallbackDeclarationValidatorTests
                 baseline.Definition.NativeCallback! with { IsVarArg = true } } },
             baseline with { Definition = baseline.Definition with { NativeCallback =
                 baseline.Definition.NativeCallback! with {
-                    CallingConventions = ["System.Runtime.CompilerServices.CallConvStdcall"] } } },
-            baseline with { Definition = baseline.Definition with { NativeCallback =
-                baseline.Definition.NativeCallback! with {
-                    CallingConventions = [
-                        "System.Runtime.CompilerServices.CallConvCdecl",
-                        "System.Runtime.CompilerServices.CallConvSuppressGCTransition"] } } },
+                    CallingConventions = ["System.Runtime.CompilerServices.CallConvSwift"] } } },
             baseline with { Definition = baseline.Definition with { NativeCallback =
                 baseline.Definition.NativeCallback! with { HasUnsupportedNamedArguments = true } } },
         })

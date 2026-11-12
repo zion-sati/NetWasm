@@ -126,17 +126,24 @@ do not isolate the native symbol namespace.
 
 | Supported call shape | Boundary |
 | --- | --- |
-| `int`/`uint`, `long`/`ulong`, `float`/`double` | Raw C scalar parameters/results; `void` results are supported |
+| `sbyte`/`byte`, `short`/`ushort`, `int`/`uint`, `long`/`ulong`, `float`/`double` | Raw C scalar parameters/results; `void` results are supported |
 | `nint`/`nuint`, unmanaged data pointers | Guest width, 32 or 64 bits; not interchangeable with fixed-width handles |
 | Scalar `ref`/`out` | Call-scoped address; native code must not retain managed storage |
 | By-value structs and unions | Unmanaged sequential/explicit layouts, including nested values, packed narrow fields, fixed buffers, explicit padding and qualified empty root values |
 | Counted arrays | Qualified byte, integer and aggregate-element input, output and in-out arrays with explicit count/capacity; storage is caller-owned and call-scoped |
 | UTF-8 strings | Stock source-generated input marshalling, including null, empty, non-ASCII and embedded-NUL behavior; native code must not retain the buffer |
 | `SafeHandle` inputs | Borrowed for the call with lifetime protection; ownership, repeated/reentrant disposal and finalization preserve exact release behavior |
-| Static callbacks | Address-taken or named `UnmanagedCallersOnly` methods with the supported scalar/pointer signatures, default C ABI or Cdecl, explicit registration lifetime and `nint` user tokens |
-| Unmanaged function pointers | Calls through `delegate* unmanaged` or `delegate* unmanaged[Cdecl]` to native functions or `UnmanagedCallersOnly` methods, with the argument and result shapes a raw `DllImport` supports |
+| Static callbacks | Address-taken or named `UnmanagedCallersOnly` methods with the supported scalar/pointer signatures, any supported calling convention, explicit registration lifetime and `nint` user tokens |
+| Unmanaged function pointers | Calls through `delegate* unmanaged`, with any supported calling convention, to native functions or `UnmanagedCallersOnly` methods, with the argument and result shapes a raw `DllImport` supports |
 
-Default C ABI and Cdecl import flags are supported without additional semantics.
+The supported calling conventions are those .NET accepts on its 64-bit
+platforms, each the C ABI as it is there: the default (`Winapi` on an import), `Cdecl`,
+`Stdcall` and `Thiscall`, with `SuppressGCTransition` or `MemberFunction`,
+named by an import's `CallingConvention` or `[UnmanagedCallConv]`, an
+`UnmanagedCallersOnly` method's `CallConvs` or a function pointer's type. An
+import marked `[SuppressGCTransition]` behaves as without it. Import flags carry
+no additional semantics.
+
 Stock generated code is ordinary CIL, not a compiler-specific generator path;
 generation does not make an unsupported raw leaf or helper available.
 
@@ -151,16 +158,16 @@ the profile.
 
 Callback signatures remain scalar/pointer only. Callback aggregates, arrays,
 byrefs, SafeHandle values and callback-valued parameters/results are rejected.
-Calls through other unmanaged conventions (`Stdcall`, `Thiscall`, `Fastcall`,
-`SuppressGCTransition`), delegate-to-native-pointer conversion, dynamic
+The `Fastcall` convention, which .NET rejects everywhere, and `Swift`, which it
+supports only on Apple platforms, fail with NW1012. Delegate-to-native-pointer
+conversion, dynamic
 trampolines, worker-thread callbacks and constructor-time managed entry remain
 unsupported. A named callback requires normal managed application startup
 before native entry.
 
-Broad runtime marshalling, raw bool/char/string leaves, narrow raw scalars,
-byref returns, varargs, custom calling conventions, custom marshallers,
-`SetLastError` and `SuppressGCTransition` remain outside the profile. Dynamic
-libraries, thin archives and direct consumer `.o` inputs are rejected. Object
+Broad runtime marshalling, raw bool/char/string leaves, byref returns,
+varargs, custom marshallers and `SetLastError` remain outside the profile.
+Dynamic libraries, thin archives and direct consumer `.o` inputs are rejected. Object
 and compatible LTO archive members must match guest width and the qualified
 Wasm feature set. Native threads, direct C++ ABI and native C++ exceptions
 crossing managed frames remain outside the profile.

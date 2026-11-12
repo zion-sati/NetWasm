@@ -92,7 +92,7 @@ public sealed class WasmModulePlannerTests
             RelativeVirtualAddress = 0,
             Signature = signature,
             NativeImport = new("mule", "read", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
-                false, false, false, false),
+                false, false, null),
         };
         var method = new MethodInstanceModel(definition,
             CliTypeIdentity.Named(Assembly, "Test", "Native", false), [], signature);

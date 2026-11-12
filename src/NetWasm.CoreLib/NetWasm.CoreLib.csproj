@@ -43,7 +43,7 @@
     <Compile Include="Reflection/CustomAttributeFormatException.cs" />
     <Compile Include="Reflection/TargetInvocationException.cs" />
     <Compile Include="Reflection/TargetParameterCountException.cs" />
-    <Compile Include="Runtime/CompilerServices/CallConv.cs" />
+    <Compile Include="Runtime/CompilerServices/CallingConventions.cs" />
     <Compile Include="AssemblyInfo.cs" />
     <Compile Include="CompilerContracts.cs" />
     <Compile Include="Obsoletions.cs" />
