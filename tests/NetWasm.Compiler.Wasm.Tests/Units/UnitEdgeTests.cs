@@ -157,6 +157,28 @@ public sealed class UnitAnswerTextTests
         Assert.Equal(caller, read.Value!.Caller);
     }
 
+    // A site's answer carries where the tail many sites share starts (its targets or matching types,
+    // issue 229); a site not found, another kind, or bytes too short to hold the offset have none.
+    [Fact]
+    public void ASitesAnswerCarriesWhereItsSharedTailStarts()
+    {
+        var method = UnitActorFixture.Method().Method;
+        var dispatch = UnitAnswerCodec.Encode(UnitQueryKind.DispatchCallSite, Key, new UnitLookup<DispatchCallSiteModel>(
+            true, new("Program::Run", 4, method, [new(Shape, method), new(Shape, method)])))!;
+        var typeTest = UnitAnswerCodec.Encode(UnitQueryKind.TypeTestSite, Key,
+            new UnitLookup<TypeTestSiteModel>(true, new("Program::Run", 4, Shape, [Shape, Shape])))!;
+
+        Assert.Equal(2, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(
+            dispatch.AsSpan(UnitAnswerCodec.TailStart(UnitQueryKind.DispatchCallSite, dispatch))));
+        Assert.Equal(2, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(
+            typeTest.AsSpan(UnitAnswerCodec.TailStart(UnitQueryKind.TypeTestSite, typeTest))));
+        Assert.Equal(0, UnitAnswerCodec.TailStart(UnitQueryKind.TypeTestSite, UnitAnswerCodec.Encode(
+            UnitQueryKind.TypeTestSite, Key, new UnitLookup<TypeTestSiteModel>(false, null))!));
+        Assert.Equal(0, UnitAnswerCodec.TailStart(UnitQueryKind.StringTypeId,
+            UnitAnswerCodec.Encode(UnitQueryKind.StringTypeId, "", 7)!));
+        Assert.Equal(0, UnitAnswerCodec.TailStart(UnitQueryKind.DispatchCallSite, [3]));
+    }
+
     [Theory]
     [InlineData("usual")]
     [InlineData("missing")]
@@ -165,6 +187,7 @@ public sealed class UnitAnswerTextTests
         var format = UnitAnswerCodec.Encode(UnitQueryKind.StringTypeId, "", 7)![0];
         var writer = new UnitModelWriter();
         writer.Byte(format);
+        writer.Int(0);
         writer.Bool(true);
         // The caller is its key's, but the key names none; or it is not, but no text follows.
         writer.Bool(damage == "usual");
@@ -280,7 +303,7 @@ public sealed class UnitTargetViewEdgeTests
     public void AStoreInMemoryWithoutItsSegmentFindsNoUnits()
     {
         var memory = new UnitStoreMemory();
-        new MemoryUnitStoreCommitter(memory).Commit("app", new(1, null,
+        new MemoryUnitStoreCommitter(memory).Commit("app", new([],
             UnitManifestFormat.Write([new(1, 1, 64)], [new(UnitStoreFormat.HashOf("Program::Run"), 0, 64)], 2),
             new HashSet<int> { 1 }, ""));
 

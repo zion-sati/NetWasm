@@ -39,7 +39,7 @@ internal static class UnitStoreFormat
     public const uint Magic = 0x5554574E; // "NWTU"
     // Raised whenever the queries units record change, so older units, validated against
     // other queries or numbering them otherwise, are not restored.
-    public const int Version = 13;
+    public const int Version = 14;
     public const uint SegmentKind = 1;
     public const uint ManifestKind = 2;
     public const int SegmentHeaderSize = 64;
@@ -49,6 +49,10 @@ internal static class UnitStoreFormat
     public const int FixedRecordSize = 88;
     public const int RelocationSize = 16;
     public const int QuerySize = 40;
+    // A query's flags (its byte 2): its value is a head ending in a reference to a tail the
+    // segment stores once for every answer that ends in it (issue 229).
+    public const byte SharedTailFlag = 1;
+    public const int TailReferenceSize = 8;
     public const int BlockSize = 8;
     public const ushort EmptySlot = ushort.MaxValue;
 
@@ -185,7 +189,21 @@ internal sealed unsafe class UnitSegment : IDisposable
             String(BinaryPrimitives.ReadInt64LittleEndian(bytes[8..])),
             new(BinaryPrimitives.ReadUInt64LittleEndian(bytes[16..]),
                 BinaryPrimitives.ReadUInt64LittleEndian(bytes[24..])),
-            value == 0 ? default : Blob(value));
+            value == 0 ? default
+                : (bytes[2] & UnitStoreFormat.SharedTailFlag) != 0 ? Joined(Blob(value)) : Blob(value));
+    }
+
+    // A value stored as a head and a shared tail, as one answer again.
+    private byte[] Joined(ReadOnlySpan<byte> head)
+    {
+        if (head.Length < UnitStoreFormat.TailReferenceSize)
+            throw new InvalidDataException("A unit answer's shared tail reference is missing.");
+        var at = head.Length - UnitStoreFormat.TailReferenceSize;
+        var tail = Blob(BinaryPrimitives.ReadInt64LittleEndian(head[at..]));
+        var joined = new byte[at + tail.Length];
+        head[..at].CopyTo(joined);
+        tail.CopyTo(joined.AsSpan(at));
+        return joined;
     }
 
     internal ref int QueryState(int id) => ref _queryStates[id];
@@ -571,14 +589,23 @@ internal static class UnitManifestFormat
 /// Builds one segment. Every unit in a segment was checked against the same compile, so a
 /// query has one answer in it and is stored once; a unit whose answer disagrees is refused.
 /// </summary>
-internal sealed class UnitSegmentWriter
+internal sealed class UnitSegmentWriter(long sectionLimit = UnitSegmentWriter.SectionLimit)
 {
-    private readonly ArrayBufferWriter<char> _strings = new(1 << 15);
+    // The format's offsets into a section are 32-bit.
+    internal const long SectionLimit = int.MaxValue;
+
+    // Each section grows in chunks, never as one array, so a segment may approach its 32-bit offsets'
+    // limit (issue 229).
+    private readonly UnitChunkedBuffer<char> _strings = new(1 << 19);
     private readonly Dictionary<string, long> _interned = new(StringComparer.Ordinal);
-    private readonly ArrayBufferWriter<byte> _blob = new(1 << 16);
-    private readonly ArrayBufferWriter<byte> _queries = new(1 << 12);
+    private readonly UnitChunkedBuffer<byte> _blob = new(1 << 20);
+    private readonly UnitChunkedBuffer<byte> _queries = new(1 << 16);
     private readonly Dictionary<(UnitQueryKind Kind, long Key), (int Id, UnitFingerprint Answer)> _queryIds = [];
-    private readonly ArrayBufferWriter<byte> _records = new(1 << 16);
+    // The encoded answers of the queries the unit being added stores first.
+    private readonly Dictionary<(UnitQueryKind Kind, long Key), byte[]?> _pendingAnswers = [];
+    // Each shared answer tail the segment holds, by its bytes, and where it is.
+    private readonly Dictionary<byte[], long> _tails = new(UnitTailComparer.Instance);
+    private readonly UnitChunkedBuffer<byte> _records = new(1 << 20);
     private readonly HashSet<string> _identities = new(StringComparer.Ordinal);
     private readonly List<(ulong Hash, int Offset)> _entries = [];
 
@@ -591,10 +618,15 @@ internal sealed class UnitSegmentWriter
     internal long Length => Align8(Align8(UnitStoreFormat.SegmentHeaderSize + _strings.WrittenCount * 2L) +
         _blob.WrittenCount) + _queries.WrittenCount + _records.WrittenCount;
 
-    internal bool Add(CompiledUnit unit)
+    internal bool Add(CompiledUnit unit) => Add(unit, out _);
+
+    // Adds a unit, or declines it: full when it would take a section past its 32-bit offsets, so
+    // another segment can take it; otherwise refused (already held, or an answer that disagrees).
+    internal bool Add(CompiledUnit unit, out bool full)
     {
         ArgumentNullException.ThrowIfNull(unit);
-        if (_identities.Contains(unit.Identity))
+        full = false;
+        if (_identities.Contains(unit.Identity) || unit.Parameters.Length > ushort.MaxValue)
             return false;
         if (!TryKeys(unit.Dependencies, out var keys))
             return false;
@@ -603,17 +635,23 @@ internal sealed class UnitSegmentWriter
             return false;
         var rootMap = unit.RootMap ?? [];
         var groupWords = GroupWords(unit.ExceptionGroups);
+        var (answerCount, answerBytes) = PendingAnswers(unit.Dependencies, keys);
+        var (rootMapAnswerCount, rootMapAnswerBytes) = PendingAnswers(rootMapDependencies, rootMapKeys);
         var size = UnitStoreFormat.FixedRecordSize + UnitStoreFormat.Align8(unit.Parameters.Length) +
             (long)unit.Relocations.Length * UnitStoreFormat.RelocationSize +
             UnitStoreFormat.Align8(keys.Length * 4) + (long)unit.BlockEmissionCounts.Count * UnitStoreFormat.BlockSize +
             UnitStoreFormat.Align8(Math.Max(0, groupWords) * 4) + UnitStoreFormat.Align8(rootMapKeys.Length * 4);
-        if (_records.WrittenCount + size > int.MaxValue ||
-            _blob.WrittenCount + (long)unit.Body.Length + rootMap.Length > int.MaxValue ||
-            unit.Parameters.Length > ushort.MaxValue)
+        // Every section the unit grows stays within its 32-bit offsets, or the unit goes to another segment.
+        if (_records.WrittenCount + size > sectionLimit ||
+            _blob.WrittenCount + (long)unit.Body.Length + rootMap.Length + answerBytes + rootMapAnswerBytes > sectionLimit ||
+            _strings.WrittenCount + StringChars(unit) > sectionLimit ||
+            _queries.WrittenCount / UnitStoreFormat.QuerySize + answerCount + rootMapAnswerCount > sectionLimit)
         {
+            _pendingAnswers.Clear();
+            full = true;
             return false;
         }
-        var offset = _records.WrittenCount;
+        var offset = (int)_records.WrittenCount;
         var record = _records.GetSpan((int)size)[..(int)size];
         record.Clear();
         WriteRef(record, 0, Intern(unit.Identity));
@@ -626,7 +664,7 @@ internal sealed class UnitSegmentWriter
         BinaryPrimitives.WriteUInt16LittleEndian(record[30..], (ushort)unit.Parameters.Length);
         WriteRef(record, 32, Intern(unit.FunctionName));
         WriteRef(record, 40, Intern(unit.EnvironmentKey));
-        var body = _blob.WrittenCount;
+        var body = (int)_blob.WrittenCount;
         _blob.Write(unit.Body.AsSpan());
         WriteRef(record, 48, UnitStoreFormat.Pack(body, unit.Body.Length));
         BinaryPrimitives.WriteInt32LittleEndian(record[56..], unit.Relocations.Length);
@@ -635,7 +673,7 @@ internal sealed class UnitSegmentWriter
         BinaryPrimitives.WriteInt32LittleEndian(record[68..], groupWords);
         if (unit.RootMap is not null)
         {
-            var map = _blob.WrittenCount;
+            var map = (int)_blob.WrittenCount;
             _blob.Write(rootMap.AsSpan());
             WriteRef(record, 72, UnitStoreFormat.Pack(map, rootMap.Length));
         }
@@ -689,6 +727,7 @@ internal sealed class UnitSegmentWriter
                 QueryId(rootMapDependencies[index], rootMapKeys[index]));
         }
         _records.Advance((int)size);
+        _pendingAnswers.Clear();
         _identities.Add(unit.Identity);
         _entries.Add((UnitStoreFormat.HashOf(unit.Identity), offset));
         return true;
@@ -706,7 +745,7 @@ internal sealed class UnitSegmentWriter
         BinaryPrimitives.WriteUInt32LittleEndian(header, UnitStoreFormat.Magic);
         BinaryPrimitives.WriteInt32LittleEndian(header[4..], UnitStoreFormat.Version);
         BinaryPrimitives.WriteUInt32LittleEndian(header[8..], UnitStoreFormat.SegmentKind);
-        BinaryPrimitives.WriteInt32LittleEndian(header[12..], _queries.WrittenCount / UnitStoreFormat.QuerySize);
+        BinaryPrimitives.WriteInt32LittleEndian(header[12..], (int)(_queries.WrittenCount / UnitStoreFormat.QuerySize));
         BinaryPrimitives.WriteInt64LittleEndian(header[16..], strings);
         BinaryPrimitives.WriteInt64LittleEndian(header[24..], _strings.WrittenCount);
         BinaryPrimitives.WriteInt64LittleEndian(header[32..], blob);
@@ -716,12 +755,12 @@ internal sealed class UnitSegmentWriter
         Span<byte> padding = stackalloc byte[8];
         padding.Clear();
         destination.Write(header);
-        destination.Write(MemoryMarshal.AsBytes(_strings.WrittenSpan));
+        _strings.WriteTo(destination);
         destination.Write(padding[..(int)(blob - strings - _strings.WrittenCount * 2L)]);
-        destination.Write(_blob.WrittenSpan);
+        _blob.WriteTo(destination);
         destination.Write(padding[..(int)(queries - blob - _blob.WrittenCount)]);
-        destination.Write(_queries.WrittenSpan);
-        destination.Write(_records.WrittenSpan);
+        _queries.WriteTo(destination);
+        _records.WriteTo(destination);
     }
 
     // Each query's interned key; false when a query this segment holds answered differently.
@@ -749,6 +788,39 @@ internal sealed class UnitSegmentWriter
         return words;
     }
 
+    // The encodings of the answers the segment does not yet hold, which QueryId then writes: their
+    // count and bytes, so Add can check that they fit before it writes anything.
+    private (int Count, long Bytes) PendingAnswers(ImmutableArray<UnitDependency> dependencies, long[] keys)
+    {
+        var (count, bytes) = (0, 0L);
+        for (var index = 0; index < keys.Length; index++)
+        {
+            var dependency = dependencies[index];
+            var query = (dependency.Kind, keys[index]);
+            if (_queryIds.ContainsKey(query) || _pendingAnswers.ContainsKey(query))
+                continue;
+            var encoded = UnitAnswerCodec.Encode(dependency.Kind, dependency.Key, dependency.Value);
+            _pendingAnswers.Add(query, encoded);
+            count++;
+            // At most the whole answer and a tail reference, when its tail is new.
+            bytes += encoded is null ? 0 : encoded.Length + UnitStoreFormat.TailReferenceSize;
+        }
+        return (count, bytes);
+    }
+
+    // The characters of the unit's strings the segment may not yet hold, as an upper bound.
+    private static long StringChars(CompiledUnit unit)
+    {
+        var chars = (long)unit.Identity.Length + unit.FunctionName.Length + unit.EnvironmentKey.Length;
+        foreach (var relocation in unit.Relocations) chars += relocation.Symbol.Length;
+        foreach (var dependency in unit.Dependencies) chars += dependency.Key.Length;
+        if (unit.RootMap is not null)
+        {
+            foreach (var dependency in unit.RootMapDependencies) chars += dependency.Key.Length;
+        }
+        return chars;
+    }
+
     // A query's id in the segment, writing it, with its answer's value, the first time.
     private int QueryId(UnitDependency dependency, long key)
     {
@@ -756,15 +828,32 @@ internal sealed class UnitSegmentWriter
         if (_queryIds.TryGetValue((kind, key), out var known))
             return known.Id;
         var value = 0L;
-        if (UnitAnswerCodec.Encode(kind, dependency.Key, dependency.Value) is { Length: > 0 } encoded)
+        var flags = (byte)0;
+        if (_pendingAnswers[(kind, key)] is { Length: > 0 } encoded)
         {
-            value = UnitStoreFormat.Pack(_blob.WrittenCount, encoded.Length);
-            _blob.Write(encoded);
+            var tail = UnitAnswerCodec.TailStart(kind, encoded);
+            if (tail > 0 && tail < encoded.Length)
+            {
+                // The site's own head, then where its shared tail is, written once per segment.
+                var reference = Tail(encoded.AsSpan(tail));
+                value = UnitStoreFormat.Pack((int)_blob.WrittenCount, tail + UnitStoreFormat.TailReferenceSize);
+                _blob.Write(encoded.AsSpan(0, tail));
+                Span<byte> written = stackalloc byte[UnitStoreFormat.TailReferenceSize];
+                BinaryPrimitives.WriteInt64LittleEndian(written, reference);
+                _blob.Write(written);
+                flags = UnitStoreFormat.SharedTailFlag;
+            }
+            else
+            {
+                value = UnitStoreFormat.Pack((int)_blob.WrittenCount, encoded.Length);
+                _blob.Write(encoded);
+            }
         }
-        var id = _queries.WrittenCount / UnitStoreFormat.QuerySize;
+        var id = (int)(_queries.WrittenCount / UnitStoreFormat.QuerySize);
         var query = _queries.GetSpan(UnitStoreFormat.QuerySize)[..UnitStoreFormat.QuerySize];
         query.Clear();
         BinaryPrimitives.WriteUInt16LittleEndian(query, (ushort)kind);
+        query[2] = flags;
         BinaryPrimitives.WriteInt64LittleEndian(query[8..], key);
         BinaryPrimitives.WriteUInt64LittleEndian(query[16..], answer.First);
         BinaryPrimitives.WriteUInt64LittleEndian(query[24..], answer.Second);
@@ -774,11 +863,23 @@ internal sealed class UnitSegmentWriter
         return id;
     }
 
+    // A shared tail's place in the blob, writing it the first time.
+    private long Tail(ReadOnlySpan<byte> tail)
+    {
+        var bytes = tail.ToArray();
+        if (_tails.TryGetValue(bytes, out var reference))
+            return reference;
+        reference = UnitStoreFormat.Pack((int)_blob.WrittenCount, bytes.Length);
+        _blob.Write(bytes);
+        _tails.Add(bytes, reference);
+        return reference;
+    }
+
     private long Intern(string value)
     {
         if (_interned.TryGetValue(value, out var reference))
             return reference;
-        reference = UnitStoreFormat.Pack(_strings.WrittenCount, value.Length);
+        reference = UnitStoreFormat.Pack((int)_strings.WrittenCount, value.Length);
         _strings.Write(value.AsSpan());
         _interned[value] = reference;
         return reference;
@@ -788,4 +889,14 @@ internal sealed class UnitSegmentWriter
 
     private static void WriteRef(Span<byte> record, int at, long reference) =>
         BinaryPrimitives.WriteInt64LittleEndian(record[at..], reference);
+}
+
+/// <summary>Compares shared answer tails by their bytes.</summary>
+internal sealed class UnitTailComparer : IEqualityComparer<byte[]>
+{
+    internal static UnitTailComparer Instance { get; } = new();
+
+    public bool Equals(byte[]? left, byte[]? right) => left.AsSpan().SequenceEqual(right);
+
+    public int GetHashCode(byte[] bytes) => (int)XxHash3.HashToUInt64(bytes);
 }

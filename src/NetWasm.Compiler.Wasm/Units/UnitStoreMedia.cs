@@ -14,16 +14,18 @@ using System.Threading;
 namespace NetWasm.Compiler.Wasm.Units;
 
 /// <summary>
-/// One compile's change to its store: the segment it adds (if any), the manifest that
-/// replaces the old one (null when the store is unchanged), the sequences the manifest
-/// keeps alive, and a plain summary of the compile's reuse.
+/// One compile's change to its store: the segments it adds, as many as its units need (issue
+/// 229), the manifest that replaces the old one (null when the store is unchanged), the sequences
+/// the manifest keeps alive, and a plain summary of the compile's reuse.
 /// </summary>
 internal readonly record struct UnitStoreChange(
-    int Sequence,
-    UnitSegmentWriter? Segment,
+    ImmutableArray<UnitStoreSegment> Segments,
     byte[]? Manifest,
     IReadOnlySet<int> LiveSequences,
     string Summary);
+
+/// <summary>A segment a compile adds, under its sequence.</summary>
+internal sealed record UnitStoreSegment(int Sequence, UnitSegmentWriter Writer);
 
 /// <summary>
 /// A compile as a later one can patch it: its module, each method's function index in it
@@ -171,8 +173,8 @@ internal sealed class FileUnitStoreCommitter(IUnitFileDeleter files) : IUnitStor
         var summary = change.Summary;
         if (change.Manifest is { } manifest)
         {
-            if (change.Segment is { } segment)
-                WriteAside(UnitStoreFiles.Segment(directory, change.Sequence), segment.WriteTo);
+            foreach (var segment in change.Segments)
+                WriteAside(UnitStoreFiles.Segment(directory, segment.Sequence), segment.Writer.WriteTo);
             WriteAside(UnitStoreFiles.Manifest(directory), stream => stream.Write(manifest));
             var stale = new List<string>();
             foreach (var file in System.IO.Directory.EnumerateFiles(directory, "units-*.seg"))
@@ -561,12 +563,18 @@ internal sealed class UnitStoreMemory
 
     internal void Apply(string location, UnitStoreChange change)
     {
-        byte[]? segment = null;
-        if (change is { Manifest: not null, Segment: { } writer })
+        // Each segment the compile adds stays well inside an array's length (CompiledUnitPublisher's
+        // capacity), so the store keeps it as one pinned array.
+        var segments = new List<(int Sequence, byte[] Bytes)>();
+        if (change.Manifest is not null)
         {
-            segment = GC.AllocateUninitializedArray<byte>(checked((int)writer.Length), pinned: true);
-            using var stream = new MemoryStream(segment, writable: true);
-            writer.WriteTo(stream);
+            foreach (var added in change.Segments)
+            {
+                var bytes = GC.AllocateUninitializedArray<byte>(checked((int)added.Writer.Length), pinned: true);
+                using var stream = new MemoryStream(bytes, writable: true);
+                added.Writer.WriteTo(stream);
+                segments.Add((added.Sequence, bytes));
+            }
         }
         lock (_gate)
         {
@@ -575,8 +583,8 @@ internal sealed class UnitStoreMemory
 
             if (change.Manifest is null)
                 return;
-            if (segment is not null)
-                _segments[(location, change.Sequence)] = segment;
+            foreach (var (sequence, bytes) in segments)
+                _segments[(location, sequence)] = bytes;
             _manifests[location] = change.Manifest;
             foreach (var key in new List<(string Location, int Sequence)>(_segments.Keys))
             {

@@ -17,7 +17,7 @@ namespace NetWasm.Compiler.Wasm.Units;
 /// </summary>
 internal static class UnitAnswerCodec
 {
-    private const byte Format = 2;
+    private const byte Format = 3;
 
     // The answer's encoding, or null for a kind that keeps no value. A site's caller is the
     // key's own ("caller@offset"), so it is written only when it is not.
@@ -29,6 +29,12 @@ internal static class UnitAnswerCodec
         if (value is null) return null;
         var writer = new UnitModelWriter();
         writer.Byte(Format);
+        // A site's answer ends in its target list or matching types, which many sites share; the
+        // offset where that tail starts follows the format, so a segment can store each tail once
+        // without decoding the answer (issue 229).
+        var tail = 0;
+        if (HasSharedTail(kind))
+            writer.Int(0);
         switch (kind)
         {
             case UnitQueryKind.StaticDataEnd:
@@ -174,6 +180,7 @@ internal static class UnitAnswerCodec
                     Text(writer, site.Caller, caller);
                     writer.Int(site.IlOffset);
                     writer.Method(site.Declaration);
+                    tail = writer.Length;
                     writer.Int(site.Targets.Length);
                     foreach (var target in site.Targets)
                     {
@@ -188,6 +195,7 @@ internal static class UnitAnswerCodec
                     Text(writer, site.Caller, caller);
                     writer.Int(site.IlOffset);
                     writer.Type(site.TargetType);
+                    tail = writer.Length;
                     writer.Types(site.MatchingTypes);
                 });
                 break;
@@ -277,8 +285,22 @@ internal static class UnitAnswerCodec
             default:
                 return null;
         }
-        return writer.ToArray();
+        var bytes = writer.ToArray();
+        if (tail != 0)
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(1), tail);
+        return bytes;
     }
+
+    // Whether answers of the kind carry the offset of a tail many answers share.
+    private static bool HasSharedTail(UnitQueryKind kind) =>
+        kind is UnitQueryKind.DispatchCallSite or UnitQueryKind.TypeTestSite;
+
+    // Where an encoded answer's shared tail starts, or zero when it has none (a site the lookup
+    // did not find, or a kind without one).
+    public static int TailStart(UnitQueryKind kind, ReadOnlySpan<byte> encoded) =>
+        HasSharedTail(kind) && encoded.Length >= 5
+            ? System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(encoded[1..])
+            : 0;
 
     // An answer as Encode wrote it, as the provider returned it.
     public static object Decode(UnitQueryKind kind, string key, ReadOnlySpan<byte> bytes, IMethodRepository methods,
@@ -288,6 +310,8 @@ internal static class UnitAnswerCodec
         var caller = Caller(key);
         var reader = new UnitModelReader(bytes.ToArray(), methods, fields);
         if (reader.Byte() != Format) throw new InvalidDataException("A unit answer is of another format.");
+        if (HasSharedTail(kind))
+            reader.Int();
         object value;
         switch (kind)
         {
