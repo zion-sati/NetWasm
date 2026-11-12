@@ -10,8 +10,6 @@ using NetWasm.Compiler.Wasm.Emission.Methods;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
-internal sealed record StackTraceSymbolData(int Id, int Address, int Length);
-
 internal sealed record ModuleDataPlan(
     IReadOnlyDictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>
         ExceptionMetadata,
@@ -23,8 +21,9 @@ internal sealed record ModuleDataPlan(
     public StaticInitializerFunctionPlan? StaticInitializerFunctions { get; init; }
     public int? NativeCallbackReadinessAddress { get; init; }
     public int? StateRegistrationGuardAddress { get; init; }
-    public int? StackTraceSymbolRegistrationGuardAddress { get; init; }
-    public ImmutableArray<StackTraceSymbolData> StackTraceSymbols { get; init; } = [];
+    // The sidecar descriptor and the CoreLib word the runtime initializer stores its address in.
+    public int? SidecarDescriptorAddress { get; init; }
+    public int? SidecarSlotAddress { get; init; }
 }
 
 internal sealed class ModuleDataPlanner(
@@ -38,7 +37,7 @@ internal sealed class ModuleDataPlanner(
         IReadOnlyList<EntityKey> directInitializers,
         IReadOnlyList<string> constructedInitializers,
         bool reserveNativeCallbackReadiness,
-        StackTraceMethodPlan? stackTraceMethods = null,
+        SidecarDescriptor? sidecars = null,
         bool reserveStateRegistrationGuard = false)
     {
         var metadata = new Dictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>();
@@ -97,22 +96,13 @@ internal sealed class ModuleDataPlanner(
             address += sizeof(int);
         }
 
-        var plannedStackTraceSymbols = stackTraceMethods?.Symbols ?? [];
-        int? stackTraceSymbolRegistrationGuardAddress = null;
-        if (!plannedStackTraceSymbols.IsEmpty)
+        int? sidecarDescriptorAddress = null;
+        if (sidecars is not null)
         {
-            stackTraceSymbolRegistrationGuardAddress = address;
-            segments.Add(new(address, [0, 0, 0, 0]));
-            address += sizeof(int);
-        }
-
-        var stackTraceSymbols = ImmutableArray.CreateBuilder<StackTraceSymbolData>();
-        foreach (var symbol in plannedStackTraceSymbols)
-        {
-            var bytes = System.Text.Encoding.Unicode.GetBytes(symbol.Name);
+            sidecarDescriptorAddress = address;
+            var bytes = sidecars.Encode();
             segments.Add(new(address, [.. bytes]));
-            stackTraceSymbols.Add(new(symbol.Id, address, symbol.Name.Length));
-            address = checked(address + bytes.Length);
+            address = Align4(checked(address + bytes.Length));
         }
 
         return new(
@@ -124,9 +114,8 @@ internal sealed class ModuleDataPlanner(
         {
             NativeCallbackReadinessAddress = nativeCallbackReadinessAddress,
             StateRegistrationGuardAddress = stateRegistrationGuardAddress,
-            StackTraceSymbolRegistrationGuardAddress =
-                stackTraceSymbolRegistrationGuardAddress,
-            StackTraceSymbols = stackTraceSymbols.ToImmutable(),
+            SidecarDescriptorAddress = sidecarDescriptorAddress,
+            SidecarSlotAddress = sidecars?.SlotAddress,
         };
     }
 

@@ -3,46 +3,47 @@ import test from "node:test";
 
 import { NetWasmHostError } from "./managed-errors.mjs";
 import { parseStackTraceSymbols } from "./stack-trace-symbol-reader.mjs";
+import { symbolSidecar } from "./symbol-sidecar-reader.test.mjs";
 
-test("parseStackTraceSymbols accepts absent and valid immutable symbol data", () => {
+const methodSymbols = (methods, options) =>
+  symbolSidecar(options?.kind ?? 2, methods.map(({ id, name }) => ({ id, strings: [name] })), options);
+
+const methods = [
+  { id: 1, name: "Example.Program.Main()" },
+  { id: 0x7fffffff, name: "Example.Worker.Run😀()" },
+];
+
+test("parseStackTraceSymbols accepts absent symbols, symbol arrays and method-symbols bytes", () => {
   assert.deepEqual(parseStackTraceSymbols(null), []);
   assert.deepEqual(parseStackTraceSymbols(undefined), []);
 
-  const source = {
-    schemaVersion: 1,
-    methods: [
-      { id: 1, name: "Example.Program.Main()" },
-      { id: 0xffffffff, name: "Example.Worker.Run😀()" },
-    ],
-  };
-  const parsedObject = parseStackTraceSymbols(source);
-  const parsedJson = parseStackTraceSymbols(JSON.stringify(source));
-  const parsedMethods = parseStackTraceSymbols(source.methods);
+  const bytes = methodSymbols(methods);
+  const parsedBytes = parseStackTraceSymbols(bytes);
+  const parsedBuffer = parseStackTraceSymbols(bytes.buffer);
+  const parsedMethods = parseStackTraceSymbols(methods);
 
-  assert.deepEqual(parsedObject, source.methods);
-  assert.deepEqual(parsedJson, source.methods);
-  assert.deepEqual(parsedMethods, source.methods);
-  assert.notStrictEqual(parsedObject[0], source.methods[0]);
-  assert.notStrictEqual(parsedMethods[0], source.methods[0]);
-  assert.equal(Object.isFrozen(parsedObject[0]), true);
+  assert.deepEqual(parsedBytes, methods);
+  assert.deepEqual(parsedBuffer, methods);
+  assert.deepEqual(parsedMethods, methods);
+  assert.notStrictEqual(parsedMethods[0], methods[0]);
+  assert.equal(Object.isFrozen(parsedBytes[0]), true);
 });
 
-test("parseStackTraceSymbols rejects malformed documents and envelopes", () => {
-  assert.throws(
-    () => parseStackTraceSymbols("{"),
-    error => error instanceof NetWasmHostError && /invalid.*sidecar/i.test(error.message));
-
+test("parseStackTraceSymbols rejects values that are not a method-symbols sidecar", () => {
+  for (const invalid of ["{", 42, {}]) {
+    assert.throws(
+      () => parseStackTraceSymbols(invalid),
+      error => error instanceof NetWasmHostError && /must be bytes/i.test(error.message));
+  }
   for (const invalid of [
-    "null",
-    42,
-    {},
-    { schemaVersion: 2, methods: [] },
-    { schemaVersion: 1 },
-    { schemaVersion: 1, methods: {} },
+    methodSymbols(methods, { magic: 0 }),
+    methodSymbols(methods, { kind: 1 }),
+    methodSymbols(methods).slice(0, 40),
+    methodSymbols([{ id: 2, name: "B" }, { id: 1, name: "A" }]),
   ]) {
     assert.throws(
       () => parseStackTraceSymbols(invalid),
-      error => error instanceof NetWasmHostError && /schema/i.test(error.message));
+      error => error instanceof NetWasmHostError && /invalid NetWasm method-symbols sidecar/i.test(error.message));
   }
 });
 
@@ -58,15 +59,13 @@ test("parseStackTraceSymbols rejects invalid and duplicate methods", () => {
     { id: 1, name: "" },
   ]) {
     assert.throws(
-      () => parseStackTraceSymbols({
-        schemaVersion: 1,
-        methods: [method],
-      }),
+      () => parseStackTraceSymbols([method]),
       error => error instanceof NetWasmHostError && /index 0/i.test(error.message));
   }
+  assert.throws(
+    () => parseStackTraceSymbols(methodSymbols([{ id: 0, name: "A" }])),
+    error => error instanceof NetWasmHostError && /index 0/i.test(error.message));
 
-  assert.throws(() => parseStackTraceSymbols({
-    schemaVersion: 1,
-    methods: [{ id: 1, name: "A" }, { id: 1, name: "B" }],
-  }), error => error instanceof NetWasmHostError && /duplicate.*1/i.test(error.message));
+  assert.throws(() => parseStackTraceSymbols([{ id: 1, name: "A" }, { id: 1, name: "B" }]),
+    error => error instanceof NetWasmHostError && /duplicate.*1/i.test(error.message));
 });

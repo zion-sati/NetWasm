@@ -40,7 +40,7 @@ internal sealed class EnumHasFlagEmitter(
         }
 
         nullChecks.Emit(code, receiver, throwFunction);
-        nullChecks.Emit(code, flag, throwFunction);
+        nullChecks.Emit(code, flag, throwFunction, ManagedExceptionKind.ArgumentNull);
         EmitConstant(code, 0);
         SetLocal(code, temporaryI4);
 
@@ -95,7 +95,7 @@ internal sealed class EnumHasFlagEmitter(
                 $"no reachable enum descriptor exists for '{constrainedType.CanonicalName}'");
         }
 
-        nullChecks.Emit(code, flag, throwFunction);
+        nullChecks.Emit(code, flag, throwFunction, ManagedExceptionKind.ArgumentNull);
         EmitConstant(code, 0);
         SetLocal(code, temporaryI4);
 

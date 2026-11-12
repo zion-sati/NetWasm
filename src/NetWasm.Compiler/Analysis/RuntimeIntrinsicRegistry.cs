@@ -75,6 +75,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.GCHandleRuntime", "Release") => RuntimeIntrinsic.GcHandleRelease,
                 ("System.GCHandleRuntime", "Address") => RuntimeIntrinsic.GcHandleAddress,
                 ("System.GCMetricRuntime", "Read") => RuntimeIntrinsic.GcGetMetric,
+                ("System.Runtime.InteropServices.ProgramSidecars", "RegisterMethodSymbol") =>
+                    RuntimeIntrinsic.StackTraceRegisterSymbol,
                 ("System.GCMetricSupportRuntime", "IsSupported") =>
                     RuntimeIntrinsic.GcMetricIsSupported,
                 ("System.GCFinalizerRuntime", "WaitForPending") => RuntimeIntrinsic.GcWaitForPendingFinalizers,

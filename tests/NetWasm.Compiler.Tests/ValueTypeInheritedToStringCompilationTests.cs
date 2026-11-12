@@ -46,23 +46,26 @@ public sealed class ValueTypeInheritedToStringCompilationTests
         {
             static string Describe<T>(T value) where T : struct => value.ToString()!;
 
+            // Each struct names its own type, as typeof does: its name, or type#<id> in a program
+            // without names (issue 225).
             public static int Run(int input)
             {
+                if (typeof(Plain).ToString() == typeof(ValueType).ToString()) return 9;
                 // A direct call on a struct that inherits ToString passes its address, not a box.
-                if (new Plain { Value = 5 }.ToString() != "ValueTypeInheritedToStringFixture.Plain") return 1;
+                if (new Plain { Value = 5 }.ToString() != typeof(Plain).ToString()) return 1;
                 var pair = new Pair { First = 7, Second = "x" };
-                if (pair.ToString() != "ValueTypeInheritedToStringFixture.Pair") return 2;
+                if (pair.ToString() != typeof(Pair).ToString()) return 2;
 
                 // Generic code reaches the same constrained call.
-                if (Describe(new Plain()) != "ValueTypeInheritedToStringFixture.Plain") return 3;
-                if (Describe(pair) != "ValueTypeInheritedToStringFixture.Pair") return 4;
+                if (Describe(new Plain()) != typeof(Plain).ToString()) return 3;
+                if (Describe(pair) != typeof(Pair).ToString()) return 4;
 
                 // Boxed calls, overrides, enums and nullable values keep their own paths.
-                if (((object)new Plain()).ToString() != "ValueTypeInheritedToStringFixture.Plain") return 5;
+                if (((object)new Plain()).ToString() != typeof(Plain).ToString()) return 5;
                 if (new Named().ToString() != "named" || Describe(new Named()) != "named") return 6;
                 if (Color.Green.ToString() != "Green" || Describe(Color.Red) != "Red") return 7;
                 Plain? present = new Plain(), missing = null;
-                if (present.ToString() != "ValueTypeInheritedToStringFixture.Plain" || missing.ToString() != "") return 8;
+                if (present.ToString() != typeof(Plain).ToString() || missing.ToString() != "") return 8;
                 return input + 1;
             }
         }

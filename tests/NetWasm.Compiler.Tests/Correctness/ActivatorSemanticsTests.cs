@@ -29,7 +29,19 @@ public sealed class ActivatorSemanticsTests(CorrectnessTestRunner runner) : CSha
                 foreach (var c in text) hash = unchecked(hash * 31 + c);
                 return hash & 0x7fffffff;
             }
-            private static int Failure(Exception failure) => Hash(failure.GetType().FullName + ": " + failure.Message);
+            // The failure's type, from the type itself: a program carries no type names, and a message
+            // that names a type reads type#<id> (issue 225).
+            private static int Failure(Exception failure) => Hash(failure switch
+            {
+                MissingMethodException => "System.MissingMethodException",
+                MissingMemberException => "System.MissingMemberException",
+                MemberAccessException => "System.MemberAccessException",
+                PlatformNotSupportedException => "System.PlatformNotSupportedException",
+                NotSupportedException => "System.NotSupportedException",
+                ArgumentException => "System.ArgumentException",
+                InvalidOperationException => "System.InvalidOperationException",
+                _ => "other",
+            });
             private static T Make<T>() where T : new() => new T();
             private static int Create<T>()
             {

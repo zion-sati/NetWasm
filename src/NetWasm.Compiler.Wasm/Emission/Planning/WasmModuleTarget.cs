@@ -19,6 +19,9 @@ internal sealed record WasmModuleTarget(
     ImmutableDictionary<(EntityKey Method, int ParameterIndex), HostCallbackDeclaration>
         HostCallbacks)
 {
+    // The build ID that binds the module to its symbols sidecars.
+    public string BuildId { get; init; } = "";
+
     public InstructionModuleTarget Instructions { get; } = new(
         Plan.FunctionIndices,
         Plan.InteropImports,
@@ -119,6 +122,7 @@ internal interface IWasmModuleTargetFactory
 internal sealed class WasmModuleTargetFactory(
 IWasmModulePlanner planner,
 IModuleDataPlanner moduleDataPlanner,
+ISymbolBuildIdCalculator buildIds,
 IStructuredMethodEmissionPlanner methodEmissions,
 IStaticInitializerFunctionPlanner staticInitializers,
 IJSImportForwarderPlanner jsImportForwarders) : IWasmModuleTargetFactory
@@ -127,18 +131,31 @@ IJSImportForwarderPlanner jsImportForwarders) : IWasmModuleTargetFactory
     {
         var plannedMethods = methodEmissions.Plan(request);
         var plan = jsImportForwarders.Plan(request, planner.Build(request, plannedMethods));
+        var buildId = buildIds.Calculate(
+            request.Sidecars?.TypeSymbolsDigest ?? [],
+            plan.StackTraceMethods.Symbols);
         var moduleData = staticInitializers.Build(request, plan, moduleDataPlanner.Build(
             plannedMethods,
             request.StaticInitializers,
             request.ConstructedStaticInitializers,
             request.NativeCallbacks.Count != 0,
-            plan.StackTraceMethods,
+            request.Sidecars is { DescriptorSlotAddress: int slot } sidecars
+                ? new SidecarDescriptor(
+                    slot,
+                    (sidecars.LoadTypeSymbols ? SidecarDescriptor.TypeSymbolsFlag : 0) |
+                    (plan.StackTraceMethods.Symbols.IsEmpty ? 0 : SidecarDescriptor.MethodSymbolsFlag),
+                    buildId,
+                    sidecars.ProgramFileName)
+                : null,
             reserveStateRegistrationGuard: request.HasReenterableHostEntries));
         return new(
             request,
             plan,
             moduleData,
             request.HostCallbacks.ToImmutableDictionary(
-                callback => (callback.ImportMethod, callback.ParameterIndex)));
+                callback => (callback.ImportMethod, callback.ParameterIndex)))
+        {
+            BuildId = buildId,
+        };
     }
 }

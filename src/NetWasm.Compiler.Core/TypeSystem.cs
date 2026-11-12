@@ -1201,6 +1201,7 @@ public enum RuntimeIntrinsic
     PreallocatedOutOfMemoryException,
     ObjectClone,
     JavaScriptHost,
+    StackTraceRegisterSymbol,
 }
 
 public static class RuntimeIntrinsicKinds
@@ -1208,6 +1209,11 @@ public static class RuntimeIntrinsicKinds
     // The portable Vector128<T> and Vector<T> operations lowered to Wasm SIMD.
     public static bool IsSimdVector(RuntimeIntrinsic intrinsic) =>
         intrinsic is >= RuntimeIntrinsic.SimdAdd and <= RuntimeIntrinsic.SimdReinterpret;
+
+    // ValueType's Equals and GetHashCode compare and hash the boxed value's own fields, so what
+    // they do depends on the receiver's exact type, not on the method that names them.
+    public static bool DependsOnReceiverType(RuntimeIntrinsic intrinsic) =>
+        intrinsic is RuntimeIntrinsic.ValueTypeEquals or RuntimeIntrinsic.ValueTypeGetHashCode;
 }
 
 public interface IRuntimeIntrinsicRegistry

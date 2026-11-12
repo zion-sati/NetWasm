@@ -445,7 +445,8 @@ public sealed class EnumIntrinsicEmitterTests
 
     private sealed class NoOpEnumNullCheckEmitter : IEnumNullCheckEmitter
     {
-        public void Emit(IWasmInstructionWriter code, int receiver, OptionalFunctionIndex throwFunction)
+        public void Emit(IWasmInstructionWriter code, int receiver, OptionalFunctionIndex throwFunction,
+            ManagedExceptionKind exception = ManagedExceptionKind.NullReference)
         {
         }
     }

@@ -2335,9 +2335,6 @@ public sealed class ExpressionTreeCompilationTests
                 method.Method.Definition.Key.Assembly.Name ==
                     "ExpressionTreeConstructionFixture");
         Assert.Empty(compilation.Program.NamedMemberDescriptors);
-        Assert.Equal(
-            RuntimeTypeNamePayload.None,
-            compilation.Program.TypeNamePayload);
     }
 
     [Theory]
@@ -2426,23 +2423,25 @@ public sealed class ExpressionTreeCompilationTests
                     var staticMember = (MemberExpression)staticField.Body;
                     if (staticMember.Member.Name != "StaticField")
                         return 14;
-                    if (staticMember.Member.DeclaringType!.Name != "Model")
+                    // Type names read as type IDs without names (issue 225); expression text uses them.
+                    var modelName = typeof(Model).Name;
+                    if (staticMember.Member.DeclaringType != typeof(Model))
                         return 15;
                     if (staticMember.Expression is not null)
                         return 16;
-                    if (staticFieldText != "() => Model.StaticField")
+                    if (staticFieldText != "() => " + modelName + ".StaticField")
                     {
                         if (staticFieldText == "() => StaticField")
                             return 17;
-                        if (staticFieldText == "Model.StaticField")
+                        if (staticFieldText == modelName + ".StaticField")
                             return 18;
                         return 100 + staticFieldText.Length;
                     }
                     if (
-                        created.ToString() != "value => new Model(value)" ||
+                        created.ToString() != "value => new " + modelName + "(value)" ||
                         call.ToString() != "model => model.Add(1)" ||
                         customOperator.ToString() != "model => (model + 1)" ||
-                        conversion.ToString() != "model => Convert(model, Int32)" ||
+                        conversion.ToString() != "model => Convert(model, " + typeof(int).Name + ")" ||
                         quote.ToString() !=
                             "value => Accept(inner => (inner + 1), value)")
                         return 6;
@@ -2455,7 +2454,7 @@ public sealed class ExpressionTreeCompilationTests
                         assignment.ToString() != "(local = 41)" ||
                         invocation.ToString() !=
                             "Invoke(value => (value + 1), local)" ||
-                        Expression.Empty().ToString() != "default(Void)")
+                        Expression.Empty().ToString() != "default(" + typeof(void).Name + ")")
                         return 7;
                     if (Expression.Constant(null, typeof(string)).ToString() != "null")
                         return 81;
@@ -2632,9 +2631,6 @@ public sealed class ExpressionTreeCompilationTests
             target,
             compilation.StaticDataEnd));
         Assert.NotEmpty(compilation.Program.NamedMemberDescriptors);
-        Assert.NotEqual(
-            RuntimeTypeNamePayload.None,
-            compilation.Program.TypeNamePayload & RuntimeTypeNamePayload.Name);
         Assert.DoesNotContain(
             compilation.Program.Methods.Values,
             method => method.Method.Definition.Name is

@@ -52,8 +52,8 @@ public sealed class NetWasmCompileTask : ToolTask
     public ITaskItem[] References { get; set; } = [];
     public ITaskItem[] Sources { get; set; } = [];
     public string Target { get; set; } = "wasm32";
-    public string? ExceptionTypeMapPath { get; set; }
-    public string? StackTraceSymbolsPath { get; set; }
+    public string? TypeSymbolsPath { get; set; }
+    public string? MethodSymbolsPath { get; set; }
     public string? DiagnosticTracePath { get; set; }
     public string? DiagnosticLogPath { get; set; }
     public string? WitPath { get; set; }
@@ -63,6 +63,7 @@ public sealed class NetWasmCompileTask : ToolTask
     public string? ProjectDirectory { get; set; }
     public string? PathMap { get; set; }
     public bool EmitStackTrace { get; set; }
+    public bool EmitTypeNames { get; set; }
     public bool StructuredDiagnostics { get; set; }
     // Keep and reuse compiled units (NetWasmCompiledUnits: on by default at O0), and verify reused ones.
     // "true" or "false"; empty leaves nwc's default (on at O0).
@@ -109,6 +110,7 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedNewObjectNullCheckElimination { get; set; } = "Auto";
     public string ManagedLoopStrengthReduction { get; set; } = "Auto";
     public string ManagedRangeBranchFolding { get; set; } = "Auto";
+    public string ManagedUnwrittenStaticFieldFolding { get; set; } = "Auto";
 
     protected override string ToolName => "nwc";
 
@@ -200,10 +202,14 @@ public sealed class NetWasmCompileTask : ToolTask
         builder.AppendSwitchIfNotNull("-interopmanifest:", InteropManifestPath);
         builder.AppendSwitchIfNotNull("-compilermetadata:", CompilerMetadataPath);
         builder.AppendSwitchIfNotNull("-callbackobject:", NativeCallbackObjectPath);
-        AppendIfNotEmpty(builder, "-exceptiontypemap:", ExceptionTypeMapPath);
+        AppendIfNotEmpty(builder, "-typesymbols:", TypeSymbolsPath);
         if (EmitStackTrace)
         {
-            AppendIfNotEmpty(builder, "-stacktracesymbols:", StackTraceSymbolsPath);
+            AppendIfNotEmpty(builder, "-methodsymbols:", MethodSymbolsPath);
+        }
+        if (EmitTypeNames)
+        {
+            builder.AppendSwitch("-typenames+");
         }
         AppendIfNotEmpty(builder, "-wit:", WitPath);
         AppendIfNotEmpty(builder, "-world:", WitWorld);
@@ -274,6 +280,7 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("newobjectnullcheckelimination", ManagedNewObjectNullCheckElimination),
                      ("loopstrengthreduction", ManagedLoopStrengthReduction),
                      ("rangebranchfolding", ManagedRangeBranchFolding),
+                     ("unwrittenstaticfieldfolding", ManagedUnwrittenStaticFieldFolding),
                  })
         {
             if (value is not ("" or "Auto"))

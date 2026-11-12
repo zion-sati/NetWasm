@@ -36,6 +36,37 @@ public sealed class PayForPlayFormattingCompilationTests
         Assert.Contains(reached, method => method.StartsWith("System.Number::", StringComparison.Ordinal));
     }
 
+    // The console writes integers as their ToString() does: its provider is the current culture,
+    // whose number format is always the invariant one here, so the text is the same and writing an
+    // integer builds no culture state.
+    [Theory]
+    [InlineData("Console.WriteLine(input - 7);")]
+    [InlineData("Console.Write(input - 7);")]
+    [InlineData("Console.WriteLine((long)input - 7);")]
+    [InlineData("Console.Write((long)input - 7);")]
+    public void ConsoleIntegersBuildNoCultureState(string statement)
+    {
+        var reached = ReachedMethodsOfStatement(statement);
+
+        Assert.DoesNotContain(reached, method => method.EndsWith("WithoutFormat", StringComparison.Ordinal));
+        Assert.DoesNotContain(reached, method => method.StartsWith("System.Globalization.", StringComparison.Ordinal));
+        Assert.Contains(reached, method => method.StartsWith("System.Number::", StringComparison.Ordinal));
+    }
+
+    // Console text is encoded as UTF-8 without constructing an Encoding: writing it builds neither
+    // UTF8Encoding nor its replacement fallbacks.
+    [Theory]
+    [InlineData("Console.WriteLine(\"text\");")]
+    [InlineData("Console.Write(\"text\".AsSpan());")]
+    [InlineData("Console.Error.WriteLine(input);")]
+    public void ConsoleTextConstructsNoEncoding(string statement)
+    {
+        var reached = ReachedMethodsOfStatement(statement);
+
+        Assert.DoesNotContain(reached, method => method.StartsWith("System.Text.UTF8Encoding::", StringComparison.Ordinal));
+        Assert.DoesNotContain(reached, method => method.Contains("ReplacementFallback", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("(input + 0.5f).ToString()")]
     [InlineData("(input + 0.5).ToString()")]
@@ -337,7 +368,14 @@ public sealed class PayForPlayFormattingCompilationTests
         Assert.Equal(count, Execute(checks.ToString(), count, optimize, target, Types, Helpers));
     }
 
-    private static List<string> ReachedMethods(string expression)
+    private static List<string> ReachedMethods(string expression) =>
+        ReachedMethodsOf($"public static int Run(int input) => {expression}.Length;", platformWorld: false);
+
+    // A statement may write to the console, which imports the platform's standard streams.
+    private static List<string> ReachedMethodsOfStatement(string statement) =>
+        ReachedMethodsOf($"public static int Run(int input) {{ {statement} return 0; }}", platformWorld: true);
+
+    private static List<string> ReachedMethodsOf(string run, bool platformWorld)
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileOptimizedSource(
@@ -346,11 +384,13 @@ public sealed class PayForPlayFormattingCompilationTests
             using System;
             public static class EntryPoint
             {
-                public static int Run(int input) => {{expression}}.Length;
+                {{run}}
             }
             """);
         var result = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: WasmTarget.Wasm32));
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: WasmTarget.Wasm32,
+            WitPath: platformWorld ? Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0") : null,
+            WitWorld: platformWorld ? "netwasm:platform/platform@1.0.0" : null));
         return
         [
             .. result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)

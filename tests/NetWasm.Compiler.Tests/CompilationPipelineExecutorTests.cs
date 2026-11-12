@@ -69,13 +69,13 @@ public sealed class CompilationPipelineExecutorTests
         Assert.Same(fixture.Program, Assert.IsType<CompilationAnalysis>(emission[2]).Program);
         Assert.Same(fixture.Layouts, emission[3]);
         Assert.Same(options, emission[4]);
-        var bound = Assert.IsType<CompilationResult>(fixture.Arguments("stack-binding")[0]);
-        Assert.NotSame(bound, fixture.StackBoundResult);
-        Assert.Same(fixture.StackBoundResult, fixture.Arguments("diagnostic-binding")[0]);
-        Assert.NotSame(fixture.StackBoundResult, fixture.DiagnosticBoundResult);
-        Assert.Same(fixture.DiagnosticBoundResult, result);
+        var bound = Assert.IsType<CompilationResult>(fixture.Arguments("symbol-binding")[0]);
+        Assert.NotSame(bound, fixture.SymbolBoundResult);
+        Assert.Same(fixture.SymbolBoundResult, result);
+        Assert.Same(fixture.Emission.TypeSymbols, fixture.Arguments("symbol-binding")[1]);
+        Assert.Equal(fixture.Emission.Result.BuildId, fixture.Arguments("symbol-binding")[2]);
         Assert.Equal(fixture.Emission.Result.StackTraceSymbols,
-            Assert.IsType<ImmutableArray<WasmStackTraceSymbol>>(fixture.Arguments("stack-binding")[1]));
+            Assert.IsType<ImmutableArray<WasmStackTraceSymbol>>(fixture.Arguments("symbol-binding")[3]));
         Assert.Equal(metrics ? 1 : 0, fixture.Calls.Count(call => call.Capability == "trace"));
         Assert.Equal(metrics ? 1 : 0, fixture.Calls.Count(call => call.Capability == "metrics-create"));
         if (metrics)
@@ -113,7 +113,7 @@ public sealed class CompilationPipelineExecutorTests
 
         Assert.Same(writerThrows ? fixture.WriterFailure : fixture.Failure, failure);
         Assert.Single(fixture.Calls, call => call.Capability == "lease-dispose");
-        Assert.DoesNotContain(fixture.Calls, call => call.Capability is "success-artifact" or "stack-binding" or "diagnostic-binding");
+        Assert.DoesNotContain(fixture.Calls, call => call.Capability is "success-artifact" or "symbol-binding");
         var writing = fixture.Arguments("failure-artifact");
         Assert.Equal("emission", writing[1]);
         Assert.Same(fixture.Failure, writing[2]);
@@ -140,11 +140,11 @@ public sealed class CompilationPipelineExecutorTests
             NetWasm.Compiler.Metadata.Inputs.CompilationInputs.Empty, NetWasm.Compiler.Metadata.Inputs.CompilationInputs.Empty));
 
     // The last compile's module patched, with the facts it kept.
-    private static EarlyCutoffEmission Served(Fixture fixture, ImmutableArray<NetWasm.Compiler.ExceptionTypes.ReachableExceptionType>? exceptionTypes) =>
+    private static EarlyCutoffEmission Served(Fixture fixture, byte[]? typeSymbols) =>
         new([9, 9], 1, "early cutoff: patched 1 of the last compile's functions\n")
         {
             Kept = new([9, 9], [], [], []),
-            Facts = new("", 96, fixture.Manifest, [], [], null, false, exceptionTypes),
+            Facts = new("", 96, fixture.Manifest, [], [], null, false, typeSymbols, [5]),
         };
 
     [Theory]
@@ -153,25 +153,27 @@ public sealed class CompilationPipelineExecutorTests
     public void AServedCompileIsTheLastCompilesModuleWithTheFactsItKept(bool metrics)
     {
         var plain = new Fixture(WasmTarget.Wasm32);
-        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, []));
+        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, [7]));
 
         var outcome = fixture.Executor.Execute(fixture.Options(metrics, 0), serveFromLastCompile: true);
 
         Assert.True(outcome.Module.PatchedLastCompile);
         Assert.Equal([9, 9], outcome.Module.ApplicationModule);
+        // The patched module names its types and methods as the last compile did.
+        Assert.Equal([7], outcome.Module.TypeSymbols!.Bytes);
+        Assert.Equal([5], outcome.Module.MethodSymbols!.Bytes);
         Assert.Contains(fixture.Calls, call => call.Capability == "kept-commit");
         Assert.Equal(metrics, fixture.Calls.Any(call => call.Capability == "metric-complete"));
     }
 
-    // Its facts name no exception types, which an exception type map needs: it runs in full.
+    // Its facts keep no type-symbols sidecar, which every compile writes: it runs in full.
     [Fact]
-    public void AServedCompileWhoseFactsCannotBindItsDiagnosticsRunsInFull()
+    public void AServedCompileWhoseFactsKeepNoSidecarsRunsInFull()
     {
         var plain = new Fixture(WasmTarget.Wasm32);
         var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, null));
 
-        var outcome = fixture.Executor.Execute(fixture.Options(false, 0) with { EmitExceptionTypeMap = true },
-            serveFromLastCompile: true);
+        var outcome = fixture.Executor.Execute(fixture.Options(false, 0), serveFromLastCompile: true);
 
         Assert.False(outcome.Module.PatchedLastCompile);
         Assert.Same(fixture.Emission.Result.Module, outcome.Module.ApplicationModule);
@@ -197,7 +199,7 @@ public sealed class CompilationPipelineExecutorTests
     {
         var plain = new Fixture(WasmTarget.Wasm32);
         var cutoff = patched
-            ? Served(plain, []) with { Module = plain.Emission.Result.Module }
+            ? Served(plain, [7]) with { Module = plain.Emission.Result.Module }
             : new EarlyCutoffEmission(null, 0, "early cutoff: declined (an edit)\n");
         var fixture = new Fixture(WasmTarget.Wasm32, Observation(), cutoff);
 
@@ -211,7 +213,7 @@ public sealed class CompilationPipelineExecutorTests
     public void VerificationFailsACutoffThatPatchedAnotherModule()
     {
         var plain = new Fixture(WasmTarget.Wasm32);
-        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, []));
+        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, [7]));
 
         var failure = Assert.Throws<InvalidOperationException>(() =>
             fixture.Executor.Execute(fixture.Options(false, 0) with { VerifyCompiledUnits = true }));
@@ -255,7 +257,8 @@ public sealed class CompilationPipelineExecutorTests
                 NativeImports = [new("library", "entry", [width == WasmTarget.Wasm32 ? WasmValueType.I32 : WasmValueType.I64], WasmValueType.F64)],
                 FunctionImports = [new("host", "read", WasmFunctionType.Create(CliValueKind.I4))],
                 RuntimeFeatures = [NetWasmRuntimeFeatureIds.LocalTime],
-            }, new([], []));
+                BuildId = new string('b', 32),
+            }, new([], []), new([], [], []));
             var lease = Capability<IMetadataCompilationLease>("lease", invoke: (method, _) =>
             {
                 Calls.Add((method.Name == "Dispose" ? "lease-dispose" : "lease-snapshot", []));
@@ -283,11 +286,8 @@ public sealed class CompilationPipelineExecutorTests
                 Capability<IHostInteropManifestBuilder>("manifest", Manifest),
                 Capability<ICompilationComplexityStage>("complexity"),
                 Capability<ICompilerProgressReporter>("progress"),
-                // A served compile binds its patched module; a full one, its result.
-                Capability<ICompilationDiagnosticBindingStage>("diagnostic-binding", invoke: (_, args) =>
-                    args[0] is byte[]? null : DiagnosticBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
-                Capability<ICompilationStackTraceArtifactBinder>("stack-binding", invoke: (_, args) =>
-                    StackBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
+                Capability<NetWasm.Compiler.Symbols.ICompilationSymbolSidecarBinder>("symbol-binding", invoke: (_, args) =>
+                    SymbolBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
                 Capability<ISymbolFormatterFactory>("symbols", ValidationTestData.Symbols()),
                 Capability<ICompilationMetricsRequestFactory>("metrics-create", metrics),
                 Capability<ICompilationInputDetector>("inputs-detect", invoke: (_, _) => inputs),
@@ -304,8 +304,7 @@ public sealed class CompilationPipelineExecutorTests
         public CompilationLayouts Layouts { get; }
         public CompilationEmission Emission { get; }
         public HostInteropManifest Manifest { get; }
-        public CompilationResult? StackBoundResult { get; private set; }
-        public CompilationResult? DiagnosticBoundResult { get; private set; }
+        public CompilationResult? SymbolBoundResult { get; private set; }
         public List<(string Capability, object?[] Arguments)> Calls { get; } = [];
         public string? FailureAt { get; init; }
         public Exception Failure { get; init; } = new InvalidOperationException("capability failure");
@@ -350,8 +349,7 @@ public sealed class CompilationPipelineExecutorTests
                 yield return "trace";
             yield return "manifest";
             yield return "success-artifact";
-            yield return "stack-binding";
-            yield return "diagnostic-binding";
+            yield return "symbol-binding";
             yield return "inputs-record";
             yield return "lease";
             yield return "lease-dispose";

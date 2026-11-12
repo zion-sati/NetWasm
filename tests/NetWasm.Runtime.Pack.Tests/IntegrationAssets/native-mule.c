@@ -528,3 +528,47 @@ int native_mule_aggregate_selftest(void)
     if (native_mule_aggregate_narrow(narrow).value != -1233 || narrow.value != -1200) return 15;
     return 42;
 }
+
+/* Issue 226: native functions managed code calls through unmanaged function pointers. */
+typedef struct mule_calli_pair { int first; int second; } mule_calli_pair;
+
+static int mule_calli_twice(int value) { return value * 2; }
+
+static mule_calli_pair mule_calli_swap(mule_calli_pair value) {
+    mule_calli_pair swapped = { value.second, value.first };
+    return swapped;
+}
+
+static double mule_calli_mix(int integer, double real, mule_int64 wide) {
+    return (double)integer + real + (double)wide;
+}
+
+void *native_mule_calli_twice_address(void) { return (void *)&mule_calli_twice; }
+void *native_mule_calli_swap_address(void) { return (void *)&mule_calli_swap; }
+void *native_mule_calli_mix_address(void) { return (void *)&mule_calli_mix; }
+
+/* Issue 226's siblings: float, narrow integers the C ABI extends, a pointer-width argument and a
+ * struct of one scalar, which the C ABI passes as that scalar rather than through a pointer. */
+typedef struct mule_calli_wrapped { double value; } mule_calli_wrapped;
+
+static float mule_calli_scale(float value, float factor) { return value * factor; }
+
+static signed char mule_calli_narrow(unsigned char unsigned_value, signed char signed_value) {
+    return (signed char)(unsigned_value + signed_value);
+}
+
+static mule_int64 mule_calli_sum(const int *values, int count) {
+    mule_int64 sum = 0;
+    for (int index = 0; index < count; index++) sum += values[index];
+    return sum * 4294967296LL;
+}
+
+static mule_calli_wrapped mule_calli_wrap(mule_calli_wrapped wrapped) {
+    mule_calli_wrapped doubled = { wrapped.value * 2.0 };
+    return doubled;
+}
+
+void *native_mule_calli_scale_address(void) { return (void *)&mule_calli_scale; }
+void *native_mule_calli_narrow_address(void) { return (void *)&mule_calli_narrow; }
+void *native_mule_calli_sum_address(void) { return (void *)&mule_calli_sum; }
+void *native_mule_calli_wrap_address(void) { return (void *)&mule_calli_wrap; }

@@ -80,7 +80,6 @@ internal static class MethodContributionFingerprint
         Set(16);
         Int(hash, (facts.RequiresTypeFacts ? 1 : 0) | (facts.RequiresDelegateInvoke ? 2 : 0) |
             (facts.RequiresGenericArguments ? 4 : 0) | (facts.RequiresMemberNames ? 8 : 0));
-        Text(hash, facts.TypeNamePayload.ToString());
         // Whether the body allocates by itself: with the methods it calls, that decides which
         // methods allocate, and so every caller's safepoints.
         var allocates = false;

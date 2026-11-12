@@ -47,29 +47,67 @@ namespace System.Runtime.InteropServices
 
         internal static ILocalTimePreflightValidator CreateLocalTimePreflightValidator() =>
             new LocalTimePreflightValidator(
+                ProgramSidecars.FileName(".tz-info") ?? "",
                 new EnvironmentVariableReader(PlatformServices.ProcessEnvironment),
                 new TimeZoneAssetFileOpener(
                     new WasiPreopenedDirectorySource(new WasiPreopensInvoker()),
-                    new WasiReadOnlyFileOpener(new WasiDescriptorOpenInvoker(
-                        new WasiOpenAtInvoker(),
-                        new Concurrency.SubtaskReturnAwaiter(
-                            CreateWaitableEventAwaiter(),
-                            new Concurrency.WasiSubtaskDropInvoker()),
-                        new CanonicalBufferAllocator())),
-                    new WasiReadOnlyFileReader(
-                        new WasiFileStreamOpenInvoker(),
-                        new WasiFileStreamReadInvoker(),
-                        new WasiFileStreamReadableDropInvoker(),
-                        new WasiFileStreamResultReadInvoker(),
-                        new WasiFileStreamResultDropInvoker(),
-                        CreateWaitableEventAwaiter(),
-                        new CanonicalBufferAllocator())),
+                    CreateReadOnlyFileOpener(),
+                    CreateReadOnlyFileReader()),
                 new TimeZoneAssetParser(),
                 new TimeZoneDefinitionResolverFactory(new TimeZoneTransitionTableReader()),
                 new LocalTimeOffsetResolverFactory(new TimeZoneTransitionResolver()),
                 new UtcLocalTimeOffsetResolver(),
                 new LocalTimeOffsetResolverInstaller(),
                 new TimeZoneCatalogSnapshotInstaller());
+
+        internal static Sidecars.ISymbolSidecarLoader CreateTypeSymbolLoader() =>
+            CreateSymbolSidecarLoader(
+                new Sidecars.TypeSymbolInstaller(),
+                ".type-symbols",
+                Sidecars.SymbolSidecar.TypeKind,
+                "type names read as type#<id>");
+
+        internal static Sidecars.ISymbolSidecarLoader CreateMethodSymbolLoader() =>
+            CreateSymbolSidecarLoader(
+                new Sidecars.MethodSymbolInstaller(new Sidecars.RuntimeMethodSymbolRegistrar()),
+                ".method-symbols",
+                Sidecars.SymbolSidecar.MethodKind,
+                "stack frames read as method#<id>");
+
+        private static Sidecars.ISymbolSidecarLoader CreateSymbolSidecarLoader(
+            Sidecars.ISymbolSidecarInstaller installer,
+            string suffix,
+            ushort kind,
+            string consequence) =>
+            new Sidecars.SymbolSidecarLoader(
+                new Sidecars.WasiSidecarFileReader(
+                    new WasiPreopenedDirectorySource(new WasiPreopensInvoker()),
+                    CreateReadOnlyFileOpener(),
+                    CreateReadOnlyFileReader()),
+                new Sidecars.SymbolSidecarParser(),
+                installer,
+                new Sidecars.ProgramStandardErrorWriter(),
+                suffix,
+                kind,
+                consequence);
+
+        private static IReadOnlyFileOpener CreateReadOnlyFileOpener() =>
+            new WasiReadOnlyFileOpener(new WasiDescriptorOpenInvoker(
+                new WasiOpenAtInvoker(),
+                new Concurrency.SubtaskReturnAwaiter(
+                    CreateWaitableEventAwaiter(),
+                    new Concurrency.WasiSubtaskDropInvoker()),
+                new CanonicalBufferAllocator()));
+
+        private static IReadOnlyFileReader CreateReadOnlyFileReader() =>
+            new WasiReadOnlyFileReader(
+                new WasiFileStreamOpenInvoker(),
+                new WasiFileStreamReadInvoker(),
+                new WasiFileStreamReadableDropInvoker(),
+                new WasiFileStreamResultReadInvoker(),
+                new WasiFileStreamResultDropInvoker(),
+                CreateWaitableEventAwaiter(),
+                new CanonicalBufferAllocator());
 
         internal static IManagedEntryPointArgumentSource
             CreateManagedEntryPointArgumentSource(
@@ -114,10 +152,10 @@ namespace System.Runtime.InteropServices
                         new Output.WasiStandardOutputResultReadInvoker(),
                         new Output.WasiStandardOutputResultDropInvoker(),
                         awaiter,
-                        new CanonicalBufferAllocator()),
-                    new Output.WasiStandardOutputWritableDropInvoker()),
+                        new CanonicalBufferAllocator())),
                 new Output.WasiStandardOutputWriteInvoker(),
-                awaiter);
+                awaiter,
+                new Concurrency.WasiThreadYieldInvoker());
         }
 
         internal static Input.WasiStandardInputReader CreateStandardInput() =>
@@ -143,10 +181,10 @@ namespace System.Runtime.InteropServices
                         new Output.WasiStandardErrorResultReadInvoker(),
                         new Output.WasiStandardErrorResultDropInvoker(),
                         awaiter,
-                        new CanonicalBufferAllocator()),
-                    new Output.WasiStandardErrorWritableDropInvoker()),
+                        new CanonicalBufferAllocator())),
                 new Output.WasiStandardErrorWriteInvoker(),
-                awaiter);
+                awaiter,
+                new Concurrency.WasiThreadYieldInvoker());
         }
     }
 
@@ -198,6 +236,10 @@ namespace System.Runtime.InteropServices
 
         internal static string[] ReadManagedEntryPointArguments() =>
             ManagedEntryPointArguments.Read();
+
+        // What a Main(string[]) that never reads its parameter receives: nothing can observe the
+        // array, so the command line goes unread, as for a parameterless Main.
+        internal static string[] IgnoredManagedEntryPointArguments() => null!;
 
         internal static IPlatformScheduler Scheduler
         {

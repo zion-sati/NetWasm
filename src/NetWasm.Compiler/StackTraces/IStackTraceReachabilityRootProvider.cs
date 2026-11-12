@@ -7,7 +7,9 @@ namespace NetWasm.Compiler.StackTraces;
 internal interface IStackTraceReachabilityRootProvider
 {
     ReachabilityRoots Provide(
-        bool enabled,
+        bool stackTraces,
+        bool typeNames,
         ITypeFinder types,
-        IFieldRepository fields);
+        IFieldRepository fields,
+        IMethodRepository methods);
 }

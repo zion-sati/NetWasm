@@ -1,6 +1,8 @@
 namespace System.Runtime.InteropServices.TimeZones
 {
+    // The time zone data is the program's <program>.wasm.tz-info sidecar (assetName).
     internal sealed class LocalTimePreflightValidator(
+        string assetName,
         IEnvironmentVariableReader environment,
         ITimeZoneAssetFileOpener assetFiles,
         ITimeZoneAssetParser assets,
@@ -10,8 +12,8 @@ namespace System.Runtime.InteropServices.TimeZones
         ILocalTimeOffsetResolverInstaller installer,
         ITimeZoneCatalogSnapshotInstaller catalogs) : ILocalTimePreflightValidator
     {
-        internal const string AssetName = "netwasm-timezones.nwtz";
         internal const string RequiredDataVersion = "2026c";
+        private readonly string _assetName = assetName ?? throw new ArgumentNullException();
         private readonly IEnvironmentVariableReader _environment =
             environment ?? throw new ArgumentNullException();
         private readonly ITimeZoneAssetFileOpener _assetFiles =
@@ -49,7 +51,7 @@ namespace System.Runtime.InteropServices.TimeZones
                 ITimeZoneAssetFile file;
                 try
                 {
-                    file = _assetFiles.Open(AssetName);
+                    file = _assetFiles.Open(_assetName);
                 }
                 catch (PlatformNotSupportedException exception)
                 {
@@ -100,12 +102,12 @@ namespace System.Runtime.InteropServices.TimeZones
             }
         }
 
-        private static PlatformNotSupportedException Failure(
+        private PlatformNotSupportedException Failure(
             string timeZone,
             string identity,
             string reason) => new(
                 "Timezone preflight failed: TZ='" + timeZone +
-                "'; asset='" + AssetName +
+                "'; asset='" + _assetName +
                 "'; identity='" + identity +
                 "'; required-version='" + RequiredDataVersion +
                 "'; reason=" + reason + ".");

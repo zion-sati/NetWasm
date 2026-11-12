@@ -36,4 +36,28 @@ public sealed class AuthoritativeRootSourceSelectorTests
         Assert.Contains(selected, result);
         Assert.Contains(local, result);
     }
+
+    // A byref argument keeps one value for the call unless stored, so its slot is written at entry
+    // and on a store instead of at every safepoint; one held in the value frame or captured by a
+    // filter is not.
+    [Fact]
+    public void ByrefArgumentsAreAuthoritativeUnlessFramedOrCaptured()
+    {
+        var receiver = new RootSource(RootSourceKind.ManagedAddressArgument, 0);
+        var framed = new RootSource(RootSourceKind.ManagedAddressArgument, 1);
+        var captured = new RootSource(RootSourceKind.ManagedAddressArgument, 2);
+        var byrefLocal = new RootSource(RootSourceKind.ManagedAddressLocal, 0);
+        var roots = new MethodRootMap(EntryKey,
+            new[] { receiver, framed, captured, byrefLocal }
+                .Select((source, slot) => (source, slot)).ToImmutableDictionary(x => x.source, x => x.slot), []);
+        var values = new ValueFrameLayout(16, [], ImmutableDictionary<int, int>.Empty.Add(1, 0), [], []);
+        var captureSlot = new CapturedSlot(true, 2);
+        var filters = new FilterEnvironmentLayout(16, 1, 0,
+            ImmutableDictionary<CapturedSlot, FilterCapture>.Empty.Add(captureSlot,
+                new(captureSlot, CliTypeIdentity.FromStackKind(CliValueKind.ManagedAddress), 0, [])));
+
+        var result = new AuthoritativeRootSourceSelector().Select(roots, values, filters, new ArrayMetadataCachingPlan([], []));
+
+        Assert.Equal([receiver], result);
+    }
 }

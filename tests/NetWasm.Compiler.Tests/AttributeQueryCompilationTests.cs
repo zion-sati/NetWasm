@@ -140,7 +140,8 @@ public sealed class AttributeQueryCompilationTests
 
         var compilation = NetWasmCompiler.Compile(options);
         Assert.Equal(42, ExecuteWithStandardWasiNode(compilation.ApplicationModule, assets.Directory,
-            42, target, compilation.StaticDataEnd));
+            42, target, compilation.StaticDataEnd, System.Collections.Immutable.ImmutableDictionary<string, string>.Empty,
+            timeZoneAssetPath: null, methodSymbols: compilation.MethodSymbols!.Bytes));
     }
 
     [Theory]

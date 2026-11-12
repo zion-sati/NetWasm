@@ -216,7 +216,7 @@ public sealed class WasmModuleEmitterContractTests
                 Capability<IAsyncJSImportSetAppender>("async"),
                 Capability<IFilterFunctionSetAppender>("filters"),
                 Capability<IRuntimeFunctionAppender>("runtime", new RuntimeFunctionAppendResult(22, 23, 21, false)),
-                new NoLocalTimeMethod(),
+                new NoStartupPreflights(),
                 Capability<IRequestedExportSetAppender>("requested"),
                 Capability<IComponentFunctionAppender>("component", ImmutableArray.Create("feature")),
                 Capability<IFunctionIndexResolverFactory>("indices", Capability<IFunctionIndexResolver>("resolve")),
@@ -300,9 +300,11 @@ public sealed class WasmModuleEmitterContractTests
             InvokeCapability(targetMethod!, args ?? []);
     }
 
-    private sealed class NoLocalTimeMethod :
-        NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.LocalTime.ILocalTimePreflightMethodSelector
+    private sealed class NoStartupPreflights :
+        NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.Startup.IStartupPreflightMethodSelector
     {
-        public EntityKey? Select(WasmEmissionRequest request) => null;
+        public NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.Startup.StartupPreflights Select(
+            WasmEmissionRequest request) =>
+            NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.Startup.StartupPreflights.None;
     }
 }

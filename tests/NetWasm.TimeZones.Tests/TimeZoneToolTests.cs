@@ -606,7 +606,9 @@ public sealed class TimeZoneToolTests
 
         Assert.Contains("timeZone == null", source);
         Assert.Contains("response.ok", source);
-        Assert.Contains("/netwasm-timezones", source);
+        Assert.Contains("\"/netwasm-sidecars\"", source);
+        Assert.Contains("[`${programFileName}.tz-info`]", source);
+        Assert.Contains("programFileName.includes(\"/\")", source);
         Assert.Contains("zones.nwtz", source);
         Assert.Throws<ArgumentException>(() => encoder.Encode(""));
     }

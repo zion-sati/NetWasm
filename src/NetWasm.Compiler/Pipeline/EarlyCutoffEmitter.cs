@@ -34,8 +34,6 @@ internal sealed record EarlyCutoffEmission(byte[]? Module, int Patched, string A
 
     public UnitKeptCompile? Kept { get; init; }
     public KeptCompilationFacts? Facts { get; init; }
-    // The stack-trace symbols, written again, when the compile writes stack traces.
-    public StackTraces.StackTraceSymbolArtifact? StackTraceSymbols { get; init; }
 }
 
 internal interface IEarlyCutoffEmitter
@@ -95,8 +93,7 @@ internal sealed class EarlyCutoffEmitter(
     IRuntimeIntrinsicRegistryFactory intrinsicRegistries,
     ITypeDefinitionResolverFactory typeDefinitionResolvers,
     IExceptionGroupEnumerator exceptionGroups,
-    StackTraces.IStackTraceSourceLocationReader sourceLocations,
-    StackTraces.IStackTraceSymbolWriter stackTraceSymbols) : IEarlyCutoffEmitter
+    StackTraces.IStackTraceSourceLocationReader sourceLocations) : IEarlyCutoffEmitter
 {
     public EarlyCutoffEmission Emit(EarlyCutoffRequest request)
     {
@@ -116,14 +113,13 @@ internal sealed class EarlyCutoffEmitter(
         var symbols = symbolFormatters.Create(metadata);
         if (UnitPlanCodec.Decode(kept.Plans, methods, fields) is not { } plans)
             return Declined("the last compile's plans cannot be replayed");
+        // The last compile's method-symbols sidecar and build ID hold while every symbol is the same.
         EarlyCutoffStackTraces? stackTraces = null;
-        StackTraces.StackTraceSymbolArtifact? stackTraceArtifact = null;
         if (options.EmitStackTrace)
         {
             stackTraces = EarlyCutoffStackTraces.Replay(plans.StackTraces, methods, symbols, sourceLocations.Read(metadata, options),
                 edited);
             if (stackTraces is null) return Declined("the stack-trace symbols changed");
-            stackTraceArtifact = stackTraceSymbols.Write(stackTraces.Table.Symbols);
         }
         if (edited.Length == 0)
         {
@@ -131,7 +127,6 @@ internal sealed class EarlyCutoffEmitter(
             {
                 Kept = kept,
                 Facts = facts,
-                StackTraceSymbols = stackTraceArtifact,
             };
         }
         var functions = UnitFunctionIndices.Read(kept.FunctionIndices);
@@ -232,7 +227,6 @@ internal sealed class EarlyCutoffEmitter(
             {
                 Kept = kept,
                 Facts = facts,
-                StackTraceSymbols = stackTraceArtifact,
             };
     }
 

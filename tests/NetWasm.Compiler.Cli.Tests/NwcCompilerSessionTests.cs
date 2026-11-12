@@ -3,8 +3,7 @@ using NetWasm.Compiler.Cli.Tests.TestSupport;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.ExceptionTypes;
-using NetWasm.Compiler.StackTraces;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Wasm;
 
 namespace NetWasm.Compiler.Cli.Tests;
@@ -18,13 +17,13 @@ public sealed class NwcCompilerSessionTests
     [InlineData(WasmTarget.Wasm64, "wasm64")]
     public void MapsEveryCompilerFact(WasmTarget target, string expectedTarget)
     {
-        var symbols = new StackTraceSymbolArtifact([41, 42], "application/json", "symbols.json", "digest");
-        var exceptions = new ExceptionTypeMapArtifact([1], "application/json", "exceptions.json", "digest");
+        var symbols = new SymbolSidecarArtifact(SymbolSidecarKind.Method, [41, 42]);
+        var types = new SymbolSidecarArtifact(SymbolSidecarKind.Type, [1]);
         var callbacks = CliTestData.CallbackSupport(WasmValueType.I32);
         var result = new ModuleCompilationResult([0, 97, 115, 109], CliTestData.InteropManifest(expectedTarget), 99)
         {
-            StackTraceSymbols = symbols,
-            DiagnosticArtifacts = new DiagnosticArtifactBundle([], exceptions, [], null!),
+            MethodSymbols = symbols,
+            TypeSymbols = types,
             RuntimeFeatures = [NetWasmRuntimeFeatureIds.LocalTime],
             FunctionImports = [new("host", "read", WasmFunctionType.Create(CliValueKind.I4))],
             NativeImports = [new("library", "compute", [WasmValueType.F64], WasmValueType.I64)],
@@ -39,8 +38,8 @@ public sealed class NwcCompilerSessionTests
         Assert.Same(result.ApplicationModule, actual.CoreModule);
         Assert.Equal(99, actual.StaticDataEnd);
         Assert.Same(result.InteropManifest, actual.InteropManifest);
-        Assert.Same(symbols, actual.StackTraceSymbols);
-        Assert.Same(exceptions, actual.ExceptionTypeMap);
+        Assert.Same(symbols, actual.MethodSymbols);
+        Assert.Same(types, actual.TypeSymbols);
         Assert.Equal(expectedTarget, actual.Target);
         Assert.Equal(result.RuntimeFeatures, actual.RuntimeFeatures);
         Assert.Equal(result.FunctionImports, actual.FunctionImports);
@@ -51,14 +50,15 @@ public sealed class NwcCompilerSessionTests
     }
 
     [Fact]
-    public void LeavesTheExceptionTypeMapOutWithoutDiagnosticArtifacts()
+    public void LeavesTheSidecarsOutWhenTheCompileHasNone()
     {
         var result = new ModuleCompilationResult([], CliTestData.InteropManifest("wasm32"), 0);
 
         var actual = new NwcCompilerSession(new RecordingCompiler(result), new Disposable())
             .Compile(Options(WasmTarget.Wasm32));
 
-        Assert.Null(actual.ExceptionTypeMap);
+        Assert.Null(actual.TypeSymbols);
+        Assert.Null(actual.MethodSymbols);
     }
 
     // An entry export completes before it returns unless Main is asynchronous: an

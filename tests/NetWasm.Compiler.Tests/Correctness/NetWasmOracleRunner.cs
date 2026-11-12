@@ -37,10 +37,10 @@ internal sealed class NetWasmOracleRunner(
         var modulePath = Path.Combine(
             compilation.Directory,
             $"{compilation.Fixture.Name}.{compilation.Profile}.{targetName}.wasm");
-        var stackTraceSymbolsPath = compilation.Fixture.EmitStackTrace
-            ? modulePath + ".stacktrace.json"
+        var methodSymbolsPath = compilation.Fixture.EmitStackTrace
+            ? modulePath + ".method-symbols"
             : null;
-        var hostConfigurationPath = stackTraceSymbolsPath is null &&
+        var hostConfigurationPath = methodSymbolsPath is null &&
             !compilation.Fixture.CallbackEntry
             ? null
             : modulePath + ".host.json";
@@ -51,14 +51,14 @@ internal sealed class NetWasmOracleRunner(
             target,
             tracePath,
             modulePath,
-            stackTraceSymbolsPath,
+            methodSymbolsPath,
             exports),
             cancellationToken);
         if (hostConfigurationPath is not null)
         {
             File.WriteAllText(hostConfigurationPath, JsonSerializer.Serialize(new
             {
-                stackTraceSymbolsPath,
+                methodSymbolsPath,
                 callbackEntry = compilation.Fixture.CallbackEntry,
                 inputArgument = compilation.Fixture.CallbackEntry,
             }));

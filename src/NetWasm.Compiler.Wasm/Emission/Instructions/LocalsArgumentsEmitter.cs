@@ -261,7 +261,8 @@ internal sealed class LocalsArgumentsEmitter(
     private void EmitStoreArgument(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var argumentIndex = CilOperandReader.GetIndex(request.Instruction);
-        if (TryStoreAuthoritative(request, code, new(RootSourceKind.Argument, argumentIndex))) return;
+        if (TryStoreAuthoritative(request, code, new(RootSourceKind.Argument, argumentIndex)) ||
+            TryStoreAuthoritative(request, code, new(RootSourceKind.ManagedAddressArgument, argumentIndex))) return;
         var targetLocal = argumentIndex + request.Context.ParameterOffset;
         var type = argumentSignatureTypes.Resolve(request.Header, argumentIndex);
         if (TryGetFilterCapture(request.Context, true, argumentIndex, out var capture))
@@ -329,8 +330,8 @@ internal sealed class LocalsArgumentsEmitter(
         EmitLocalGet(code, GetStackLocal(request.Context, top, request.Stack[top]));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
             WasmInstructionOperand.Unsigned((uint)(source.Index +
-                (source.Kind == RootSourceKind.Argument
-                    ? request.Context.ParameterOffset : request.Context.LocalBase)))));
+                (source.Kind == RootSourceKind.Local
+                    ? request.Context.LocalBase : request.Context.ParameterOffset)))));
         ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
             checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
         request.Stack.RemoveAt(top);

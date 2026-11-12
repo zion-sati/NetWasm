@@ -1,13 +1,18 @@
 using System.IO;
 using System.Text;
+using System.Text.Unicode;
 
 namespace System.Runtime.InteropServices.ConsoleServices;
 
-// Floating-point and decimal values are written with a null provider. FormatProvider is always
-// the current culture here, and the no-provider form writes the same text, so console output does
-// not make the provider-driven formatter reachable.
+// Numbers are written with their no-provider ToString(). FormatProvider is always the current
+// culture here, whose number format is the invariant one, so the text is the same, and console
+// output does not make the provider-driven formatters or culture state reachable.
+// Text is encoded as Encoding.UTF8 encodes it, an unpaired surrogate becoming U+FFFD, without
+// constructing an Encoding: at most three bytes for each UTF-16 code unit, and a long text in
+// pieces of whole characters.
 internal abstract class ConsoleTextWriter : TextWriter
 {
+    private const int MaximumCharsPerWrite = 4096;
 
     public override Encoding Encoding => Encoding.UTF8;
 
@@ -23,11 +28,27 @@ internal abstract class ConsoleTextWriter : TextWriter
 
     public override void Write(string? value)
     {
-        if (value is not null)
+        if (string.IsNullOrEmpty(value))
         {
-            WriteBytes(Encoding.UTF8.GetBytes(value));
+            return;
+        }
+
+        var buffer = new byte[Math.Min(value.Length, MaximumCharsPerWrite) * 3];
+        for (var offset = 0; offset < value.Length;)
+        {
+            Utf8.FromUtf16(value.AsSpan(offset), buffer, out var charsRead, out var bytesWritten);
+            WriteToStream(buffer.AsSpan(0, bytesWritten));
+            offset += charsRead;
         }
     }
+
+    public override void Write(int value) => Write(value.ToString());
+
+    public override void Write(uint value) => Write(value.ToString());
+
+    public override void Write(long value) => Write(value.ToString());
+
+    public override void Write(ulong value) => Write(value.ToString());
 
     public override void Write(float value) => Write(value.ToString());
 
@@ -36,17 +57,9 @@ internal abstract class ConsoleTextWriter : TextWriter
     public override void Write(decimal value) => Write(value.ToString());
 
     public override void WriteLine(int value) =>
-        Write(value.ToString(FormatProvider) + NewLine);
+        Write(value.ToString() + NewLine);
 
     public override void WriteLine(string? value) => Write((value ?? string.Empty) + NewLine);
-
-    private void WriteBytes(byte[] contents)
-    {
-        if (contents.Length != 0)
-        {
-            WriteToStream(contents);
-        }
-    }
 
     // Writes to the stream's platform service.
     protected abstract void WriteToStream(ReadOnlySpan<byte> contents);

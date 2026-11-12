@@ -337,7 +337,7 @@
       "id": "jco.closure-integrity",
       "version": "1",
       "relativePath": "tools/jco/closure-integrity.json",
-      "sha256": "fbbc383e5ef9b7384018061b026bcb7323a27bd53485a480903ffaef8f30c40c"
+      "sha256": "257b43a7319647eb14a47392db9032e2eef76ffa6c09cba0e636c9696446e18c"
     },
     {
       "id": "jco.notices",
@@ -353,9 +353,9 @@
     },
     {
       "id": "jco.bindgen-patch",
-      "version": "1.41.0+netwasm.2",
+      "version": "1.41.0+netwasm.4",
       "relativePath": "tools/jco/patch-provenance.json",
-      "sha256": "b3be396f8329be4a013681e2605d647898db701304c8f89a5a54e444d0e86f03"
+      "sha256": "e08440f3c211bcdd09d52a25ac1aae537966a1c63e17afa0fcb6848dfc0ce573"
     },
     {
       "id": "hosting-bundle.command",

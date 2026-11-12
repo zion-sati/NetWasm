@@ -150,8 +150,10 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
                 [ManagedExceptionKind.OutOfMemory],
             RuntimeIntrinsic.UnsafeUnbox =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.InvalidCast],
-            RuntimeIntrinsic.EnumCompareTo or RuntimeIntrinsic.EnumHasFlag =>
+            RuntimeIntrinsic.EnumCompareTo =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.Argument],
+            RuntimeIntrinsic.EnumHasFlag =>
+                [ManagedExceptionKind.NullReference, ManagedExceptionKind.ArgumentNull, ManagedExceptionKind.Argument],
             RuntimeIntrinsic.IntegerDivRem =>
                 [ManagedExceptionKind.DivideByZero, ManagedExceptionKind.Overflow],
             RuntimeIntrinsic.StringAllocate =>

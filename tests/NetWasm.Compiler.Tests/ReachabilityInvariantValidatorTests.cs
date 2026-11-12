@@ -660,6 +660,58 @@ public sealed class ReachabilityInvariantValidatorTests
                 new EmptyIntrinsicRegistry())).Message);
     }
 
+    // A delegate converted from another binds the other's Invoke, which has no body: its type's
+    // invoke helper is its function (issue 223). A method named Invoke on another type, or a
+    // delegate's other methods, still need a target.
+    [Theory]
+    [InlineData("Invoke", true, true)]
+    [InlineData("Invoke", false, false)]
+    [InlineData("Run", true, false)]
+    public void OnlyADelegatesInvokeIsCallableWithoutATarget(string name, bool delegateType, bool valid)
+    {
+        var target = CreateTarget(name, 0x06000008);
+        var program = ProgramWithInstructions(new CilInstruction(0, 1, CilOperation.Return, new CilOperand.None())) with
+        {
+            CallableMethods = ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(target.CanonicalName, target),
+        };
+        var types = delegateType ? new DelegateTypeClassifier() : ValidationTestData.TypeClassifier();
+
+        void Validate() => CreateValidator().Validate(
+            ValidationTestData.MethodInstances(), types, program, new EmptyIntrinsicRegistry());
+
+        if (valid)
+            Validate();
+        else
+            Assert.Contains("has no canonical reachable target", Assert.Throws<CompilerException>(Validate).Message);
+    }
+
+    // ldvirtftn may name a delegate's Invoke, whose dispatch target is its type's invoke helper
+    // (issue 223); another method without a target still fails.
+    [Theory]
+    [InlineData("Invoke", true, true)]
+    [InlineData("Invoke", false, false)]
+    [InlineData("Run", true, false)]
+    public void OnlyADelegatesInvokeIsADispatchTargetWithoutABody(string name, bool delegateType, bool valid)
+    {
+        var target = CreateTarget(name, 0x06000008);
+        var program = ProgramWithInstructions(new CilInstruction(0, 1, CilOperation.Return, new CilOperand.None()));
+        var caller = program.MethodInstances.Values.Single().CanonicalName;
+        program = program with
+        {
+            DispatchCallSites = ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add($"{caller}@00000000",
+                new DispatchCallSiteModel(caller, 0, target, [new DispatchTargetModel(target.DeclaringType, target)])),
+        };
+        var types = delegateType ? new DelegateTypeClassifier() : ValidationTestData.TypeClassifier();
+
+        void Validate() => CreateValidator().Validate(
+            ValidationTestData.MethodInstances(), types, program, new EmptyIntrinsicRegistry());
+
+        if (valid)
+            Validate();
+        else
+            Assert.Contains("targets an unreachable method", Assert.Throws<CompilerException>(Validate).Message);
+    }
+
     [Fact]
     public void RejectsHostCallbacksWithoutImportOrDelegateInvoke()
     {

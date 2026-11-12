@@ -1,5 +1,8 @@
 import { NetWasmHostError } from "./managed-errors.mjs";
+import { readMethodSymbols } from "./symbol-sidecar-reader.mjs";
 
+// A program's method-symbols sidecar (<program>.wasm.method-symbols) as the frames a host registers with the
+// runtime; or symbols already read.
 export function parseStackTraceSymbols(value) {
   if (value == null) {
     return [];
@@ -7,20 +10,15 @@ export function parseStackTraceSymbols(value) {
   if (Array.isArray(value)) {
     return parseMethods(value);
   }
-  let artifact;
+  const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : value;
+  if (!(bytes instanceof Uint8Array)) {
+    throw new NetWasmHostError("a NetWasm method-symbols sidecar must be bytes");
+  }
   try {
-    artifact = typeof value === "string" ? JSON.parse(value) : value;
+    return parseMethods(readMethodSymbols(bytes));
   } catch (error) {
-    throw new NetWasmHostError(
-      `invalid NetWasm stack-trace symbol sidecar: ${error.message}`);
+    throw new NetWasmHostError(`invalid NetWasm method-symbols sidecar: ${error.message}`);
   }
-  if (artifact == null || typeof artifact !== "object"
-      || artifact.schemaVersion !== 1
-      || !Array.isArray(artifact.methods)) {
-    throw new NetWasmHostError(
-      "invalid NetWasm stack-trace symbol sidecar schema");
-  }
-  return parseMethods(artifact.methods);
 }
 
 function parseMethods(methods) {

@@ -1,7 +1,7 @@
 import { createBrowserArtifactTransport } from "./browser-artifact-transport.mjs";
 import { createBrowserDeploymentManifestLoader } from "./browser-deployment-manifest-loader.mjs";
 import { createBrowserRawLoader } from "./browser-raw-loader.mjs";
-import { createBrowserTimeZoneMaterializer } from "./browser-timezone-materializer.mjs";
+import { createBrowserSidecarMaterializer } from "./browser-sidecar-materializer.mjs";
 import { createBrowserVerifiedModuleImporter } from "./browser-verified-module-importer.mjs";
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { jsExportExecutionContract } from "./execution-contracts.mjs";
@@ -13,7 +13,7 @@ import { requiredImportModules } from "./interop-manifest-reader.mjs";
 import { prepareRawNetWasmInterop } from "./raw-interop-preparation.mjs";
 import { openRawExportSession } from "./raw-export-session.mjs";
 import { createScopeReleaseCommand } from "./scope-release-command.mjs";
-import { selectTimeZoneSidecar } from "./timezone-sidecar-selector.mjs";
+import { selectProgramSidecars } from "./program-sidecar-selector.mjs";
 
 const optionKeys = [
   "configuration", "consumerModules", "manifestUrl", "platform", "platformProviderCatalog",
@@ -126,7 +126,7 @@ export function createBrowserRawExportSession(options) {
       const filesystem = options.platform.createFilesystemScope === null ? null
         : options.platform.createFilesystemScope(hostRequest.grants.preopens);
       if (filesystem !== null) releaseActions.push(filesystem.dispose);
-      const selection = selectTimeZoneSidecar({
+      const selection = selectProgramSidecars({
         artifacts: manifest.artifacts,
         environment: hostRequest.environment,
         runtimeFeatures: manifest.runtimeFeatures,
@@ -135,7 +135,7 @@ export function createBrowserRawExportSession(options) {
         if (filesystem === null) {
           throw new TypeError("time zone data requires an application that links a filesystem interface");
         }
-        const materializeTimeZone = createBrowserTimeZoneMaterializer({
+        const materializeSidecars = createBrowserSidecarMaterializer({
           manifestUrl: options.manifestUrl,
           platform: Object.freeze({
             digest: options.platform.digest,
@@ -143,7 +143,7 @@ export function createBrowserRawExportSession(options) {
             mountReadOnlyFile: filesystem.mountReadOnlyFile,
           }),
         });
-        const mount = await materializeTimeZone(Object.freeze({ selection, signal: null }));
+        const mount = await materializeSidecars(Object.freeze({ selection, signal: null }));
         if (mount !== null) releaseActions.push(mount.release);
       }
 

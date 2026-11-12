@@ -5,6 +5,7 @@ import {
   loadRawArtifacts,
   projectRawModuleInventory,
 } from "./raw-artifact-loader.mjs";
+import { symbolSidecar, typeSymbol } from "./symbol-sidecar-reader.test.mjs";
 
 const encoder = new TextEncoder();
 const application = Buffer.from(
@@ -30,15 +31,8 @@ const interop = Object.freeze({
 });
 const layoutBytes = encoder.encode(JSON.stringify(layout));
 const interopBytes = encoder.encode(JSON.stringify(interop));
-const exceptionTypeMapBytes = encoder.encode(JSON.stringify({
-  schemaVersion: 2,
-  buildId: "build",
-  entries: [],
-}));
-const stackTraceSymbolsBytes = encoder.encode(JSON.stringify({
-  schemaVersion: 1,
-  methods: [{ id: 7, name: "EntryPoint.Run in Program.cs:line 12" }],
-}));
+const typeSymbolsBytes = symbolSidecar(1, [typeSymbol(3, "App.Boom")]);
+const methodSymbolsBytes = symbolSidecar(2, [{ id: 7, strings: ["EntryPoint.Run in Program.cs:line 12"] }]);
 const adapter = Object.freeze({ rawAdapterMetadata: Object.freeze({}), createAdapter() {} });
 
 test("verifies the complete closure before loading and returns the inspected immutable ABI", async () => {
@@ -89,14 +83,8 @@ test("verifies the complete closure before loading and returns the inspected imm
   assert.equal(Object.isFrozen(loaded.runtimeLayout.managedExecutableEntryPoint), true);
   assert.equal(Object.isFrozen(loaded.interopManifest), true);
   assert.equal(Object.isFrozen(loaded.interopManifest.statusAbi), true);
-  assert.equal(loaded.diagnosticArtifacts.manifest.buildId, "build");
-  assert.equal(loaded.diagnosticArtifacts.manifest.wasmSha256, sha256(application));
-  assert.equal(loaded.diagnosticArtifacts.manifest.exceptionTypeMapSha256,
-    sha256(exceptionTypeMapBytes));
-  assert.deepEqual(loaded.diagnosticArtifacts.wasmBytes, new Uint8Array(application));
-  assert.deepEqual(loaded.diagnosticArtifacts.mapBytes, exceptionTypeMapBytes);
-  assert.equal(loaded.diagnosticArtifacts.mapMediaType,
-    "application/vnd.netwasm.exception-types+json;version=2");
+  // Crash reports name types from the type-symbols sidecar, read when a report needs it (issue 225).
+  assert.deepEqual(loaded.diagnosticArtifacts.typeSymbols, typeSymbolsBytes);
   assert.deepEqual(loaded.stackTraceSymbols, [
     { id: 7, name: "EntryPoint.Run in Program.cs:line 12" },
   ]);
@@ -127,25 +115,52 @@ test("rejects integrity and transport failures before loading executable content
   }
 });
 
-test("loads an older raw closure without diagnostic artifacts", async () => {
+test("loads a raw closure without symbols sidecars", async () => {
   const request = createRequest();
   request.artifacts = request.artifacts.filter(
-    value => value.role !== "exception-type-map" && value.role !== "stack-trace-symbols");
+    value => value.role !== "type-symbols" && value.role !== "method-symbols");
   const loaded = await loadRawArtifacts(request);
   assert.equal(loaded.diagnosticArtifacts, undefined);
   assert.deepEqual(loaded.stackTraceSymbols, []);
 });
 
-test("rejects a malformed stack-trace sidecar", async () => {
+// Issue 225: a symbols file the host cannot use is left out, and the program still loads.
+test("leaves out a symbols sidecar it cannot read, verify or parse", async () => {
+  const malformed = content();
+  malformed.set("method-symbols", symbolSidecar(1, []));
+  const parsed = await loadRawArtifacts(createRequest({
+    artifacts: artifacts(malformed),
+    readArtifact: async value => malformed.get(value.role),
+  }));
+  assert.deepEqual(parsed.stackTraceSymbols, []);
+  assert.deepEqual(parsed.diagnosticArtifacts.typeSymbols, typeSymbolsBytes);
+
   const values = content();
-  values.set("stack-trace-symbols", encoder.encode(JSON.stringify({
-    schemaVersion: 2,
-    methods: [],
-  })));
+  const tampered = await loadRawArtifacts(createRequest({
+    readArtifact: async value => value.role === "type-symbols" ? Uint8Array.of(1) : values.get(value.role),
+  }));
+  assert.equal(tampered.diagnosticArtifacts, undefined);
+  assert.equal(tampered.stackTraceSymbols.length, 1);
+
+  const unreadable = await loadRawArtifacts(createRequest({
+    async readArtifact(value) {
+      if (value.role === "method-symbols") throw new Error("ENOENT");
+      return values.get(value.role);
+    },
+  }));
+  assert.deepEqual(unreadable.stackTraceSymbols, []);
+
+  const controller = new AbortController();
   await assert.rejects(() => loadRawArtifacts(createRequest({
-    artifacts: artifacts(values),
-    readArtifact: async value => values.get(value.role),
-  })), /stack-trace symbol sidecar schema/u);
+    signal: controller.signal,
+    async readArtifact(value) {
+      if (value.role === "type-symbols") {
+        controller.abort();
+        throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+      }
+      return values.get(value.role);
+    },
+  })), error => error.name === "AbortError");
 });
 
 test("honors cancellation before I/O and between read, hash, and load stages", async () => {
@@ -379,8 +394,19 @@ test("accepts and freezes schema-four compiler callback evidence", async () => {
     sha256: "a".repeat(64),
     callbacks,
     temporaryApplicationExports: [callbacks[0].applicationExportName],
-    temporaryRuntimeExports: [callbacks[0].runtimeGetterExportName],
+    temporaryRuntimeExports: [callbacks[0].runtimeGetterExportName, "netwasm_calli_ii"],
+    trampolines: ["netwasm_calli_ii"],
   };
+  // Issue 226: an object may define only unmanaged calli trampolines.
+  const trampolinesOnly = {
+    ...nativeCallbackSupport,
+    callbacks: [],
+    temporaryApplicationExports: [],
+    temporaryRuntimeExports: ["netwasm_calli_ii"],
+  };
+  const loadedTrampolines = await loadRawArtifacts(requestWithContent("runtime-layout", encoder.encode(
+    JSON.stringify({ ...layout, schemaVersion: 4, nativeImports: [], nativeCallbackSupport: trampolinesOnly }))));
+  assert.deepEqual(loadedTrampolines.runtimeLayout.nativeCallbackSupport, trampolinesOnly);
   for (const featureEvidence of [{}, { runtimeFeatures: ["local-time"] }]) {
     const bytes = encoder.encode(JSON.stringify({
       ...layout,
@@ -418,12 +444,21 @@ test("rejects incomplete or contradictory schema-four callback evidence before l
     callbacks: [callback],
     temporaryApplicationExports: [callback.applicationExportName],
     temporaryRuntimeExports: [callback.runtimeGetterExportName],
+    trampolines: [],
   };
   const invalidSupport = [
     null,
     { ...support, fileName: "../application.callbacks.o" },
     { ...support, sha256: "A".repeat(64) },
-    { ...support, callbacks: [] },
+    { ...support, callbacks: [], temporaryApplicationExports: [], temporaryRuntimeExports: [] },
+    { ...support, trampolines: null },
+    { ...support, trampolines: ["netwasm_calli_v"] },
+    { ...support, trampolines: [""], temporaryRuntimeExports: [callback.runtimeGetterExportName, ""] },
+    {
+      ...support,
+      trampolines: ["runtime_getter"],
+      temporaryRuntimeExports: [callback.runtimeGetterExportName, "runtime_getter"],
+    },
     { ...support, callbacks: [{ ...callback, parameters: ["v128"] }] },
     { ...support, callbacks: [{ ...callback, runtimeImportSymbol: "" }] },
     { ...support, callbacks: [{ ...callback, runtimeGetterExportName: "" }] },
@@ -513,26 +548,6 @@ test("rejects malformed runtime layouts and mismatched interop manifests", async
   }
 });
 
-test("rejects malformed raw exception type maps before loading modules", async () => {
-  for (const bytes of [
-    encoder.encode("{"),
-    encoder.encode("null"),
-    encoder.encode("[]"),
-    encoder.encode(JSON.stringify({ schemaVersion: 1, buildId: "build", entries: [] })),
-    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: 7, entries: [] })),
-    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: "", entries: [] })),
-    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: "build", entries: null })),
-  ]) {
-    const request = requestWithContent("exception-type-map", bytes);
-    const calls = [];
-    request.compileModule = async () => { calls.push("compile"); return {}; };
-    request.importModule = async () => { calls.push("import"); return {}; };
-
-    await assert.rejects(() => loadRawArtifacts(request), /exception type map/);
-    assert.deepEqual(calls, []);
-  }
-});
-
 function createRequest(overrides = {}) {
   const values = content();
   return {
@@ -559,10 +574,10 @@ function content() {
   return new Map([
     ["application", new Uint8Array(application)],
     ["raw-adapter", adapterSource],
-    ["exception-type-map", exceptionTypeMapBytes],
+    ["type-symbols", typeSymbolsBytes],
     ["runtime-layout", layoutBytes],
     ["interop-manifest", interopBytes],
-    ["stack-trace-symbols", stackTraceSymbolsBytes],
+    ["method-symbols", methodSymbolsBytes],
   ]);
 }
 
@@ -570,14 +585,14 @@ function artifacts(values) {
   return [
     artifact("publish/app.wasm", "application", "application/wasm", values.get("application")),
     artifact("publish/app.raw-adapter.mjs", "raw-adapter", "text/javascript", values.get("raw-adapter")),
-    artifact("publish/app.exceptions.json", "exception-type-map",
-      "application/vnd.netwasm.exception-types+json;version=2",
-      values.get("exception-type-map"), 2),
+    artifact("publish/app.wasm.type-symbols", "type-symbols",
+      "application/vnd.netwasm.type-symbols;version=1",
+      values.get("type-symbols"), 1),
     artifact("publish/runtime-layout.json", "runtime-layout", "application/json", values.get("runtime-layout"), 2),
     artifact("publish/interop.json", "interop-manifest", "application/json", values.get("interop-manifest"), 1),
-    artifact("publish/app.netwasm.stacktrace.json", "stack-trace-symbols",
-      "application/vnd.netwasm.stack-trace-symbols+json;version=1",
-      values.get("stack-trace-symbols"), 1),
+    artifact("publish/app.wasm.method-symbols", "method-symbols",
+      "application/vnd.netwasm.method-symbols;version=1",
+      values.get("method-symbols"), 1),
   ];
 }
 

@@ -7,8 +7,8 @@ const roleMediaTypes = Object.freeze({
   "component-adapter": "text/javascript",
   "component-javascript": "text/javascript",
   "component-core-module": "application/wasm",
-  "exception-type-map": "application/vnd.netwasm.exception-types+json;version=2",
-  "stack-trace-symbols": "application/vnd.netwasm.stack-trace-symbols+json;version=1",
+  "type-symbols": "application/vnd.netwasm.type-symbols;version=1",
+  "method-symbols": "application/vnd.netwasm.method-symbols;version=1",
 });
 const singletonRoles = Object.freeze([
   "application",
@@ -47,11 +47,10 @@ export function createComponentArtifactPlan(request = {}) {
       throw new TypeError(`component artifact role '${role}' must occur exactly once`);
     }
   }
-  if ((byRole.get("exception-type-map")?.length ?? 0) > 1) {
-    throw new TypeError("component artifact role 'exception-type-map' may occur at most once");
-  }
-  if ((byRole.get("stack-trace-symbols")?.length ?? 0) > 1) {
-    throw new TypeError("component artifact role 'stack-trace-symbols' may occur at most once");
+  for (const role of ["type-symbols", "method-symbols"]) {
+    if ((byRole.get(role)?.length ?? 0) > 1) {
+      throw new TypeError(`component artifact role '${role}' may occur at most once`);
+    }
   }
   const coreModules = byRole.get("component-core-module");
   if (coreModules === undefined || coreModules.length === 0) {
@@ -71,9 +70,9 @@ export function createComponentArtifactPlan(request = {}) {
   return Object.freeze({
     application: byRole.get("application")[0],
     adapter: byRole.get("component-adapter")[0],
-    exceptionTypeMap: byRole.get("exception-type-map")?.[0],
+    typeSymbols: byRole.get("type-symbols")?.[0],
     generatedModule: byRole.get("component-javascript")[0],
-    stackTraceSymbols: byRole.get("stack-trace-symbols")?.[0],
+    methodSymbols: byRole.get("method-symbols")?.[0],
     coreModules: Object.freeze([...coreModules]),
     resolveCoreModule(name) {
       validateLeafName(name);

@@ -95,7 +95,9 @@ internal sealed class WholeProgramAnalyzerFactory(
             optimizationSettings.Devirtualization is not (DevirtualizationPolicy.Disabled or
             DevirtualizationPolicy.ExactType) ||
             optimizationSettings.AllocationElimination is not (AllocationEliminationPolicy.Disabled or
-            AllocationEliminationPolicy.Unused))
+            AllocationEliminationPolicy.Unused) ||
+            optimizationSettings.UnwrittenStaticFieldFolding is not (UnwrittenStaticFieldFoldingPolicy.Disabled or
+            UnwrittenStaticFieldFoldingPolicy.WholeProgram))
             throw new ArgumentOutOfRangeException(nameof(optimizationSettings));
         var parts = MethodAnalysisParts.Build(
             new(calledMethods, typeOperands, specializers, optimizers, attributeQueries, dispatchTargets,
@@ -135,6 +137,21 @@ internal sealed class WholeProgramAnalyzerFactory(
                     new StaticArrayPopulationPlanner(fieldRepository, calls, types,
                         new ValueConstructorPurityClassifier(methodBodies, fieldRepository, typeDefinitions, methodRepository, intrinsics),
                         new ClosedTypeIdentityComparer(typeDefinitions), typeDefinitions)));
+        }
+        if (optimizationSettings.UnwrittenStaticFieldFolding == UnwrittenStaticFieldFoldingPolicy.WholeProgram)
+        {
+            reducers.Add(new UnwrittenStaticFieldProgramReducer(
+                new StaticFieldWriteCollector(fieldRepository),
+                fieldRepository,
+                typeIdentities,
+                typeDefinitions,
+                methodRepository,
+                new MethodSpecializer(
+                [
+                    ConstantCalls(),
+                    new KnownSizeRewriter(calls),
+                    ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
+                ])));
         }
         var concurrency = SelectConcurrency(
             OperatingSystem.IsBrowser(), Environment.ProcessorCount);

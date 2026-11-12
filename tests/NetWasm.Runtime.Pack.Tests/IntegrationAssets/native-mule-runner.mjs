@@ -61,7 +61,7 @@ for (let index = 0; index < 2; index++) {
     }
     if (profile !== "callback-failure") assert.equal(events.length, 0);
     const finalMemoryBytes = managed.instance.exports.memory.buffer.byteLength;
-    if (profile === "named-callbacks" || profile === "callback-only") {
+    if (profile === "named-callbacks" || profile === "callback-only" || profile === "unmanaged-calls") {
       assert.equal(finalMemoryBytes, initialMemoryBytes);
     } else if (profile !== "callback-failure") {
       assert(finalMemoryBytes > initialMemoryBytes);

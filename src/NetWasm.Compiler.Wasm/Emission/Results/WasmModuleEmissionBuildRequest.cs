@@ -14,4 +14,5 @@ internal sealed record WasmModuleEmissionBuildRequest(
 {
     public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
     public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
+    public string BuildId { get; init; } = "";
 }

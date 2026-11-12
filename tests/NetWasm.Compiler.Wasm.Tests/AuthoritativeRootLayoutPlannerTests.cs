@@ -62,6 +62,20 @@ public sealed class AuthoritativeRootLayoutPlannerTests
     }
 
     [Fact]
+    public void AByrefArgumentGetsAStableSlot()
+    {
+        var receiver = new RootSource(RootSourceKind.ManagedAddressArgument, 0);
+        var other = new RootSource(RootSourceKind.EvaluationStack, 0);
+        var map = new MethodRootMap(EntryKey,
+            ImmutableDictionary<RootSource, int>.Empty.Add(other, 0).Add(receiver, 0), []);
+
+        var result = _planner.Plan(map, [receiver]);
+
+        Assert.Equal(0, result.Slots[receiver]);
+        Assert.Equal(1, result.RootMap.Slots[other]);
+    }
+
+    [Fact]
     public void MissingSelectionIsRejected()
     {
         var map = new MethodRootMap(EntryKey, [], []);

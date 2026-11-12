@@ -102,6 +102,33 @@ public sealed class DelegateBindingInvariantValidatorTests
         AssertInvariant(validator, mismatched);
     }
 
+    // A static closed over its first argument binds the Invoke's parameters to the rest; only a
+    // static whose first parameter is a reference can close over it (issue 223's class).
+    [Fact]
+    public void ValidatorChecksAStaticClosedOverItsFirstArgument()
+    {
+        var binding = ValidBinding();
+        var validator = Validator();
+        var closedTarget = Method(binding.Target.Definition.Name, TargetTypeKey,
+            binding.Target.Definition.Key.MetadataToken, ReferenceType, ReferenceType, BaseReferenceType);
+        var closed = RebindTarget(binding, closedTarget) with { ClosedOverFirstArgument = true };
+        var scalarFirst = RebindTarget(closed, Method(binding.Target.Definition.Name, TargetTypeKey,
+            binding.Target.Definition.Key.MetadataToken, ReferenceType, CliTypeIdentity.FromStackKind(CliValueKind.I4),
+            BaseReferenceType));
+        var instance = RebindTarget(closed, closedTarget with
+        {
+            Definition = closedTarget.Definition with { IsStatic = false },
+        });
+        var noParameters = RebindTarget(closed, Method(binding.Target.Definition.Name, TargetTypeKey,
+            binding.Target.Definition.Key.MetadataToken, ReferenceType));
+
+        validator.Validate(new DelegateTypeClassifier(), Program(closed));
+        AssertInvariant(validator, Program(scalarFirst));
+        AssertInvariant(validator, Program(instance));
+        AssertInvariant(validator, Program(noParameters));
+        AssertInvariant(validator, Program(binding with { ClosedOverFirstArgument = true }));
+    }
+
     [Fact]
     public void ValidatorRejectsParameterCountAndIdentityMismatches()
     {

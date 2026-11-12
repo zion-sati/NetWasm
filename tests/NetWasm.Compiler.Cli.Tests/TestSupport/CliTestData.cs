@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.Security.Cryptography;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.ManagedExecutables;
-using NetWasm.Compiler.StackTraces;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Wasm;
 using NetWasm.Compiler.Wasm.Emission;
 
@@ -12,7 +12,7 @@ internal static class CliTestData
 {
     public static ManagedModuleCompilation Compilation(
         string target = "wasm32",
-        StackTraceSymbolArtifact? symbols = null,
+        SymbolSidecarArtifact? methodSymbols = null,
         ManagedExecutableEntryPointAbi? entryPoint = null,
         ImmutableArray<string> runtimeFeatures = default,
         ImmutableArray<WasmFunctionImport> functionImports = default,
@@ -21,7 +21,6 @@ internal static class CliTestData
         [0, 97, 115, 109],
         65_537,
         InteropManifest(target),
-        symbols,
         target,
         entryPoint,
         runtimeFeatures,
@@ -29,6 +28,7 @@ internal static class CliTestData
         {
             NativeImports = nativeImports.IsDefault ? [] : nativeImports,
             NativeCallbackSupport = nativeCallbackSupport,
+            MethodSymbols = methodSymbols,
         };
 
     public static HostInteropManifest InteropManifest(string target) => new(

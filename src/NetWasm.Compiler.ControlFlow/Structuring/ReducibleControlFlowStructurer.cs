@@ -10,8 +10,7 @@ namespace NetWasm.Compiler.ControlFlow.Structuring;
 internal interface IReducibleControlFlowStructurer
 {
     // The method's control flow as labeled blocks, loops and branches, or null
-    // when the method has exception regions, irreducible control flow or a
-    // conditional branch whose two targets are one block.
+    // when the method has exception regions or irreducible control flow.
     StructuredSequenceDraft? Structure(ValidatedControlFlowGraph validated);
 }
 
@@ -25,16 +24,22 @@ internal interface IReducibleControlFlowStructurer
 // tests whether to enter its body is a pre-test loop instead, which emission
 // rotates, and a diamond of single blocks stays an if/else that Binaryen can
 // turn into a select.
-internal sealed class ReducibleControlFlowStructurer : IReducibleControlFlowStructurer
+internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassifier conditionalBranches) :
+    IReducibleControlFlowStructurer
 {
+    private readonly ICilConditionalBranchClassifier _conditionalBranches =
+        conditionalBranches ?? throw new ArgumentNullException(nameof(conditionalBranches));
+
     public StructuredSequenceDraft? Structure(ValidatedControlFlowGraph validated) =>
-        validated.Graph.MethodBody.ExceptionRegions.IsEmpty && Analysis.Create(validated) is { } analysis
+        validated.Graph.MethodBody.ExceptionRegions.IsEmpty &&
+        Analysis.Create(validated, _conditionalBranches) is { } analysis
             ? new StructuredSequenceDraft(analysis.Tree(validated.Graph.Entry.Index))
             : null;
 
     private sealed class Analysis
     {
         private readonly ControlFlowGraph _graph;
+        private readonly ICilConditionalBranchClassifier _conditionalBranches;
         private readonly Dictionary<int, int> _order;
         private readonly Dictionary<int, int> _dominators;
         private readonly Dictionary<int, HashSet<int>> _loops;
@@ -44,24 +49,24 @@ internal sealed class ReducibleControlFlowStructurer : IReducibleControlFlowStru
 
         private Analysis(
             ControlFlowGraph graph,
+            ICilConditionalBranchClassifier conditionalBranches,
             Dictionary<int, int> order,
             Dictionary<int, int> dominators,
             Dictionary<int, HashSet<int>> loops)
         {
             _graph = graph;
+            _conditionalBranches = conditionalBranches;
             _order = order;
             _dominators = dominators;
             _loops = loops;
         }
 
-        internal static Analysis? Create(ValidatedControlFlowGraph validated)
+        internal static Analysis? Create(
+            ValidatedControlFlowGraph validated,
+            ICilConditionalBranchClassifier conditionalBranches)
         {
             var graph = validated.Graph;
             var postorder = Postorder(graph);
-            if (postorder.Any(block => !Supported(graph, block)))
-            {
-                return null;
-            }
             var order = new Dictionary<int, int>();
             for (var index = 0; index < postorder.Count; index++)
             {
@@ -90,7 +95,7 @@ internal sealed class ReducibleControlFlowStructurer : IReducibleControlFlowStru
                     AddNaturalLoop(graph, order, body, block);
                 }
             }
-            var analysis = new Analysis(graph, order, dominators, loops);
+            var analysis = new Analysis(graph, conditionalBranches, order, dominators, loops);
             analysis.Place();
             analysis.SelectPreTests(validated);
             return analysis;
@@ -196,7 +201,11 @@ internal sealed class ReducibleControlFlowStructurer : IReducibleControlFlowStru
             }
             if (successors.Length == 1)
             {
-                regions.Add(new StructuredBlockDraft(basicBlock));
+                // A conditional branch to the next instruction still evaluates
+                // its condition, which an if with empty arms consumes.
+                regions.Add(_conditionalBranches.Classify(basicBlock.Terminator.Operation)
+                    ? new StructuredIfDraft(basicBlock, StructuredSequenceDraft.Empty, StructuredSequenceDraft.Empty)
+                    : new StructuredBlockDraft(basicBlock));
                 return Branch(block, successors[0], regions);
             }
             var (whenTrue, whenFalse) = Arms(basicBlock, successors);
@@ -362,26 +371,6 @@ internal sealed class ReducibleControlFlowStructurer : IReducibleControlFlowStru
         }
 
         private sealed record PreTest(int Body, int Exit, bool ContinueWhenConditionTrue);
-
-        private static bool Supported(ControlFlowGraph graph, int block)
-        {
-            var terminator = graph.GetBlock(block).Terminator.Operation;
-            // Only a method without exception regions gets here, so no block
-            // leaves one, and decoding lowers a switch to branches, so only a
-            // conditional branch has two successors.
-            return terminator switch
-            {
-                CilOperation.BranchIfTrue or CilOperation.BranchIfFalse or
-                    CilOperation.BranchIfEqual or CilOperation.BranchIfNotEqual or
-                    CilOperation.BranchIfGreaterThanSigned or CilOperation.BranchIfGreaterThanUnsigned or
-                    CilOperation.BranchIfGreaterThanOrEqualSigned or
-                    CilOperation.BranchIfGreaterThanOrEqualUnsigned or
-                    CilOperation.BranchIfLessThanSigned or CilOperation.BranchIfLessThanUnsigned or
-                    CilOperation.BranchIfLessThanOrEqualSigned or
-                    CilOperation.BranchIfLessThanOrEqualUnsigned => graph.Successors[block].Length == 2,
-                _ => true,
-            };
-        }
 
         private static List<int> Postorder(ControlFlowGraph graph)
         {

@@ -32,6 +32,7 @@ internal sealed record CompilationScenario(
     // runs as an asynchronous Main (AsyncObservationEntry) whose callbacks run that work.
     internal string? ObserveMethodName { get; init; }
     internal bool EmitStackTrace { get; init; }
+    internal bool EmitTypeNames { get; init; }
     internal bool EmitPortablePdb { get; init; }
     internal FinalWasmOptimization Optimization { get; init; } =
         TestOptimization.Default;
@@ -101,6 +102,7 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
             DiagnosticLogPath: scenario.DiagnosticLogPath,
             WitPath: scenario.WitPath,
             WitWorld: scenario.WitWorld,
+            EmitTypeNames: scenario.EmitTypeNames,
             EmitStackTrace: scenario.EmitStackTrace,
             ProjectDirectory: _assets.Directory,
             Optimization: scenario.Optimization,
@@ -119,13 +121,14 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
             scenario.Environment,
             scenario.TimeZoneAssetPath,
             scenario.LoadStackTraceSymbols
-                ? compilation.StackTraceSymbols?.Bytes
+                ? compilation.MethodSymbols?.Bytes
                 : null,
             callbackEntry: scenario.ObserveMethodName is not null,
             expectedEnvironmentReads: scenario.ExpectedEnvironmentReads,
             expectedPreopenReads: scenario.ExpectedPreopenReads,
             entryInvocationCount: scenario.EntryInvocationCount,
-            inputArgument: scenario.ObserveMethodName is not null);
+            inputArgument: scenario.ObserveMethodName is not null,
+            typeSymbols: scenario.LoadStackTraceSymbols ? compilation.TypeSymbols?.Bytes : null);
     }
 
     private static (string Source, string EntryTypeName, string EntryMethodName) Observed(

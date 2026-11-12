@@ -531,6 +531,18 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedRangeBranchFolding.Enabled => RangeBranchFoldingPolicy.ProvenRanges,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // A static field nothing writes reads as its default, so the code its value decides folds,
+        // as an exit code nothing sets decides the process exit; a whole-program fact, as the other
+        // whole-program reductions take.
+        var unwrittenStaticFieldsOverride = options?.UnwrittenStaticFieldFolding ?? ManagedUnwrittenStaticFieldFolding.Auto;
+        var unwrittenStaticFields = unwrittenStaticFieldsOverride switch
+        {
+            ManagedUnwrittenStaticFieldFolding.Auto => wholeProgramDefaults
+                ? UnwrittenStaticFieldFoldingPolicy.WholeProgram : UnwrittenStaticFieldFoldingPolicy.Disabled,
+            ManagedUnwrittenStaticFieldFolding.Disabled => UnwrittenStaticFieldFoldingPolicy.Disabled,
+            ManagedUnwrittenStaticFieldFolding.Enabled => UnwrittenStaticFieldFoldingPolicy.WholeProgram,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
 
         if (preset == FinalWasmOptimization.None &&
             (hint != ManagedInliningHints.Auto ||
@@ -568,6 +580,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              newObjectsOverride == ManagedNewObjectNullCheckElimination.Enabled ||
              strengthReductionOverride == ManagedLoopStrengthReduction.Enabled ||
              rangeBranchesOverride == ManagedRangeBranchFolding.Enabled ||
+             unwrittenStaticFieldsOverride == ManagedUnwrittenStaticFieldFolding.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -628,6 +641,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             options?.LowMemoryUnused ?? false,
             newObjects,
             strengthReduction,
-            rangeBranches);
+            rangeBranches,
+            unwrittenStaticFields);
     }
 }

@@ -15,12 +15,15 @@ internal sealed class AuthoritativeRootSourceSelector : IAuthoritativeRootSource
         ArgumentNullException.ThrowIfNull(values);
         ArgumentNullException.ThrowIfNull(filters);
         ArgumentNullException.ThrowIfNull(arrays);
+        // A byref argument is authoritative too: it keeps one value for the call unless stored, so
+        // its slot is written at entry and on a store, not republished at every safepoint, which
+        // a value type's instance methods and async MoveNext otherwise do for their receiver.
         return roots.Slots.Keys.Where(source => !source.IsIndirect &&
-            source.Kind is RootSourceKind.Argument or RootSourceKind.Local &&
-            !filters.Captures.ContainsKey(new(source.Kind == RootSourceKind.Argument, source.Index)) &&
-            !arrays.Slots.Contains(new(source.Kind == RootSourceKind.Argument, source.Index)) &&
-            (source.Kind == RootSourceKind.Argument
-                ? !values.ArgumentOffsets.ContainsKey(source.Index)
-                : !values.SpilledScalarLocals.Contains(source.Index))).ToImmutableHashSet();
+            source.Kind is RootSourceKind.Argument or RootSourceKind.Local or RootSourceKind.ManagedAddressArgument &&
+            !filters.Captures.ContainsKey(new(source.Kind != RootSourceKind.Local, source.Index)) &&
+            !arrays.Slots.Contains(new(source.Kind != RootSourceKind.Local, source.Index)) &&
+            (source.Kind == RootSourceKind.Local
+                ? !values.SpilledScalarLocals.Contains(source.Index)
+                : !values.ArgumentOffsets.ContainsKey(source.Index))).ToImmutableHashSet();
     }
 }

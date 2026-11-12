@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.Reflection.Metadata;
 using System.Text;
 using System.Text.Json;
-using NetWasm.Compiler.ExceptionTypes;
+using NetWasm.Compiler.Tests.Symbols;
 using NetWasm.Compiler.StackTraces;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.TestInfrastructure;
@@ -13,73 +13,7 @@ namespace NetWasm.Compiler.Tests;
 public sealed class StackTraceArtifactTests
 {
     [Fact]
-    public void WriterProducesDeterministicOrderedSidecar()
-    {
-        var writer = CreateWriter();
-
-        var artifact = writer.Write([
-            new(7, "Example.Worker.Run()"),
-            new(1, "Example.Program.Main()"),
-        ]);
-
-        Assert.Equal(
-            "application/vnd.netwasm.stack-trace-symbols+json;version=1",
-            artifact.MediaType);
-        Assert.Equal("application.netwasm.stacktrace.json", artifact.FileNameHint);
-        Assert.Equal(64, artifact.Sha256.Length);
-        using var document = JsonDocument.Parse(artifact.Bytes);
-        Assert.Equal(1, document.RootElement.GetProperty("schemaVersion").GetInt32());
-        var methods = document.RootElement.GetProperty("methods").EnumerateArray()
-            .ToArray();
-        Assert.Equal([1, 7], methods.Select(method =>
-            method.GetProperty("id").GetInt32()));
-        Assert.Equal([
-            "Example.Program.Main()",
-            "Example.Worker.Run()",
-        ], methods.Select(method => method.GetProperty("name").GetString()));
-        Assert.Equal(artifact.Bytes, writer.Write([
-            new(1, "Example.Program.Main()"),
-            new(7, "Example.Worker.Run()"),
-        ]).Bytes);
-    }
-
-    [Fact]
-    public void WriterRejectsUninitializedSymbolArray()
-    {
-        Assert.Throws<ArgumentException>(() =>
-            CreateWriter().Write(default));
-    }
-
-    [Fact]
-    public void BinderIncludesSidecarOnlyWhenInstrumentationIsEnabled()
-    {
-        var binder = CreateBinder();
-        var result = EmptyResult();
-        var disabled = binder.Bind(
-            result,
-            default,
-            Options(emitStackTrace: false));
-        Assert.Null(disabled.StackTraceSymbols);
-
-        var enabled = binder.Bind(
-            result,
-            [new(1, "Example.Program.Main()")],
-            Options(emitStackTrace: true));
-        Assert.NotNull(enabled.StackTraceSymbols);
-    }
-
-    [Fact]
-    public void BinderRejectsMissingInputs()
-    {
-        var binder = CreateBinder();
-        Assert.Throws<ArgumentNullException>(() =>
-            binder.Bind(null!, [], Options(false)));
-        Assert.Throws<ArgumentNullException>(() =>
-            binder.Bind(EmptyResult(), [], null!));
-    }
-
-    [Fact]
-    public void InstrumentedCompilerEmbedsReachableSymbolsAndWritesSidecar()
+    public void InstrumentedCompilerWritesReachableSymbolsToTheSidecarAlone()
     {
         using var assets = TestAssets.Create();
         const string identity = "UniqueTraceFixture.EntryPoint::UniqueTraceMethod";
@@ -102,13 +36,13 @@ public sealed class StackTraceArtifactTests
             [],
             EmitStackTrace: true));
 
-        var sidecar = Assert.IsType<StackTraceSymbolArtifact>(result.StackTraceSymbols);
-        Assert.Contains(identity, Encoding.UTF8.GetString(sidecar.Bytes),
-            StringComparison.Ordinal);
+        // The module carries no frame text: it loads the method-symbols sidecar (issue 225).
+        Assert.Contains(SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts,
+            text => text!.Contains(identity, StringComparison.Ordinal));
         Assert.Equal(-1, result.ApplicationModule.AsSpan().IndexOf(
             Encoding.UTF8.GetBytes(identity)));
-        Assert.True(result.ApplicationModule.AsSpan().IndexOf(
-            Encoding.Unicode.GetBytes(identity)) >= 0);
+        Assert.Equal(-1, result.ApplicationModule.AsSpan().IndexOf(
+            Encoding.Unicode.GetBytes(identity)));
     }
 
     [Fact]
@@ -143,8 +77,7 @@ public sealed class StackTraceArtifactTests
             [],
             EmitStackTrace: true));
 
-        var json = Encoding.UTF8.GetString(
-            Assert.IsType<StackTraceSymbolArtifact>(result.StackTraceSymbols).Bytes);
+        var json = string.Join('\n', SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts);
         Assert.Contains("Secret.cs:line 42", json, StringComparison.Ordinal);
         Assert.DoesNotContain("/private/developer/work", json, StringComparison.Ordinal);
         Assert.Contains("/_/src/Mapped.cs:line 73", json, StringComparison.Ordinal);
@@ -224,8 +157,7 @@ public sealed class StackTraceArtifactTests
             EmitStackTrace: true,
             ProjectDirectory: assets.Directory));
 
-        var json = Encoding.UTF8.GetString(
-            Assert.IsType<StackTraceSymbolArtifact>(result.StackTraceSymbols).Bytes);
+        var json = string.Join('\n', SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts);
         Assert.Contains("Secret.cs:line 12", json, StringComparison.Ordinal);
         Assert.DoesNotContain("work/developer", json, StringComparison.Ordinal);
     }
@@ -259,8 +191,7 @@ public sealed class StackTraceArtifactTests
             ProjectDirectory: assets.Directory,
             PathMap: assets.Directory + "=/mapped"));
 
-        var json = Encoding.UTF8.GetString(
-            Assert.IsType<StackTraceSymbolArtifact>(result.StackTraceSymbols).Bytes);
+        var json = string.Join('\n', SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts);
         Assert.Contains("/mapped/src/Program.cs:line 23", json, StringComparison.Ordinal);
     }
 
@@ -282,10 +213,12 @@ public sealed class StackTraceArtifactTests
             [],
             EmitStackTrace: true));
 
-        var json = Encoding.UTF8.GetString(
-            Assert.IsType<StackTraceSymbolArtifact>(result.StackTraceSymbols).Bytes);
-        Assert.Contains("EntryPoint::Run", json, StringComparison.Ordinal);
-        Assert.DoesNotContain(":line ", json, StringComparison.Ordinal);
+        // The fixture's frames have no lines; CoreLib's own frames keep theirs.
+        var frames = SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts
+            .Where(text => text!.StartsWith("EntryPoint::", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Contains("EntryPoint::Run", frames);
+        Assert.DoesNotContain(frames, frame => frame!.Contains(":line ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -316,8 +249,7 @@ public sealed class StackTraceArtifactTests
             [],
             EmitStackTrace: true));
 
-        var json = Encoding.UTF8.GetString(
-            Assert.IsType<StackTraceSymbolArtifact>(result.StackTraceSymbols).Bytes);
+        var json = string.Join('\n', SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts);
         Assert.Contains("EntryPoint::Run", json, StringComparison.Ordinal);
     }
 
@@ -359,8 +291,7 @@ public sealed class StackTraceArtifactTests
             [],
             EmitStackTrace: true));
 
-        var json = Encoding.UTF8.GetString(
-            Assert.IsType<StackTraceSymbolArtifact>(result.StackTraceSymbols).Bytes);
+        var json = string.Join('\n', SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts);
         Assert.Contains(
             "https://raw.githubusercontent.com/example/repository/commit/Mapped.cs:line 17",
             json,
@@ -617,15 +548,6 @@ public sealed class StackTraceArtifactTests
         Assert.NotNull(sourceDocument.Document);
         Assert.Equal(27, sourceDocument.StartLine);
     }
-
-    private static readonly Func<IStackTraceSymbolWriter> CreateWriter =
-        static () => new StackTraceSymbolWriter(new ArtifactDigestCalculator());
-
-    private static readonly Func<ICompilationStackTraceArtifactBinder> CreateBinder =
-        static () => new CompilationStackTraceArtifactBinder(CreateWriter());
-
-    private static CompilationResult EmptyResult() =>
-        new([], null!, null!, null!, 0);
 
     private static CompilerOptions Options(bool emitStackTrace) =>
         new(

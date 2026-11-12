@@ -118,11 +118,11 @@ tree whose shape is created at runtime.
 Delegate adapters and member-execution descriptors remain closed-world compiler
 facts. Only reachable delegate signatures and reachable members are emitted.
 Expression execution by itself does not require member or type names. A
-reachable read of `MemberInfo.Name` or `Type.FullName` independently retains
-only that kind of name fact; a type name is then kept for every type in the
-program (see [type names](support-status.md#type-names)). This supports
-metadata-based cache keys and
-display names without adding runtime member discovery, `MethodInfo.Invoke`,
+reachable read of `MemberInfo.Name` retains the names of the members the program
+demands. A program carries no type names: they read `type#<id>` unless the
+build writes them to its type-symbols sidecar (see
+[type names](support-status.md#type-names)). This supports metadata-based cache
+keys and display names without adding runtime member discovery, `MethodInfo.Invoke`,
 `FieldInfo.GetValue`, `Delegate.CreateDelegate`, Reflection.Emit, or `dynamic`.
 
 ## Qualified consumer boundary

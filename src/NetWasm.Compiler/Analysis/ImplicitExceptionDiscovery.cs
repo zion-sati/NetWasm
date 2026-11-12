@@ -133,7 +133,8 @@ internal sealed class ImplicitExceptionDiscovery(
                 requirements.Add(new(ManagedExceptionKind.Arithmetic, "System.ArithmeticException"));
                 break;
             case CilOperation.CastClass:
-            case CilOperation.CallIndirect:
+            // A managed calli without a matching target throws; an unmanaged one calls native code.
+            case CilOperation.CallIndirect when instruction.Operand is not CilOperand.CallSite { Unmanaged: true }:
                 requirements.Add(new(ManagedExceptionKind.InvalidCast, "System.InvalidCastException"));
                 break;
             case CilOperation.MaterializeType when !CilTypeMaterialization.IsConstant(instruction):

@@ -20,8 +20,8 @@ internal sealed record CompilerArtifactWriteRequest(
     public string? RuntimeLayoutPath { get; init; }
     public string? InteropManifestPath { get; init; }
     public string? CompilerMetadataPath { get; init; }
-    public string? ExceptionTypeMapPath { get; init; }
-    public string? StackTraceSymbolsPath { get; init; }
+    public string? TypeSymbolsPath { get; init; }
+    public string? MethodSymbolsPath { get; init; }
 }
 
 internal interface ICompilerArtifactWriter
@@ -58,14 +58,14 @@ internal sealed class CompilerArtifactWriter(
             throw CliOptionException.Create("native callbacks require -runtimelayout");
         }
         ValidateDistinctPaths(request);
-        var exceptionTypeMap = request.ExceptionTypeMapPath is null
+        var typeSymbols = request.TypeSymbolsPath is null
             ? null
-            : compilation.ExceptionTypeMap ?? throw new InvalidOperationException(
-                "compiler diagnostics did not produce an exception type map");
-        var stackTraceSymbols = request.StackTraceSymbolsPath is null
+            : compilation.TypeSymbols ?? throw new InvalidOperationException(
+                "the compile did not produce its type-symbols sidecar");
+        var methodSymbols = request.MethodSymbolsPath is null
             ? null
-            : compilation.StackTraceSymbols ?? throw new InvalidOperationException(
-                "stack-trace instrumentation did not produce its symbol sidecar");
+            : compilation.MethodSymbols ?? throw new InvalidOperationException(
+                "stack-trace instrumentation did not produce its method-symbols sidecar");
         string[] runtimeFeatures = compilation.RuntimeFeatures.IsDefault
             ? []
             : [.. compilation.RuntimeFeatures.Order(StringComparer.Ordinal)];
@@ -88,7 +88,8 @@ internal sealed class CompilerArtifactWriter(
                     callbackSupport.Sha256,
                     callbackSupport.Callbacks,
                     callbackSupport.TemporaryApplicationExports,
-                    callbackSupport.TemporaryRuntimeExports),
+                    callbackSupport.TemporaryRuntimeExports,
+                    callbackSupport.Trampolines),
             };
         }
         else
@@ -100,9 +101,9 @@ internal sealed class CompilerArtifactWriter(
             request.InteropManifestPath,
             compilation.InteropManifest,
             CompilerArtifactJsonContext.Sidecars.HostInteropManifest);
-        if (exceptionTypeMap is not null)
+        if (typeSymbols is not null)
         {
-            _binaryFiles.Write(request.ExceptionTypeMapPath!, exceptionTypeMap.Bytes);
+            _binaryFiles.Write(request.TypeSymbolsPath!, typeSymbols.Bytes);
         }
         var functionImports = compilation.FunctionImports.IsDefault ? [] : compilation.FunctionImports;
         WriteJson(
@@ -117,9 +118,9 @@ internal sealed class CompilerArtifactWriter(
                     import.Type.Parameters,
                     import.Type.Result))]),
             CompilerArtifactJsonContext.Sidecars.CompilerMetadataSidecar);
-        if (stackTraceSymbols is not null)
+        if (methodSymbols is not null)
         {
-            _binaryFiles.Write(request.StackTraceSymbolsPath!, stackTraceSymbols.Bytes);
+            _binaryFiles.Write(request.MethodSymbolsPath!, methodSymbols.Bytes);
         }
         // The core module is written last, so a complete module means complete sidecars.
         _binaryFiles.Write(request.CoreModulePath, compilation.CoreModule);
@@ -145,8 +146,8 @@ internal sealed class CompilerArtifactWriter(
                      request.RuntimeLayoutPath,
                      request.InteropManifestPath,
                      request.CompilerMetadataPath,
-                     request.ExceptionTypeMapPath,
-                     request.StackTraceSymbolsPath,
+                     request.TypeSymbolsPath,
+                     request.MethodSymbolsPath,
                  })
         {
             if (path is not null && !distinct.Add(Path.GetFullPath(path)))

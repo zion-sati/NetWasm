@@ -89,6 +89,11 @@ internal sealed class WasmModulePlanInvariantValidator :
                 RequireIndex(getterIndex.Value, expected++, indices, "callback getter");
             }
         }
+        // The unmanaged calli trampolines follow the getters, one per physical signature (issue 226).
+        foreach (var trampoline in plan.NativeImports.CallSites.Trampolines)
+        {
+            RequireIndex(trampoline.Index.Value, expected++, indices, "unmanaged call trampoline");
+        }
         var constructedIdentities = request.ConstructedMethods.Keys
             .ToHashSet(StringComparer.Ordinal);
         var expectedMethods = methodEmissions

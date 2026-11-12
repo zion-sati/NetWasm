@@ -598,5 +598,6 @@ public sealed class WasmModulePlanInvariantValidatorTests
         new WasmModulePlanInvariantValidator(),
         new NativeImportPlanner(NativeAbiTestSupport.ScalarPlanner()),
         NativeAbiTestSupport.CallbackPlanner(),
+            NativeAbiTestSupport.CallSitePlanner(),
         new FinalizationPlanBuilder(new RecordingLayoutProvider(), new FakeIntrinsics()));
 }

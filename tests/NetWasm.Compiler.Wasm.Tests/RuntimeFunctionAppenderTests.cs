@@ -386,7 +386,7 @@ public sealed class RuntimeFunctionAppenderTests
             bool reportTerminalExceptions,
             EntityKey? argumentFactory,
             MethodInstanceModel? completion,
-            EntityKey? localTimePreflight,
+            ImmutableArray<EntityKey> startupPreflights,
             EntityKey? processExit,
             bool initializesRuntime)
         {

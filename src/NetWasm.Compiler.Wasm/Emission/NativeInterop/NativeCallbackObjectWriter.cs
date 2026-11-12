@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -11,7 +12,8 @@ namespace NetWasm.Compiler.Wasm.Emission.NativeInterop;
 /// <summary>
 /// Adapts the callback plan to the narrow LLVM Wasm object contract consumed by
 /// the native linker. LLD owns final table placement and resolves each getter's
-/// relocated table address.
+/// relocated table address. Each unmanaged calli trampoline calls its last argument
+/// through the linked function table with the call's C ABI signature (issue 226).
 /// </summary>
 internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
 {
@@ -37,10 +39,13 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
     private const byte I64Const = 0x42;
     private const byte LocalGet = 0x20;
     private const byte Call = 0x10;
+    private const byte CallIndirect = 0x11;
     private const byte End = 0x0b;
     private const byte FunctionIndexLebRelocation = 0;
     private const byte TableIndexSlebRelocation = 1;
     private const byte TableIndexSleb64Relocation = 18;
+    private const byte TypeIndexLebRelocation = 6;
+    private const byte TableNumberLebRelocation = 20;
 
     private readonly IUnsignedLeb128Encoder _unsigned;
     private readonly IUtf8StringEncoder _utf8;
@@ -63,11 +68,15 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
         _writers = writers;
     }
 
-    public byte[] Write(NativeCallbackPlan callbacks, WasmTarget target)
+    public byte[] Write(
+        NativeCallbackPlan callbacks,
+        ImmutableArray<NativeCallTrampoline> trampolines,
+        WasmTarget target)
     {
         ArgumentNullException.ThrowIfNull(callbacks);
+        trampolines = trampolines.IsDefault ? [] : trampolines;
         var targetLayout = WasmTargetLayout.For(target);
-        if (callbacks.Methods.Length == 0)
+        if (callbacks.Methods.Length == 0 && trampolines.IsEmpty)
         {
             return [];
         }
@@ -75,23 +84,24 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
         var moduleBuffer = new WasmBinaryBuffer();
         var module = _writers(moduleBuffer);
         module.Write(Header);
-        WriteTypeSection(module, callbacks, targetLayout);
-        WriteImportSection(module, callbacks, targetLayout);
+        WriteTypeSection(module, callbacks, trampolines, targetLayout);
+        WriteImportSection(module, callbacks, trampolines, targetLayout);
         var named = callbacks.Methods.Where(callback => callback.IsNamed).ToArray();
-        if (named.Length != 0 || !callbacks.AddressedMethods.IsEmpty)
+        if (named.Length != 0 || !callbacks.AddressedMethods.IsEmpty || !trampolines.IsEmpty)
         {
             WriteFunctionSection(
                 module,
                 callbacks,
                 named,
-                callbacks.AddressedMethods.Length);
+                callbacks.AddressedMethods.Length,
+                trampolines);
         }
         if (!callbacks.AddressedMethods.IsEmpty)
         {
             WriteElementSection(module, callbacks, targetLayout);
         }
-        var relocations = WriteCodeSection(module, callbacks, named, targetLayout);
-        WriteLinkingSection(module, callbacks);
+        var relocations = WriteCodeSection(module, callbacks, named, trampolines, targetLayout);
+        WriteLinkingSection(module, callbacks, trampolines);
         if (relocations.Count != 0)
         {
             WriteRelocationSection(
@@ -109,12 +119,12 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
     private void WriteTypeSection(
         IWasmBinaryWriter module,
         NativeCallbackPlan callbacks,
+        ImmutableArray<NativeCallTrampoline> trampolines,
         WasmTargetLayout target)
     {
         WriteSection(module, TypeSection, payload =>
         {
-            WriteCount(payload, callbacks.Methods.Length +
-                (callbacks.AddressedMethods.IsEmpty ? 0 : 1));
+            WriteCount(payload, TrampolineTypeBase(callbacks) + trampolines.Length * 2);
             foreach (var callback in callbacks.Methods)
             {
                 var signature = callback.Abi.PhysicalSignature;
@@ -134,18 +144,51 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
                     ? WasmValueType.I64
                     : WasmValueType.I32)]);
             }
+
+            // Each trampoline's own type, then the type of the function it calls: the same without
+            // the trailing function pointer.
+            foreach (var trampoline in trampolines)
+            {
+                WriteFunctionType(payload, trampoline.Type.Parameters, trampoline.Type.Result, target);
+                WriteFunctionType(payload, trampoline.Type.Parameters[..^1], trampoline.Type.Result, target);
+            }
         });
     }
+
+    private void WriteFunctionType(
+        IWasmBinaryWriter payload,
+        ImmutableArray<CliValueKind> parameters,
+        CliValueKind result,
+        WasmTargetLayout target)
+    {
+        payload.Write([FunctionType]);
+        WriteCount(payload, parameters.Length);
+        foreach (var parameter in parameters)
+        {
+            payload.Write([(byte)WasmValueTypes.FromCli(parameter, target)]);
+        }
+        WriteResult(payload, result, target);
+    }
+
+    // The getter's type follows the callbacks' types; the trampolines' types follow both.
+    private static int TrampolineTypeBase(NativeCallbackPlan callbacks) =>
+        callbacks.Methods.Length + (callbacks.AddressedMethods.IsEmpty ? 0 : 1);
+
+    private static bool ImportsTable(
+        NativeCallbackPlan callbacks,
+        ImmutableArray<NativeCallTrampoline> trampolines) =>
+        !callbacks.AddressedMethods.IsEmpty || !trampolines.IsEmpty;
 
     private void WriteImportSection(
         IWasmBinaryWriter module,
         NativeCallbackPlan callbacks,
+        ImmutableArray<NativeCallTrampoline> trampolines,
         WasmTargetLayout target)
     {
         WriteSection(module, ImportSection, payload =>
         {
             WriteCount(payload, callbacks.Methods.Length +
-                (!callbacks.AddressedMethods.IsEmpty ? 2 : 1));
+                (ImportsTable(callbacks, trampolines) ? 2 : 1));
             for (var index = 0; index < callbacks.Methods.Length; index++)
             {
                 _utf8.Encode(payload, RuntimeAbi.ApplicationModule);
@@ -158,7 +201,7 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
             _utf8.Encode(payload, "__linear_memory");
             payload.Write([MemoryImport, target.UsesMemory64 ? (byte)0x04 : (byte)0x00, 0x00]);
 
-            if (!callbacks.AddressedMethods.IsEmpty)
+            if (ImportsTable(callbacks, trampolines))
             {
                 _utf8.Encode(payload, "env");
                 _utf8.Encode(payload, "__indirect_function_table");
@@ -176,11 +219,12 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
         IWasmBinaryWriter module,
         NativeCallbackPlan callbacks,
         NativeCallbackMethodPlan[] named,
-        int addressedCount)
+        int addressedCount,
+        ImmutableArray<NativeCallTrampoline> trampolines)
     {
         WriteSection(module, FunctionSection, payload =>
         {
-            WriteCount(payload, named.Length + addressedCount);
+            WriteCount(payload, named.Length + addressedCount + trampolines.Length);
             foreach (var callback in named)
             {
                 WriteCount(payload, callbacks.Methods.IndexOf(callback));
@@ -188,6 +232,10 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
             for (var index = 0; index < addressedCount; index++)
             {
                 WriteCount(payload, callbacks.Methods.Length);
+            }
+            for (var index = 0; index < trampolines.Length; index++)
+            {
+                WriteCount(payload, TrampolineTypeBase(callbacks) + index * 2);
             }
         });
     }
@@ -218,13 +266,14 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
         IWasmBinaryWriter module,
         NativeCallbackPlan callbacks,
         NativeCallbackMethodPlan[] named,
+        ImmutableArray<NativeCallTrampoline> trampolines,
         WasmTargetLayout target)
     {
         var relocations = new List<ObjectRelocation>(
-            named.Length + callbacks.AddressedMethods.Length);
+            named.Length + callbacks.AddressedMethods.Length + trampolines.Length * 2);
         WriteSection(module, CodeSection, (payload, payloadLength) =>
         {
-            WriteCount(payload, named.Length + callbacks.AddressedMethods.Length);
+            WriteCount(payload, named.Length + callbacks.AddressedMethods.Length + trampolines.Length);
             foreach (var callback in named)
             {
                 var bodyBuffer = new WasmBinaryBuffer();
@@ -265,11 +314,53 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
                 WritePaddedZero(payload, addressWidth);
                 payload.Write([End]);
             }
+            for (var index = 0; index < trampolines.Length; index++)
+            {
+                // local.get each argument, then the pointer; call_indirect (type) (table).
+                var arguments = trampolines[index].Type.Parameters.Length;
+                var bodyBuffer = new WasmBinaryBuffer();
+                var body = _writers(bodyBuffer);
+                WriteCount(body, 0);
+                for (var parameter = 0; parameter < arguments; parameter++)
+                {
+                    body.Write([LocalGet]);
+                    WriteCount(body, parameter);
+                }
+                body.Write([CallIndirect]);
+                var typeOffset = bodyBuffer.Length;
+                WritePaddedZero(body, 5);
+                var tableOffset = bodyBuffer.Length;
+                WritePaddedZero(body, 5);
+                body.Write([End]);
+
+                WriteCount(payload, bodyBuffer.Length);
+                var bodyOffset = payloadLength();
+                payload.Write(bodyBuffer.Snapshot());
+                relocations.Add(new(
+                    TypeIndexLebRelocation,
+                    bodyOffset + typeOffset,
+                    TrampolineTypeBase(callbacks) + index * 2 + 1));
+                relocations.Add(new(
+                    TableNumberLebRelocation,
+                    bodyOffset + tableOffset,
+                    TableSymbolIndex(callbacks, named.Length, trampolines)));
+            }
         });
         return relocations;
     }
 
-    private void WriteLinkingSection(IWasmBinaryWriter module, NativeCallbackPlan callbacks)
+    // The symbol table lists the callback imports, the named callbacks, the getters, the
+    // trampolines and then the table.
+    private static int TableSymbolIndex(
+        NativeCallbackPlan callbacks,
+        int namedCount,
+        ImmutableArray<NativeCallTrampoline> trampolines) =>
+        callbacks.Methods.Length + namedCount + callbacks.AddressedMethods.Length + trampolines.Length;
+
+    private void WriteLinkingSection(
+        IWasmBinaryWriter module,
+        NativeCallbackPlan callbacks,
+        ImmutableArray<NativeCallTrampoline> trampolines)
     {
         WriteCustomSection(module, "linking", payload =>
         {
@@ -279,10 +370,8 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
                 var named = callbacks.Methods
                     .Where(callback => callback.IsNamed)
                     .ToArray();
-                WriteCount(symbols, checked(callbacks.Methods.Length +
-                    named.Length +
-                    callbacks.AddressedMethods.Length +
-                    (callbacks.AddressedMethods.IsEmpty ? 0 : 1)));
+                WriteCount(symbols, checked(TableSymbolIndex(callbacks, named.Length, trampolines) +
+                    (ImportsTable(callbacks, trampolines) ? 1 : 0)));
                 for (var index = 0; index < callbacks.Methods.Length; index++)
                 {
                     symbols.Write([FunctionSymbol, UndefinedExplicitName]);
@@ -301,7 +390,14 @@ internal sealed class NativeCallbackObjectWriter : INativeCallbackObjectWriter
                     WriteCount(symbols, callbacks.Methods.Length + named.Length + index);
                     _utf8.Encode(symbols, callbacks.AddressedMethods[index].GetterName!);
                 }
-                if (!callbacks.AddressedMethods.IsEmpty)
+                for (var index = 0; index < trampolines.Length; index++)
+                {
+                    symbols.Write([FunctionSymbol, 0x00]);
+                    WriteCount(symbols, callbacks.Methods.Length + named.Length +
+                        callbacks.AddressedMethods.Length + index);
+                    _utf8.Encode(symbols, trampolines[index].Symbol);
+                }
+                if (ImportsTable(callbacks, trampolines))
                 {
                     symbols.Write([TableSymbol, Undefined, 0x00]);
                 }

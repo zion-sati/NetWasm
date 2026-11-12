@@ -47,6 +47,10 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Enum", "ToString"),
             ("System.Enum", "InternalToString"),
             ("System.Enum", "InternalFormat"),
+            // A value type's default equality and hash call each reference field's Equals and
+            // GetHashCode, which can allocate, while the compared value is held only by the call.
+            ("System.ValueType", "Equals"),
+            ("System.ValueType", "GetHashCode"),
             ("System.Runtime.CompilerServices.ObjectArrayDelegateAdapter", "Create"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeDelegate"),

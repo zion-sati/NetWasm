@@ -229,10 +229,7 @@ public sealed class RuntimeInitializerFunctionEmitterTests
                         WasmModuleProfile.CoreApplication,
                         IncludeTerminalExceptionReporter: true,
                         IncludeStackTrace: true))
-                {
-                    StackTraceSymbolRegistrationGuardAddress = 300,
-                    StackTraceSymbols = [new(1, 304, 22)],
-                });
+                );
         var instructions = instructionWriter.ToInstructions();
 
         Assert.Contains(instructions, instruction =>
@@ -249,7 +246,8 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         Assert.Contains(instructions, instruction =>
             instruction.Opcode == WasmOpcodes.I32Constant &&
             instruction.Operand.SignedValue == 31);
-        Assert.Contains(instructions, instruction =>
+        // Frame text comes from the method-symbols sidecar, which CoreLib registers (issue 225).
+        Assert.DoesNotContain(instructions, instruction =>
             instruction.Opcode == WasmOpcodes.Call &&
             instruction.Operand.UnsignedValue == (uint)imports.Resolve(
                 RuntimeImportSymbol.StackTraceRegisterSymbol,
@@ -257,41 +255,33 @@ public sealed class RuntimeInitializerFunctionEmitterTests
                     WasmModuleProfile.CoreApplication,
                     IncludeTerminalExceptionReporter: true,
                     IncludeStackTrace: true)));
-        Assert.Equal(2, addresses.Constants.Count(value => value == 300));
-        Assert.Contains(304, addresses.Constants);
-        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Load);
-        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.If);
-        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
     }
 
-    [Fact]
-    public void EnabledStackTracePlanRequiresRegistrationGuard()
+    // CoreLib finds the sidecar descriptor through a static word the initializer fills, as wide as an address.
+    [Theory]
+    [InlineData(4, WasmOpcodes.I32Store)]
+    [InlineData(8, WasmOpcodes.I64Store)]
+    public void TheSidecarDescriptorAddressIsStoredInItsCoreLibWord(int addressSize, byte store)
     {
-        var plan = new StackTraceMethodPlan(
-            ImmutableDictionary<EntityKey, int>.Empty,
-            ImmutableDictionary<string, int>.Empty,
-            [new(1, "Example.Program.Main()")],
-            ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty,
-            29,
-            31);
-        var initializer = new InitializerHarness(
+        var instructionWriter = new EmitterTestSupport.RecordingInstructionWriter();
+        var addresses = new RecordingAddressEmitter();
+        var code = new GeneratedFunctionWriterFactory().Create();
+        new InitializerHarness(
             new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([]),
             WasmRuntimeImports.CreateCatalog(),
-            new RecordingAddressEmitter(),
-            new RecordingRuntimeCoreInitializer());
+            addresses,
+            new RecordingRuntimeCoreInitializer(),
+            addressSize == 8 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32).Initialize(
+                new GeneratedFunctionWriterLease(code.Bytes, code.Snapshots, instructionWriter),
+                new RuntimeInitializationPlan(512, StackTraceMethodPlan.Disabled)
+                {
+                    SidecarSlotAddress = 600,
+                    SidecarDescriptorAddress = 700,
+                });
 
-        var exception = Assert.Throws<InvalidOperationException>(() => initializer.Initialize(
-            new GeneratedFunctionWriterFactory().Create(),
-            new RuntimeInitializationPlan(
-                512,
-                plan,
-                new RuntimeImportSelection(
-                    WasmModuleProfile.CoreApplication,
-                    IncludeTerminalExceptionReporter: true,
-                    IncludeStackTrace: true))));
-
-        Assert.Contains("guard address", exception.Message, StringComparison.Ordinal);
+        Assert.Equal([600, 700], addresses.Constants.Where(value => value is 600 or 700));
+        Assert.Contains(instructionWriter.ToInstructions(), instruction => instruction.Opcode == store);
     }
 
     [Fact]
@@ -482,11 +472,12 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         IStaticDataLayout staticData,
         IRuntimeImportResolver imports,
         IAddressInstructionEmitter addresses,
-        IRuntimeCoreInitializer core)
+        IRuntimeCoreInitializer core,
+        WasmTargetLayout? target = null)
     {
         public void Initialize(GeneratedFunctionWriterLease code, RuntimeInitializationPlan plan) =>
             new RuntimeInitializerFunctionEmitter(
-                new RecordingLayoutProvider(WasmTargetLayout.Wasm32),
+                new RecordingLayoutProvider(target ?? WasmTargetLayout.Wasm32),
                 descriptors,
                 staticData,
                 imports,

@@ -12,7 +12,8 @@ public abstract partial class Assembly
 {
     public virtual string? CodeBase => throw MetadataUnavailable();
     public virtual MethodInfo? EntryPoint => throw MetadataUnavailable();
-    public virtual string? FullName => throw MetadataUnavailable();
+    // NetWasm: there are no assemblies at run time, so an assembly's name reads as unavailable (issue 225).
+    public virtual string? FullName => TypeSymbols.AssemblyNameUnavailable;
     public virtual string ImageRuntimeVersion => throw MetadataUnavailable();
     public virtual bool IsDynamic => false;
     public virtual string Location => throw MetadataUnavailable();
@@ -26,7 +27,7 @@ public abstract partial class Assembly
     public static string CreateQualifiedName(string? assemblyName, string? typeName) => typeName + ", " + assemblyName;
 
     public virtual AssemblyName GetName() => GetName(false);
-    public virtual AssemblyName GetName(bool copiedName) => throw MetadataUnavailable();
+    public virtual AssemblyName GetName(bool copiedName) => new() { Name = TypeSymbols.AssemblyNameUnavailable };
     public virtual AssemblyName[] GetReferencedAssemblies() => throw MetadataUnavailable();
     public virtual Type? GetType(string name) => GetType(name, false, false);
     public virtual Type? GetType(string name, bool throwOnError) => GetType(name, throwOnError, false);

@@ -50,6 +50,17 @@ python3 compiler-qualification/runtime-performance/run.py \
   CRC-32 over a 1 MiB buffer. The program fails if a timed region allocates, and
   each checksum is exact, the bits of the final energy for `nbody`.
 
+- `async`: single-threaded async state machines and Task, modelled on
+  dotnet/performance's Perf_AsyncMethods and ValueTaskPerfTest:
+  `async-completed` and `async-valuetask-completed` await methods that complete
+  without suspending, `async-chain` ten nested ones, `yield` suspends through
+  the scheduler, `value-task-source` resumes a reusable IValueTaskSource from a
+  queued work item, `ping-pong` hands a value between two loops through
+  TaskCompletionSource, `async-iterator` drains an async iterator that yields
+  every 64th item, and `when-all` awaits eight methods that each suspend once.
+  Completions come from queued work or the event loop, never another thread,
+  so every runtime runs the same interleaving and the checksum is exact.
+
 `gc_statistics.py` reports NetWasmGC's allocator statistics for each
 scenario's timed region: allocations by path, run refills, bitmap search,
 zeroed bytes, marking and sweep work, and a partition of the heap into arenas,

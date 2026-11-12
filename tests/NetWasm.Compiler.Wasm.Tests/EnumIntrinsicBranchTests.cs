@@ -1520,6 +1520,32 @@ public sealed class EnumIntrinsicBranchTests
         Assert.Contains(equality, code.ToArray());
     }
 
+    // A null receiver throws NullReferenceException and a null flag ArgumentNullException, as
+    // desktop's Enum.HasFlag does, boxed or constrained (issue 223's class: a delegate to HasFlag
+    // runs this expansion).
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HasFlagRejectsANullFlagWithArgumentNullException(bool constrained)
+    {
+        var underlying = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var metadata = new EnumMetadataFixture(underlying);
+        var nullChecks = new NoOpNullCheckEmitter();
+        var emitter = new EnumHasFlagEmitter(
+            new FixedStorageResolver(metadata, underlying),
+            nullChecks,
+            new EnumValuePairEmitter(metadata.Layouts),
+            new ImplicitExceptionEmitter(metadata.Layouts),
+            metadata.Layouts);
+
+        emitter.EmitHasFlag(new RecordingInstructionWriter(), 0, 1, 2, 3, OptionalFunctionIndex.At(7),
+            constrained ? CliValueKind.ManagedAddress : CliValueKind.ManagedReference, metadata.EnumType);
+
+        Assert.Equal(constrained
+            ? [(1, ManagedExceptionKind.ArgumentNull)]
+            : [(0, ManagedExceptionKind.NullReference), (1, ManagedExceptionKind.ArgumentNull)], nullChecks.Checks);
+    }
+
     [Fact]
     public void HasFlagRequiresAClosedConstrainedReceiverType()
     {
@@ -2002,9 +2028,11 @@ public sealed class EnumIntrinsicBranchTests
 
     private sealed class NoOpNullCheckEmitter : IEnumNullCheckEmitter
     {
-        public void Emit(IWasmInstructionWriter code, int objectLocal, OptionalFunctionIndex throwFunction)
-        {
-        }
+        public List<(int Local, ManagedExceptionKind Exception)> Checks { get; } = [];
+
+        public void Emit(IWasmInstructionWriter code, int objectLocal, OptionalFunctionIndex throwFunction,
+            ManagedExceptionKind exception = ManagedExceptionKind.NullReference) =>
+            Checks.Add((objectLocal, exception));
     }
 
     private sealed class FixedFunctionIndexResolver : IFunctionIndexResolver

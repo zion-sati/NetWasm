@@ -28,7 +28,8 @@ internal sealed class ReachabilityInstructionAnalyzerFactory(
         ICalledMethodResolver calledMethods,
         ITypeOperandResolver typeOperands,
         IDispatchSiteKeyBuilder dispatchSiteKeys,
-        IDelegateMethodClassifier delegateMethods) =>
+        IDelegateMethodClassifier delegateMethods,
+        IRuntimeIntrinsicRegistry intrinsics) =>
         new StaticInitializationDependencyDecorator(new ReachabilityInstructionAnalyzer(
             typeFinder,
             typeIdentities,
@@ -39,5 +40,5 @@ internal sealed class ReachabilityInstructionAnalyzerFactory(
             nullableTypes,
             managedCallSites,
             nativeCallbacks,
-            new DispatchReceiverBoundResolver(typeOperands)), typeFinder);
+            new DispatchReceiverBoundResolver(typeOperands, nullableTypes), intrinsics), typeFinder);
 }

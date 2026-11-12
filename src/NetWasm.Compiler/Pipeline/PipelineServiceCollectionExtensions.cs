@@ -48,8 +48,6 @@ internal static class PipelineServiceCollectionExtensions
         services.AddSingleton<ICompilationDiagnosticTraceStage,
             CompilationDiagnosticTraceStage>();
         services.AddSingleton<ICompilationComplexityStage, CompilationComplexityStage>();
-        services.AddSingleton<ICompilationDiagnosticBindingStage,
-            CompilationDiagnosticBindingStage>();
         services.AddSingleton<ICompilationTimestampReader, CompilationTimestampReader>();
         services.AddSingleton<ICompilationElapsedTimeCalculator,
             CompilationElapsedTimeCalculator>();

@@ -26,8 +26,10 @@
     <NoWarn>$(NoWarn);CS3001;CS3002;CS3003;CS3008;CS3015</NoWarn>
     <!-- As upstream CoreLib: generic vector code takes pointers to T. -->
     <NoWarn>$(NoWarn);CS8500</NoWarn>
-    <!-- Upstream shared sources choose CoreLib's public surface with this symbol. -->
-    <DefineConstants>$(DefineConstants);SYSTEM_PRIVATE_CORELIB</DefineConstants>
+    <!-- Upstream shared sources choose CoreLib's public surface with this symbol. NETWASM is the
+         symbol the SDK defines for netwasm projects; CoreLib's NetWasm adaptations of upstream
+         sources use it. -->
+    <DefineConstants>$(DefineConstants);SYSTEM_PRIVATE_CORELIB;NETWASM</DefineConstants>
   </PropertyGroup>
 
   <!-- Keep declaration order stable: metadata tokens are part of deterministic compiler output. -->
@@ -187,6 +189,18 @@
     <Compile Include="Runtime/InteropServices/TimeZones/WasiReadOnlyFileReader.cs" />
     <Compile Include="Runtime/InteropServices/TimeZones/ITimeZoneAssetFileOpener.cs" />
     <Compile Include="Runtime/InteropServices/TimeZones/TimeZoneAssetFileOpener.cs" />
+    <Compile Include="Runtime/InteropServices/ProgramSidecars.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/ISidecarFileReader.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/ISymbolSidecarInstaller.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/ISymbolSidecarParser.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/MethodSymbolInstaller.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/ProgramStandardErrorWriter.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/SidecarDescriptor.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/SymbolSidecar.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/SymbolSidecarLoader.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/SymbolSidecarParser.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/TypeSymbolInstaller.cs" />
+    <Compile Include="Runtime/InteropServices/Sidecars/WasiSidecarFileReader.cs" />
     <Compile Include="Runtime/InteropServices/TimeZones/ITimeZoneDefinitionResolverFactory.cs" />
     <Compile Include="Runtime/InteropServices/TimeZones/TimeZoneDefinitionResolverFactory.cs" />
     <Compile Include="Runtime/InteropServices/TimeZones/ILocalTimeOffsetResolverFactory.cs" />
@@ -355,6 +369,8 @@
     <Compile Include="Runtime/InteropServices/Concurrency/WasiWaitableSetCreateInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/IWasiWaitableJoinInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/WasiWaitableJoinInvoker.cs" />
+    <Compile Include="Runtime/InteropServices/Concurrency/IWasiThreadYieldInvoker.cs" />
+    <Compile Include="Runtime/InteropServices/Concurrency/WasiThreadYieldInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/IWasiWaitableSetWaitInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/WasiWaitableSetWaitInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/IWaitableEventAwaiter.cs" />
@@ -475,6 +491,7 @@
     <Compile Include="DBNull.cs" />
     <Compile Include="Type.cs" />
     <Compile Include="Type.Diagnostics.cs" />
+    <Compile Include="TypeSymbols.cs" />
     <Compile Include="Type.Reflection.cs" />
     <Compile Include="TypeCode.cs" />
     <Compile Include="IServiceProvider.cs" />

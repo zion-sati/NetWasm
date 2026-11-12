@@ -34,7 +34,7 @@ internal sealed class RuntimeFunctionAppender(
         IFunctionIndexResolver functionIndices,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
         EntityKey? entryPointArgumentFactory = null,
-        EntityKey? localTimePreflight = null,
+        ImmutableArray<EntityKey> startupPreflights = default,
         EntityKey? processExit = null)
     {
         ArgumentNullException.ThrowIfNull(functions);
@@ -135,7 +135,7 @@ internal sealed class RuntimeFunctionAppender(
                 boundaryEntries,
                 entryPointArgumentFactory,
                 EntryCompletion: commandEntry?.Start,
-                LocalTimePreflight: localTimePreflight,
+                StartupPreflights: startupPreflights,
                 // A callback-lifted entry exits when CoreLib completes its task.
                 ProcessExit: commandEntry is null ? processExit : null));
             if (commandEntry is not null)

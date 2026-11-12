@@ -44,6 +44,10 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.Enum", "ToString")]
     [InlineData("System.Enum", "InternalToString")]
     [InlineData("System.Enum", "InternalFormat")]
+    // A value type's default equality and hash run each reference field's own Equals and
+    // GetHashCode.
+    [InlineData("System.ValueType", "Equals")]
+    [InlineData("System.ValueType", "GetHashCode")]
     public void ClassifyRecognizesEveryRuntimeAllocationBoundary(
         string typeName,
         string methodName)

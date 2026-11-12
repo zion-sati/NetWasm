@@ -1916,7 +1916,28 @@ public sealed class TypedStackValidatorTests
                 [],
                 I(0, CilOperation.Constrained, new CilOperand.TypeIdentity(value)),
                 I(1, CilOperation.Return))),
-            "must immediately precede call or callvirt");
+            "must immediately precede call, callvirt or ldftn");
+        // A static virtual's method group: constrained. ldftn (ECMA-335 III.2.1 as augmented);
+        // ldvirtftn takes no constrained. prefix.
+        _ = Validate(Body(
+            CliValueKind.Void,
+            1,
+            [],
+            I(0, CilOperation.Constrained, new CilOperand.TypeIdentity(value)),
+            I(1, CilOperation.LoadFunction, new CilOperand.Entity(NoArgumentStaticCallKey)),
+            I(2, CilOperation.Pop),
+            I(3, CilOperation.Return)));
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                1,
+                [],
+                I(0, CilOperation.LoadNull),
+                I(1, CilOperation.Constrained, new CilOperand.TypeIdentity(value)),
+                I(2, CilOperation.LoadVirtualFunction, new CilOperand.Entity(NoArgumentStaticCallKey)),
+                I(3, CilOperation.Pop),
+                I(4, CilOperation.Return))),
+            "must immediately precede call, callvirt or ldftn");
         Assert.Throws<InvalidOperationException>(() => Validate(Body(
             CliValueKind.Void,
             1,
@@ -2141,24 +2162,57 @@ public sealed class TypedStackValidatorTests
                 [],
                 I(0, CilOperation.LoadNull),
                 I(1, CilOperation.Throw),
-                I(2, CilOperation.Pop),
-                I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
-                I(4, CilOperation.Leave, new CilOperand.BranchTarget(5)),
-                I(5, CilOperation.Return)) with
+                I(2, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+                I(3, CilOperation.EndFinally),
+                I(4, CilOperation.Return)) with
             {
                 ExceptionRegions =
                 [
                     new CilExceptionRegion(
-                        CilExceptionRegionKind.Catch,
+                        CilExceptionRegionKind.Finally,
                         0,
                         2,
                         2,
-                        3,
-                        TypeKey,
+                        2,
+                        null,
                         null),
                 ],
             }),
             "evaluation stack is not empty at control transfer");
+    }
+
+    // leave empties the evaluation stack (ECMA-335 III.3.46), so a value still on it is
+    // discarded rather than refused, and the leave's target starts on an empty stack (issue
+    // 221's class).
+    [Fact]
+    public void LeaveDiscardsTheValuesOnTheStack()
+    {
+        var validated = Validate(Body(
+            CliValueKind.Void,
+            1,
+            [],
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.Throw),
+            I(2, CilOperation.Pop),
+            I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(4, CilOperation.Leave, new CilOperand.BranchTarget(5)),
+            I(5, CilOperation.Return)) with
+        {
+            ExceptionRegions =
+            [
+                new CilExceptionRegion(
+                    CilExceptionRegionKind.Catch,
+                    0,
+                    2,
+                    2,
+                    3,
+                    TypeKey,
+                    null),
+            ],
+        });
+
+        Assert.Equal([CliValueKind.I4], validated.InstructionEntryStacks[4]);
+        Assert.Empty(validated.InstructionEntryStacks[5]);
     }
 
     // Roslyn's `address ?? rethrow` in a catch handler (dotnet/runtime's Dns.EndResolve): the

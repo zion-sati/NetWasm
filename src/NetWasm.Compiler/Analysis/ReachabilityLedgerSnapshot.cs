@@ -72,7 +72,6 @@ internal sealed record ReachabilityLedgerSnapshot(
 
     internal bool RequiresGenericArguments { get; init; }
 
-    internal RuntimeTypeNamePayload TypeNamePayload { get; init; }
 
     internal ImmutableDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
@@ -121,7 +120,6 @@ internal sealed record ReachabilityLedgerSnapshot(
         RequiresTypeFacts = ledger.RequiresTypeFacts,
         RequiresDelegateInvoke = ledger.RequiresDelegateInvoke,
         RequiresGenericArguments = ledger.RequiresGenericArguments,
-        TypeNamePayload = ledger.TypeNamePayload,
         NativeCallbacks = ledger.NativeCallbacks.ToImmutable(),
     };
 }

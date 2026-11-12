@@ -7,15 +7,15 @@ import { createExecutionRequestValidator } from "./execution-request-validator.m
 import { createFailureDetailRedaction } from "./failure-detail-redaction.mjs";
 import { createLocalArtifactTransport } from "./local-artifact-transport.mjs";
 import { createLocalDeploymentManifestLoader } from "./local-deployment-manifest-loader.mjs";
-import { createLocalTimeZoneMaterializer } from "./local-timezone-materializer.mjs";
+import { createLocalSidecarMaterializer } from "./local-sidecar-materializer.mjs";
 import { importLocalVerifiedModule } from "./local-verified-module-importer.mjs";
 import { createNetWasmExecutionFacade } from "./netwasm-execution-facade.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
 import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
-import { executeWithTimeZoneResources } from "./timezone-execution.mjs";
-import { selectTimeZoneSidecar } from "./timezone-sidecar-selector.mjs";
+import { executeWithProgramSidecars } from "./sidecar-execution.mjs";
+import { selectProgramSidecars } from "./program-sidecar-selector.mjs";
 
 const factoryKeys = ["manifestPath", "platform"];
 const platformKeys = ["createFilesystem", "createImports"];
@@ -51,16 +51,16 @@ export function createLocalExecutionComposition(
   const executeDeployment = createDeploymentExecution({
     createFilesystem: options.platform.createFilesystem,
     createOutputFinalization,
-    createTimeZoneMaterializer: mountReadOnlyFile => createLocalTimeZoneMaterializer({
+    createSidecarMaterializer: mountReadOnlyFile => createLocalSidecarMaterializer({
       manifestPath: options.manifestPath,
       mountReadOnlyFile,
     }),
-    executeWithResources: executeWithTimeZoneResources,
+    executeWithResources: executeWithProgramSidecars,
     loadManifest: createLocalDeploymentManifestLoader({ manifestPath: options.manifestPath }),
     prepareProviders,
     prepareRawInterop,
     resolveStrategy: kind => asContractStrategy(resolveStrategy, kind),
-    selectTimeZone: selectTimeZoneSidecar,
+    selectSidecars: selectProgramSidecars,
     validateRequest: asContractAction(validateRequest),
   });
   const redactFailureDetails = createFailureDetailRedaction({ isAbsoluteHostPath: isAbsolute });

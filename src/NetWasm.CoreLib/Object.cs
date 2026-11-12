@@ -13,7 +13,9 @@ namespace System
         public virtual bool Equals(object? value) => this == value;
         public virtual int GetHashCode() => ObjectIdentityRuntime.GetHashCode(this);
         public virtual string ToString() => GetType().ToString();
-        public Type GetType() => null!;
+        // The compiler lowers every call to GetType, this one included, to a read of the object's
+        // type; the body is what a delegate or function pointer to GetType runs.
+        public Type GetType() => GetType();
         [Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.InternalCall)]
         protected extern object MemberwiseClone();
         public static bool Equals(object? left, object? right) =>

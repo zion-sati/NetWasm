@@ -153,27 +153,40 @@ Rich exception diagnostics are a build-profile choice, not a promise of desktop
 .NET diagnostic behavior. See [the exception-profile defaults, opt-ins and
 interop payload boundaries](diagnostics.md#managed-exceptions-and-diagnostic-profiles).
 
-SDK Debug builds enable managed stack instrumentation and its deterministic
-symbol sidecar by default; Release builds leave it out unless
-`NetWasmManagedStackTrace=true`. `nwc` enables the same behavior
-with `-stacktracesymbols:<path>`. `Exception.StackTrace` then reports the
-captured managed frames without adding general reflection or type-name metadata
-to the Wasm image. This is diagnostic stack-trace support, not source-level
+SDK Debug builds enable managed stack instrumentation by default and write the
+frame names to `<program>.wasm.method-symbols` beside the program; Release
+builds leave both out unless `NetWasmManagedStackTrace=true`. `nwc` enables the
+same behavior with `-methodsymbols:<path>`. The program reads that file at
+startup (see [program sidecars](diagnostics.md#program-sidecars)), and
+`Exception.StackTrace` then names each captured frame. A frame without a name
+reads `method#<id>`. This is diagnostic stack-trace support, not source-level
 debugging or DWARF; see
 [deferred debug information](#deferred-debug-information-dwarf).
 
 ### Type names
 
-`Type.Name`, `Type.Namespace`, `Type.FullName` and `Type.ToString()` work on
-any `Type` value, including one from `GetType()`. Looking a type up by its name,
-as `Type.GetType(string)` does, is outside the profile.
+A program carries no type names. `Type.Name`, `Type.FullName` and
+`Type.ToString()` return `type#<id>`, the type's runtime type ID in decimal
+(`type#37`), whether the `Type` came from `typeof` or `GetType()`.
+`Type.Namespace` returns `null`, and `Type.AssemblyQualifiedName` returns
+`type#37, <Assembly name unavailable>`. The default `Object.ToString()` returns
+the same text, and `Exception.ToString()` and framework messages that name a
+type use it. Each type has its own text, the same however code reaches the type,
+so a dictionary keyed by type name keeps working. Code that needs a readable
+name should use a string it already has, such as a constant or `nameof`.
 
-The names come from data the compiler generates, and they are not free. The
-first reachable read of one of these members, on any type, adds that form of
-name for every type in the program, together with the runtime type facts the
-names rely on: tens of kilobytes in a small application. Code that must stay
-small, such as an error path every application reaches, should use a string it
-already has, for example a constant or `nameof`.
+`NetWasmTypeNames`, on in Debug and off in Release, writes every type's names to
+`<program>.wasm.type-symbols` beside the program, and the program reads them at
+startup (see [program sidecars](diagnostics.md#program-sidecars)). Names then
+form as .NET forms them, except that every assembly name reads
+`<Assembly name unavailable>`: `typeof(List<int>).FullName` is
+``System.Collections.Generic.List`1[[System.Int32, <Assembly name unavailable>]]``
+and its `ToString()` is ``System.Collections.Generic.List`1[System.Int32]``.
+`Assembly.FullName` and `AssemblyName.Name` return
+`<Assembly name unavailable>` in every build.
+
+Looking a type up by its name, as `Type.GetType(string)` does, is outside the
+profile.
 
 ## Complete / supported package profiles
 
@@ -213,7 +226,7 @@ profile. The separate library and test packages below are also published.
 | Area | Supported boundary |
 | --- | --- |
 | Bounded custom attribute queries | Type-targeted queries, `DescriptionAttribute`, and user-defined attributes, including closed generics, are available on raw wasm32/wasm64 and component wasm32. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [query profile](custom-attributes.md). |
-| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs, and static scalar/pointer `UnmanagedCallersOnly` callbacks across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction, arbitrary unmanaged `calli`, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
+| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs, static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction, unmanaged calling conventions other than the default C ABI and Cdecl, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
 
 ## In progress
 
@@ -251,8 +264,8 @@ DWARF is not emitted today. The only planned DWARF mode is deterministic,
 unoptimized Debug output with truthful source line/function data for wasm32 and
 wasm64. Optimized or Release DWARF, reconstruction of optimized-away values,
 and a partial source-debugging experience are intentionally unsupported. The
-managed stack-trace sidecar is separate and remains the available diagnostic
-facility.
+managed stack-trace sidecar (`<program>.wasm.method-symbols`) is separate and
+remains the available diagnostic facility.
 
 The deferred debugger direction includes Rider and Visual Studio breakpoints,
 stepping, call stacks, Locals and a defined read-only Watch subset. The design

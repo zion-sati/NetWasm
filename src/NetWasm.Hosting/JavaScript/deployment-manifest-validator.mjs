@@ -1,4 +1,8 @@
 import { isCanonicalWitFunctionName } from "./canonical-wit-function-name.mjs";
+const symbolSidecars = Object.freeze({
+  "type-symbols": "application/vnd.netwasm.type-symbols;version=1",
+  "method-symbols": "application/vnd.netwasm.method-symbols;version=1",
+});
 
 const rootKeys = [
   "artifacts",
@@ -131,6 +135,7 @@ function validateArtifacts(value, hasLocalTime) {
   let application;
   let applicationCount = 0;
   let timeZone;
+  const symbols = new Map();
   const artifacts = value.map(artifact => {
     assertExactDataObject(artifact, artifactKeys, "deployment artifact");
     validateRelativePath(artifact.relativePath);
@@ -160,11 +165,24 @@ function validateArtifacts(value, hasLocalTime) {
         throw new TypeError("deployment contains multiple timezone artifacts");
       }
       timeZone = snapshot;
+    } else if (Object.hasOwn(symbolSidecars, artifact.role)) {
+      if (symbols.has(artifact.role)) {
+        throw new TypeError(`deployment contains multiple ${artifact.role} artifacts`);
+      }
+      symbols.set(artifact.role, snapshot);
     }
     return snapshot;
   });
   if (applicationCount !== 1) {
     throw new TypeError("deployment must identify exactly one application artifact");
+  }
+  // A program opens its sidecars by their names beside it (issue 225).
+  for (const [role, sidecar] of symbols) {
+    if (sidecar.relativePath !== `${application.relativePath}.${role}`
+        || sidecar.mediaType !== symbolSidecars[role]
+        || sidecar.schemaVersion !== 1) {
+      throw new TypeError(`${role} artifact does not satisfy the adjacent schema-1 contract`);
+    }
   }
   if (timeZone !== undefined) {
     if (!hasLocalTime) {

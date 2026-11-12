@@ -164,13 +164,15 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             "callbacks",
             "temporaryApplicationExports",
             "temporaryRuntimeExports",
+            "trampolines",
         ]);
-        if (fields.Count != 5 ||
+        if (fields.Count != 6 ||
             fields["fileName"].ValueKind != JsonValueKind.String ||
             fields["sha256"].ValueKind != JsonValueKind.String ||
             fields["callbacks"].ValueKind != JsonValueKind.Array ||
             fields["temporaryApplicationExports"].ValueKind != JsonValueKind.Array ||
-            fields["temporaryRuntimeExports"].ValueKind != JsonValueKind.Array)
+            fields["temporaryRuntimeExports"].ValueKind != JsonValueKind.Array ||
+            fields["trampolines"].ValueKind != JsonValueKind.Array)
         {
             throw InvalidContract();
         }
@@ -203,7 +205,10 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             Path.GetFileName(support.FileName) == support.FileName &&
             support.FileName.EndsWith(".o", StringComparison.Ordinal) &&
             ValidDigest(support.Sha256) &&
-            !support.Callbacks.IsDefaultOrEmpty &&
+            !support.Callbacks.IsDefault &&
+            !support.Trampolines.IsDefault &&
+            (!support.Callbacks.IsEmpty || !support.Trampolines.IsEmpty) &&
+            support.Trampolines.All(ValidName) &&
             !support.TemporaryApplicationExports.IsDefault &&
             !support.TemporaryRuntimeExports.IsDefault &&
             support.Callbacks.All(callback =>
@@ -223,7 +228,8 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             support.TemporaryRuntimeExports.SequenceEqual(
                 support.Callbacks
                     .Where(callback => callback.RuntimeGetterExportName is not null)
-                    .Select(callback => callback.RuntimeGetterExportName!),
+                    .Select(callback => callback.RuntimeGetterExportName!)
+                    .Concat(support.Trampolines),
                 StringComparer.Ordinal) &&
             HasUniqueCallbackSymbols(support) &&
             support.TemporaryApplicationExports.Distinct(StringComparer.Ordinal).Count() ==
@@ -257,6 +263,7 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             .Concat(support.Callbacks
                 .Where(callback => callback.RuntimeGetterExportName is not null)
                 .Select(callback => callback.RuntimeGetterExportName!))
+            .Concat(support.Trampolines)
             .ToArray();
         return applicationExports.Distinct(StringComparer.Ordinal).Count() ==
                 applicationExports.Length &&

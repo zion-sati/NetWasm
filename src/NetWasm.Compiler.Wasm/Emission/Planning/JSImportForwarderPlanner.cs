@@ -10,9 +10,10 @@ internal interface IJSImportForwarderPlanner
     WasmModulePlan Plan(WasmEmissionRequest request, WasmModulePlan plan);
 }
 
-// A delegate invokes its target with the managed signature, but a JSImport's Wasm
-// import has the interop ABI. Each JSImport that a delegate binds directly gets one
-// managed-ABI forwarder function, placed before the static initializer functions.
+// A delegate or function pointer calls its target with the managed signature, but a
+// JSImport's Wasm import has the interop ABI. Each JSImport whose address the program
+// loads gets one managed-ABI forwarder function, placed before the static initializer
+// functions, and its address is the forwarder's.
 internal sealed class JSImportForwarderPlanner(ISymbolFormatter symbols) : IJSImportForwarderPlanner
 {
     public WasmModulePlan Plan(WasmEmissionRequest request, WasmModulePlan plan)
@@ -21,8 +22,7 @@ internal sealed class JSImportForwarderPlanner(ISymbolFormatter symbols) : IJSIm
         ArgumentNullException.ThrowIfNull(plan);
 
         var jsImports = request.JSImportMethods.Select(method => method.Key).ToHashSet();
-        var targets = request.DelegateBindings
-            .Select(binding => binding.Target)
+        var targets = request.CallableMethods.Values
             .Where(target => jsImports.Contains(target.Definition.Key))
             .DistinctBy(target => target.Definition.Key)
             .OrderBy(target => target.Definition.Key.Assembly.Name, StringComparer.Ordinal)
@@ -67,7 +67,7 @@ internal sealed class JSImportForwarderPlanner(ISymbolFormatter symbols) : IJSIm
     private CompilerException Unsupported(MethodInstanceModel target, string shape) => new(
         new CompilerDiagnostic(
             DiagnosticCode.UnsupportedMetadata,
-            $"A delegate cannot bind directly to JSImport method '{symbols.Format(target.Definition)}' " +
+            $"A delegate or function pointer cannot name JSImport method '{symbols.Format(target.Definition)}' " +
             $"because it {shape}. Bind a lambda that calls the method instead.",
             target.Definition.Name));
 }

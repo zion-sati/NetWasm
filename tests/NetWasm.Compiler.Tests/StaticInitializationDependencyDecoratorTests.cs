@@ -13,7 +13,7 @@ public sealed class StaticInitializationDependencyDecoratorTests
         var factory = Assert.IsAssignableFrom<IReachabilityInstructionAnalyzerFactory>(
             new ReachabilityInstructionAnalyzerFactory(null!, null!));
         // Instruction-specific collaborators are deliberately unused for an empty body.
-        var analyzer = factory.Create(metadata, metadata, metadata, null!, null!, null!);
+        var analyzer = factory.Create(metadata, metadata, metadata, null!, null!, null!, null!);
         var owner = CliTypeIdentity.Named(Metadata.Assembly, "Example", "Owner", false);
         var method = Metadata.Method(7, ".cctor", owner);
 

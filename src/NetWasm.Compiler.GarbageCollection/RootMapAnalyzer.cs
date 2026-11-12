@@ -100,7 +100,7 @@ public sealed class RootMapAnalyzer(
             if (storage.Locals.TryGetValue(instruction.Offset, out var localTypes))
             {
                 foreach (var localIndex in roots
-                             .Where(source => source.Kind == RootSourceKind.ManagedAddressLocal && !source.IsIndirect)
+                             .Where(source => source.Kind == RootSourceKind.ManagedAddressLocal)
                              .Select(source => source.Index).ToArray())
                 {
                     AddAnchorDemands(method, instruction, localTypes[localIndex],
@@ -131,12 +131,7 @@ public sealed class RootMapAnalyzer(
             if (demands.TryGetValue(instruction.Offset, out var demanded))
             {
                 foreach (var anchor in demanded)
-                {
-                    var index = anchorSlots[anchor];
-                    roots.Add(new(RootSourceKind.StackStorageAnchor, index));
-                    roots.UnionWith(ReferenceSourcesForStorage(RootSourceKind.StackStorageAnchor,
-                        index, anchor.BackingType, referenceIsIndirect: true));
-                }
+                    roots.Add(new(RootSourceKind.StackStorageAnchor, anchorSlots[anchor]));
             }
             var orderedRoots = Order(roots);
             var constructorRoots = ImmutableArray<RootSource>.Empty;
@@ -334,8 +329,10 @@ public sealed class RootMapAnalyzer(
         {
             return signature.ParameterSignatureTypes;
         }
+        // A value type's instance methods take their receiver by reference.
         var declaringType = instance.DeclaringType;
-        return signature.ParameterSignatureTypes.Insert(0, declaringType);
+        return signature.ParameterSignatureTypes.Insert(0,
+            declaringType.IsValueType ? CliTypeIdentity.ManagedByReference(declaringType) : declaringType);
     }
 
     // A pinned local keeps what it holds alive until it is overwritten, though
@@ -344,14 +341,14 @@ public sealed class RootMapAnalyzer(
         [.. method.Body.PinnedLocals.Order().SelectMany(local =>
             SourcesFor(RootSourceKind.Local, local, method.Body.LocalSignatureTypes[local]))];
 
-    // What a byref argument addresses stays rooted for the whole call, as a
-    // value type's receiver, which its instance methods take by reference, does.
+    // A byref argument, a value type's receiver among them, stays a root for
+    // the whole call, keeping the object it points into alive. What it
+    // addresses is not this method's to publish: heap storage is traced through
+    // its object, and frame storage through its frame's reference map.
     private ImmutableArray<RootSource> GetPersistentManagedAddressArgumentRoots(
         ManagedMethodBody method)
     {
         var parameters = GetParameterSignatureTypes(method);
-        if (!method.Method.Definition.IsStatic && method.Method.DeclaringType.IsValueType)
-            parameters = parameters.SetItem(0, CliTypeIdentity.ManagedByReference(method.Method.DeclaringType));
         return [.. parameters.SelectMany((type, index) => type.StackKind == CliValueKind.ManagedAddress
             ? SourcesFor(RootSourceKind.Argument, index, type)
             : [])];
@@ -362,26 +359,9 @@ public sealed class RootMapAnalyzer(
         int index,
         CliTypeIdentity type)
     {
-        if (type.StackKind != CliValueKind.ManagedAddress)
-        {
-            return ReferenceSourcesForStorage(
-                kind,
-                index,
-                type,
-                referenceIsIndirect: false);
-        }
-
-        var addressKind = AddressKind(kind);
-        var elementType = type.ElementType!;
-        return
-        [
-            new RootSource(addressKind, index),
-            .. ReferenceSourcesForStorage(
-                addressKind,
-                index,
-                elementType,
-                referenceIsIndirect: true),
-        ];
+        return type.StackKind == CliValueKind.ManagedAddress
+            ? [new RootSource(AddressKind(kind), index)]
+            : ReferenceSourcesForStorage(kind, index, type);
     }
 
     private void AddEmbeddedStackRoots(
@@ -393,10 +373,11 @@ public sealed class RootMapAnalyzer(
     {
         for (var stackIndex = 0; stackIndex < stackTypes.Length; stackIndex++)
         {
+            // A byref on the stack is a root of its own (AddStackRoots).
+            if (stack[stackIndex] != CliValueKind.ValueType) continue;
             if (stackTypes[stackIndex].Type is not { } type)
             {
-                if (!stackTypes[stackIndex].BackingCovered && !stackTypes[stackIndex].CompleteBackingKnown &&
-                    stack[stackIndex] is CliValueKind.ValueType or CliValueKind.ManagedAddress)
+                if (!stackTypes[stackIndex].BackingCovered && !stackTypes[stackIndex].CompleteBackingKnown)
                 {
                     throw new CompilerException(new CompilerDiagnostic(DiagnosticCode.InvalidCil,
                         "live stack storage identity is unresolved at a collection safepoint",
@@ -404,22 +385,8 @@ public sealed class RootMapAnalyzer(
                 }
                 continue;
             }
-            var storageType = type;
-            var referenceIsIndirect = false;
-            if (type.StackKind == CliValueKind.ManagedAddress)
-            {
-                storageType = type.ElementType!;
-                referenceIsIndirect = true;
-            }
 
-            foreach (var source in ReferenceSourcesForStorage(
-                         RootSourceKind.EvaluationStack,
-                         stackIndex,
-                         storageType,
-                         referenceIsIndirect))
-            {
-                roots.Add(source);
-            }
+            roots.UnionWith(ReferenceSourcesForStorage(RootSourceKind.EvaluationStack, stackIndex, type));
         }
     }
 
@@ -441,8 +408,8 @@ public sealed class RootMapAnalyzer(
         {
             var pointee = storage.Type?.StackKind == CliValueKind.ManagedAddress
                 ? storage.Type.ElementType : storage.Type;
-            if (backing.Equals(pointee) || ReferenceSourcesForStorage(
-                    RootSourceKind.StackStorageAnchor, 0, backing, referenceIsIndirect: true).IsEmpty)
+            if (backing.Equals(pointee) ||
+                ReferenceSourcesForStorage(RootSourceKind.StackStorageAnchor, 0, backing).IsEmpty)
                 continue;
             if (!storage.CompleteBackingKnown)
             {
@@ -454,14 +421,14 @@ public sealed class RootMapAnalyzer(
         }
     }
 
+    // The references a storage of the type holds: itself, or a value's
+    // reference fields at their offsets.
     private ImmutableArray<RootSource> ReferenceSourcesForStorage(
         RootSourceKind kind,
         int index,
-        CliTypeIdentity type,
-        bool referenceIsIndirect) => type.StackKind switch
+        CliTypeIdentity type) => type.StackKind switch
         {
-            CliValueKind.ManagedReference =>
-            [new RootSource(kind, index, referenceIsIndirect ? 0 : -1)],
+            CliValueKind.ManagedReference => [new RootSource(kind, index)],
             CliValueKind.ValueType =>
             [.. _layouts.GetValueLayout(type).ReferenceOffsets.Select(
                 offset => new RootSource(kind, index, offset))],

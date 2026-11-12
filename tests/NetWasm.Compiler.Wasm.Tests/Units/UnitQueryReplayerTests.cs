@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Wasm.Tests.Units;
@@ -162,6 +163,34 @@ public sealed class UnitQueryReplayerTests
             EmitterTestSupport.CreateInstructionModuleTarget());
 
         Assert.Equal(UnitQueryStatus.Failed, answer.Status);
+    }
+
+    // A delegate's Invoke has no function of its own: its address is its type's invoke helper,
+    // and a replay answers it as the compile that recorded it did, so the unit holding it is
+    // reused (issue 223).
+    [Theory]
+    [InlineData("d:Program:0x06000005", 41)]
+    [InlineData("c:Func`2<int,int>::Invoke", 42)]
+    public void ADelegateInvokeAddressIsFoundAsItsTypesInvokeHelper(string key, int index)
+    {
+        var (replayer, log) = Replayer();
+        var target = EmitterTestSupport.CreateInstructionModuleTarget();
+        target = target with
+        {
+            FunctionIndices = target.FunctionIndices with
+            {
+                DelegateInvokeMethods = ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty
+                    .Add(new(Program, 0x06000005), new(41)),
+                ConstructedDelegateInvokeMethods = ImmutableDictionary<string, WasmFunctionIndex>.Empty
+                    .Add("Func`2<int,int>::Invoke", new(42)),
+            },
+        };
+
+        var answer = replayer.Replay(UnitQueryKind.FunctionAddress, key, Arguments, target);
+
+        Assert.Equal(UnitQueryStatus.Answered, answer.Status);
+        Assert.Contains(new UnitDependency(UnitQueryKind.FunctionAddress, key,
+            UnitTargetViews.FunctionAddressAnswer(true, index)), log.Answers);
     }
 
     private static (UnitQueryReplayer Replayer, UnitDependencyLog Log) Replayer()

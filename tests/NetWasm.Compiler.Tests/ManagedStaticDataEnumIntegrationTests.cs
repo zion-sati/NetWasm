@@ -277,50 +277,6 @@ public sealed class ManagedStaticDataEnumIntegrationTests
     }
 
     [Fact]
-    public void BuildPublishesDemandedRuntimeTypeNames()
-    {
-        var target = WasmTargetLayout.Wasm32;
-        var state = PendingDelegateFacts(target, descriptor: null);
-        state.Strings.Add("Callback", new StringLayout(512, 8, 8));
-        state.PendingTypeFacts[0] = state.PendingTypeFacts[0] with
-        {
-            Names = new RuntimeTypeNames(
-                RuntimeTypeNamePayload.Name,
-                "Callback",
-                null,
-                null,
-                null),
-        };
-        var phases = new NoOpStaticBuildPhase();
-
-        var result = new ManagedStaticDataBuilder(
-            EmptyLayouts(),
-            state,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases,
-            phases).Build();
-
-        var factsAddress = state.TypeFacts[2];
-        var facts = Assert.Single(
-            result.Segments,
-            segment => segment.Address == factsAddress).Data;
-        var namesAddress = ReadAddress(
-            facts,
-            RuntimeTypeFactsEncoding.NameFactsOffset(target),
-            target);
-        Assert.NotEqual(0, namesAddress);
-        Assert.Contains(result.Segments, segment => segment.Address == namesAddress);
-    }
-
-    [Fact]
     public void BuilderRejectsNullRequiredDependencies()
     {
         var types = EmptyLayouts();
@@ -439,8 +395,7 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             0,
             0,
             0,
-            descriptor,
-            null));
+            descriptor));
         return state;
     }
 

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
@@ -455,7 +456,7 @@ public sealed class OutwardMethodFunctionAppenderTests
             bool reportTerminalExceptions,
             EntityKey? argumentFactory,
             MethodInstanceModel? completion,
-            EntityKey? localTimePreflight,
+            ImmutableArray<EntityKey> startupPreflights,
             EntityKey? processExit,
             bool initializesRuntime)
         {

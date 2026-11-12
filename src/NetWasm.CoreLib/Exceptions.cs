@@ -81,9 +81,26 @@ namespace System
             return current;
         }
 
-        public override string ToString() => _innerException is null
-            ? Message
-            : Message + " ---> " + _innerException.ToString();
+        // Upstream's shape: the class name, the message after ": ", the inner exception after " ---> " and the end
+        // of its stack trace, then this exception's stack trace. NetWasm: the class name is the type's name, or its
+        // ID without names (issue 225).
+        public override string ToString()
+        {
+            string className = GetType().ToString();
+            string message = Message;
+            string result = string.IsNullOrEmpty(message) ? className : className + ": " + message;
+            if (_innerException is not null)
+            {
+                result += Environment.NewLine + " ---> " + _innerException.ToString() + Environment.NewLine +
+                    "   --- End of inner exception stack trace ---";
+            }
+            string? stackTrace = StackTrace;
+            if (stackTrace is not null)
+            {
+                result += Environment.NewLine + stackTrace;
+            }
+            return result;
+        }
     }
 
     public class SystemException : Exception

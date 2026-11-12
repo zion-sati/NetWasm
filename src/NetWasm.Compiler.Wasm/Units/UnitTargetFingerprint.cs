@@ -110,6 +110,19 @@ internal static class UnitTargetFingerprint
             // The ABI plan is a record whose generated text lists its members.
             answer.Add(import.Abi.ToString());
         }
+        answer.Add(target.NativeImports.CallSites.Trampolines.Length);
+        foreach (var trampoline in target.NativeImports.CallSites.Trampolines)
+        {
+            answer.Add(trampoline.Symbol);
+            answer.Add(trampoline.Index.Value);
+        }
+        answer.Add(target.NativeImports.CallSites.BySignature.Count);
+        foreach (var (key, lowering) in target.NativeImports.CallSites.BySignature.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            answer.Add(key);
+            answer.Add(lowering.Lowering.ToString());
+            answer.Add(lowering.Trampoline.Symbol);
+        }
         answer.Add(target.NativeCallbacks.Methods.Length);
         foreach (var callback in target.NativeCallbacks.Methods)
         {

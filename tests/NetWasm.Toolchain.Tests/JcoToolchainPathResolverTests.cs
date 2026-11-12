@@ -36,7 +36,7 @@ public sealed class JcoToolchainPathResolverTests
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
         Assert.Equal("0.1.0-preview.23", result.PackageVersion);
-        Assert.Equal("1.41.0+netwasm.2", result.JcoVersion);
+        Assert.Equal("1.41.0+netwasm.4", result.JcoVersion);
         Assert.Equal("0.13.0", result.Preview3ShimVersion);
         Assert.Equal(NodePath, result.NodePath);
         Assert.Equal(new Version(25, 0), result.NodeVersion);
@@ -306,7 +306,7 @@ public sealed class JcoToolchainPathResolverTests
         {
             ToolchainPlatformAssetIds.JcoPackage => "1.41.0",
             ToolchainPlatformAssetIds.JcoEntryPoint => "1.41.0",
-            ToolchainPlatformAssetIds.JcoBindgenPatch => "1.41.0+netwasm.2",
+            ToolchainPlatformAssetIds.JcoBindgenPatch => "1.41.0+netwasm.4",
             ToolchainPlatformAssetIds.Preview3ShimPackage => "0.13.0",
             _ when id.StartsWith("preview3-shim.", StringComparison.Ordinal) => "0.13.0",
             _ => "1",

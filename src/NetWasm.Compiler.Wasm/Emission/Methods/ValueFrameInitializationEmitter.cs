@@ -30,6 +30,8 @@ internal sealed class ValueFrameInitializationEmitter(
         EmitRange(code, context, CreateFilterLocalRange(header, context));
         EmitRange(code, context, CreateRange(context.FilterEnvironment.AnchorOffsets.Values
             .Select(offset => new StorageRange(offset, layouts.Target.AddressSize))));
+        foreach (var (offset, size) in context.ValueFrameReferences.EntryClears)
+            EmitRange(code, context, new StorageRange(offset, size));
     }
 
     private StorageRange? CreateLocalRange(

@@ -14,8 +14,8 @@ public sealed class NativeCallbackObjectWriterTests
     {
         var writer = CreateWriter();
 
-        Assert.Empty(writer.Write(NativeCallbackPlan.Empty, WasmTarget.Wasm32));
-        Assert.Empty(writer.Write(NativeCallbackPlan.Empty, WasmTarget.Wasm64));
+        Assert.Empty(writer.Write(NativeCallbackPlan.Empty, [], WasmTarget.Wasm32));
+        Assert.Empty(writer.Write(NativeCallbackPlan.Empty, [], WasmTarget.Wasm64));
     }
 
     [Theory]
@@ -37,7 +37,7 @@ public sealed class NativeCallbackObjectWriterTests
             17);
 
         var types = new ObjectReader(
-            ObjectFile.Parse(CreateWriter().Write(plan, target))[0].Payload);
+            ObjectFile.Parse(CreateWriter().Write(plan, [], target))[0].Payload);
 
         Assert.Equal(2u, types.ReadUnsigned());
         Assert.Equal((byte)0x60, types.ReadByte());
@@ -50,15 +50,100 @@ public sealed class NativeCallbackObjectWriterTests
         types.AssertEnd();
     }
 
+    // Issue 226: a trampoline calls its last argument through the linked function table with
+    // the call's C ABI type, both operands relocated by the linker.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, 0x7f)]
+    [InlineData(WasmTarget.Wasm64, 0x7e)]
+    public void WritesTrampolinesThatCallThroughTheLinkedTable(WasmTarget target, byte pointerType)
+    {
+        var trampoline = new NativeCallTrampoline(
+            "netwasm_calli_di",
+            WasmFunctionType.Create(CliValueKind.F8, CliValueKind.I4, CliValueKind.NativeInt),
+            new(30));
+
+        var sections = ObjectFile.Parse(CreateWriter().Write(NativeCallbackPlan.Empty, [trampoline], target));
+
+        Assert.Equal([1, 2, 3, 10, 0, 0], sections.Take(6).Select(section => section.Id));
+        var types = new ObjectReader(sections[0].Payload);
+        Assert.Equal(2u, types.ReadUnsigned());
+        Assert.Equal(new byte[] { 0x60, 2, 0x7f, pointerType, 1, 0x7c }, types.ReadBytes(6));
+        Assert.Equal(new byte[] { 0x60, 1, 0x7f, 1, 0x7c }, types.ReadBytes(5));
+        types.AssertEnd();
+        var imports = new ObjectReader(sections[1].Payload);
+        Assert.Equal(2u, imports.ReadUnsigned());
+        Assert.Equal(("env", "__linear_memory"), (imports.ReadString(), imports.ReadString()));
+        imports.ReadBytes(3);
+        Assert.Equal(("env", "__indirect_function_table"), (imports.ReadString(), imports.ReadString()));
+        Assert.Equal((byte)1, imports.ReadByte());
+        Assert.Equal(new byte[] { 0x70, target == WasmTarget.Wasm64 ? (byte)4 : (byte)0, 1 }, imports.ReadBytes(3));
+        imports.AssertEnd();
+        Assert.Equal(new byte[] { 1, 0 }, sections[2].Payload);
+        var code = new ObjectReader(sections[3].Payload);
+        Assert.Equal(1u, code.ReadUnsigned());
+        Assert.Equal(17u, code.ReadUnsigned());
+        var body = code.Position;
+        Assert.Equal(new byte[] { 0, 0x20, 0, 0x20, 1, 0x11 }, code.ReadBytes(6));
+        Assert.Equal(new byte[] { 0x80, 0x80, 0x80, 0x80, 0, 0x80, 0x80, 0x80, 0x80, 0, 0x0b }, code.ReadBytes(11));
+        code.AssertEnd();
+        var linking = new ObjectReader(sections[4].Payload);
+        Assert.Equal(2u, linking.ReadUnsigned());
+        Assert.Equal((byte)8, linking.ReadByte());
+        linking.ReadUnsigned();
+        Assert.Equal(2u, linking.ReadUnsigned());
+        Assert.Equal(new byte[] { 0, 0, 0 }, linking.ReadBytes(3));
+        Assert.Equal("netwasm_calli_di", linking.ReadString());
+        Assert.Equal(new byte[] { 5, 0x10, 0 }, linking.ReadBytes(3));
+        linking.AssertEnd();
+        var relocations = new ObjectReader(sections[5].Payload);
+        Assert.Equal(3u, relocations.ReadUnsigned());
+        Assert.Equal(2u, relocations.ReadUnsigned());
+        // The call's type is type 1; the table is symbol 1.
+        Assert.Equal((6, body + 6, 1u), (relocations.ReadByte(), (int)relocations.ReadUnsigned(), relocations.ReadUnsigned()));
+        Assert.Equal((20, body + 11, 1u), (relocations.ReadByte(), (int)relocations.ReadUnsigned(), relocations.ReadUnsigned()));
+        relocations.AssertEnd();
+    }
+
+    // Trampolines follow the getters: their types after the getter's, their functions and symbols
+    // after the getters', and the one table import serves both.
+    [Fact]
+    public void PlacesTrampolinesAfterTheCallbackGetters()
+    {
+        var plan = CreatePlan();
+        var trampoline = new NativeCallTrampoline(
+            "netwasm_calli_v",
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.NativeInt),
+            new(40));
+
+        var sections = ObjectFile.Parse(CreateWriter().Write(plan, [trampoline], WasmTarget.Wasm32));
+
+        var types = new ObjectReader(sections[0].Payload);
+        Assert.Equal((uint)(plan.Methods.Length + 1 + 2), types.ReadUnsigned());
+        var imports = new ObjectReader(sections[1].Payload);
+        Assert.Equal((uint)(plan.Methods.Length + 2), imports.ReadUnsigned());
+        var functions = new ObjectReader(sections[2].Payload);
+        var named = plan.Methods.Count(callback => callback.IsNamed);
+        Assert.Equal((uint)(named + plan.AddressedMethods.Length + 1), functions.ReadUnsigned());
+        for (var index = 0; index < named + plan.AddressedMethods.Length; index++)
+        {
+            functions.ReadUnsigned();
+        }
+        Assert.Equal((uint)(plan.Methods.Length + 1), functions.ReadUnsigned());
+        functions.AssertEnd();
+        var linking = System.Text.Encoding.UTF8.GetString(sections[5].Payload);
+        Assert.True(linking.IndexOf("netwasm_calli_v", StringComparison.Ordinal) >
+            linking.IndexOf(plan.AddressedMethods[^1].GetterName!, StringComparison.Ordinal));
+    }
+
     [Fact]
     public void RejectsInvalidInputs()
     {
         var writer = CreateWriter();
 
         Assert.Throws<ArgumentNullException>(() =>
-            writer.Write(null!, WasmTarget.Wasm32));
+            writer.Write(null!, [], WasmTarget.Wasm32));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            writer.Write(NativeCallbackPlan.Empty, (WasmTarget)42));
+            writer.Write(NativeCallbackPlan.Empty, [], (WasmTarget)42));
     }
 
     [Theory]
@@ -73,8 +158,8 @@ public sealed class NativeCallbackObjectWriterTests
         var callbacks = CreatePlan();
         var writer = CreateWriter();
 
-        var first = writer.Write(callbacks, target);
-        var second = writer.Write(callbacks, target);
+        var first = writer.Write(callbacks, [], target);
+        var second = writer.Write(callbacks, [], target);
 
         Assert.Equal(first, second);
         var sections = ObjectFile.Parse(first);
@@ -125,7 +210,7 @@ public sealed class NativeCallbackObjectWriterTests
             ImmutableHashSet<string>.Empty,
             17);
 
-        var sections = ObjectFile.Parse(CreateWriter().Write(plan, target));
+        var sections = ObjectFile.Parse(CreateWriter().Write(plan, [], target));
 
         Assert.Equal(expectsMemory64Feature
                 ? [1, 2, 3, 10, 0, 0, 0]
@@ -227,7 +312,7 @@ public sealed class NativeCallbackObjectWriterTests
             ImmutableHashSet.Create(StringComparer.Ordinal, callback.CanonicalName),
             17);
 
-        var sections = ObjectFile.Parse(CreateWriter().Write(plan, target));
+        var sections = ObjectFile.Parse(CreateWriter().Write(plan, [], target));
 
         Assert.Equal([1, 2, 3, 9, 10, 0, 0],
             sections.Take(7).Select(section => (int)section.Id));

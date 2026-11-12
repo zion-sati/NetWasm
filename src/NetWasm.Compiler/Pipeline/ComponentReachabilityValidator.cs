@@ -83,11 +83,37 @@ internal sealed class ComponentReachabilityValidator : IComponentReachabilityVal
                     "netwasm-wit-bindgen or NetWasmWit item, or update the package that contains them",
                     binding));
             }
+            var first = FormatFirstBinding(missing, methods, symbols);
+            var missingMethod = missing.Select(methods.GetMethod).First(method => symbols.Format(method) == first);
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.ComponentContract,
-                "reachable WIT binding is not part of the selected world",
-                FormatFirstBinding(missing, methods, symbols)));
+                Missing(missingMethod, contract),
+                first));
         }
+    }
+
+    // What the program reaches and the world lacks, and the line that adds it, or the method that
+    // reaches nothing the world declares (issue 180).
+    private static string Missing(MethodDefinitionModel method, ComponentBoundaryContract contract)
+    {
+        var (verb, interfaceName, function) = method.WitImport is { } import
+            ? ("import", import.InterfaceName, import.FunctionName)
+            : ("export", method.WitExport!.InterfaceName, method.WitExport.FunctionName);
+        var world = contract.World.Length == 0 ? "the selected world" : $"world '{WorldName(contract)}'";
+        return interfaceName.Length == 0
+            ? $"reachable WIT binding {verb}s function '{function}', which {world} does not {verb}; " +
+                $"add it to the world's {verb}s, or remove the code that reaches it"
+            : $"reachable WIT binding {verb}s '{interfaceName}', which {world} does not {verb}; " +
+                $"add `{verb} {interfaceName};` to the world, or remove the code that reaches it";
+    }
+
+    // namespace:package/world@version, as a world is selected.
+    private static string WorldName(ComponentBoundaryContract contract)
+    {
+        var at = contract.Package.IndexOf('@');
+        return at < 0
+            ? $"{contract.Package}/{contract.World}"
+            : $"{contract.Package[..at]}/{contract.World}{contract.Package[at..]}";
     }
 
     // namespace:package@version/interface, the key bindings generated before

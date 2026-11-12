@@ -11,7 +11,9 @@ public partial class Type : IReflect
     public virtual Guid GUID => throw UnsupportedTypeOwnerMetadata();
     public virtual Assembly Assembly => throw UnsupportedTypeOwnerMetadata();
     public new virtual Module Module => throw UnsupportedTypeOwnerMetadata();
-    public virtual string? AssemblyQualifiedName => throw UnsupportedTypeOwnerMetadata();
+    // NetWasm: the full name with the assembly name .NET appends, which is unavailable at run time (issue 225).
+    public virtual string? AssemblyQualifiedName =>
+        FullName is { } fullName ? fullName + ", " + TypeSymbols.AssemblyNameUnavailable : null;
     public override Type? DeclaringType => throw UnsupportedTypeOwnerMetadata();
     public override Type? ReflectedType => DeclaringType;
     public bool IsNested => DeclaringType != null;

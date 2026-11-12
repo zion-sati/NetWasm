@@ -155,6 +155,36 @@ public sealed class ValueFrameLayoutPlannerTests
             .Create(PlanningMethod(body), scalarCallLifetimes: plan));
     }
 
+    // A calli returns a value type through the buffer a call does; a scalar result needs none.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CalliValueTypeResultsGetTheirOwnBuffer(WasmTarget target)
+    {
+        var fixture = new PlannerFixture(target);
+        var value = fixture.ValueType;
+        var layouts = new MemberValueLayouts(new ValueLayout(value, 24, 8, [8]));
+        var arguments = new IndexedArguments([CliValueKind.NativeInt], [CliTypeIdentity.FromStackKind(CliValueKind.NativeInt)]);
+        var body = new CilMethodBody(fixture.BodyMethod, 2, [],
+        [
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.CallIndirect, new CilOperand.CallSite(MethodSignatureModel.Create(value))),
+            I(2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(3, CilOperation.CallIndirect, new CilOperand.CallSite(MethodSignatureModel.Create(CliValueKind.I4))),
+        ]);
+        var planner = new ValueFrameLayoutPlanner(fixture, fixture, fixture.Layouts, layouts,
+            fixture.TypeOperands, fixture.TypeIdentities, arguments, arguments,
+            new DirectValueLoadSelector(),
+            EmptyTransientAggregatePromotionPlanner.Instance,
+            new SimdValueFrameSlotAlignmentResolver());
+
+        var frame = ThroughContract(planner).Create(PlanningMethod(body, (1, 0)));
+
+        Assert.Equal([1], frame.TemporaryOffsets.Keys.ToArray());
+        Assert.Equal(0, frame.TemporaryOffsets[1] % 8);
+        Assert.True(frame.Size >= frame.TemporaryOffsets[1] + 24);
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
@@ -496,6 +526,45 @@ public sealed class ValueFrameLayoutPlannerTests
         Assert.Equal(56, frame.Size);
         Assert.Empty(frame.LocalOffsets);
         Assert.Empty(frame.ArgumentOffsets);
+    }
+
+    // Issue 226: an unmanaged calli lowers its aggregates as a DllImport call does: private
+    // argument copies and result storage at its argument slot, below the function pointer.
+    [Fact]
+    public void UnmanagedCallsReserveNativeArgumentAndResultStorage()
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
+        var valueType = CliTypeIdentity.Named(Assembly, "Test", "NativePair", true);
+        var pointer = CliTypeIdentity.FromStackKind(CliValueKind.NativeInt);
+        var logical = MethodSignatureModel.Create(valueType, valueType, valueType);
+        var parameter = new NativeAbiValuePlan(NativeAbiValueKind.IndirectAggregate, valueType, pointer, 12, 4);
+        var result = parameter with { Size = 16, Alignment = 16 };
+        var lowering = new NativeAbiSignaturePlan(logical,
+            MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.NativeInt, CliValueKind.NativeInt,
+                CliValueKind.NativeInt),
+            [new(0, 1, parameter), new(1, 2, parameter)], result, 0);
+        var trampoline = new NativeCallTrampoline("netwasm_calli_vppp",
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.NativeInt, CliValueKind.NativeInt,
+                CliValueKind.NativeInt, CliValueKind.NativeInt), new(4));
+        var imports = NativeImportPlan.Empty with
+        {
+            CallSites = new([trampoline], ImmutableDictionary<string, NativeCallSiteLowering>.Empty.Add(
+                NativeCallSitePlan.Key(logical), new(lowering, trampoline))),
+        };
+        var body = new CilMethodBody(program.GetMethod(EntryKey), 3, [],
+            [I(3, CilOperation.CallIndirect, new CilOperand.CallSite(logical, Unmanaged: true))]);
+
+        var frame = ThroughContract(CreateValueFrameLayoutPlanner(program, layouts)).Create(
+            PlanningMethod(body, (3, 3)), imports);
+
+        Assert.True(frame.NativeArgumentOffsets.ContainsKey((3, 0)));
+        Assert.True(frame.NativeArgumentOffsets.ContainsKey((3, 1)));
+        Assert.NotEqual(frame.NativeArgumentOffsets[(3, 0)], frame.NativeArgumentOffsets[(3, 1)]);
+        Assert.Equal(0, frame.TemporaryOffsets[3] % 16);
+        var missing = Assert.Throws<CompilerException>(() =>
+            ThroughContract(CreateValueFrameLayoutPlanner(program, layouts)).Create(PlanningMethod(body, (3, 3))));
+        Assert.Equal(DiagnosticCode.CompilerInvariant, missing.Diagnostic.Code);
     }
 
     [Theory]
@@ -993,6 +1062,9 @@ public sealed class ValueFrameLayoutPlannerTests
         Assert.Equal(20, Assert.Single(layout.CallReceiverOffsets).Key);
         Assert.True(layout.TemporaryOffsets.Values.Distinct().Count() <
             layout.TemporaryOffsets.Count);
+        // A value type's constructor receives its temporary's address.
+        Assert.Equal<int>([25, 26], layout.ConstructedValueTypes.Keys.Order());
+        Assert.All(layout.ConstructedValueTypes.Values, type => Assert.True(type.IsValueType));
     }
 
     [Fact]

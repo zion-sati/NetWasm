@@ -94,10 +94,9 @@ public sealed class RootPublicationEmitterTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void InactiveBackingVariantsAreGuardedBeforeAnyIndirectFieldRead(WasmTarget target)
+    public void AnAnchorPublishesTheBackingAddressItHoldsAndReadsNothingThroughIt(WasmTarget target)
     {
-        var pointerSize = WasmTargetLayout.For(target).AddressSize;
-        var source = new RootSource(RootSourceKind.StackStorageAnchor, 0, pointerSize);
+        var source = new RootSource(RootSourceKind.StackStorageAnchor, 0);
         var context = CreateMethodEmissionContext() with
         {
             AnchorLocals = ImmutableDictionary<int, int>.Empty.Add(0, 100),
@@ -113,16 +112,12 @@ public sealed class RootPublicationEmitterTests
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         CreateEmitter(layouts).Emit(request, code);
         var instructions = code.ToInstructions();
-        var branch = instructions.IndexOf(Assert.Single(instructions.Where(instruction => instruction.Opcode == WasmOpcodes.If)));
-        var otherwise = instructions.IndexOf(Assert.Single(instructions.Where(instruction => instruction.Opcode == WasmOpcodes.Else)));
-        var load = Assert.Single(instructions.Where(instruction => instruction.Opcode ==
-            (target == WasmTarget.Wasm64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load)));
-        Assert.True(branch < otherwise && otherwise < instructions.IndexOf(load));
-        Assert.Equal((uint)pointerSize, load.Operand.Offset);
-        Assert.Contains(instructions, instruction => instruction.Opcode ==
-            (target == WasmTarget.Wasm64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero));
-        Assert.Equal(2, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.LocalGet &&
-            instruction.Operand == WasmInstructionOperand.Unsigned(100)));
+        Assert.DoesNotContain(instructions, instruction => instruction.Opcode is WasmOpcodes.If or
+            WasmOpcodes.I32Load or WasmOpcodes.I64Load);
+        Assert.Single(instructions, instruction => instruction.Opcode == WasmOpcodes.LocalGet &&
+            instruction.Operand == WasmInstructionOperand.Unsigned(100));
+        Assert.Single(instructions, instruction => instruction.Opcode ==
+            (target == WasmTarget.Wasm64 ? WasmOpcodes.I64Store : WasmOpcodes.I32Store));
     }
 
     [Theory]
@@ -140,7 +135,7 @@ public sealed class RootPublicationEmitterTests
             kind == CliValueKind.ValueType ? pair : CliTypeIdentity.FromStackKind(kind);
         var slot = new CapturedSlot(false, 0);
         var source = new RootSource(kind == CliValueKind.ManagedAddress ? RootSourceKind.ManagedAddressLocal : RootSourceKind.Local,
-            0, kind == CliValueKind.ManagedReference ? -1 : pointerSize);
+            0, kind == CliValueKind.ValueType ? pointerSize : -1);
         var context = CreateMethodEmissionContext() with
         {
             LocalBase = 8,
@@ -161,8 +156,8 @@ public sealed class RootPublicationEmitterTests
             instruction.Operand == WasmInstructionOperand.Unsigned(90));
         var loads = instructions.Where(instruction => instruction.Opcode ==
             (target == WasmTarget.Wasm64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load)).ToArray();
-        Assert.Equal(kind == CliValueKind.ManagedAddress ? 3 : 1, loads.Length);
-        Assert.Equal(kind == CliValueKind.ManagedReference ? 0u : (uint)pointerSize, loads[^1].Operand.Offset);
+        // A captured reference or byref is read from its environment slot; a value's reference from its offset.
+        Assert.Equal(kind == CliValueKind.ValueType ? (uint)pointerSize : 0u, Assert.Single(loads).Operand.Offset);
     }
 
     [Theory]

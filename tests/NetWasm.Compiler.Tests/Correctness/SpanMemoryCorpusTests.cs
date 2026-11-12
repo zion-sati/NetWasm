@@ -225,8 +225,11 @@ public sealed class SpanMemoryCorpusTests(CorrectnessTestRunner runner)
                     Span<char> letters = "abc".ToCharArray();
                     ReadOnlySpan<char> digits = "0123";
                     var hash = (letters.ToString() == "abc" ? 1 : 0) + digits.Slice(1).ToString().Length * 1000;
-                    hash += new Span<int>(new int[3]).ToString() == "System.Span<Int32>[3]" ? 10000 : 0;
-                    hash += new ReadOnlySpan<byte>(new byte[2]).ToString() == "System.ReadOnlySpan<Byte>[2]" ? 20000 : 0;
+                    // The element type's name reads type#<id>: a program carries no type names (issue 225).
+                    var span = new Span<int>(new int[3]).ToString();
+                    var readOnly = new ReadOnlySpan<byte>(new byte[2]).ToString();
+                    hash += span.StartsWith("System.Span<") && span.EndsWith(">[3]") ? 10000 : 0;
+                    hash += readOnly.StartsWith("System.ReadOnlySpan<") && readOnly.EndsWith(">[2]") ? 20000 : 0;
             #pragma warning disable CS0618 // Equals and GetHashCode on spans are obsolete because they throw.
                     hash += Code(() => _ = new Span<int>(new int[1]).Equals(null)) * 100000;
                     hash += Code(() => _ = new ReadOnlySpan<int>(new int[1]).GetHashCode()) * 1000000;

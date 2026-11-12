@@ -2,7 +2,7 @@ using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Diagnostics;
-using NetWasm.Compiler.ExceptionTypes;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Pipeline;
 using NetWasm.Compiler.StackTraces;
 using NetWasm.Compiler.Wasm;
@@ -24,8 +24,8 @@ public sealed record ModuleCompilationResult(
     public ImmutableArray<WasmNativeImport> NativeImports { get; init; } = [];
     public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
     public WasmNativeCallbackSupportArtifact? NativeCallbackSupport { get; init; }
-    public StackTraceSymbolArtifact? StackTraceSymbols { get; init; }
-    public DiagnosticArtifactBundle? DiagnosticArtifacts { get; init; }
+    public SymbolSidecarArtifact? TypeSymbols { get; init; }
+    public SymbolSidecarArtifact? MethodSymbols { get; init; }
 
     // The entry point's metadata token in the entry assembly, when the program has one.
     public int? EntryPointToken { get; init; }
@@ -47,8 +47,8 @@ public sealed record ModuleCompilationResult(
             NativeImports = result.NativeImports,
             RuntimeFeatures = result.RuntimeFeatures,
             NativeCallbackSupport = result.NativeCallbackSupport,
-            StackTraceSymbols = result.StackTraceSymbols,
-            DiagnosticArtifacts = result.DiagnosticArtifacts,
+            TypeSymbols = result.TypeSymbols,
+            MethodSymbols = result.MethodSymbols,
             EntryPointToken = entry?.Key.MetadataToken,
             // An asynchronous Main is a callback-lifted wasi:cli/run.
             SynchronousEntry = entry is null ||

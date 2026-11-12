@@ -43,6 +43,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<EphemeronHandleGetValueIntrinsicEmitter>();
         services.AddSingleton<EphemeronHandleSetTargetToNullIntrinsicEmitter>();
         services.AddSingleton<EphemeronHandleSetValueIntrinsicEmitter>();
+        services.AddSingleton<StackTraceRegisterSymbolIntrinsicEmitter>();
         services.AddSingleton<EphemeronHandleReleaseIntrinsicEmitter>();
         services.AddSingleton<GcHandleCreateIntrinsicEmitter>();
         services.AddSingleton<GcHandleGetIntrinsicEmitter>();
@@ -64,7 +65,6 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<IValueTypeEqualsEmitter, ValueTypeEqualsEmitter>();
         services.AddSingleton<IValueTypeHashCodeEmitter, ValueTypeHashCodeEmitter>();
         services.AddSingleton<ValueTypeEqualsIntrinsicEmitter>();
-        services.AddSingleton<IValueTypeHashReceiverResolver, ValueTypeHashReceiverResolver>();
         services.AddSingleton<ValueTypeGetHashCodeIntrinsicEmitter>();
         services.AddSingleton<SuppressFinalizeIntrinsicEmitter>();
         services.AddSingleton<ReRegisterForFinalizeIntrinsicEmitter>();
@@ -220,6 +220,9 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<EphemeronHandleReleaseIntrinsicEmitter>(
             services,
             RuntimeIntrinsic.EphemeronHandleRelease);
+        AddRegistration<StackTraceRegisterSymbolIntrinsicEmitter>(
+            services,
+            RuntimeIntrinsic.StackTraceRegisterSymbol);
         AddRegistration<GcHandleCreateIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleCreate);
         AddRegistration<GcHandleGetIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleGet);
         AddRegistration<GcHandleSetIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleSet);

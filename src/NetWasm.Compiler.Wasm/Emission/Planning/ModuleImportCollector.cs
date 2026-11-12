@@ -53,7 +53,9 @@ internal sealed class ModuleImportCollector(
                 new WasmFunctionImport(
                     RuntimeAbi.RuntimeModule,
                     callback.GetterName!,
-                    WasmFunctionType.Create(CliValueKind.NativeInt))))];
+                    WasmFunctionType.Create(CliValueKind.NativeInt))))
+            .Concat(request.NativeImports.CallSites.Trampolines.Select(trampoline =>
+                new WasmFunctionImport(RuntimeAbi.RuntimeModule, trampoline.Symbol, trampoline.Type)))];
     }
 
     // A direct import takes the managed arguments and returns the managed

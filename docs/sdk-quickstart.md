@@ -78,8 +78,9 @@ dotnet run
 ```
 
 The template prints `42`. Debug builds include managed stack traces by default.
-Release omits their instrumentation and symbol sidecar unless
-`NetWasmManagedStackTrace=true`.
+Release omits their instrumentation and method-symbols sidecar unless
+`NetWasmManagedStackTrace=true`, and reads type names as `type#<id>` unless
+`NetWasmTypeNames=true` (see [type names](support-status.md#type-names)).
 Structured rich failure reporting also defaults on in Debug and off in Release,
 with the independent `NetWasmStructuredDiagnostics` switch. See
 [exception profiles and their non-desktop boundaries](diagnostics.md#managed-exceptions-and-diagnostic-profiles).

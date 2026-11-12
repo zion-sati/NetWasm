@@ -20,6 +20,7 @@ function importsFor(target) {
     ['$root', '[waitable-set-new]'],
     ['$root', '[waitable-join]'],
     ['$root', '[waitable-set-wait]'],
+    ['$root', '[thread-yield]'],
     [`${prefix}|wasi:cli/exit@0.3`, 'exit'],
     [`${prefix}|wasi:cli/exit@0.3`, 'exit-with-code'],
     [`${prefix}|wasi:random/random@0.3`, 'get-random-u64'],

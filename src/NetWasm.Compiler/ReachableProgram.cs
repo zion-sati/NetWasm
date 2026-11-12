@@ -86,7 +86,6 @@ public sealed record ReachableProgram(
 
     public bool RequiresGenericArguments { get; init; }
 
-    public RuntimeTypeNamePayload TypeNamePayload { get; init; }
 
     public ImmutableArray<string> ConstructedStaticInitializers { get; init; } = [];
 

@@ -97,10 +97,11 @@ public sealed class UnsafeAccessorCompilationTests
                 Assert.True(method.Definition.HasManagedBody);
                 Assert.NotNull(method.Definition.UnsafeAccessor);
             });
-            var symbols = Encoding.UTF8.GetString(result.StackTraceSymbols!.Bytes);
+            var symbols = string.Join('\n', NetWasm.Compiler.Tests.Symbols.SymbolSidecarContents.Read(result.MethodSymbols!.Bytes).Texts);
             Assert.Contains("AccessorLibrary.Accessors::Fail", symbols, StringComparison.Ordinal);
             Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
-                42, target, result.StaticDataEnd));
+                42, target, result.StaticDataEnd, System.Collections.Immutable.ImmutableDictionary<string, string>.Empty,
+                timeZoneAssetPath: null, methodSymbols: result.MethodSymbols!.Bytes));
         }
     }
 

@@ -34,7 +34,7 @@ public sealed class CorpusCompilerRequestFactoryTests
         Assert.Equal("trace", request.DiagnosticTracePath);
         Assert.Equal("module", request.ModulePath);
         Assert.True(request.EmitStackTrace);
-        Assert.Equal("symbols", request.StackTraceSymbolsPath);
+        Assert.Equal("symbols", request.MethodSymbolsPath);
         Assert.Equal("layout", request.RuntimeLayoutPath);
         Assert.Equal("interop", request.InteropManifestPath);
         Assert.Equal(reactor ? Path.Combine("repository", "wit", "netwasm-platform-1.0.0") : null, request.WitPath);
@@ -63,7 +63,7 @@ public sealed class CorpusCompilerRequestFactoryTests
         Assert.Null(request.RuntimeLayoutPath);
         Assert.Null(request.InteropManifestPath);
         Assert.Null(request.DiagnosticTracePath);
-        Assert.Null(request.StackTraceSymbolsPath);
+        Assert.Null(request.MethodSymbolsPath);
         Assert.False(request.EmitStackTrace);
         Assert.Empty(request.Exports);
     }

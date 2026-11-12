@@ -306,9 +306,8 @@ public sealed class CompiledUnitRestoreTests
             Assert.Equal(plain.SynchronousEntry, module.SynchronousEntry);
             Assert.Equal(plain.InteropManifest.Imports.Length, module.InteropManifest.Imports.Length);
             Assert.Equal(plain.InteropManifest.Exports.Length, module.InteropManifest.Exports.Length);
-            Assert.Equal(plain.DiagnosticArtifacts!.ExceptionTypeMap.Bytes, module.DiagnosticArtifacts!.ExceptionTypeMap.Bytes);
-            Assert.Equal(plain.DiagnosticArtifacts.ManifestBytes, module.DiagnosticArtifacts.ManifestBytes);
-            Assert.Equal(plain.StackTraceSymbols?.Bytes, module.StackTraceSymbols?.Bytes);
+            Assert.Equal(plain.TypeSymbols!.Bytes, module.TypeSymbols!.Bytes);
+            Assert.Equal(plain.MethodSymbols?.Bytes, module.MethodSymbols?.Bytes);
         }
     }
 

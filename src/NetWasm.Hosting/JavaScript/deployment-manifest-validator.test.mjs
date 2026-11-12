@@ -255,6 +255,29 @@ test("validateDeploymentManifest enforces artifact uniqueness and timezone owner
   }
 });
 
+// Issue 225: a program opens its symbols sidecars by their names beside it.
+test("validateDeploymentManifest binds each symbols sidecar beside the application", () => {
+  for (const [role, sha] of [["type-symbols", "c"], ["method-symbols", "d"]]) {
+    const sidecar = artifact({
+      relativePath: `app.wasm.${role}`,
+      role,
+      mediaType: `application/vnd.netwasm.${role};version=1`,
+      sha256: digest(sha),
+      schemaVersion: 1,
+    });
+    assert.equal(validateDeploymentManifest(manifest({ artifacts: [artifact(), sidecar] })).artifacts[1].role, role);
+    expectInvalid(manifest({ artifacts: [artifact(), sidecar, { ...sidecar, relativePath: `other.wasm.${role}` }] }),
+      new RegExp(`multiple ${role}`, "i"));
+    for (const invalid of [
+      { ...sidecar, relativePath: `other.wasm.${role}` },
+      { ...sidecar, mediaType: "application/octet-stream" },
+      { ...sidecar, schemaVersion: 2 },
+    ]) {
+      expectInvalid(manifest({ artifacts: [artifact(), invalid] }), new RegExp(`${role} artifact.*adjacent schema-1`, "i"));
+    }
+  }
+});
+
 test("validateDeploymentManifest validates function inventories and signatures", () => {
   for (const key of ["requiredImports", "exports"]) {
     expectInvalid(manifest({ [key]: null }), new RegExp(`${key === "requiredImports" ? "required imports" : "exports"} must be explicit`, "i"));

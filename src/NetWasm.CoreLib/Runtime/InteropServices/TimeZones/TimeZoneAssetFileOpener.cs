@@ -5,7 +5,6 @@ namespace System.Runtime.InteropServices.TimeZones
         IReadOnlyFileOpener opener,
         IReadOnlyFileReader reader) : ITimeZoneAssetFileOpener
     {
-        internal const string MountPath = "/netwasm-timezones";
         private readonly IPreopenedDirectorySource _preopens =
             preopens ?? throw new ArgumentNullException();
         private readonly IReadOnlyFileOpener _opener =
@@ -27,7 +26,7 @@ namespace System.Runtime.InteropServices.TimeZones
             }
             foreach (var directory in _preopens.Read())
             {
-                if (directory.Path == MountPath)
+                if (directory.Path == Sidecars.SidecarDescriptor.MountPath)
                 {
                     return new TimeZoneAssetFile(
                         _opener.Open(directory.Handle, assetName),
@@ -35,7 +34,7 @@ namespace System.Runtime.InteropServices.TimeZones
                 }
             }
             throw new PlatformNotSupportedException(
-                "Timezone asset mount '" + MountPath + "' is unavailable.");
+                "Timezone asset mount '" + Sidecars.SidecarDescriptor.MountPath + "' is unavailable.");
         }
     }
 }

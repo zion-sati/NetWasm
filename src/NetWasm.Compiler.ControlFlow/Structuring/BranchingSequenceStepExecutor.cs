@@ -37,7 +37,6 @@ internal sealed class BranchingSequenceStepExecutor(
         int? current = currentBlockOffset;
 
         var block = state.Graph.GetBlock(current.Value);
-        var successors = state.Graph.Successors[current.Value];
 
         if (block.Terminator.Operation is
             CilOperation.BranchIfTrue or CilOperation.BranchIfFalse or
@@ -51,8 +50,16 @@ internal sealed class BranchingSequenceStepExecutor(
                 CilOperation.BranchIfLessThanOrEqualSigned or
                 CilOperation.BranchIfLessThanOrEqualUnsigned)
         {
-            var branchTarget = successors[0];
-            var fallthrough = successors[1];
+            var (branchTarget, fallthrough) = state.Graph.GetConditionalTargets(current.Value);
+            if (branchTarget == fallthrough)
+            {
+                // Both edges reach the next block, as a branch to the next instruction does: the
+                // condition is still evaluated, and consumed by an if whose arms are empty.
+                AddConditional(state, block, StructuredSequenceDraft.Empty, StructuredSequenceDraft.Empty, regions);
+                return new StructuredSequenceStepResult(
+                    StructuredSequenceStepDisposition.Continue,
+                    branchTarget);
+            }
             var trueStart = block.Terminator.Operation is CilOperation.BranchIfTrue or
                 CilOperation.BranchIfEqual or CilOperation.BranchIfNotEqual or
                 CilOperation.BranchIfGreaterThanSigned or
@@ -154,15 +161,7 @@ internal sealed class BranchingSequenceStepExecutor(
                 join,
                 allowed,
                 [.. path]);
-            var isOriginal = state.ClaimedBlockBodies.Add(block.Index);
-            if (state.BoundaryOwnedBlocks.Contains(block.Index))
-            {
-                state.BoundaryClaimedBlockBodies.Add(block.Index);
-            }
-            regions.Add(new StructuredIfDraft(block, whenTrue, whenFalse)
-            {
-                IsOriginal = isOriginal,
-            });
+            AddConditional(state, block, whenTrue, whenFalse, regions);
             current = join;
             return new StructuredSequenceStepResult(
                 StructuredSequenceStepDisposition.Continue,
@@ -172,5 +171,23 @@ internal sealed class BranchingSequenceStepExecutor(
         return new StructuredSequenceStepResult(
             StructuredSequenceStepDisposition.NotHandled,
             current);
+    }
+
+    private static void AddConditional(
+        ControlFlowStructuringState state,
+        BasicBlock block,
+        StructuredSequenceDraft whenTrue,
+        StructuredSequenceDraft whenFalse,
+        ImmutableArray<StructuredRegionDraft>.Builder regions)
+    {
+        var isOriginal = state.ClaimedBlockBodies.Add(block.Index);
+        if (state.BoundaryOwnedBlocks.Contains(block.Index))
+        {
+            state.BoundaryClaimedBlockBodies.Add(block.Index);
+        }
+        regions.Add(new StructuredIfDraft(block, whenTrue, whenFalse)
+        {
+            IsOriginal = isOriginal,
+        });
     }
 }

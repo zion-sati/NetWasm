@@ -37,5 +37,6 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? multicastInlineDispatch = null,
         string? newObjectNullCheckElimination = null,
         string? loopStrengthReduction = null,
-        string? rangeBranchFolding = null);
+        string? rangeBranchFolding = null,
+        string? unwrittenStaticFieldFolding = null);
 }

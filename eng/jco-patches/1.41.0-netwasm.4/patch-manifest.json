@@ -1,0 +1,43 @@
+{
+  "build": {
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "command": "cargo xtask build release",
+    "node": "v26.7.0",
+    "pathRemapping": {
+      "cargoHome": "/_/cargo",
+      "checkout": "/_/jco"
+    },
+    "pnpm": "10.17.1",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+  },
+  "builder": {
+    "assetName": "jco-bindgen-1.41.0-netwasm.4.zip",
+    "recipePath": "eng/jco-bindgen.json",
+    "releaseTag": "jco-bindgen-v1.41.0-netwasm.4",
+    "repository": "https://github.com/zion-sati/NetWasm.NativeTools.git",
+    "revision": "4525b7400405d78eeb3f1ef951e8189095d82cb7"
+  },
+  "description": "Identify genuine declared-result errors in generated bindings, complete stream reads with values the host already supplied, resume yielded guests on the next macrotask instead of a clamped timer, and wake a host copy when its event is pending instead of polling with a timer.",
+  "effectiveVersion": "1.41.0+netwasm.4",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "licensePath": "LICENSE.upstream",
+  "licenseSha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+  "originalSha256": "1d8adc0872cc1ed47779610cc7ab09add0ca7cecdf723a1c5b294f805683e69e",
+  "replacement": {
+    "path": "js-component-bindgen-component.core.wasm",
+    "sha256": "f8c5817e317afe225e23997d1d11cdf79b49269c2d8d413a9df2b256b71c2470"
+  },
+  "schemaVersion": 1,
+  "sourcePatch": {
+    "path": "jco-netwasm.patch",
+    "sha256": "8ee79fb0430e9e791ef4489ac131ceb86b401d6446582ab1653e06842fcfb092"
+  },
+  "targetPath": "node_modules/@bytecodealliance/jco-transpile/vendor/js-component-bindgen-component.core.wasm",
+  "upstream": {
+    "jcoTranspileVersion": "0.23.0",
+    "jcoVersion": "1.41.0",
+    "repository": "https://github.com/bytecodealliance/jco",
+    "revision": "04fe1e247df7c53a09ac047b30f24fa2386aa7c8",
+    "tag": "jco-v1.41.0"
+  }
+}

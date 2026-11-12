@@ -18,8 +18,6 @@ internal sealed class ConstructedTypeDescriptorBuilder(
     IStaticReferenceBitmapBuilder bitmaps,
     IAssignableTypeMetadataBuilder assignableTypes,
     bool requiresTypeFacts = false,
-    RuntimeTypeNamePayload typeNamePayload = RuntimeTypeNamePayload.None,
-    IAssemblyIdentityFormatter? assemblyNames = null,
     IReadOnlyDictionary<string, MethodInstanceModel>? delegateInvokeDescriptors = null,
     IReadOnlyDictionary<CliTypeIdentity, MethodInstanceModel>? finalizers = null) :
     IConstructedTypeDescriptorBuilder
@@ -65,8 +63,6 @@ internal sealed class ConstructedTypeDescriptorBuilder(
     private readonly IAssignableTypeMetadataBuilder _assignableTypes = assignableTypes ??
         throw new ArgumentNullException(nameof(assignableTypes));
     private readonly bool _requiresTypeFacts = requiresTypeFacts;
-    private readonly RuntimeTypeNamePayload _typeNamePayload = typeNamePayload;
-    private readonly IAssemblyIdentityFormatter? _assemblyNames = assemblyNames;
     private readonly IReadOnlyDictionary<string, MethodInstanceModel>
         _delegateInvokeDescriptors = delegateInvokeDescriptors ??
             ImmutableDictionary<string, MethodInstanceModel>.Empty;
@@ -130,17 +126,7 @@ internal sealed class ConstructedTypeDescriptorBuilder(
                         type.CanonicalName,
                         out var delegateInvoke)
                             ? delegateInvoke.CanonicalName
-                            : null,
-                    _typeNamePayload != RuntimeTypeNamePayload.None
-                        ? RuntimeTypeNameFormatter.Format(
-                            type,
-                            _typeDefinitions,
-                            _assemblyNames ?? throw new CompilerException(
-                                new CompilerDiagnostic(
-                                    DiagnosticCode.RuntimeContract,
-                                    "runtime type names require an assembly identity formatter")),
-                            _typeNamePayload)
-                        : null));
+                            : null));
             }
         }
     }

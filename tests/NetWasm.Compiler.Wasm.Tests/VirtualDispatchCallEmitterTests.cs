@@ -271,6 +271,60 @@ public sealed class VirtualDispatchCallEmitterTests
                 instruction.Opcode == WasmOpcodes.Branch));
     }
 
+    // A case serves a run of receiver type ids: its target's code is emitted once, behind one
+    // unsigned comparison of the type id's distance from the run's start (issue 222).
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void ARunOfReceiversSharesOneTargetBehindOneComparison(int caseCount)
+    {
+        var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.ManagedReference);
+        var convert = new MethodInstanceModel(
+            new MethodDefinitionModel(Key(0x06000060), TypeKey, "System.IConvertible.ToInt32", false, signature, 1),
+            ReferenceType(),
+            [],
+            signature);
+        var targets = Enumerable.Range(0, caseCount * 3)
+            .Select(index => new DispatchTargetModel(
+                CliTypeIdentity.Named(Assembly, "Test", $"E{index}", isValueType: true), convert))
+            .ToImmutableArray();
+        var runs = Enumerable.Range(0, caseCount)
+            .Select(index => new VirtualDispatchCase(targets[index * 3], 10 * (index + 1), 10 * (index + 1) + 2))
+            .ToImmutableArray();
+        var enumConvert = new RecordingEnumConvertEmitter();
+        var request = CreateDispatchRequest(convert, targets, [CliValueKind.ManagedReference], consumed: 1, out var indices);
+
+        Emit(
+            (ICallEmitter)CreateEmitter(
+                new RecordingLayoutProvider(),
+                new IntrinsicRegistry(new Dictionary<EntityKey, RuntimeIntrinsic>
+                {
+                    [convert.Definition.Key] = RuntimeIntrinsic.EnumConvert,
+                }),
+                enumConvert: enumConvert,
+                cases: new FixedCases(runs)),
+            request,
+            indices);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request.Instruction)).ToInstructions();
+        Assert.Equal(caseCount, enumConvert.Calls);
+        var tests = instructions.Select((instruction, index) => (instruction, index))
+            .Where(item => item.instruction.Opcode == WasmOpcodes.I32Subtract)
+            .Select(item => instructions[item.index + 1])
+            .ToArray();
+        Assert.Equal(caseCount, tests.Length);
+        Assert.All(tests, run => Assert.Equal(WasmInstructionOperand.Signed(3), run.Operand));
+        Assert.Equal(caseCount > 1, instructions.Any(instruction =>
+            instruction.Opcode == WasmOpcodes.I32Constant && instruction.Operand == WasmInstructionOperand.Signed(30)));
+    }
+
+    private sealed class FixedCases(ImmutableArray<VirtualDispatchCase> cases) : IVirtualDispatchCasePlanner
+    {
+        public ImmutableArray<VirtualDispatchCase> Plan(
+            ImmutableArray<DispatchTargetModel> checkedTargets,
+            ImmutableArray<DispatchTargetModel> receivers) => cases;
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32Load)]
     [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64Load)]
@@ -304,8 +358,12 @@ public sealed class VirtualDispatchCallEmitterTests
         Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request.Instruction));
     }
 
-    [Fact]
-    public void RejectsNonVirtualOperationEvenWhenAPlanExists()
+    // A call that names a method depending on its receiver's exact type (a struct's base.Equals)
+    // dispatches on its receiver too; no other instruction dispatches as a call.
+    [Theory]
+    [InlineData(CilOperation.Call, true)]
+    [InlineData(CilOperation.NewObject, false)]
+    public void DispatchesACallOrCallvirtWhereAPlanExists(CilOperation operation, bool dispatches)
     {
         var type = ReferenceType();
         var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
@@ -316,14 +374,17 @@ public sealed class VirtualDispatchCallEmitterTests
             [CliValueKind.ManagedReference, CliValueKind.I4],
             consumed: 2,
             out var indices,
-            operation: CilOperation.Call);
+            operation: operation);
+        var emitter = (ICallEmitter)CreateEmitter(new RecordingLayoutProvider());
 
-        var exception = Assert.Throws<InvalidOperationException>(() => Emit(
-            (ICallEmitter)CreateEmitter(new RecordingLayoutProvider()),
-            request,
-            indices));
-
-        Assert.Contains("callvirt instruction", exception.Message);
+        if (dispatches)
+        {
+            Emit(emitter, request, indices);
+            Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request.Instruction));
+            return;
+        }
+        var exception = Assert.Throws<InvalidOperationException>(() => Emit(emitter, request, indices));
+        Assert.Contains("call or callvirt instruction", exception.Message);
     }
 
     [Fact]
@@ -746,11 +807,12 @@ public sealed class VirtualDispatchCallEmitterTests
         IValueTypeEqualsEmitter? valueTypeEquals = null,
         IValueTypeHashCodeEmitter? valueTypeHashCode = null,
         IStaticInitializationEmitter? initialization = null,
-        IMethodInitializationTriggerClassifier? initializationTriggers = null) => new(
-        layouts,
+        IMethodInitializationTriggerClassifier? initializationTriggers = null,
+        IVirtualDispatchCasePlanner? cases = null) => new(
         layouts,
         layouts,
         new VirtualDispatchEmissionPlanBuilder(),
+        cases ?? new VirtualDispatchCasePlanner(layouts, intrinsics ?? new FakeIntrinsics()),
         intrinsics ?? new FakeIntrinsics(),
         new ImplicitExceptionEmitter(layouts),
         enumEquals ?? new RecordingEnumEqualsEmitter(),

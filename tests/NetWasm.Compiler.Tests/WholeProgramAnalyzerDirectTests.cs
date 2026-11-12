@@ -510,21 +510,6 @@ public sealed class WholeProgramAnalyzerDirectTests
     }
 
     [Fact]
-    public void TypeNamePayloadEnablesTypeFactsAtDerivedRootClosure()
-    {
-        var fixture = new ClosureFixture
-        {
-            DemandedTypeNamePayload = RuntimeTypeNamePayload.Name,
-        };
-
-        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
-
-        var snapshot = fixture.ProgramBuilder.Snapshot!;
-        Assert.True(snapshot.RequiresTypeFacts);
-        Assert.Equal(RuntimeTypeNamePayload.Name, snapshot.TypeNamePayload);
-    }
-
-    [Fact]
     public void RepeatedDelegateInvokePublicationRejectsContradictoryFacts()
     {
         var fixture = new ClosureFixture
@@ -749,7 +734,6 @@ public sealed class WholeProgramAnalyzerDirectTests
         internal bool UseProductionDelegateHierarchy { get; init; }
         internal bool IncludeNativeCallback { get; init; }
         internal bool IncludeOpenGenericRuntimeType { get; init; }
-        internal RuntimeTypeNamePayload DemandedTypeNamePayload { get; init; }
         internal int NonTriggeringCall { get; init; }
         internal bool LatePropertyDispatch { get; init; }
         internal bool LateIntrinsicDescriptorType { get; init; }
@@ -1048,13 +1032,6 @@ public sealed class WholeProgramAnalyzerDirectTests
                         .Add(DelegateType)
                         .Add(SecondDelegateType),
                     AllocatedTypes = instructions.AllocatedTypes.Add(SecondDelegateType),
-                };
-            }
-            if (DemandedTypeNamePayload != RuntimeTypeNamePayload.None)
-            {
-                instructions = instructions with
-                {
-                    TypeNamePayload = DemandedTypeNamePayload,
                 };
             }
             if (IncludeNativeCallback)

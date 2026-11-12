@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
@@ -149,10 +150,10 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         { "void", false, "System.Console.WriteLine(\"before\"); System.Environment.Exit(5); System.Console.WriteLine(\"after\");", 5, "before\n", "" },
         { "void", false, "System.Environment.ExitCode = 9; System.Environment.Exit(0);", 0, "", "" },
         { "void", false, "try { System.Environment.FailFast(\"boom\"); } catch { System.Console.WriteLine(\"caught\"); }", 134, "", "Process terminated.\nboom\n" },
-        // The exception reads as NetWasm's Exception.ToString does, without a runtime type name
-        // (docs/diagnostics.md); desktop .NET writes "System.InvalidOperationException: inner".
+        // The exception reads as .NET's Exception.ToString does, its type as type#<id> since a program
+        // carries no type names (issue 225); desktop .NET writes "System.InvalidOperationException: inner".
         { "void", false, "System.Environment.FailFast(null, new System.InvalidOperationException(\"inner\"));", 134, "",
-            "Process terminated.\nRuntime operation halted by call to System.Environment.FailFast(). (0x80131623)\ninner\n" },
+            "Process terminated.\nRuntime operation halted by call to System.Environment.FailFast(). (0x80131623)\ntype#<id>: inner\n" },
         { "System.Threading.Tasks.Task", true, "await System.Threading.Tasks.Task.Yield(); System.Environment.ExitCode = 6;", 6, "", "" },
         { "System.Threading.Tasks.Task", true, "await System.Threading.Tasks.Task.Yield(); System.Environment.Exit(8);", 8, "", "" },
     };
@@ -182,7 +183,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
 
         Assert.True(exitCode == expectedExitCode, $"exit code {exitCode}: {error}");
         Assert.Equal(expectedOutput, output);
-        Assert.Equal(expectedError, error);
+        Assert.Equal(expectedError, Regex.Replace(error, @"type#\d+", "type#<id>"));
     }
 
     // Generated WASI 0.3 bindings in a command: a sent stream (stdout's write-via-stream) and
@@ -363,6 +364,130 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
     // File, FileInfo, Directory, FileStream and the current directory on a preopened directory:
     // creating, writing, appending, reading, seeking, copying, moving, enumerating, timestamps,
     // recursive deletion, relative paths, and the exceptions .NET throws on Unix.
+    // The console writes text as .NET's UTF-8 console encoding does: two-, three- and four-byte
+    // characters, an unpaired surrogate as U+FFFD, and texts longer than the 4,096 characters the
+    // writer encodes at once: a surrogate pair that no longer fits the piece's 12,288 bytes, an
+    // unpaired surrogate at the end, and three-byte characters that fill each piece exactly.
+    [Fact]
+    public async Task ConsoleWritesUtf8AsDotNetDoes()
+    {
+        string[] texts =
+        [
+            "ascii", "caf\u00e9 \u4e2d", "\uD83D\uDE00", "\uD800", "a\uDC00b", "\uD800\uD83D\uDE00", "",
+            new string('x', 12287) + "\uD83D\uDE00" + new string('y', 5000) + "\uD83D",
+            new string('\u4e2d', 5000),
+        ];
+        using var assets = TestAssets.Create();
+        var assembly = CompileExecutable(assets, true, """
+            using System;
+            namespace ConsoleUtf8Fixture;
+            internal static class Program
+            {
+                private static int Main()
+                {
+                    string[] texts =
+                    [
+                        "ascii", "caf\u00e9 \u4e2d", "\uD83D\uDE00", "\uD800", "a\uDC00b", "\uD800\uD83D\uDE00", "",
+                        new string('x', 12287) + "\uD83D\uDE00" + new string('y', 5000) + "\uD83D",
+                        new string('\u4e2d', 5000),
+                    ];
+                    foreach (var text in texts) Console.WriteLine(text);
+                    Console.Write(texts[1].AsSpan());
+                    Console.Write(new[] { '-', 'a', '\u00e9', '-' }, 1, 2);
+                    Console.Write(texts[7]);
+                    return 0;
+                }
+            }
+            """);
+        var component = await PackageProgram(assets, assembly, ManagedExecutableCompletionShape.Synchronous);
+
+        var (exitCode, output, error) = await RunWasmtimeWithOutputBytes(assets.Root, component);
+
+        Assert.True(exitCode == 0, $"exit code {exitCode}: {error}");
+        var expected = string.Concat(texts.Select(text => text + "\n")) + texts[1] + "a\u00e9" + texts[7];
+        Assert.Equal(System.Text.Encoding.UTF8.GetBytes(expected), output);
+    }
+
+    // A void Main exits with the Environment.ExitCode it sets, as on .NET.
+    [Fact]
+    public async Task VoidMainExitsWithTheExitCodeItSetsInWasmtime()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = CompileExecutable(assets, true, """
+            using System;
+            namespace ExitCodeFixture;
+            internal static class Program
+            {
+                private static void Main()
+                {
+                    Console.WriteLine(1);
+                    Environment.ExitCode = 3;
+                }
+            }
+            """);
+        var component = await PackageProgram(
+            assets, assembly, ManagedExecutableCompletionShape.Synchronous, ManagedExecutableReturnShape.Void);
+
+        var (exitCode, output, error) = await RunWasmtimeWithOutput(assets.Root, component);
+
+        Assert.True(exitCode == 3, $"exit code {exitCode}: {error}");
+        Assert.Equal("1\n", output);
+    }
+
+    // A void Main that never sets Environment.ExitCode reads 0 and ends through wasi:cli/run's
+    // result, as an int Main returning 0 does, so its component imports no wasi:cli/exit; one that
+    // sets the exit code still imports it.
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("Environment.ExitCode = 3;", true)]
+    public async Task VoidMainImportsProcessExitOnlyWhenItSetsTheExitCode(string statement, bool importsExit)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = CompileExecutable(assets, true, $$"""
+            using System;
+            namespace ExitImportFixture;
+            internal static class Program
+            {
+                private static void Main()
+                {
+                    Console.WriteLine(42);
+                    {{statement}}
+                }
+            }
+            """);
+        var component = await PackageProgram(assets, assembly, ManagedExecutableCompletionShape.Synchronous,
+            ManagedExecutableReturnShape.Void, FinalWasmOptimization.Oz);
+
+        var wit = await RunComponentTool("wasm-tools", assets.Root, "component", "wit", component);
+
+        Assert.Equal(importsExit, wit.Contains("import wasi:cli/exit@0.3.2;", StringComparison.Ordinal));
+    }
+
+    // A Main that reads its arguments receives the command line after the program name, as on .NET.
+    [Fact]
+    public async Task MainThatReadsItsArgumentsReceivesThemInWasmtime()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = CompileExecutable(assets, true, """
+            using System;
+            namespace ArgumentsFixture;
+            internal static class Program
+            {
+                private static int Main(string[] args)
+                {
+                    Console.WriteLine(string.Join("|", args));
+                    return args.Length;
+                }
+            }
+            """);
+        var component = await PackageProgram(assets, assembly, ManagedExecutableCompletionShape.Synchronous);
+
+        var (exitCode, output, error) = await RunWasmtimeWithOutput(assets.Root, component, "first", "second word");
+
+        Assert.True(exitCode == 2, $"exit code {exitCode}: {error}");
+        Assert.Equal("first|second word\n", output);
+    }
+
     [Fact]
     public async Task FileApisWorkOnAPreopenedDirectoryInWasmtime()
     {
@@ -483,7 +608,19 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
                     }
                     catch (Exception e)
                     {
-                        return e.GetType().Name;
+                        // The exception's name, from its type: a program carries no type names (issue 225).
+                        return e switch
+                        {
+                            FileNotFoundException => "FileNotFoundException",
+                            DirectoryNotFoundException => "DirectoryNotFoundException",
+                            PathTooLongException => "PathTooLongException",
+                            IOException => "IOException",
+                            UnauthorizedAccessException => "UnauthorizedAccessException",
+                            PlatformNotSupportedException => "PlatformNotSupportedException",
+                            NotSupportedException => "NotSupportedException",
+                            ArgumentException => "ArgumentException",
+                            _ => "other",
+                        };
                     }
                 }
 
@@ -1059,6 +1196,18 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         ManagedExecutableCompletionShape completion,
         params string[] wasmtimeArguments)
     {
+        var component = await PackageProgram(assets, assembly, completion);
+        return await RunWasmtimeWithOutput(assets.Root, [.. wasmtimeArguments, component]);
+    }
+
+    // Compiles Main to a WASI 0.3 command component and returns its path.
+    private static async Task<string> PackageProgram(
+        TestAssets assets,
+        string assembly,
+        ManagedExecutableCompletionShape completion,
+        ManagedExecutableReturnShape returnShape = ManagedExecutableReturnShape.ExitCode,
+        FinalWasmOptimization optimization = FinalWasmOptimization.None)
+    {
         var entry = ReadEntryPoint(assembly);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly, [assets.CoreLib], entry.TypeName, entry.MethodName, [], WasmTarget.Wasm32,
@@ -1090,9 +1239,9 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
             application, toolchainWit,
             services.GetRequiredService<IWitWorldSpecifierFormatter>().Format(world), component,
             ComponentTarget.Wasm32Wasi02, runtime,
-            new(ManagedExecutableParameterShape.None, ManagedExecutableReturnShape.ExitCode, completion),
-            FinalWasmOptimization.None));
-        return await RunWasmtimeWithOutput(assets.Root, [.. wasmtimeArguments, component]);
+            new(ManagedExecutableParameterShape.None, returnShape, completion),
+            optimization));
+        return component;
     }
 
     private static async Task<(int ExitCode, string Output, string Error)> RunWasmtimeWithInput(
@@ -1137,6 +1286,28 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         var error = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
         return (process.ExitCode, await output, await error);
+    }
+
+    private static async Task<(int ExitCode, byte[] Output, string Error)> RunWasmtimeWithOutputBytes(
+        string workingDirectory,
+        string component)
+    {
+        var start = new ProcessStartInfo("wasmtime")
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        start.ArgumentList.Add("run");
+        start.ArgumentList.Add(component);
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Wasmtime did not start.");
+        using var output = new MemoryStream();
+        var copy = process.StandardOutput.BaseStream.CopyToAsync(output);
+        var error = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        await copy;
+        return (process.ExitCode, output.ToArray(), await error);
     }
 
     private static async Task<(int ExitCode, string Error)> RunWasmtime(string workingDirectory, string component)

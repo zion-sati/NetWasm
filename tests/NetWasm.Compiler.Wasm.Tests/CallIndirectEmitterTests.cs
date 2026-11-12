@@ -3,7 +3,10 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
+using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -60,26 +63,113 @@ public sealed class CallIndirectEmitterTests
         Assert.Contains(WasmOpcodes.Call, GetCodeBytes(originalRequest));
     }
 
-    [Fact]
-    public void ValueTypeReturnIsRejectedDeterministically()
+    // Issue 226: an unmanaged calli calls its signature's trampoline with the C ABI arguments and
+    // then the function pointer, instead of matching managed candidates.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnmanagedCallPassesItsArgumentsThenThePointerToItsTrampoline(bool memory64)
     {
+        var signature = MethodSignatureModel.Create(CliValueKind.I8, CliValueKind.I4, CliValueKind.F8);
+        var callSites = NativeAbiTestSupport.CallSitePlanner().Plan([new(signature, "M", 0)], 23);
+        var request = CreateInstructionRequest(
+            CilOperation.CallIndirect,
+            [CliValueKind.I4, CliValueKind.F8, CliValueKind.NativeInt],
+            new CilOperand.CallSite(signature, Unmanaged: true));
+        var original = request;
+        request = request with
+        {
+            Target = request.Target with { NativeImports = NativeImportPlan.Empty with { CallSites = callSites } },
+        };
+
+        CreateEmitter(memory64 ? WasmTargetLayout.For(WasmTarget.Wasm64) : null).Emit(
+            request, GetCodeWriter(original), CreateFunctionIndexResolver());
+
+        Assert.Equal([CliValueKind.I8], request.Stack);
+        var code = GetCodeBytes(original);
+        var call = Array.IndexOf(code, WasmOpcodes.Call);
+        Assert.Equal((byte)23, code[call + 1]);
+        // The three operands, the pointer last, precede the call; nothing compares candidates.
+        Assert.Equal(3, code.Take(call).Count(value => value == WasmOpcodes.LocalGet));
+        Assert.DoesNotContain(memory64 ? WasmOpcodes.I64Equal : WasmOpcodes.I32Equal, code);
+    }
+
+    [Fact]
+    public void UnmanagedCallWithoutAPlannedTrampolineIsAnInvariantFailure()
+    {
+        var request = CreateInstructionRequest(
+            CilOperation.CallIndirect,
+            [CliValueKind.NativeInt],
+            new CilOperand.CallSite(MethodSignatureModel.Create(CliValueKind.Void), Unmanaged: true));
+
+        var error = Assert.Throws<CompilerException>(() =>
+            CreateEmitter().Emit(request, GetCodeWriter(request), CreateFunctionIndexResolver()));
+
+        Assert.Equal(DiagnosticCode.CompilerInvariant, error.Diagnostic.Code);
+        Assert.Empty(GetCodeBytes(request));
+    }
+
+    // A value-type result goes to the call's frame buffer: the buffer's address is the
+    // candidate's first argument and, after the call, the evaluation stack's value.
+    [Fact]
+    public void ValueTypeReturnGoesThroughTheFrameBuffer()
+    {
+        var program = new FakeProgram();
         var valueType = CliTypeIdentity.Named(
             Assembly,
             "Test",
             "Value",
             isValueType: true);
+        var signature = MethodSignatureModel.Create(valueType);
+        var definition = program.GetMethod(EntryKey) with { Signature = signature };
+        var callable = new MethodInstanceModel(
+            definition,
+            CliTypeIdentity.Named(Assembly, "Test", "Type", isValueType: false),
+            [],
+            signature);
+        var context = CreateMethodEmissionContext(2) with
+        {
+            ValueLayout = CreateMethodEmissionContext(2).ValueLayout with
+            {
+                Size = 32,
+                TemporaryOffsets = ImmutableDictionary<int, int>.Empty.Add(0, 16),
+            },
+        };
         var request = CreateInstructionRequest(
             CilOperation.CallIndirect,
             [CliValueKind.NativeInt],
-            new CilOperand.CallSite(MethodSignatureModel.Create(valueType)));
+            new CilOperand.CallSite(signature),
+            context: context);
+        var code = GetCodeWriter(request);
+        var originalRequest = request;
+        request = request with
+        {
+            Target = CreateInstructionModuleTarget(program) with
+            {
+                CallableMethods = Lookups.Whole(ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(
+                    callable.CanonicalName,
+                    callable)),
+            },
+        };
 
-        var exception = Assert.Throws<CompilerException>(() =>
-            CreateEmitter().Emit(
-                request,
-                GetCodeWriter(request),
-                CreateFunctionIndexResolver()));
+        CreateEmitter().Emit(request, code, CreateFunctionIndexResolver(program));
 
-        Assert.Equal(DiagnosticCode.UnsupportedCil, exception.Diagnostic.Code);
+        Assert.Equal([CliValueKind.ValueType], request.Stack);
+        var bytes = GetCodeBytes(originalRequest);
+        var frame = (byte)context.ValueFrame;
+        // The buffer address (frame + 16) precedes the candidate's call and becomes the result.
+        Assert.Equal(2, CountSequence(bytes, [WasmOpcodes.LocalGet, frame, WasmOpcodes.I32Constant, 16, WasmOpcodes.I32Add]));
+        Assert.Contains(WasmOpcodes.Call, bytes);
+    }
+
+    private static int CountSequence(byte[] bytes, byte[] sequence)
+    {
+        var count = 0;
+        for (var index = 0; index + sequence.Length <= bytes.Length; index++)
+        {
+            if (bytes.AsSpan(index, sequence.Length).SequenceEqual(sequence)) count++;
+        }
+        return count;
     }
 
     [Fact]
@@ -125,7 +215,10 @@ public sealed class CallIndirectEmitterTests
         var layouts = new RecordingLayoutProvider(target);
         return new CallIndirectEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts));
+            new ImplicitExceptionEmitter(layouts),
+            new ValueFrameAddressEmitter(layouts),
+            new NativeAbiCallEmitter(layouts, new NoInitialization(), new AddressInstructionEmitter(layouts),
+                new ImplicitExceptionEmitter(layouts)));
     }
 
     private static MethodInstanceModel CreateCallable(FakeProgram program)
@@ -149,4 +242,12 @@ public sealed class CallIndirectEmitterTests
             isValueType: false),
         [],
         definition.Signature);
+
+    private sealed class NoInitialization : IStaticInitializationEmitter
+    {
+        public void Emit(StaticInitializationEmissionRequest request, IWasmInstructionWriter code,
+            IFunctionIndexResolver functionIndices)
+        {
+        }
+    }
 }

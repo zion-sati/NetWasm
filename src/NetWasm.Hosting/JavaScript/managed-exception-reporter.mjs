@@ -1,6 +1,4 @@
-import { sha256 as sha256InJavaScript } from "./sha256.mjs";
-
-const MAP_MEDIA_TYPE = "application/vnd.netwasm.exception-types+json;version=2";
+import { readTypeSymbols } from "./symbol-sidecar-reader.mjs";
 
 export function createManagedExceptionReporter(options) {
   const {
@@ -52,7 +50,6 @@ export function createManagedExceptionEventReporter(options) {
     loadArtifacts,
     stackTraceSymbols = [],
     maximumReportedMessageLength = Number.POSITIVE_INFINITY,
-    crypto: cryptoProvider = globalThis.crypto,
   } = options;
 
   if (typeof reportImmediate !== "function") throw new TypeError("reportImmediate must be a function");
@@ -96,24 +93,23 @@ export function createManagedExceptionEventReporter(options) {
     terminalEvents.push(terminalEvent);
     reportImmediate(terminalEvent);
 
-    artifactsPromise ??= loadAndValidateArtifacts(loadArtifacts, cryptoProvider);
+    artifactsPromise ??= loadAndValidateArtifacts(loadArtifacts);
     let enrichment;
+    // The program's type-symbols sidecar names every exception type it can throw (issue 225); without it the
+    // type reads as its ID, as in the program.
     enrichment = artifactsPromise.then(
       artifacts => {
-        const entry = artifacts.types.get(typeId);
         reportEnriched({
           eventId,
           typeId,
-          typeName: entry?.displayName ?? `<unknown exception type #${typeId}>`,
-          canonicalIdentity: entry?.canonicalIdentity,
-          assemblyIdentity: entry?.assemblyIdentity,
+          typeName: artifacts.types.get(typeId)?.displayName ?? `type#${typeId}`,
           message,
           stackTrace: resolvedStackTrace,
-          buildId: artifacts.manifest.buildId,
+          buildId: artifacts.buildId,
         });
       },
       error => {
-        reportEnriched({ eventId, typeId, typeName: `<exception type #${typeId} unavailable>`, message, stackTrace: resolvedStackTrace, artifactError: String(error) });
+        reportEnriched({ eventId, typeId, typeName: `type#${typeId}`, message, stackTrace: resolvedStackTrace, artifactError: String(error) });
       },
     ).catch(error => {
       enrichmentFailure ??= error;
@@ -183,42 +179,9 @@ export function copyManagedString(memory, reference, length, stringDataOffset) {
   return result;
 }
 
-export async function loadAndValidateArtifacts(loadArtifacts, cryptoProvider) {
+// The deployment's type-symbols sidecar, which its loader has checked against the deployment manifest.
+export async function loadAndValidateArtifacts(loadArtifacts) {
   const artifacts = await loadArtifacts();
-  const { manifest, mapBytes, wasmBytes } = artifacts;
-  if (!manifest || manifest.schemaVersion !== 1 || typeof manifest.buildId !== "string") throw new Error("invalid diagnostic artifact manifest");
-  if (!(mapBytes instanceof Uint8Array) || !(wasmBytes instanceof Uint8Array)) throw new Error("diagnostic artifacts must be byte arrays");
-
-  const [mapDigest, wasmDigest] = await Promise.all([
-    sha256(mapBytes, cryptoProvider),
-    sha256(wasmBytes, cryptoProvider),
-  ]);
-  if (mapDigest !== manifest.exceptionTypeMapSha256 || wasmDigest !== manifest.wasmSha256) throw new Error("diagnostic artifact digest mismatch");
-
-  const map = JSON.parse(new TextDecoder().decode(mapBytes));
-  if (map.schemaVersion !== 2 || map.buildId !== manifest.buildId || !Array.isArray(map.entries)) throw new Error("invalid exception type map");
-  if (artifacts.mapMediaType !== undefined && artifacts.mapMediaType !== MAP_MEDIA_TYPE) throw new Error("unsupported exception type map media type");
-  const types = new Map();
-  let previousTypeId = 0;
-  for (const entry of map.entries) {
-    if (entry.typeId <= previousTypeId)
-      throw new Error("Exception type map entries must be ordered by ascending type ID.");
-
-    if (!Number.isSafeInteger(entry.typeId) ||
-        typeof entry.displayName !== "string" || entry.displayName.length === 0 ||
-        typeof entry.canonicalIdentity !== "string" || entry.canonicalIdentity.length === 0 ||
-        typeof entry.assemblyIdentity !== "string" || entry.assemblyIdentity.length === 0)
-      throw new Error("invalid exception type map entry");
-    types.set(entry.typeId, entry);
-    previousTypeId = entry.typeId;
-  }
-  return { manifest, types };
-}
-
-// A page outside a secure context has no crypto.subtle; it hashes in
-// JavaScript, as its deployment's files are.
-async function sha256(bytes, cryptoProvider) {
-  const subtle = cryptoProvider?.subtle;
-  const digest = new Uint8Array(subtle === undefined ? sha256InJavaScript(bytes) : await subtle.digest("SHA-256", bytes));
-  return Array.from(digest, value => value.toString(16).padStart(2, "0")).join("");
+  if (!(artifacts?.typeSymbols instanceof Uint8Array)) throw new Error("the type-symbols sidecar must be bytes");
+  return readTypeSymbols(artifacts.typeSymbols);
 }

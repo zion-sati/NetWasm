@@ -95,12 +95,15 @@ internal sealed record RuntimeNativeCallbackDescriptor(
     ImmutableArray<RuntimeNativeValueType> Parameters,
     RuntimeNativeValueType? ReturnType);
 
+// The object's unmanaged calli trampolines (Trampolines) follow its callback getters among the
+// temporary runtime exports.
 internal sealed record RuntimeNativeCallbackSupport(
     string FileName,
     string Sha256,
     ImmutableArray<RuntimeNativeCallbackDescriptor> Callbacks,
     ImmutableArray<string> TemporaryApplicationExports,
-    ImmutableArray<string> TemporaryRuntimeExports);
+    ImmutableArray<string> TemporaryRuntimeExports,
+    ImmutableArray<string> Trampolines);
 
 internal sealed record RuntimeMemoryLayoutRequest(
     RuntimePackTarget Target,

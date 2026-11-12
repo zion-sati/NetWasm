@@ -14,17 +14,23 @@ public sealed class KeptCompilationFactsTests
         "export", "entry token", "diagnostic trace", "world", "source", "alias", "import module", "stack trace",
     };
 
-    // A result without diagnostic artifacts names no exception types; one with them names its map's.
+    // The facts keep the result's sidecars, which a compile served from them writes again.
     [Fact]
-    public void TheFactsNameTheExceptionTypesOfTheResultsDiagnostics()
+    public void TheFactsKeepTheResultsSidecars()
     {
         var result = new ModuleCompilationResult([0x00, 0x61, 0x73, 0x6D], null!, 64);
 
-        Assert.Null(KeptCompilationFacts.Of(Base, result).ExceptionTypes);
-        Assert.Empty(KeptCompilationFacts.Of(Base, result with
+        Assert.Null(KeptCompilationFacts.Of(Base, result).TypeSymbols);
+        var facts = KeptCompilationFacts.Of(Base, result with
         {
-            DiagnosticArtifacts = new NetWasm.Compiler.ExceptionTypes.DiagnosticArtifactBundle([], null!, [], null!),
-        }).ExceptionTypes!.Value);
+            TypeSymbols = new(NetWasm.Compiler.Symbols.SymbolSidecarKind.Type, [1, 2]),
+            MethodSymbols = new(NetWasm.Compiler.Symbols.SymbolSidecarKind.Method, [3]),
+        });
+        Assert.Equal([1, 2], facts.TypeSymbols);
+        Assert.Equal([3], facts.MethodSymbols);
+        var read = KeptCompilationFacts.Read(KeptCompilationFacts.Write(facts))!;
+        Assert.Equal([1, 2], read.TypeSymbols);
+        Assert.Equal([3], read.MethodSymbols);
         Assert.Equal(64, KeptCompilationFacts.Of(Base, result).StaticDataEnd);
     }
 

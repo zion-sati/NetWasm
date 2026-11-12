@@ -280,9 +280,12 @@ internal sealed class ReachabilityClosureBuilder(
                 while (pendingDispatches.TryDequeue(out var work))
                 {
                     dispatchCount++;
-                    var target = _dispatchTargets.Resolve(
-                        work.Declaration.Declaration,
-                        work.Receiver);
+                    // A non-virtual call dispatches on its receiver only to the method it names.
+                    var target = work.Declaration.Operation == CilOperation.Call
+                        ? new DispatchTargetModel(work.Receiver, work.Declaration.Declaration)
+                        : _dispatchTargets.Resolve(
+                            work.Declaration.Declaration,
+                            work.Receiver);
                     if (target is null)
                     {
                         continue;
@@ -297,7 +300,15 @@ internal sealed class ReachabilityClosureBuilder(
                         dispatchTargets.Add(work.DispatchKey, targets);
                     }
                     targets.TryAdd(target.ReceiverType.CanonicalName, target);
-                    VisitMethod(CilOperation.CallVirtual, target.Method);
+                    // A delegate's Invoke has no body: its type's invoke helper serves it.
+                    if (IsDelegateInvoke(target.Method))
+                    {
+                        types.Add(target.Method.Definition.DeclaringType);
+                    }
+                    else
+                    {
+                        VisitMethod(CilOperation.CallVirtual, target.Method);
+                    }
                     if (work.Declaration.Operation == CilOperation.LoadVirtualFunction)
                     {
                         AddCallable(target.Method);
@@ -451,10 +462,6 @@ internal sealed class ReachabilityClosureBuilder(
             {
                 Methods = plannedExecutions.ToImmutable(),
             };
-            if (state.TypeNamePayload != RuntimeTypeNamePayload.None)
-            {
-                state.RequiresTypeFacts = true;
-            }
             if (state.RequiresGenericArguments)
             {
                 state.RequiresTypeFacts = true;
@@ -484,8 +491,7 @@ internal sealed class ReachabilityClosureBuilder(
             bool RequiresTypeFacts,
             bool RequiresDelegateInvoke,
             bool RequiresGenericArguments,
-            bool RequiresMemberNames,
-            RuntimeTypeNamePayload TypeNamePayload)
+            bool RequiresMemberNames)
             CaptureClosureStamp() => (
             types.Count,
             state.RuntimeTypeDefinitions.Count,
@@ -506,8 +512,7 @@ internal sealed class ReachabilityClosureBuilder(
             state.RequiresTypeFacts,
             state.RequiresDelegateInvoke,
             state.RequiresGenericArguments,
-            state.RequiresMemberNames,
-            state.TypeNamePayload);
+            state.RequiresMemberNames);
 
         void EnsureModuleInitialized(AssemblyIdentity assembly)
         {
@@ -559,7 +564,6 @@ internal sealed class ReachabilityClosureBuilder(
             state.RequiresDelegateInvoke |= analysis.RequiresDelegateInvoke;
             state.RequiresGenericArguments |= analysis.RequiresGenericArguments;
             state.RequiresMemberNames |= analysis.RequiresMemberNames;
-            state.TypeNamePayload |= analysis.TypeNamePayload;
             foreach (var type in analysis.RuntimeTypes)
             {
                 AddRuntimeType(type);
@@ -874,6 +878,9 @@ internal sealed class ReachabilityClosureBuilder(
                     field.SignatureType));
             }
         }
+
+        bool IsDelegateInvoke(MethodInstanceModel method) =>
+            method.Definition.Name == "Invoke" && _delegateTypes.Recognize(method.DeclaringType);
 
         void VisitMethod(CilOperation operation, MethodInstanceModel target)
         {

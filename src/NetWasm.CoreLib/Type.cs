@@ -17,7 +17,9 @@ namespace System
             throw new PlatformNotSupportedException("Constructing custom Type metadata providers is not supported on NetWasm.");
         }
 
-        public static Type? GetTypeFromHandle(RuntimeTypeHandle handle) => null;
+        // The compiler lowers every call, this one included, to the handle's type; the body is
+        // what a delegate or function pointer to the method runs.
+        public static Type? GetTypeFromHandle(RuntimeTypeHandle handle) => GetTypeFromHandle(handle);
 
         // RuntimeTypeHandle uses the compiler's 32-bit semantic type identity on
         // both Wasm targets, matching ldtoken and GetTypeFromHandle.
@@ -30,9 +32,8 @@ namespace System
             return o.GetType().TypeHandle;
         }
 
-        internal static Type GetTypeFromSemanticId(int semanticTypeId) =>
-            throw new PlatformNotSupportedException(
-                "Only compiler-emitted semantic type identities are supported.");
+        // Lowered like GetTypeFromHandle.
+        internal static Type GetTypeFromSemanticId(int semanticTypeId) => GetTypeFromSemanticId(semanticTypeId);
         public bool IsValueType => IsValueTypeImpl();
         public bool IsEnum => HasFlag(RuntimeTypeFactsFlags.Enum);
         public bool IsInterface => HasFlag(RuntimeTypeFactsFlags.Interface);
@@ -183,48 +184,6 @@ namespace System
             return *(RuntimeTypeFacts*)address;
         }
 
-        private unsafe RuntimeTypeNameFacts GetNameFacts(int requiredPayload)
-        {
-            nint address = GetFacts().NameFacts;
-            if (address == 0)
-            {
-                throw new InvalidOperationException(
-                    "Compiler-generated runtime type-name facts are missing.");
-            }
-            RuntimeTypeNameFacts facts = *(RuntimeTypeNameFacts*)address;
-            if ((facts.Payload & requiredPayload) == 0)
-            {
-                throw new InvalidOperationException(
-                    "Compiler-generated runtime type-name facts are incomplete.");
-            }
-            return facts;
-        }
-
-        private string GetRuntimeName() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.Name).Name) ??
-            throw new InvalidOperationException(
-                "The compiler-generated runtime type name is invalid.");
-
-        private string? GetRuntimeNamespace() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.Namespace).Namespace);
-
-        private string? GetRuntimeFullName() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.FullName).FullName);
-
-        private string GetRuntimeDisplayName() =>
-            GetString(GetNameFacts(RuntimeTypeNamePayload.DisplayName).DisplayName) ??
-            throw new InvalidOperationException(
-                "The compiler-generated runtime type display name is invalid.");
-
-        private static string? GetString(nint address)
-        {
-            if (address == 0)
-            {
-                return null;
-            }
-            return Runtime.CompilerServices.Unsafe.As<nint, string?>(ref address);
-        }
-
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern nint InternalGetFacts(int semanticTypeId);
     }
@@ -253,14 +212,6 @@ namespace System
         internal const int ArrayRankMask = 0x3f;
     }
 
-    internal static class RuntimeTypeNamePayload
-    {
-        internal const int Name = 1 << 0;
-        internal const int Namespace = 1 << 1;
-        internal const int FullName = 1 << 2;
-        internal const int DisplayName = 1 << 3;
-    }
-
     internal readonly struct RuntimeTypeFacts
     {
         internal readonly int Flags;
@@ -269,18 +220,8 @@ namespace System
         internal readonly int AssignableTypeIdCount;
         internal readonly nint AssignableTypeIds;
         internal readonly nint DelegateInvoke;
-        internal readonly nint NameFacts;
         internal readonly int GenericArgumentCount;
         internal readonly nint GenericArgumentTypeIds;
-    }
-
-    internal readonly struct RuntimeTypeNameFacts
-    {
-        internal readonly int Payload;
-        internal readonly nint Name;
-        internal readonly nint Namespace;
-        internal readonly nint FullName;
-        internal readonly nint DisplayName;
     }
 
     public readonly partial struct RuntimeTypeHandle : IEquatable<RuntimeTypeHandle>

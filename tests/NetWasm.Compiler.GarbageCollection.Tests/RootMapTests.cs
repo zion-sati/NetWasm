@@ -976,7 +976,7 @@ public sealed class RootMapTests
     }
 
     [Fact]
-    public void ManagedAddressArgumentPointeeRemainsRootedAfterLastExplicitUse()
+    public void ManagedAddressArgumentRemainsRootedAfterLastExplicitUse()
     {
         var program = new FakeProgram();
         var reference = CliTypeIdentity.Primitive(
@@ -1008,9 +1008,7 @@ public sealed class RootMapTests
         Assert.Contains(
             new RootSource(RootSourceKind.ManagedAddressArgument, 0),
             roots);
-        Assert.Contains(
-            new RootSource(RootSourceKind.ManagedAddressArgument, 0, 0),
-            roots);
+        Assert.DoesNotContain(roots, root => root.IsIndirect);
     }
 
     // A span, a ref struct or a callee can hold the address of a local or an
@@ -1463,7 +1461,7 @@ public sealed class RootMapTests
     }
 
     [Fact]
-    public void RootMapPublishesReferenceStoredThroughManagedAddress()
+    public void RootMapRootsAManagedAddressArgumentButNotTheReferenceItAddresses()
     {
         var program = new FakeProgram();
         var reference = CliTypeIdentity.Primitive(
@@ -1503,13 +1501,11 @@ public sealed class RootMapTests
         Assert.Contains(
             new RootSource(RootSourceKind.ManagedAddressArgument, 0),
             roots);
-        Assert.Contains(
-            new RootSource(RootSourceKind.ManagedAddressArgument, 0, 0),
-            roots);
+        Assert.DoesNotContain(roots, root => root.IsIndirect);
     }
 
     [Fact]
-    public void RootMapPublishesReferencesInsideValueStoredThroughManagedAddress()
+    public void RootMapRootsAManagedAddressArgumentButNotTheValueItAddresses()
     {
         var program = new FakeProgram();
         var definition = Method(EntryKey, parameters: [CliValueKind.ManagedAddress]) with
@@ -1547,9 +1543,35 @@ public sealed class RootMapTests
         Assert.Contains(
             new RootSource(RootSourceKind.ManagedAddressArgument, 0),
             roots);
-        Assert.Contains(
-            new RootSource(RootSourceKind.ManagedAddressArgument, 0, 4),
-            roots);
+        Assert.DoesNotContain(roots, root => root.IsIndirect);
+    }
+
+    // A value type's instance method takes its receiver by reference: a receiver live across a
+    // safepoint is that byref, not a copy of the value whose reference fields the method publishes.
+    [Fact]
+    public void RootMapRootsAValueTypeReceiverAsTheByrefItIs()
+    {
+        var program = new FakeProgram();
+        var method = Instance(Method(LeafKey, isStatic: false) with { DeclaringType = ValueTypeKey }, PairType);
+        var body = StructuredInstance(
+            program,
+            method,
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(3, CilOperation.Call, new CilOperand.Entity(AddressCallKey)),
+            I(4, CilOperation.Return));
+
+        var map = CreateAnalyzer(program, new FakeLayouts(PairType)).Analyze(
+            new RootMapAnalysisRequest(
+                body,
+                Lookups.Of(new HashSet<EntityKey> { AllocatorKey }),
+                Lookups.Of(new HashSet<string>())));
+
+        var roots = Assert.Single(map.Safepoints).Value.Roots;
+        Assert.Contains(new RootSource(RootSourceKind.ManagedAddressArgument, 0), roots);
+        Assert.DoesNotContain(roots, root => root.Kind == RootSourceKind.Argument);
+        Assert.DoesNotContain(roots, root => root.IsIndirect);
     }
 
     [Fact]
@@ -2318,7 +2340,7 @@ public sealed class RootMapTests
     }
 
     [Fact]
-    public void RootMapEmbedsValueArgumentsAndValueTypeReceiversAtCalls()
+    public void RootMapEmbedsValueArgumentsAndRootsValueTypeReceiversAtCalls()
     {
         var program = new FakeProgram();
         var method = Method(EntryKey) with
@@ -2352,12 +2374,15 @@ public sealed class RootMapTests
             new RootSource(RootSourceKind.EvaluationStack, 0, 4),
             map.Safepoints[1].Roots);
         Assert.Contains(
+            new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0),
+            map.Safepoints[3].Roots);
+        Assert.DoesNotContain(
             new RootSource(RootSourceKind.EvaluationStack, 0, 4),
             map.Safepoints[3].Roots);
     }
 
     [Fact]
-    public void RootMapFramesManagedAddressValuesAlreadyOnTheEvaluationStack()
+    public void RootMapRootsManagedAddressesOnTheEvaluationStackButNotWhatTheyAddress()
     {
         var program = new FakeProgram();
         var method = Method(EntryKey) with
@@ -2382,9 +2407,7 @@ public sealed class RootMapTests
         Assert.Contains(
             new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0),
             map.Safepoints[1].Roots);
-        Assert.Contains(
-            new RootSource(RootSourceKind.EvaluationStack, 0, 4),
-            map.Safepoints[1].Roots);
+        Assert.DoesNotContain(map.Safepoints[1].Roots, root => root.IsIndirect);
     }
 
     [Fact]

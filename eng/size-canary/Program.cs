@@ -37,7 +37,7 @@ if (args is ["compile", var repository, var input, var application, var layout,
         EntryMethodToken: entry.MetadataToken,
         EntryPointKind: CompilerEntryPointKind.ManagedExecutable,
         StructuredDiagnostics: structuredDiagnostics));
-    if (result.StackTraceSymbols is not null)
+    if (result.MethodSymbols is not null)
     {
         throw new InvalidOperationException(
             "The Release size canary must keep rich managed stack traces disabled.");

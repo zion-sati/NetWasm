@@ -74,10 +74,10 @@ public sealed class AttributeExceptionSemanticsTests(CorrectnessTestRunner runne
                 return input;
             }
             private static bool Wrapped(Exception exception) =>
-                exception.GetType().Name == "CustomAttributeFormatException" &&
+                exception.GetType() == typeof(CustomAttributeFormatException) &&
                 exception.HResult == unchecked((int)0x80131605) &&
                 exception.Message == "'Value' property specified was not found." &&
-                exception.InnerException?.GetType().Name == "TargetInvocationException" &&
+                exception.InnerException?.GetType() == typeof(TargetInvocationException) &&
                 exception.InnerException.HResult == unchecked((int)0x80131604) &&
                 ReferenceEquals(exception.InnerException.InnerException, FailingAttribute.Failure);
         }

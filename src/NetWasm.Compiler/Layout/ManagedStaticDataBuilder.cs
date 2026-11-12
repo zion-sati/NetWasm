@@ -117,9 +117,6 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
     {
         foreach (var facts in _state.PendingTypeFacts.OrderBy(facts => facts.TypeId))
         {
-            var names = facts.Names is null
-                ? 0
-                : RuntimeTypeFactsEncoding.AddNames(_state, _target, facts.Names);
             var genericArgumentTypeIds = AddGenericArgumentTypeIds(
                 facts.GenericArgumentTypeIds);
             RuntimeTypeFactsEncoding.Add(
@@ -132,7 +129,6 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
                 facts.AssignableTypeIdsAddress,
                 facts.AssignableTypeIdCount,
                 GetDelegateInvokeAddress(facts),
-                names,
                 genericArgumentTypeIds,
                 facts.GenericArgumentTypeIds.Length);
         }

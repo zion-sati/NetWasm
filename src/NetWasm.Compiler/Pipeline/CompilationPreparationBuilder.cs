@@ -29,6 +29,7 @@ internal sealed class CompilationPreparationBuilder(
     ISymbolFormatterFactory symbols,
     IStackTraceReachabilityRootProvider stackTraceRoots,
     IManagedExecutableArgumentFactoryResolver argumentFactories,
+    IMethodBodyReaderFactory bodies,
     IManagedExecutableExitResolver exits,
     IWasmOptimizationSettingsResolver optimizationSettings,
     Analysis.PlatformServices.IPlatformServiceBindingResolverFactory platformServices) :
@@ -68,6 +69,8 @@ internal sealed class CompilationPreparationBuilder(
         stackTraceRoots ?? throw new ArgumentNullException(nameof(stackTraceRoots));
     private readonly IManagedExecutableArgumentFactoryResolver _argumentFactories =
         argumentFactories ?? throw new ArgumentNullException(nameof(argumentFactories));
+    private readonly IMethodBodyReaderFactory _bodies =
+        bodies ?? throw new ArgumentNullException(nameof(bodies));
     private readonly IManagedExecutableExitResolver _exits =
         exits ?? throw new ArgumentNullException(nameof(exits));
     private readonly IWasmOptimizationSettingsResolver _optimizationSettings =
@@ -109,15 +112,17 @@ internal sealed class CompilationPreparationBuilder(
             componentContract,
             options.Target);
         var argumentFactory = entry.EntryPoint is { } entryPoint
-            ? _argumentFactories.Resolve(options.EntryPointKind, entryPoint, types, methods)
+            ? _argumentFactories.Resolve(options.EntryPointKind, entryPoint, types, methods, _bodies.Create(metadata))
             : null;
         var exit = entry.EntryPoint is { } exitingEntryPoint
             ? _exits.Resolve(options.EntryPointKind, exitingEntryPoint.Signature.ReturnType, types, methods)
             : null;
         var reachabilityRoots = _stackTraceRoots.Provide(
             options.EmitStackTrace,
+            options.EmitTypeNames,
             types,
-            fields);
+            fields,
+            methods);
         foreach (var root in new[] { argumentFactory, exit })
         {
             if (root is { } method)

@@ -106,8 +106,8 @@ public sealed partial class SdkToolchainContractTests
         Assert.Contains("NetWasmWriteWitWorkerHostEntryTask", source, StringComparison.Ordinal);
         Assert.Contains("NetWasmWriteWorkerClientEntryTask", source, StringComparison.Ordinal);
         Assert.Contains(".worker-client.d.mts", source, StringComparison.Ordinal);
-        Assert.Contains("exception-type-map", source, StringComparison.Ordinal);
-        Assert.Contains("application/vnd.netwasm.exception-types+json;version=2", source,
+        Assert.Contains("type-symbols", source, StringComparison.Ordinal);
+        Assert.Contains("application/vnd.netwasm.type-symbols;version=1", source,
             StringComparison.Ordinal);
         Assert.Contains("MSBuildProjectDirectory", source, StringComparison.Ordinal);
     }

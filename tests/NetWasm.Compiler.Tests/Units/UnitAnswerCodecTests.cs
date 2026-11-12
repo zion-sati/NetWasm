@@ -142,6 +142,25 @@ public sealed class UnitPlanCodecTests
         }
         """;
 
+    // Delegates converted from other delegates bind their Invoke, by definition and, for a
+    // generic delegate, by canonical name (issue 223).
+    private const string Delegates = """
+        using System;
+
+        public delegate int Transform(int value);
+
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                Func<int, int> twice = value => value * 2;
+                var transform = new Transform(twice);
+                var back = new Func<int, int>(transform);
+                return back(input);
+            }
+        }
+        """;
+
     [Theory]
     [InlineData(WasmTarget.Wasm32, "base")]
     [InlineData(WasmTarget.Wasm64, "base")]
@@ -149,6 +168,7 @@ public sealed class UnitPlanCodecTests
     [InlineData(WasmTarget.Wasm32, "interop")]
     [InlineData(WasmTarget.Wasm64, "handles")]
     [InlineData(WasmTarget.Wasm32, "expressions")]
+    [InlineData(WasmTarget.Wasm64, "delegates")]
     public void KeptPlansReadBackAsTheCompileUsedThem(WasmTarget target, string program)
     {
         using var assets = TestAssets.Create();
@@ -171,6 +191,15 @@ public sealed class UnitPlanCodecTests
             actual.DelegateMulticastHelpers.OrderBy(pair => pair.Key, StringComparer.Ordinal));
         Assert.Equal(expected.ImportedMethods.OrderBy(pair => pair.Key.ToString()), actual.ImportedMethods.OrderBy(pair => pair.Key.ToString()));
         Assert.Equal(expected.JSImportForwarders.OrderBy(pair => pair.Key.ToString()), actual.JSImportForwarders.OrderBy(pair => pair.Key.ToString()));
+        Assert.Equal(expected.DelegateInvokeMethods.OrderBy(pair => pair.Key.ToString()),
+            actual.DelegateInvokeMethods.OrderBy(pair => pair.Key.ToString()));
+        Assert.Equal(expected.ConstructedDelegateInvokeMethods.OrderBy(pair => pair.Key, StringComparer.Ordinal),
+            actual.ConstructedDelegateInvokeMethods.OrderBy(pair => pair.Key, StringComparer.Ordinal));
+        if (program == "delegates")
+        {
+            Assert.NotEmpty(actual.DelegateInvokeMethods);
+            Assert.NotEmpty(actual.ConstructedDelegateInvokeMethods);
+        }
         Assert.Equal(expected.ManagedThrowFunctionIndex, actual.ManagedThrowFunctionIndex);
         Assert.Equal(expected.ManagedRethrowFunctionIndex, actual.ManagedRethrowFunctionIndex);
         Assert.Equal(used.ModuleData.StaticDataEnd, plans.ModuleData.StaticDataEnd);
@@ -208,6 +237,27 @@ public sealed class UnitPlanCodecTests
         Assert.NotEqual(default, UnitTargetFingerprint.Of(used));
     }
 
+    // Issue 226: an unmanaged calli's trampoline is a native import too, and the target names it.
+    [Fact]
+    public void PlansWithUnmanagedCallsAreNotReplayable()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedUnsafeSource("UnitPlans", """
+            public static unsafe class EntryPoint
+            {
+                public static int Run(int input) =>
+                    input == 0 ? 0 : ((delegate* unmanaged<int, int>)(nint)input)(input);
+            }
+            """);
+
+        var (kept, decoded, used) = Plans(assets, assembly, "EntryPoint", WasmTarget.Wasm32);
+
+        Assert.Equal("netwasm_calli_ii", Assert.Single(used.NativeImports.CallSites.Trampolines).Symbol);
+        Assert.Equal(9, kept.Length);
+        Assert.Null(decoded);
+        Assert.NotEqual(default, UnitTargetFingerprint.Of(used));
+    }
+
     [Theory]
     [InlineData("short")]
     [InlineData("magic")]
@@ -240,6 +290,7 @@ public sealed class UnitPlanCodecTests
         "kinds" => (assets.CompileOptimizedUnsafeSource("UnitPlans", UnitQueryKindTests.Source), "EntryPoint"),
         "interop" => (assets.CompileOptimizedSource("UnitPlans", Interop), "EntryPoint"),
         "expressions" => (assets.CompileOptimizedSource("UnitPlans", Expressions), "EntryPoint"),
+        "delegates" => (assets.CompileOptimizedSource("UnitPlans", Delegates), "EntryPoint"),
         _ => (Handles(assets), "MemberHandles.EntryPoint"),
     };
 

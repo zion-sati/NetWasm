@@ -20,6 +20,6 @@ internal interface IRuntimeFunctionAppender
         IFunctionIndexResolver functionIndices,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
         EntityKey? entryPointArgumentFactory = null,
-        EntityKey? localTimePreflight = null,
+        ImmutableArray<EntityKey> startupPreflights = default,
         EntityKey? processExit = null);
 }

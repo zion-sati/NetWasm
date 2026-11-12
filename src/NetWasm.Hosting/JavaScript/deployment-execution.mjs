@@ -7,13 +7,13 @@ import { createManagedExceptionOutput } from "./managed-exception-output.mjs";
 const factoryKeys = [
   "createFilesystem",
   "createOutputFinalization",
-  "createTimeZoneMaterializer",
+  "createSidecarMaterializer",
   "executeWithResources",
   "loadManifest",
   "prepareProviders",
   "prepareRawInterop",
   "resolveStrategy",
-  "selectTimeZone",
+  "selectSidecars",
   "validateRequest",
 ];
 const executionKeys = ["request", "signal", "stderr", "stdin", "stdout"];
@@ -50,7 +50,7 @@ export function createDeploymentExecution(options) {
       if (request.buildFingerprint !== manifest.buildFingerprint) {
         throw createContractError();
       }
-      selection = options.selectTimeZone({
+      selection = options.selectSidecars({
         artifacts: manifest.artifacts,
         environment: request.environment,
         runtimeFeatures: manifest.runtimeFeatures,
@@ -88,7 +88,7 @@ export function createDeploymentExecution(options) {
         signal: input.signal,
         releaseActions: output.releaseActions,
         createFilesystem: () => options.createFilesystem(request.grants.preopens),
-        createMaterializer: options.createTimeZoneMaterializer,
+        createMaterializer: options.createSidecarMaterializer,
         execute: async ({ filesystem, signal }) => {
           let providers;
           try {

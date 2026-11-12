@@ -59,9 +59,10 @@ internal sealed class ReachableProgramBuilder(
                 pair => pair.Key,
                 pair => EmptyRootMap(pair.Value.Method.Definition.Key),
                 StringComparer.Ordinal);
+        // Every delegate type whose Invoke is called, directly or not, or whose address a delegate
+        // binds, has an invoke helper.
         var delegateInvokeMethods = state.ManagedCallSites.Values
             .Where(site =>
-                site.Operation == ManagedCallOperation.Virtual &&
                 site.Target.Definition.Name == "Invoke" &&
                 delegateTypes.Recognize(site.Target.DeclaringType))
             .Select(site => site.Target)
@@ -111,7 +112,6 @@ internal sealed class ReachableProgramBuilder(
             NamedMemberDescriptors = state.NamedMemberDescriptors,
             RequiresTypeFacts = state.RequiresTypeFacts,
             RequiresGenericArguments = state.RequiresGenericArguments,
-            TypeNamePayload = state.TypeNamePayload,
             ConstructedStaticInitializers = [
                 ..state.ConstructedStaticInitializers
                     .Order(StringComparer.Ordinal)

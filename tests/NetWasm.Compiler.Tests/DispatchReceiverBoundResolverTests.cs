@@ -71,12 +71,55 @@ public sealed class DispatchReceiverBoundResolverTests
         Assert.Null(Resolve([Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(4)), Call(1)], [Specific]));
     }
 
+    // A struct's base.Equals(other) and base.GetHashCode() box the struct and call ValueType's
+    // method non-virtually; the dispatch on the receiver's type reaches only that struct
+    // (issue 223's class), not every boxed value type in the program.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ANonVirtualCallReachesOnlyTheTypeItsReceiverWasBoxedFrom(int arguments)
+    {
+        ImmutableArray<CilInstruction> loads =
+            [Instruction(1, CilOperation.LoadArgument, new CilOperand.Index(1)), Instruction(2, CilOperation.LoadNull, new CilOperand.None())];
+
+        Assert.Equal(Value, Resolve(
+            [Instruction(0, CilOperation.Box, new CilOperand.TypeIdentity(Value)), .. loads[..arguments], Instruction(arguments + 1, CilOperation.Call, new CilOperand.None())],
+            [], arguments: arguments));
+    }
+
+    public static TheoryData<string> UnprovenBoxes => ["no box", "first", "computed argument", "entered", "nullable", "reference", "open"];
+
+    [Theory]
+    [MemberData(nameof(UnprovenBoxes))]
+    public void ANonVirtualCallIsUnboundWhereTheBoxIsUnproven(string shape)
+    {
+        var box = Instruction(0, CilOperation.Box, new CilOperand.TypeIdentity(Value));
+        var call = Instruction(2, CilOperation.Call, new CilOperand.None());
+        var load = Instruction(1, CilOperation.LoadArgument, new CilOperand.Index(1));
+        ImmutableArray<CilInstruction> instructions = shape switch
+        {
+            "no box" => [Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)), load, call],
+            "first" => [load, call with { Offset = 1, NextOffset = 2 }],
+            "computed argument" => [box, Instruction(1, CilOperation.Duplicate, new CilOperand.None()), call],
+            "entered" => [box, load, call, Instruction(3, CilOperation.Branch, new CilOperand.BranchTarget(1))],
+            "nullable" => [box with { Operand = new CilOperand.TypeIdentity(CliTypeIdentity.GenericInstantiation(
+                CliTypeIdentity.Named(new("System.Private.CoreLib"), "System", "Nullable`1", isValueType: true), [Value])) }, load, call],
+            "reference" => [box with { Operand = new CilOperand.TypeIdentity(Specific) }, load, call],
+            _ => [box with { Operand = new CilOperand.TypeIdentity(CliTypeIdentity.GenericParameter(true, 0)) }, load, call],
+        };
+
+        Assert.Null(Resolve(instructions, [], arguments: shape == "first" ? 2 : 1, callIndex: shape == "entered" ? 2 : null));
+    }
+
     private static CliTypeIdentity? Resolve(
         ImmutableArray<CilInstruction> instructions,
         ImmutableArray<CliTypeIdentity> locals,
         bool argument = false,
         int? handlerAt = null,
-        int? filterAt = null)
+        int? filterAt = null,
+        int arguments = 0,
+        int? callIndex = null)
     {
         var caller = Method("Run", Owner, isStatic: false, parameters: [Specific]);
         var body = new CilMethodBody(caller.Definition, 2, [.. locals.Select(static type => type.StackKind)], instructions)
@@ -87,9 +130,10 @@ public sealed class DispatchReceiverBoundResolverTests
                 : [new(filterAt is null ? CilExceptionRegionKind.Catch : CilExceptionRegionKind.Filter,
                     0, 1, handlerAt ?? 0, 1, null, filterAt)],
         };
-        var declaration = Method("Invoke", Contract, isStatic: false, parameters: argument ? [Specific] : []);
-        return new DispatchReceiverBoundResolver(new FixedTypeOperands()).Resolve(
-            new ReachabilityInstructionRequest(caller, body), instructions.Length - 1, declaration);
+        var declaration = Method("Invoke", Contract, isStatic: false,
+            parameters: argument ? [Specific] : [.. Enumerable.Repeat(Specific, arguments)]);
+        return new DispatchReceiverBoundResolver(new FixedTypeOperands(), new NullableTypeResolver()).Resolve(
+            new ReachabilityInstructionRequest(caller, body), callIndex ?? instructions.Length - 1, declaration);
     }
 
     private static CilInstruction Call(int offset) =>

@@ -44,6 +44,25 @@ public sealed class ModuleImportCollectorTests
         Assert.Empty(parameters.CallbackFlags);
     }
 
+    // Issue 226: the unmanaged calli trampolines are runtime imports that follow the others.
+    [Fact]
+    public void UnmanagedCallTrampolinesAreRuntimeImportsAfterTheOthers()
+    {
+        var program = new FakeProgram();
+        var request = EmitterTestSupport.CreateEmissionRequest(program);
+        var callSites = NativeAbiTestSupport.CallSitePlanner().Plan(
+            [new(MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I8), "M", 0)], 1);
+
+        var imports = CreateCollector(program, new RecordingJavaScriptParameterTypeResolver()).Collect(new(request,
+            [Import("runtime", "first")], [], WasmTarget.Wasm32, [])
+        { NativeImports = NativeImportPlan.Empty with { CallSites = callSites } });
+
+        Assert.Equal(2, imports.Length);
+        Assert.Equal(new WasmFunctionImport(RuntimeAbi.RuntimeModule, "netwasm_calli_vl",
+            callSites.Trampolines[0].Type), imports[1]);
+        Assert.Equal([CliValueKind.I8, CliValueKind.NativeInt], imports[1].Type.Parameters.ToArray());
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]

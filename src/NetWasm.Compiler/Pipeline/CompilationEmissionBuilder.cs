@@ -10,6 +10,7 @@ using NetWasm.Compiler.Emission;
 using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.StackTraces;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Validation;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -38,7 +39,9 @@ internal sealed class CompilationEmissionBuilder(
     IManagedExceptionObjectProviderFactory exceptionObjects,
     IStackTraceSourceLocationReader stackTraceSourceLocations,
     IMethodOutlineProviderFactory outlines,
-    IUnitStoreCommitter unitCommitter) : ICompilationEmissionBuilder
+    IUnitStoreCommitter unitCommitter,
+    ITypeIdentityResolverFactory typeIdentities,
+    IRuntimeTypeSymbolTableBuilder typeSymbols) : ICompilationEmissionBuilder
 {
     private readonly IManagedWasmEmitterFactory _emitters = emitters ??
         throw new ArgumentNullException(nameof(emitters));
@@ -85,6 +88,10 @@ internal sealed class CompilationEmissionBuilder(
         throw new ArgumentNullException(nameof(outlines));
     private readonly IUnitStoreCommitter _unitCommitter = unitCommitter ??
         throw new ArgumentNullException(nameof(unitCommitter));
+    private readonly ITypeIdentityResolverFactory _typeIdentities = typeIdentities ??
+        throw new ArgumentNullException(nameof(typeIdentities));
+    private readonly IRuntimeTypeSymbolTableBuilder _typeSymbols = typeSymbols ??
+        throw new ArgumentNullException(nameof(typeSymbols));
 
     public CompilationEmission Emit(
         MetadataCompilationSnapshot metadata,
@@ -249,6 +256,15 @@ internal sealed class CompilationEmissionBuilder(
                 MulticastDispatchPolicy.Inline,
             SourceLocations = _stackTraceSourceLocations.Read(metadata, options),
         };
+        var typeSymbols = _typeSymbols.Build(layouts.Snapshot, _typeIdentities.Create(metadata), typeDefinitions);
+        request = request with
+        {
+            Sidecars = new WasmSidecarRequest(
+                options.ProgramFileName,
+                options.EmitTypeNames,
+                typeSymbols.Digest,
+                SidecarDescriptorSlot(analysis.Program, types, fields, staticFieldLayouts)),
+        };
         var emission = emitter.Emit(request);
         _invariants.Validate(emission.Module, options.Target);
         if (units is { Directory: { } directory, Change: { } change })
@@ -258,7 +274,27 @@ internal sealed class CompilationEmissionBuilder(
             units.Kept = new UnitKeptCompile(emission.Module, functions,
                 UnitPlanCodec.Encode(target, layouts.Snapshot, ProgramFacts(analysis.Program)), []);
         }
-        return new CompilationEmission(emission, lowering);
+        return new CompilationEmission(emission, lowering, typeSymbols);
+    }
+
+    // CoreLib's ProgramSidecars.s_descriptor, the word the runtime initializer fills with the sidecar
+    // descriptor's address; null when nothing reachable reads it.
+    private static int? SidecarDescriptorSlot(
+        ReachableProgram program,
+        ITypeRepository types,
+        IFieldRepository fields,
+        IStaticFieldLayoutProvider staticFields)
+    {
+        foreach (var key in program.Fields)
+        {
+            var field = fields.GetField(key);
+            if (!field.IsStatic || field.Name != "s_descriptor")
+                continue;
+            var type = types.GetTypeDefinition(field.DeclaringType);
+            if (type.Namespace == "System.Runtime.InteropServices" && type.Name == "ProgramSidecars")
+                return staticFields.GetStaticFieldLayout(key).Address;
+        }
+        return null;
     }
 
     // What a later compile's early cutoff derives an edited method's own facts from.

@@ -91,6 +91,31 @@ public sealed class DelegateBindingPlannerTests
         Assert.Empty(bindings);
     }
 
+    // A static method with one parameter more than the Invoke, a reference, closes over its first
+    // argument (ECMA-335 II.14.6.1): an extension method's group, text.Twice (issue 223's class).
+    [Fact]
+    public void PlannerBindsAStaticClosedOverItsFirstReferenceArgument()
+    {
+        var reference = Type("Reference");
+        var scalar = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var planner = new[]
+        {
+            new DelegateBindingPlanner(new RecordingRelationships(), new ManagedMethodIdentityFactory()),
+        }.Cast<IDelegateBindingPlanner>().Single();
+        var invoke = Method("Invoke", Type("Callback"), scalar, scalar);
+        var closed = Method("Closed", Type("Owner1"), scalar, reference, scalar);
+        var scalarFirst = Method("ScalarFirst", Type("Owner2"), scalar, scalar, scalar);
+        var instance = Method("Instance", Type("Owner3"), scalar, reference, scalar);
+        instance = instance with { Definition = instance.Definition with { IsStatic = false } };
+
+        var binding = Assert.Single(planner.Plan([invoke], [closed, scalarFirst, instance]));
+
+        Assert.Same(closed, binding.Target);
+        Assert.True(binding.ClosedOverFirstArgument);
+        Assert.True(binding.PassesTarget);
+        Assert.Equal(scalar, Assert.Single(binding.ParameterBindings).TargetType);
+    }
+
     [Fact]
     public void PlannerDeduplicatesAndOrdersInvokesAndTargets()
     {

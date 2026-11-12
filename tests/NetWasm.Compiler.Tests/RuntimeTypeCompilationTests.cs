@@ -156,7 +156,6 @@ public sealed class RuntimeTypeCompilationTests
                 target,
                 compilation.StaticDataEnd));
         Assert.True(compilation.Program.RequiresTypeFacts);
-        Assert.Equal(RuntimeTypeNamePayload.None, compilation.Program.TypeNamePayload);
         var factsLookups = compilation.Program.Methods.Values
             .Concat(compilation.Program.ConstructedMethods.Values)
             .SelectMany(method => method.Body.Instructions)
@@ -210,17 +209,16 @@ public sealed class RuntimeTypeCompilationTests
                         closedPair[1] == typeof(string)) passed |= 4;
 
                     System.Type[] open = typeof(Box<>).GetGenericArguments();
+                    // Without names a parameter reads as its type ID, as every type does (issue 225).
                     if (open.Length == 1 &&
-                        open[0].Name == "T" &&
+                        open[0].Name.StartsWith("type#") &&
                         open[0].ContainsGenericParameters &&
                         !open[0].IsGenericType &&
-                        open[0].Namespace == null &&
-                        open[0].FullName == null) passed |= 8;
+                        open[0].Namespace == null) passed |= 8;
 
                     System.Type[] openPair = typeof(Pair<,>).GetGenericArguments();
                     if (openPair.Length == 2 &&
-                        openPair[0].Name == "TFirst" &&
-                        openPair[1].Name == "TSecond") passed |= 16;
+                        openPair[0].Name != openPair[1].Name) passed |= 16;
 
                     System.Type other = typeof(Other<>).GetGenericArguments()[0];
                     if (open[0] != other) passed |= 32;
@@ -724,37 +722,22 @@ public sealed class RuntimeTypeCompilationTests
             [assets.CoreLib],
             "RuntimeTypeNamesFixture.EntryPoint",
             "Run",
-            [],
-            Target: target));
+            [new RequestedExport("run", "RuntimeTypeNamesFixture.EntryPoint", "Run")],
+            Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EmitTypeNames: true));
 
-        Assert.Equal(
-            63,
-            ExecuteWithStandardWasiNode(
-                compilation.ApplicationModule,
-                assets.Directory,
-                0,
-                target,
-                compilation.StaticDataEnd));
-        Assert.Equal(
-            RuntimeTypeNamePayload.Name |
-                RuntimeTypeNamePayload.Namespace |
-                RuntimeTypeNamePayload.FullName |
-                RuntimeTypeNamePayload.DisplayName,
-            compilation.Program.TypeNamePayload);
-        Assert.True(compilation.Program.RequiresTypeFacts);
-        var coreLibIdentity = System.Reflection.AssemblyName
-            .GetAssemblyName(assets.CoreLib)
-            .FullName;
-        Assert.Contains(
-            "RuntimeTypeNamesFixture.Box`1[[System.Int32, " +
-                coreLibIdentity + "]][]",
-            compilation.Layouts.StaticData.Strings.Keys);
+        // The names come from the type-symbols sidecar; the module carries none (issue 225), so
+        // without the sidecar it keeps running with every name read as a type ID.
+        Assert.Equal(63, RunWithTypeSymbols(compilation, assets.Directory, target));
+        Assert.Equal(0, RunWithTypeSymbols(compilation, assets.Directory, target, loadSidecar: false));
     }
 
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void BaseVirtualCallsRetainOnlyTypeNameAndDisplayName(WasmTarget target)
+    public void BaseVirtualCallsReadTheSidecarNames(WasmTarget target)
     {
         using var assets = TestAssets.Create();
         const string expectedName = "Box`1";
@@ -783,30 +766,17 @@ public sealed class RuntimeTypeCompilationTests
             [assets.CoreLib],
             "RuntimeTypeNamesViaBaseCallsFixture.EntryPoint",
             "Run",
-            [],
-            Target: target));
+            [new RequestedExport("run", "RuntimeTypeNamesViaBaseCallsFixture.EntryPoint", "Run")],
+            Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EmitTypeNames: true));
 
         Assert.Equal(
             (expectedName.Length * 100) + expectedDisplayName.Length,
-            ExecuteWithStandardWasiNode(
-                compilation.ApplicationModule,
-                assets.Directory,
-                0,
-                target,
-                compilation.StaticDataEnd));
-        Assert.Equal(
-            RuntimeTypeNamePayload.Name | RuntimeTypeNamePayload.DisplayName,
-            compilation.Program.TypeNamePayload);
-        Assert.Contains(expectedName, compilation.Layouts.StaticData.Strings.Keys);
-        Assert.Contains(expectedDisplayName, compilation.Layouts.StaticData.Strings.Keys);
-        Assert.DoesNotContain(
-            "RuntimeTypeNamesViaBaseCallsFixture",
-            compilation.Layouts.StaticData.Strings.Keys);
-        Assert.DoesNotContain(
-            compilation.Layouts.StaticData.Strings.Keys,
-            value => value.StartsWith(
-                    "RuntimeTypeNamesViaBaseCallsFixture.Box`1[[",
-                    StringComparison.Ordinal));
+            RunWithTypeSymbols(compilation, assets.Directory, target));
+        Assert.DoesNotContain(expectedName, compilation.Layouts.StaticData.Strings.Keys);
+        Assert.DoesNotContain(expectedDisplayName, compilation.Layouts.StaticData.Strings.Keys);
     }
 
     [Theory]
@@ -832,6 +802,7 @@ public sealed class RuntimeTypeCompilationTests
             [],
             Target: target));
 
+        // Without names a type has no namespace, as a global type has none.
         Assert.Equal(
             1,
             ExecuteWithStandardWasiNode(
@@ -840,11 +811,31 @@ public sealed class RuntimeTypeCompilationTests
                 0,
                 target,
                 compilation.StaticDataEnd));
-        Assert.Equal(
-            RuntimeTypeNamePayload.Namespace,
-            compilation.Program.TypeNamePayload);
+        Assert.Equal(1, RunWithTypeSymbols(NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "EntryPoint",
+            "Run",
+            [new RequestedExport("run", "EntryPoint", "Run")],
+            Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EmitTypeNames: true)), assets.Directory, target));
         Assert.DoesNotContain("EntryPoint", compilation.Layouts.StaticData.Strings.Keys);
     }
+
+    // Reading the sidecar takes wasi:filesystem, which the platform world provides.
+    private static int RunWithTypeSymbols(
+        CompilationResult compilation, string directory, WasmTarget target, bool loadSidecar = true) =>
+        ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule,
+            directory,
+            0,
+            target,
+            compilation.StaticDataEnd,
+            System.Collections.Immutable.ImmutableDictionary<string, string>.Empty,
+            timeZoneAssetPath: null,
+            typeSymbols: loadSidecar ? compilation.TypeSymbols!.Bytes : null);
 
 
     private static void AssertContainsStaticEntryPointMetadata(string assemblyPath)

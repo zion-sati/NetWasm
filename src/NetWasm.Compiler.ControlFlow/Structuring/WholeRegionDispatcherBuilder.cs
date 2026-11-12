@@ -22,10 +22,11 @@ internal sealed class WholeRegionDispatcherBuilder(ICilConditionalBranchClassifi
             {
                 var branchSelectsFirst =
                     block.Terminator.Operation != CilOperation.BranchIfFalse;
+                var (taken, notTaken) = state.Graph.GetConditionalTargets(node);
                 return new StructuredDispatcherBlockDraft(
                     block,
-                    branchSelectsFirst ? successors[0] : successors[1],
-                    branchSelectsFirst ? successors[1] : successors[0])
+                    branchSelectsFirst ? taken : notTaken,
+                    branchSelectsFirst ? notTaken : taken)
                 {
                     IsOriginal = state.ClaimedBlockBodies.Add(block.Index),
                 };

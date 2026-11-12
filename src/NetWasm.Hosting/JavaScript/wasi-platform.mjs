@@ -1,5 +1,5 @@
 import { readInputSource, validateInputSource } from "./input-source.mjs";
-import { validateOutputSink, writeStreamToSink } from "./output-sink-stream.mjs";
+import { dropGuestStream, validateOutputSink, writeStreamToSink } from "./output-sink-stream.mjs";
 
 // The WASI 0.3 interfaces NetWasm's JavaScript hosts supply to one execution. The command
 // line, environment and standard streams are the execution request's; clocks and random
@@ -141,25 +141,15 @@ export function createWasiPlatform(services) {
         if (released) return;
         released = true;
         await Promise.race([Promise.allSettled([...drains]), nextTurn()]);
-        for (const stream of openStreams) dropStream(stream);
+        for (const stream of openStreams) dropGuestStream(stream);
         openStreams.clear();
         for (const timer of timers) clearTimeout(timer);
         timers.clear();
         // A read the guest left waiting no longer holds the host's input open.
-        if (input !== null) dropStream(input);
+        if (input !== null) dropGuestStream(input);
       },
     });
   });
-}
-
-function dropStream(stream) {
-  const dispose = stream[Symbol.dispose] ?? stream[Symbol.for("dispose")];
-  try {
-    if (typeof dispose === "function") dispose.call(stream);
-    else if (typeof stream.return === "function") stream.return();
-  } catch {
-    // The stream's guest already went away; nothing is left to release.
-  }
 }
 
 function createExit(code) {

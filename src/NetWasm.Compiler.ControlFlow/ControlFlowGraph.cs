@@ -140,4 +140,14 @@ public sealed record ControlFlowGraph
 
     public BasicBlock GetBlock(int index) => Blocks[index];
     public BasicBlock GetBlockAtOffset(int offset) => _blocksByOffset[offset];
+
+    // Where the conditional branch ending a block goes when taken and when not. A branch to the
+    // next instruction has a single successor, which both reach.
+    public (int Taken, int NotTaken) GetConditionalTargets(int block) => Successors[block] switch
+    {
+        [var taken, var notTaken] => (taken, notTaken),
+        [var both] => (both, both),
+        var successors => throw new InvalidOperationException(
+            $"Block {block} has {successors.Length} successors, not the one or two of a conditional branch."),
+    };
 }

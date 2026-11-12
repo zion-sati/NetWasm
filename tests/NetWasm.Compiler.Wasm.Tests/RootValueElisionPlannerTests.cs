@@ -11,7 +11,7 @@ using static EmitterTestSupport;
 public sealed class RootValueElisionPlannerTests
 {
     private readonly IRootValueElisionPlanner _planner =
-        Assert.IsAssignableFrom<IRootValueElisionPlanner>(new RootValueElisionPlanner());
+        Assert.IsAssignableFrom<IRootValueElisionPlanner>(new RootValueElisionPlanner(new StructuredBlockPredecessorReader()));
     private static readonly RootSource Source = new(RootSourceKind.Argument, 0);
 
     [Fact]
@@ -66,6 +66,47 @@ public sealed class RootValueElisionPlannerTests
         Assert.Equal([0], plan[1]);
         Assert.Contains(0, plan[2]);
         Assert.Equal(!conditional, plan[2].Contains(1));
+    }
+
+    // A stable variable published on every ordinary path into a block, and not assigned since,
+    // still holds its slot there; an assignment on one path means it is published again.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PublishedValuesFollowOrdinaryEdgesAndMeetAtJoins(bool oneArmAssigns)
+    {
+        var context = Context([new(0, [Source], []), new(2, [Source], []), new(6, [Source], [])]);
+        var method = BlockMethods.Of(
+            BlockMethods.Block(0, [I(0, CilOperation.Call)], new StructuredConditionalExit(
+                new(1, CilOperation.BranchIfTrue, 0, CliValueKind.I4, null), new(1), new(2))),
+            BlockMethods.Block(1, [I(2, CilOperation.Call)], new StructuredBranchExit(3, new(3))),
+            BlockMethods.Block(2, oneArmAssigns ? [I(4, CilOperation.StoreArgument, new CilOperand.Index(0))] : [I(4, CilOperation.Nop)],
+                new StructuredFallthroughExit(new(3))),
+            BlockMethods.Block(3, [I(6, CilOperation.Call)], new StructuredTerminalExit(I(7, CilOperation.Return))));
+
+        var plan = _planner.Plan(method, context);
+
+        Assert.Empty(plan[0]);
+        Assert.Equal([0], plan[2]);
+        Assert.Equal(!oneArmAssigns, plan[6].Contains(0));
+    }
+
+    [Fact]
+    public void ADeferredRootFrameKeepsPublishedValuesWithinBlocks()
+    {
+        var context = Context([new(0, [Source], []), new(2, [Source], [])]) with
+        {
+            TerminalBranchValueFramePlacement = new(new TerminalBranchValueFramePlan(
+                new(new(0), StructuredBlockRole.Owner), StructuredSequence.Empty, StructuredSequence.Empty, true, [])
+            {
+                DefersRootFrame = true,
+            }, new(0, [], [], [], [])),
+        };
+        var method = BlockMethods.Of(
+            BlockMethods.Block(0, [I(0, CilOperation.Call)], new StructuredFallthroughExit(new(1))),
+            BlockMethods.Block(1, [I(2, CilOperation.Call)], new StructuredTerminalExit(I(3, CilOperation.Return))));
+
+        Assert.Empty(_planner.Plan(method, context)[2]);
     }
 
     [Fact]

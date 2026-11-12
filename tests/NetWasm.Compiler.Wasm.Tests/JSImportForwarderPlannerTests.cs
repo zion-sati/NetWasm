@@ -1,7 +1,5 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
-using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -13,13 +11,15 @@ public sealed class JSImportForwarderPlannerTests
 {
     private static readonly EntityKey SecondImportKey = new(Assembly, 0x06000009);
 
+    // A delegate or function pointer names its target by loading its address: every JSImport
+    // whose address the program loads gets a forwarder, and no other method does.
     [Fact]
-    public void LeavesThePlanUnchangedWithoutDelegateBoundJSImports()
+    public void LeavesThePlanUnchangedWithoutAddressTakenJSImports()
     {
         var program = new FakeProgram();
         var (request, plan) = WasmModulePlanInvariantValidatorTests.CreateNativePlan();
         var ordinary = Instance(program.GetMethod(EntryKey));
-        request = request with { DelegateBindings = [Binding(ordinary)] };
+        request = request with { CallableMethods = Callables(ordinary) };
 
         var planned = Planner(program).Plan(request, plan);
 
@@ -27,7 +27,7 @@ public sealed class JSImportForwarderPlannerTests
     }
 
     [Fact]
-    public void PlacesOneForwarderPerDelegateBoundJSImportBeforeStaticInitializers()
+    public void PlacesOneForwarderPerAddressTakenJSImportBeforeStaticInitializers()
     {
         var program = new FakeProgram();
         var (request, plan) = WasmModulePlanInvariantValidatorTests.CreateNativePlan();
@@ -41,7 +41,7 @@ public sealed class JSImportForwarderPlannerTests
         request = request with
         {
             JSImportMethods = [second.Definition, first.Definition],
-            DelegateBindings = [Binding(second), Binding(first), Binding(first), Binding(ordinary)],
+            CallableMethods = Callables(second, first, ordinary),
         };
         plan = plan with { StaticInitializerFunctionBase = 20 };
 
@@ -56,7 +56,7 @@ public sealed class JSImportForwarderPlannerTests
     }
 
     [Fact]
-    public void RejectsADelegateBoundCallbackRegisteringJSImport()
+    public void RejectsAnAddressTakenCallbackRegisteringJSImport()
     {
         var program = new FakeProgram();
         var (request, plan) = WasmModulePlanInvariantValidatorTests.CreateNativePlan();
@@ -64,7 +64,7 @@ public sealed class JSImportForwarderPlannerTests
         request = request with
         {
             JSImportMethods = [import.Definition],
-            DelegateBindings = [Binding(import)],
+            CallableMethods = Callables(import),
             HostCallbacks = [new HostCallbackDeclaration(EntryKey, 0, import, "callback")],
         };
 
@@ -76,7 +76,7 @@ public sealed class JSImportForwarderPlannerTests
     }
 
     [Fact]
-    public void RejectsADelegateBoundAsynchronousJSImport()
+    public void RejectsAnAddressTakenAsynchronousJSImport()
     {
         var program = new FakeProgram();
         var (request, plan) = WasmModulePlanInvariantValidatorTests.CreateNativePlan();
@@ -84,7 +84,7 @@ public sealed class JSImportForwarderPlannerTests
         request = request with
         {
             JSImportMethods = [import.Definition],
-            DelegateBindings = [Binding(import)],
+            CallableMethods = Callables(import),
             JavaScriptAsyncBindings = ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty.Add(
                 EntryKey,
                 new JavaScriptAsyncMethodBinding(
@@ -111,15 +111,6 @@ public sealed class JSImportForwarderPlannerTests
         [],
         method.Signature);
 
-    private static ManagedDelegateBinding Binding(MethodInstanceModel target)
-    {
-        var type = CliTypeIdentity.FromStackKind(CliValueKind.I4);
-        return new(
-            new ManagedMethodIdentity("invoke"),
-            new ManagedMethodIdentity(target.CanonicalName),
-            target,
-            target,
-            [],
-            new(type, type, ManagedDelegateAdaptation.Identity));
-    }
+    private static Dictionary<string, MethodInstanceModel> Callables(params MethodInstanceModel[] targets) =>
+        targets.ToDictionary(target => target.CanonicalName, StringComparer.Ordinal);
 }

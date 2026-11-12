@@ -227,7 +227,7 @@ internal sealed class TimeZoneInfoFacadeExecutionHarness(
         string? WitPath,
         string? WitWorld,
         bool EmitStackTrace,
-        string? StackTraceSymbolsPath);
+        string? MethodSymbolsPath);
 
     private sealed record ExportRequest(
         string Name,

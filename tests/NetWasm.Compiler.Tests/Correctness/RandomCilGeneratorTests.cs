@@ -30,6 +30,25 @@ public sealed class RandomCilGeneratorTests
             block => block.EntryStack.AsSpan().SequenceEqual([CliValueKind.I4]));
     }
 
+    // Each program branches to its next block with every conditional branch, the shape a
+    // Debug build emits for an if whose body is a removed call (issue 221).
+    [Fact]
+    public void EveryProgramBranchesToTheNextBlockWithEveryConditionalBranch()
+    {
+        foreach (var seed in RandomCilFixtureFactory.PilotSeeds)
+        {
+            var blocks = _generator.Generate(seed).Blocks;
+            var operations = blocks.Zip(blocks.Skip(1))
+                .Where(pair => pair.First.Instructions[^1].Operand is GeneratedCilOperand.BlockTarget target &&
+                    target.BlockId == pair.Second.Id && pair.First.Instructions[^1].Operation != CilOperation.Branch)
+                .Select(pair => pair.First.Instructions[^1].Operation)
+                .ToArray();
+
+            Assert.Equal(12, operations.Length);
+            Assert.Equal(12, operations.Distinct().Count());
+        }
+    }
+
     [Fact]
     public void FixedPilotSeedsExerciseEveryGeneratedInstructionFamily()
     {

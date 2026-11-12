@@ -4,8 +4,11 @@ namespace NetWasm.Compiler.Metadata;
 
 internal interface IMetadataCallSiteSignatureResolver
 {
-    MethodSignatureModel Resolve(
+    // The calli at offset in method (for diagnostics) reads the call site metadataToken names.
+    CilOperand.CallSite Resolve(
         MetadataAssemblySnapshot source,
         int metadataToken,
-        CliGenericContext genericContext);
+        CliGenericContext genericContext,
+        string method,
+        int offset);
 }

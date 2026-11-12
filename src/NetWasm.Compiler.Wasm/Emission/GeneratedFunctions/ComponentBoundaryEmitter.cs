@@ -4,7 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Encoding;
-using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.LocalTime;
+using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.Startup;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
@@ -18,15 +18,16 @@ internal sealed class ComponentBoundaryEmitter(
     IRuntimeImportResolver runtimeImports,
     IRuntimeStateInitializer runtimeState,
     ICanonicalAbiFunctionTypePlanner canonicalTypes,
-    ILocalTimePreflightCallEmitter localTimePreflight,
-    ILocalTimePreflightMethodSelector localTimeMethods,
+    IStartupPreflightCallEmitter startupPreflights,
+    IStartupPreflightMethodSelector startupMethods,
     IGeneratedFunctionWriterFactory writers) : IComponentBoundaryEmitter
 {
     private readonly IRuntimeImportResolver _runtimeImports = runtimeImports;
     private readonly IRuntimeStateInitializer _runtimeState = runtimeState;
     private readonly ICanonicalAbiFunctionTypePlanner _canonicalTypes = canonicalTypes;
-    private readonly ILocalTimePreflightCallEmitter _localTimePreflight =
-        localTimePreflight;
+    private readonly IStartupPreflightCallEmitter _startupPreflights =
+        startupPreflights;
+    private readonly IStartupPreflightMethodSelector _startupMethods = startupMethods;
 
     public ComponentBoundaryArtifacts Emit(
         WasmEmissionRequest request,
@@ -143,11 +144,13 @@ internal sealed class ComponentBoundaryEmitter(
         var body = writers.Create();
         body.Bytes.Write([0]);
         _runtimeState.Initialize(body, initialization);
-        var usesLocalTime = LocalTimePreflightPlacement.RunsInProcessEntry(request)
-            ? localTimeMethods.Select(request) is not null
-            : _localTimePreflight.Emit(body, request, functionIndices);
+        var preflights = _startupMethods.Select(request);
+        if (!StartupPreflightPlacement.RunsInProcessEntry(request))
+        {
+            _startupPreflights.Emit(body, preflights.Methods, functionIndices);
+        }
         body.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        return (body.Snapshots.Read(), usesLocalTime);
+        return (body.Snapshots.Read(), preflights.UsesLocalTime);
     }
 
     private byte[] EmitNoOp()

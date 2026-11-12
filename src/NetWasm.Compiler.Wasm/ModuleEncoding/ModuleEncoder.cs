@@ -243,26 +243,70 @@ public sealed class ModuleEncoder : IModuleEncoder
         _unsigned.Encode(payload, (uint)functions.Count);
         foreach (var function in functions)
         {
-            RequireLoadableBody(function);
+            RequireLoadableFunction(function);
             _unsigned.Encode(payload, (uint)function.Body.Length);
             payload.Write(function.Body);
         }
         _sections.Write(module, 10, _snapshotReaderFactory(payloadBuffer).Read());
     }
 
-    // Engines refuse to compile a module containing a larger function body, and
-    // the validator after linking can only name its byte offset.
+    // Engines refuse to compile a module containing a larger function, and the
+    // validator after linking can only name its byte offset.
     internal const int MaximumFunctionBodySize = 7_654_321;
+    internal const int MaximumFunctionParameters = 1_000;
+    // Its parameters count among a function's locals, as V8 and Wasmtime count them.
+    internal const int MaximumFunctionLocals = 50_000;
 
-    private static void RequireLoadableBody(WasmFunctionDefinition function)
+    private static void RequireLoadableFunction(WasmFunctionDefinition function)
     {
+        var parameters = function.Type.Parameters.Length;
+        if (parameters > MaximumFunctionParameters)
+        {
+            throw Limit($"the method compiles to a WebAssembly function with {parameters:N0} parameters, over the " +
+                $"{MaximumFunctionParameters:N0} that browsers, Node and Wasmtime accept; pass the values in fewer " +
+                "parameters, for example in an array or an object", function.Name);
+        }
+        var locals = parameters + DeclaredLocals(function.Body);
+        if (locals > MaximumFunctionLocals)
+        {
+            throw Limit($"the method compiles to a WebAssembly function with {locals:N0} locals, over the " +
+                $"{MaximumFunctionLocals:N0} that browsers, Node and Wasmtime accept; split it into smaller methods",
+                function.Name);
+        }
         if (function.Body.Length > MaximumFunctionBodySize)
         {
-            throw new CompilerException(new CompilerDiagnostic(
-                DiagnosticCode.FunctionBodyLimit,
-                $"the method compiles to a {function.Body.Length:N0}-byte WebAssembly function, over the " +
+            throw Limit($"the method compiles to a {function.Body.Length:N0}-byte WebAssembly function, over the " +
                 $"{MaximumFunctionBodySize:N0}-byte limit that browsers and Node enforce; split it into smaller methods",
-                function.Name));
+                function.Name);
+        }
+
+        static CompilerException Limit(string message, string method) =>
+            new(new CompilerDiagnostic(DiagnosticCode.FunctionLimit, message, method));
+    }
+
+    // A body starts with its locals: a count of runs, each a count and a value type. A reference
+    // type that names its heap type (0x63, 0x64) carries the heap type after it.
+    private static long DeclaredLocals(byte[] body)
+    {
+        var position = 0;
+        var runs = ReadUnsigned(body, ref position);
+        long locals = 0;
+        for (ulong run = 0; run < runs; run++)
+        {
+            locals += (long)ReadUnsigned(body, ref position);
+            if (body[position++] is 0x63 or 0x64) ReadUnsigned(body, ref position);
+        }
+        return locals;
+    }
+
+    private static ulong ReadUnsigned(byte[] bytes, ref int position)
+    {
+        ulong value = 0;
+        for (var shift = 0; ; shift += 7)
+        {
+            var next = bytes[position++];
+            value |= (ulong)(next & 0x7f) << shift;
+            if ((next & 0x80) == 0) return value;
         }
     }
 

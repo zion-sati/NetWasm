@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { readManagedExceptionDetails } from "./managed-exception-details.mjs";
 import { createManagedExceptionCapture } from "./managed-exception-capture.mjs";
 import { createManagedExceptionPayloadConsumer } from "./managed-exception-payload-consumer.mjs";
 import { createManagedExceptionTypeResolver } from "./managed-exception-type-resolver.mjs";
+import { symbolSidecar, typeSymbol } from "./symbol-sidecar-reader.test.mjs";
 
 const details = (overrides = {}) => ({ typeId: 7, typeName: null, message: "message", stackTrace: null, ...overrides });
 
@@ -128,23 +128,18 @@ test("consumption releases malformed payloads and propagates owned release or lo
   }
 });
 
-test("type resolution verifies artifacts once and preserves numeric fallback", async () => {
-  const digest = bytes => createHash("sha256").update(bytes).digest("hex");
-  const mapBytes = new TextEncoder().encode(JSON.stringify({ schemaVersion: 2, buildId: "build",
-    entries: [{ typeId: 7, displayName: "System.FormatException", canonicalIdentity: "format", assemblyIdentity: "core" }] }));
-  const wasmBytes = new Uint8Array([1]);
+test("type resolution reads the type-symbols sidecar once and preserves numeric fallback", async () => {
   let loads = 0;
-  const resolve = createManagedExceptionTypeResolver({ crypto: webcrypto, loadArtifacts: async () => {
+  const resolve = createManagedExceptionTypeResolver({ loadArtifacts: async () => {
     loads++;
-    return { manifest: { schemaVersion: 1, buildId: "build", wasmSha256: digest(wasmBytes),
-      exceptionTypeMapSha256: digest(mapBytes) }, mapBytes, wasmBytes };
+    return { typeSymbols: symbolSidecar(1, [typeSymbol(7, "System.FormatException")]) };
   } });
   assert.deepEqual(await Promise.all([resolve(7), resolve(8)]), ["System.FormatException", null]);
   assert.equal(await resolve(7), "System.FormatException");
   assert.equal(loads, 1);
   for (const typeId of [0, -1, 1.5, 0x80000000]) await assert.rejects(resolve(typeId), TypeError);
   for (const loadArtifacts of [() => { throw new Error("missing"); }, () => ({}), () => null]) {
-    const fallback = createManagedExceptionTypeResolver({ loadArtifacts, crypto: webcrypto });
+    const fallback = createManagedExceptionTypeResolver({ loadArtifacts });
     assert.equal(await fallback(7), null);
     assert.equal(await fallback(8), null);
   }

@@ -49,6 +49,30 @@ public sealed class QualifiedProcessRunnerTests
     }
 
     [Fact]
+    public void WaitsForOutputThatArrivesSecondsAfterTheExit()
+    {
+        // A descendant holds the pipes for three seconds after the process exits, as a stalled
+        // reader on a loaded host does; the output is complete only once they close.
+        var result = Run("printf early; (sleep 3; printf late) &", TimeSpan.FromSeconds(30));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(QualifiedProcessCompletion.Exited, result.Completion);
+        Assert.Equal("earlylate", result.StandardOutput);
+    }
+
+    [Fact]
+    public void ReportsPipesStillOpenAfterTheTimeout()
+    {
+        var result = Run("printf early; (sleep 5) &", TimeSpan.FromMilliseconds(500));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(QualifiedProcessCompletion.LaunchFailed, result.Completion);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("process output pipes did not close within 2000 ms", result.CleanupFailure);
+        Assert.IsType<TimeoutException>(result.LaunchException);
+    }
+
+    [Fact]
     public void TimesOutAndKillsTheProcessTree()
     {
         var directory = CorrectnessTestAssets.CreateDirectory();

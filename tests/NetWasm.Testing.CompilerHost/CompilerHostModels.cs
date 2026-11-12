@@ -21,7 +21,7 @@ internal sealed record CompilationRequest(
     string? WitPath = null,
     string? WitWorld = null,
     bool EmitStackTrace = false,
-    string? StackTraceSymbolsPath = null,
+    string? MethodSymbolsPath = null,
     CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
     bool CollectCompilerMetrics = true,
     string? IntermediateOutputPath = null,

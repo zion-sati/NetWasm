@@ -15,8 +15,12 @@ internal interface IDispatchReceiverBoundResolver
 // takes no arguments, the declared type of what the instruction before it
 // pushes. A foreach over IEnumerable<T> keeps its enumerator in a local of
 // type IEnumerator<T>, so its MoveNext and Dispose reach only enumerators of
-// T rather than every IEnumerator and IDisposable in the program.
-internal sealed class DispatchReceiverBoundResolver(ITypeOperandResolver typeOperands) : IDispatchReceiverBoundResolver
+// T rather than every IEnumerator and IDisposable in the program. A non-virtual call that
+// dispatches on its receiver's exact type (a struct's base.Equals) reaches only the type the
+// receiver was boxed from, where a box pushed it and each argument after it is one plain load.
+internal sealed class DispatchReceiverBoundResolver(
+    ITypeOperandResolver typeOperands,
+    INullableTypeResolver nullableTypes) : IDispatchReceiverBoundResolver
 {
     public CliTypeIdentity? Resolve(ReachabilityInstructionRequest request, int callIndex, MethodInstanceModel declaration)
     {
@@ -25,6 +29,10 @@ internal sealed class DispatchReceiverBoundResolver(ITypeOperandResolver typeOpe
         if (callIndex <= 0)
         {
             return null;
+        }
+        if (request.Body.Instructions[callIndex].Operation == CilOperation.Call)
+        {
+            return BoxedReceiver(request, callIndex, declaration);
         }
 
         var previous = request.Body.Instructions[callIndex - 1];
@@ -40,6 +48,30 @@ internal sealed class DispatchReceiverBoundResolver(ITypeOperandResolver typeOpe
             bound.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation or
                 CliTypeShape.SzArray or CliTypeShape.Array
             ? bound
+            : null;
+    }
+
+    private CliTypeIdentity? BoxedReceiver(ReachabilityInstructionRequest request, int callIndex, MethodInstanceModel declaration)
+    {
+        var instructions = request.Body.Instructions;
+        var producer = callIndex - 1 - declaration.Signature.ParameterSignatureTypes.Length;
+        if (producer < 0 || instructions[producer].Operation != CilOperation.Box)
+        {
+            return null;
+        }
+        for (var index = producer + 1; index <= callIndex; index++)
+        {
+            if (index < callIndex && instructions[index].Operation is not (
+                    CilOperation.LoadArgument or CilOperation.LoadLocal or CilOperation.LoadNull or CilOperation.LoadString) ||
+                IsEntered(request.Body, instructions[index].Offset))
+            {
+                return null;
+            }
+        }
+        // Boxing Nullable<T> pushes a boxed T or null, never a Nullable<T>.
+        var boxed = typeOperands.Resolve(instructions[producer], request.Method);
+        return boxed is { IsValueType: true, ContainsGenericParameters: false } && nullableTypes.Resolve(boxed) is null
+            ? boxed
             : null;
     }
 

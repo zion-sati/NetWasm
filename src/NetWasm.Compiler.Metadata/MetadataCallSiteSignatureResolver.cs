@@ -6,17 +6,23 @@ namespace NetWasm.Compiler.Metadata;
 
 internal sealed class MetadataCallSiteSignatureResolver : IMetadataCallSiteSignatureResolver
 {
-    public MethodSignatureModel Resolve(
+    private const string CallConvCdecl = "System.Runtime.CompilerServices.CallConvCdecl";
+
+    public CilOperand.CallSite Resolve(
         MetadataAssemblySnapshot source,
         int metadataToken,
-        CliGenericContext genericContext)
+        CliGenericContext genericContext,
+        string method,
+        int offset)
     {
         var handle = MetadataTokens.EntityHandle(metadataToken);
         if (handle.Kind != HandleKind.StandaloneSignature)
         {
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.UnsupportedMetadata,
-                $"calli token 0x{metadataToken:x8} is not a standalone signature"));
+                $"calli token 0x{metadataToken:x8} is not a standalone signature",
+                method,
+                offset));
         }
 
         var signature = source.Reader.GetStandaloneSignature(
@@ -26,13 +32,34 @@ internal sealed class MetadataCallSiteSignatureResolver : IMetadataCallSiteSigna
                     source.Reader,
                     source.AssemblyIdentityAliases),
                 genericContext);
-        if (signature.Header.CallingConvention != SignatureCallingConvention.Default)
+        // An unmanaged pointer uses the platform's C ABI, as a DllImport does: its own convention
+        // (unmanaged, unmanaged[Cdecl]) or Cdecl named once as a modifier of the return type.
+        var convention = signature.Header.CallingConvention;
+        var returnType = signature.ReturnType;
+        var modifiers = 0;
+        while (returnType.Shape == CliTypeShape.Modified)
         {
-            throw new CompilerException(new CompilerDiagnostic(
-                DiagnosticCode.UnsupportedMetadata,
-                $"calli calling convention '{signature.Header.CallingConvention}' is not supported"));
+            if (convention != SignatureCallingConvention.Unmanaged ||
+                returnType.CustomModifier!.FullName != CallConvCdecl || ++modifiers != 1)
+            {
+                throw Unsupported(returnType.CustomModifier!.FullName ?? "a modifier");
+            }
+            returnType = returnType.ElementType!;
+        }
+        if (convention is not (SignatureCallingConvention.Default or
+            SignatureCallingConvention.CDecl or SignatureCallingConvention.Unmanaged))
+        {
+            throw Unsupported(convention.ToString());
         }
 
-        return new MethodSignatureModel(signature.ReturnType, signature.ParameterTypes);
+        return new(
+            new MethodSignatureModel(returnType, signature.ParameterTypes),
+            convention != SignatureCallingConvention.Default);
+
+        CompilerException Unsupported(string name) => new(new CompilerDiagnostic(
+            DiagnosticCode.NativeInterop,
+            $"calli calling convention '{name}' is not supported; unmanaged function pointers use the default C ABI or Cdecl",
+            method,
+            offset));
     }
 }

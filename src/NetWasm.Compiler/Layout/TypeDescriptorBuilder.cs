@@ -15,8 +15,7 @@ internal sealed class TypeDescriptorBuilder(
     WasmTargetLayout target,
     ManagedStaticDataBuildState state,
     IStaticReferenceBitmapBuilder bitmaps,
-    IAssignableTypeMetadataBuilder assignableTypes,
-    IAssemblyIdentityFormatter? assemblyNames = null) : ITypeDescriptorBuilder
+    IAssignableTypeMetadataBuilder assignableTypes) : ITypeDescriptorBuilder
 {
     internal TypeDescriptorBuilder(
         ITypeIdentityResolver identities,
@@ -62,7 +61,6 @@ internal sealed class TypeDescriptorBuilder(
         throw new ArgumentNullException(nameof(bitmaps));
     private readonly IAssignableTypeMetadataBuilder _assignableTypes = assignableTypes ??
         throw new ArgumentNullException(nameof(assignableTypes));
-    private readonly IAssemblyIdentityFormatter? _assemblyNames = assemblyNames;
 
     public void Build()
     {
@@ -109,17 +107,7 @@ internal sealed class TypeDescriptorBuilder(
                         typeIdentity.CanonicalName,
                         out var delegateInvoke)
                             ? delegateInvoke.CanonicalName
-                            : null,
-                    _program.TypeNamePayload != RuntimeTypeNamePayload.None
-                        ? RuntimeTypeNameFormatter.Format(
-                            typeIdentity,
-                            _typeDefinitions,
-                            _assemblyNames ?? throw new CompilerException(
-                                new CompilerDiagnostic(
-                                    DiagnosticCode.RuntimeContract,
-                                    "runtime type names require an assembly identity formatter")),
-                            _program.TypeNamePayload)
-                        : null));
+                            : null));
             }
         }
     }

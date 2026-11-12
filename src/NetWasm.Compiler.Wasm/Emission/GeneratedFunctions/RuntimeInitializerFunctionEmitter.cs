@@ -54,27 +54,15 @@ internal sealed class RuntimeInitializerFunctionEmitter(
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                     RuntimeImportSymbol.StackTraceInitialize,
                     plan.RuntimeImportSelection))));
-            var guardAddress = plan.StackTraceSymbolRegistrationGuardAddress ??
-                throw new InvalidOperationException(
-                    "Stack-trace symbol registration requires a guard address.");
-            EmitOnce(code, guardAddress, () =>
-            {
-                foreach (var symbol in plan.StackTraceSymbols)
-                {
-                    code.Instructions.Write(WasmInstruction.WithOperand(
-                        WasmOpcodes.I32Constant,
-                        WasmInstructionOperand.Signed(symbol.Id)));
-                    addresses.Emit(code.Instructions, symbol.Address);
-                    code.Instructions.Write(WasmInstruction.WithOperand(
-                        WasmOpcodes.I32Constant,
-                        WasmInstructionOperand.Signed(symbol.Length)));
-                    code.Instructions.Write(WasmInstruction.WithOperand(
-                        WasmOpcodes.Call,
-                        WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                            RuntimeImportSymbol.StackTraceRegisterSymbol,
-                            plan.RuntimeImportSelection))));
-                }
-            });
+        }
+        // CoreLib's sidecar readers find the descriptor through a static word.
+        if (plan.SidecarSlotAddress is int slot && plan.SidecarDescriptorAddress is int descriptor)
+        {
+            addresses.Emit(code.Instructions, slot);
+            addresses.Emit(code.Instructions, descriptor);
+            code.Instructions.Write(layouts.Target.AddressSize == sizeof(long)
+                ? WasmInstruction.WithOperand(WasmOpcodes.I64Store, WasmInstructionOperand.Memory(3, 0))
+                : WasmInstruction.WithOperand(WasmOpcodes.I32Store, WasmInstructionOperand.Memory(2, 0)));
         }
         if (plan.StateRegistrationGuardAddress is int registrationGuard)
         {

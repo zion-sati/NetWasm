@@ -155,7 +155,8 @@ public sealed class RuntimeLayoutReaderTests
                  "applicationExportName":"application_0",
                  "runtimeGetterExportName":"getter_0","parameters":["i32","i64"],"returnType":"f64"}],
                "temporaryApplicationExports":["application_0"],
-               "temporaryRuntimeExports":["getter_0"]}}
+               "temporaryRuntimeExports":["getter_0","netwasm_calli_ii"],
+               "trampolines":["netwasm_calli_ii"]}}
             """);
 
         var layout = new RuntimeLayoutReader().Read(path);
@@ -176,7 +177,8 @@ public sealed class RuntimeLayoutReaderTests
             callback.Parameters.ToArray());
         Assert.Equal(RuntimeNativeValueType.F64, callback.ReturnType);
         Assert.Equal(["application_0"], support.TemporaryApplicationExports.ToArray());
-        Assert.Equal(["getter_0"], support.TemporaryRuntimeExports.ToArray());
+        Assert.Equal(["getter_0", "netwasm_calli_ii"], support.TemporaryRuntimeExports.ToArray());
+        Assert.Equal(["netwasm_calli_ii"], support.Trampolines.ToArray());
     }
 
     [Theory]
@@ -210,6 +212,7 @@ public sealed class RuntimeLayoutReaderTests
                 },
                 temporaryApplicationExports = ApplicationCallbackExports,
                 temporaryRuntimeExports = RuntimeCallbackExports,
+                trampolines = Array.Empty<string>(),
             },
         });
 
@@ -288,6 +291,32 @@ public sealed class RuntimeLayoutReaderTests
                 collidingApplicationExport)));
     }
 
+    // Issue 226: an object may define only unmanaged calli trampolines, which follow the getters
+    // among the temporary runtime exports.
+    [Fact]
+    public void BindsTrampolinesAfterTheGetters()
+    {
+        using var directory = new TemporaryDirectory();
+        var reader = new RuntimeLayoutReader();
+
+        var layout = reader.Read(directory.Write("trampolines-only.json",
+            CallbackLayout([], [], ["netwasm_calli_ii"], ["netwasm_calli_ii"])));
+
+        Assert.Empty(layout.NativeCallbackSupport!.Callbacks);
+        Assert.Equal(["netwasm_calli_ii"], layout.NativeCallbackSupport.Trampolines.ToArray());
+        foreach (var (name, content) in new[]
+        {
+            ("none.json", CallbackLayout([], [], [])),
+            ("unlisted.json", CallbackLayout([], [], [], ["netwasm_calli_ii"])),
+            ("invalid-name.json", CallbackLayout([], [], [" "], [" "])),
+            ("duplicate.json", CallbackLayout([], [], ["netwasm_calli_ii", "netwasm_calli_ii"],
+                ["netwasm_calli_ii", "netwasm_calli_ii"])),
+        })
+        {
+            Assert.Throws<InvalidOperationException>(() => reader.Read(directory.Write(name, content)));
+        }
+    }
+
     [Fact]
     public void RejectsCallbackSupportOutsideSchemaFour()
     {
@@ -308,6 +337,7 @@ public sealed class RuntimeLayoutReaderTests
     [InlineData("callbacks-kind")]
     [InlineData("application-exports-kind")]
     [InlineData("runtime-exports-kind")]
+    [InlineData("trampolines-kind")]
     [InlineData("callback-missing-field")]
     [InlineData("callback-parameters-kind")]
     public void RejectsMalformedCallbackContractShapes(string defect)
@@ -335,6 +365,9 @@ public sealed class RuntimeLayoutReaderTests
                 break;
             case "runtime-exports-kind":
                 support["temporaryRuntimeExports"] = new JsonObject();
+                break;
+            case "trampolines-kind":
+                support["trampolines"] = new JsonObject();
                 break;
             case "callback-missing-field":
                 callback.Remove("nativeSymbol");
@@ -473,7 +506,8 @@ public sealed class RuntimeLayoutReaderTests
     private static string CallbackLayout(
         object[] callbacks,
         string[] temporaryApplicationExports,
-        string[] temporaryRuntimeExports) => JsonSerializer.Serialize(new
+        string[] temporaryRuntimeExports,
+        string[]? trampolines = null) => JsonSerializer.Serialize(new
         {
             schemaVersion = 4,
             target = "wasm32",
@@ -487,6 +521,7 @@ public sealed class RuntimeLayoutReaderTests
                 callbacks,
                 temporaryApplicationExports,
                 temporaryRuntimeExports,
+                trampolines = trampolines ?? [],
             },
         });
 

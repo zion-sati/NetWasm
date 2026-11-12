@@ -38,8 +38,8 @@ public sealed class CompileCliCommandTests
         Assert.Null(request.RuntimeLayoutPath);
         Assert.Null(request.InteropManifestPath);
         Assert.Null(request.CompilerMetadataPath);
-        Assert.Null(request.ExceptionTypeMapPath);
-        Assert.Null(request.StackTraceSymbolsPath);
+        Assert.Null(request.TypeSymbolsPath);
+        Assert.Null(request.MethodSymbolsPath);
     }
 
     [Theory]
@@ -96,8 +96,8 @@ public sealed class CompileCliCommandTests
             "App.dll", "-out:app.wasm", "-target:function", "-entry:Example.Entry::Run", "-r:CoreLib.dll",
             "-export:add=Example.Math::Add", "-platform:wasm64", "-optimize:O3", "-pathmap:/src=/_/",
             "-source:Entry.cs", "-interopmanifest:interop.json", "-runtimelayout:layout.json",
-            "-compilermetadata:metadata.json", "-exceptiontypemap:exceptions.json",
-            "-stacktracesymbols:symbols.json", "-callbackobject:native/callbacks.o", "-wit:contract.wit",
+            "-compilermetadata:metadata.json", "-typesymbols:app.wasm.type-symbols", "-typenames+",
+            "-methodsymbols:app.wasm.method-symbols", "-callbackobject:native/callbacks.o", "-wit:contract.wit",
             "-world:example:test/test", "-importmodule:host_ui", "-diagnostictrace:trace.json",
             "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics+",
             "-verifycompiledunits+",
@@ -129,7 +129,8 @@ public sealed class CompileCliCommandTests
             "-managedmulticastinlinedispatch:Enabled",
             "-managednewobjectnullcheckelimination:Disabled",
             "-managedloopstrengthreduction:Disabled",
-            "-managedrangebranchfolding:Enabled");
+            "-managedrangebranchfolding:Enabled",
+            "-managedunwrittenstaticfieldfolding:Disabled");
 
         Assert.Equal("node", harness.Sessions.WasmTools!.Executable);
         var options = harness.Sessions.Options!;
@@ -140,6 +141,7 @@ public sealed class CompileCliCommandTests
         Assert.Equal("/src=/_/", options.PathMap);
         Assert.Equal(["Entry.cs"], options.SourcePaths);
         Assert.True(options.EmitStackTrace);
+        Assert.True(options.EmitTypeNames);
         Assert.Equal("contract.wit", options.WitPath);
         Assert.Equal("example:test/test", options.WitWorld);
         Assert.Equal(["host_ui"], options.ImportModules);
@@ -185,13 +187,14 @@ public sealed class CompileCliCommandTests
         Assert.Equal(ManagedNewObjectNullCheckElimination.Disabled, overrides.NewObjectNullCheckElimination);
         Assert.Equal(ManagedLoopStrengthReduction.Disabled, overrides.LoopStrengthReduction);
         Assert.Equal(ManagedRangeBranchFolding.Enabled, overrides.RangeBranchFolding);
+        Assert.Equal(ManagedUnwrittenStaticFieldFolding.Disabled, overrides.UnwrittenStaticFieldFolding);
         var request = harness.Artifacts.Request!;
         Assert.Equal("native/callbacks.o", request.CallbackObjectPath);
         Assert.Equal("layout.json", request.RuntimeLayoutPath);
         Assert.Equal("interop.json", request.InteropManifestPath);
         Assert.Equal("metadata.json", request.CompilerMetadataPath);
-        Assert.Equal("exceptions.json", request.ExceptionTypeMapPath);
-        Assert.Equal("symbols.json", request.StackTraceSymbolsPath);
+        Assert.Equal("app.wasm.type-symbols", request.TypeSymbolsPath);
+        Assert.Equal("app.wasm.method-symbols", request.MethodSymbolsPath);
     }
 
     [Fact]
@@ -205,6 +208,7 @@ public sealed class CompileCliCommandTests
         var options = harness.Sessions.Options!;
         Assert.Null(options.IntermediateOutputPath);
         Assert.False(options.EmitStackTrace);
+        Assert.False(options.EmitTypeNames);
         Assert.Equal(FinalWasmOptimization.Oz, options.Optimization);
     }
 

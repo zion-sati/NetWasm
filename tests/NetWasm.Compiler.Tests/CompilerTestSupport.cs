@@ -516,13 +516,14 @@ internal static class CompilerTestSupport
         int staticDataEnd,
         IReadOnlyDictionary<string, string> environment,
         string? timeZoneAssetPath,
-        byte[]? stackTraceSymbols = null,
+        byte[]? methodSymbols = null,
         bool callbackEntry = false,
         string? entryExportName = null,
         int expectedEnvironmentReads = 1,
         int expectedPreopenReads = 1,
         int entryInvocationCount = 1,
-        bool inputArgument = false) =>
+        bool inputArgument = false,
+        byte[]? typeSymbols = null) =>
         ExecuteWithStandardWasiNodeCore(
             module,
             directory,
@@ -531,13 +532,14 @@ internal static class CompilerTestSupport
             staticDataEnd,
             environment,
             timeZoneAssetPath,
-            stackTraceSymbols,
+            methodSymbols,
             callbackEntry,
             entryExportName,
             expectedEnvironmentReads,
             expectedPreopenReads,
             entryInvocationCount,
-            inputArgument).GetProperty("value").GetInt32();
+            inputArgument,
+            typeSymbols).GetProperty("value").GetInt32();
 
     internal static long ExecuteWithStandardWasiNode(
         byte[] module,
@@ -577,29 +579,36 @@ internal static class CompilerTestSupport
         int staticDataEnd,
         IReadOnlyDictionary<string, string> environment,
         string? timeZoneAssetPath,
-        byte[]? stackTraceSymbols = null,
+        byte[]? methodSymbols = null,
         bool callbackEntry = false,
         string? entryExportName = null,
         int expectedEnvironmentReads = 1,
         int expectedPreopenReads = 1,
         int entryInvocationCount = 1,
-        bool inputArgument = false)
+        bool inputArgument = false,
+        byte[]? typeSymbols = null,
+        bool hostRegistersMethodSymbols = true)
     {
         var modulePath = Path.Combine(directory, $"application-{target}.wasm");
         var configurationPath = Path.Combine(directory, $"wasi-host-{target}.json");
-        var stackTraceSymbolsPath = stackTraceSymbols is null
-            ? null
-            : Path.Combine(directory, $"application-{target}.netwasm.stacktrace.json");
-        File.WriteAllBytes(modulePath, module);
-        if (stackTraceSymbols is not null)
+        string? Sidecar(byte[]? bytes, string suffix)
         {
-            File.WriteAllBytes(stackTraceSymbolsPath!, stackTraceSymbols);
+            if (bytes is null)
+                return null;
+            var path = Path.Combine(directory, $"application-{target}.wasm{suffix}");
+            File.WriteAllBytes(path, bytes);
+            return path;
         }
+        var methodSymbolsPath = Sidecar(methodSymbols, ".method-symbols");
+        var typeSymbolsPath = Sidecar(typeSymbols, ".type-symbols");
+        File.WriteAllBytes(modulePath, module);
         File.WriteAllText(configurationPath, System.Text.Json.JsonSerializer.Serialize(new
         {
             environment,
             timeZoneAssetPath,
-            stackTraceSymbolsPath,
+            methodSymbolsPath,
+            typeSymbolsPath,
+            hostRegistersMethodSymbols,
             callbackEntry,
             entryExportName,
             entryInvocationCount,

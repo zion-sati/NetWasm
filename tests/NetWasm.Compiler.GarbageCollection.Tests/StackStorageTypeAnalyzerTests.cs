@@ -59,14 +59,15 @@ public sealed class StackStorageTypeAnalyzerTests
         if (shape == 0)
         {
             Assert.Empty(map.AnchorPlan.Anchors);
-            Assert.Contains(new RootSource(RootSourceKind.EvaluationStack, 0, pointerSize), roots);
+            Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0), roots);
+            Assert.DoesNotContain(roots, root => root.IsIndirect);
             return;
         }
         var location = new StackStorageLocation(shape == 3 ? StackStorageLocationKind.Local : StackStorageLocationKind.EvaluationStack, 0);
         var slot = map.AnchorPlan.Anchors.IndexOf(new(location, Pair));
         Assert.True(slot >= 0);
         Assert.Contains(new RootSource(RootSourceKind.StackStorageAnchor, slot), roots);
-        Assert.Contains(new RootSource(RootSourceKind.StackStorageAnchor, slot, pointerSize), roots);
+        Assert.DoesNotContain(roots, root => root.IsIndirect);
         Assert.Contains(map.AnchorPlan.Assignments[0], assignment => assignment is StackStorageAnchorAssignment.Capture);
         Assert.All(roots, root => Assert.True(map.Slots.ContainsKey(root)));
     }
@@ -146,7 +147,7 @@ public sealed class StackStorageTypeAnalyzerTests
     [InlineData(8, 5)]
     [InlineData(4, 6)]
     [InlineData(8, 6)]
-    public void PreservedAggregateValuesAndTypedAddressesPublishTheirPayload(int pointerSize, int producer)
+    public void PreservedAggregateValuesPublishTheirPayloadAndTypedAddressesOnlyThemselves(int pointerSize, int producer)
     {
         var repository = new Repository(pointerSize);
         var address = CliTypeIdentity.ManagedByReference(Pair);
@@ -170,11 +171,14 @@ public sealed class StackStorageTypeAnalyzerTests
         Assert.Equal(produced, Assert.Single(storage[1]).Type);
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
             Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>())));
-        Assert.Contains(new RootSource(RootSourceKind.EvaluationStack, 0,
-            producer == 6 ? 0 : pointerSize), roots.Safepoints[1].Roots);
         if (produced.StackKind == CliValueKind.ManagedAddress)
         {
             Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0), roots.Safepoints[1].Roots);
+            Assert.DoesNotContain(roots.Safepoints[1].Roots, root => root.Kind == RootSourceKind.EvaluationStack);
+        }
+        else
+        {
+            Assert.Contains(new RootSource(RootSourceKind.EvaluationStack, 0, pointerSize), roots.Safepoints[1].Roots);
         }
         // A local whose address is taken stays rooted; no other local is one.
         Assert.Equal(producer == 2, roots.Safepoints[1].Roots.Contains(new RootSource(RootSourceKind.Local, 0, pointerSize)));
@@ -306,7 +310,7 @@ public sealed class StackStorageTypeAnalyzerTests
     [InlineData(2, true)]
     [InlineData(3, false)]
     [InlineData(4, false)]
-    public void ArithmeticNeedsCompleteStableOrCapturedBackingRatherThanAReferenceFreePointee(int source, bool stable)
+    public void ArithmeticAddressesAreRootsWhetherOrNotTheirBackingIsKnown(int source, bool stable)
     {
         var repository = new Repository(4);
         var buffer = CliTypeIdentity.Named(Assembly, "Tests", "Buffer", true);
@@ -329,20 +333,10 @@ public sealed class StackStorageTypeAnalyzerTests
         Assert.Null(storage.Type);
         Assert.Equal(stable, storage.BackingCovered);
         var request = new RootMapAnalysisRequest(method, Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()));
-        if (source != 4)
-        {
-            var roots = CreateRootAnalyzer(repository).Analyze(request).Safepoints[5].Roots;
-            Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0), roots);
-            Assert.DoesNotContain(roots, root => root.Kind == RootSourceKind.EvaluationStack);
-            if (source == 2)
-            {
-                Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), roots);
-            }
-        }
-        else
-        {
-            Assert.Throws<CompilerException>(() => CreateRootAnalyzer(repository).Analyze(request));
-        }
+        var roots = CreateRootAnalyzer(repository).Analyze(request).Safepoints[5].Roots;
+        Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0), roots);
+        Assert.DoesNotContain(roots, root => root.Kind == RootSourceKind.EvaluationStack);
+        Assert.Equal(source == 2, roots.Contains(new RootSource(RootSourceKind.Local, 0, 4)));
     }
 
     [Fact]
@@ -559,7 +553,8 @@ public sealed class StackStorageTypeAnalyzerTests
             var map = CreateRootAnalyzer(repository).Analyze(request);
             var anchor = map.AnchorPlan.Anchors.IndexOf(new(new(StackStorageLocationKind.EvaluationStack, 0), Pair));
             Assert.True(anchor >= 0);
-            Assert.Contains(new RootSource(RootSourceKind.StackStorageAnchor, anchor, 4), map.Safepoints[9].Roots);
+            Assert.Contains(new RootSource(RootSourceKind.StackStorageAnchor, anchor), map.Safepoints[9].Roots);
+            Assert.DoesNotContain(map.Safepoints[9].Roots, root => root.Kind == RootSourceKind.StackStorageAnchor && root.IsIndirect);
             Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), map.Safepoints[9].Roots);
         }
         else
@@ -628,8 +623,9 @@ public sealed class StackStorageTypeAnalyzerTests
         if (mutation == 0)
         {
             var roots = CreateRootAnalyzer(repository).Analyze(request).Safepoints[safepoint].Roots;
-            Assert.Contains(new RootSource(RootSourceKind.ManagedAddressArgument, 0, 4), roots);
+            Assert.Contains(new RootSource(RootSourceKind.ManagedAddressArgument, 0), roots);
             Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0), roots);
+            Assert.DoesNotContain(roots, root => root.IsIndirect);
         }
         else
         {
@@ -637,7 +633,9 @@ public sealed class StackStorageTypeAnalyzerTests
             var map = CreateRootAnalyzer(repository).Analyze(request);
             var anchor = Assert.Single(map.AnchorPlan.Anchors);
             Assert.Equal(new StackStorageAnchor(new(StackStorageLocationKind.EvaluationStack, 0), Pair), anchor);
-            Assert.Contains(new RootSource(RootSourceKind.StackStorageAnchor, 0, 4), map.Safepoints[safepoint].Roots);
+            Assert.Contains(new RootSource(RootSourceKind.StackStorageAnchor, 0), map.Safepoints[safepoint].Roots);
+            Assert.DoesNotContain(map.Safepoints[safepoint].Roots,
+                root => root.Kind == RootSourceKind.StackStorageAnchor && root.IsIndirect);
             Assert.Contains(map.AnchorPlan.Assignments.Values.SelectMany(assignments => assignments),
                 assignment => assignment is StackStorageAnchorAssignment.Capture);
         }
@@ -1044,7 +1042,7 @@ public sealed class StackStorageTypeAnalyzerTests
         Assert.Contains(
             new RootSource(RootSourceKind.StackStorageAnchor, index),
             map.Safepoints[6].Roots);
-        Assert.Contains(
+        Assert.DoesNotContain(
             new RootSource(RootSourceKind.StackStorageAnchor, index, 4),
             map.Safepoints[6].Roots);
     }

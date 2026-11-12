@@ -80,6 +80,9 @@ public sealed class VectorSurfaceCorpusTests(CorrectnessTestRunner runner)
                         long.CreateTruncating(value)));
 
                 private static void Mix(ref long h, bool value) => h = unchecked(h * 1000003 + (value ? 1 : 2));
+                // The exception's name length, from its type: a program carries no type names (issue 225).
+                private static int Kind(ArithmeticException e) =>
+                    e is DivideByZeroException ? 21 : e is OverflowException ? 17 : 19;
 
                 private static void Mix<T>(ref long h, Vector128<T> value) where T : INumberBase<T>
                 {
@@ -622,24 +625,24 @@ public sealed class VectorSurfaceCorpusTests(CorrectnessTestRunner runner)
                     Mix(ref h, Vector128.CreateSequence<double>(E<double>(s + 0), E<double>(s + 1)));
                     Mix(ref h, Vector128.DegreesToRadians(V128<double>(s + 0)));
                     Mix(ref h, Vector128.DegreesToRadians(V128<float>(s + 0)));
-                    try { Mix(ref h, Vector128.Divide<byte>(V128<byte>(s + 0), V128<byte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<sbyte>(V128<sbyte>(s + 0), V128<sbyte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<short>(V128<short>(s + 0), V128<short>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<ushort>(V128<ushort>(s + 0), V128<ushort>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<int>(V128<int>(s + 0), V128<int>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<uint>(V128<uint>(s + 0), V128<uint>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<long>(V128<long>(s + 0), V128<long>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<ulong>(V128<ulong>(s + 0), V128<ulong>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
+                    try { Mix(ref h, Vector128.Divide<byte>(V128<byte>(s + 0), V128<byte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<sbyte>(V128<sbyte>(s + 0), V128<sbyte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<short>(V128<short>(s + 0), V128<short>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<ushort>(V128<ushort>(s + 0), V128<ushort>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<int>(V128<int>(s + 0), V128<int>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<uint>(V128<uint>(s + 0), V128<uint>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<long>(V128<long>(s + 0), V128<long>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<ulong>(V128<ulong>(s + 0), V128<ulong>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
                     Mix(ref h, Vector128.Divide<float>(V128<float>(s + 0), V128<float>(s + 1)));
                     Mix(ref h, Vector128.Divide<double>(V128<double>(s + 0), V128<double>(s + 1)));
-                    try { Mix(ref h, Vector128.Divide<byte>(V128<byte>(s + 0), E<byte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<sbyte>(V128<sbyte>(s + 0), E<sbyte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<short>(V128<short>(s + 0), E<short>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<ushort>(V128<ushort>(s + 0), E<ushort>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<int>(V128<int>(s + 0), Count(s))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<uint>(V128<uint>(s + 0), E<uint>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<long>(V128<long>(s + 0), E<long>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
-                    try { Mix(ref h, Vector128.Divide<ulong>(V128<ulong>(s + 0), E<ulong>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + e.GetType().Name.Length; }
+                    try { Mix(ref h, Vector128.Divide<byte>(V128<byte>(s + 0), E<byte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<sbyte>(V128<sbyte>(s + 0), E<sbyte>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<short>(V128<short>(s + 0), E<short>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<ushort>(V128<ushort>(s + 0), E<ushort>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<int>(V128<int>(s + 0), Count(s))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<uint>(V128<uint>(s + 0), E<uint>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<long>(V128<long>(s + 0), E<long>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
+                    try { Mix(ref h, Vector128.Divide<ulong>(V128<ulong>(s + 0), E<ulong>(s + 1))); } catch (ArithmeticException e) { h = h * 31 + Kind(e); }
                     return h;
                 }
 

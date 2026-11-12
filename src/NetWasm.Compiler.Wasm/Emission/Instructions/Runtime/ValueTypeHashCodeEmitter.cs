@@ -12,7 +12,8 @@ internal sealed class ValueTypeHashCodeEmitter(
     ITypeDescriptorSource descriptors,
     ITypeRepository types,
     IMethodRepository methods,
-    IValueTypeEqualityFieldPlanner fields) : IValueTypeHashCodeEmitter
+    IValueTypeEqualityFieldPlanner fields,
+    IRootPublicationEmitter roots) : IValueTypeHashCodeEmitter
 {
     private readonly Lazy<EntityKey> _referenceHashCode = new(
         () => ResolveReferenceHashCode(descriptors, types, methods));
@@ -35,6 +36,9 @@ internal sealed class ValueTypeHashCodeEmitter(
                 values.GetValueLayout(type).Alignment)
             : 0;
 
+        // A reference field's GetHashCode can allocate: publish the roots first, the hashed
+        // value among them, so a collection it starts keeps it alive for the fields after it.
+        roots.Emit(request.Instruction, code);
         WriteI32(code, 17);
         SetLocal(code, accumulator);
         foreach (var field in fields.Plan(type))

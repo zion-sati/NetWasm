@@ -56,4 +56,5 @@ public sealed record WasmOptimizationSettings(
     bool LowMemoryUnused = false,
     NewObjectNullCheckEliminationPolicy NewObjectNullCheckElimination = NewObjectNullCheckEliminationPolicy.Disabled,
     LoopStrengthReductionPolicy LoopStrengthReduction = LoopStrengthReductionPolicy.Disabled,
-    RangeBranchFoldingPolicy RangeBranchFolding = RangeBranchFoldingPolicy.Disabled);
+    RangeBranchFoldingPolicy RangeBranchFolding = RangeBranchFoldingPolicy.Disabled,
+    UnwrittenStaticFieldFoldingPolicy UnwrittenStaticFieldFolding = UnwrittenStaticFieldFoldingPolicy.Disabled);

@@ -68,6 +68,9 @@ public sealed class UnitFingerprintTests
         var fingerprints = operands.Select(operand => Of(new CilInstruction(0, 1, CilOperation.Nop, operand))).ToArray();
         Assert.Equal(fingerprints.Length, fingerprints.Distinct().Count());
         Assert.Equal(fingerprints[3], Of(new CilInstruction(0, 1, CilOperation.Nop, new CilOperand.ConstantF4(1))));
+        // An unmanaged calli lowers to a different call than a managed one (issue 226).
+        Assert.NotEqual(fingerprints[13], Of(new CilInstruction(0, 1, CilOperation.Nop,
+            new CilOperand.CallSite(method.Signature, Unmanaged: true))));
     }
 
     [Fact]

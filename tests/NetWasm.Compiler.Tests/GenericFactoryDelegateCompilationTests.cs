@@ -131,8 +131,7 @@ public sealed class GenericFactoryDelegateCompilationTests
             "GenericFactoryDelegateFixture.EntryPoint",
             "Run",
             [],
-            target,
-            EmitExceptionTypeMap: true));
+            target));
         var observed = CompilerTestSupport.ExecuteWithStandardWasiNode(
             result.ApplicationModule,
             assets.Directory,

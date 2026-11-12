@@ -250,7 +250,7 @@ test("routes managed exception diagnostics to the worker stderr sink", async () 
   session.exports.report();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(state.outputMessages[0], "Managed exception #7: <no stored message>\n");
-  assert.match(state.outputMessages[1], /Managed exception #7 type: <exception type #7 unavailable>/);
+  assert.match(state.outputMessages[1], /Managed exception #7 type: type#7/);
   await session.close();
 });
 

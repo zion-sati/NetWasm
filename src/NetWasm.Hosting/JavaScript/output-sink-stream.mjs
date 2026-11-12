@@ -4,6 +4,8 @@ const chunkLimit = 64 * 1024;
 // Copies a guest's stream<u8> (wasi:cli/stdout and stderr write-via-stream) into a host
 // sink until the guest drops its writable end, and settles as the write's future does:
 // ok once every byte reached the sink, or the WASI error code a failed sink write maps to.
+// A failed copy drops the guest's stream, so the guest sees a closed pipe rather than waiting
+// for a reader that will never come back.
 export async function writeStreamToSink(stream, sink) {
   validateOutputSink(sink);
   const read = createGuestByteReader(stream);
@@ -14,7 +16,19 @@ export async function writeStreamToSink(stream, sink) {
       sink.write(chunk);
     }
   } catch {
+    dropGuestStream(stream);
     return Object.freeze({ tag: "err", val: "io" });
+  }
+}
+
+// Drops the host's end of a guest stream: a jco stream end disposes, an async iterator returns.
+export function dropGuestStream(stream) {
+  const dispose = stream?.[Symbol.dispose] ?? stream?.[Symbol.for("dispose")];
+  try {
+    if (typeof dispose === "function") dispose.call(stream);
+    else if (typeof stream?.return === "function") stream.return();
+  } catch {
+    // The stream's guest already went away; nothing is left to release.
   }
 }
 

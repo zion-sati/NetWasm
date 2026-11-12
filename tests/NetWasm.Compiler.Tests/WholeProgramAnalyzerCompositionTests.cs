@@ -116,12 +116,14 @@ public sealed class WholeProgramAnalyzerCompositionTests
     }
 
     [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(false, false, true)]
-    [InlineData(false, true, false)]
-    [InlineData(true, false, false)]
-    [InlineData(true, true, true)]
-    public void FactoryUsesEveryInjectedAlgorithmAndFreshLedgerPerAnalysis(bool constants, bool populations, bool calls)
+    [InlineData(false, false, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, false, false, true)]
+    [InlineData(true, true, true, true)]
+    public void FactoryUsesEveryInjectedAlgorithmAndFreshLedgerPerAnalysis(
+        bool constants, bool populations, bool calls, bool unwrittenStatics)
     {
         using var assets = TestAssets.Create();
         using var compilation = MetadataCompilationTestFactory.Load(
@@ -198,7 +200,9 @@ public sealed class WholeProgramAnalyzerCompositionTests
         var settings = new WasmOptimizationSettingsResolver().Resolve(FinalWasmOptimization.Oz,
             new(ConstantArgumentPropagation: constants ? ManagedConstantArgumentPropagation.Enabled : ManagedConstantArgumentPropagation.Disabled,
                 StaticArrayPopulationElimination: populations ? ManagedStaticArrayPopulationElimination.Enabled : ManagedStaticArrayPopulationElimination.Disabled,
-                ConstantCallFolding: calls ? ManagedConstantCallFolding.Enabled : ManagedConstantCallFolding.Disabled));
+                ConstantCallFolding: calls ? ManagedConstantCallFolding.Enabled : ManagedConstantCallFolding.Disabled,
+                UnwrittenStaticFieldFolding: unwrittenStatics
+                    ? ManagedUnwrittenStaticFieldFolding.Enabled : ManagedUnwrittenStaticFieldFolding.Disabled));
         var entry = methodFinder.FindMethod(
             snapshot.EntryAssemblyIdentity,
             "NetWasm.Fixtures.Application.EntryPoint",
@@ -283,6 +287,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
             settings with { SwitchBitTests = (SwitchBitTestPolicy)255 },
             settings with { Devirtualization = (DevirtualizationPolicy)255 },
             settings with { AllocationElimination = (AllocationEliminationPolicy)255 },
+            settings with { UnwrittenStaticFieldFolding = (UnwrittenStaticFieldFoldingPolicy)255 },
         })
         {
             var error = Assert.Throws<ArgumentOutOfRangeException>(() => factory.Create(

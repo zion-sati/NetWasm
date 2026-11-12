@@ -1346,7 +1346,10 @@ public sealed class MethodSpecializerTests
     public void ConstrainedRuleLeavesGenericParametersAndOpenReferencesUnchanged()
     {
         var assembly = new AssemblyIdentity("in-memory");
-        var method = Target("Run", 140, "Fixtures.Target");
+        // An instance method on an unsealed reference type still dispatches on its receiver; only
+        // a static virtual resolves on the named type itself.
+        var target = Target("Run", 140, "Fixtures.Target");
+        var method = target with { Definition = target.Definition with { IsStatic = false } };
         var openType = CliTypeIdentity.GenericParameter(true, 0);
         var referenceType = CliTypeIdentity.Named(assembly, "Fixtures", "Reference", false);
         var body = Body(
@@ -1684,9 +1687,12 @@ public sealed class MethodSpecializerTests
             new FixedSymbolFormatter("Fixtures.Box")), Body(
                 new CilInstruction(0, 1, CilOperation.Constrained,
                     new CilOperand.TypeIdentity(constrainedType)),
-                new CilInstruction(1, 2, CilOperation.LoadVirtualFunction,
+                new CilInstruction(1, 2, CilOperation.LoadFunction,
                     new CilOperand.MethodInstance(declarationInstance))));
 
+        // constrained. ldftn names a static virtual's implementation (ECMA-335 III.2.1 as
+        // augmented): the load names it directly and the prefix goes.
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.LoadFunction, rewritten.Instructions[1].Operation);
         var resolved = Assert.IsType<CilOperand.MethodInstance>(rewritten.Instructions[1].Operand).Value;
         Assert.Equal(implementation, resolved.Definition);

@@ -223,6 +223,61 @@ public sealed class WasmBinaryTests
         Assert.Contains("7,654,322-byte", error.Message, StringComparison.Ordinal);
     }
 
+    // A function's parameters count among its locals; a reference type naming its heap type
+    // carries the heap type after it.
+    [Fact]
+    public void ModuleEncoderNamesAFunctionOverTheEngineLocalLimit()
+    {
+        static WasmModuleBuildRequest Request(int parameters, params (uint Count, byte[] Type)[] runs)
+        {
+            var body = new List<byte>();
+            Leb(body, (uint)runs.Length);
+            foreach (var (count, type) in runs)
+            {
+                Leb(body, count);
+                body.AddRange(type);
+            }
+            body.Add(0x0b);
+            return new([], "runtime", "memory",
+                [new("Grammar::Initialize", new([.. Enumerable.Repeat(CliValueKind.I4, parameters)], CliValueKind.Void), [.. body])],
+                [], [], false, WasmTarget.Wasm32);
+        }
+        byte[] i32 = [0x7f], heapReference = [0x64, 0x70];
+
+        Assert.NotEmpty(CreateModuleEncoder().Encode(Request(1, (1, heapReference), (49_998, i32))));
+        var error = Assert.Throws<CompilerException>(() =>
+            CreateModuleEncoder().Encode(Request(2, (1, heapReference), (49_998, i32))));
+        Assert.Equal("NW1013", error.Diagnostic.Id);
+        Assert.Equal("Grammar::Initialize", error.Diagnostic.Method);
+        Assert.Contains("50,001 locals, over the 50,000", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ModuleEncoderNamesAFunctionOverTheEngineParameterLimit()
+    {
+        static WasmModuleBuildRequest Request(int parameters) => new([], "runtime", "memory",
+            [new("Grammar::Many", new([.. Enumerable.Repeat(CliValueKind.I8, parameters)], CliValueKind.I4), [0, 0x0b])],
+            [], [], false, WasmTarget.Wasm32);
+
+        Assert.NotEmpty(CreateModuleEncoder().Encode(Request(ModuleEncoder.MaximumFunctionParameters)));
+        var error = Assert.Throws<CompilerException>(() =>
+            CreateModuleEncoder().Encode(Request(ModuleEncoder.MaximumFunctionParameters + 1)));
+        Assert.Equal("NW1013", error.Diagnostic.Id);
+        Assert.Equal("Grammar::Many", error.Diagnostic.Method);
+        Assert.Contains("1,001 parameters, over the 1,000", error.Message, StringComparison.Ordinal);
+    }
+
+    private static void Leb(List<byte> bytes, uint value)
+    {
+        do
+        {
+            var next = (byte)(value & 0x7f);
+            value >>= 7;
+            bytes.Add(value == 0 ? next : (byte)(next | 0x80));
+        }
+        while (value != 0);
+    }
+
     [Fact]
     public void ModuleEncoderOmitsFunctionNamesWhenRequested()
     {

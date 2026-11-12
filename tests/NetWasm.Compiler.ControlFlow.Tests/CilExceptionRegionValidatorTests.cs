@@ -223,18 +223,16 @@ public sealed class CilExceptionRegionValidatorTests
             body.Instructions[^1].NextOffset);
     }
 
+    // A leave in a method without regions exits nothing: it is a branch that empties the stack
+    // (ECMA-335 III.3.46; issue 221's class).
     [Fact]
-    public void RejectsLeaveOutsideAnExceptionRegion()
-    {
-        AssertDiagnostic(
-            () => ControlFlowGraphBuilder.Build(Body(
-                CliValueKind.Void,
-                0,
-                [],
-                I(0, CilOperation.Leave, new CilOperand.BranchTarget(1)),
-                I(1, CilOperation.Return))),
-            "leave target does not exit to an enclosing exception region");
-    }
+    public void AcceptsLeaveOutsideAnExceptionRegion() =>
+        _ = ControlFlowGraphBuilder.Build(Body(
+            CliValueKind.Void,
+            0,
+            [],
+            I(0, CilOperation.Leave, new CilOperand.BranchTarget(1)),
+            I(1, CilOperation.Return)));
 
     [Fact]
     public void ValidatesFaultCleanupAsAnExceptionZone()
@@ -488,8 +486,11 @@ public sealed class CilExceptionRegionValidatorTests
         AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(guarded, guarded.Instructions[^1].NextOffset), message);
     }
 
+    // leave exits any number of enclosing blocks, none included (ECMA-335 III.3.46): outside every
+    // region, or to another instruction of its own try, it is a branch that empties the stack.
+    // It never enters a block (issue 221's class).
     [Fact]
-    public void ALeaveThatExitsNoRegionIsRefused()
+    public void ALeaveExitsNoneOrMoreRegionsButEntersNone()
     {
         var outside = Body(CliValueKind.Void, 0, [], I(0, CilOperation.Leave, new CilOperand.BranchTarget(1)),
             I(1, CilOperation.Return));
@@ -499,10 +500,17 @@ public sealed class CilExceptionRegionValidatorTests
                 ? instruction with { Operand = new CilOperand.BranchTarget(0) }
                 : instruction)],
         };
+        var entering = FinallyBody() with
+        {
+            Instructions = [.. FinallyBody().Instructions.Select(instruction =>
+                instruction.Operation == CilOperation.Return
+                    ? instruction with { Operation = CilOperation.Leave, Operand = new CilOperand.BranchTarget(0) }
+                    : instruction)],
+        };
 
-        AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(outside, outside.Instructions[^1].NextOffset),
-            "leave target does not exit to an enclosing exception region");
-        AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(within, within.Instructions[^1].NextOffset),
+        CreateExceptionRegionValidator().Validate(outside, outside.Instructions[^1].NextOffset);
+        CreateExceptionRegionValidator().Validate(within, within.Instructions[^1].NextOffset);
+        AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(entering, entering.Instructions[^1].NextOffset),
             "leave target does not exit to an enclosing exception region");
     }
 

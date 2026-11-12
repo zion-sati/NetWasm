@@ -39,8 +39,11 @@ public sealed class IntrinsicAddressBodyPlannerTests
             body.Instructions.Select(instruction => instruction.Operation));
     }
 
+    // CoreLib's body for an intrinsic is often a stand-in only call sites replace (Object.GetType
+    // returned null, string.Length 0, Unsafe.As threw), so an address forwards to the intrinsic
+    // even where the method has CIL (issue 223's class).
     [Fact]
-    public void AnalyzesAManagedIntrinsicBodyAsUpstreamRunsItForIndirectCalls()
+    public void ForwardsAnIntrinsicWithCilToItselfRatherThanRunningItsBody()
     {
         var method = Instance("HasFlag", isStatic: false, CliValueKind.I4, CliValueKind.ManagedReference, relativeVirtualAddress: 0x2050);
 
@@ -48,7 +51,8 @@ public sealed class IntrinsicAddressBodyPlannerTests
 
         Assert.NotNull(request);
         Assert.Same(method, request.Method);
-        Assert.Null(request.RewrittenBody);
+        var body = Assert.IsType<CilMethodBody>(request.RewrittenBody);
+        Assert.Same(method, ((CilOperand.MethodInstance)body.Instructions[2].Operand).Value);
     }
 
     [Fact]

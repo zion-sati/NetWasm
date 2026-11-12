@@ -154,7 +154,7 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
                 new Final.StructuredExceptionGroupProjector(controlFlowProjector)),
                 new Final.StructuredMethodFactory(finalValidator)),
             dispatcherElimination == DispatcherEliminationPolicy.Reducible
-                ? new ReducibleControlFlowStructurer()
+                ? new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier())
                 : null);
     }
 }

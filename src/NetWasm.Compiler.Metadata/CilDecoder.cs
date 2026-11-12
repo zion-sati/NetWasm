@@ -25,7 +25,8 @@ internal sealed class CilDecoder(
     IMetadataTypeSignatureResolver typeSignatures,
     IMetadataCallSiteSignatureResolver callSiteSignatures,
     IMetadataStackTypeResolver stackTypes,
-    ICilSwitchLowerer switches) : ICilDecoder
+    ICilSwitchLowerer switches,
+    ICilTryReentryLowerer tries) : ICilDecoder
 {
     private static readonly Dictionary<byte, OpCode> OneByteOpCodes;
     private static readonly Dictionary<byte, OpCode> TwoByteOpCodes;
@@ -121,15 +122,16 @@ internal sealed class CilDecoder(
         var lowered = switches.Lower(
             instructions.ToImmutable(),
             exceptionRegions);
+        var reentered = tries.Lower(lowered.Instructions, lowered.ExceptionRegions, locals.Length);
         return new CilMethodBody(
             method,
-            checked(body.MaxStack + lowered.AdditionalMaxStack),
-            locals,
-            lowered.Instructions)
+            checked(body.MaxStack + lowered.AdditionalMaxStack + reentered.AdditionalMaxStack),
+            [.. locals, .. reentered.AddedLocals.Select(type => type.StackKind)],
+            reentered.Instructions)
         {
             MethodInstance = methodInstance,
-            LocalSignatureTypes = localSignatureTypes,
-            ExceptionRegions = lowered.ExceptionRegions,
+            LocalSignatureTypes = [.. localSignatureTypes, .. reentered.AddedLocals],
+            ExceptionRegions = reentered.ExceptionRegions,
             PinnedLocals = pinnedLocals,
         };
     }
@@ -337,11 +339,12 @@ internal sealed class CilDecoder(
             case "callvirt": operation = CilOperation.CallVirtual; operand = ReadMethod(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "calli":
                 operation = CilOperation.CallIndirect;
-                operand = new CilOperand.CallSite(
-                    _callSiteSignatures.Resolve(
-                        assembly.Metadata,
-                        ReadInt32(bytes, ref position, displayName, offset),
-                        genericContext));
+                operand = _callSiteSignatures.Resolve(
+                    assembly.Metadata,
+                    ReadInt32(bytes, ref position, displayName, offset),
+                    genericContext,
+                    displayName,
+                    offset);
                 break;
             case "newobj": operation = CilOperation.NewObject; operand = ReadMethod(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "box": operation = CilOperation.Box; operand = ReadSignatureType(assembly, genericContext, displayName, bytes, ref position, offset); break;

@@ -26,12 +26,6 @@ internal enum RuntimeTypeFactsFlags
 
 internal static class RuntimeTypeFactsEncoding
 {
-    private const RuntimeTypeNamePayload KnownNamePayload =
-        RuntimeTypeNamePayload.Name |
-        RuntimeTypeNamePayload.Namespace |
-        RuntimeTypeNamePayload.FullName |
-        RuntimeTypeNamePayload.DisplayName;
-
     internal const int FlagsOffset = 0;
     internal const int TypeCodeOffset = 4;
     internal const int BaseTypeIdOffset = 8;
@@ -41,11 +35,8 @@ internal static class RuntimeTypeFactsEncoding
     internal static int DelegateInvokeOffset(WasmTargetLayout target) =>
         AssignableTypeIdsOffset + target.AddressSize;
 
-    internal static int NameFactsOffset(WasmTargetLayout target) =>
-        DelegateInvokeOffset(target) + target.AddressSize;
-
     internal static int GenericArgumentCountOffset(WasmTargetLayout target) =>
-        NameFactsOffset(target) + target.AddressSize;
+        DelegateInvokeOffset(target) + target.AddressSize;
 
     internal static int GenericArgumentTypeIdsOffset(WasmTargetLayout target) =>
         ManagedTypeLayoutCompiler.Align(
@@ -54,66 +45,6 @@ internal static class RuntimeTypeFactsEncoding
 
     internal static int Size(WasmTargetLayout target) =>
         GenericArgumentTypeIdsOffset(target) + target.AddressSize;
-
-    internal const int NamePayloadOffset = 0;
-
-    internal static int NameOffset(WasmTargetLayout target) =>
-        ManagedTypeLayoutCompiler.Align(sizeof(int), target.AddressSize);
-
-    internal static int NamespaceOffset(WasmTargetLayout target) =>
-        NameOffset(target) + target.AddressSize;
-
-    internal static int FullNameOffset(WasmTargetLayout target) =>
-        NamespaceOffset(target) + target.AddressSize;
-
-    internal static int DisplayNameOffset(WasmTargetLayout target) =>
-        FullNameOffset(target) + target.AddressSize;
-
-    internal static int NamesSize(WasmTargetLayout target) =>
-        DisplayNameOffset(target) + target.AddressSize;
-
-    internal static int AddNames(
-        ManagedStaticDataBuildState state,
-        WasmTargetLayout target,
-        RuntimeTypeNames names)
-    {
-        if (names.Payload == RuntimeTypeNamePayload.None ||
-            (names.Payload & ~KnownNamePayload) != 0)
-        {
-            throw new CompilerException(new CompilerDiagnostic(
-                DiagnosticCode.RuntimeContract,
-                $"runtime type-name payload '{names.Payload}' is invalid"));
-        }
-        state.Cursor = ManagedTypeLayoutCompiler.Align(state.Cursor, target.AddressSize);
-        var address = state.Cursor;
-        var bytes = new byte[NamesSize(target)];
-        BinaryPrimitives.WriteInt32LittleEndian(
-            bytes.AsSpan(NamePayloadOffset),
-            (int)names.Payload);
-        WriteAddress(
-            bytes,
-            NameOffset(target),
-            target,
-            GetStringAddress(state, names.Name));
-        WriteAddress(
-            bytes,
-            NamespaceOffset(target),
-            target,
-            GetStringAddress(state, names.Namespace));
-        WriteAddress(
-            bytes,
-            FullNameOffset(target),
-            target,
-            GetStringAddress(state, names.FullName));
-        WriteAddress(
-            bytes,
-            DisplayNameOffset(target),
-            target,
-            GetStringAddress(state, names.DisplayName));
-        state.Segments.Add(new DataSegment(address, [.. bytes]));
-        state.Cursor += bytes.Length;
-        return address;
-    }
 
     internal static void Add(
         ManagedStaticDataBuildState state,
@@ -125,7 +56,6 @@ internal static class RuntimeTypeFactsEncoding
         int assignableTypeIdsAddress,
         int assignableTypeIdCount,
         int delegateInvokeAddress = 0,
-        int nameFactsAddress = 0,
         int genericArgumentTypeIdsAddress = 0,
         int genericArgumentCount = 0)
     {
@@ -169,10 +99,6 @@ internal static class RuntimeTypeFactsEncoding
             bytes.AsSpan(DelegateInvokeOffset(target)),
             target,
             delegateInvokeAddress);
-        WriteAddress(
-            bytes.AsSpan(NameFactsOffset(target)),
-            target,
-            nameFactsAddress);
         BinaryPrimitives.WriteInt32LittleEndian(
             bytes.AsSpan(GenericArgumentCountOffset(target)),
             genericArgumentCount);
@@ -319,26 +245,5 @@ internal static class RuntimeTypeFactsEncoding
         {
             BinaryPrimitives.WriteInt64LittleEndian(destination, value);
         }
-    }
-
-    private static void WriteAddress(
-        byte[] destination,
-        int offset,
-        WasmTargetLayout target,
-        int value) => WriteAddress(destination.AsSpan(offset), target, value);
-
-    private static int GetStringAddress(
-        ManagedStaticDataBuildState state,
-        string? value)
-    {
-        if (value is null)
-        {
-            return 0;
-        }
-        return state.Strings.TryGetValue(value, out var layout)
-            ? layout.Address
-            : throw new CompilerException(new CompilerDiagnostic(
-                DiagnosticCode.RuntimeContract,
-                $"type name '{value}' was not assigned static storage"));
     }
 }

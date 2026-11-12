@@ -68,7 +68,7 @@ public sealed partial class CompilerArchitectureTests
         Assert.Contains("AddCompilerAnalysis()", source, StringComparison.Ordinal);
         Assert.Contains("AddCompilerDiagnostics()", source, StringComparison.Ordinal);
         Assert.Contains("AddCompilerValidation()", source, StringComparison.Ordinal);
-        Assert.Contains("AddCompilerExceptionTypes()", source, StringComparison.Ordinal);
+        Assert.Contains("AddCompilerSymbols()", source, StringComparison.Ordinal);
         Assert.Contains("AddCompilerLayout()", source, StringComparison.Ordinal);
         Assert.Contains("AddCompilerLoading()", source, StringComparison.Ordinal);
         Assert.Contains("AddCompilerEmission()", source, StringComparison.Ordinal);

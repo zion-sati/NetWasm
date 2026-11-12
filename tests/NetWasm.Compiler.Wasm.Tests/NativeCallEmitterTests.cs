@@ -52,7 +52,7 @@ public sealed class NativeCallEmitterTests
         var initialization = new RecordingInitialization();
         var writer = new RecordingInstructionWriter();
 
-        new NativeCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions())
+        new NativeCallEmitter(new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions()))
             .Emit(new(instruction, method, 1, 5), writer, new RecordingIndices());
 
         var expected = new List<WasmInstruction>();
@@ -116,7 +116,7 @@ public sealed class NativeCallEmitterTests
             logical.ParameterTypes, context: context), method, plan);
         var writer = new RecordingInstructionWriter();
 
-        new NativeCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), new RecordingExceptions())
+        new NativeCallEmitter(new NativeAbiCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), new RecordingExceptions()))
             .Emit(new(instruction, method, 0, 1), writer, new RecordingIndices());
 
         var expected = new List<WasmInstruction>();
@@ -194,7 +194,7 @@ public sealed class NativeCallEmitterTests
             [CliValueKind.ValueType], context: context), method, plan);
         var writer = new RecordingInstructionWriter();
 
-        new NativeCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), new RecordingExceptions())
+        new NativeCallEmitter(new NativeAbiCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), new RecordingExceptions()))
             .Emit(new(instruction, method, 0, 1), writer, new RecordingIndices());
 
         var stackLocal = (uint)WasmLocalLayoutPlanner.GetEvaluationStackLocal(context.StackLocals,
@@ -232,7 +232,7 @@ public sealed class NativeCallEmitterTests
             [CliValueKind.ValueType], context: context), method, plan);
         var writer = new RecordingInstructionWriter();
 
-        new NativeCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), new RecordingExceptions())
+        new NativeCallEmitter(new NativeAbiCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), new RecordingExceptions()))
             .Emit(new(instruction, method, 0, 1), writer, new RecordingIndices());
 
         var emitted = writer.ToInstructions();
@@ -265,8 +265,7 @@ public sealed class NativeCallEmitterTests
         var indices = new RecordingIndices();
         var initialization = new RecordingInitialization();
 
-        var error = Assert.Throws<CompilerException>(() => new NativeCallEmitter(layouts, initialization,
-            CreateAddressInstructions(layouts), new RecordingExceptions()).Emit(new(instruction, method, 0, result ? 0 : 1), writer, indices));
+        var error = Assert.Throws<CompilerException>(() => new NativeCallEmitter(new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions())).Emit(new(instruction, method, 0, result ? 0 : 1), writer, indices));
 
         Assert.Equal(DiagnosticCode.CompilerInvariant, error.Diagnostic.Code);
         Assert.Empty(writer.ToInstructions());
@@ -302,8 +301,7 @@ public sealed class NativeCallEmitterTests
         var indices = new RecordingIndices();
         var initialization = new RecordingInitialization();
 
-        var error = Assert.Throws<CompilerException>(() => new NativeCallEmitter(layouts, initialization,
-            CreateAddressInstructions(layouts), new RecordingExceptions()).Emit(new(instruction, method, 0, 0), writer, indices));
+        var error = Assert.Throws<CompilerException>(() => new NativeCallEmitter(new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions())).Emit(new(instruction, method, 0, 0), writer, indices));
 
         Assert.Equal(DiagnosticCode.CompilerInvariant, error.Diagnostic.Code);
         Assert.Empty(writer.ToInstructions());
@@ -323,7 +321,7 @@ public sealed class NativeCallEmitterTests
         var initialization = new RecordingInitialization();
         var indices = new RecordingIndices();
         var writer = new RecordingInstructionWriter();
-        var emitter = new NativeCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions());
+        var emitter = new NativeCallEmitter(new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions()));
         var changed = method with { Definition = method.Definition with { Name = "Contradictory" } };
 
         Assert.Equal(DiagnosticCode.CompilerInvariant, Assert.Throws<CompilerException>(() =>
@@ -365,8 +363,7 @@ public sealed class NativeCallEmitterTests
             [.. signature.ParameterSignatureTypes.Take(5), CliTypeIdentity.FromStackKind(CliValueKind.NativeInt)]));
         var initialization = new RecordingInitialization();
         var indices = new RecordingIndices();
-        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(layouts, initialization,
-            CreateAddressInstructions(layouts), new RecordingExceptions()));
+        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions())));
         var instruction = CreateInstructionRequest(CilOperation.Call,
             new[] { CliValueKind.I4 }.Concat(signature.ParameterTypes), maxStack: 8);
         instruction = Publish(instruction, method, plan);
@@ -414,8 +411,7 @@ public sealed class NativeCallEmitterTests
         var writer = new RecordingInstructionWriter();
         var instruction = CreateInstructionRequest(operation);
         var layouts = new RecordingLayoutProvider();
-        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(
-            layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions()));
+        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions())));
 
         var error = Assert.Throws<CompilerException>(() => emitter.Emit(
             new(instruction, method, argumentBase, consumed), writer, indices));
@@ -437,8 +433,7 @@ public sealed class NativeCallEmitterTests
         var writer = new RecordingInstructionWriter();
         var indices = new RecordingIndices();
         var layouts = new RecordingLayoutProvider();
-        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(
-            layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions()));
+        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions())));
 
         Assert.Equal(DiagnosticCode.CompilerInvariant, Assert.Throws<CompilerException>(() =>
             emitter.Emit(new(instruction, method, 0, 0), writer, indices)).Diagnostic.Code);
@@ -477,7 +472,7 @@ public sealed class NativeCallEmitterTests
         var instruction = Publish(CreateInstructionRequest(CilOperation.Call, [CliValueKind.I4]), method, plan);
         var writer = new RecordingInstructionWriter();
 
-        new NativeCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), exceptions)
+        new NativeCallEmitter(new NativeAbiCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), exceptions))
             .Emit(new(instruction, method, 0, 1), writer, new RecordingIndices());
 
         var emitted = writer.ToInstructions();
@@ -491,6 +486,49 @@ public sealed class NativeCallEmitterTests
         Assert.Equal([ManagedExceptionKind.JSException], exceptions.Kinds);
     }
 
+    // A C ABI call names exactly one callee, a DllImport or an unmanaged calli's trampoline, and a
+    // trampoline takes a native-int function pointer last (issue 226).
+    [Fact]
+    public void ACallNamesOneCalleeAndATrampolineTakesANativeIntPointer()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var logical = MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4);
+        var method = Method(logical);
+        var lowering = NativeAbiTestSupport.Plan(method.Definition.NativeImport!, logical, logical).Lowering;
+        var trampoline = new NativeCallTrampoline("netwasm_calli_vi",
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, CliValueKind.NativeInt), new(9));
+        var initialization = new RecordingInitialization();
+        var calls = new NativeAbiCallEmitter(layouts, initialization, CreateAddressInstructions(layouts), new RecordingExceptions());
+        foreach (var (stack, consumed, import, callee) in new (CliValueKind[], int, MethodInstanceModel?, NativeCallTrampoline?)[]
+        {
+            ([CliValueKind.I4], 1, null, null),
+            ([CliValueKind.I4, CliValueKind.NativeInt], 2, method, trampoline),
+            ([CliValueKind.I4, CliValueKind.I4], 2, null, trampoline),
+            ([CliValueKind.I4, CliValueKind.NativeInt], 1, null, trampoline),
+        })
+        {
+            var instruction = CreateInstructionRequest(CilOperation.CallIndirect, stack);
+            var writer = new RecordingInstructionWriter();
+            var error = Assert.Throws<CompilerException>(() => calls.Emit(
+                new(instruction, lowering, stack.Length - consumed, consumed, HostCall: false, "M")
+                {
+                    Import = import,
+                    Trampoline = callee,
+                }, writer, new RecordingIndices()));
+            Assert.Equal(DiagnosticCode.CompilerInvariant, error.Diagnostic.Code);
+            Assert.Empty(writer.ToInstructions());
+        }
+
+        var valid = CreateInstructionRequest(CilOperation.CallIndirect, [CliValueKind.I4, CliValueKind.NativeInt]);
+        var emitted = new RecordingInstructionWriter();
+        calls.Emit(new(valid, lowering, 0, 2, HostCall: false, "M") { Trampoline = trampoline }, emitted, new RecordingIndices());
+        Assert.Equal([WasmOpcodes.LocalGet, WasmOpcodes.LocalGet, WasmOpcodes.Call],
+            emitted.ToInstructions().Select(instruction => instruction.Opcode));
+        Assert.Equal(9u, emitted.ToInstructions()[^1].Operand.UnsignedValue);
+        Assert.Null(initialization.Request);
+        Assert.Empty(valid.Stack);
+    }
+
     [Fact]
     public void RequiredDependenciesAndEmissionArgumentsReject()
     {
@@ -499,11 +537,14 @@ public sealed class NativeCallEmitterTests
         var initialization = new RecordingInitialization();
         var addresses = CreateAddressInstructions(layouts);
         var exceptions = new RecordingExceptions();
-        Assert.Throws<ArgumentNullException>(() => new NativeCallEmitter(null!, initialization, addresses, exceptions));
-        Assert.Throws<ArgumentNullException>(() => new NativeCallEmitter(layouts, null!, addresses, exceptions));
-        Assert.Throws<ArgumentNullException>(() => new NativeCallEmitter(layouts, initialization, null!, exceptions));
-        Assert.Throws<ArgumentNullException>(() => new NativeCallEmitter(layouts, initialization, addresses, null!));
-        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(layouts, initialization, addresses, exceptions));
+        var calls = new NativeAbiCallEmitter(layouts, initialization, addresses, exceptions);
+        Assert.Throws<ArgumentNullException>(() => new NativeCallEmitter(null!));
+        Assert.Throws<ArgumentNullException>(() => new NativeAbiCallEmitter(null!, initialization, addresses, exceptions));
+        Assert.Throws<ArgumentNullException>(() => new NativeAbiCallEmitter(layouts, null!, addresses, exceptions));
+        Assert.Throws<ArgumentNullException>(() => new NativeAbiCallEmitter(layouts, initialization, null!, exceptions));
+        Assert.Throws<ArgumentNullException>(() => new NativeAbiCallEmitter(layouts, initialization, addresses, null!));
+        Assert.Throws<ArgumentNullException>(() => calls.Emit(null!, new RecordingInstructionWriter(), new RecordingIndices()));
+        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new NativeCallEmitter(calls));
         var request = new CallEmissionRequest(CreateInstructionRequest(CilOperation.Call), method, 0, 0);
         Assert.Throws<ArgumentNullException>(() => emitter.Emit(null!, new RecordingInstructionWriter(), new RecordingIndices()));
         Assert.Throws<ArgumentNullException>(() => emitter.Emit(request, null!, new RecordingIndices()));

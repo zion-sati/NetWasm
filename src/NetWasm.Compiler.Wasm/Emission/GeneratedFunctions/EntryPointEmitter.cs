@@ -1,6 +1,7 @@
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
@@ -20,7 +21,7 @@ internal sealed class EntryPointEmitter(
         bool reportTerminalExceptions = true,
         EntityKey? argumentFactory = null,
         MethodInstanceModel? completion = null,
-        EntityKey? localTimePreflight = null,
+        ImmutableArray<EntityKey> startupPreflights = default,
         EntityKey? processExit = null,
         bool initializesRuntime = true)
     {
@@ -73,9 +74,9 @@ internal sealed class EntryPointEmitter(
             {
                 runtimeInitialization.Initialize(code, initialization);
             }
-            // The local-time preflight may wait on wasi:filesystem, which only an
+            // The startup preflights may wait on wasi:filesystem, which only an
             // async-typed call such as wasi:cli/run may do; initialization may not.
-            if (localTimePreflight is { } preflight)
+            foreach (var preflight in startupPreflights.IsDefault ? [] : startupPreflights)
             {
                 code.Instructions.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.Call,

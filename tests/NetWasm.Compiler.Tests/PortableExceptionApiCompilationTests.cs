@@ -620,7 +620,8 @@ public sealed class PortableExceptionApiCompilationTests
                     if (valueError.ParamName == "mode" &&
                         valueError.HResult == unchecked((int)0x80070057) &&
                         valueError.Message ==
-                            "The value of argument 'mode' (-7) is invalid for Enum type 'Mode'. (Parameter 'mode')") passed |= 2;
+                            "The value of argument 'mode' (-7) is invalid for Enum type '" + typeof(Mode).Name +
+                            "'. (Parameter 'mode')") passed |= 2;
 
                     System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(0);
                     System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(1);

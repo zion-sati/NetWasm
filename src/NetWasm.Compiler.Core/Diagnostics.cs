@@ -17,7 +17,8 @@ public enum DiagnosticCode
     ComponentToolchain = 1010,
     CompilerInvariant = 1011,
     NativeInterop = 1012,
-    FunctionBodyLimit = 1013,
+    // A function past a limit engines put on one function: body size, locals or parameters.
+    FunctionLimit = 1013,
     // A host could not read or write a file, or failed unexpectedly.
     HostFailure = 1014,
     // A program's NetWasmPlatformAttribute declaration is invalid.

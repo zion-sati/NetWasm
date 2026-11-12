@@ -20,6 +20,7 @@ internal static class PlanningServiceCollectionExtensions
         services.TryAddSingleton<INativeAbiSignaturePlanner, NativeAbiSignaturePlanner>();
         services.TryAddSingleton<INativeAbiPlanner, NativeAbiPlanner>();
         services.AddSingleton<INativeImportPlanner, NativeImportPlanner>();
+        services.AddSingleton<INativeCallSitePlanner, NativeCallSitePlanner>();
         services.AddSingleton<INativeCallbackPlanBuilder, NativeCallbackPlanBuilder>();
         services.AddSingleton<InteropImportPlanner>();
         services.AddSingleton<IInteropImportPlanner>(provider =>
@@ -53,6 +54,7 @@ internal static class PlanningServiceCollectionExtensions
         services.AddSingleton<IModuleExportValidator, ModuleExportValidator>();
         services.AddSingleton<IModuleImportCollector, ModuleImportCollector>();
         services.AddSingleton<IComponentBuiltInImportResolver, ComponentBuiltInImportResolver>();
+        services.AddSingleton<ISymbolBuildIdCalculator, SymbolBuildIdCalculator>();
         services.AddSingleton<WasmModuleTargetFactory>();
         services.AddSingleton<IWasmModuleTargetFactory>(provider =>
             provider.GetRequiredService<WasmModuleTargetFactory>());

@@ -126,6 +126,7 @@ constructors must not re-enter managed code.
 | Strings | Source-generated UTF-8 input marshalling, including null, empty, non-ASCII, and embedded NUL |
 | Handles | `SafeHandle` inputs borrowed with call lifetime protection |
 | Callbacks | Static scalar/pointer `UnmanagedCallersOnly` callbacks, named or address-taken, using the default C ABI or Cdecl and explicit registration lifetime |
+| Function pointers | Calls through `delegate* unmanaged` and `delegate* unmanaged[Cdecl]`, to a native function or an `UnmanagedCallersOnly` method, with the shapes above |
 
 The full layout, ownership, cache, and target-width rules remain in the
 [CoreLib/runtime static-native profile](corelib-runtime.md#static-native-interop).
@@ -210,6 +211,6 @@ exceptions crossing managed frames.
 
 `SafeHandle` `ref`, `out`, and return construction are unsupported.
 Callback aggregates, arrays, byrefs, handles, callback-valued parameters or
-results, arbitrary unmanaged `calli`, and delegate-to-native-pointer conversion
-are also outside the profile. These exclusions are compile-time failures rather
+results, function pointers with another calling convention, and
+delegate-to-native-pointer conversion are also outside the profile. These exclusions are compile-time failures rather
 than silent ABI guesses.

@@ -33,7 +33,7 @@ internal sealed class WasmModuleEmitter(
     IAsyncJSImportSetAppender asyncJSImportFunctions,
     IFilterFunctionSetAppender filterFunctions,
     IRuntimeFunctionAppender runtimeFunctions,
-    GeneratedFunctions.LocalTime.ILocalTimePreflightMethodSelector localTimeMethods,
+    GeneratedFunctions.Startup.IStartupPreflightMethodSelector startupMethods,
     IRequestedExportSetAppender requestedExports,
     IComponentFunctionAppender componentFunctions,
     IFunctionIndexResolverFactory functionIndexResolvers,
@@ -67,8 +67,8 @@ internal sealed class WasmModuleEmitter(
     private readonly IAsyncJSImportSetAppender _asyncJSImportFunctions =
         asyncJSImportFunctions;
     private readonly IRuntimeFunctionAppender _runtimeFunctions = runtimeFunctions;
-    private readonly GeneratedFunctions.LocalTime.ILocalTimePreflightMethodSelector _localTimeMethods =
-        localTimeMethods;
+    private readonly GeneratedFunctions.Startup.IStartupPreflightMethodSelector _startupMethods =
+        startupMethods;
     private readonly IRequestedExportSetAppender _requestedExports = requestedExports;
     private readonly IComponentFunctionAppender _componentFunctions = componentFunctions;
     private readonly IFunctionIndexResolverFactory _functionIndexResolvers =
@@ -180,9 +180,8 @@ internal sealed class WasmModuleEmitter(
             NativeCallbackReadinessAddress =
                 moduleData.NativeCallbackReadinessAddress,
             StateRegistrationGuardAddress = moduleData.StateRegistrationGuardAddress,
-            StackTraceSymbolRegistrationGuardAddress =
-                moduleData.StackTraceSymbolRegistrationGuardAddress,
-            StackTraceSymbols = moduleData.StackTraceSymbols,
+            SidecarDescriptorAddress = moduleData.SidecarDescriptorAddress,
+            SidecarSlotAddress = moduleData.SidecarSlotAddress,
             ModuleInitializers = [
                 .. request.ModuleInitializers.Select(initializer =>
                 {
@@ -234,9 +233,9 @@ internal sealed class WasmModuleEmitter(
             functionIndices,
             boundaryEntries,
             request.EntryPointArgumentFactory,
-            GeneratedFunctions.LocalTime.LocalTimePreflightPlacement.RunsInProcessEntry(request)
-                ? _localTimeMethods.Select(request)
-                : null,
+            GeneratedFunctions.Startup.StartupPreflightPlacement.RunsInProcessEntry(request)
+                ? _startupMethods.Select(request).Methods
+                : [],
             request.EntryPointExit);
         var requestedExportIndices = ImmutableDictionary.CreateBuilder<string, int>(
             StringComparer.Ordinal);
@@ -338,6 +337,7 @@ internal sealed class WasmModuleEmitter(
         {
             NativeImports = plan.NativeImports,
             NativeCallbacks = plan.NativeCallbacks,
+            BuildId = target.BuildId,
         });
     }
 

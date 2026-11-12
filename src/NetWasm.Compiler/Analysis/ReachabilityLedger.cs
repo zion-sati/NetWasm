@@ -58,7 +58,6 @@ internal sealed class ReachabilityLedger
     internal bool RequiresDelegateInvoke { get; set; }
     internal bool RequiresGenericArguments { get; set; }
     internal bool RequiresMemberNames { get; set; }
-    internal RuntimeTypeNamePayload TypeNamePayload { get; set; }
     internal ImmutableHashSet<EntityKey>.Builder Types { get; } =
         ImmutableHashSet.CreateBuilder<EntityKey>();
     internal ImmutableHashSet<EntityKey>.Builder Fields { get; } =

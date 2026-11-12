@@ -7,13 +7,13 @@ using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Emission;
 using NetWasm.Compiler.EntryPoints;
-using NetWasm.Compiler.ExceptionTypes;
 using NetWasm.Compiler.GarbageCollection;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Loading;
 using NetWasm.Compiler.Pipeline;
 using NetWasm.Compiler.StackTraces;
+using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Validation;
 
 namespace NetWasm.Compiler;
@@ -50,7 +50,7 @@ public static class NetWasmCompilerServiceCollectionExtensions
         services.AddCompilerEmission();
         services.AddCompilerDiagnostics();
         services.AddCompilerValidation();
-        services.AddCompilerExceptionTypes();
+        services.AddCompilerSymbols();
         services.AddCompilerStackTraces();
         services.AddCompilerInterop();
         services.AddCompilerEntryPoints();

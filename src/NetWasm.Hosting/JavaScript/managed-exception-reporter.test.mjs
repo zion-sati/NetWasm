@@ -1,28 +1,13 @@
 import assert from "node:assert/strict";
-import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 import { createManagedExceptionReporter, copyManagedString } from "./managed-exception-reporter.mjs";
+import { symbolSidecar, typeSymbol } from "./symbol-sidecar-reader.test.mjs";
 
-const wasmBytes = Uint8Array.from([0, 97, 115, 109]);
-const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+const buildId = "b".repeat(32);
+const typeSymbols = (entries, options) => symbolSidecar(options?.kind ?? 1, entries, options);
 
-function diagnosticArtifacts(map, overrides = {}) {
-  const mapBytes = new TextEncoder().encode(
-    typeof map === "string" ? map : JSON.stringify(map));
-  return {
-    manifest: {
-      schemaVersion: 1,
-      buildId: "build",
-      wasmSha256: digest(wasmBytes),
-      exceptionTypeMapSha256: digest(mapBytes),
-    },
-    wasmBytes,
-    mapBytes,
-    ...overrides,
-  };
-}
 
-async function reportArtifactOutcome(artifacts, crypto = webcrypto) {
+async function reportArtifactOutcome(artifacts) {
   let resolveEnriched;
   const enrichment = new Promise(resolve => { resolveEnriched = resolve; });
   let enriched;
@@ -34,7 +19,6 @@ async function reportArtifactOutcome(artifacts, crypto = webcrypto) {
       enriched = event;
       resolveEnriched();
     },
-    crypto,
     loadArtifacts: async () => artifacts,
   });
   reporter.reportTerminalException(7, 0, 0);
@@ -53,9 +37,6 @@ test("reports immediately and enriches lazily with one cached artifact load", as
   const memory = new WebAssembly.Memory({ initial: 1 });
   new Uint16Array(memory.buffer, 40, 2).set([0x68, 0x69]);
   new Uint16Array(memory.buffer, 56, 2).set([0x61, 0x74]);
-  const wasmBytes = Uint8Array.from([0, 97, 115, 109]);
-  const mapBytes = new TextEncoder().encode(JSON.stringify({ schemaVersion: 2, buildId: "build", entries: [{ typeId: 7, displayName: "BoomException", canonicalIdentity: "BoomException, App", assemblyIdentity: "App" }] }));
-  const digest = bytes => createHash("sha256").update(bytes).digest("hex");
   const immediate = [];
   const enriched = [];
   let resolveEnriched;
@@ -69,10 +50,9 @@ test("reports immediately and enriches lazily with one cached artifact load", as
       enriched.push(event);
       if (enriched.length === 2) resolveEnriched();
     },
-    crypto: webcrypto,
     loadArtifacts: async () => {
       loads++;
-      return { manifest: { schemaVersion: 1, buildId: "build", wasmSha256: digest(wasmBytes), exceptionTypeMapSha256: digest(mapBytes) }, wasmBytes, mapBytes };
+      return { typeSymbols: typeSymbols([typeSymbol(7, "BoomException")]) };
     },
   });
 
@@ -117,7 +97,6 @@ test("resolves exact numeric frames from the deployed symbol sidecar", async () 
       id: 7,
       name: "EntryPoint.Run in Program.cs:line 12",
     }],
-    crypto: webcrypto,
     loadArtifacts: async () => {
       throw new Error("not deployed");
     },
@@ -153,22 +132,12 @@ test("drains every scheduled enrichment before host finalization", async () => {
   let resolveArtifacts;
   const artifactsReady = new Promise(resolve => { resolveArtifacts = resolve; });
   const enriched = [];
-  const artifacts = diagnosticArtifacts({
-    schemaVersion: 2,
-    buildId: "build",
-    entries: [{
-      typeId: 7,
-      displayName: "System.FormatException",
-      canonicalIdentity: "System.FormatException, System.Private.CoreLib",
-      assemblyIdentity: "System.Private.CoreLib",
-    }],
-  });
+  const artifacts = { typeSymbols: typeSymbols([typeSymbol(7, "System.FormatException")]) };
   const reporter = createManagedExceptionReporter({
     getMemory: () => new WebAssembly.Memory({ initial: 1 }),
     stringDataOffset: 8,
     reportImmediate: () => {},
     reportEnriched: event => enriched.push(event),
-    crypto: webcrypto,
     loadArtifacts: () => artifactsReady,
   });
 
@@ -192,7 +161,6 @@ test("invalid references preserve the type report", () => {
     stringDataOffset: 8,
     reportImmediate: event => immediate.push(event),
     reportEnriched: () => {},
-    crypto: webcrypto,
     loadArtifacts: async () => { throw new Error("not deployed"); },
   });
 
@@ -270,49 +238,8 @@ test("preserves an immediate ID and message when artifact loading fails", async 
   assert.equal(immediate[0].typeId, 99);
   assert.equal(immediate[0].message, null);
   assert.equal(enriched[0].eventId, immediate[0].eventId);
-  assert.equal(enriched[0].typeName, "<exception type #99 unavailable>");
+  assert.equal(enriched[0].typeName, "type#99");
   assert.match(enriched[0].artifactError, /missing diagnostic artifacts/);
-});
-
-test("preserves the immediate report when artifact binding is mismatched", async () => {
-  const wasmBytes = Uint8Array.from([0, 97, 115, 109]);
-  const mapBytes = new TextEncoder().encode(JSON.stringify({
-    schemaVersion: 2,
-    buildId: "build",
-    entries: [],
-  }));
-  const digest = bytes => createHash("sha256").update(bytes).digest("hex");
-  const immediate = [];
-  const enriched = [];
-  let resolveEnriched;
-  const enrichment = new Promise(resolve => { resolveEnriched = resolve; });
-  const reporter = createManagedExceptionReporter({
-    getMemory: () => new WebAssembly.Memory({ initial: 1 }),
-    stringDataOffset: 8,
-    reportImmediate: event => immediate.push(event),
-    reportEnriched: event => {
-      enriched.push(event);
-      resolveEnriched();
-    },
-    crypto: webcrypto,
-    loadArtifacts: async () => ({
-      manifest: {
-        schemaVersion: 1,
-        buildId: "build",
-        wasmSha256: "mismatched",
-        exceptionTypeMapSha256: digest(mapBytes),
-      },
-      wasmBytes,
-      mapBytes,
-    }),
-  });
-
-  reporter.reportTerminalException(7, 0, 0);
-  await enrichment;
-
-  assert.equal(immediate[0].typeId, 7);
-  assert.equal(enriched[0].eventId, immediate[0].eventId);
-  assert.match(enriched[0].artifactError, /digest mismatch/);
 });
 
 test("treats non-integral and unsafe message references as unavailable", () => {
@@ -405,47 +332,13 @@ test("nested host re-entry retains the terminal event for each invocation", () =
   assert.equal(reporter.consumeTerminalEvent(), undefined);
 });
 
-test("rejects exception maps whose entries are not deterministically ordered", async () => {
-  const memory = new WebAssembly.Memory({ initial: 1 });
-  const wasmBytes = Uint8Array.from([0, 97, 115, 109]);
-  const mapBytes = new TextEncoder().encode(JSON.stringify({
-    schemaVersion: 2,
-    buildId: "build",
-    entries: [
-      { typeId: 2, displayName: "Example.Second", canonicalIdentity: "Example.Second, Example", assemblyIdentity: "Example" },
-      { typeId: 1, displayName: "Example.First", canonicalIdentity: "Example.First, Example", assemblyIdentity: "Example" },
-    ],
-  }));
-  const digest = bytes => createHash("sha256").update(bytes).digest("hex");
-  const enriched = [];
-  let resolveEnriched;
-  const enrichment = new Promise(resolve => { resolveEnriched = resolve; });
-  const reporter = createManagedExceptionReporter({
-    getMemory: () => memory,
-    stringDataOffset: 8,
-    reportImmediate: () => {},
-    reportEnriched: event => {
-      enriched.push(event);
-      resolveEnriched();
-    },
-    crypto: webcrypto,
-    loadArtifacts: async () => ({
-      manifest: {
-        schemaVersion: 1,
-        buildId: "build",
-        wasmSha256: digest(wasmBytes),
-        exceptionTypeMapSha256: digest(mapBytes),
-      },
-      wasmBytes,
-      mapBytes,
-    }),
+test("rejects a type-symbols sidecar whose entries are not ordered", async () => {
+  const outcome = await reportArtifactOutcome({
+    typeSymbols: typeSymbols([typeSymbol(2, "Example.Second"), typeSymbol(1, "Example.First")]),
   });
 
-  reporter.reportTerminalException(2, 0, 0);
-  await enrichment;
-
-  assert.equal(enriched.length, 1);
-  assert.match(enriched[0].artifactError, /ordered by ascending type ID/);
+  assert.equal(outcome.typeName, "type#7");
+  assert.match(outcome.artifactError, /not in order/);
 });
 
 test("keeps host reporting failures distinct from managed terminal failures", () => {
@@ -468,12 +361,7 @@ test("drain preserves an enrichment output failure", async () => {
     stringDataOffset: 8,
     reportImmediate() {},
     reportEnriched: () => { throw hostFailure; },
-    loadArtifacts: async () => diagnosticArtifacts({
-      schemaVersion: 2,
-      buildId: "build",
-      entries: [],
-    }),
-    crypto: webcrypto,
+    loadArtifacts: async () => ({ typeSymbols: typeSymbols([]) }),
   });
 
   reporter.reportTerminalEvent(7, "message");
@@ -529,90 +417,38 @@ test("rejects invalid managed string locations without reading memory", () => {
   assert.equal(copyManagedString(memory, 17, 1, 8), "<message unavailable>");
 });
 
-test("reports each diagnostic artifact envelope failure without losing the event", async () => {
-  const validMap = { schemaVersion: 2, buildId: "build", entries: [] };
-  const valid = diagnosticArtifacts(validMap);
+// Without a usable type-symbols sidecar a crash report names the type by its ID, as the program does (issue 225).
+test("reports each sidecar failure without losing the event", async () => {
+  const valid = typeSymbols([typeSymbol(7, "Example.Error")]);
   const cases = [
-    { ...valid, manifest: null },
-    { ...valid, manifest: { ...valid.manifest, schemaVersion: 2 } },
-    { ...valid, manifest: { ...valid.manifest, buildId: 42 } },
-    { ...valid, mapBytes: null },
-    { ...valid, wasmBytes: null },
-    { ...valid, manifest: { ...valid.manifest, exceptionTypeMapSha256: "0".repeat(64) } },
-    { ...valid, manifest: { ...valid.manifest, wasmSha256: "0".repeat(64) } },
+    null,
+    {},
+    { typeSymbols: [1, 2] },
+    { typeSymbols: valid.slice(0, 20) },
+    { typeSymbols: typeSymbols([], { kind: 2 }) },
   ];
 
   for (const artifacts of cases) {
     const outcome = await reportArtifactOutcome(artifacts);
     assert.equal(outcome.eventId, 1);
-    assert.match(outcome.artifactError, /artifact|digest/);
+    assert.equal(outcome.typeName, "type#7");
+    assert.match(outcome.artifactError, /type-symbols|sidecar/);
   }
 });
 
-// Issue #139: a page outside a secure context has no crypto.subtle, and still
-// names managed exceptions from its diagnostic artifacts.
-test("resolves exception types without crypto.subtle", async () => {
-  const entry = {
-    typeId: 7,
-    displayName: "Example.Error",
-    canonicalIdentity: "Example.Error, Example",
-    assemblyIdentity: "Example",
-  };
-  const artifacts = diagnosticArtifacts({ schemaVersion: 2, buildId: "build", entries: [entry] });
-  for (const crypto of [{}, undefined]) {
-    const outcome = await reportArtifactOutcome(artifacts, crypto);
-    assert.equal(outcome.artifactError, undefined);
-    assert.equal(outcome.typeName, "Example.Error");
-  }
-  const mismatch = await reportArtifactOutcome(
-    { ...artifacts, manifest: { ...artifacts.manifest, wasmSha256: "0".repeat(64) } }, {});
-  assert.match(mismatch.artifactError, /digest mismatch/u);
+test("names the type and build from the type-symbols sidecar", async () => {
+  const outcome = await reportArtifactOutcome({ typeSymbols: typeSymbols([typeSymbol(7, "Example.Error")]) });
+
+  assert.equal(outcome.artifactError, undefined);
+  assert.equal(outcome.typeName, "Example.Error");
+  assert.equal(outcome.buildId, buildId);
 });
 
-test("reports each exception-map contract failure without losing the event", async () => {
-  const entry = {
-    typeId: 7,
-    displayName: "Example.Error",
-    canonicalIdentity: "Example.Error, Example",
-    assemblyIdentity: "Example",
-  };
-  const maps = [
-    "{",
-    { schemaVersion: 1, buildId: "build", entries: [] },
-    { schemaVersion: 2, buildId: "other", entries: [] },
-    { schemaVersion: 2, buildId: "build", entries: null },
-    { schemaVersion: 2, buildId: "build", entries: [{ ...entry, typeId: Number.NaN }] },
-    { schemaVersion: 2, buildId: "build", entries: [{ ...entry, displayName: 7 }] },
-    { schemaVersion: 2, buildId: "build", entries: [{ ...entry, displayName: "" }] },
-    { schemaVersion: 2, buildId: "build", entries: [{ ...entry, canonicalIdentity: 7 }] },
-    { schemaVersion: 2, buildId: "build", entries: [{ ...entry, canonicalIdentity: "" }] },
-    { schemaVersion: 2, buildId: "build", entries: [{ ...entry, assemblyIdentity: 7 }] },
-    { schemaVersion: 2, buildId: "build", entries: [{ ...entry, assemblyIdentity: "" }] },
-  ];
+test("enriches an unknown valid exception type by its ID", async () => {
+  const outcome = await reportArtifactOutcome({ typeSymbols: typeSymbols([]) });
 
-  for (const map of maps) {
-    const outcome = await reportArtifactOutcome(diagnosticArtifacts(map));
-    assert.equal(outcome.eventId, 1);
-    assert.match(outcome.artifactError, /JSON|exception type map|entry|ordered/);
-  }
-
-  const mediaType = await reportArtifactOutcome(diagnosticArtifacts(
-    { schemaVersion: 2, buildId: "build", entries: [] },
-    { mapMediaType: "application/json" }));
-  assert.match(mediaType.artifactError, /media type/);
-});
-
-test("enriches an unknown valid exception type without fabricating identity", async () => {
-  const outcome = await reportArtifactOutcome(diagnosticArtifacts({
-    schemaVersion: 2,
-    buildId: "build",
-    entries: [],
-  }, { mapMediaType: "application/vnd.netwasm.exception-types+json;version=2" }));
-
-  assert.equal(outcome.typeName, "<unknown exception type #7>");
-  assert.equal(outcome.canonicalIdentity, undefined);
-  assert.equal(outcome.assemblyIdentity, undefined);
-  assert.equal(outcome.buildId, "build");
+  assert.equal(outcome.typeName, "type#7");
+  assert.equal(outcome.buildId, buildId);
 });
 
 test("returns from the raw raise hook so the emitter produces the terminal trap", async () => {

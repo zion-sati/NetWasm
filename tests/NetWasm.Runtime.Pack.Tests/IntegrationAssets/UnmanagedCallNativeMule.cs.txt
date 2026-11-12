@@ -1,0 +1,81 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct CalliPair
+{
+    public int First;
+    public int Second;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct CalliWrapped
+{
+    public double Value;
+}
+
+// Issue 226: calls through unmanaged function pointers reach native functions and
+// [UnmanagedCallersOnly] methods, with scalar, mixed and aggregate C ABI signatures, and its
+// siblings: float, narrow integers, a pointer argument and a struct of one scalar.
+public static unsafe class EntryPoint
+{
+    private static int s_marked;
+
+    [DllImport("mule", EntryPoint = "native_mule_calli_twice_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* TwiceAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_swap_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* SwapAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_mix_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* MixAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_scale_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* ScaleAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_narrow_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* NarrowAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_sum_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* SumAddress();
+    [DllImport("mule", EntryPoint = "native_mule_calli_wrap_address", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void* WrapAddress();
+
+    public static int Run(int input)
+    {
+        var twice = (delegate* unmanaged<int, int>)TwiceAddress();
+        if (twice(input) != input * 2) return -1;
+        var cdeclTwice = (delegate* unmanaged[Cdecl]<int, int>)TwiceAddress();
+        if (cdeclTwice(input + 1) != (input + 1) * 2) return -2;
+        var swap = (delegate* unmanaged<CalliPair, CalliPair>)SwapAddress();
+        var swapped = swap(new CalliPair { First = input, Second = 7 });
+        if (swapped.First != 7 || swapped.Second != input) return -3;
+        var mix = (delegate* unmanaged<int, double, long, double>)MixAddress();
+        if (mix(input, 0.5, 1L << 40) != input + 0.5 + (1L << 40)) return -4;
+        delegate* unmanaged<int, int> triple = &Triple;
+        if (triple(input) != input * 3) return -5;
+        delegate* unmanaged[Cdecl]<int, void> mark = &Mark;
+        mark(input);
+        if (s_marked != input) return -6;
+        // Siblings: float, narrow integers extended as the C ABI does, a pointer-width argument and
+        // a struct of one scalar, which travels as that scalar.
+        var scale = (delegate* unmanaged<float, float, float>)ScaleAddress();
+        if (scale(input + 0.5f, 3f) != (input + 0.5f) * 3f) return -7;
+        var narrow = (delegate* unmanaged<byte, sbyte, sbyte>)NarrowAddress();
+        if (narrow(250, (sbyte)-(input + 3)) != (sbyte)(250 - (input + 3))) return -8;
+        var values = stackalloc int[] { input, 2, 3 };
+        var sum = (delegate* unmanaged<int*, int, long>)SumAddress();
+        if (sum(values, 3) != (input + 5) * 4294967296L) return -9;
+        var wrap = (delegate* unmanaged<CalliWrapped, CalliWrapped>)WrapAddress();
+        if (wrap(new CalliWrapped { Value = input + 0.25 }).Value != (input + 0.25) * 2) return -10;
+        delegate* unmanaged<float, float> half = &Half;
+        if (half(input + 1f) != (input + 1f) / 2) return -11;
+        return 42;
+    }
+
+    [UnmanagedCallersOnly]
+    private static float Half(float value) => value / 2;
+
+    [UnmanagedCallersOnly]
+    private static int Triple(int value) => value * 3;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static void Mark(int value) => s_marked = value;
+}

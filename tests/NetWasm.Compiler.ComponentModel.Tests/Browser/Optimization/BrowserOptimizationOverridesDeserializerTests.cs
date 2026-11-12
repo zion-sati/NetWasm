@@ -46,7 +46,8 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
               "multicastInlineDispatch":"Enabled",
               "newObjectNullCheckElimination":"Disabled",
               "loopStrengthReduction":"Disabled",
-              "rangeBranchFolding":"Enabled"
+              "rangeBranchFolding":"Enabled",
+              "unwrittenStaticFieldFolding":"Disabled"
             }
             """);
         Assert.Equal(new WasmOptimizationOverrides(
@@ -85,7 +86,8 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
             MulticastInlineDispatch: ManagedMulticastInlineDispatch.Enabled,
             NewObjectNullCheckElimination: ManagedNewObjectNullCheckElimination.Disabled,
             LoopStrengthReduction: ManagedLoopStrengthReduction.Disabled,
-            RangeBranchFolding: ManagedRangeBranchFolding.Enabled), result);
+            RangeBranchFolding: ManagedRangeBranchFolding.Enabled,
+            UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Disabled), result);
     }
 
     [Fact]

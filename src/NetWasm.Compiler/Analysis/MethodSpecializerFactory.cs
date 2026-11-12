@@ -49,6 +49,8 @@ internal sealed class MethodSpecializerFactory(
         [
             // First, so every later rule sees an argument or store of the kind declared.
             new ImplicitCoercionRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
+            // Second, so every later rule meets each leave on an empty stack, exiting a block.
+            new LeaveRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
             .. optimizationSettings.SwitchBitTests == SwitchBitTestPolicy.Conservative
                 ? [new SwitchBitTestRewriter()]
                 : Array.Empty<IMethodRewriteRule>(),

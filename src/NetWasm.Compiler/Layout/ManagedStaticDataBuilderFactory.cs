@@ -7,23 +7,18 @@ namespace NetWasm.Compiler.Layout;
 
 internal sealed class ManagedStaticDataBuilderFactory(
     IExceptionTypeNameResolver exceptionTypeNames,
-    IAssignableTypeMetadataBuilderFactory assignableTypeMetadata,
-    IAssemblyIdentityFormatterFactory assemblyIdentityFormatters) :
+    IAssignableTypeMetadataBuilderFactory assignableTypeMetadata) :
     IManagedStaticDataBuilderFactory
 {
     private readonly IExceptionTypeNameResolver _exceptionTypeNames = exceptionTypeNames ??
         throw new System.ArgumentNullException(nameof(exceptionTypeNames));
     private readonly IAssignableTypeMetadataBuilderFactory _assignableTypeMetadata =
         assignableTypeMetadata ?? throw new ArgumentNullException(nameof(assignableTypeMetadata));
-    private readonly IAssemblyIdentityFormatterFactory _assemblyIdentityFormatters =
-        assemblyIdentityFormatters ??
-        throw new ArgumentNullException(nameof(assemblyIdentityFormatters));
 
     internal ManagedStaticDataBuilderFactory(IExceptionTypeNameResolver exceptionTypeNames) :
         this(
             exceptionTypeNames,
-            new EmptyAssignableTypeMetadataBuilderFactory(),
-            new AssemblyIdentityFormatterFactory())
+            new EmptyAssignableTypeMetadataBuilderFactory())
     {
     }
 
@@ -50,7 +45,6 @@ internal sealed class ManagedStaticDataBuilderFactory(
             identityBaseTypes,
             types,
             state);
-        var assemblyNames = _assemblyIdentityFormatters.Create(metadata.Assemblies);
         return new ManagedStaticDataBuilder(
             types,
             state,
@@ -65,8 +59,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 bitmaps,
-                assignableTypes,
-                assemblyNames),
+                assignableTypes),
             new ConstructedTypeDescriptorBuilder(
                 typeFinder,
                 typeDefinitions,
@@ -78,8 +71,6 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 bitmaps,
                 assignableTypes,
                 program.RequiresTypeFacts,
-                program.TypeNamePayload,
-                assemblyNames,
                 program.DelegateInvokeDescriptors,
                 program.Finalizers),
             new ValueTypeDescriptorBuilder(

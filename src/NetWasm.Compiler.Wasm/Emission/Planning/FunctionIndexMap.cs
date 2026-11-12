@@ -39,16 +39,27 @@ internal sealed record FunctionIndexMap(
     public ImmutableDictionary<EntityKey, WasmFunctionIndex> JSImportForwarders { get; init; } =
         ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty;
 
+    // A delegate's Invoke has no function of its own: a delegate that binds it, converted from
+    // another delegate, takes the address of its type's invoke helper. Keyed by definition, and
+    // by canonical name for a generic delegate's.
+    public ImmutableDictionary<EntityKey, WasmFunctionIndex> DelegateInvokeMethods { get; init; } =
+        ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty;
+
+    public ImmutableDictionary<string, WasmFunctionIndex> ConstructedDelegateInvokeMethods { get; init; } =
+        ImmutableDictionary<string, WasmFunctionIndex>.Empty;
+
     public bool TryGetMethod(EntityKey method, out WasmFunctionIndex index) =>
         DirectMethods.TryGetValue(method, out index) ||
         JSImportForwarders.TryGetValue(method, out index) ||
+        DelegateInvokeMethods.TryGetValue(method, out index) ||
         ImportedMethods.TryGetValue(method, out index);
 
     public bool TryGetInteropImport(EntityKey method, out WasmFunctionIndex index) =>
         ImportedMethods.TryGetValue(method, out index);
 
     public bool TryGetConstructedMethod(string method, out WasmFunctionIndex index) =>
-        ConstructedMethods.TryGetValue(method, out index);
+        ConstructedMethods.TryGetValue(method, out index) ||
+        ConstructedDelegateInvokeMethods.TryGetValue(method, out index);
 
     public WasmFunctionIndex GetDelegateInvokeHelper(string delegateType) =>
         DelegateInvokeHelpers[delegateType];

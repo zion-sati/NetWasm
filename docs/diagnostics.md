@@ -9,7 +9,8 @@ The size-first Release profile normally leaves those optional features out.
 | SDK property | Debug default | Release default | Purpose |
 | --- | --- | --- | --- |
 | `NetWasmStructuredDiagnostics` | `true` | `false` | Structured managed failure reporting for the selected execution contract |
-| `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and its symbol sidecar |
+| `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and the frame names in `<program>.wasm.method-symbols` |
+| `NetWasmTypeNames` | `true` | `false` | Every type's names in `<program>.wasm.type-symbols`, which the program reads; without them a name reads `type#<id>` |
 
 The switches are independent. Enable the desired features explicitly, for
 example for an application that needs rich Release diagnostics:
@@ -23,11 +24,13 @@ example for an application that needs rich Release diagnostics:
 
 Setting either property to `false` also overrides its Debug default. These
 features are pay-as-you-use and do not enable reflection or general runtime
-type-name discovery. Do not require desktop-style messages, formatted exception
+type discovery. Do not require desktop-style messages, formatted exception
 text or stack frames from a deployment whose selected profile omits them.
 
-Supported interop boundaries can still expose a managed type ID, sidecar-mapped
-type name and stored message when available. Turning diagnostics off is not a
+Supported interop boundaries can still expose a managed type ID, the type's
+name from `<program>.wasm.type-symbols` and the stored message when available.
+Every build writes the names of its exception types to that file, so a host's
+crash report names the type even when the program itself reads `type#<id>`. Turning diagnostics off is not a
 security guarantee that application messages are erased. JavaScript managed
 error payloads preserve the stored nullable message, not a synthesized result
 of the managed `Exception.Message` getter. Null and an explicitly empty string
@@ -40,6 +43,36 @@ A faulted `Task` whose exception nothing observes writes one line, "NetWasm: an
 unobserved managed Task exception was finalized", to standard error when it is
 collected. Handle `TaskScheduler.UnobservedTaskException` to receive the
 exception itself.
+
+## Program sidecars
+
+A build writes a program's optional data beside it, each file named after the
+program:
+
+| File | Holds | Written |
+| --- | --- | --- |
+| `<program>.wasm.type-symbols` | Type names by runtime type ID | Every build: the exception types; with `NetWasmTypeNames`, every type |
+| `<program>.wasm.method-symbols` | Stack frame names by method ID, with file and line in Debug | With `NetWasmManagedStackTrace` |
+| `<program>.wasm.tz-info` | Time zone data | When local time is reachable; see [timezone assets](timezone-assets.md) |
+
+The deployment manifest records each file. The program opens them read-only
+from one guest directory, `/netwasm-sidecars/`, under the names the build gave
+them: `App.wasm` opens `/netwasm-sidecars/App.wasm.type-symbols`. NetWasm's
+JavaScript hosts mount them there. Under Wasmtime, mount the folder that holds
+the program:
+
+```sh
+wasmtime run --dir bin/Debug/netwasm0.1::/netwasm-sidecars bin/Debug/netwasm0.1/App.wasm
+```
+
+A program built with `NetWasmTypeNames` or `NetWasmManagedStackTrace` reads its
+symbols files at startup. Each file carries the build ID of the program that
+wrote it. If a file is missing, unreadable, malformed or from another build, the
+program writes one line to standard error, for example
+`NetWasm: skipped /netwasm-sidecars/App.wasm.type-symbols (the host mounts no /netwasm-sidecars directory); type names read as type#<id>.`,
+and runs as if it was built without that file: names read `type#<id>` and
+frames `method#<id>`. Time zone data is different: a `TZ` the program cannot
+find in its data fails at startup.
 
 ## Compiler diagnostic format
 
@@ -61,11 +94,11 @@ reported by `NW1010`, see the [support status and roadmap](support-status.md).
 | `NW1006` `InvalidEntryPoint` | Entry lookup and Wasm entry validation | `--entry` is absent/non-unique or is not static `int Method(int)`; a Wasm entry cannot return a managed value type. Select a valid entry or use an explicit export/WIT export. |
 | `NW1007` `IrreducibleControlFlow` | Control-flow structurization | A valid method graph cannot be represented by the current structured Wasm lowering. Rewrite the reachable control flow. |
 | `NW1008` `RuntimeContract` | Layout/runtime-state and Wasm emission lookups | A compiler-generated function index, layout, exception object, or scalar memory contract is absent/inconsistent. Report compiler/runtime state with the complete command. |
-| `NW1009` `ComponentContract` | WIT reading/validation, world selection, component reachability, and binding conflict checks | WIT is absent/ambiguous/async, bindings are outside the selected world, or exports conflict. Select one supported synchronous world and align declarations/options. |
+| `NW1009` `ComponentContract` | WIT reading/validation, world selection, component reachability, and binding conflict checks | WIT is absent/ambiguous/async, bindings are outside the selected world, or exports conflict. Select one supported synchronous world and align declarations/options; for a binding outside the world, the message names the interface the program reaches and the `import` or `export` line that adds it. |
 | `NW1010` `ComponentToolchain` | Component capability checks and external `wasm-tools`/`wasm-merge`/`wasm-opt` execution | A tool is unavailable/fails, or wasm64 Component packaging is unsupported. Install/verify pinned tools or use wasm32 for Components; wasm64 is never silently downgraded. |
 | `NW1011` `CompilerInvariant` | Metadata, reachability, structured-program, layout, roots, emission, and complexity validators | Compiler state violated an internal invariant. Report it as a compiler defect, not an ordinary compatibility error. |
 | `NW1012` `NativeInterop` | Static native declarations, ABI layouts, imports, callback exports, and reachability | A reachable declaration is outside the documented static C profile or conflicts with another export. Use a supported shape or isolate it from the closed world. |
-| `NW1013` `FunctionBodyLimit` | Module encoding, right after emission and before linking or optimization | A method compiles to a WebAssembly function body over 7,654,321 bytes, which browsers and Node refuse to compile. The diagnostic names the method and its size. Split the method into smaller methods. |
+| `NW1013` `FunctionLimit` | Module encoding, right after emission and before linking or optimization | A method compiles to a WebAssembly function past a limit browsers, Node and Wasmtime put on one function: a body larger than 7,654,321 bytes, more than 50,000 locals (its parameters among them) or more than 1,000 parameters. The diagnostic names the managed method and the limit | Split the method, for example a large generated initializer, into smaller methods, or pass many values in an array or an object |
 | `NW1014` `HostFailure` | `nwc` reading inputs and writing outputs | The host failed outside the compiler, such as a missing input or an unwritable output directory. Correct the path or permission the message names. |
 | `NW1015` `PlatformService` | Preparing compilation, before reachability | A `NetWasmPlatformServiceAttribute` binding is invalid: it names a type that is not a platform service contract, binds one contract twice, binds an implementation that is an interface, abstract, a value type, generic, lacks a public parameterless constructor or does not implement the contract, or binds `ITimerScheduler` in a program with WASI, whose timers run on the Component Model's event loop | Correct the attribute the message names |
 | `NWA2001` `GenericExpansion` | Identifier formatting only; no current production emitter | The enum reserves this identifier but no current source path emits it. Preserve and report the exact value if observed. |

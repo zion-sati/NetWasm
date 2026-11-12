@@ -1,15 +1,14 @@
 namespace System.Runtime.InteropServices.Output;
 
-// One standard stream's write-via-stream, opened on first write and closed or
-// ended once. The opened streams form a list that EndOpened ends when the
-// process exits, as an operating system closes a process's descriptors.
+// One standard stream's write-via-stream, opened on first write and closed once.
+// The opened streams form a list that EndOpened closes when the process exits,
+// as an operating system closes a process's descriptors and flushes their output.
 internal sealed class WasiOutputStreamResource : IDisposable
 {
     private static WasiOutputStreamResource? s_opened;
 
     private readonly IWasiOutputStreamOpener _opener;
     private readonly IWasiOutputStreamCloser _closer;
-    private readonly IWasiByteStreamWritableDropInvoker _dropWritable;
     private WasiOutputStreamEnds _ends;
     private bool _opened;
     private bool _disposed;
@@ -17,12 +16,10 @@ internal sealed class WasiOutputStreamResource : IDisposable
 
     internal WasiOutputStreamResource(
         IWasiOutputStreamOpener opener,
-        IWasiOutputStreamCloser closer,
-        IWasiByteStreamWritableDropInvoker dropWritable)
+        IWasiOutputStreamCloser closer)
     {
         _opener = opener ?? throw new ArgumentNullException();
         _closer = closer ?? throw new ArgumentNullException();
-        _dropWritable = dropWritable ?? throw new ArgumentNullException();
     }
 
     internal int Writable
@@ -72,17 +69,9 @@ internal sealed class WasiOutputStreamResource : IDisposable
         }
     }
 
-    // Ends an open stream at process exit, unless it was already closed: dropping
-    // the writable end tells the host the output is complete. The completion
-    // future goes with the exiting instance.
-    internal void End()
-    {
-        if (_disposed || !_opened)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _dropWritable.Drop(_ends.Writable);
-    }
+    // Closes an open stream at process exit, unless it was already closed, and waits
+    // until the host has written everything the program wrote: a host that passes the
+    // bytes on asynchronously would otherwise lose what it had accepted but not yet
+    // written when the program's export returns (issue 224).
+    internal void End() => Dispose();
 }

@@ -14,12 +14,13 @@ internal sealed class EnumNullCheckEmitter(
     public void Emit(
         IWasmInstructionWriter code,
         int objectLocal,
-        OptionalFunctionIndex throwFunction)
+        OptionalFunctionIndex throwFunction,
+        ManagedExceptionKind exception = ManagedExceptionKind.NullReference)
     {
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(objectLocal))));
         references.Emit(code, ReferenceComparison.EqualZero);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        exceptions.Emit(code, ManagedExceptionKind.NullReference, throwFunction);
+        exceptions.Emit(code, exception, throwFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 }

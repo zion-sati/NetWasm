@@ -35,16 +35,19 @@ NetWasm.Compiler.Tests.Correctness.BitArrayCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.BitCastCorpusTests
 NetWasm.Compiler.Tests.Correctness.BoxingRepresentationTests
 NetWasm.Compiler.Tests.Correctness.BranchValueFrameArgumentTests
+NetWasm.Compiler.Tests.Correctness.ByRefTargetRootsGcTests
 NetWasm.Compiler.Tests.Correctness.CallArgumentRootingTests
 NetWasm.Compiler.Tests.Correctness.CfgPropertyTests
 NetWasm.Compiler.Tests.Correctness.CharPredicateCorpusTests
 NetWasm.Compiler.Tests.Correctness.CharUnicodeInfoCorpusTests
 NetWasm.Compiler.Tests.Correctness.CleanupOutcomeDifferentialTests
+NetWasm.Compiler.Tests.Correctness.ClosedIssueSiblingCompilationTests
 NetWasm.Compiler.Tests.Correctness.CollectionCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.CollectionStateBoundaryTests
 NetWasm.Compiler.Tests.Correctness.CommonValueModelsCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.ComplexMutableCollectionCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.ConcurrentDictionaryCompatibilityCorpusTests
+NetWasm.Compiler.Tests.Correctness.ConditionalBranchToFallthroughCompilationTests
 NetWasm.Compiler.Tests.Correctness.ConstantFoldingCorpusTests
 NetWasm.Compiler.Tests.Correctness.ConstantTripLoopUnrollerCorpusTests
 NetWasm.Compiler.Tests.Correctness.ControlFlowDifferentialTests
@@ -54,6 +57,7 @@ NetWasm.Compiler.Tests.Correctness.CryptographicRandomTests
 NetWasm.Compiler.Tests.Correctness.DecimalEdgeTests
 NetWasm.Compiler.Tests.Correctness.DelegateCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.DelegateInvocationGcTests
+NetWasm.Compiler.Tests.Correctness.DelegateInvokeTargetCompilationTests
 NetWasm.Compiler.Tests.Correctness.DelegateTargetSearchTests
 NetWasm.Compiler.Tests.Correctness.DeterministicAsyncContractDifferentialTests
 NetWasm.Compiler.Tests.Correctness.DeterministicGeneratedCorpusTests
@@ -81,6 +85,7 @@ NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests
 NetWasm.Compiler.Tests.Correctness.FrozenDictionaryCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.FrozenOrdinalStringCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.FrozenSetCompatibilityCorpusTests
+NetWasm.Compiler.Tests.Correctness.FunctionPointerValueTypeCompilationTests
 NetWasm.Compiler.Tests.Correctness.FusedMultiplyAddCorpusTests
 NetWasm.Compiler.Tests.Correctness.GcGenerationArgumentCorpusTests
 NetWasm.Compiler.Tests.Correctness.GenericCharacterValueModelsCompatibilityCorpusTests
@@ -95,6 +100,7 @@ NetWasm.Compiler.Tests.Correctness.ImmutableQueueStackCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.ImmutableSortedDictionaryCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.ImmutableSortedSetCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.ImplicitExceptionIdentityCorpusTests
+NetWasm.Compiler.Tests.Correctness.ImplicitExceptionIdentitySiblingTests
 NetWasm.Compiler.Tests.Correctness.IndexRangeCorpusTests
 NetWasm.Compiler.Tests.Correctness.InlineArrayRootsGcTests
 NetWasm.Compiler.Tests.Correctness.InlinedReceiverCheckTests
@@ -110,12 +116,14 @@ NetWasm.Compiler.Tests.Correctness.ListCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.LoopInvariantFieldHoistingCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.LoopRotationCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.ManagedIoCompatibilityCorpusTests
+NetWasm.Compiler.Tests.Correctness.ManyEnumDispatchCompilationTests
 NetWasm.Compiler.Tests.Correctness.MathDifferentialTests
 NetWasm.Compiler.Tests.Correctness.Matrix4x4CompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.MemoryBoundaryTests
 NetWasm.Compiler.Tests.Correctness.MemoryCopyCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.MemoryExtensionsCorpusTests
 NetWasm.Compiler.Tests.Correctness.MemoryPinningCompatibilityTests
+NetWasm.Compiler.Tests.Correctness.MethodGroupTargetCompilationTests
 NetWasm.Compiler.Tests.Correctness.MethodResolutionCorpusTests
 NetWasm.Compiler.Tests.Correctness.MonitorTests
 NetWasm.Compiler.Tests.Correctness.MultiFileCorpusTests
@@ -134,6 +142,7 @@ NetWasm.Compiler.Tests.Correctness.NumericsVector3StorageCorpusTests
 NetWasm.Compiler.Tests.Correctness.NumericsVectorStorageCorpusTests
 NetWasm.Compiler.Tests.Correctness.NumericsVectorTypesCorpusTests
 NetWasm.Compiler.Tests.Correctness.ObjectModelCollectionCompatibilityCorpusTests
+NetWasm.Compiler.Tests.Correctness.OptimizerSiblingCompilationTests
 NetWasm.Compiler.Tests.Correctness.OrderedDictionaryCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.PolyTypeGeneratedAccessorTests
 NetWasm.Compiler.Tests.Correctness.PortableMatrixCompatibilityTests
@@ -154,6 +163,7 @@ NetWasm.Compiler.Tests.Correctness.ReferenceRepresentationCrossProductTests
 NetWasm.Compiler.Tests.Correctness.RootFunctionsCorpusTests
 NetWasm.Compiler.Tests.Correctness.RootLifetimeGcTests
 NetWasm.Compiler.Tests.Correctness.RttiArraySemanticTests
+NetWasm.Compiler.Tests.Correctness.RuntimeAllocationSiblingGcTests
 NetWasm.Compiler.Tests.Correctness.RuntimeCloneRootsGcTests
 NetWasm.Compiler.Tests.Correctness.RuntimeHelpersCompilerContractsCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.ScalarCallPreservationGcTests
@@ -185,7 +195,6 @@ NetWasm.Compiler.Tests.Correctness.TaskSchedulerTests
 NetWasm.Compiler.Tests.Correctness.TextInfoCorpusTests
 NetWasm.Compiler.Tests.Correctness.ThreadLocalTests
 NetWasm.Compiler.Tests.Correctness.TypeInitializationTriggerCorpusTests
-NetWasm.Compiler.Tests.Correctness.TypeNameCorpusTests
 NetWasm.Compiler.Tests.Correctness.TypeTestCorpusTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorFailureTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorGcTests
@@ -197,6 +206,7 @@ NetWasm.Compiler.Tests.Correctness.ValidCSharpFuzzTests
 NetWasm.Compiler.Tests.Correctness.ValueAndCallDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ValueFrameInitializationTests
 NetWasm.Compiler.Tests.Correctness.ValueTypeDefaultInterfaceMethodCorpusTests
+NetWasm.Compiler.Tests.Correctness.ValueTypeEqualityRootsGcTests
 NetWasm.Compiler.Tests.Correctness.VectorSurfaceCorpusTests
 NetWasm.Compiler.Tests.Correctness.VectorValueShapesCorpusTests
 NetWasm.Compiler.Tests.Correctness.WalkLoopUnrollerCorpusTests

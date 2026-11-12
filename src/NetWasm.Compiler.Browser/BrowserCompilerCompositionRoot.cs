@@ -5,7 +5,6 @@ using NetWasm.Compiler.Browser.Inputs;
 using NetWasm.Compiler.Browser.Results;
 using NetWasm.Compiler.Browser.Wit;
 using NetWasm.Compiler.ComponentModel;
-using NetWasm.Compiler.ExceptionTypes;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Metadata.ManagedExecutables;
 using NetWasm.Compiler.Wasm.Units;
@@ -28,8 +27,6 @@ internal static class BrowserCompilerCompositionRoot
             BrowserCompilationRequestResolver>();
         registrations.AddSingleton<IManagedAssemblyImageReader,
             VirtualManagedAssemblyImageReader>();
-        registrations.AddSingleton<ICompilationInputHasher,
-            VirtualCompilationInputHasher>();
         registrations.AddSingleton<IWitDocumentJsonReader, WitDocumentJsonReader>();
         registrations.AddSingleton<IWitDocumentReader, VirtualWitDocumentReader>();
         registrations.AddSingleton<IBrowserCompilationResultProjector,

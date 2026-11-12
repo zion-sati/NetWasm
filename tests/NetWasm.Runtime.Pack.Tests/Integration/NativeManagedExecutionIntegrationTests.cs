@@ -119,6 +119,17 @@ public sealed class NativeManagedExecutionIntegrationTests
             generated: false,
             namedCallbacks: true);
 
+    // Issue 226: calls through unmanaged function pointers, to native functions and to
+    // [UnmanagedCallersOnly] methods, run through the linked native function table.
+    [Theory]
+    [InlineData("wasm32", false)]
+    [InlineData("wasm32", true)]
+    [InlineData("wasm64", false)]
+    [InlineData("wasm64", true)]
+    [Trait("Category", "NativeUnmanagedCallIntegration")]
+    public void ExecutesUnmanagedFunctionPointerCallsThroughRealArchive(string target, bool lto)
+        => Execute(target, lto, generated: false, unmanagedCalls: true);
+
     [Theory]
     [InlineData("wasm32")]
     [InlineData("wasm64")]
@@ -148,7 +159,8 @@ public sealed class NativeManagedExecutionIntegrationTests
         bool namedCallbacks = false,
         bool callbackOnly = false,
         bool callbackFailure = false,
-        bool simd = false)
+        bool simd = false,
+        bool unmanagedCalls = false)
     {
         var providerlessCallbacks = callbackOnly || callbackFailure;
         using var temporary = new TemporaryDirectory();
@@ -183,6 +195,10 @@ public sealed class NativeManagedExecutionIntegrationTests
         if (simd)
         {
             cell += "-simd";
+        }
+        if (unmanagedCalls)
+        {
+            cell += "-unmanaged-calls";
         }
         Assert.False(Directory.Exists(cell));
         Directory.CreateDirectory(cell);
@@ -219,6 +235,7 @@ public sealed class NativeManagedExecutionIntegrationTests
             }
         }
         var sourcePath = Path.Combine(AppContext.BaseDirectory, "IntegrationAssets",
+            unmanagedCalls ? "UnmanagedCallNativeMule.cs.txt" :
             callbackFailure ? "CallbackFailureNativeMule.cs.txt" :
                 callbackOnly ? "CallbackOnlyNativeMule.cs.txt" :
                 namedCallbacks ? "NamedCallbackNativeMule.cs.txt" :
@@ -276,14 +293,29 @@ public sealed class NativeManagedExecutionIntegrationTests
             var compilation = NetWasmCompiler.Compile(new(assembly, [coreLib], "NativeMule.EntryPoint", "Run", [], wasmTarget,
                 DiagnosticTracePath: Path.Combine(run, "compiler-trace.json"), DiagnosticLogPath: Path.Combine(run, "compiler.log"),
                 ReferenceAssemblyAliases: generated ? DesktopAliases : null));
-            Assert.Equal(providerlessCallbacks ? 0 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :
+            Assert.Equal(providerlessCallbacks ? 0 : unmanagedCalls ? 7 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :
                     aggregateProfile ? 19 : aggregates ? 4 : 14,
                 compilation.NativeImports.Length);
             Assert.DoesNotContain(compilation.NativeImports, import => import.LibraryName == "unused");
             var application = Path.Combine(run, "application.wasm");
             File.WriteAllBytes(application, compilation.ApplicationModule);
             var callbackObject = Path.Combine(run, "application.callbacks.o");
-            if (callbacks || namedCallbacks || providerlessCallbacks)
+            if (unmanagedCalls)
+            {
+                // One trampoline per C ABI signature: (int)->int for twice and Triple, the
+                // aggregate swap's (result, argument) pointers, mix and Mark; scale and Half's
+                // floats, narrow's extended integers, sum's pointer and the one-double struct,
+                // which travels as a double.
+                var support = Assert.IsType<WasmNativeCallbackSupportArtifact>(compilation.NativeCallbackSupport);
+                Assert.Equal(3, support.Callbacks.Length);
+                Assert.Equal(["netwasm_calli_dd", "netwasm_calli_didl", "netwasm_calli_ff", "netwasm_calli_fff",
+                        "netwasm_calli_ii", "netwasm_calli_iii", "netwasm_calli_lpi", "netwasm_calli_vi", "netwasm_calli_vpp"],
+                    support.Trampolines);
+                Assert.Equal([.. support.Callbacks.Select(callback => callback.RuntimeGetterExportName!),
+                    .. support.Trampolines], support.TemporaryRuntimeExports);
+                File.WriteAllBytes(callbackObject, support.ObjectBytes);
+            }
+            else if (callbacks || namedCallbacks || providerlessCallbacks)
             {
                 var support = Assert.IsType<WasmNativeCallbackSupportArtifact>(compilation.NativeCallbackSupport);
                 Assert.Equal(namedCallbacks || providerlessCallbacks ? 1 : 15, support.Callbacks.Length);
@@ -327,6 +359,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                         callbackSupport.Callbacks,
                         callbackSupport.TemporaryApplicationExports,
                         callbackSupport.TemporaryRuntimeExports,
+                        callbackSupport.Trampolines,
                     },
                 }
                 : new
@@ -353,7 +386,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                 NativeLibraries = providerlessCallbacks
                     ? []
                     : [new("mule", target, archive), new("unused", target, Path.Combine(cell, "missing-unused.a"))],
-                NativeCallbackObjectPath = callbacks || namedCallbacks || providerlessCallbacks
+                NativeCallbackObjectPath = callbacks || namedCallbacks || providerlessCallbacks || unmanagedCalls
                     ? callbackObject
                     : null,
             };
@@ -424,6 +457,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                 commands.Invoke(new(Path.Combine(tools, "node" + suffix),
                     [Path.Combine(AppContext.BaseDirectory, "IntegrationAssets", "native-mule-runner.mjs"),
                         assets.Root, target, manifestPath, module, observation, internalExportsPath,
+                        unmanagedCalls ? "unmanaged-calls" :
                         callbackFailure ? "callback-failure" :
                             callbackOnly ? "callback-only" :
                             namedCallbacks ? "named-callbacks" : callbacks ? "callbacks" : "ordinary"],
@@ -482,6 +516,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                 namedCallbacks,
                 callbackOnly,
                 callbackFailure,
+                unmanagedCalls,
                 compilation.NativeImports,
                 SourceSha256 = new Sha256ArtifactDigestCalculator().Calculate(sourcePath),
                 AssemblySha256 = new Sha256ArtifactDigestCalculator().Calculate(assembly),

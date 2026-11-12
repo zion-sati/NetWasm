@@ -802,17 +802,17 @@
         <MediaType>application/json</MediaType>
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmDeploymentArtifact>
-      <_NetWasmDeploymentArtifact Include="$(NetWasmExceptionTypeMapPath)">
-        <RelativePath>$(AssemblyName).exceptions.json</RelativePath>
-        <Role>exception-type-map</Role>
-        <MediaType>application/vnd.netwasm.exception-types+json;version=2</MediaType>
-        <SchemaVersion>2</SchemaVersion>
+      <_NetWasmDeploymentArtifact Include="$(NetWasmTypeSymbolsPath)">
+        <RelativePath>$(AssemblyName).wasm.type-symbols</RelativePath>
+        <Role>type-symbols</Role>
+        <MediaType>application/vnd.netwasm.type-symbols;version=1</MediaType>
+        <SchemaVersion>1</SchemaVersion>
       </_NetWasmDeploymentArtifact>
-      <_NetWasmDeploymentArtifact Include="$(NetWasmStackTraceSymbolsPath)"
-                                  Condition="'$(NetWasmStackTraceSymbolsPath)' != '' AND Exists('$(NetWasmStackTraceSymbolsPath)')">
-        <RelativePath>$(AssemblyName).netwasm.stacktrace.json</RelativePath>
-        <Role>stack-trace-symbols</Role>
-        <MediaType>application/vnd.netwasm.stack-trace-symbols+json;version=1</MediaType>
+      <_NetWasmDeploymentArtifact Include="$(NetWasmMethodSymbolsPath)"
+          Condition="'$(NetWasmMethodSymbolsPath)' != '' AND Exists('$(NetWasmMethodSymbolsPath)')">
+        <RelativePath>$(AssemblyName).wasm.method-symbols</RelativePath>
+        <Role>method-symbols</Role>
+        <MediaType>application/vnd.netwasm.method-symbols;version=1</MediaType>
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmDeploymentArtifact>
       <_NetWasmDeploymentRequiredImport Include="@(_NetWasmRequiredImport)" Condition="'$(NetWasmRawWasm)' == 'true'" />
@@ -1003,17 +1003,17 @@
         <MediaType>application/json</MediaType>
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmBrowserDeploymentArtifact>
-      <_NetWasmBrowserDeploymentArtifact Include="$(NetWasmExceptionTypeMapPath)">
-        <RelativePath>$(AssemblyName).exceptions.json</RelativePath>
-        <Role>exception-type-map</Role>
-        <MediaType>application/vnd.netwasm.exception-types+json;version=2</MediaType>
-        <SchemaVersion>2</SchemaVersion>
+      <_NetWasmBrowserDeploymentArtifact Include="$(NetWasmTypeSymbolsPath)">
+        <RelativePath>$(AssemblyName).wasm.type-symbols</RelativePath>
+        <Role>type-symbols</Role>
+        <MediaType>application/vnd.netwasm.type-symbols;version=1</MediaType>
+        <SchemaVersion>1</SchemaVersion>
       </_NetWasmBrowserDeploymentArtifact>
-      <_NetWasmBrowserDeploymentArtifact Include="$(NetWasmStackTraceSymbolsPath)"
-                                         Condition="'$(NetWasmStackTraceSymbolsPath)' != '' AND Exists('$(NetWasmStackTraceSymbolsPath)')">
-        <RelativePath>$(AssemblyName).netwasm.stacktrace.json</RelativePath>
-        <Role>stack-trace-symbols</Role>
-        <MediaType>application/vnd.netwasm.stack-trace-symbols+json;version=1</MediaType>
+      <_NetWasmBrowserDeploymentArtifact Include="$(NetWasmMethodSymbolsPath)"
+          Condition="'$(NetWasmMethodSymbolsPath)' != '' AND Exists('$(NetWasmMethodSymbolsPath)')">
+        <RelativePath>$(AssemblyName).wasm.method-symbols</RelativePath>
+        <Role>method-symbols</Role>
+        <MediaType>application/vnd.netwasm.method-symbols;version=1</MediaType>
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmBrowserDeploymentArtifact>
     </ItemGroup>
@@ -1269,17 +1269,17 @@
         <MediaType>application/json</MediaType>
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmWorkerDeploymentArtifact>
-      <_NetWasmWorkerDeploymentArtifact Include="$(NetWasmExceptionTypeMapPath)">
-        <RelativePath>$(AssemblyName).exceptions.json</RelativePath>
-        <Role>exception-type-map</Role>
-        <MediaType>application/vnd.netwasm.exception-types+json;version=2</MediaType>
-        <SchemaVersion>2</SchemaVersion>
+      <_NetWasmWorkerDeploymentArtifact Include="$(NetWasmTypeSymbolsPath)">
+        <RelativePath>$(AssemblyName).wasm.type-symbols</RelativePath>
+        <Role>type-symbols</Role>
+        <MediaType>application/vnd.netwasm.type-symbols;version=1</MediaType>
+        <SchemaVersion>1</SchemaVersion>
       </_NetWasmWorkerDeploymentArtifact>
-      <_NetWasmWorkerDeploymentArtifact Include="$(NetWasmStackTraceSymbolsPath)"
-                                        Condition="'$(NetWasmStackTraceSymbolsPath)' != '' AND Exists('$(NetWasmStackTraceSymbolsPath)')">
-        <RelativePath>$(AssemblyName).netwasm.stacktrace.json</RelativePath>
-        <Role>stack-trace-symbols</Role>
-        <MediaType>application/vnd.netwasm.stack-trace-symbols+json;version=1</MediaType>
+      <_NetWasmWorkerDeploymentArtifact Include="$(NetWasmMethodSymbolsPath)"
+          Condition="'$(NetWasmMethodSymbolsPath)' != '' AND Exists('$(NetWasmMethodSymbolsPath)')">
+        <RelativePath>$(AssemblyName).wasm.method-symbols</RelativePath>
+        <Role>method-symbols</Role>
+        <MediaType>application/vnd.netwasm.method-symbols;version=1</MediaType>
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmWorkerDeploymentArtifact>
     </ItemGroup>
@@ -1464,17 +1464,17 @@
         <Role>worker-javascript</Role>
         <MediaType>text/javascript</MediaType>
       </_NetWasmWitWorkerDeploymentArtifact>
-      <_NetWasmWitWorkerDeploymentArtifact Include="$(NetWasmExceptionTypeMapPath)">
-        <RelativePath>$(AssemblyName).exceptions.json</RelativePath>
-        <Role>exception-type-map</Role>
-        <MediaType>application/vnd.netwasm.exception-types+json;version=2</MediaType>
-        <SchemaVersion>2</SchemaVersion>
+      <_NetWasmWitWorkerDeploymentArtifact Include="$(NetWasmTypeSymbolsPath)">
+        <RelativePath>$(AssemblyName).wasm.type-symbols</RelativePath>
+        <Role>type-symbols</Role>
+        <MediaType>application/vnd.netwasm.type-symbols;version=1</MediaType>
+        <SchemaVersion>1</SchemaVersion>
       </_NetWasmWitWorkerDeploymentArtifact>
-      <_NetWasmWitWorkerDeploymentArtifact Include="$(NetWasmStackTraceSymbolsPath)"
-                                           Condition="'$(NetWasmStackTraceSymbolsPath)' != '' AND Exists('$(NetWasmStackTraceSymbolsPath)')">
-        <RelativePath>$(AssemblyName).netwasm.stacktrace.json</RelativePath>
-        <Role>stack-trace-symbols</Role>
-        <MediaType>application/vnd.netwasm.stack-trace-symbols+json;version=1</MediaType>
+      <_NetWasmWitWorkerDeploymentArtifact Include="$(NetWasmMethodSymbolsPath)"
+          Condition="'$(NetWasmMethodSymbolsPath)' != '' AND Exists('$(NetWasmMethodSymbolsPath)')">
+        <RelativePath>$(AssemblyName).wasm.method-symbols</RelativePath>
+        <Role>method-symbols</Role>
+        <MediaType>application/vnd.netwasm.method-symbols;version=1</MediaType>
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmWitWorkerDeploymentArtifact>
     </ItemGroup>

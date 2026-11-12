@@ -62,7 +62,8 @@ a span, `char`, `Rune` or `StringComparer` takes it.
 Abstract and in-memory streams do not imply a general filesystem:
 `System.IO.File`, `FileStream`, `Directory`, enumeration/mutation/watching and
 arbitrary preopen access are not implemented. The runtime's fixed read-only
-timezone-sidecar mount is deployment plumbing, not a public file API. Selected
+`/netwasm-sidecars/` mount, from which a program reads its time zone data and
+symbols, is deployment plumbing, not a public file API. Selected
 WASI HTTP does not expose `System.Net.Sockets`, raw TCP/UDP, listeners or
 general DNS APIs. Selected CLI environment, arguments, output and exit plumbing
 does not expose `System.Diagnostics.Process`, subprocess creation, shell
@@ -133,6 +134,7 @@ do not isolate the native symbol namespace.
 | UTF-8 strings | Stock source-generated input marshalling, including null, empty, non-ASCII and embedded-NUL behavior; native code must not retain the buffer |
 | `SafeHandle` inputs | Borrowed for the call with lifetime protection; ownership, repeated/reentrant disposal and finalization preserve exact release behavior |
 | Static callbacks | Address-taken or named `UnmanagedCallersOnly` methods with the supported scalar/pointer signatures, default C ABI or Cdecl, explicit registration lifetime and `nint` user tokens |
+| Unmanaged function pointers | Calls through `delegate* unmanaged` or `delegate* unmanaged[Cdecl]` to native functions or `UnmanagedCallersOnly` methods, with the argument and result shapes a raw `DllImport` supports |
 
 Default C ABI and Cdecl import flags are supported without additional semantics.
 Stock generated code is ordinary CIL, not a compiler-specific generator path;
@@ -149,7 +151,8 @@ the profile.
 
 Callback signatures remain scalar/pointer only. Callback aggregates, arrays,
 byrefs, SafeHandle values and callback-valued parameters/results are rejected.
-Arbitrary unmanaged `calli`, delegate-to-native-pointer conversion, dynamic
+Calls through other unmanaged conventions (`Stdcall`, `Thiscall`, `Fastcall`,
+`SuppressGCTransition`), delegate-to-native-pointer conversion, dynamic
 trampolines, worker-thread callbacks and constructor-time managed entry remain
 unsupported. A named callback requires normal managed application startup
 before native entry.

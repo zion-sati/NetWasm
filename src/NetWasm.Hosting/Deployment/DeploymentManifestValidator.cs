@@ -8,6 +8,13 @@ namespace NetWasm.Hosting.Deployment;
 /// <summary>Validates the publish-safe structure and canonical identities of a deployment manifest.</summary>
 public sealed class DeploymentManifestValidator : IDeploymentManifestValidator
 {
+    private static readonly Dictionary<string, string> SymbolSidecarMediaTypes =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["type-symbols"] = "application/vnd.netwasm.type-symbols;version=1",
+            ["method-symbols"] = "application/vnd.netwasm.method-symbols;version=1",
+        };
+
     public void Validate(DeploymentManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
@@ -123,6 +130,7 @@ public sealed class DeploymentManifestValidator : IDeploymentManifestValidator
         var applicationCount = 0;
         DeploymentArtifact? application = null;
         DeploymentArtifact? timeZone = null;
+        var symbols = new Dictionary<string, DeploymentArtifact>(StringComparer.Ordinal);
         foreach (var artifact in artifacts)
         {
             ArgumentNullException.ThrowIfNull(artifact);
@@ -154,11 +162,29 @@ public sealed class DeploymentManifestValidator : IDeploymentManifestValidator
 
                 timeZone = artifact;
             }
+            else if (SymbolSidecarMediaTypes.ContainsKey(artifact.Role))
+            {
+                if (!symbols.TryAdd(artifact.Role, artifact))
+                {
+                    throw new ArgumentException($"A deployment may contain only one {artifact.Role} artifact.", nameof(artifacts));
+                }
+            }
         }
 
         if (applicationCount != 1)
         {
             throw new ArgumentException("A deployment must identify exactly one application artifact.", nameof(artifacts));
+        }
+
+        // A program opens its sidecars by their names beside it (issue 225).
+        foreach (var (role, sidecar) in symbols)
+        {
+            if (!string.Equals(sidecar.RelativePath, application!.RelativePath + "." + role, StringComparison.Ordinal)
+                || !string.Equals(sidecar.MediaType, SymbolSidecarMediaTypes[role], StringComparison.Ordinal)
+                || sidecar.SchemaVersion != 1)
+            {
+                throw new ArgumentException($"The {role} artifact must use the adjacent schema-1 deployment contract.", nameof(artifacts));
+            }
         }
 
         if (timeZone is null)

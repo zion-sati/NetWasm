@@ -82,7 +82,11 @@ public readonly record struct ValueTypeDescriptorLayout(
     int BitmapBitCount);
 public readonly record struct MetadataTypeDescriptorLayout(
     CliTypeIdentity Type,
-    int TypeId);
+    int TypeId)
+{
+    // A generic parameter's declared name (T), which its scoped identity does not carry.
+    public string? GenericParameterName { get; init; }
+}
 
 public interface ITargetLayout
 {

@@ -48,8 +48,6 @@ internal sealed record ReachabilityInstructionAnalysis(
     public bool RequiresGenericArguments { get; init; }
 
     public bool RequiresMemberNames { get; init; }
-
-    public RuntimeTypeNamePayload TypeNamePayload { get; init; }
 }
 
 internal sealed record ReachableMethodAnalysis(

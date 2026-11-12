@@ -133,7 +133,6 @@ export function prepareParsedNetWasmInterop({
         releaseHandle: handles.release,
         resolveType: createManagedExceptionTypeResolver({
           loadArtifacts: loadDiagnosticArtifacts,
-          crypto: globalThis.crypto,
         }),
       });
       const builtins = createInteropBuiltinServiceModule({

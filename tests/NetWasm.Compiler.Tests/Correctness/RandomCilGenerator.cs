@@ -99,17 +99,36 @@ internal sealed class RandomCilGenerator : IRandomCilGenerator
             Instruction(CilOperation.Branch,
                 new GeneratedCilOperand.BlockTarget(firstCondition))));
 
+        // Three conditional branches to the block that follows each, as a Debug build emits for
+        // an if whose body is a removed call, lead into each diamond: every program has each
+        // conditional branch so. Their constants draw from a stream of their own, so the seeds'
+        // other draws, and the instruction families they cover, are the same without them.
+        var guards = new Random(unchecked(seed * 31 + 221));
+        var guardOperation = (seed % ConditionalBranches.Length + ConditionalBranches.Length) %
+            ConditionalBranches.Length;
         var conditionId = firstCondition;
         for (var index = 0; index < 4; index++)
         {
+            var diamondId = conditionId;
+            for (var guard = 0; guard < 3; guard++)
+            {
+                var nextGuard = nextId++;
+                blocks.Add(ConditionBlock(
+                    guards,
+                    diamondId,
+                    nextGuard,
+                    consumesIncomingValue: index > 0 && guard == 0,
+                    ConditionalBranches[guardOperation++ % ConditionalBranches.Length]));
+                diamondId = nextGuard;
+            }
             var trueId = nextId++;
             var falseId = nextId++;
             var joinId = nextId++;
             blocks.Add(ConditionBlock(
                 random,
-                conditionId,
+                diamondId,
                 falseId,
-                consumesIncomingValue: index > 0));
+                consumesIncomingValue: false));
             blocks.Add(MutationBlock(random, trueId, joinId));
             blocks.Add(MutationBlock(random, falseId, joinId));
             conditionId = joinId;
@@ -670,9 +689,10 @@ internal sealed class RandomCilGenerator : IRandomCilGenerator
         Random random,
         int id,
         int falseTarget,
-        bool consumesIncomingValue)
+        bool consumesIncomingValue,
+        CilOperation? fixedOperation = null)
     {
-        var operation = ConditionalBranches[random.Next(ConditionalBranches.Length)];
+        var operation = fixedOperation ?? ConditionalBranches[random.Next(ConditionalBranches.Length)];
         var instructions = ImmutableArray.CreateBuilder<GeneratedCilInstruction>();
         if (consumesIncomingValue)
         {

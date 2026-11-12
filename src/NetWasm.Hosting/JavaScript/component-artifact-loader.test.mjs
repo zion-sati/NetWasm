@@ -1,18 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadComponentArtifacts } from "./component-artifact-loader.mjs";
+import { symbolSidecar } from "./symbol-sidecar-reader.test.mjs";
 
-const encoder = new TextEncoder();
 const digest = character => character.repeat(64);
-const mapBytes = encoder.encode(JSON.stringify({
-  schemaVersion: 2,
-  buildId: "build",
-  entries: [],
-}));
-const stackTraceSymbolBytes = encoder.encode(JSON.stringify({
-  schemaVersion: 1,
-  methods: [{ id: 7, name: "EntryPoint.Run in Program.cs:line 12" }],
-}));
+const typeSymbolsBytes = symbolSidecar(1, []);
+const methodSymbolsBytes = symbolSidecar(2, [{ id: 7, strings: ["EntryPoint.Run in Program.cs:line 12"] }]);
 const artifact = (relativePath, role, mediaType, sha256, schemaVersion = null) => ({
   relativePath,
   role,
@@ -26,10 +19,10 @@ const artifacts = () => [
   artifact("publish/app-component.js", "component-javascript", "text/javascript", digest("3")),
   artifact("publish/app-component.core2.wasm", "component-core-module", "application/wasm", digest("4")),
   artifact("publish/app-component.core.wasm", "component-core-module", "application/wasm", digest("5")),
-  artifact("publish/app.exceptions.json", "exception-type-map",
-    "application/vnd.netwasm.exception-types+json;version=2", digest("6"), 2),
-  artifact("publish/app.netwasm.stacktrace.json", "stack-trace-symbols",
-    "application/vnd.netwasm.stack-trace-symbols+json;version=1", digest("6"), 1),
+  artifact("publish/app.wasm.type-symbols", "type-symbols",
+    "application/vnd.netwasm.type-symbols;version=1", digest("6"), 1),
+  artifact("publish/app.wasm.method-symbols", "method-symbols",
+    "application/vnd.netwasm.method-symbols;version=1", digest("6"), 1),
 ];
 const markerDigests = new Map([
   [1, digest("1")],
@@ -37,7 +30,7 @@ const markerDigests = new Map([
   [3, digest("3")],
   [4, digest("4")],
   [5, digest("5")],
-  [mapBytes[0], digest("6")],
+  [typeSymbolsBytes[0], digest("6")],
 ]);
 
 test("verifies the complete closure before importing and compiling exact owned bytes", async () => {
@@ -50,10 +43,10 @@ test("verifies the complete closure before importing and compiling exact owned b
     async readArtifact(value, signal) {
       assert.equal(signal, null);
       const marker = Number(value.sha256[0]);
-      const bytes = value.role === "exception-type-map"
-        ? new Uint8Array(mapBytes)
-        : value.role === "stack-trace-symbols"
-          ? new Uint8Array(stackTraceSymbolBytes)
+      const bytes = value.role === "type-symbols"
+        ? new Uint8Array(typeSymbolsBytes)
+        : value.role === "method-symbols"
+          ? new Uint8Array(methodSymbolsBytes)
         : Uint8Array.of(marker, 9);
       transportBuffers.set(value.relativePath, bytes);
       calls.push(`read:${marker}`);
@@ -89,9 +82,8 @@ test("verifies the complete closure before importing and compiling exact owned b
 
   assert.equal(Object.isFrozen(loaded), true);
   assert.equal(loaded.adapter, adapter);
-  assert.equal(loaded.diagnosticArtifacts.manifest.buildId, "build");
-  assert.equal(loaded.diagnosticArtifacts.manifest.wasmSha256, digest("1"));
-  assert.equal(loaded.diagnosticArtifacts.manifest.exceptionTypeMapSha256, digest("6"));
+  // Crash reports name types from the type-symbols sidecar (issue 225).
+  assert.deepEqual(loaded.diagnosticArtifacts.typeSymbols, typeSymbolsBytes);
   assert.deepEqual(loaded.stackTraceSymbols, [
     { id: 7, name: "EntryPoint.Run in Program.cs:line 12" },
   ]);
@@ -99,7 +91,7 @@ test("verifies the complete closure before importing and compiling exact owned b
   assert.deepEqual(loaded.loadCoreModule("app-component.core2.wasm"), { marker: 4 });
   assert.throws(() => loaded.loadCoreModule("APP-component.core.wasm"), /unavailable/);
   const firstUse = calls.findIndex(value => value.startsWith("import:") || value.startsWith("compile:"));
-  assert.equal(calls.slice(0, firstUse).filter(value => value.startsWith("hash:")).length, 7);
+  assert.equal(calls.slice(0, firstUse).filter(value => value.startsWith("hash:")).length, 6);
   assert.equal(calls.slice(firstUse).some(value => value.startsWith("hash:")), false);
   for (const bytes of transportBuffers.values()) assert.notEqual(bytes[0], 255);
 });
@@ -109,55 +101,47 @@ test("loads browser artifacts through the identical shared contract", async () =
   assert.equal(loaded.adapter.contractKey, "wasi-command@0.3.2");
 });
 
-test("loads an older component closure without diagnostic artifacts", async () => {
+test("loads a component closure without symbols sidecars", async () => {
   const request = createRequest();
   request.artifacts = request.artifacts.filter(
-    value => value.role !== "exception-type-map" && value.role !== "stack-trace-symbols");
+    value => value.role !== "type-symbols" && value.role !== "method-symbols");
   const loaded = await loadComponentArtifacts(request);
   assert.equal(loaded.diagnosticArtifacts, undefined);
   assert.deepEqual(loaded.stackTraceSymbols, []);
 });
 
-test("rejects a malformed stack-trace sidecar", async () => {
-  const request = createRequest({
-    readArtifact: async value => value.role === "stack-trace-symbols"
-      ? encoder.encode(JSON.stringify({
-        schemaVersion: 2,
-        methods: [],
-      }))
-      : value.role === "exception-type-map"
-        ? new Uint8Array(mapBytes)
-        : Uint8Array.of(Number(value.sha256[0]), 9),
-  });
-  await assert.rejects(() => loadComponentArtifacts(request),
-    /stack-trace symbol sidecar schema/u);
-});
+// Issue 225: a symbols file the host cannot use is left out, and the component still loads.
+test("leaves out a symbols sidecar it cannot read, verify or parse", async () => {
+  const bytesFor = value => Uint8Array.of(Number(value.sha256[0]), 9);
+  const parsed = await loadComponentArtifacts(createRequest({
+    readArtifact: async value => value.role === "method-symbols"
+      ? symbolSidecar(1, [])
+      : value.role === "type-symbols"
+        ? new Uint8Array(typeSymbolsBytes)
+        : bytesFor(value),
+  }));
+  assert.deepEqual(parsed.stackTraceSymbols, []);
+  assert.deepEqual(parsed.diagnosticArtifacts.typeSymbols, typeSymbolsBytes);
 
-test("rejects malformed component exception type maps before module use", async () => {
-  for (const bytes of [
-    encoder.encode("{"),
-    encoder.encode("null"),
-    encoder.encode("[]"),
-    encoder.encode(JSON.stringify({ schemaVersion: 1, buildId: "build", entries: [] })),
-    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: 7, entries: [] })),
-    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: "", entries: [] })),
-    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: "build", entries: null })),
-  ]) {
-    const calls = [];
-    const request = createRequest({
-      readArtifact: async value => value.role === "exception-type-map"
-        ? bytes
-        : value.role === "stack-trace-symbols"
-          ? new Uint8Array(stackTraceSymbolBytes)
-          : Uint8Array.of(Number(value.sha256[0]), 9),
-      hashBytes: async value => markerDigests.get(value[0]) ?? digest("6"),
-      importModule: async () => { calls.push("import"); return {}; },
-      compileCoreModule: async () => { calls.push("compile"); return {}; },
-    });
+  const tampered = await loadComponentArtifacts(createRequest({
+    // Bytes whose digest is another artifact's: an integrity failure.
+    readArtifact: async value => value.role === "type-symbols"
+      ? Uint8Array.of(1, 0)
+      : value.role === "method-symbols"
+        ? new Uint8Array(methodSymbolsBytes)
+        : bytesFor(value),
+  }));
+  assert.equal(tampered.diagnosticArtifacts, undefined);
+  assert.equal(tampered.stackTraceSymbols.length, 1);
 
-    await assert.rejects(() => loadComponentArtifacts(request), /exception type map/);
-    assert.deepEqual(calls, []);
-  }
+  const unreadable = await loadComponentArtifacts(createRequest({
+    async readArtifact(value) {
+      if (value.role === "method-symbols") throw new Error("HTTP 404");
+      return value.role === "type-symbols" ? new Uint8Array(typeSymbolsBytes) : bytesFor(value);
+    },
+  }));
+  assert.deepEqual(unreadable.stackTraceSymbols, []);
+  assert.notEqual(unreadable.diagnosticArtifacts, undefined);
 });
 
 test("rejects integrity failures before importing or compiling", async () => {
@@ -262,10 +246,10 @@ function createRequest(overrides = {}) {
   return {
     deploymentKind: "component",
     artifacts: artifacts(),
-    readArtifact: async value => value.role === "exception-type-map"
-      ? new Uint8Array(mapBytes)
-      : value.role === "stack-trace-symbols"
-        ? new Uint8Array(stackTraceSymbolBytes)
+    readArtifact: async value => value.role === "type-symbols"
+      ? new Uint8Array(typeSymbolsBytes)
+      : value.role === "method-symbols"
+        ? new Uint8Array(methodSymbolsBytes)
       : Uint8Array.of(Number(value.sha256[0]), 9),
     hashBytes: async bytes => markerDigests.get(bytes[0]),
     importModule: async (_bytes, value) => value.role === "component-adapter"

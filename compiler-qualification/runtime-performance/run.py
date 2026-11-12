@@ -41,11 +41,19 @@ SCENARIOS = {
     'integer-formatting': ('corelib', ['integer-formatting', '20000']),
     'nbody': ('compute', ['nbody', '1000000']),
     'sort': ('compute', ['sort', '10']),
+    'async-completed': ('async', ['async-completed', '200000']),
+    'async-valuetask-completed': ('async', ['async-valuetask-completed', '200000']),
+    'async-chain': ('async', ['async-chain', '20000']),
+    'yield': ('async', ['yield', '100000']),
+    'value-task-source': ('async', ['value-task-source', '100000']),
+    'ping-pong': ('async', ['ping-pong', '50000']),
+    'async-iterator': ('async', ['async-iterator', '200000']),
+    'when-all': ('async', ['when-all', '10000']),
     'crc32': ('compute', ['crc32', '16']),
 }
 COLLECTORS = ['Compact', 'NetWasm', 'Bump']
 NAMES = {'transaction': 'Transaction', 'gc': 'GcWorkloads', 'net11': 'Net11Patterns', 'corelib': 'CoreLibPaths',
-         'compute': 'ComputeKernels'}
+         'compute': 'ComputeKernels', 'async': 'AsyncPatterns'}
 
 
 def run(command, cwd, env, log):
@@ -118,7 +126,7 @@ def parse(text):
     """Returns (milliseconds, checksum) from a workload's first result line."""
     for line in text.splitlines():
         fields = line.split('|')
-        if fields[0] in ('PROBE', 'GCWORK', 'NET11', 'CORELIB', 'COMPUTE'):
+        if fields[0] in ('PROBE', 'GCWORK', 'NET11', 'CORELIB', 'COMPUTE', 'ASYNC'):
             ticks, frequency, checksum = int(fields[2]), int(fields[3]), fields[4]
             return ticks * 1000 / frequency, checksum
     raise ValueError(f'no result line in: {text[:200]}')

@@ -1,6 +1,7 @@
 # Compiler test classes that pull request CI runs; the release runs every compiler test.
 # One fully qualified class per line. A listed class without tests fails the shard filter.
 NetWasm.Compiler.Tests.Analysis.Constants.StaticTypeObjectRewriterTests
+NetWasm.Compiler.Tests.Analysis.Constants.UnwrittenStaticFieldProgramReducerTests
 NetWasm.Compiler.Tests.Analysis.ReachableMethodBatchAnalyzerTests
 NetWasm.Compiler.Tests.AngleConversionCompilationTests
 NetWasm.Compiler.Tests.ArrayGetValueNullableDescriptorCompilationTests
@@ -190,6 +191,7 @@ NetWasm.Compiler.Tests.Correctness.TypeTestCorpusTests
 NetWasm.Compiler.Tests.Correctness.TypedTraceDifferentialTests
 NetWasm.Compiler.Tests.Correctness.UnsafeByReferenceDifferentialTests
 NetWasm.Compiler.Tests.Correctness.UnsupportedCilBoundaryTests
+NetWasm.Compiler.Tests.Correctness.UnwrittenStaticFieldCorpusTests
 NetWasm.Compiler.Tests.Correctness.ValueAndCallDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ValueFrameInitializationTests
 NetWasm.Compiler.Tests.Correctness.ValueTypeDefaultInterfaceMethodCorpusTests

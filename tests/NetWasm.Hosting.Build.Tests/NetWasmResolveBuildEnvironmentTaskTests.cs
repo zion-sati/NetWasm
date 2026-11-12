@@ -46,7 +46,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
         Assert.Equal(PathFor("compiler.wit.wasm"), task.CompilerWitPackagePath);
         Assert.Equal(PathFor("inspect.mjs"), task.RawInspectionCommandPath);
         Assert.Equal(PathFor("jco.mjs"), task.JcoPath);
-        Assert.Equal("1.41.0+netwasm.2", task.JcoVersion);
+        Assert.Equal("1.41.0+netwasm.4", task.JcoVersion);
         Assert.Equal("0.13.0", task.Preview3ShimVersion);
         Assert.Equal(PathFor("jco"), task.NodeHttpProviderRoot);
         Assert.Equal(PathFor("http.js"), task.NodeHttpProviderEntryPath);
@@ -271,7 +271,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                 new(
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",
-                    "1.41.0+netwasm.2",
+                    "1.41.0+netwasm.4",
                     "0.13.0",
                     node.AbsolutePath,
                     nodeCompatibility.Version,

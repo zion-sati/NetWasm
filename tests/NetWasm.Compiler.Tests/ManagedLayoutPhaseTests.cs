@@ -699,12 +699,7 @@ public sealed class ManagedLayoutPhaseTests
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
 
         ThrowsNull(() => new ManagedStaticDataBuilderFactory(null!));
-        ThrowsNull(() => new ManagedStaticDataBuilderFactory(
-            exceptionNames, null!, new AssemblyIdentityFormatterFactory()));
-        ThrowsNull(() => new ManagedStaticDataBuilderFactory(
-            exceptionNames,
-            new EmptyAssignableTypeMetadataBuilderFactory(),
-            null!));
+        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, null!));
         ThrowsNull(() => new ManagedTypeLayoutBuildState(null!));
         ThrowsNull(() => new ManagedTypeLayoutCompiler(
             null!, target, objectPhase, resolvePhase, resolvePhase, objectPhase,
@@ -1801,24 +1796,6 @@ public sealed class ManagedLayoutPhaseTests
 
         Assert.Equal(6, types.ConstructedObjects.Count);
 
-        var missingNameFormatter = new ConstructedTypeDescriptorBuilder(
-            new TypeFinder(definitions),
-            typeDefinitions,
-            identityBases,
-            new ObjectLayoutResolver(typeDefinitions, types),
-            types,
-            types.Target,
-            new ManagedStaticDataBuildState(),
-            new StaticReferenceBitmapBuilder(),
-            EmptyAssignableTypeMetadataBuilder.Instance,
-            requiresTypeFacts: true,
-            typeNamePayload: RuntimeTypeNamePayload.Name);
-        var missingNameFormatterError = Assert.Throws<CompilerException>(
-            missingNameFormatter.Build);
-        Assert.Equal(
-            DiagnosticCode.RuntimeContract,
-            missingNameFormatterError.Diagnostic.Code);
-
         var missingArrayTypes = types with
         {
             Objects = ImmutableDictionary<EntityKey, ObjectLayout>.Empty,
@@ -1941,12 +1918,9 @@ public sealed class ManagedLayoutPhaseTests
             stateWithoutInvoke,
             new StaticReferenceBitmapBuilder(),
             EmptyAssignableTypeMetadataBuilder.Instance,
-            requiresTypeFacts: true,
-            typeNamePayload: RuntimeTypeNamePayload.Name,
-            assemblyNames: new FixedAssemblyIdentityFormatter()).Build();
+            requiresTypeFacts: true).Build();
         var factsWithoutInvoke = Assert.Single(stateWithoutInvoke.PendingTypeFacts);
         Assert.Null(factsWithoutInvoke.DelegateInvokeDescriptor);
-        Assert.Equal("Callback`1", factsWithoutInvoke.Names!.Name);
     }
 
     [Fact]
@@ -2068,37 +2042,7 @@ public sealed class ManagedLayoutPhaseTests
         Assert.True(state.TypeDescriptors.Single(item => item.Type == interfaceKey).IsInterface);
         Assert.False(state.TypeDescriptors.Single(item => item.Type == baseKey).IsInterface);
 
-        var namesRequiredProgram = EmptyProgram() with
-        {
-            RequiresTypeFacts = true,
-            TypeNamePayload = RuntimeTypeNamePayload.Name,
-        };
-        var missingNameFormatter = new TypeDescriptorBuilder(
-            new MappingIdentities(new Dictionary<EntityKey, CliTypeIdentity>
-            {
-                [baseKey] = baseIdentity,
-                [derivedKey] = derivedIdentity,
-                [interfaceKey] = interfaceIdentity,
-            }),
-            typeDefinitions,
-            new MappingIdentityBases(new Dictionary<CliTypeIdentity, CliTypeIdentity?>
-            {
-                [baseIdentity] = null,
-                [derivedIdentity] = baseIdentity,
-                [interfaceIdentity] = null,
-            }),
-            new ObjectLayoutResolver(typeDefinitions, types),
-            namesRequiredProgram,
-            types,
-            types.Target,
-            new ManagedStaticDataBuildState(),
-            new StaticReferenceBitmapBuilder(),
-            EmptyAssignableTypeMetadataBuilder.Instance);
-        var missingNameFormatterError = Assert.Throws<CompilerException>(
-            missingNameFormatter.Build);
-        Assert.Equal(
-            DiagnosticCode.RuntimeContract,
-            missingNameFormatterError.Diagnostic.Code);
+
     }
 
     [Fact]
@@ -2180,17 +2124,14 @@ public sealed class ManagedLayoutPhaseTests
             {
                 DelegateInvokeDescriptors =
                     ImmutableDictionary<string, MethodInstanceModel>.Empty,
-                TypeNamePayload = RuntimeTypeNamePayload.Name,
             },
             types,
             types.Target,
             stateWithoutInvoke,
             new StaticReferenceBitmapBuilder(),
-            EmptyAssignableTypeMetadataBuilder.Instance,
-            assemblyNames: new FixedAssemblyIdentityFormatter()).Build();
+            EmptyAssignableTypeMetadataBuilder.Instance).Build();
         var factsWithoutInvoke = Assert.Single(stateWithoutInvoke.PendingTypeFacts);
         Assert.Null(factsWithoutInvoke.DelegateInvokeDescriptor);
-        Assert.Equal("Callback", factsWithoutInvoke.Names!.Name);
     }
 
     [Theory]
@@ -2732,11 +2673,6 @@ public sealed class ManagedLayoutPhaseTests
     {
         public EntityKey? GetBaseType(EntityKey typeKey) => null;
         public CliTypeIdentity? GetBaseType(CliTypeIdentity type) => null;
-    }
-
-    private sealed class FixedAssemblyIdentityFormatter : IAssemblyIdentityFormatter
-    {
-        public string Format(AssemblyIdentity identity) => identity.Name;
     }
 
     private sealed class RejectingTypeRelationshipClassifier :

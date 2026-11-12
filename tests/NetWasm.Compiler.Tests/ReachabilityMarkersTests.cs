@@ -8,17 +8,7 @@ public sealed class ReachabilityMarkersTests
     private static readonly AssemblyIdentity Assembly = new("NetWasm.CoreLib");
 
     [Theory]
-    [InlineData("System", "Type", "GetRuntimeName", RuntimeTypeNamePayload.Name)]
-    [InlineData("System", "Type", "GetRuntimeNamespace", RuntimeTypeNamePayload.Namespace)]
-    [InlineData("System", "Type", "GetRuntimeFullName", RuntimeTypeNamePayload.FullName)]
-    [InlineData("System", "Type", "GetRuntimeDisplayName", RuntimeTypeNamePayload.DisplayName)]
-    [InlineData("System", "Type", "get_Name", RuntimeTypeNamePayload.None)]
-    [InlineData("System", "Object", "GetRuntimeName", RuntimeTypeNamePayload.None)]
-    public void TypeNameReadersNameTheirPayload(string ns, string type, string method, RuntimeTypeNamePayload payload) =>
-        Assert.Equal(payload, ReachabilityMarkers.TypeNamePayload(Method(ns, type, method)));
-
-    [Theory]
-    [InlineData("System", "Type", "GetRuntimeName", true)]
+    [InlineData("System", "Type", "get_Name", false)]
     [InlineData("System", "Type", "GetDelegateInvokeMethod", true)]
     [InlineData("System", "Type", "GetGenericArguments", true)]
     [InlineData("System.Reflection", "MemberInfo", "get_Name", true)]

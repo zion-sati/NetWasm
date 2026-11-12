@@ -26,7 +26,7 @@ public sealed class MetadataCallSiteSignatureResolverTests
 
         Action<IMetadataCallSiteSignatureResolver> contract = resolver =>
             Assert.Throws<CompilerException>(() =>
-                resolver.Resolve(source, 0, CliGenericContext.Empty));
+                resolver.Resolve(source, 0, CliGenericContext.Empty, "M", 3));
 
         contract(new MetadataCallSiteSignatureResolver());
     }
@@ -66,7 +66,9 @@ public sealed class MetadataCallSiteSignatureResolverTests
                     source,
                     MetadataTokens.GetToken(
                         MetadataTokens.StandaloneSignatureHandle(row)),
-                    CliGenericContext.Empty);
+                    CliGenericContext.Empty,
+                    "M",
+                    0).Signature;
             }
             catch (BadImageFormatException)
             {
@@ -110,12 +112,81 @@ public sealed class MetadataCallSiteSignatureResolverTests
             new Dictionary<int, EntityHandle>(),
             new Dictionary<int, ImmutableArray<EntityHandle>>());
 
-        var exception = Assert.Throws<CompilerException>(() =>
-            new MetadataCallSiteSignatureResolver().Resolve(
-                source,
-                MetadataTokens.GetToken(handle),
-                CliGenericContext.Empty));
+        // A C (0x01) call site through an unmanaged pointer is supported (issue 226).
+        var callSite = new MetadataCallSiteSignatureResolver().Resolve(
+            source,
+            MetadataTokens.GetToken(handle),
+            CliGenericContext.Empty,
+            "M",
+            0);
 
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
+        Assert.True(callSite.Unmanaged);
+        Assert.Equal(CliValueKind.Void, callSite.Signature.ReturnType);
+    }
+
+    // Issue 226: an unmanaged pointer's call site keeps its convention; only the default C ABI and
+    // Cdecl are supported, and an unsupported one names the method and IL offset.
+    [Fact]
+    public void ResolveRecordsUnmanagedConventionsAndRejectsOthersWithTheirLocation()
+    {
+        using var assets = TestAssets.Create();
+        var path = assets.CompileUnsafeSource(
+            "UnmanagedCallSites",
+            """
+            public static unsafe class EntryPoint
+            {
+                public static int Managed(delegate*<int, int> target) => target(1);
+                public static int Unmanaged(delegate* unmanaged<int, int> target) => target(2);
+                public static int Cdecl(delegate* unmanaged[Cdecl]<long, int> target) => target(3);
+                public static int CdeclSuppressed(delegate* unmanaged[Cdecl, SuppressGCTransition]<float, int> target) => target(4);
+                public static int Stdcall(delegate* unmanaged[Stdcall]<double, int> target) => target(5);
+            }
+            """);
+        using var assembly = ManagedAssemblyTestFactory.Load(path);
+        var source = new MetadataAssemblySnapshot(
+            assembly.Identity,
+            assembly.Reader,
+            assembly.Types,
+            assembly.Fields,
+            assembly.Methods,
+            assembly.Metadata.BaseTypes,
+            assembly.Metadata.ImplementedInterfaces);
+        var resolver = new MetadataCallSiteSignatureResolver();
+        var resolved = new List<CilOperand.CallSite>();
+        var failures = new List<CompilerDiagnostic>();
+        for (var row = 1; row <= assembly.Reader.GetTableRowCount(TableIndex.StandAloneSig); row++)
+        {
+            var handle = MetadataTokens.StandaloneSignatureHandle(row);
+            // Local signatures share the table; only method signatures are call sites.
+            if (assembly.Reader.GetBlobReader(assembly.Reader.GetStandaloneSignature(handle).Signature)
+                .ReadSignatureHeader().Kind != SignatureKind.Method)
+            {
+                continue;
+            }
+            try
+            {
+                resolved.Add(resolver.Resolve(source, MetadataTokens.GetToken(handle), CliGenericContext.Empty, "M", 7));
+            }
+            catch (CompilerException exception)
+            {
+                failures.Add(exception.Diagnostic);
+            }
+        }
+
+        Assert.Equal(3, resolved.Count);
+        Assert.Contains(resolved, site => !site.Unmanaged && site.Signature.ParameterTypes[0] == CliValueKind.I4);
+        Assert.Contains(resolved, site => site.Unmanaged && site.Signature.ParameterTypes[0] == CliValueKind.I4);
+        // Cdecl as the convention modifier is stripped from the result.
+        var cdecl = Assert.Single(resolved, site => site.Signature.ParameterTypes[0] == CliValueKind.I8);
+        Assert.True(cdecl.Unmanaged);
+        Assert.Equal(CliTypeShape.Primitive, cdecl.Signature.ReturnSignatureType.Shape);
+        Assert.Equal(2, failures.Count);
+        Assert.All(failures, diagnostic =>
+        {
+            Assert.Equal(DiagnosticCode.NativeInterop, diagnostic.Code);
+            Assert.Equal(("M", 7), (diagnostic.Method, diagnostic.IlOffset));
+        });
+        Assert.Contains(failures, diagnostic => diagnostic.Message.Contains("CallConvSuppressGCTransition", StringComparison.Ordinal));
+        Assert.Contains(failures, diagnostic => diagnostic.Message.Contains("'StdCall'", StringComparison.Ordinal));
     }
 }

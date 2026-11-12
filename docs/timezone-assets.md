@@ -78,9 +78,13 @@ full `DateTime` range. Its outputs are deterministic for the same source:
 
 For browsers, serve the Brotli representation at the asset URL with
 `Content-Encoding: br`. `fetch()` receives the decompressed bytes. NetWasm's
-browser hosts mount them themselves. In a custom host that instantiates the
-component through jco, the generated loader mounts those bytes as
-`/netwasm-timezones/netwasm-timezones.nwtz` before the component starts. The
+browser hosts mount them themselves. The program opens its time zone data
+read-only as `/netwasm-sidecars/<program>.wasm.tz-info`, under the name the
+build gave it (see [program sidecars](diagnostics.md#program-sidecars)). In a
+custom host that instantiates the component through jco, the generated loader
+mounts those bytes there before the component starts; pass the program's file
+name as `programFileName`, for example
+`configureNetWasmTimeZone({ timeZone, programFileName: "App.wasm" })`. The
 loader configures `@bytecodealliance/preview3-shim`'s browser environment and
 preopens; it does not add a framework `JSImport`. jco 1.41 maps only
 `wasi:*@0.3.0` imports to preview3-shim by default, so such a host passes a
@@ -90,11 +94,14 @@ recent, so keep a browser test of the host when upgrading it.
 Invoke the generated loader only for a component whose imports show reachable
 local-time support. Passing no `timeZone`, `UTC`, or `Etc/UTC` clears timezone
 preopens and performs no asset fetch. Any other identifier configures `TZ`,
-fetches the asset, and fails immediately if the response is unsuccessful.
+requires `programFileName`, fetches the asset, and fails immediately if the
+response is unsuccessful.
 
 Native hosts decompress the `.br` deployment artifact before startup and
-preopen a read-only directory at `/netwasm-timezones` containing the
-uncompressed payload. Both native and browser lanes therefore expose the same
+preopen a read-only directory at `/netwasm-sidecars` containing the
+uncompressed payload as `<program>.wasm.tz-info`. Under Wasmtime, mount the
+folder that holds the program:
+`wasmtime run --env TZ=Australia/Melbourne --dir bin::/netwasm-sidecars bin/App.wasm`. Both native and browser lanes therefore expose the same
 standard `wasi:filesystem` contract to managed code.
 
 Hosts check the payload's SHA-256 digest against the deployment manifest before
