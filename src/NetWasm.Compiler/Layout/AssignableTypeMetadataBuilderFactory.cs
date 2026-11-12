@@ -65,27 +65,3 @@ internal sealed class EmptyAssignableTypeMetadataBuilder : IAssignableTypeMetada
 
     public ImmutableArray<int> Build(CliTypeIdentity candidate) => [];
 }
-
-// Null object: a type implements no interfaces, for layouts built without metadata relationships.
-internal sealed class EmptyImplementedInterfaceResolverFactory : IImplementedInterfaceResolverFactory
-{
-    public IImplementedInterfaceResolver Create(MetadataCompilationSnapshot snapshot) => new Resolver();
-
-    private sealed class Resolver : IImplementedInterfaceResolver
-    {
-        public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type) => [];
-    }
-}
-
-internal sealed class EmptyAssignableTypeMetadataBuilderFactory :
-    IAssignableTypeMetadataBuilderFactory
-{
-    public IAssignableTypeMetadataBuilder Create(
-        MetadataCompilationSnapshot metadata,
-        ITypeFinder typeFinder,
-        ITypeDefinitionResolver typeDefinitions,
-        ITypeIdentityResolver identities,
-        IMetadataIdentityBaseTypeResolver identityBaseTypes,
-        ManagedTypeLayouts types) =>
-        EmptyAssignableTypeMetadataBuilder.Instance;
-}

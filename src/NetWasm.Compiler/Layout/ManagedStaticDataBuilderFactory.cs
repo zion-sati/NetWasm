@@ -18,14 +18,6 @@ internal sealed class ManagedStaticDataBuilderFactory(
     private readonly IAssignableTypeMetadataBuilderFactory _assignableTypeMetadata =
         assignableTypeMetadata ?? throw new ArgumentNullException(nameof(assignableTypeMetadata));
 
-    internal ManagedStaticDataBuilderFactory(IExceptionTypeNameResolver exceptionTypeNames) :
-        this(
-            exceptionTypeNames,
-            new EmptyAssignableTypeMetadataBuilderFactory(),
-            new EmptyImplementedInterfaceResolverFactory())
-    {
-    }
-
     public IManagedStaticDataBuilder Create(
         MetadataCompilationSnapshot metadata,
         ITypeRepository typeRepository,

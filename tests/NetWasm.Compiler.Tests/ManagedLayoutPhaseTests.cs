@@ -617,7 +617,7 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ValueLayoutProvider(null!));
 
         ThrowsNull(() => new ManagedLayoutCompiler(null!,
-            new ManagedStaticDataBuilderFactory(exceptionNames)));
+            new ManagedStaticDataBuilderFactory(exceptionNames, new NoAssignableTypes(), new NoInterfaces())));
         ThrowsNull(() => new ManagedLayoutCompiler(
             new ManagedTypeLayoutCompilerFactory(new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver()), new ManagedObjectLayoutBuilderFactory(new ExplicitValueLayoutResolver()), exceptionNames), null!));
 
@@ -635,9 +635,9 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, null!, new ExplicitValueLayoutResolver()));
         ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, null!));
 
-        ThrowsNull(() => new ManagedStaticDataBuilderFactory(null!));
-        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, null!, new EmptyImplementedInterfaceResolverFactory()));
-        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, new EmptyAssignableTypeMetadataBuilderFactory(), null!));
+        ThrowsNull(() => new ManagedStaticDataBuilderFactory(null!, new NoAssignableTypes(), new NoInterfaces()));
+        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, null!, new NoInterfaces()));
+        ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, new NoAssignableTypes(), null!));
         ThrowsNull(() => new ManagedTypeLayoutBuildState(null!));
         ThrowsNull(() => new ManagedTypeLayoutCompiler(
             null!, target, objectPhase, resolvePhase, resolvePhase, objectPhase,
@@ -772,7 +772,7 @@ public sealed class ManagedLayoutPhaseTests
             ImmutableArray<MethodDefinitionModel>.Empty,
             ImmutableDictionary<string, string>.Empty);
         var objectFactory = new ManagedObjectLayoutBuilderFactory(new ExplicitValueLayoutResolver());
-        var staticFactory = new ManagedStaticDataBuilderFactory(exceptionNames);
+        var staticFactory = new ManagedStaticDataBuilderFactory(exceptionNames, new NoAssignableTypes(), new NoInterfaces());
         var valueFactory = new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver());
         var compilerFactory = new ManagedTypeLayoutCompilerFactory(valueFactory, objectFactory, exceptionNames);
 
@@ -2542,6 +2542,25 @@ public sealed class ManagedLayoutPhaseTests
     {
         public CliTypeIdentity? GetBaseType(CliTypeIdentity type) =>
             bases.TryGetValue(type, out var value) ? value : null;
+    }
+
+    private sealed class NoAssignableTypes : IAssignableTypeMetadataBuilderFactory
+    {
+        public IAssignableTypeMetadataBuilder Create(
+            MetadataCompilationSnapshot metadata,
+            ITypeFinder typeFinder,
+            ITypeDefinitionResolver typeDefinitions,
+            ITypeIdentityResolver identities,
+            IMetadataIdentityBaseTypeResolver identityBaseTypes,
+            ManagedTypeLayouts types) =>
+            EmptyAssignableTypeMetadataBuilder.Instance;
+    }
+
+    private sealed class NoInterfaces : IImplementedInterfaceResolverFactory, IImplementedInterfaceResolver
+    {
+        public IImplementedInterfaceResolver Create(MetadataCompilationSnapshot snapshot) => this;
+
+        public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type) => [];
     }
 
     private sealed class ReferenceValueLayoutResolver : IValueLayoutResolver

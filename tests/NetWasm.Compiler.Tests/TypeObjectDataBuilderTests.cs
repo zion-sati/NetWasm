@@ -15,7 +15,7 @@ public sealed class TypeObjectDataBuilderTests
     private static readonly EntityKey TypeKey = new(ValidationTestData.Assembly, 0x02000040);
 
     [Fact]
-    public void ATypeConstantWithoutSystemTypesLayoutReportsTheRuntimeContract()
+    public void ATypeConstantWithoutRuntimeTypesLayoutReportsTheRuntimeContract()
     {
         var materialized = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
         var body = ValidationTestData.ManagedMethodBody(
@@ -36,7 +36,7 @@ public sealed class TypeObjectDataBuilderTests
             collaborators, program, types, collaborators, collaborators, target, new ManagedStaticDataBuildState()).Build());
 
         Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
-        Assert.Contains("'System.Type'", exception.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains($"'{RuntimeTypeObjects.ClassName}'", exception.Diagnostic.Message, StringComparison.Ordinal);
     }
 
     private sealed class Collaborators : ITypeFinder, IObjectLayoutResolver, ITypeOperandResolver

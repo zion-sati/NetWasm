@@ -182,6 +182,11 @@ public sealed class RuntimeTypeAssemblyResolverTests
     }
 
     [Fact]
+    public void AFunctionPointerTypeIsCoreLibs() =>
+        Assert.Equal(CoreLib, new RuntimeTypeAssemblyResolver(new Definitions()).Resolve(
+            CliTypeIdentity.FunctionPointer(new(0, 0, 0, MethodSignatureModel.Create(CliValueKind.Void)))));
+
+    [Fact]
     public void AGenericParameterHasNoAssemblyOfItsOwn() =>
         Assert.Equal(DiagnosticCode.RuntimeContract, Assert.Throws<CompilerException>(() =>
             new RuntimeTypeAssemblyResolver(new Definitions()).Resolve(CliTypeIdentity.GenericParameter(method: false, 0)))

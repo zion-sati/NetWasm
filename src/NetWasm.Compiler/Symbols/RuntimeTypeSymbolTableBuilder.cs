@@ -79,7 +79,7 @@ public sealed class RuntimeTypeSymbolTableBuilder : IRuntimeTypeSymbolTableBuild
                 genericParameterNames[descriptor.Type] = name;
         }
 
-        var capacity = types.Count == 0 ? 1 : types.Keys.Max() + 1;
+        var capacity = types.Keys.DefaultIfEmpty().Max() + 1;
         var symbols = types
             .Select(pair => RuntimeTypeNameFormatter.Format(pair.Key, pair.Value, definitions, genericParameterNames,
                 argument => assemblyNames.Format(assemblyOf.Resolve(argument))))
