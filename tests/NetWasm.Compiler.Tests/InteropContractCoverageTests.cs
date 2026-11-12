@@ -1488,7 +1488,7 @@ public sealed class InteropContractCoverageTests
             ImmutableDictionary<string, ObjectLayout>.Empty
                 .Add("System.Array", new ObjectLayout(1, 8, []))
                 .Add("System.String", new ObjectLayout(2, 8, []))
-                .Add("System.Type", new ObjectLayout(3, 8, [])),
+                .Add(RuntimeTypeObjects.ClassName, new ObjectLayout(3, 8, [])),
             ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty,
             new ManagedValueLayoutState(),
             WasmTargetLayout.For(target),

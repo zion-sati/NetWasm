@@ -93,7 +93,7 @@ public sealed class LayoutContractCoverageTests
             ImmutableDictionary<string, ObjectLayout>.Empty
                 .Add("System.Array", new ObjectLayout(1, 8, []))
                 .Add("System.String", new ObjectLayout(2, 8, []))
-                .Add("System.Type", new ObjectLayout(3, 8, [])),
+                .Add(RuntimeTypeObjects.ClassName, new ObjectLayout(3, 8, [])),
             ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty
                 .Add(constructed, objectLayout),
             state,
@@ -545,7 +545,7 @@ public sealed class LayoutContractCoverageTests
             ImmutableDictionary<string, ObjectLayout>.Empty
                 .Add("System.Array", new ObjectLayout(1, 8, []))
                 .Add("System.String", new ObjectLayout(2, 8, []))
-                .Add("System.Type", new ObjectLayout(3, 8, [])),
+                .Add(RuntimeTypeObjects.ClassName, new ObjectLayout(3, 8, [])),
             ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty
                 .Add(constructed, objectLayout),
             state,
@@ -585,7 +585,7 @@ public sealed class LayoutContractCoverageTests
             "System.Byte", "System.Int16", "System.UInt16", "System.Int32",
             "System.UInt32", "System.Int64", "System.UInt64", "System.Single",
             "System.Double", "System.IntPtr", "System.UIntPtr", "System.String",
-            "System.Object", "System.Array", "System.Type",
+            "System.Object", "System.Array", RuntimeTypeObjects.ClassName,
         };
         var definitions = names.Select((name, index) =>
             Definition(new EntityKey(Assembly, 100 + index), name, false)).ToArray();
@@ -595,12 +595,12 @@ public sealed class LayoutContractCoverageTests
             {
                 "System.Array" => new ObjectLayout(1, 8, []),
                 "System.String" => new ObjectLayout(2, 8, []),
-                "System.Type" => new ObjectLayout(3, 8, []),
+                RuntimeTypeObjects.ClassName => new ObjectLayout(3, 8, []),
                 _ => new ObjectLayout(8, 8, []),
             }).ToImmutableDictionary();
         var byName = objects
             .Where(pair => definitions.Single(definition => definition.Key == pair.Key)
-                .FullName is "System.Array" or "System.String" or "System.Type")
+                .FullName is "System.Array" or "System.String" or RuntimeTypeObjects.ClassName)
             .ToImmutableDictionary(
                 pair => definitions.Single(definition => definition.Key == pair.Key).FullName,
                 pair => pair.Value,

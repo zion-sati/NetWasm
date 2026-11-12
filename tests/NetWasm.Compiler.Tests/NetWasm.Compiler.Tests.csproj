@@ -51,6 +51,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Correctness/*.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Correctness/*.mjs;Correctness/*.cjs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

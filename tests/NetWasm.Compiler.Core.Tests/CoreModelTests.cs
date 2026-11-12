@@ -314,7 +314,10 @@ public sealed class CoreModelTests
         var descriptor = new TypeDescriptorLayout(
             TypeKey, 10, 9, 24, [8], finalizer);
         var constructed = new ConstructedTypeDescriptorLayout(
-            valueType, 11, 10, 32, [16, 24], constructedFinalizer) { AssignableTypeIds = [10, 11] };
+            valueType, 11, 10, 32, [16, 24], constructedFinalizer)
+        {
+            AssignableTypeIds = [10, 11],
+        };
         var valueDescriptor = new ValueTypeDescriptorLayout(
             valueType, 12, 8, 4, [0]);
 
