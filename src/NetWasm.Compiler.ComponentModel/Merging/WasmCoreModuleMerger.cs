@@ -85,7 +85,8 @@ public sealed class WasmCoreModuleMergeRunner(
 
 /// <summary>
 /// Where every input's entities land in the merged module: the imports no input resolves first,
-/// by kind, then each input's definitions in input order.
+/// by kind, then each input's definitions in input order, with the functions an input hints
+/// never to inline after every other function.
 /// </summary>
 internal sealed class WasmMergePlan
 {
@@ -100,6 +101,8 @@ internal sealed class WasmMergePlan
     private readonly Dictionary<(byte Kind, string Module, string Name, string Descriptor), int> _importIndices = [];
     private readonly int[][] _mergedImports;
     private readonly int[][] _bases;
+    private readonly int[][] _functionSlots;
+    private readonly (int Module, int Function)[] _functionOrder;
     private readonly WasmMergeIndices[] _indices;
     private readonly List<int> _starts = [];
     private readonly int _startType = -1;
@@ -133,6 +136,7 @@ internal sealed class WasmMergePlan
             }
         }
         _functionCount = next[WasmMergeModule.FunctionKind];
+        (_functionSlots, _functionOrder) = PlaceFunctions(modules, _imports[WasmMergeModule.FunctionKind].Count);
         var data = 0;
         var elements = 0;
         _indices = new WasmMergeIndices[modules.Length];
@@ -161,11 +165,8 @@ internal sealed class WasmMergePlan
         var startFunction = _starts.Count > 1;
         Section(3, _functionCount - _imports[0].Count + (startFunction ? 1 : 0), () =>
         {
-            for (var module = 0; module < _modules.Length; module++)
-            {
-                foreach (var type in _modules[module].Functions)
-                    _section.Unsigned((uint)WasmExpressionRemapper.Mapped(_typeMaps[module], type));
-            }
+            foreach (var (module, function) in _functionOrder)
+                _section.Unsigned((uint)WasmExpressionRemapper.Mapped(_typeMaps[module], _modules[module].Functions[function]));
             if (startFunction) _section.Unsigned((uint)_startType);
         });
         Section(4, _modules.Sum(module => module.Tables.Count), () => Ranges(module => module.Tables));
@@ -326,8 +327,48 @@ internal sealed class WasmMergePlan
         for (var index = 0; index < imports.Count; index++)
             map[index] = Resolve(module, imports[index], 0);
         for (var index = imports.Count; index < map.Length; index++)
-            map[index] = _bases[module][kind] + index - imports.Count;
+            map[index] = Definition(module, kind, index - imports.Count);
         return map;
+    }
+
+    private int Definition(int module, byte kind, int defined) => kind == WasmMergeModule.FunctionKind
+        ? _functionSlots[module][defined]
+        : _bases[module][kind] + defined;
+
+    // Every input's function definitions in input order, the functions it hints never to inline
+    // after all the others. Binaryen merges identical functions before it inlines and keeps the
+    // first of them, hints and all: one empty [NoInlining] method ahead of the empty constructors
+    // and Dispose methods it duplicated made every call to them a call that could not inline
+    // (1,565 calls to nothing in the micro-benchmark runner). Behind them, a group of identical
+    // functions keeps an ordinary one whenever it has one, and the never-inline method inlines
+    // as the function it duplicates does; a function with code of its own keeps its hint.
+    private static (int[][] Slots, (int, int)[] Order) PlaceFunctions(WasmMergeModule[] modules, int imported)
+    {
+        var slots = modules.Select(module => new int[module.Defined(WasmMergeModule.FunctionKind)]).ToArray();
+        var order = new List<(int, int)>(slots.Sum(module => module.Length));
+        var neverInlined = modules.Select(NeverInlined).ToArray();
+        foreach (var last in new[] { false, true })
+        {
+            for (var module = 0; module < modules.Length; module++)
+            {
+                for (var function = 0; function < slots[module].Length; function++)
+                {
+                    if (neverInlined[module].Contains(function) != last) continue;
+                    slots[module][function] = imported + order.Count;
+                    order.Add((module, function));
+                }
+            }
+        }
+        return (slots, [.. order]);
+    }
+
+    // The definitions a kept function-level hint marks never to inline (hint value 0).
+    private static HashSet<int> NeverInlined(WasmMergeModule module)
+    {
+        var imported = module.ImportsOfKind[WasmMergeModule.FunctionKind].Count;
+        return [.. module.InlineHints
+            .Where(entry => entry.Function >= imported && entry.Hint.Length == 1 && module.Bytes[entry.Hint.Start] == 0)
+            .Select(entry => (int)entry.Function - imported)];
     }
 
     private int Resolve(int module, int import, int depth)
@@ -351,7 +392,7 @@ internal sealed class WasmMergePlan
                 $"'{_modules[module].Name}' imports {kind} '{entry.Name}' from '{entry.Module}' with another signature");
         }
         if (export.Index >= imports.Count)
-            return _bases[target][entry.Kind] + (int)export.Index - imports.Count;
+            return Definition(target, entry.Kind, (int)export.Index - imports.Count);
         if (depth == _modules.Length)
             throw WasmMergeRead.Invalid($"'{entry.Module}' re-exports {kind} '{entry.Name}' in a cycle of imports");
         return Resolve(target, imports[(int)export.Index], depth + 1);
@@ -470,16 +511,14 @@ internal sealed class WasmMergePlan
     private void WriteCode(bool startFunction)
     {
         var body = new WasmMergeSink(1024);
-        Each((module, index) =>
+        foreach (var (module, function) in _functionOrder)
         {
-            foreach (var range in module.Bodies)
-            {
-                body.Clear();
-                WasmExpressionRemapper.Body(module.Bytes, range.Start, range.Length, _indices[index], body);
-                _section.Unsigned((uint)body.Length);
-                _section.Write(body.Written);
-            }
-        });
+            var range = _modules[module].Bodies[function];
+            body.Clear();
+            WasmExpressionRemapper.Body(_modules[module].Bytes, range.Start, range.Length, _indices[module], body);
+            _section.Unsigned((uint)body.Length);
+            _section.Write(body.Written);
+        }
         if (!startFunction) return;
         body.Clear();
         body.Byte(0);

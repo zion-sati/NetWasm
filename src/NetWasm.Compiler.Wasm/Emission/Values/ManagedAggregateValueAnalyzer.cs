@@ -264,6 +264,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
                             wholeValueStores);
                         break;
                     case CilOperation.Call:
+                        var recorded = materializations.Count;
                         producedOrigins = ApplyCall(
                             request.ByRefEffects,
                             instruction,
@@ -272,6 +273,15 @@ internal sealed class ManagedAggregateValueAnalyzer(
                             storages,
                             materializations,
                             rejected);
+                        // A call that writes the storage flushes and reloads every lane, as a
+                        // whole-value store does, and pays off only where a store would.
+                        for (var added = recorded; added < materializations.Count; added++)
+                        {
+                            if (materializations[added].ReloadAfter)
+                            {
+                                wholeValueStores.Add((blockId, materializations[added].Storage));
+                            }
+                        }
                         break;
                     case CilOperation.CallVirtual:
                     case CilOperation.NewObject:
@@ -528,10 +538,13 @@ internal sealed class ManagedAggregateValueAnalyzer(
         }
     }
 
-    // Each whole-value store flushes and reloads every lane, so lanes pay off
-    // only where they are accessed in a loop the stores sit outside of, as an
-    // enumerator is assigned before the loop that moves it. A value copied
-    // into the storage on every iteration stays in memory.
+    // Each whole-value store, and each call that writes the storage, flushes
+    // and reloads every lane, so lanes pay off only where they are accessed in
+    // a loop the stores sit outside of, as an enumerator is assigned before the
+    // loop that moves it. A value copied into the storage on every iteration
+    // stays in memory, and so does an enumerator whose MoveNext writes it on
+    // every iteration: a reload of every lane after each call costs more than
+    // the loop's one read of Current from memory.
     private static void RejectUnamortizedStores(
         StructuredMethod method,
         List<(StructuredBlockId Block, ManagedAggregateStorageId Storage)> wholeValueStores,
