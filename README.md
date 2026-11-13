@@ -30,7 +30,7 @@ toolchain's standard library and ordinary build, with no hand-added tools.
 
 **55.3% smaller raw. 39.1% smaller with Brotli-11.**
 
-![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 28,377 raw and 11,880 compressed bytes; Rust is 63,528 and 19,519; Rust's WASI 0.2 build, shown for context, is 53,382 and 16,725; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI 0.3 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-landscape-brotli11.svg)
+![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 28,377 raw and 11,880 compressed bytes; Rust is 63,528 and 19,519; Rust's WASI 0.2 build, shown for context, is 53,382 and 16,725; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI 0.3 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-wasi03.svg)
 
 | Toolchain | Raw Wasm | Brotli 11 | Comparison role |
 | --- | ---: | ---: | --- |
@@ -242,7 +242,7 @@ For an empty-UI Blazor WebAssembly application that prints `42`, with AOT,
 managed trimming, IL stripping, invariant globalization and size-focused native
 linking enabled:
 
-![AOT Wasm size comparison, lower is better: NetWasm with Compact GC 27.7 KiB, Blazor .NET 10 11.71 MiB, Blazor .NET 11 RC1 14.58 MiB. NetWasm is about 539 times smaller than the .NET 11 build by exact bytes.](docs/images/aot-console42-size.svg)
+![AOT Wasm size comparison, lower is better: NetWasm with Compact GC 27.7 KiB, Blazor .NET 10 11.71 MiB, Blazor .NET 11 RC1 14.58 MiB. NetWasm is about 539 times smaller than the .NET 11 build by exact bytes.](docs/images/aot-console42-size-wasi03.svg)
 
 | AOT build | Uncompressed Wasm | Relative to NetWasm |
 | --- | ---: | ---: |
