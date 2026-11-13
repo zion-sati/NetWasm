@@ -1,6 +1,6 @@
 # Size measurements and methodology
 
-## C# with precise GC beats Rust's size profile
+## C# with precise GC: less than half Rust's size profile
 
 The measured Release/Oz `Console.WriteLine(42)` WASI 0.3 component is
 **28,377 bytes (27.7 KiB)** with the default precise Compact collector, or
@@ -326,6 +326,7 @@ are **not equivalent deployment formats or collector boundaries**:
 | --- | --- | ---: | ---: | --- |
 | NetWasm Release/Oz, Compact | WASI 0.3 component | 28,377 | 11,880 | Precise Compact GC included in the artifact |
 | Rust 1.100.0 size profile | WASI 0.3 component | 63,528 | 19,519 | No tracing GC in this workload |
+| Rust 1.100.0 size profile, for context | WASI 0.2 component | 53,382 | 16,725 | No tracing GC in this workload |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | 22,655 | WasmGC supplied by the host engine, not the artifact |
 | TinyGo 0.39.0 `fmt.Println(42)` | WASI Preview 1 core module | 93,043 | 26,931 | Precise GC configured |
 
