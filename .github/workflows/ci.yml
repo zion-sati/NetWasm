@@ -615,7 +615,8 @@ jobs:
           SDK_VERSION: ${{ steps.isolated-dotnet.outputs.sdk-version }}
           DOTNET_ARCHITECTURE: ${{ matrix.architecture }}
         run: |
-          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+          # dot.net drops connections now and then: retry long enough to outlast it.
+          curl --fail --silent --show-error --location --retry 8 --retry-delay 10 --retry-all-errors \
             --output "$RUNNER_TEMP/dotnet-install.sh" https://dot.net/v1/dotnet-install.sh
           bash "$RUNNER_TEMP/dotnet-install.sh" \
             --version "$SDK_VERSION" \
@@ -636,7 +637,9 @@ jobs:
           DOTNET_ARCHITECTURE: ${{ matrix.architecture }}
         run: |
           $script = Join-Path $env:RUNNER_TEMP 'dotnet-install.ps1'
-          Invoke-WebRequest -UseBasicParsing https://dot.net/v1/dotnet-install.ps1 -OutFile $script
+          # dot.net drops connections now and then: retry long enough to outlast it.
+          Invoke-WebRequest -UseBasicParsing https://dot.net/v1/dotnet-install.ps1 -OutFile $script `
+            -MaximumRetryCount 8 -RetryIntervalSec 10
           $root = Join-Path $env:RUNNER_TEMP 'dotnet-isolated'
           & $script -Version $env:SDK_VERSION -Architecture $env:DOTNET_ARCHITECTURE -InstallDir $root -NoPath
           $root | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
