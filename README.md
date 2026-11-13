@@ -18,7 +18,7 @@ and .NET CIL directly to WebAssembly. It does not carry the desktop CLR, Mono,
 [See supported APIs](docs/support-status.md) ·
 [Read the documentation](docs/index.md)
 
-## C# now beats Rust on Wasm size
+## C# at less than half Rust's Wasm size
 
 **NetWasm + precise GC: 28,377 bytes**<br>
 **Rust 1.100.0 size-oriented profile: 63,528 bytes**
@@ -30,17 +30,18 @@ toolchain's standard library and ordinary build, with no hand-added tools.
 
 **55.3% smaller raw. 39.1% smaller with Brotli-11.**
 
-![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 28,377 raw and 11,880 compressed bytes; Rust is 63,528 and 19,519; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI Preview 2 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-landscape-brotli11.svg)
+![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 28,377 raw and 11,880 compressed bytes; Rust is 63,528 and 19,519; Rust's WASI 0.2 build, shown for context, is 53,382 and 16,725; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI 0.3 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-landscape-brotli11.svg)
 
 | Toolchain | Raw Wasm | Brotli 11 | Comparison role |
 | --- | ---: | ---: | --- |
 | **NetWasm, Compact GC** | **28,377 B** | **11,880 B** | WASI 0.3 component; precise GC included |
 | Rust 1.100.0, size profile | 63,528 B | 19,519 B | Matched WASI 0.3 component reference |
+| *Rust 1.100.0, size profile* | *53,382 B* | *16,725 B* | *WASI 0.2 component, for context* |
 | Kotlin 2.4.0 `wasmWasi` | 79,293 B | 22,655 B | P1 context; GC supplied by the host engine |
 | TinyGo 0.39.0 | 93,043 B | 26,931 B | P1 context; precise GC configured |
 
 Rust is the headline comparison because it uses the same workload and output
-form. Kotlin/Wasm and TinyGo show the broader footprint landscape, but their
+form. Rust's WASI 0.2 build, Kotlin/Wasm and TinyGo show the broader footprint landscape, but their
 targets and runtime boundaries differ. This is a measured workload/profile
 result, not a language-wide size ranking.
 
