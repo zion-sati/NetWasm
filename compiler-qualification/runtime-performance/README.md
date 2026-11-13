@@ -135,7 +135,7 @@ host CPU, so its rows have no linear memory or component size.
 `wasi-wasm` with Wasm SIMD and run under the same Wasmtime, with the same
 checksum, memory and size measurements. The SDK root needs the
 `wasi-experimental` workload and the wasi-sdk release that workload expects
-(33.0 for .NET 11 RC3, 25.0 for .NET 10); the project targets the SDK's own
+(33.0 for .NET 11, 25.0 for .NET 10); the project targets the SDK's own
 framework. wasi-sdk's clang runs any `wasm-opt` it finds on `PATH`, so the
 harness builds Mono with a minimal `PATH`. Wasm samples compile serially (`-C parallel-compilation=n`) so
 a sample's startup does not load every core, and `summary.json` keeps each

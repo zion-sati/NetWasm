@@ -46,8 +46,8 @@ allocation workloads.
 ## Reproduce
 
 The harness needs Python 3, Git, the .NET SDKs pinned in
-`eng/csharp15-toolchain.json` and Wasmtime 49.0.3 on `PATH`. For Mono AOT,
-install a .NET 11 RC3 SDK with the `wasi-experimental` workload, and wasi-sdk
+`eng/csharp15-toolchain.json` and Wasmtime 50.0.1 on `PATH`. For Mono AOT,
+install the .NET 11 SDK 11.0.100 with the `wasi-experimental` workload, and wasi-sdk
 33.0. Check out dotnet/performance at the commit `run.py` pins:
 
 ```sh
@@ -61,7 +61,7 @@ NuGet.org:
 ```sh
 python3 compiler-qualification/micro-benchmarks/run.py \
   --performance <performance> \
-  --feed <empty-directory> 0.11.2 --libraries 0.11.0 \
+  --feed <empty-directory> 0.13.0 --libraries 0.11.0 \
   --mono-aot <dotnet-root> <wasi-sdk-root> \
   --output <new-directory>
 ```

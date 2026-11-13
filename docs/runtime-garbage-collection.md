@@ -38,7 +38,7 @@ the supported NetWasm profile.
 
 These figures come from complete managed workloads, not isolated
 allocator microbenchmarks. The figures below are the lower median from two
-cohorts on an Apple M1 Max under Wasmtime 49.0.3. Each cohort ran three warmups
+cohorts on an Apple M1 Max under Wasmtime 50.0.1. Each cohort ran three warmups
 and then fifteen fresh-process samples per collector, rotating the collector
 order on every sample. Every cell used the same managed program and the `O3`
 compiler profile, and every result matched the same program on desktop .NET;
@@ -46,9 +46,9 @@ lower is better.
 
 | Collector | Full transaction | Retained object graph | UI-style object churn |
 | --- | ---: | ---: | ---: |
-| Bump | 25.24 ms | 4.38 ms | 9.49 ms |
-| NetWasmGC | 28.47 ms | 4.82 ms | 7.70 ms |
-| Compact | 42.22 ms | 12.49 ms | 20.98 ms |
+| Bump | 24.58 ms | 3.87 ms | 8.53 ms |
+| NetWasmGC | 26.68 ms | 4.00 ms | 5.39 ms |
+| Compact | 40.79 ms | 12.32 ms | 20.50 ms |
 
 The full transaction creates 100,000 transactions, normalizes their account
 strings and aggregates them into growing containers, with allocation and
@@ -71,8 +71,8 @@ the tradeoffs visible: Bump keeps growing because it never reclaims, and Compact
 trades throughput for the smallest tracing-collector artifact.
 
 The corresponding complete Console `42` components, published with the SDK at
-`Oz`, are 35,090 bytes for Bump (11,650 with Brotli quality 11), 39,151 for
-Compact (13,355) and 42,298 for NetWasmGC (14,778). See
+`Oz`, are 23,805 bytes for Bump (9,880 with Brotli quality 11), 28,377 for
+Compact (11,880) and 32,154 for NetWasmGC (13,465). See
 [Size and methodology](size-and-methodology.md#collector-selection-and-compression)
 for the exact size boundary. Timing and file size measure
 different things; neither table is a universal collector ranking.
