@@ -3,7 +3,8 @@
 // Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/SpanHelpers.ByteMemOps.cs
 // Adaptations: the native memmove and memset that large blocks call are Wasm's memory.copy and memory.fill,
 // and on NetWasm (NETWASM) blocks over 16 bytes take them: Wasmtime runs either faster than the unrolled
-// copies and stores from 17 bytes, and the 17- to 64-byte and 64-byte-block paths are left out.
+// copies and stores from 17 bytes, and the 17- to 64-byte and 64-byte-block paths are left out. The
+// wrappers that call them are not NoInlining on NetWasm, which has no P/Invoke prolog to keep apart.
 
 #if TARGET_AMD64 || TARGET_ARM64 || (TARGET_32BIT && !TARGET_ARM) || TARGET_LOONGARCH64
 // JIT is guaranteed to unroll blocks up to 64 bytes in size
@@ -256,8 +257,11 @@ namespace System
         }
 
         // Non-inlinable wrapper around the QCall that avoids polluting the fast path
-        // with P/Invoke prolog/epilog.
+        // with P/Invoke prolog/epilog. NetWasm: memory.copy has no prolog to keep out of
+        // the fast path, so the wrapper inlines and a 17-byte copy makes no call.
+#if !NETWASM
         [MethodImpl(MethodImplOptions.NoInlining)]
+#endif
         private static unsafe void MemmoveNative(ref byte dest, ref byte src, nuint len)
         {
             fixed (byte* pDest = &dest)
@@ -469,8 +473,11 @@ namespace System
         }
 
         // Non-inlinable wrapper around the QCall that avoids polluting the fast path
-        // with P/Invoke prolog/epilog.
+        // with P/Invoke prolog/epilog. NetWasm: memory.fill has no prolog to keep out of
+        // the fast path, so the wrapper inlines and a 17-byte clear makes no call.
+#if !NETWASM
         [MethodImpl(MethodImplOptions.NoInlining)]
+#endif
         private static unsafe void ZeroMemoryNative(ref byte b, nuint byteLength)
         {
             fixed (byte* ptr = &b)

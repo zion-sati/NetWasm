@@ -105,7 +105,7 @@ public sealed class WasmCoreModuleMergerTests
             Section(12, U(1)),
             Section(10, Vec(Body([], [0x41, 0, 0x28, 0x02, 0x00, 0x1a]))),
             Section(11, Vec([1, .. Bytes(new byte[300])])),
-            Custom("binaryen.inline", [.. U(1), .. U(0), .. U(2), .. U(0), .. U(1), 0x7f, .. U(0), .. U(1), 0x00]),
+            Custom("binaryen.inline", [.. U(1), .. U(0), .. U(1), .. U(0), .. U(1), 0x7f]),
             Custom("name", [1, 2]),
             Custom("keep", [1, 2, 3]));
         var q = Module(
@@ -161,7 +161,7 @@ public sealed class WasmCoreModuleMergerTests
                 [5, 0x70, .. Vec([0xd2, 1, 0x0b])],
                 [7, 0x70, .. Vec([0xd2, 1, 0x0b])])),
             Section(12, U(4)),
-            Custom("binaryen.inline", [.. U(1), .. U(0), .. U(2), .. U(0), .. U(1), 0x7f, .. U(0), .. U(1), 0x00]),
+            Custom("binaryen.inline", [.. U(1), .. U(0), .. U(1), .. U(0), .. U(1), 0x7f]),
             Section(10, Vec(
                 Body([], [0x41, 0, 0x28, 0x02, 0x00, 0x1a]),
                 Body([],
@@ -176,6 +176,54 @@ public sealed class WasmCoreModuleMergerTests
                 [2, 1, 0x41, 0, 0x0b, .. Bytes("b"u8)],
                 [1, .. Bytes("c"u8)])),
             Custom("keep", [1, 2, 3])), merged);
+    }
+
+    // A function hinted never to inline lands after every other function, so an optimizer that
+    // keeps the first of identical functions, hints and all, keeps an ordinary one. Every index
+    // that names it follows it: a call, an export, an element, another input's import, its hint.
+    [Fact]
+    public void AFunctionHintedNeverToInlineLandsAfterEveryOtherFunction()
+    {
+        var a = Module(
+            Section(1, Vec(FuncType([], []))),
+            Section(3, Vec(U(0), U(0), U(0))),
+            Section(4, Vec([0x70, 0x00, 1])),
+            Section(7, Vec(Export("never", 0, 0), Export("calls", 0, 1))),
+            Section(9, Vec([0, 0x41, 0, 0x0b, .. Vec(U(0))])),
+            Custom("binaryen.inline",
+                [.. U(2), .. U(0), .. U(1), .. U(0), .. U(1), 0x00, .. U(2), .. U(1), .. U(0), .. U(1), 0x7f]),
+            Section(10, Vec(Body([]), Body([], [0x10, 0]), Body([], [0x10, 1]))));
+        var b = Module(
+            Section(1, Vec(FuncType([], []))),
+            Section(2, Vec(ImportFunction("a", "never", 0))),
+            Section(3, Vec(U(0))),
+            Section(10, Vec(Body([], [0x10, 0]))));
+
+        var merged = Merger.Merge([new("a", a), new("b", b)]);
+
+        Assert.Equal(Module(
+            Section(1, Vec(FuncType([], []))),
+            Section(3, Vec(U(0), U(0), U(0), U(0))),
+            Section(4, Vec([0x70, 0x00, 1])),
+            Section(7, Vec(Export("never", 0, 3), Export("calls", 0, 0))),
+            Section(9, Vec([0, 0x41, 0, 0x0b, .. Vec(U(3))])),
+            Custom("binaryen.inline",
+                [.. U(2), .. U(1), .. U(1), .. U(0), .. U(1), 0x7f, .. U(3), .. U(1), .. U(0), .. U(1), 0x00]),
+            Section(10, Vec(Body([], [0x10, 3]), Body([], [0x10, 0]), Body([], [0x10, 3]), Body([])))), merged);
+    }
+
+    // Only definitions are placed: a never-inline hint on an imported function moves nothing.
+    [Fact]
+    public void ANeverInlineHintOnAnImportPlacesNothing()
+    {
+        var module = Module(
+            Section(1, Vec(FuncType([], []))),
+            Section(2, Vec(ImportFunction("host", "h", 0))),
+            Section(3, Vec(U(0), U(0))),
+            Custom("binaryen.inline", [.. U(1), .. U(0), .. U(1), .. U(0), .. U(1), 0x00]),
+            Section(10, Vec(Body([], [0x10, 0]), Body([], [0x10, 1]))));
+
+        Assert.Equal(module, Merger.Merge([new("a", module)]));
     }
 
     // Function 0 is always inlined (127), function 1 never (0): size-aware selection drops the

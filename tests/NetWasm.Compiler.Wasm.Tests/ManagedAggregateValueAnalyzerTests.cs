@@ -299,6 +299,24 @@ public sealed class ManagedAggregateValueAnalyzerTests
         Assert.Empty(fixture.Analyze(fixture.StoreThenLoopMethod(storeInLoop: true)).Storages);
     }
 
+    // A call that writes the storage reloads every lane as a whole-value store does: before the
+    // loop that reads the lanes it reloads them once; in that loop, as an enumerator's MoveNext
+    // is, every iteration would reload every lane for one read, so the value stays in memory.
+    [Fact]
+    public void WritingCallsOutsideTheLoopThatReadsTheLanesReloadThem()
+    {
+        var fixture = new Fixture();
+        var writes = new ManagedByRefMethodEffects([0], [], []);
+
+        var analysis = fixture.Analyze(fixture.CallThenLoopMethod(callInLoop: false), targetEffects: writes);
+
+        Assert.Single(analysis.Storages);
+        Assert.Contains(analysis.Materializations, item => item is { InstructionOffset: 1, ReloadAfter: true });
+        Assert.Empty(fixture.Analyze(fixture.CallThenLoopMethod(callInLoop: true), targetEffects: writes).Storages);
+        // A call that only reads the value leaves its lanes wherever it sits.
+        Assert.Single(fixture.Analyze(fixture.CallThenLoopMethod(callInLoop: true)).Storages);
+    }
+
     // A labeled loop and a dispatcher's blocks are one loop deeper than their
     // surroundings and a labeled block and a dispatcher's exit are not, so a store beside them reloads the
     // lanes their reads use while a store inside rejects them.
@@ -487,12 +505,18 @@ public sealed class ManagedAggregateValueAnalyzerTests
         Assert.DoesNotContain(analysis.LaneAccesses.Values, access => access.StackKind == CliValueKind.ValueType);
     }
 
+    // The planner's side: a materialization that reloads (the analyzer keeps lanes only where
+    // the writes sit outside the loop that reads them) feeds the next iteration's phi.
     [Fact]
     public void WritingCallReloadsReachTheNextLoopIteration()
     {
         var fixture = new Fixture();
         var method = fixture.LoopMethod();
-        var analysis = fixture.Analyze(method, targetEffects: new([0], [], []));
+        var analysis = fixture.Analyze(method);
+        analysis = analysis with
+        {
+            Materializations = [.. analysis.Materializations.Select(item => item with { ReloadAfter = true })],
+        };
         var plan = new ManagedAggregateSsaPlanner().Plan(new(method, analysis));
 
         var synchronization = Assert.Single(plan.Materializations);
@@ -517,7 +541,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
     public void RepeatedCallArgumentsMergeReadOnlyAndWritingObligations()
     {
         var fixture = new Fixture();
-        var method = fixture.DuplicateReadOnlyCallMethod();
+        var method = fixture.DuplicateReadOnlyCallMethod(readInLoop: true);
         var request = fixture.Request(method, fixture.EmptyRootMap());
         request = request with
         {
@@ -668,7 +692,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
     public void SsaPlannerKeepsMaterializationsAndReloadsBoundToTheirOwnStorage(WasmTarget target, bool writingCall)
     {
         var fixture = new Fixture(target);
-        var method = fixture.TwoOwnedStoragesMethod();
+        var method = fixture.TwoOwnedStoragesMethod(readsInLoop: true);
         var analysis = fixture.Analyze(method, targetEffects: new(writingCall ? [0] : [], [], []));
 
         var plan = new ManagedAggregateSsaPlanner().Plan(new(method, analysis));
@@ -1266,7 +1290,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
 
         public MethodRootMap EmptyRootMap() => new(Body.Definition.Key, [], []);
 
-        public StructuredMethod TwoOwnedStoragesMethod()
+        public StructuredMethod TwoOwnedStoragesMethod(bool readsInLoop = false)
         {
             var steps = new[]
             {
@@ -1285,9 +1309,46 @@ public sealed class ManagedAggregateValueAnalyzerTests
                 Step(I(12, CilOperation.Pop), CliValueKind.I4),
             };
             var id = new StructuredBlockId(0);
+            if (readsInLoop)
+            {
+                return CallsThenLoop(steps, 7, [CliValueKind.ValueType, CliValueKind.ValueType], [Aggregate, Aggregate]);
+            }
             return Graph(id, ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
                 .Add(id, Block(id, steps, new StructuredFallthroughExit(null))), steps,
                 [CliValueKind.ValueType, CliValueKind.ValueType], [Aggregate, Aggregate]);
+        }
+
+        // A writing or reading call on local 0 and then a read of its lanes, the call
+        // before the loop that reads or in it.
+        public StructuredMethod CallThenLoopMethod(bool callInLoop)
+        {
+            var steps = new[]
+            {
+                Step(I(0, CilOperation.LoadLocalAddress, new CilOperand.Index(0))),
+                Step(I(1, CilOperation.Call, new CilOperand.MethodInstance(Target)), CliValueKind.ManagedAddress),
+                Step(I(2, CilOperation.LoadLocalAddress, new CilOperand.Index(0))),
+                Step(I(3, CilOperation.LoadField, new CilOperand.FieldInstance(Low)), CliValueKind.ManagedAddress),
+                Step(I(4, CilOperation.Pop), CliValueKind.I4),
+            };
+            return CallsThenLoop(steps, 2, [CliValueKind.ValueType], [Aggregate], callInLoop);
+        }
+
+        // The steps before split in one block, the rest in a second inside a loop; with
+        // callsInLoop, the loop holds both blocks.
+        private StructuredMethod CallsThenLoop(InstructionStep[] steps, int split, ImmutableArray<CliValueKind> locals,
+            ImmutableArray<CliTypeIdentity> localTypes, bool callsInLoop = false)
+        {
+            var calls = new StructuredBlockId(0);
+            var reads = new StructuredBlockId(1);
+            StructuredRegion Code(StructuredBlockId id) => new StructuredCode(new(id, StructuredBlockRole.Owner));
+            StructuredRegion Loop(params StructuredRegion[] body) =>
+                new StructuredLoop(null, false, new([.. body]), StructuredSequence.Empty, StructuredSequence.Empty);
+            return Graph(calls,
+                ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
+                    .Add(calls, Block(calls, steps[..split], new StructuredFallthroughExit(reads)))
+                    .Add(reads, Block(reads, steps[split..], new StructuredFallthroughExit(null))),
+                steps, locals, localTypes,
+                new(callsInLoop ? [Loop(Code(calls), Code(reads))] : [Code(calls), Loop(Code(reads))]));
         }
 
         public StructuredMethod LoopMethod()
@@ -1823,7 +1884,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
             return SingleBlock(steps);
         }
 
-        public StructuredMethod DuplicateReadOnlyCallMethod()
+        public StructuredMethod DuplicateReadOnlyCallMethod(bool readInLoop = false)
         {
             var steps = new[]
             {
@@ -1837,7 +1898,9 @@ public sealed class ManagedAggregateValueAnalyzerTests
                 Step(I(4, CilOperation.LoadField, new CilOperand.FieldInstance(Low)), CliValueKind.ManagedAddress),
                 Step(I(5, CilOperation.Pop), CliValueKind.I4),
             };
-            return SingleBlock(steps);
+            return readInLoop
+                ? CallsThenLoop(steps, 3, [], [])
+                : SingleBlock(steps);
         }
 
         public StructuredMethod DuplicateAddressMethod()
