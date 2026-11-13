@@ -99,5 +99,20 @@ test("runtime composition supplies WASI 0.3 contracts and the clock for both wid
     assert.equal(status & 15, 1);
     assert.ok(modules[`${prefix}|wasi:cli/environment@0.3`]);
     assert.equal(typeof modules.$root["[waitable-set-new]"], "function");
+    assert.equal(modules[`${prefix}|wasi:filesystem/preopens@0.3`], undefined);
+  }
+});
+
+test("runtime composition mounts a program's sidecar under /netwasm-sidecars for both widths", () => {
+  for (const target of ["wasm32", "wasm64"]) {
+    const prefix = target === "wasm64" ? "cm64p2" : "cm32p2";
+    const allocations = [];
+    const modules = linkedCorpusProgramDependencies.createRuntimeImports(
+      target, () => ({ buffer: new ArrayBuffer(65536) }), () => ({
+        component_realloc(...args) { allocations.push(args); return target === "wasm64" ? 1024n : 1024; },
+      }), { fileName: "App.wasm.method-symbols", bytes: new Uint8Array([1, 2, 3]) });
+    assert.ok(modules[`${prefix}|wasi:filesystem/preopens@0.3`]);
+    assert.ok(modules[`${prefix}|wasi:filesystem/types@0.3`]);
+    assert.ok(modules[`${prefix}|wasi:clocks/monotonic-clock@0.3`]);
   }
 });

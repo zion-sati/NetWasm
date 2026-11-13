@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { instantiateNetWasm } from "../../../src/NetWasm.Runtime/browser-host.mjs";
 import { createRuntimeContractImports } from "../../NetWasm.Runtime.Tests/runtime-contract-imports.mjs";
 import { createMonotonicClockImports } from "../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs";
+import { createReadOnlyAssetImports } from "../../NetWasm.Runtime.Tests/read-only-asset-imports.mjs";
 import { createLinkedCorpusProgram } from "./linked-corpus-program.mjs";
 
 export const linkedCorpusProgramDependencies = Object.freeze({
@@ -13,9 +14,14 @@ export const linkedCorpusProgramDependencies = Object.freeze({
   listImports: module => WebAssembly.Module.imports(module),
   hash: bytes => createHash("sha256").update(bytes).digest("hex"),
   instantiate: instantiateNetWasm,
-  createRuntimeImports: (target, getMemory, getExports) => ({
+  createRuntimeImports: (target, getMemory, getExports, sidecar) => ({
     ...createRuntimeContractImports(target, getMemory, getExports),
     ...createMonotonicClockImports(target, () => process.hrtime.bigint()),
+    // The program's sidecar under /netwasm-sidecars, read through WASI 0.3's filesystem.
+    ...(sidecar == null ? {} : createReadOnlyAssetImports(target, getMemory, (size, alignment) => {
+      const address = target === "wasm64" ? BigInt : Number;
+      return getExports().component_realloc(address(0), address(0), address(alignment), address(size));
+    }, { mountPath: "/netwasm-sidecars", fileName: sidecar.fileName, bytes: sidecar.bytes })),
   }),
 });
 const program = createLinkedCorpusProgram(linkedCorpusProgramDependencies);

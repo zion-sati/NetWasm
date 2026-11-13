@@ -43,6 +43,11 @@ const server = createServer(async (request, response) => {
     response.writeHead(404).end();
   }
 });
+// A slow runner (Debug on Windows Arm64) can wait more than Node's 5 s keep-alive between a page's
+// requests; a browser reusing the connection the server just closed reported
+// ERR_PROXY_CONNECTION_FAILED through the proxy. Idle connections stay open for the whole run.
+server.keepAliveTimeout = 600_000;
+server.headersTimeout = 601_000;
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const results = [];
 try {

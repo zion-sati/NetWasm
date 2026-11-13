@@ -24,8 +24,9 @@ function fixture(overrides = {}) {
     async compileModule(bytes) { calls.push(["compile", bytes]); return { compiled: true }; },
     listImports(module) { calls.push(["imports", module]); return []; },
     hash(bytes) { return bytes[0] === 1 ? digest("a") : digest("b"); },
-    createRuntimeImports(target, getMemory, getExports) {
+    createRuntimeImports(target, getMemory, getExports, sidecar) {
       calls.push(["runtime", target]);
+      if (sidecar != null) calls.push(["sidecar", sidecar.fileName, [...sidecar.bytes]]);
       return { target, getMemory, getExports };
     },
     async instantiate(options) {
@@ -81,6 +82,18 @@ test("both targets preserve ordered value observations, traces, identity and fre
   }
 });
 
+test("a method-symbols sidecar is read once and handed to every instance's runtime imports", async () => {
+  const state = fixture();
+  await state.program.run({
+    ...baseRequest, methodSymbols: { path: "app.method-symbols", fileName: "App.wasm.method-symbols" } });
+  assert.deepEqual(state.calls.filter(([kind]) => kind === "binary").map(([, path]) => path),
+    [baseRequest.modulePath, "app.method-symbols"]);
+  const sidecars = state.calls.filter(([kind]) => kind === "sidecar");
+  assert.equal(sidecars.length, 3);
+  assert.ok(sidecars.every(([, fileName, bytes]) => fileName === "App.wasm.method-symbols" && bytes.length === 1));
+  assert.ok(fixture().calls.every(([kind]) => kind !== "sidecar"));
+});
+
 test("managed exceptions and raw traps remain distinct observations", async () => {
   let invocation = 0;
   const state = fixture({
@@ -112,7 +125,10 @@ test("invalid requests fail before I/O", async () => {
     { ...baseRequest, manifestSha256: "short" }, { ...baseRequest, exposesLegacyTrace: null },
     { ...baseRequest, usesTypedTrace: null }, { ...baseRequest, inputs: [] },
     { ...baseRequest, inputs: [0, 0] }, { ...baseRequest, inputs: [1.5] },
-    { ...baseRequest, inputs: [-2147483649] }, { ...baseRequest, inputs: [2147483648] }];
+    { ...baseRequest, inputs: [-2147483649] }, { ...baseRequest, inputs: [2147483648] },
+    { ...baseRequest, methodSymbols: {} }, { ...baseRequest, methodSymbols: { path: "", fileName: "App.wasm.method-symbols" } },
+    { ...baseRequest, methodSymbols: { path: "app.method-symbols", fileName: "" } },
+    { ...baseRequest, methodSymbols: { path: "app.method-symbols", fileName: "dir/App.wasm.method-symbols" } }];
   for (const request of invalid) {
     const state = fixture();
     await assert.rejects(state.program.run(request), TypeError);
