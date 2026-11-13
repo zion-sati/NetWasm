@@ -2,15 +2,15 @@
 
 ## C# with precise GC beats Rust's size profile
 
-The measured Release/Oz `Console.WriteLine(42)` WASI Preview 2 component is
-**39,151 bytes (38.2 KiB)** with the default precise Compact collector, or
-**13,355 bytes with Brotli quality 11**. The same print-`42` workload with
-Rust 1.99.1's size-oriented profile produces a **52,569-byte** WASI Preview 2
-component, or **16,648 bytes with Brotli quality 11**. NetWasm is **13,418 bytes
-(25.5%) smaller raw** and **3,293 bytes (19.8%) smaller compressed**, including
+The measured Release/Oz `Console.WriteLine(42)` WASI 0.3 component is
+**28,377 bytes (27.7 KiB)** with the default precise Compact collector, or
+**11,880 bytes with Brotli quality 11**. The same print-`42` workload with
+Rust 1.100.0's size-oriented profile produces a **63,528-byte** WASI 0.3
+component, or **19,519 bytes with Brotli quality 11**. NetWasm is **35,151 bytes
+(55.3%) smaller raw** and **7,639 bytes (39.1%) smaller compressed**, including
 its linked runtime and reachable precise-GC support.
 
-These NetWasm figures were reproduced using the released 0.11.2 SDK and template
+These NetWasm figures were reproduced using the released 0.13.0 SDK and template
 packages from NuGet.org. All three collector variants execute and print `42`.
 The retained Rust reference uses
 the exact toolchain and Cargo profile documented below; it is not a claim about
@@ -27,12 +27,12 @@ Console.WriteLine(42);
 Use the canonical assembly name `NetWasmApp` for exact-size reproduction.
 Assembly identity participates in deterministic method/type ordering, so
 renaming an otherwise identical assembly can change encoded index bytes.
-The released-package reproduction ran on macOS arm64 under Wasmtime 49.0.3.
+The released-package reproduction ran on macOS arm64 under Wasmtime 50.0.1.
 
 The ordinary released-SDK reproduction is:
 
 ```sh
-dotnet new install NetWasm.Templates@0.11.2
+dotnet new install NetWasm.Templates@0.13.0
 dotnet new netwasm-app -n NetWasmApp
 cd NetWasmApp
 dotnet restore
@@ -49,9 +49,9 @@ ordinary SDK users do not need a maintainer Emscripten installation.
 
 | Collector | Uncompressed component | Brotli quality 11 |
 | --- | ---: | ---: |
-| Compact (default) | 39,151 bytes | 13,355 bytes |
-| NetWasmGC | 42,298 bytes | 14,778 bytes |
-| Bump | 35,090 bytes | 11,650 bytes |
+| Compact (default) | 28,377 bytes | 11,880 bytes |
+| NetWasmGC | 32,154 bytes | 13,465 bytes |
+| Bump | 23,805 bytes | 9,880 bytes |
 
 These are complete optimized components for the same application and command
 WIT, not isolated collector sizes. Brotli uses generic mode with `lgwin=22`.
@@ -184,24 +184,27 @@ loaded, their uncompressed response lengths matched the published totals,
 `42` appeared in the console, the empty component rendered, and no browser
 errors occurred.
 
-Relative to the 39,151-byte NetWasm component, these retained
-Blazor Wasm payloads are about 314x and 391x as large. The Blazor builds were
+Relative to the 28,377-byte NetWasm component, these retained
+Blazor Wasm payloads are about 433x and 539x as large. The Blazor builds were
 measured on the date above. KiB means 1,024 bytes; MiB means 1,048,576 bytes.
 Neither total includes JavaScript, HTML or the host engine.
 
 This is [Mono WebAssembly AOT](https://learn.microsoft.com/en-us/aspnet/core/blazor/webassembly-build-tools-and-aot?view=aspnetcore-10.0),
 with [IL stripping](https://learn.microsoft.com/en-us/aspnet/core/blazor/performance/webassembly-runtime-performance?view=aspnetcore-10.0),
 rather than CoreCLR Native AOT. The Blazor outputs use a JavaScript browser
-host; NetWasm produces a WASI Preview 2 component. These measurements describe
+host; NetWasm produces a WASI 0.3 component. These measurements describe
 the tested app and settings, not a minimum size for every .NET Wasm app or a
 comparison of equivalent UI frameworks.
 
 ## Rust: a footprint reference, not a GC comparison
 
-The [Rust target documentation](https://doc.rust-lang.org/rustc/platform-support/wasm32-wasip2.html)
-confirms that `wasm32-wasip2` produces a Component rather than a raw core
-module. The local runs below therefore compare uncompressed final components,
-not a Rust core module against a wrapped C# program.
+The [Rust target documentation](https://doc.rust-lang.org/rustc/platform-support/wasm32-wasip3.html)
+describes `wasm32-wasip3` as a Tier 2 target whose output is a WASI 0.3
+component, and Rust 1.100.0 distributes its standard library. NetWasm's
+component targets WASI 0.3 as well, so the local runs below compare
+uncompressed final components of the same kind, not a Rust core module against
+a wrapped C# program. Rust's `wasm32-wasip2` builds, which produce WASI 0.2
+components, are listed for context.
 
 For the numeric-output workload, the Rust source is:
 
@@ -211,19 +214,18 @@ fn main() {
 }
 ```
 
-| Toolchain and build | Final component |
-| --- | ---: |
-| NetWasm, Release/Oz, Compact | 39,151 bytes |
-| Rust 1.90.0, ordinary Cargo release | 86,248 bytes |
-| Rust 1.99.1, ordinary Cargo release | 81,031 bytes |
-| Rust 1.99.1, size-oriented profile below | 52,569 bytes |
-| Rust 1.99.1, size profile with wasm-opt run by hand (below) | 40,488 bytes |
+| Toolchain and build | Final component | Brotli 11 |
+| --- | ---: | ---: |
+| NetWasm, Release/Oz, Compact (WASI 0.3) | 28,377 bytes | 11,880 bytes |
+| Rust 1.100.0, `wasm32-wasip3`, ordinary Cargo release | 102,875 bytes | 29,450 bytes |
+| Rust 1.100.0, `wasm32-wasip3`, size-oriented profile below | 63,528 bytes | 19,519 bytes |
+| Rust 1.100.0, `wasm32-wasip2`, ordinary Cargo release | 89,908 bytes | 26,245 bytes |
+| Rust 1.100.0, `wasm32-wasip2`, size-oriented profile below | 53,382 bytes | 16,725 bytes |
+| Rust 1.100.0, `wasm32-wasip2`, size profile with wasm-opt run by hand (below) | 41,185 bytes | 14,523 bytes |
 
-All five artifacts executed and printed `42` under Wasmtime. The retained
-Rust 1.90.0 run used Wasmtime 47.0.3; the Rust 1.99.1 runs and NetWasm used
-Wasmtime 49.0.3.
-These are artifact-size observations, not a cross-engine performance comparison.
-The Rust artifacts also pass wasm-tools 1.256.0 validation.
+Every artifact executed and printed `42` under Wasmtime 50.0.1 and passes
+wasm-tools 1.256.0 validation. These are artifact-size observations, not a
+cross-engine performance comparison.
 
 This is a deliberately small console-output workload, not a language-wide
 ranking or a claim that NetWasm matches the smallest possible Rust binary.
@@ -232,11 +234,10 @@ features, standard-library coverage and optimization defaults matter.
 
 ### Reproduce the Rust runs
 
-Install the pinned Rust toolchains without changing your default:
+Install the pinned Rust toolchain without changing your default:
 
 ```sh
-rustup toolchain install 1.90.0 --profile minimal --target wasm32-wasip2
-rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip2
+rustup toolchain install 1.100.0 --profile minimal --target wasm32-wasip3 --target wasm32-wasip2
 ```
 
 Create a Cargo binary project with the source above and this `Cargo.toml`:
@@ -259,29 +260,29 @@ strip = "symbols"
 Build and measure separate output directories:
 
 ```sh
-cargo +1.90.0 build --release --target wasm32-wasip2 --target-dir target-190
-cargo +1.99.1 build --release --target wasm32-wasip2 --target-dir target-199
-cargo +1.99.1 build --profile small --target wasm32-wasip2 --target-dir target-199
-wc -c target-190/wasm32-wasip2/release/console42.wasm
-wc -c target-199/wasm32-wasip2/release/console42.wasm
-wc -c target-199/wasm32-wasip2/small/console42.wasm
+for target in wasm32-wasip3 wasm32-wasip2; do
+  cargo +1.100.0 build --release --target $target --target-dir target
+  cargo +1.100.0 build --profile small --target $target --target-dir target
+done
+wc -c target/wasm32-wasip3/release/console42.wasm target/wasm32-wasip3/small/console42.wasm
+wc -c target/wasm32-wasip2/release/console42.wasm target/wasm32-wasip2/small/console42.wasm
 ```
 
 See [Cargo's profile documentation](https://doc.rust-lang.org/cargo/reference/profiles.html)
 for optimization, LTO, panic and stripping semantics. These runs use the
-toolchains' distributed standard libraries, not a custom size-optimized
+toolchain's distributed standard library, not a custom size-optimized
 standard-library rebuild.
 
 ### Rust with wasm-opt run by hand
 
-NetWasm runs Binaryen's wasm-opt inside every build. Rust's `wasm32-wasip2`
-build does not, and its output is already a component, which wasm-opt does not
-accept. Linking the core module alone, optimizing it and re-encoding the
-component:
+NetWasm runs Binaryen's wasm-opt inside every build. Rust's builds do not, and
+their output is already a component, which wasm-opt does not accept. For
+`wasm32-wasip2`, linking the core module alone, optimizing it and re-encoding
+the component works:
 
 ```sh
 RUSTFLAGS="-C link-arg=--skip-wit-component" \
-  cargo +1.99.1 build --profile small --target wasm32-wasip2 --target-dir target-core
+  cargo +1.100.0 build --profile small --target wasm32-wasip2 --target-dir target-core
 wasm-opt -Oz --converge \
   --enable-bulk-memory --enable-bulk-memory-opt --enable-call-indirect-overlong \
   --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals \
@@ -291,17 +292,15 @@ wasm-tools component new core.wasm -o component.wasm
 wasm-tools strip --all component.wasm -o console42.wasm
 ```
 
-| Rust 1.99.1 build | Raw | Brotli 11 |
-| --- | ---: | ---: |
-| Size profile | 52,569 bytes | 16,648 bytes |
-| Core module through `wasm-opt -Oz`, component re-encoded | 44,410 bytes | 15,137 bytes |
-| Same, every custom section stripped | 40,571 bytes | 14,487 bytes |
-| Same, with `--converge` | 40,488 bytes | 14,390 bytes |
-| NetWasm Release/Oz, Compact, ordinary publish | 39,151 bytes | 13,355 bytes |
+The result is 41,185 bytes (14,523 with Brotli-11) and prints `42`: smaller
+than Rust's own WASI 0.3 output, and still larger than NetWasm's ordinary
+publish. wasm-opt is Binaryen version 132 and wasm-tools is 1.256.0. The
+feature flags are the ones Rust's output uses.
 
-wasm-opt is Binaryen version 132 and wasm-tools is 1.256.0. The feature flags
-are the ones Rust's output uses: with `--all-features`, the re-encoded
-component no longer loads in Wasmtime 49.0.3. Every row prints `42`.
+The same route does not yet work for `wasm32-wasip3`: the component that
+`wasm-tools component new` re-encodes from the `wasip3` core module validates
+but traps in Wasmtime 50.0.1 with an out-of-bounds memory access, with or
+without wasm-opt, so it has no row above.
 
 ### What the 2025 table actually establishes
 
@@ -325,8 +324,8 @@ are **not equivalent deployment formats or collector boundaries**:
 
 | Build | Artifact | Raw bytes | Brotli 11 | Collector boundary |
 | --- | --- | ---: | ---: | --- |
-| NetWasm Release/Oz, Compact | WASI Preview 2 Component | 39,151 | 13,355 | Precise Compact GC included in the artifact |
-| Rust 1.99.1 size profile | WASI Preview 2 Component | 52,569 | 16,648 | No tracing GC in this workload |
+| NetWasm Release/Oz, Compact | WASI 0.3 component | 28,377 | 11,880 | Precise Compact GC included in the artifact |
+| Rust 1.100.0 size profile | WASI 0.3 component | 63,528 | 19,519 | No tracing GC in this workload |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | 22,655 | WasmGC supplied by the host engine, not the artifact |
 | TinyGo 0.39.0 `fmt.Println(42)` | WASI Preview 1 core module | 93,043 | 26,931 | Precise GC configured |
 
@@ -413,7 +412,7 @@ System.Text.Json workloads produced:
 These are historical scenario measurements, not current component sizes,
 not incremental package costs, and not minimum sizes for arbitrary JSON
 programs. Do not compare their 54,230-byte baseline directly with the current
-39,151-byte Compact component. `JsonDocument` is also not the mutable `JsonNode` API.
+28,377-byte Compact component. `JsonDocument` is also not the mutable `JsonNode` API.
 
 The useful result is granularity: choosing a different JSON workload retains
 a different closure. Adding a package reference alone is not the same thing

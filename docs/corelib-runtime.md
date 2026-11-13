@@ -188,7 +188,7 @@ explicit raw module path while Memory64 Component packaging remains blocked.
 
 Normal SDK consumers restore packaged build tools and prebuilt archives. They
 do not need emsdk, Python or manual link commands. Internal build-tool execution
-has no P2 requirement and is independent of the application's ABI.
+has no WASI requirement and is independent of the application's ABI.
 
 ## Source and license boundary
 

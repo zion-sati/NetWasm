@@ -1,17 +1,17 @@
 <svg role="img" aria-labelledby="chart-title chart-description"
      xmlns="http://www.w3.org/2000/svg" width="960" height="740" viewBox="0 0 960 740">
   <title id="chart-title">Wasm footprint landscape: C# with precise GC is smallest raw and after Brotli 11</title>
-  <desc id="chart-description">Zero-based size comparison for programs that print 42. NetWasm with precise Compact garbage collection is 39,151 raw and 13,355 Brotli-11 bytes. Rust 1.99.1 is 52,569 raw and 16,648 compressed bytes. These are matched WASI Preview 2 components. Kotlin 2.4 is 79,293 raw and 22,655 compressed bytes. TinyGo 0.39 is 93,043 raw and 26,931 compressed bytes. Kotlin and TinyGo are contextual WASI Preview 1 references.</desc>
+  <desc id="chart-description">Zero-based size comparison for programs that print 42. NetWasm with precise Compact garbage collection is 28,377 raw and 11,880 Brotli-11 bytes. Rust 1.100.0 is 63,528 raw and 19,519 compressed bytes. These are matched WASI 0.3 components. Kotlin 2.4 is 79,293 raw and 22,655 compressed bytes. TinyGo 0.39 is 93,043 raw and 26,931 compressed bytes. Kotlin and TinyGo are contextual WASI Preview 1 references.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="960" y2="740" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#080b10"/>
       <stop offset="1" stop-color="#111827"/>
     </linearGradient>
-    <linearGradient id="netwasm-bar" x1="90" y1="0" x2="418" y2="0" gradientUnits="userSpaceOnUse">
+    <linearGradient id="netwasm-bar" x1="90" y1="0" x2="306" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#06b6d4"/>
       <stop offset="1" stop-color="#67e8f9"/>
     </linearGradient>
-    <linearGradient id="rust-bar" x1="90" y1="0" x2="499" y2="0" gradientUnits="userSpaceOnUse">
+    <linearGradient id="rust-bar" x1="90" y1="0" x2="574" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#b45309"/>
       <stop offset="1" stop-color="#fbbf24"/>
     </linearGradient>
@@ -55,7 +55,7 @@
     <text x="172" y="11" class="muted" font-size="12">Brotli 11</text>
   </g>
 
-  <text x="90" y="215" fill="#67e8f9" font-size="12" font-weight="800" letter-spacing="1.7">MATCHED WASI PREVIEW 2 COMPONENTS</text>
+  <text x="90" y="215" fill="#67e8f9" font-size="12" font-weight="800" letter-spacing="1.7">MATCHED WASI 0.3 COMPONENTS</text>
 
   <g aria-hidden="true">
     <line x1="90" y1="228" x2="90" y2="670" class="grid"/>
@@ -66,16 +66,16 @@
   </g>
 
   <text x="90" y="250" fill="#67e8f9" class="label">NetWasm  /  Compact GC</text>
-  <text x="870" y="250" fill="#a5f3fc" class="value">39,151 B raw</text>
-  <rect x="90" y="262" width="298" height="28" rx="6" fill="url(#netwasm-bar)" stroke="#67e8f9" filter="url(#bar-shadow)"/>
-  <rect x="90" y="298" width="102" height="8" rx="4" fill="#ecfeff"/>
-  <text x="870" y="306" class="compressed-value">13,355 B Brotli 11</text>
+  <text x="870" y="250" fill="#a5f3fc" class="value">28,377 B raw</text>
+  <rect x="90" y="262" width="216" height="28" rx="6" fill="url(#netwasm-bar)" stroke="#67e8f9" filter="url(#bar-shadow)"/>
+  <rect x="90" y="298" width="90" height="8" rx="4" fill="#ecfeff"/>
+  <text x="870" y="306" class="compressed-value">11,880 B Brotli 11</text>
 
-  <text x="90" y="350" fill="#fbbf24" class="label">Rust 1.99  /  size profile</text>
-  <text x="870" y="350" fill="#fde68a" class="value">52,569 B raw</text>
-  <rect x="90" y="362" width="400" height="28" rx="6" fill="url(#rust-bar)" stroke="#fbbf24" filter="url(#bar-shadow)"/>
-  <rect x="90" y="398" width="127" height="8" rx="4" fill="#fef3c7"/>
-  <text x="870" y="406" class="compressed-value">16,648 B Brotli 11</text>
+  <text x="90" y="350" fill="#fbbf24" class="label">Rust 1.100  /  size profile</text>
+  <text x="870" y="350" fill="#fde68a" class="value">63,528 B raw</text>
+  <rect x="90" y="362" width="484" height="28" rx="6" fill="url(#rust-bar)" stroke="#fbbf24" filter="url(#bar-shadow)"/>
+  <rect x="90" y="398" width="149" height="8" rx="4" fill="#fef3c7"/>
+  <text x="870" y="406" class="compressed-value">19,519 B Brotli 11</text>
 
   <line x1="90" y1="435" x2="870" y2="435" stroke="#334155"/>
   <text x="90" y="461" fill="#94a3b8" font-size="12" font-weight="800" letter-spacing="1.7">BROADER FOOTPRINT CONTEXT  /  WASI PREVIEW 1</text>
