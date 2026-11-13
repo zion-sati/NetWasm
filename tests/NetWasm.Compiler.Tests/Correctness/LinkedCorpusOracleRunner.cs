@@ -101,7 +101,12 @@ internal sealed class LinkedCorpusOracleRunner(
         var moduleHash = fingerprints.Compute(buildPlan.OutputModulePath);
         var observationRequest = observationRequests.Create(
             compilation.Fixture, cell.Target, buildPlan.OutputModulePath,
-            manifestPath, moduleHash, manifestHash);
+            manifestPath, moduleHash, manifestHash) with
+        {
+            MethodSymbols = stackTracePath is null
+                ? null
+                : new(stackTracePath, Path.GetFileNameWithoutExtension(compilation.NetWasm.AssemblyPath) + ".wasm.method-symbols"),
+        };
         var observed = observations.Observe(
             observationRequest,
             compilerResponse.TypeNames,

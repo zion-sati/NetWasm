@@ -32,6 +32,11 @@ export function createLinkedCorpusProgram({
       if (manifest?.target !== request.target)
         throw new TypeError("Linked corpus manifest target differs from its request");
       const module = await compileModule(moduleBytes);
+      // A fixture that emits stack traces opens its method-symbols sidecar, as its hosts mount it.
+      const sidecar = request.methodSymbols == null ? null : {
+        fileName: request.methodSymbols.fileName,
+        bytes: await readBinary(request.methodSymbols.path),
+      };
       if (listImports(module).some(({ module: name }) =>
         name === "wasi_snapshot_preview1" || name === "wasi_unstable"))
         throw new TypeError("Linked corpus module imports forbidden Preview 1 services");
@@ -44,7 +49,7 @@ export function createLinkedCorpusProgram({
             manifest,
             runtimeModules: createRuntimeImports(
               request.target, () => managed.instance.exports.memory,
-              () => managed.instance.exports),
+              () => managed.instance.exports, sidecar),
             managedExceptionReporting: { reportImmediate },
           });
           return managed;
@@ -70,6 +75,11 @@ export function createLinkedCorpusProgram({
   });
 }
 
+function validSidecar(sidecar) {
+  return sidecar == null || (typeof sidecar.path === "string" && sidecar.path.length !== 0
+    && typeof sidecar.fileName === "string" && sidecar.fileName.length !== 0 && !sidecar.fileName.includes("/"));
+}
+
 function validateRequest(request) {
   if (!request || request.schemaVersion !== 1
       || (request.target !== "wasm32" && request.target !== "wasm64")
@@ -79,7 +89,8 @@ function validateRequest(request) {
       || !/^[0-9a-f]{64}$/.test(request.manifestSha256)
       || typeof request.exposesLegacyTrace !== "boolean"
       || typeof request.usesTypedTrace !== "boolean"
-      || !Array.isArray(request.inputs) || request.inputs.length === 0)
+      || !Array.isArray(request.inputs) || request.inputs.length === 0
+      || !validSidecar(request.methodSymbols))
     throw new TypeError("Invalid linked corpus request");
   const unique = new Set();
   for (const input of request.inputs) {

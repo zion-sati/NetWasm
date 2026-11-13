@@ -11,7 +11,15 @@ internal sealed record LinkedCorpusObservationRequest(
     string ManifestSha256,
     ImmutableArray<int> Inputs,
     bool ExposesLegacyTrace,
-    bool UsesTypedTrace);
+    bool UsesTypedTrace)
+{
+    // The method-symbols sidecar a fixture that emits stack traces opens, which the runner mounts
+    // under /netwasm-sidecars as the program's hosts do; null for every other fixture.
+    public LinkedCorpusSidecar? MethodSymbols { get; init; }
+}
+
+// A sidecar file and the name the program opens it by (<program>.wasm.method-symbols).
+internal sealed record LinkedCorpusSidecar(string Path, string FileName);
 
 internal sealed record LinkedCorpusObservationInvocation(
     LinkedCorpusObservationRequest Request,
@@ -27,8 +35,15 @@ internal sealed record LinkedCorpusObservationResult(
 internal sealed class LinkedCorpusObservationException(
     LinkedCorpusObservationInvocation invocation,
     QualifiedProcessResult result) :
-    Exception("linked corpus observation process failed", result.LaunchException)
+    Exception(Describe(result), result.LaunchException)
 {
+    // What CI can show of a failed run: how it ended and the tail of what it wrote.
+    private static string Describe(QualifiedProcessResult result) =>
+        $"linked corpus observation process failed: completion={result.Completion}, exit={result.ExitCode}" +
+        $"{Environment.NewLine}stderr: {Tail(result.StandardError)}{Environment.NewLine}stdout: {Tail(result.StandardOutput)}";
+
+    private static string Tail(string text) => text.Length <= 4000 ? text : "..." + text[^4000..];
+
     public LinkedCorpusObservationInvocation Invocation { get; } = invocation;
     public QualifiedProcessResult Result { get; } = result;
 }

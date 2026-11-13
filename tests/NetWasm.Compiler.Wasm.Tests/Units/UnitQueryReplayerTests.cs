@@ -16,11 +16,14 @@ public sealed class UnitQueryReplayerTests
     private static readonly EntityKey ValueField = new(Program, 0x04000001);
     private static readonly FieldDefinitionModel ValueDefinition = new(ValueField, new(Program, 0x02000002), "Value", Point, false);
     private static readonly FieldInstanceModel Value = new(ValueDefinition, Point, Point);
+    private static readonly MethodDefinitionModel RunDefinition = new(new EntityKey(Program, 0x06000001),
+        new EntityKey(Program, 0x02000002), "Run", true, MethodSignatureModel.Create(CliValueKind.I4), 0);
+    private static readonly MethodInstanceModel Run = new(RunDefinition, Point, [], RunDefinition.Signature);
 
     private static readonly UnitQueryArguments Arguments = new(
         Lookups.Of(new Dictionary<string, CliTypeIdentity> { [Point.CanonicalName] = Point, [Broken.CanonicalName] = Broken }),
         Lookups.Of(new Dictionary<string, FieldInstanceModel> { [Value.CanonicalName] = Value }),
-        Lookups.Of(new Dictionary<string, MethodInstanceModel>()));
+        Lookups.Of(new Dictionary<string, MethodInstanceModel> { [Run.CanonicalName] = Run }));
 
     public static TheoryData<string, string> Answered => new()
     {
@@ -47,6 +50,7 @@ public sealed class UnitQueryReplayerTests
         { nameof(UnitQueryKind.TypeObjectTable), "count" },
         { nameof(UnitQueryKind.TypeObjectTable), "size" },
         { nameof(UnitQueryKind.FieldDescriptorAddress), Value.CanonicalName },
+        { nameof(UnitQueryKind.MethodDescriptorAddress), Run.CanonicalName },
         { nameof(UnitQueryKind.MemberDescriptorOffsets), "declaring-type-id" },
         { nameof(UnitQueryKind.MemberDescriptorOffsets), "requires-declaring-type" },
         { nameof(UnitQueryKind.ExceptionObject), nameof(ManagedExceptionKind.Overflow) },
@@ -100,6 +104,7 @@ public sealed class UnitQueryReplayerTests
         { nameof(UnitQueryKind.StaticField), Point.CanonicalName + "::0xzz" },
         { nameof(UnitQueryKind.InstanceField), Point.CanonicalName + "::0x04000009" },
         { nameof(UnitQueryKind.FieldDescriptorAddress), "missing" },
+        { nameof(UnitQueryKind.MethodDescriptorAddress), "missing" },
         { nameof(UnitQueryKind.ExceptionObject), "Bogus" },
         { nameof(UnitQueryKind.ManagedCallSite), "caller" },
         { nameof(UnitQueryKind.ManagedCallSite), "caller@zz" },
