@@ -6,6 +6,9 @@
 // NetWasm: the one thread's local buckets are a field rather than a ConditionalWeakTable of every thread's.
 // NetWasm: the trim callback, which reads the monotonic clock, is registered only in a world that imports
 // wasi:clocks/monotonic-clock; in one without it (a custom WIT world, a plain core module) the pool keeps what it caches.
+// NetWasm: every instantiation registers the one SharedArrayPoolTrimCallback.Trim rather than its own lambda, so the trim
+// adds one target to the dispatch of every delegate a Func<object, bool> converts to (Func<Product, bool> included,
+// through variance), not one per element type the program pools.
 
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -25,7 +28,7 @@ namespace System.Buffers
     /// checking its processor number, because multiple threads could interleave on the same core, and because
     /// a thread is allowed to check other core's buckets if its core's bucket is empty/full.
     /// </remarks>
-    internal sealed partial class SharedArrayPool<T> : ArrayPool<T>
+    internal sealed partial class SharedArrayPool<T> : ArrayPool<T>, ISharedArrayPoolTrim
     {
         /// <summary>The number of buckets (array sizes) in the pool, one for each array length, starting from length 16.</summary>
         private const int NumBuckets = 27; // Utilities.SelectBucketIndex(1024 * 1024 * 1024 + 1)
@@ -299,7 +302,7 @@ namespace System.Buffers
             // NetWasm: only where the selected world imports the monotonic clock the trim reads (a compile-time fact).
             if (PlatformWorld.ImportsMonotonicClock() && !Interlocked.Exchange(ref _trimCallbackCreated, true))
             {
-                Gen2GcCallback.Register(s => ((SharedArrayPool<T>)s).Trim(), this);
+                Gen2GcCallback.Register(SharedArrayPoolTrimCallback.Trim, this);
             }
 
             return tlsBuckets;
@@ -328,6 +331,18 @@ namespace System.Buffers
     }
 
     /// <summary>Provides a collection of partitions, each of which is a pool of arrays.</summary>
+    // NetWasm: the trim every SharedArrayPool<T> shares one callback for.
+    internal interface ISharedArrayPoolTrim
+    {
+        bool Trim();
+    }
+
+    // NetWasm: the one Gen2GcCallback target for every SharedArrayPool<T>.
+    internal static class SharedArrayPoolTrimCallback
+    {
+        internal static bool Trim(object pool) => ((ISharedArrayPoolTrim)pool).Trim();
+    }
+
     internal sealed class SharedArrayPoolPartitions
     {
         /// <summary>The partitions.</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -19,22 +20,13 @@ internal sealed class DispatchTargetResolver(
     ITypeRelationshipClassifier relationships,
     IBaseTypeResolver baseTypes) : IDispatchTargetResolver
 {
-    private readonly Dictionary<(string Declaration, string Receiver), DispatchTargetModel?> _targets = [];
+    // The managed optimizer's devirtualization resolves through one resolver from every analysis worker at once.
+    private readonly ConcurrentDictionary<(string Declaration, string Receiver), DispatchTargetModel?> _targets = new();
 
     public DispatchTargetModel? Resolve(
         MethodInstanceModel declaration,
-        CliTypeIdentity receiver)
-    {
-        var key = (declaration.CanonicalName, receiver.CanonicalName);
-        if (_targets.TryGetValue(key, out var target))
-        {
-            return target;
-        }
-
-        target = ResolveUncached(declaration, receiver);
-        _targets.Add(key, target);
-        return target;
-    }
+        CliTypeIdentity receiver) =>
+        _targets.GetOrAdd((declaration.CanonicalName, receiver.CanonicalName), _ => ResolveUncached(declaration, receiver));
 
     private DispatchTargetModel? ResolveUncached(
         MethodInstanceModel declaration,
