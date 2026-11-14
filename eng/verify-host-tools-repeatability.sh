@@ -39,6 +39,32 @@ for name in sorted(set(a) | set(b)):
             x, y = first.read(name), second.read(name)
             offsets = [i for i in range(len(x)) if x[i] != y[i]]
             print(f"    {len(offsets)} bytes differ, first at {offsets[:12]}, last at {offsets[-1]}")
+            # Each run of differing bytes, with both builds' bytes and, in a Mach-O, the load command or section holding it.
+            ranges = []
+            for offset in offsets:
+                if ranges and offset <= ranges[-1][1] + 8:
+                    ranges[-1][1] = offset
+                else:
+                    ranges.append([offset, offset])
+            places = []
+            if x[:4] in (b"\xcf\xfa\xed\xfe",):
+                import struct
+                count, commands_size = struct.unpack_from("<II", x, 16)
+                at = 32
+                for index in range(count):
+                    cmd, size = struct.unpack_from("<II", x, at)
+                    places.append((at, at + size, f"load command {index} ({hex(cmd)})"))
+                    if cmd == 0x19:
+                        for section in range(struct.unpack_from("<I", x, at + 64)[0]):
+                            header = at + 72 + section * 80
+                            name = (x[header + 16:header + 32].rstrip(b"\0") + b"," + x[header:header + 16].rstrip(b"\0")).decode()
+                            size64, offset32 = struct.unpack_from("<QI", x, header + 40)
+                            if offset32:
+                                places.append((offset32, offset32 + size64, f"section {name}"))
+                    at += size
+            for start, end in ranges[:16]:
+                place = next((label for low, high, label in places if low <= start < high), "")
+                print(f"    [{start}, {end}] {place}: {x[start:end + 1].hex()} vs {y[start:end + 1].hex()}")
             if x[:4] in (b"\xcf\xfa\xed\xfe",):
                 import struct
                 ncmds = struct.unpack_from("<I", x, 16)[0]
