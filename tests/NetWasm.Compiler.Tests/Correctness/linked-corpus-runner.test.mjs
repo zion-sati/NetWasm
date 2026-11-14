@@ -98,8 +98,13 @@ test("runtime composition supplies WASI 0.3 contracts and the clock for both wid
     const status = modules["wasi:clocks/monotonic-clock@0.3.2"]["[async-lower]wait-for"](0n);
     assert.equal(status & 15, 1);
     assert.ok(modules[`${prefix}|wasi:cli/environment@0.3`]);
+    assert.equal(typeof modules[`${prefix}|wasi:clocks/system-clock@0.3`].now, "function");
     assert.equal(typeof modules.$root["[waitable-set-new]"], "function");
-    assert.equal(modules[`${prefix}|wasi:filesystem/preopens@0.3`], undefined);
+    // Without a sidecar no directory is preopened: get-directories lists none.
+    const memory = { buffer: new ArrayBuffer(64) };
+    const empty = linkedCorpusProgramDependencies.createRuntimeImports(target, () => memory, () => ({}));
+    empty[`${prefix}|wasi:filesystem/preopens@0.3`]["get-directories"](target === "wasm64" ? 8n : 8);
+    assert.deepEqual([...new Uint8Array(memory.buffer, 8, 16)], new Array(16).fill(0));
   }
 });
 

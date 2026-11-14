@@ -1,6 +1,7 @@
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
+using System.Collections.Immutable;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -318,6 +319,10 @@ public sealed class DiagnosticsProfileIntegrationTests
         {
             EntryAssemblyPath = entryAssembly,
             ReferencePaths = [assets.CoreLib],
+            // As the SDK compiles every program (EventSourceSupport=false): CoreLib's own event logging, such as
+            // ArrayPool's, leaves the program through its ILLink.Substitutions stubs.
+            FeatureSwitches = ImmutableDictionary<string, bool>.Empty
+                .Add("System.Diagnostics.Tracing.EventSource.IsSupported", false),
         };
         return NetWasmCompiler.Compile(options);
     }

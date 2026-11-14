@@ -2,18 +2,23 @@
 // filesystem, as CoreLib's time zone reader calls it: open-at is async-lowered with its six
 // flat parameters in memory, and a file reads through a stream<u8> and a completion future.
 // Every call completes at once, so nothing ever waits.
-// Injected capabilities: getMemory(), allocate(byteLength, alignment).
-export function createReadOnlyAssetImports(target, getMemory, allocate, { mountPath, fileName, bytes }) {
+// Injected capabilities: getMemory(), allocate(byteLength, alignment). Without an asset there is no preopened
+// directory, as in the corpus oracle host: a program that looks for files (the time zone reader) finds none.
+export function createReadOnlyAssetImports(target, getMemory, allocate, asset = null) {
   if (target !== 'wasm32' && target !== 'wasm64')
     throw new TypeError('Unsupported asset target');
   if (typeof getMemory !== 'function' || typeof allocate !== 'function')
     throw new TypeError('Guest memory and allocation capabilities are required');
-  if (typeof mountPath !== 'string' || !mountPath.startsWith('/') ||
-      typeof fileName !== 'string' || fileName.length === 0 || fileName.includes('/') ||
-      fileName === '.' || fileName === '..' || !(bytes instanceof Uint8Array))
-    throw new TypeError('An explicit mount, relative file name and byte array are required');
-  const contents = new Uint8Array(bytes);
-  const pathBytes = new TextEncoder().encode(mountPath);
+  if (asset !== null) {
+    const { mountPath, fileName, bytes } = asset;
+    if (typeof mountPath !== 'string' || !mountPath.startsWith('/') ||
+        typeof fileName !== 'string' || fileName.length === 0 || fileName.includes('/') ||
+        fileName === '.' || fileName === '..' || !(bytes instanceof Uint8Array))
+      throw new TypeError('An explicit mount, relative file name and byte array are required');
+  }
+  const fileName = asset?.fileName;
+  const contents = new Uint8Array(asset?.bytes ?? []);
+  const pathBytes = new TextEncoder().encode(asset?.mountPath ?? '');
   const width = target === 'wasm64' ? 8 : 4;
   const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
   // A subtask that returned, and a stream or future copy that completed or found its other
@@ -118,6 +123,11 @@ export function createReadOnlyAssetImports(target, getMemory, allocate, { mountP
   return {
     [`${prefix}|wasi:filesystem/preopens@0.3`]: {
       'get-directories'(result) {
+        if (asset === null) {
+          writeAddress(result, 0);
+          writeAddress(Number(result) + width, 0);
+          return;
+        }
         const path = lower(pathBytes);
         const elements = Number(allocate(width * 3, width));
         const handle = nextHandle++;
