@@ -14,6 +14,7 @@ typedef struct {
     int fd;
 } FILE;
 
+size_t __stdio_read(FILE *file, unsigned char *contents, size_t length);
 size_t __stdio_write(FILE *file, const unsigned char *contents, size_t length);
 int __stdio_close(FILE *file);
 off_t __stdio_seek(FILE *file, off_t offset, int whence);

@@ -12,6 +12,7 @@ public sealed class UnsafeAccessorTargetResolverTests
     private static readonly CliTypeIdentity Owner = CliTypeIdentity.Named(Assembly, "Test", "Owner", false);
     private static readonly CliTypeIdentity Integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
     private static readonly CliTypeIdentity Void = CliTypeIdentity.FromStackKind(CliValueKind.Void);
+    private static readonly CliTypeIdentity ObjectType = CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference, isValueType: false);
     private static readonly CliTypeIdentity TypeVariable = CliTypeIdentity.GenericParameter(false, 0);
     private static readonly CliTypeIdentity MethodVariable = CliTypeIdentity.GenericParameter(true, 0);
 
@@ -43,7 +44,7 @@ public sealed class UnsafeAccessorTargetResolverTests
             case "unknown-kind": accessor = Change(accessor, accessor.Definition.UnsafeAccessor! with { Kind = 99 }); break;
             case "constructor-void": accessor = fixture.Accessor(UnsafeAccessorMemberKind.Constructor); fixture.Signature = Signature(Void); break;
             case "constructor-byref": accessor = fixture.Accessor(UnsafeAccessorMemberKind.Constructor); fixture.Signature = Signature(CliTypeIdentity.ManagedByReference(Owner)); break;
-            case "constructor-name": accessor = Change(fixture.Accessor(UnsafeAccessorMemberKind.Constructor), new(0, ".ctor", true, false, false)); fixture.Signature = Signature(Owner); break;
+            case "constructor-name": accessor = Change(fixture.Accessor(UnsafeAccessorMemberKind.Constructor), new(0, ".ctor", true, false)); fixture.Signature = Signature(Owner); break;
             case "missing-owner": fixture.Signature = Signature(Void); break;
             case "field-arity": accessor = fixture.Accessor(UnsafeAccessorMemberKind.Field); fixture.Signature = Signature(CliTypeIdentity.ManagedByReference(Integer), Owner, Integer); break;
             case "field-value-return": accessor = fixture.Accessor(UnsafeAccessorMemberKind.Field); fixture.Signature = Signature(Integer, Owner); break;
@@ -64,15 +65,13 @@ public sealed class UnsafeAccessorTargetResolverTests
     }
 
     [Theory]
-    [InlineData("translation")]
     [InlineData("vector-owner")]
     [InlineData("array-owner")]
     public void UnsupportedShapesProduceAnExplicitMetadataDiagnostic(string shape)
     {
         var fixture = new Fixture();
         var accessor = fixture.Accessor();
-        if (shape == "translation") accessor = Change(accessor, accessor.Definition.UnsafeAccessor! with { HasTypeTranslation = true });
-        else fixture.Signature = Signature(Void, shape == "vector-owner" ? CliTypeIdentity.SzArray(Owner) : CliTypeIdentity.Array(Owner, 2));
+        fixture.Signature = Signature(Void, shape == "vector-owner" ? CliTypeIdentity.SzArray(Owner) : CliTypeIdentity.Array(Owner, 2));
         var exception = Assert.Throws<CompilerException>(() => fixture.Create().Resolve(accessor));
         Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
         Assert.Empty(fixture.Requests);
@@ -87,7 +86,7 @@ public sealed class UnsafeAccessorTargetResolverTests
     public void NamesDistinguishOmissionFromExplicitNullOrEmpty(bool specified, string? name, string expected)
     {
         var fixture = new Fixture();
-        var accessor = Change(fixture.Accessor(), new(1, name, specified, false, false));
+        var accessor = Change(fixture.Accessor(), new(1, name, specified, false));
         fixture.Create().Resolve(accessor);
         Assert.Equal(expected, Assert.Single(fixture.Requests).Name);
     }
@@ -194,6 +193,76 @@ public sealed class UnsafeAccessorTargetResolverTests
         Assert.Empty(fixture.Requests);
     }
 
+    // An UnsafeAccessorTypeAttribute position is declared object and stands for the type it names, so the
+    // member is matched against that type: here the owner a static method accessor passes first.
+    [Fact]
+    public void TranslatedParametersAreMatchedAsTheTypeTheyName()
+    {
+        var fixture = new Fixture { Signature = Signature(Void, ObjectType, ObjectType) };
+        fixture.NamedTypes["Test.Owner, Accessors"] = fixture.OwnerDefinition;
+        var accessor = Change(fixture.Accessor(UnsafeAccessorMemberKind.StaticMethod),
+            new((int)UnsafeAccessorMemberKind.StaticMethod, null, false, false, new([null, "Test.Owner, Accessors"])));
+
+        Assert.IsType<UnsafeAccessorBinding.Method>(fixture.Create().Resolve(accessor));
+
+        var request = Assert.Single(fixture.Requests);
+        Assert.Equal(CliTypeIdentity.FromDefinition(fixture.OwnerDefinition), request.Signature.ParameterTypes[0]);
+        Assert.Equal(ObjectType, request.Signature.ParameterTypes[1]);
+        Assert.Equal(new[] { ("Test.Owner, Accessors", Assembly) }, fixture.TypeNameRequests);
+    }
+
+    [Fact]
+    public void TranslatedReturnValuesAreMatchedAsTheTypeTheyName()
+    {
+        var fixture = new Fixture { Signature = Signature(ObjectType) };
+        fixture.NamedTypes["Test.Owner, Accessors"] = fixture.OwnerDefinition;
+        var accessor = Change(fixture.Accessor(UnsafeAccessorMemberKind.Constructor),
+            new((int)UnsafeAccessorMemberKind.Constructor, null, false, false, new(["Test.Owner, Accessors"])));
+
+        Assert.IsType<UnsafeAccessorBinding.Constructor>(fixture.Create().Resolve(accessor));
+
+        Assert.Equal(CliTypeIdentity.FromDefinition(fixture.OwnerDefinition), Assert.Single(fixture.Requests).Signature.ReturnType);
+    }
+
+    // The CLR fails to load a type the attribute names but the program does not define when the accessor runs.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UndefinedTranslatedTypesBindTypeLoadFailures(bool returnValue)
+    {
+        var fixture = new Fixture { Signature = returnValue ? Signature(ObjectType) : Signature(Void, ObjectType) };
+        var kind = returnValue ? UnsafeAccessorMemberKind.Constructor : UnsafeAccessorMemberKind.StaticMethod;
+        var accessor = Change(fixture.Accessor(kind),
+            new((int)kind, null, false, false, new(returnValue ? ["Missing.Type"] : [null, "Missing.Type"])));
+
+        var failure = Assert.IsType<UnsafeAccessorBinding.Failure>(fixture.Create().Resolve(accessor));
+
+        Assert.Equal("System.TypeLoadException", failure.ExceptionConstructor.DeclaringType.FullName);
+        Assert.Empty(fixture.Requests);
+    }
+
+    [Theory]
+    [InlineData("not-object")]
+    [InlineData("value-type")]
+    [InlineData("generic")]
+    public void UnsupportedTranslationsProduceAnExplicitMetadataDiagnostic(string shape)
+    {
+        var fixture = new Fixture { Signature = Signature(Void, shape == "not-object" ? Integer : ObjectType) };
+        fixture.NamedTypes["Test.Owner"] = shape switch
+        {
+            "value-type" => fixture.OwnerDefinition with { IsValueType = true },
+            "generic" => fixture.OwnerDefinition with { GenericArity = 1 },
+            _ => fixture.OwnerDefinition,
+        };
+        var accessor = Change(fixture.Accessor(UnsafeAccessorMemberKind.StaticMethod),
+            new((int)UnsafeAccessorMemberKind.StaticMethod, null, false, false, new([null, "Test.Owner"])));
+
+        var exception = Assert.Throws<CompilerException>(() => fixture.Create().Resolve(accessor));
+
+        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
+        Assert.Empty(fixture.Requests);
+    }
+
     [Theory]
     [InlineData("signatures")]
     [InlineData("definitions")]
@@ -201,6 +270,7 @@ public sealed class UnsafeAccessorTargetResolverTests
     [InlineData("types")]
     [InlineData("methods")]
     [InlineData("stackTypes")]
+    [InlineData("typeNames")]
     public void MissingCollaboratorsReportTheExactParameter(string parameter)
     {
         var fixture = new Fixture();
@@ -210,7 +280,8 @@ public sealed class UnsafeAccessorTargetResolverTests
             parameter == "members" ? null! : fixture.Registry,
             parameter == "types" ? null! : fixture,
             parameter == "methods" ? null! : fixture,
-            parameter == "stackTypes" ? null! : fixture));
+            parameter == "stackTypes" ? null! : fixture,
+            parameter == "typeNames" ? null! : fixture));
         Assert.Equal(parameter, exception.ParamName);
         Assert.Empty(fixture.Requests);
     }
@@ -243,8 +314,10 @@ public sealed class UnsafeAccessorTargetResolverTests
     private static MethodSignature<CliTypeIdentity> Signature(CliTypeIdentity result, params CliTypeIdentity[] parameters) => new(new SignatureHeader(0), result, parameters.Length, 0, [.. parameters]);
 
     private sealed class Fixture : IUnsafeAccessorSignatureReader, ITypeDefinitionResolver, IUnsafeAccessorMemberResolver,
-        ITypeFinder, IMethodRepository, IMetadataStackTypeResolver
+        ITypeFinder, IMethodRepository, IMetadataStackTypeResolver, IUnsafeAccessorTypeNameResolver
     {
+        internal Dictionary<string, TypeDefinitionModel> NamedTypes { get; } = [];
+        internal List<(string, AssemblyIdentity)> TypeNameRequests { get; } = [];
         private readonly Dictionary<EntityKey, MethodDefinitionModel> _exceptionConstructors = [];
         internal TypeDefinitionModel OwnerDefinition { get; set; } = new(new(Assembly, 0x02000001), "Test", "Owner", false, [], []);
         internal MethodDefinitionModel Target { get; } = new(new(Assembly, 0x06000002), new(Assembly, 0x02000001), "Target", false, MethodSignatureModel.Create(CliValueKind.Void), 1);
@@ -259,13 +332,13 @@ public sealed class UnsafeAccessorTargetResolverTests
         internal ImmutableDictionary<UnsafeAccessorMemberKind, IUnsafeAccessorMemberResolver> Registry =>
             Enum.GetValues<UnsafeAccessorMemberKind>().ToImmutableDictionary(kind => kind, _ => (IUnsafeAccessorMemberResolver)this);
         internal IUnsafeAccessorTargetResolver Create(ImmutableDictionary<UnsafeAccessorMemberKind, IUnsafeAccessorMemberResolver>? registry = null) =>
-            ThroughContract(new UnsafeAccessorTargetResolver(this, this, registry ?? Registry, this, this, this));
+            ThroughContract(new UnsafeAccessorTargetResolver(this, this, registry ?? Registry, this, this, this, this));
         private static IUnsafeAccessorTargetResolver ThroughContract(IUnsafeAccessorTargetResolver resolver) => resolver;
         internal MethodInstanceModel Accessor(UnsafeAccessorMemberKind kind = UnsafeAccessorMemberKind.Method)
         {
             var definition = new MethodDefinitionModel(new(Assembly, 0x06000001), OwnerDefinition.Key, "Access", true,
                 new(Signature.ReturnType, Signature.ParameterTypes), 0)
-            { UnsafeAccessor = new((int)kind, null, false, false, false) };
+            { UnsafeAccessor = new((int)kind, null, false, false) };
             return new(definition, Owner, [], definition.Signature);
         }
         public MethodSignature<CliTypeIdentity> Read(MethodDefinitionModel method) => Signature;
@@ -298,6 +371,11 @@ public sealed class UnsafeAccessorTargetResolverTests
             return new(owner, fullName[..split], fullName[(split + 1)..], false, [], candidates.ToImmutable());
         }
         public MethodDefinitionModel GetMethod(EntityKey key) => _exceptionConstructors[key];
+        public TypeDefinitionModel? Resolve(string typeName, AssemblyIdentity accessorAssembly)
+        {
+            TypeNameRequests.Add((typeName, accessorAssembly));
+            return NamedTypes.GetValueOrDefault(typeName);
+        }
         public CliTypeIdentity Resolve(CliTypeIdentity type) => throw new NotSupportedException();
         public MethodSignatureModel Resolve(MethodSignatureModel signature) => throw new NotSupportedException();
         public CliTypeIdentity Resolve(CliTypeIdentity type, CliGenericContext genericContext)

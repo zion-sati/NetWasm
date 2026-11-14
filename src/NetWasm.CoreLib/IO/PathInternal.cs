@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Adapted from dotnet/runtime System.Private.CoreLib (commit
-// 474ed963699fc29809015392738a15231aaae2de). The retained helpers implement
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce). The retained helpers implement
 // the deterministic Unix lexical path contract; ambient filesystem and current
 // directory operations are intentionally not included in NetWasm.
 

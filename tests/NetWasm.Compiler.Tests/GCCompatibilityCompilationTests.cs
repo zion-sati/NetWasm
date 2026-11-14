@@ -174,13 +174,14 @@ public static class EntryPoint
             return 21;
         }
 
-        try
+        // As Mono's: the collector's current counters; every collection is a full blocking one.
+        var memory = GC.GetGCMemoryInfo();
+        // (This harness's host reports no heap size; the linked runtime's collector does.)
+        if (memory.HeapSizeBytes < 0 || memory.FragmentedBytes < 0 || memory.FragmentedBytes > memory.HeapSizeBytes ||
+            memory.Index != GC.CollectionCount(0) || GC.GetGCMemoryInfo(GCKind.Ephemeral).Index != 0 ||
+            AppDomain.MonitoringSurvivedProcessMemorySize < 0)
         {
-            GC.GetGCMemoryInfo();
             return 4;
-        }
-        catch (PlatformNotSupportedException)
-        {
         }
 
         try
@@ -213,13 +214,34 @@ public static class EntryPoint
         {
         }
 
+        // Every non-negative generation runs the single-generation collection, and every
+        // generation's count covers every collection.
+        int beforeHigher = GC.CollectionCount(2);
         GC.Collect(1);
+        GC.Collect(2);
+        GC.Collect(3, GCCollectionMode.Forced, blocking: true, compacting: false);
+        if (GC.CollectionCount(2) != beforeHigher + 3 ||
+            GC.CollectionCount(1) != GC.CollectionCount(0) ||
+            GC.CollectionCount(3) != GC.CollectionCount(0))
+        {
+            return 7;
+        }
+
         try
         {
             GC.Collect(-1);
-            return 7;
+            return 20;
         }
-        catch (ArgumentOutOfRangeException)
+        catch (ArgumentOutOfRangeException exception) when (exception.ParamName == "generation")
+        {
+        }
+
+        try
+        {
+            GC.CollectionCount(-1);
+            return 21;
+        }
+        catch (ArgumentOutOfRangeException exception) when (exception.ParamName == "generation")
         {
         }
 

@@ -1,0 +1,44 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+
+namespace System.ComponentModel.Design
+{
+    /// <summary>
+    /// This interface provides a container for services. A service container
+    /// is, by definition, a service provider. In addition to providing services
+    /// it also provides a mechanism for adding and removing services.
+    /// </summary>
+    public interface IServiceContainer : IServiceProvider
+    {
+        /// <summary>
+        /// Adds the given service to the service container.
+        /// </summary>
+        void AddService(Type serviceType, object serviceInstance);
+
+        /// <summary>
+        /// Adds the given service to the service container.
+        /// </summary>
+        void AddService(Type serviceType, object serviceInstance, bool promote);
+
+        /// <summary>
+        /// Adds the given service to the service container.
+        /// </summary>
+        void AddService(Type serviceType, ServiceCreatorCallback callback);
+
+        /// <summary>
+        /// Adds the given service to the service container.
+        /// </summary>
+        void AddService(Type serviceType, ServiceCreatorCallback callback, bool promote);
+
+        /// <summary>
+        /// Removes the given service type from the service container.
+        /// </summary>
+        void RemoveService(Type serviceType);
+
+        /// <summary>
+        /// Removes the given service type from the service container.
+        /// </summary>
+        void RemoveService(Type serviceType, bool promote);
+    }
+}

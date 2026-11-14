@@ -8,14 +8,14 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis.AddressTakenValues;
 
 internal sealed class SimpleValueTypeAccessorCanonicalizer(
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     IFieldRepository fields,
     AddressTakenValuePromotionPolicy policy,
     IMethodInitializationTriggerClassifier initializationTriggers) :
     ISimpleValueTypeAccessorCanonicalizer
 {
-    private readonly IMethodBodyReader _methodBodies = methodBodies ??
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ??
         throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ??
         throw new ArgumentNullException(nameof(calledMethods));
@@ -75,8 +75,7 @@ internal sealed class SimpleValueTypeAccessorCanonicalizer(
             return null;
         }
 
-        var body = _methodBodies.ReadMethodBody(method);
-        if (!body.ExceptionRegions.IsEmpty)
+        if (!_methodBodies.TryReadMethodBody(method, out var body) || !body.ExceptionRegions.IsEmpty)
         {
             return null;
         }

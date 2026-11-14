@@ -105,6 +105,9 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 state),
             new EnumMetadataCollector(
                 typeDefinitions, identities, types, program.EnumMetadataRequirements, state),
-            new EnumMetadataBuilder(state, types.Target));
+            new EnumMetadataBuilder(state, types.Target),
+            new StructMarshallingDataCollector(typeDefinitions, fields, metadata.Methods, program, types, state),
+            new StructMarshallingDataBuilder(program, types, state),
+            program.UninitializedObjectTypes);
     }
 }

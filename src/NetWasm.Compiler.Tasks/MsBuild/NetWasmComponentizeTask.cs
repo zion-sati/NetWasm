@@ -157,7 +157,8 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
             var entryPoint = CompileAsLibrary ? null : _entryPoints.Read(InputAssemblyPath);
             using var session = _sessions.Create(
                 CreateWasmToolsCommand(),
-                CreateBinaryenConfiguration());
+                CreateBinaryenConfiguration(),
+                new MsBuildProgressLoggerProvider(Log));
             var manifest = session.Build(new(
                 CoreModulePath,
                 RuntimeModulePath,

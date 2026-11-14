@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 namespace System.Collections.Generic
 {
     // Contract definitions adapted from dotnet/runtime System.Private.CoreLib
-    // at commit 474ed963699fc29809015392738a15231aaae2de.
+    // at commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
     // Licensed under the MIT license; see the upstream repository for the
     // complete copyright notice.
 

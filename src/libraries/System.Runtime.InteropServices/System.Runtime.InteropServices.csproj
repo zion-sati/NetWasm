@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Runtime.InteropServices</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Runtime/CompilerServices/IUnknownConstantAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/AutomationProxyAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComAliasNameAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComAwareEventInfo.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComCompatibleVersionAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComConversionLossAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComRegisterFunctionAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/ADVF.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/DATADIR.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/DVASPECT.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/FORMATETC.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/IAdviseSink.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/IDataObject.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/IEnumFormatETC.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/IEnumSTATDATA.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/STATDATA.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/STGMEDIUM.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComTypes/TYMED.cs" />
+    <Compile Include="System/Runtime/InteropServices/ComUnregisterFunctionAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/HandleCollector.cs" />
+    <Compile Include="System/Runtime/InteropServices/ImportedFromTypeLibAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/ManagedToNativeComInteropStubAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/PrimaryInteropAssemblyAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/RuntimeEnvironment.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibFuncAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibFuncFlags.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibImportClassAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibTypeAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibTypeFlags.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibVarAttribute.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibVarFlags.cs" />
+    <Compile Include="System/Runtime/InteropServices/TypeLibVersionAttribute.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Security/SecureStringMarshal.cs" />
+  </ItemGroup>
+</Project>

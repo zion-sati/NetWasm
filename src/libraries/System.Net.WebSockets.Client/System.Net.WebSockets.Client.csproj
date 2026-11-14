@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Net.WebSockets.Client</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Net.Security/System.Net.Security.csproj" />
+    <ProjectReference Include="../System.Net.WebHeaderCollection/System.Net.WebHeaderCollection.csproj" />
+    <ProjectReference Include="../System.Net.WebSockets/System.Net.WebSockets.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Net/HttpKnownHeaderNames.TryGetHeaderName.cs" />
+    <Compile Include="Common/System/Net/HttpKnownHeaderNames.cs" />
+    <Compile Include="Common/System/Net/UriScheme.cs" />
+    <Compile Include="Common/System/Net/WebSockets/WebSocketDefaults.cs" />
+    <Compile Include="Common/System/Net/WebSockets/WebSocketValidate.cs" />
+    <Compile Include="System/Net/WebSockets/ClientWebSocket.cs" />
+    <Compile Include="System/Net/WebSockets/ClientWebSocketDeflateConstants.cs" />
+    <Compile Include="System/Net/WebSockets/ClientWebSocketOptions.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketHandle.NetWasm.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

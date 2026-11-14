@@ -2,11 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // DegreesToRadians and RadiansToDegrees from System.Private.CoreLib Single.cs at runtime commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 namespace System
 {
-    public partial struct Single
+    public readonly partial struct Single
     {
         // Multiplying by `head` alone is enough here, without the rest of the triple that `double`
         // needs: the constant being inexact is under `2^-54.6` relative and the single rounding of

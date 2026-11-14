@@ -13,6 +13,21 @@ public sealed class TypeRelationshipClassifierActorTests
     private static readonly CliTypeIdentity ValueType = Named("Value", true);
 
     [Fact]
+    public void PointerArrayElementsCompareStructurallyWithoutResolvingPointerDefinitions()
+    {
+        var classifier = Create(new DefinitionResolver());
+        var integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var empty = CliTypeIdentity.FromStackKind(CliValueKind.Void);
+        var first = CliTypeIdentity.SzArray(CliTypeIdentity.UnmanagedPointer(integer));
+        var other = CliTypeIdentity.SzArray(CliTypeIdentity.UnmanagedPointer(empty));
+        Assert.True(classifier.Classify(first, first).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(first, other).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(other, first).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(first, CliTypeIdentity.SzArray(integer)).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(CliTypeIdentity.SzArray(integer), first).IsAssignmentCompatible);
+    }
+
+    [Fact]
     public void VectorToRankOneArrayPreservesExactValueElementCompatibility()
     {
         var classifier = Create(new DefinitionResolver());
@@ -23,6 +38,25 @@ public sealed class TypeRelationshipClassifierActorTests
         Assert.True(classifier.Classify(vector, rankOne).IsAssignmentCompatible);
         Assert.False(classifier.Classify(rankOne, vector).IsAssignmentCompatible);
         Assert.False(classifier.Classify(vector, CliTypeIdentity.Array(element, 2)).IsAssignmentCompatible);
+    }
+
+    [Fact]
+    public void ElementModifiersAndFunctionPointersDoNotResolveAsNamedDefinitions()
+    {
+        var classifier = Create(new DefinitionResolver());
+        var integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var longer = CliTypeIdentity.FromStackKind(CliValueKind.I8);
+        var pointer = CliTypeIdentity.UnmanagedPointer(integer);
+        var byref = CliTypeIdentity.ManagedByReference(integer);
+        var otherByref = CliTypeIdentity.ManagedByReference(longer);
+        var function = CliTypeIdentity.FunctionPointer(new(0, 0, 0, MethodSignatureModel.Create(CliValueKind.I4)));
+        var otherFunction = CliTypeIdentity.FunctionPointer(new(0, 0, 0, MethodSignatureModel.Create(CliValueKind.I8)));
+        foreach (var pair in new[] { (pointer, byref), (byref, pointer), (byref, otherByref),
+            (function, otherFunction), (function, integer), (integer, function) })
+            Assert.False(classifier.Classify(CliTypeIdentity.SzArray(pair.Item1),
+                CliTypeIdentity.SzArray(pair.Item2)).IsAssignmentCompatible);
+        Assert.True(classifier.Classify(CliTypeIdentity.SzArray(function),
+            CliTypeIdentity.SzArray(function)).IsAssignmentCompatible);
     }
 
     [Theory]

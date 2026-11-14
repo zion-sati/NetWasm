@@ -46,9 +46,6 @@
     }
   ],
   "referencePaths": [],
-  "referenceAssemblyAliases": {
-    "System.Collections": "NetWasm.CoreLib"
-  },
   "oracleMode": "SameIl",
   "matrixProfile": "Extended",
   "supportsBatchedOracle": true,

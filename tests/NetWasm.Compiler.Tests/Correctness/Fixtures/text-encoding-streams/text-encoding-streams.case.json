@@ -42,7 +42,6 @@
   ],
   "referencePaths": [],
   "referenceAssemblyAliases": {
-    "System.Memory": "NetWasm.CoreLib",
     "System.Text.Encoding.Extensions": "NetWasm.CoreLib"
   },
   "oracleMode": "SameIl",

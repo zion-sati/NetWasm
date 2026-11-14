@@ -201,6 +201,33 @@ public sealed class RuntimeImportCatalogTests
     [Theory]
     [InlineData(WasmModuleProfile.CoreApplication)]
     [InlineData(WasmModuleProfile.ComponentCoreModule)]
+    public void BoxedValueRuntimeImportsAreIncludedOnlyWhenSelected(WasmModuleProfile profile)
+    {
+        var catalog = WasmRuntimeImports.CreateCatalog();
+        var disabled = new RuntimeImportSelection(
+            profile,
+            IncludeTerminalExceptionReporter: false);
+        var arraySetValue = disabled with { IncludeArraySetValue = true };
+        var objectClone = disabled with { IncludeObjectClone = true };
+
+        Assert.DoesNotContain(catalog.Resolve(disabled), import =>
+            import.Name is RuntimeAbi.RuntimeArraySetValue or RuntimeAbi.RuntimeObjectClone);
+        Assert.Throws<InvalidOperationException>(() =>
+            catalog.Resolve(RuntimeImportSymbol.ArraySetValue, disabled));
+        Assert.Throws<InvalidOperationException>(() =>
+            catalog.Resolve(RuntimeImportSymbol.ObjectClone, disabled));
+        Assert.Equal(
+            RuntimeAbi.RuntimeArraySetValue,
+            catalog.Resolve(arraySetValue)[catalog.Resolve(RuntimeImportSymbol.ArraySetValue, arraySetValue)].Name);
+        Assert.DoesNotContain(catalog.Resolve(arraySetValue), import => import.Name == RuntimeAbi.RuntimeObjectClone);
+        Assert.Equal(
+            RuntimeAbi.RuntimeObjectClone,
+            catalog.Resolve(objectClone)[catalog.Resolve(RuntimeImportSymbol.ObjectClone, objectClone)].Name);
+    }
+
+    [Theory]
+    [InlineData(WasmModuleProfile.CoreApplication)]
+    [InlineData(WasmModuleProfile.ComponentCoreModule)]
     public void UnhandledExceptionHintIsIncludedOnlyWhenSelected(WasmModuleProfile profile)
     {
         var catalog = WasmRuntimeImports.CreateCatalog();
@@ -239,27 +266,6 @@ public sealed class RuntimeImportCatalogTests
         Assert.Equal(
             RuntimeAbi.RuntimeObjectClone,
             catalog.Resolve(enabled)[catalog.Resolve(RuntimeImportSymbol.ObjectClone, enabled)].Name);
-    }
-
-    [Theory]
-    [InlineData(WasmModuleProfile.CoreApplication)]
-    [InlineData(WasmModuleProfile.ComponentCoreModule)]
-    public void ArraySetValueImportIsIncludedOnlyWhenSelected(WasmModuleProfile profile)
-    {
-        var catalog = WasmRuntimeImports.CreateCatalog();
-        var disabled = new RuntimeImportSelection(
-            profile,
-            IncludeTerminalExceptionReporter: false);
-        var enabled = disabled with { IncludeArraySetValue = true };
-
-        Assert.DoesNotContain(
-            catalog.Resolve(disabled),
-            import => import.Name == RuntimeAbi.RuntimeArraySetValue);
-        Assert.Throws<InvalidOperationException>(() =>
-            catalog.Resolve(RuntimeImportSymbol.ArraySetValue, disabled));
-        Assert.Equal(
-            RuntimeAbi.RuntimeArraySetValue,
-            catalog.Resolve(enabled)[catalog.Resolve(RuntimeImportSymbol.ArraySetValue, enabled)].Name);
     }
 
     [Theory]

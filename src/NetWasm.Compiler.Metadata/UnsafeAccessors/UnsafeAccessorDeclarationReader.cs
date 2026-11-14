@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Reflection.Metadata;
 using NetWasm.Compiler.Core.UnsafeAccessors;
 
@@ -44,23 +45,42 @@ internal sealed class UnsafeAccessorDeclarationReader(
                     name = argument.Value as string;
                     specified = true;
                 }
-                declaration = new(kind, name, specified, malformed, false);
+                declaration = new(kind, name, specified, malformed);
             }
             catch (BadImageFormatException)
             {
-                declaration = new(-1, null, false, true, false);
+                declaration = new(-1, null, false, true);
             }
         }
         if (declaration is null) return null;
+        // Each UnsafeAccessorTypeAttribute names the type its position stands for; sequence number 0 is
+        // the return value.
+        var names = ImmutableArray.CreateBuilder<string?>();
         foreach (var parameterHandle in method.GetParameters())
         {
-            foreach (var handle in metadata.GetParameter(parameterHandle).GetCustomAttributes())
+            var parameter = metadata.GetParameter(parameterHandle);
+            foreach (var handle in parameter.GetCustomAttributes())
             {
-                if (AttributeName(metadata, metadata.GetCustomAttribute(handle)) == TranslationAttribute)
-                    return declaration with { HasTypeTranslation = true };
+                var attribute = metadata.GetCustomAttribute(handle);
+                if (AttributeName(metadata, attribute) != TranslationAttribute) continue;
+                if (TypeName(attribute) is not { } typeName) return declaration with { IsMalformed = true };
+                while (names.Count <= parameter.SequenceNumber) names.Add(null);
+                names[parameter.SequenceNumber] = typeName;
             }
         }
-        return declaration;
+        return names.Count == 0 ? declaration : declaration with { TypeTranslations = new(names.ToImmutable()) };
+    }
+
+    private string? TypeName(CustomAttribute attribute)
+    {
+        try
+        {
+            return attribute.DecodeValue(valueTypes).FixedArguments is [{ Value: string name }] ? name : null;
+        }
+        catch (BadImageFormatException)
+        {
+            return null;
+        }
     }
 
     private string AttributeName(MetadataReader metadata, CustomAttribute attribute)

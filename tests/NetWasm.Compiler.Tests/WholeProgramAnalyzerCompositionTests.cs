@@ -166,8 +166,12 @@ public sealed class WholeProgramAnalyzerCompositionTests
             new ManagedMethodOptimizerFactory(
                 new TypedStackValidatorFactory(
                     new StackTypeCompatibilityValidator()),
-                new ControlFlowGraphBuilderFactory()),
-            new AttributeQueryMethodSpecializerFactory(),
+                new ControlFlowGraphBuilderFactory(),
+                new NetWasm.Compiler.Analysis.Arrays.ArrayBoundsCheckEliminatorFactory(),
+                new NetWasm.Compiler.Analysis.Arrays.RepeatedArrayAccessEliminatorFactory(),
+                new NetWasm.Compiler.Analysis.NullChecks.ConstructedObjectNullCheckEliminatorFactory(),
+                new IntegerCheckEliminatorFactory()),
+            new AttributeQueryMethodSpecializerFactory(new MetadataCompilationMaterializationFactory()),
             dispatchTargets,
             relationships,
             new TypeRelationshipKeyResolverFactory(),
@@ -179,7 +183,11 @@ public sealed class WholeProgramAnalyzerCompositionTests
             new ReachableMethodAnalyzerFactory(
                 new TypedStackValidatorFactory(
                     new StackTypeCompatibilityValidator()),
-                new ControlFlowGraphBuilderFactory()),
+                new ControlFlowGraphBuilderFactory(),
+                new NetWasm.Compiler.Analysis.Arrays.ArrayBoundsCheckEliminatorFactory(),
+                new NetWasm.Compiler.Analysis.Arrays.RepeatedArrayAccessEliminatorFactory(),
+                new NetWasm.Compiler.Analysis.NullChecks.ConstructedObjectNullCheckEliminatorFactory(),
+                new IntegerCheckEliminatorFactory()),
             typeTests,
             exceptions,
             builders,

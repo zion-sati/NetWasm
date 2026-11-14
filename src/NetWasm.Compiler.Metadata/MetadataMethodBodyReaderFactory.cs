@@ -51,6 +51,12 @@ public sealed class MetadataMethodBodyReaderFactory(
             methods,
             new ArrayMethodResolver(signatureComparer),
             stackTypes,
+            new FrameworkMethodContractValidator(new MetadataAssemblyResolver(
+                materialized.MetadataAssemblies, ImmutableDictionary<string, string>.Empty, availability)),
+            new RuntimeTypeDefinitions(materialized.MetadataAssemblies),
+            materialized.OriginalContractTypes,
+            new MetadataCrossAssemblyPrivateAccessValidator(new MetadataAssemblyResolver(
+                materialized.MetadataAssemblies, ImmutableDictionary<string, string>.Empty, availability)),
             new MetadataBaseTypeIdentityResolver(typeDefinitions,
                 new MetadataAssemblyResolver(materialized.MetadataAssemblies,
                     materialized.ReferenceAssemblyAliases, availability), signatureTypes));
@@ -63,7 +69,13 @@ public sealed class MetadataMethodBodyReaderFactory(
             types,
             typeDefinitions,
             fields,
-            stackTypes);
+            stackTypes,
+            new FrameworkFieldContractValidator(new MetadataAssemblyResolver(
+                materialized.MetadataAssemblies, ImmutableDictionary<string, string>.Empty, availability)),
+            new RuntimeTypeDefinitions(materialized.MetadataAssemblies),
+            materialized.OriginalContractTypes,
+            new MetadataCrossAssemblyPrivateAccessValidator(new MetadataAssemblyResolver(
+                materialized.MetadataAssemblies, ImmutableDictionary<string, string>.Empty, availability)));
         var decoders = new CilDecoderFactory(
             methodBodies,
             symbols,
@@ -74,7 +86,8 @@ public sealed class MetadataMethodBodyReaderFactory(
                 signatureTypes,
                 stackTypes),
             new MetadataCallSiteSignatureResolver(),
-            stackTypes);
+            stackTypes,
+            new TypedReferenceCallResolver(new MetadataTypeFinderFactory(_materializations), snapshot, methods, stackTypes));
         return new MetadataMethodBodyReader(
             decoders,
             new ManagedAssemblyResolver(
@@ -88,6 +101,7 @@ public sealed class MetadataMethodBodyReaderFactory(
             new UnsafeAccessorTargetResolverFactory(materialized, typeDefinitions, types, methods, fields, stackTypes),
             new UnsafeAccessorBodyBuilder(),
             new DelegateAsynchronousCallBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods),
-            new UnsafeIntrinsicBodyBuilder());
+            new UnsafeIntrinsicBodyBuilder(),
+            new UnboundNativeImportBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods));
     }
 }

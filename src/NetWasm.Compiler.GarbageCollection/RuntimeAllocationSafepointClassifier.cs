@@ -35,6 +35,14 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Array", "InternalCopy"),
             ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "CloneBoxedValue"),
             ("System.DelegateRuntime", "Clone"),
+            // An object's memberwise copy, arrays of a type known at run time and
+            // an uninitialized object, which the runtime allocates, and a class
+            // constructor run, which executes managed code.
+            ("System.Object", "MemberwiseClone"),
+            ("System.Array", "InternalCreateInstance"),
+            ("System.Array", "InternalCreateRectangularInstance"),
+            ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AllocateUninitializedObject"),
+            ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "RunClassConstructor"),
             ("System.Nullable", "GetUnderlyingType"),
             // Enum intrinsics allocate arrays, boxes and uncached type objects,
             // or call the allocating formatting helper outside managed CIL.
@@ -55,6 +63,8 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeDelegate"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "ReadField"),
+            // A static field's write runs its type's initializer first.
+            ("System.Runtime.CompilerServices.RuntimeMemberExecution", "WriteField"),
         }.ToFrozenSet();
 
     public bool Classify(MethodDefinitionModel method, ITypeRepository types)
@@ -68,10 +78,13 @@ public sealed class RuntimeAllocationSafepointClassifier :
     public bool Classify(MethodInstanceModel method)
     {
         ArgumentNullException.ThrowIfNull(method);
-        // String's identity is the primitive one, which has no full name.
-        var typeName = method.DeclaringType.CanonicalName == "primitive:string"
-            ? "System.String"
-            : method.DeclaringType.FullName!;
+        // String's and Object's identities are the primitive ones, which have no full name.
+        var typeName = method.DeclaringType.CanonicalName switch
+        {
+            "primitive:string" => "System.String",
+            "primitive:object" => "System.Object",
+            _ => method.DeclaringType.FullName!,
+        };
         return Safepoints.Contains((typeName, method.Definition.Name));
     }
 }

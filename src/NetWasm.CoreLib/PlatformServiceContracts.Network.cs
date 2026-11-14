@@ -91,6 +91,13 @@ namespace System.Runtime.InteropServices.WebAssembly
 
         ValueTask<NetworkTransferResult> ReceiveAsync(long socket, Memory<byte> buffer, CancellationToken cancellationToken);
 
+        // A non-blocking stream send (Socket.Blocking false): what the platform takes now, or WouldBlock when it
+        // takes nothing without waiting.
+        SocketError TrySend(long socket, ReadOnlySpan<byte> data, out int bytesSent);
+
+        // A non-blocking stream receive: the bytes the platform has now, or WouldBlock when it has none yet.
+        SocketError TryReceive(long socket, Span<byte> buffer, out int bytesReceived);
+
         // A datagram to the address, or to the connected peer when it is null.
         SocketError SendTo(long socket, ReadOnlySpan<byte> data, IPEndPoint? remoteEndPoint, out int bytesSent);
 
@@ -153,6 +160,12 @@ namespace System.Runtime.InteropServices.WebAssembly
 
         public virtual SocketError Receive(long socket, Span<byte> buffer, out int bytesReceived) =>
             throw PlatformServiceErrors.Unavailable("Receiving on a socket", "Network");
+
+        public virtual SocketError TrySend(long socket, ReadOnlySpan<byte> data, out int bytesSent) =>
+            throw PlatformServiceErrors.Unavailable("Sending on a non-blocking socket", "Network");
+
+        public virtual SocketError TryReceive(long socket, Span<byte> buffer, out int bytesReceived) =>
+            throw PlatformServiceErrors.Unavailable("Receiving on a non-blocking socket", "Network");
 
         public virtual ValueTask<NetworkTransferResult> ReceiveAsync(long socket, Memory<byte> buffer, CancellationToken cancellationToken) =>
             new(new NetworkTransferResult(Receive(socket, buffer.Span, out var received), received));

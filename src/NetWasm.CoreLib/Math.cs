@@ -1,7 +1,7 @@
 // Adapted from dotnet/runtime System.Private.CoreLib Math.cs and MathF.cs.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
-// Source reference: dotnet/runtime commit 474ed963699fc29809015392738a15231aaae2de.
+// Source reference: dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -10,6 +10,14 @@ namespace System
     /// <summary>Common mathematical constants and scalar operations.</summary>
     public static partial class Math
     {
+        // The largest digit count the fast rounding path handles: `10^digits` must fit a `ulong` for the
+        // integer fallback (10^19 is the last that does); larger counts use the exact routine.
+        private const int maxFastRoundingDigits = 19;
+
+        // Below this boundary a double may have a fractional portion; at or above it every
+        // representable value is already an integer (2^52).
+        private const double doubleIntegerBoundary = 4503599627370496.0;
+
         public const double E = 2.718281828459045;
         public const double PI = 3.141592653589793;
         public const double Tau = 6.283185307179586;
@@ -645,16 +653,38 @@ namespace System
         public static double Round(double value, MidpointRounding mode) => RoundMode(value, mode);
         public static double Round(double value, int digits, MidpointRounding mode)
         {
-            if (digits < 0) throw new ArgumentOutOfRangeException();
-            if ((uint)mode > (uint)MidpointRounding.ToPositiveInfinity) throw new ArgumentException();
-            if (digits == 0) return RoundMode(value, mode);
-            if (Abs(value) >= 1e16 || IsNaN(value) || IsInfinity(value)) return value;
-            if (digits <= 15)
+            if (digits < 0)
             {
-                var power = Pow10(digits);
-                return RoundMode(value * power, mode) / power;
+                ThrowHelper.ThrowArgumentOutOfRange_RoundingDigits(nameof(digits));
             }
-            return Number.RoundToDecimalDigits(value, digits, mode);
+
+            if ((uint)mode > (uint)MidpointRounding.ToPositiveInfinity)
+            {
+                ThrowHelper.ThrowArgumentException_InvalidEnumValue(mode);
+            }
+
+            // Rounding to zero fractional digits is just rounding to an integer, which the dedicated
+            // overload does with a single hardware instruction on most platforms.
+            if (digits == 0)
+            {
+                return Round(value, mode);
+            }
+
+            // Only finite values with a magnitude below the integer boundary can have a fractional
+            // portion to round. All other values (including NaN and Infinity) are returned unchanged;
+            // this comparison is naturally false for those cases.
+            if (Abs(value) < doubleIntegerBoundary)
+            {
+                // The fast path only handles the small-digit range where `10^digits` is exactly
+                // representable; larger counts fall back to the exact arbitrary-precision routine.
+                if ((digits > maxFastRoundingDigits) || !Number.TryRoundToDecimalDigitsFast(value, digits, mode, out double rounded))
+                {
+                    rounded = Number.RoundToDecimalDigits<double>(value, digits, mode);
+                }
+                value = rounded;
+            }
+
+            return value;
         }
 
         // Upstream's managed scalbln: Math's SCALEB_C1, SCALEB_C2 and SCALEB_C3 as literals.
@@ -773,13 +803,6 @@ namespace System
             return result == 0 ? CopySign(0, value) : result;
         }
 
-        private static double Pow10(int digits)
-        {
-            var result = 1.0;
-            while (digits-- > 0) result *= 10;
-            return result;
-        }
-
         private static bool IsNaN(double value) => double.IsNaN(value);
         private static bool IsInfinity(double value) => double.IsInfinity(value);
         private static bool IsNegative(double value) => value < 0 || value == 0 && 1 / value == double.NegativeInfinity;
@@ -805,6 +828,14 @@ namespace System
     /// <summary>Single-precision counterparts of <see cref="Math"/> operations.</summary>
     public static partial class MathF
     {
+        // The largest digit count the fast rounding path handles: `10^digits` must be exactly representable
+        // as a `float` (10^10 is the last that is); larger counts use the exact routine.
+        private const int maxFastRoundingDigits = 10;
+
+        // Below this boundary a float may have a fractional portion; at or above it every
+        // representable value is already an integer (2^23).
+        private const float singleIntegerBoundary = 8388608.0f;
+
         public const float E = 2.7182817f;
         public const float PI = 3.1415927f;
         public const float Tau = 6.2831855f;
@@ -932,19 +963,40 @@ namespace System
             return Round(value, digits, MidpointRounding.ToEven);
         }
         public static float Round(float value, MidpointRounding mode) => (float)Math.Round(value, mode);
-        public static float Round(float value, int digits, MidpointRounding mode)
+        public static float Round(float x, int digits, MidpointRounding mode)
         {
-            if (digits < 0) throw new ArgumentOutOfRangeException();
-            if ((uint)mode > (uint)MidpointRounding.ToPositiveInfinity) throw new ArgumentException();
-            if (digits == 0) return Round(value, mode);
-            if (Abs(value) >= 8388608 || float.IsNaN(value) || float.IsInfinity(value)) return value;
-            if (digits <= 6)
+            if (digits < 0)
             {
-                var power = 1.0f;
-                for (var index = 0; index < digits; index++) power *= 10;
-                return (float)(Math.Round((double)value * power, mode) / power);
+                ThrowHelper.ThrowArgumentOutOfRange_RoundingDigits(nameof(digits));
             }
-            return Number.RoundToDecimalDigits(value, digits, mode);
+
+            if ((uint)mode > (uint)MidpointRounding.ToPositiveInfinity)
+            {
+                ThrowHelper.ThrowArgumentException_InvalidEnumValue(mode);
+            }
+
+            // Rounding to zero fractional digits is just rounding to an integer, which the dedicated
+            // overload does with a single hardware instruction on most platforms.
+            if (digits == 0)
+            {
+                return Round(x, mode);
+            }
+
+            // Only finite values with a magnitude below the integer boundary can have a fractional
+            // portion to round. All other values (including NaN and Infinity) are returned unchanged;
+            // this comparison is naturally false for those cases.
+            if (Abs(x) < singleIntegerBoundary)
+            {
+                // The fast path only handles the small-digit range where `10^digits` is exactly
+                // representable; larger counts fall back to the exact arbitrary-precision routine.
+                if ((digits > maxFastRoundingDigits) || !Number.TryRoundToDecimalDigitsFast(x, digits, mode, out float rounded))
+                {
+                    rounded = Number.RoundToDecimalDigits<float>(x, digits, mode);
+                }
+                x = rounded;
+            }
+
+            return x;
         }
         // Upstream's managed scalblnf: MathF's SCALEB_C1, SCALEB_C2 and SCALEB_C3 as literals.
         public static float ScaleB(float x, int n)

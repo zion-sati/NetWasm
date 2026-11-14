@@ -27,6 +27,9 @@ public sealed class NonEscapingAllocationReplacerTests
     internal static readonly MethodInstanceModel BoxConstructor = Method(2, Int32);
     private static readonly MethodInstanceModel Throwing = Method(3);
 
+    // A constructor whose body references something missing; its own analysis reports that.
+    private static readonly MethodInstanceModel Undecodable = Method(4);
+
     public static TheoryData<string> ReplacedShapes() => ["fields read and the object dropped", "object used in a filtered try"];
 
     [Theory]
@@ -45,6 +48,7 @@ public sealed class NonEscapingAllocationReplacerTests
     [
         "address of the object's local", "older object read after a newer one", "volatile field read",
         "object read across a branch", "constructor that throws", "older object read in a filtered handler",
+        "constructor that cannot be decoded",
     ];
 
     [Theory]
@@ -114,6 +118,8 @@ public sealed class NonEscapingAllocationReplacerTests
             .Label("next").Op(CilOperation.LoadField, new CilOperand.FieldInstance(BoxValue)).Return()),
         "constructor that throws" => Body(code => code
             .Op(CilOperation.NewObject, new CilOperand.MethodInstance(Throwing)).Local(CilOperation.StoreLocal, 0).ReadValue(0)),
+        "constructor that cannot be decoded" => Body(code => code
+            .Op(CilOperation.NewObject, new CilOperand.MethodInstance(Undecodable)).Local(CilOperation.StoreLocal, 0).ReadValue(0)),
         // var older = new Box(1); try { var newer = new Box(2); _ = newer.Value; }
         // catch when (true) { return older.Value; } return 0;
         _ => Body(code => code
@@ -169,9 +175,19 @@ public sealed class NonEscapingAllocationReplacerTests
     }
 
     private sealed class Program :
-        ITypeRepository, IFieldRepository, IMethodRepository, IMethodBodyReader, ICalledMethodResolver, IFinalizerResolver,
+        ITypeRepository, IFieldRepository, IMethodRepository, IMethodBodyReader, ICalleeMethodBodyReader, ICalledMethodResolver, IFinalizerResolver,
         IMethodInitializationTriggerClassifier
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         public TypeDefinitionModel GetTypeDefinition(EntityKey key) => new(key, "Fixture", "Box", false, [], []);
 
         public FieldDefinitionModel GetField(EntityKey key) => throw new NotSupportedException();
@@ -181,7 +197,9 @@ public sealed class NonEscapingAllocationReplacerTests
         public MethodInstanceModel? Resolve(CilInstruction instruction) =>
             instruction.Operand is CilOperand.MethodInstance method ? method.Value : null;
 
-        public CilMethodBody ReadMethodBody(MethodInstanceModel method) => new(method.Definition, 2, [],
+        public CilMethodBody ReadMethodBody(MethodInstanceModel method) => method == Undecodable
+            ? throw new CompilerException(new(DiagnosticCode.MissingApi, "missing"))
+            : new(method.Definition, 2, [],
             method == BoxConstructor
                 ? new CilBuilder().Local(CilOperation.LoadArgument, 0).Local(CilOperation.LoadArgument, 1)
                     .Op(CilOperation.StoreField, new CilOperand.FieldInstance(BoxValue)).Return().Build()

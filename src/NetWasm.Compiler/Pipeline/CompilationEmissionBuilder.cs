@@ -215,14 +215,14 @@ internal sealed class CompilationEmissionBuilder(
             ManagedByRefEffects = analysis.Program.ManagedByRefEffects,
             ObjectArrayDelegateAdapters = analysis.Program.ObjectArrayDelegateAdapters,
             MemberExecution = analysis.Program.MemberExecution,
+            SharedObjectDispatch = analysis.Program.SharedObjectDispatch,
             NativeCallbacks = nativeCallbacks,
             AddressedNativeCallbacks = addressedNativeCallbacks,
             EntryPointArgumentFactory = preparation.EntryPointArgumentFactory,
             EntryPointExit = preparation.EntryPointExit,
             CollectManagedMethodMemoryMetrics = options.DiagnosticTracePath is not null,
             CompiledUnits = units,
-            UseJavaScriptExportBoundary =
-                options.UseJavaScriptExportBoundary || options.WitPath is null,
+            UseJavaScriptExportBoundary = preparation.World.JavaScriptHost,
             StructuredDiagnostics = options.StructuredDiagnostics,
             EnableAddressTakenAggregatePromotion =
                 preparation.OptimizationSettings.AddressTakenValuePromotion !=

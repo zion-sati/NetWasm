@@ -77,27 +77,9 @@ internal sealed class MetadataTypeDefinitionResolver : ITypeDefinitionResolver
     }
 
     private static string PrimitiveTypeName(CliTypeIdentity identity) =>
-        identity.CanonicalName switch
-        {
-            "primitive:void" => "System.Void",
-            "primitive:bool" => "System.Boolean",
-            "primitive:char" => "System.Char",
-            "primitive:i1" => "System.SByte",
-            "primitive:u1" => "System.Byte",
-            "primitive:i2" => "System.Int16",
-            "primitive:u2" => "System.UInt16",
-            "primitive:i4" => "System.Int32",
-            "primitive:u4" => "System.UInt32",
-            "primitive:i8" => "System.Int64",
-            "primitive:u8" => "System.UInt64",
-            "primitive:f4" => "System.Single",
-            "primitive:f8" => "System.Double",
-            "primitive:nativeint" => "System.IntPtr",
-            "primitive:nativeuint" => "System.UIntPtr",
-            "primitive:string" => "System.String",
-            "primitive:object" => "System.Object",
-            _ => throw new CompilerException(new CompilerDiagnostic(
+        PrimitiveTypeNames.TryGetFullName(identity.CanonicalName, out var name)
+            ? name
+            : throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.UnsupportedMetadata,
-                $"primitive type identity '{identity}' has no type definition")),
-        };
+                $"primitive type identity '{identity}' has no type definition"));
 }

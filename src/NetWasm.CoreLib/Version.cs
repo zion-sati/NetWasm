@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Deterministic port of dotnet/runtime System.Private.CoreLib Version.cs.
-// Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
+// Upstream commit: deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Culture, reflection metadata, and host dependencies are intentionally absent.
 
 using System.Diagnostics.CodeAnalysis;
@@ -14,6 +14,7 @@ namespace System;
 // A Version object contains four hierarchical numeric components. Build and
 // revision may be unspecified, represented internally by -1.
 [Serializable]
+[System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
 public sealed class Version : ICloneable,
     IComparable,
     IComparable<Version?>,

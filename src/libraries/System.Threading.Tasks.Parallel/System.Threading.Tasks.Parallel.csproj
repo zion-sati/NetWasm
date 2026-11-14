@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Threading.Tasks.Parallel</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Collections.Concurrent/System.Collections.Concurrent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Threading/Tasks/Parallel.ForEachAsync.cs" />
+    <Compile Include="System/Threading/Tasks/Parallel.cs" />
+    <Compile Include="System/Threading/Tasks/ParallelETWProvider.cs" />
+    <Compile Include="System/Threading/Tasks/ParallelLoopState.cs" />
+    <Compile Include="System/Threading/Tasks/ParallelRangeManager.cs" />
+    <Compile Include="System/Threading/Tasks/TaskReplicator.cs" />
+  </ItemGroup>
+</Project>

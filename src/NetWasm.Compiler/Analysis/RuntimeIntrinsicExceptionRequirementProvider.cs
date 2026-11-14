@@ -8,6 +8,8 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
     IRuntimeIntrinsicRegistry intrinsics) :
     IRuntimeIntrinsicExceptionRequirementProvider
 {
+    private static readonly ReachabilityExceptionRequirement NotSupported =
+        new(ManagedExceptionKind.NotSupported, "System.NotSupportedException");
     private static readonly ReachabilityExceptionRequirement NullReference =
         new(ManagedExceptionKind.NullReference, "System.NullReferenceException");
     private static readonly ReachabilityExceptionRequirement IndexOutOfRange =
@@ -28,8 +30,6 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
         new(ManagedExceptionKind.InvalidOperation, "System.InvalidOperationException");
     private static readonly ReachabilityExceptionRequirement ArgumentOutOfRange =
         new(ManagedExceptionKind.ArgumentOutOfRange, "System.ArgumentOutOfRangeException");
-    private static readonly ReachabilityExceptionRequirement NotSupported =
-        new(ManagedExceptionKind.NotSupported, "System.NotSupportedException");
 
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
@@ -55,7 +55,9 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.EnumGetHashCode or
             RuntimeIntrinsic.EnumGetTypeCode => [NullReference],
 
-            RuntimeIntrinsic.ArrayElementType => [OutOfMemory],
+            RuntimeIntrinsic.ArrayElementType or RuntimeIntrinsic.ArrayCreateInstance or
+                RuntimeIntrinsic.ArrayCreateRectangularInstance or
+                RuntimeIntrinsic.AllocateUninitializedObject => [OutOfMemory],
             // Throws nothing; it returns the OutOfMemoryException frozen in the image.
             RuntimeIntrinsic.PreallocatedOutOfMemoryException => [OutOfMemory],
 
@@ -67,15 +69,17 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.ArrayGetLowerBound or
             RuntimeIntrinsic.StringCharacterAt => [NullReference, IndexOutOfRange],
 
-            RuntimeIntrinsic.ObjectClone or
-            RuntimeIntrinsic.ArrayGetValue => [NullReference, OutOfMemory],
+            RuntimeIntrinsic.ObjectClone => [NullReference, OutOfMemory],
+            RuntimeIntrinsic.ArrayGetValue => [NullReference, OutOfMemory, NotSupported],
 
             RuntimeIntrinsic.MemberExecuteMethod =>
                 [NullReference, OutOfMemory, InvalidCast, InvalidOperation],
 
             RuntimeIntrinsic.DelegateDynamicInvoke => [OutOfMemory, Argument],
 
-            RuntimeIntrinsic.MemberReadField => [NullReference, OutOfMemory],
+            RuntimeIntrinsic.MemberReadField => [NullReference, OutOfMemory, InvalidCast],
+
+            RuntimeIntrinsic.MemberWriteField => [NullReference, InvalidCast],
 
             RuntimeIntrinsic.NativeMemoryAlloc or
             RuntimeIntrinsic.NativeMemoryRealloc or

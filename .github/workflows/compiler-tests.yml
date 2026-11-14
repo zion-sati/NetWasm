@@ -168,7 +168,6 @@ jobs:
         env:
           CORPUS_PROFILE: ${{ inputs.corpus-profile }}
           NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
-          NETWASM_COMPATIBILITY_REFERENCE_ROOT: ${{ runner.temp }}/compiler-qualification/compatibility-references
           NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
           NETWASM_WASM_TOOLS_PATH: ${{ runner.temp }}/wasm-tools/wasm-tools
         run: |
@@ -210,7 +209,6 @@ jobs:
           TEST_CLASSES: ${{ inputs.classes }}
           COVERAGE: ${{ inputs.coverage }}
           NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
-          NETWASM_COMPATIBILITY_REFERENCE_ROOT: ${{ runner.temp }}/compiler-qualification/compatibility-references
           NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
           NETWASM_WASM_TOOLS_PATH: ${{ runner.temp }}/wasm-tools/wasm-tools
         run: |

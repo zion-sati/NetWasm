@@ -13,7 +13,8 @@ internal sealed class MetadataMethodBodyReader(
     IUnsafeAccessorTargetResolverFactory accessors,
     IUnsafeAccessorBodyBuilder accessorBodies,
     IDelegateAsynchronousCallBodyBuilder delegateAsynchronousCalls,
-    IUnsafeIntrinsicBodyBuilder unsafeIntrinsics) : IMethodBodyReader
+    IUnsafeIntrinsicBodyBuilder unsafeIntrinsics,
+    IUnboundNativeImportBodyBuilder unboundNativeImports) : IMethodBodyReader
 {
     private readonly Lazy<IUnsafeAccessorTargetResolver> _accessors = new(accessors.Create);
 
@@ -26,6 +27,7 @@ internal sealed class MetadataMethodBodyReader(
     {
         { HasBody: false, UnsafeAccessor: not null } => accessorBodies.Build(method, _accessors.Value.Resolve(method)),
         { HasBody: false, IsDelegateAsynchronousCall: true } => delegateAsynchronousCalls.Build(method),
+        { HasBody: false, UnboundNativeImport: not null } => unboundNativeImports.Build(method),
         _ when unsafeIntrinsics.Build(method) is { } intrinsic => intrinsic,
         _ => decoders.Create().Decode(assemblies.Resolve(method.Definition.Key.Assembly), method),
     };

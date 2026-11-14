@@ -38,6 +38,16 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Array", "GetLowerBound") => RuntimeIntrinsic.ArrayGetLowerBound,
                 ("System.Array", "InternalElementType") => RuntimeIntrinsic.ArrayElementType,
                 ("System.Array", "InternalSetValue") => RuntimeIntrinsic.ArraySetValue,
+                ("System.Array", "InternalCreateInstance") when method.IsStatic &&
+                    method.GenericArity == 0 && method.Signature.ReturnType == CliValueKind.ManagedReference &&
+                    method.Signature.ParameterTypes.Length == 2 &&
+                    method.Signature.ParameterTypes[0] == CliValueKind.I4 &&
+                    method.Signature.ParameterTypes[1] == CliValueKind.I4 => RuntimeIntrinsic.ArrayCreateInstance,
+                ("System.Array", "InternalCreateRectangularInstance") when method.IsStatic &&
+                    method.GenericArity == 0 && method.Signature.ReturnType == CliValueKind.ManagedReference &&
+                    method.Signature.ParameterTypes.AsSpan().SequenceEqual(
+                        [CliValueKind.I4, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4]) =>
+                    RuntimeIntrinsic.ArrayCreateRectangularInstance,
                 ("System.Array", "InternalGetValue") => RuntimeIntrinsic.ArrayGetValue,
                 ("System.Array", "InternalCopy") => RuntimeIntrinsic.ArrayCopy,
                 ("System.Array", "InternalClear") => RuntimeIntrinsic.ArrayClear,
@@ -86,6 +96,14 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 (RuntimeExceptionGetters.PreallocatedOutOfMemoryTypeName, "GetInstance") =>
                     RuntimeIntrinsic.PreallocatedOutOfMemoryException,
                 ("System.DelegateRuntime", "Clone") => RuntimeIntrinsic.DelegateClone,
+                ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "RunClassConstructor") =>
+                    RuntimeIntrinsic.RunClassConstructor,
+                ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AllocateUninitializedObject") =>
+                    RuntimeIntrinsic.AllocateUninitializedObject,
+                ("System.Runtime.InteropServices.StructureMarshallingRuntime", "GetDescriptor") =>
+                    RuntimeIntrinsic.StructMarshallingData,
+                ("System.Runtime.InteropServices.StructureMarshallingRuntime", "GetDescriptorWithFieldNames") =>
+                    RuntimeIntrinsic.StructMarshallingFieldNames,
                 ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AreEqual") =>
                     RuntimeIntrinsic.RuntimeHelpersEquals,
                 ("System.MarvinSeedRuntime", "Get") => RuntimeIntrinsic.RandomSeed,
@@ -191,6 +209,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.DelegateDynamicInvoke,
                 ("System.Runtime.CompilerServices.RuntimeMemberExecution", "ReadField") =>
                     RuntimeIntrinsic.MemberReadField,
+                ("System.Runtime.CompilerServices.RuntimeMemberExecution", "WriteField") =>
+                    RuntimeIntrinsic.MemberWriteField,
                 ("System.Enum", "Equals") => RuntimeIntrinsic.EnumEquals,
                 ("System.Enum", "InternalEquals") => RuntimeIntrinsic.EnumEquals,
                 ("System.Enum", "GetHashCode") => RuntimeIntrinsic.EnumGetHashCode,

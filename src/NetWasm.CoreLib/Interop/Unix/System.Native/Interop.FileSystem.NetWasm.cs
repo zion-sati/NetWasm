@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // NetWasm's counterpart of the System.Native calls that dotnet/runtime
-// 474ed963699fc29809015392738a15231aaae2de's Unix file APIs make
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce's Unix file APIs make
 // (src/libraries/Common/src/Interop/Unix/System.Native/Interop.*.cs), with their names, types and
 // results, so those APIs port unchanged. Each call is a file or directory platform service
 // (System.Runtime.InteropServices.WebAssembly); a failure records its errno and returns -1, as
@@ -357,6 +357,46 @@ namespace System
             internal static bool SupportsHiddenFlag => false;
 
             internal static uint GetEUid() => 0;
+
+            internal enum AccessMode : int
+            {
+                F_OK = 0,   /* Check for existence */
+                X_OK = 1,   /* Check for execute */
+                W_OK = 2,   /* Check for write */
+                R_OK = 4,   /* Check for read */
+            }
+
+            // Answered from the entry's status: the effective user owns every entry, so the owner bits decide.
+            internal static int Access(string path, AccessMode mode)
+            {
+                if (Stat(path, out FileStatus status) != 0)
+                {
+                    return -1;
+                }
+
+                int owner = (status.Mode >> 6) & 7;
+                return ((int)mode & ~owner) == 0 ? 0 : SetLastError(Error.EACCES);
+            }
+
+            internal unsafe struct Passwd
+            {
+                internal const int InitialBufferSize = 256;
+                internal byte* Name;
+                internal byte* Password;
+                internal uint UserId;
+                internal uint GroupId;
+                internal byte* UserInfo;
+                internal byte* HomeDirectory;
+                internal byte* Shell;
+            }
+
+            // WASI has no user database: the user has no entry, which getpwuid_r reports as -1 and callers read as no
+            // home directory.
+            internal static unsafe int GetPwUidR(uint uid, out Passwd pwd, byte* buf, int bufLen)
+            {
+                pwd = default;
+                return -1;
+            }
 
             internal static bool IsMemberOfGroup(uint gid) => true;
 

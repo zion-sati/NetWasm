@@ -25,6 +25,7 @@ public abstract class CompilerArtifactManifestTaskBase : MsBuildTask
     public string RuntimeAbiVersion { get; set; } = "unknown";
     public string RuntimeVersion { get; set; } = "unknown";
     public ITaskItem[] References { get; set; } = [];
+    public ITaskItem[] MetadataReferences { get; set; } = [];
     public ITaskItem[] Sources { get; set; } = [];
     public string? GeneratedSourceRoot { get; set; }
     public string? RuntimeAbiManifestPath { get; set; }
@@ -58,7 +59,8 @@ public abstract class CompilerArtifactManifestTaskBase : MsBuildTask
             : Artifacts.Concat(additionalArtifacts.Select(CreateInputTaskItem)).ToImmutableArray(),
         GeneratedSourceRoot,
         CompilationIdentityPath,
-        WitInputs.ToImmutableArray());
+        WitInputs.ToImmutableArray(),
+        MetadataReferences.ToImmutableArray());
 
     internal void SetResolvedArtifacts(CompilerArtifactManifestBuildResult result)
     {

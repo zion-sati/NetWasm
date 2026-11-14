@@ -34297,8 +34297,5 @@
   "exposesLegacyTrace": false,
   "reportAllMismatches": true,
   "testMethod": "NetWasm.Compiler.Tests.Correctness.DecimalEdgeTests.BinaryConversionsRespectExactRoundingAndSignedZero",
-  "referenceAssemblyAliases": {
-    "System.Runtime.Numerics": "NetWasm.CoreLib"
-  },
   "desktopEntryMethod": "RunExactOracle"
 }

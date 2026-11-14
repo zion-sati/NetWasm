@@ -34,7 +34,7 @@ internal sealed class ExecutionPlannerFixture :
         this, this, this, this, this, this, this);
 
     internal IMemberExecutionPlanner MemberPlanner() => new MemberExecutionPlanner(
-        this, this, this, this, this, this, this);
+        this, this, this, this, this, this, this, this);
 
     public CliTypeIdentity? Resolve(CliTypeIdentity type) => NullableTypes.GetValueOrDefault(type);
 
@@ -102,6 +102,18 @@ internal sealed class ExecutionPlannerFixture :
     internal MethodInstanceModel UnarySupport()
     {
         var method = Method(100, "Invoke1", genericArity: 2, parameters: [Scalar]);
+        RegisterType("System.Runtime.CompilerServices.ObjectArrayDelegateTarget", method);
+        return method;
+    }
+
+    // ObjectArrayDelegateTarget's InvokeN (or InvokeVoidN) adapter for a delegate of the given arity.
+    internal MethodInstanceModel ArityAdapter(int arity, bool returnsVoid)
+    {
+        var method = Method(
+            100,
+            returnsVoid ? $"InvokeVoid{arity}" : $"Invoke{arity}",
+            genericArity: arity + (returnsVoid ? 0 : 1),
+            parameters: [.. Enumerable.Repeat(Scalar, arity)]);
         RegisterType("System.Runtime.CompilerServices.ObjectArrayDelegateTarget", method);
         return method;
     }

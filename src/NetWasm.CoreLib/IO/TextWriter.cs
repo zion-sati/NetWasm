@@ -2,8 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Adapted from dotnet/runtime System.Private.CoreLib (commit
-// 474ed963699fc29809015392738a15231aaae2de). MarshalByRefObject is
-// intentionally omitted; Task/ValueTask writes use the platform scheduler.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce). Task/ValueTask writes use
+// the platform scheduler.
 
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
@@ -16,7 +16,7 @@ using System.Threading.Tasks;
 
 namespace System.IO
 {
-    public abstract partial class TextWriter : IDisposable, IAsyncDisposable
+    public abstract partial class TextWriter : MarshalByRefObject, IDisposable, IAsyncDisposable
     {
         public static readonly TextWriter Null = new NullTextWriter();
 

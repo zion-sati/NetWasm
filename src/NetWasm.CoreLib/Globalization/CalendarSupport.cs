@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // NetWasm support for the calendars ported from dotnet/runtime commit
-// 474ed963699fc29809015392738a15231aaae2de. Upstream calendars call internal DateTime and
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce. Upstream calendars call internal DateTime and
 // DateOnly members and one LocalAppContextSwitches value that NetWasm's types do not declare;
 // these give the same results from NetWasm's own date arithmetic.
 
@@ -25,10 +25,6 @@ namespace System.Globalization
             minute = (int)(minutes - (hours * 60));
             hour = (int)((uint)hours % 24);
         }
-
-        // DateOnly.GetEquivalentDateTime
-        internal static DateTime GetEquivalentDateTime(this DateOnly date) =>
-            new DateTime(date.DayNumber * TimeSpan.TicksPerDay);
     }
 }
 
@@ -39,5 +35,12 @@ namespace System
         // Upstream caches the switch; the calendars read it only on era-range edge cases.
         internal static bool EnforceJapaneseEraYearRanges =>
             AppContext.TryGetSwitch("Switch.System.Globalization.EnforceJapaneseEraYearRanges", out bool enabled) && enabled;
+
+        // DateTimeFormat and DateTimeParse read these only for a Japanese calendar.
+        internal static bool FormatJapaneseFirstYearAsANumber =>
+            AppContext.TryGetSwitch("Switch.System.Globalization.FormatJapaneseFirstYearAsANumber", out bool enabled) && enabled;
+
+        internal static bool EnforceLegacyJapaneseDateParsing =>
+            AppContext.TryGetSwitch("Switch.System.Globalization.EnforceLegacyJapaneseDateParsing", out bool enabled) && enabled;
     }
 }

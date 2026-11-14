@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 
 namespace NetWasm.Runtime.Pack.Materialization;
 
-internal sealed class CommandInvoker : ICommandInvoker
+internal sealed class CommandInvoker(IToolOutputExcerptFormatter excerpts) : ICommandInvoker
 {
+    private readonly IToolOutputExcerptFormatter _excerpts = excerpts ?? throw new ArgumentNullException(nameof(excerpts));
+
     public void Invoke(RuntimeCommand command)
     {
         ArgumentNullException.ThrowIfNull(command);
@@ -31,11 +33,13 @@ internal sealed class CommandInvoker : ICommandInvoker
             var standardError = process.StandardError.ReadToEndAsync();
             process.WaitForExit();
             Task.WaitAll(standardOutput, standardError);
-            File.WriteAllText(command.LogPath, standardOutput.Result + standardError.Result);
+            var output = standardOutput.Result + standardError.Result;
+            File.WriteAllText(command.LogPath, output);
             if (process.ExitCode != 0)
             {
                 throw new InvalidOperationException(
-                    $"A NetWasm runtime tool failed; see '{Path.GetFullPath(command.LogPath)}'.");
+                    $"A NetWasm runtime tool ('{Path.GetFileName(command.ExecutablePath)}') failed with exit code " +
+                    $"{process.ExitCode}; see '{Path.GetFullPath(command.LogPath)}'.{_excerpts.Format(output)}");
             }
         }
         catch (InvalidOperationException)
@@ -44,7 +48,9 @@ internal sealed class CommandInvoker : ICommandInvoker
         }
         catch (Exception exception)
         {
-            throw new InvalidOperationException("A NetWasm runtime tool could not be executed.", exception);
+            // The cause goes in the message: NWPACK001 reports only the message (zion-sati/NetWasm#236).
+            throw new InvalidOperationException(
+                $"A NetWasm runtime tool could not be executed ('{command.ExecutablePath}'): {exception.Message}", exception);
         }
     }
 }

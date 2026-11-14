@@ -57,7 +57,9 @@ internal sealed class CompiledUnitStateFactory(
             Verifies = options.VerifyCompiledUnits,
             // Every unit's input holds what emission reads from the compile itself rather than
             // through a recorded query: the target's width and how methods are structured.
-            Policy = $"{options.Target}/{branchPrefixDuplication}/{dispatcherElimination}",
+            // and which native libraries bind, which decides whether a P/Invoke is an import or a throwing body.
+            Policy = $"{options.Target}/{branchPrefixDuplication}/{dispatcherElimination}/{NativeBindingPolicy(options)}" +
+                $"/{FeatureSwitchPolicy(options)}",
             Bodies = CompiledUnitState.Index(program.Methods.Values, program.ConstructedMethods.Values),
             Store = _loader.Load(inputs.Directory),
             Structuring = _structuring,
@@ -94,4 +96,17 @@ internal sealed class CompiledUnitStateFactory(
             return null;
         }
     }
+
+    // Folded feature switches change the bodies that call their getters.
+    // and the runtime properties AppContext's ConfigurationProperties returns.
+    internal static string FeatureSwitchPolicy(CompilerOptions options) =>
+        "switches:" + string.Join(",", options.FeatureSwitches.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => $"{pair.Key}={pair.Value}")) +
+        ";properties:" + string.Join(",", options.RuntimeProperties.Select(pair => $"{pair.Name}={pair.Value}"));
+
+    // The units of a compile that links every native library never serve one that links some, nor the reverse.
+    internal static string NativeBindingPolicy(CompilerOptions options) =>
+        options.LinkedNativeLibraries is { } linked
+            ? "native:" + string.Join(",", linked.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+            : "native:all";
 }

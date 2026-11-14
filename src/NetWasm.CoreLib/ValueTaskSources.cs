@@ -1,10 +1,11 @@
 // Portions derived from dotnet/runtime System.Private.CoreLib at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
 namespace System.Threading.Tasks.Sources
 {
+    [Flags]
     public enum ValueTaskSourceOnCompletedFlags
     {
         None = 0,
@@ -42,6 +43,7 @@ namespace System.Threading.Tasks.Sources
         TResult GetResult(short token);
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public struct ManualResetValueTaskSourceCore<TResult>
     {
         private Action<object?>? _continuation;

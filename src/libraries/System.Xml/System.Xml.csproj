@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Xml.ReaderWriter</AssemblyName>
+    <!-- Its public surface does not claim CLS compliance yet (unsigned members are not marked). -->
+    <CLSCompliant>false</CLSCompliant>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NetWasmRegexSourceGenerator>$(NETCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/System.Text.RegularExpressions.Generator.dll</NetWasmRegexSourceGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="System/SR.cs" />
+    <!-- System.Private.Xml at dotnet/runtime 811225a4: the readers, writers, DOM, XmlConvert, resolvers,
+         XPath and schema sources, and System.Private.Xml.Linq, copied verbatim and adapted where marked
+         "NetWasm:". -->
+    <Compile Include="Misc/*.cs" />
+    <Compile Include="Common/System/**/*.cs" />
+    <Compile Include="System/Xml/*.cs" />
+    <Compile Include="System/Xml/BinaryXml/*.cs" />
+    <Compile Include="System/Xml/Cache/*.cs" />
+    <Compile Include="System/Xml/Core/*.cs" />
+    <Compile Include="System/Xml/Dom/*.cs" />
+    <Compile Include="System/Xml/Resolvers/*.cs" />
+    <Compile Include="System/Xml/Schema/**/*.cs" />
+    <Compile Include="System/Xml/XPath/**/*.cs" />
+    <Compile Include="System/Xml/Linq/*.cs" />
+    <!-- XSLT: the public types and the interpreted XsltOld engine behind XslTransform, with the few runtime
+         helpers it shares with the compiled engine. XslCompiledTransform throws PlatformNotSupportedException. -->
+    <Compile Include="System/Xml/Xslt/*.cs" />
+    <Compile Include="System/Xml/Xsl/XsltOld/*.cs" />
+    <Compile Include="System/Xml/Xsl/Runtime/DecimalFormatter.cs" />
+    <Compile Include="System/Xml/Xsl/Runtime/NumberFormatter.cs" />
+    <Compile Include="System/Xml/Xsl/Runtime/StringConcat.cs" />
+    <Compile Include="System/Xml/Xsl/Xslt/Keywords.cs" />
+    <!-- XML serialization: the attributes, explicit data, identifiers, mappings, schema importer/exporter and the
+         serializer runtime bases are upstream's; XmlSerializer serializes the primitive types and dispatches to
+         subclasses, and reflection import, code generation and the reflection-based serializer are not ported. -->
+    <Compile Include="System/Xml/Serialization/**/*.cs" />
+    <ProjectReference Include="../System.ComponentModel.TypeConverter/System.ComponentModel.TypeConverter.csproj" />
+    <ProjectReference Include="../System.ObjectModel/System.ObjectModel.csproj" />
+    <ProjectReference Include="../System.Net.Primitives/System.Net.Primitives.csproj" />
+    <ProjectReference Include="../System.Diagnostics.TraceSource/System.Diagnostics.TraceSource.csproj" />
+    <ProjectReference Include="../System.Linq/System.Linq.csproj" />
+    <ProjectReference Include="../System.Text.RegularExpressions/System.Text.RegularExpressions.csproj" />
+    <Analyzer Include="$(NetWasmRegexSourceGenerator)" />
+  </ItemGroup>
+</Project>

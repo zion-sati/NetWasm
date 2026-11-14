@@ -12,7 +12,9 @@ internal sealed class NativeIntegerConversionEmitter(
 
     public void Emit(IWasmInstructionWriter code, CliValueKind source, bool unsigned)
     {
-        if (source == CliValueKind.ManagedAddress)
+        // An address, or an object's (a pinned string's, as fixed lowers it), is already address-sized; the
+        // collector does not move objects.
+        if (source is CliValueKind.ManagedAddress or CliValueKind.ManagedReference)
         {
             return;
         }

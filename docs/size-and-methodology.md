@@ -397,6 +397,18 @@ The retained run used the official `tinygo/tinygo:0.39.0` image, whose manifest
 digest was `sha256:0e51d243c1b84ec650f2dcd1cce3a09bb09730e1134771aeace2240ade4b32f5`.
 No Preview 2 adapter or component envelope was added.
 
+## Calls on `object` in larger programs
+
+The compiler sees the whole program, so a virtual call on `object` (`Equals`,
+`GetHashCode` or `ToString`) can reach every type the program allocates, and
+each value type's default `Equals` and `GetHashCode` is a case of its own. In a
+program of a few hundred types, a dictionary keyed by `object`, string
+formatting and similar code carry dozens of such calls. Under `Oz`, `Os` and
+`O0`, a call with many targets calls one shared body for its method, which
+holds the only copy of that dispatch; in a program that uses `HttpClient`,
+this removes about a fifth of the module. `O1` to `O3` keep each call's own
+dispatch, which saves a call per invocation.
+
 ## JSON is not one fixed cost
 
 Earlier isolated Release/wasm32 **core-module** measurements of the selected

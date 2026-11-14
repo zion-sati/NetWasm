@@ -1,0 +1,30 @@
+<Project>
+  <!-- NetWasm.App's implementations, for the NetWasm compiler. C# compiles against NetWasm.App.Ref; the
+       compile targets give the compiler the ones the program's assemblies reach. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NetWasmFrameworkAssembly Include="$(MSBuildThisFileDirectory)../framework/*.dll" />
+  </ItemGroup>
+
+  <!-- The zlib codecs' native half (DeflateStream, ZLibStream, GZipStream and ZIP's Deflate entries). Final linking
+       keeps it only when a program reaches one of its imports. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NativeLibrary Include="$(MSBuildThisFileDirectory)../native/wasm32/libSystem.IO.Compression.Native.a"
+                   NetWasmLibraryName="libSystem.IO.Compression.Native"
+                   WasmTarget="wasm32" />
+    <NativeLibrary Include="$(MSBuildThisFileDirectory)../native/wasm64/libSystem.IO.Compression.Native.a"
+                   NetWasmLibraryName="libSystem.IO.Compression.Native"
+                   WasmTarget="wasm64" />
+  </ItemGroup>
+
+  <!-- Cryptography's native half: dotnet/runtime's System.Security.Cryptography.Native shim over OpenSSL's libcrypto
+       (ciphers, keys, signatures, key agreement and X.509; hashing stays managed). Final linking keeps it only when a
+       program reaches one of its imports. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NativeLibrary Include="$(MSBuildThisFileDirectory)../native/wasm32/libSystem.Security.Cryptography.Native.OpenSsl.a"
+                   NetWasmLibraryName="libSystem.Security.Cryptography.Native.OpenSsl"
+                   WasmTarget="wasm32" />
+    <NativeLibrary Include="$(MSBuildThisFileDirectory)../native/wasm64/libSystem.Security.Cryptography.Native.OpenSsl.a"
+                   NetWasmLibraryName="libSystem.Security.Cryptography.Native.OpenSsl"
+                   WasmTarget="wasm64" />
+  </ItemGroup>
+</Project>

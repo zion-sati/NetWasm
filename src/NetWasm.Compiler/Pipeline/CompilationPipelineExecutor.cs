@@ -1,6 +1,10 @@
+using System.Collections.Immutable;
+using System.Linq;
+using NetWasm.Compiler.Core;
 using System;
 using System.Globalization;
 using NetWasm.Compiler.Diagnostics;
+using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Symbols;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Metadata;
@@ -33,13 +37,18 @@ internal sealed class CompilationPipelineExecutor(
     ICompilationSymbolSidecarBinder symbolSidecars,
     ISymbolFormatterFactory symbols,
     ICompilationMetricsRequestFactory metricsRequests,
+    ICompilerDiagnosticOriginBinder diagnosticOrigins,
+    ICompilerDiagnosticDependencyPathBinder dependencyPaths,
     ICompilationInputDetector inputDetector,
     ICompilationInputRecorder inputRecorder,
     ICompiledUnitStateFactory unitStates,
     IEarlyCutoffEmitter earlyCutoff,
-    IUnitKeptCompileCommitter keptCompiles) :
+    IUnitKeptCompileCommitter keptCompiles,
+    INativeImportBinderFactory nativeBinders) :
     ICompilationPipelineExecutor
 {
+    private readonly INativeImportBinderFactory _nativeBinders = nativeBinders ??
+        throw new ArgumentNullException(nameof(nativeBinders));
     private readonly IUnitKeptCompileCommitter _keptCompiles = keptCompiles ??
         throw new ArgumentNullException(nameof(keptCompiles));
     private readonly IEarlyCutoffEmitter _earlyCutoff = earlyCutoff ??
@@ -89,6 +98,12 @@ internal sealed class CompilationPipelineExecutor(
     private readonly ICompilationMetricsRequestFactory _metricsRequests = metricsRequests ??
         throw new ArgumentNullException(nameof(metricsRequests));
 
+    private readonly ICompilerDiagnosticOriginBinder _diagnosticOrigins = diagnosticOrigins ??
+        throw new ArgumentNullException(nameof(diagnosticOrigins));
+
+    private readonly ICompilerDiagnosticDependencyPathBinder _dependencyPaths = dependencyPaths ??
+        throw new ArgumentNullException(nameof(dependencyPaths));
+
     private readonly ICompiledUnitStateFactory _unitStates = unitStates ??
         throw new ArgumentNullException(nameof(unitStates));
     private readonly ICompilationInputDetector _inputDetector = inputDetector ??
@@ -130,6 +145,8 @@ internal sealed class CompilationPipelineExecutor(
             ? null
             : _metricsRequests.Create(options.MetricsObserver);
         var stage = "initialization";
+        var typeDependencyPaths = ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>>.Empty;
+        var assemblySources = ImmutableArray<CompilationAssemblySource>.Empty;
         metrics?.Stages.Start(CompilerMetricStage.Initialization);
         try
         {
@@ -138,14 +155,18 @@ internal sealed class CompilationPipelineExecutor(
             stage = "metadata";
             metrics?.Stages.Start(CompilerMetricStage.Metadata);
             CompilationOutcome compiledResult;
-            using (var lease = options.ReferenceAssemblyAliases is null or { Count: 0 }
-                ? _metadataCompilations.Load(options.EntryAssemblyPath, options.ReferencePaths)
-                : _metadataCompilations.Load(
-                    options.EntryAssemblyPath,
-                    options.ReferencePaths,
-                    options.ReferenceAssemblyAliases))
+            using (var lease = _metadataCompilations.Load(
+                options.EntryAssemblyPath,
+                options.ReferencePaths,
+                options.ReferenceAssemblyAliases is { Count: > 0 } ? options.ReferenceAssemblyAliases : null,
+                options.MetadataReferencePaths.IsDefault ? [] : options.MetadataReferencePaths,
+                options.OriginalContractReferencePaths.IsDefault ? [] : options.OriginalContractReferencePaths,
+                _nativeBinders.Create(options.LinkedNativeLibraries)))
             {
                 var metadata = lease.Snapshot;
+                if (!options.ReferenceOrigins.IsDefaultOrEmpty)
+                    assemblySources = metadata.Assemblies.Select(assembly =>
+                        new CompilationAssemblySource(assembly.Identity, assembly.Path)).ToImmutableArray();
                 _metadataStage.ValidateAndWrite(options, metadata);
                 var inputs = _inputDetector.Detect(options, metadata);
                 var symbolFormatter = _symbols.Create(metadata);
@@ -184,6 +205,7 @@ internal sealed class CompilationPipelineExecutor(
                 stage = "analysis";
                 metrics?.Stages.Start(CompilerMetricStage.Analysis);
                 var analyzed = _analysis.Analyze(metadata, prepared);
+                typeDependencyPaths = analyzed.Program.TypeDependencyPaths;
                 _programArtifacts.WriteProgram(
                     options,
                     symbolFormatter,
@@ -328,10 +350,18 @@ internal sealed class CompilationPipelineExecutor(
         }
         catch (Exception exception)
         {
+            CompilerException? enrichedFailure = null;
+            if (exception is CompilerException failure)
+            {
+                var diagnostic = _dependencyPaths.Bind(failure.Diagnostic, typeDependencyPaths);
+                diagnostic = _diagnosticOrigins.Bind(diagnostic, assemblySources, options.ReferenceOrigins);
+                if (!ReferenceEquals(diagnostic, failure.Diagnostic))
+                    enrichedFailure = new CompilerException(diagnostic, failure);
+            }
             metrics?.Stages.Start(CompilerMetricStage.FailureReporting);
             try
             {
-                _failureArtifacts.WriteFailure(options, stage, exception);
+                _failureArtifacts.WriteFailure(options, stage, enrichedFailure ?? exception);
             }
             finally
             {
@@ -341,6 +371,8 @@ internal sealed class CompilationPipelineExecutor(
                         : CompilerMetricsOutcome.Failed,
                     stage);
             }
+            if (enrichedFailure is not null)
+                throw enrichedFailure;
             throw;
         }
     }

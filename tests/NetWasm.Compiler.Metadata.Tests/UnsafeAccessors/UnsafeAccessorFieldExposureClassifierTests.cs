@@ -55,7 +55,7 @@ public sealed class UnsafeAccessorFieldExposureClassifierTests
                 break;
             case "translated-owner":
                 method = WithSignature(method, CliTypeIdentity.ManagedByReference(Integer), Integer) with
-                { UnsafeAccessor = method.UnsafeAccessor! with { HasTypeTranslation = true } };
+                { UnsafeAccessor = method.UnsafeAccessor! with { TypeTranslations = new(["Fixture.Owner, Fixture"]) } };
                 break;
         }
         Assert.True(Create().Classify(method, field));
@@ -123,7 +123,7 @@ public sealed class UnsafeAccessorFieldExposureClassifierTests
         method with { Signature = new(result, [.. parameters]) };
     private static MethodDefinitionModel Method() => new(new(Assembly, 0x06000001), new(Assembly, 0x02000002),
         "Address", true, new(CliTypeIdentity.ManagedByReference(SystemType), [Owner]), 0)
-    { UnsafeAccessor = new((int)UnsafeAccessorMemberKind.Field, "_type", true, false, false) };
+    { UnsafeAccessor = new((int)UnsafeAccessorMemberKind.Field, "_type", true, false) };
     private static FieldInstanceModel Field() => new(new(new(Assembly, 0x04000001), new(Assembly, 0x02000001),
         "_type", SystemType, false)
     { IsInitOnly = true }, Owner, SystemType);

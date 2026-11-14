@@ -1,6 +1,7 @@
 # Compiler test classes that run differential fixtures, which the release runs on the
 # linked runtime with a collection before every allocation, under each collector.
 # One fully qualified class per line; GcStressClassListTests keeps the list complete.
+NetWasm.Compiler.Tests.ArrayCreateInstanceLinkedTests
 NetWasm.Compiler.Tests.ArraySetValueLinkedCompilationTests
 NetWasm.Compiler.Tests.BoundedArrayCompilationTests
 NetWasm.Compiler.Tests.Correctness.ActivatorSemanticsTests
@@ -51,9 +52,11 @@ NetWasm.Compiler.Tests.Correctness.ConditionalBranchToFallthroughCompilationTest
 NetWasm.Compiler.Tests.Correctness.ConstantFoldingCorpusTests
 NetWasm.Compiler.Tests.Correctness.ConstantTripLoopUnrollerCorpusTests
 NetWasm.Compiler.Tests.Correctness.ControlFlowDifferentialTests
+NetWasm.Compiler.Tests.Correctness.CookieContainerCorpusTests
 NetWasm.Compiler.Tests.Correctness.CoreLibScalarCorpusTests
 NetWasm.Compiler.Tests.Correctness.CryptographicRandomSelectionTests
 NetWasm.Compiler.Tests.Correctness.CryptographicRandomTests
+NetWasm.Compiler.Tests.Correctness.DateTimeTextCorpusTests
 NetWasm.Compiler.Tests.Correctness.DecimalEdgeTests
 NetWasm.Compiler.Tests.Correctness.DelegateCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.DelegateInvocationGcTests
@@ -74,6 +77,7 @@ NetWasm.Compiler.Tests.Correctness.EncodingStreamBoundaryTests
 NetWasm.Compiler.Tests.Correctness.EnumerableIteratorContractDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ExceptionControlFlowDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ExceptionSequenceTests
+NetWasm.Compiler.Tests.Correctness.ExpressionMemberExecutionRootsGcTests
 NetWasm.Compiler.Tests.Correctness.ExtendedLoopOwnershipCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.FieldNullCheckCorpusTests
 NetWasm.Compiler.Tests.Correctness.FieldReuseCorpusTests
@@ -160,6 +164,7 @@ NetWasm.Compiler.Tests.Correctness.ReadOnlyWrapperCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.ReductionConversionCorpusTests
 NetWasm.Compiler.Tests.Correctness.ReductionLoopCorpusTests
 NetWasm.Compiler.Tests.Correctness.ReferenceRepresentationCrossProductTests
+NetWasm.Compiler.Tests.Correctness.RegexReplacementSemanticsTests
 NetWasm.Compiler.Tests.Correctness.RootFunctionsCorpusTests
 NetWasm.Compiler.Tests.Correctness.RootLifetimeGcTests
 NetWasm.Compiler.Tests.Correctness.RttiArraySemanticTests
@@ -197,10 +202,12 @@ NetWasm.Compiler.Tests.Correctness.TextInfoCorpusTests
 NetWasm.Compiler.Tests.Correctness.ThreadLocalTests
 NetWasm.Compiler.Tests.Correctness.TypeInitializationTriggerCorpusTests
 NetWasm.Compiler.Tests.Correctness.TypeTestCorpusTests
+NetWasm.Compiler.Tests.Correctness.TypedReferenceRootsGcTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorFailureTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorGcTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorNestedGenericTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorTests
+NetWasm.Compiler.Tests.Correctness.UnsafeAccessorTypeTranslationTests
 NetWasm.Compiler.Tests.Correctness.UnsafeByReferenceDifferentialTests
 NetWasm.Compiler.Tests.Correctness.UnsupportedCilBoundaryTests
 NetWasm.Compiler.Tests.Correctness.UnwrittenStaticFieldCorpusTests

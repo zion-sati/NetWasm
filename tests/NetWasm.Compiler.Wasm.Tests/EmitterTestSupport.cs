@@ -725,7 +725,7 @@ internal static class EmitterTestSupport
                 },
             };
         }
-        else if (intrinsic == RuntimeIntrinsic.ArraySetValue)
+        else if (intrinsic is RuntimeIntrinsic.ArraySetValue or RuntimeIntrinsic.ObjectClone)
         {
             instruction = instruction with
             {
@@ -733,7 +733,8 @@ internal static class EmitterTestSupport
                 {
                     RuntimeImportSelection = instruction.Target.RuntimeImportSelection with
                     {
-                        IncludeArraySetValue = true,
+                        IncludeArraySetValue = intrinsic == RuntimeIntrinsic.ArraySetValue,
+                        IncludeObjectClone = intrinsic == RuntimeIntrinsic.ObjectClone,
                     },
                 },
             };
@@ -954,10 +955,13 @@ internal sealed class RecordingLayoutProvider(
         return new ObjectLayout(9, 16, ObjectReferenceOffsets);
     }
 
+    // Type IDs by canonical name; other types read 9.
+    public IReadOnlyDictionary<string, int> TypeIds { get; init; } = new Dictionary<string, int>();
+
     public ObjectLayout GetObjectLayout(CliTypeIdentity type)
     {
         ObjectIdentityRequest = type;
-        return new ObjectLayout(9, 16, ObjectReferenceOffsets);
+        return new ObjectLayout(TypeIds.GetValueOrDefault(type.CanonicalName, 9), 16, ObjectReferenceOffsets);
     }
 
     public bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout)

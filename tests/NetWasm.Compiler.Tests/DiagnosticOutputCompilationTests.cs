@@ -24,8 +24,10 @@ public sealed class DiagnosticOutputCompilationTests
         var output = methods.Where(method => method.DeclaringType.FullName == "System.Diagnostics.Debug").ToArray();
         if (debug)
         {
-            Assert.Equal(5, output.Length);
-            Assert.All(output, method => Assert.Equal("WriteLine", method.Definition.Name));
+            // Upstream Debug routes through its static DebugProvider, which reads the indentation.
+            Assert.Equal(5, output.Count(method => method.Definition.Name == "WriteLine"));
+            Assert.Equal([".cctor", "get_IndentLevel", "get_IndentSize"], output
+                .Select(method => method.Definition.Name).Where(name => name != "WriteLine").Order(StringComparer.Ordinal));
             Assert.Contains(methods, method => method.DeclaringType.FullName == "Program" && method.Definition.Name == "Evaluate");
             Assert.Contains(methods, method => method.DeclaringType.FullName == "System.Console" && method.Definition.Name == "get_Error");
         }

@@ -18,6 +18,12 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? StaticInitializationHoistingPolicy.Disabled
             : StaticInitializationHoistingPolicy.MethodEntry;
 
+    // The speed presets dispatch calls on object inline; the rest share CoreLib's bodies.
+    private static ObjectDispatchPolicy ObjectDispatch(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+            ? ObjectDispatchPolicy.Inline
+            : ObjectDispatchPolicy.Shared;
+
     private static SmallBlockOperationPolicy SmallBlockOperations(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
             ? SmallBlockOperationPolicy.Inline
@@ -568,7 +574,8 @@ public sealed class WasmOptimizationSettingsResolverTests
             NewObjectNullCheckElimination: NewObjectNullCheckElimination(preset),
             LoopStrengthReduction: LoopStrengthReduction(preset),
             RangeBranchFolding: RangeBranchFolding(preset),
-            UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset));
+            UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset),
+            ObjectDispatch: ObjectDispatch(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
@@ -699,7 +706,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                     NewObjectNullCheckElimination: NewObjectNullCheckElimination(preset),
                     LoopStrengthReduction: LoopStrengthReduction(preset),
                     RangeBranchFolding: RangeBranchFolding(preset),
-                    UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset)),
+                    UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset),
+                    ObjectDispatch: ObjectDispatch(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }

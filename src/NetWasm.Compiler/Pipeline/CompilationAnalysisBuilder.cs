@@ -29,7 +29,8 @@ internal sealed class CompilationAnalysisBuilder(
     IMethodImplementationResolverFactory methodImplementations,
     ISymbolFormatterFactory symbols,
     IJavaScriptAsyncBindingResolverFactory asyncBindings,
-    IConstructorReceiverProverFactory constructorReceivers) : ICompilationAnalysisBuilder
+    IConstructorReceiverProverFactory constructorReceivers,
+    IUnlinkedNativeImportReporter unlinkedNativeImports) : ICompilationAnalysisBuilder
 {
     private readonly IWholeProgramAnalyzerFactory _analyzers = analyzers ??
         throw new ArgumentNullException(nameof(analyzers));
@@ -71,6 +72,8 @@ internal sealed class CompilationAnalysisBuilder(
         throw new ArgumentNullException(nameof(asyncBindings));
     private readonly IConstructorReceiverProverFactory _constructorReceivers = constructorReceivers ??
         throw new ArgumentNullException(nameof(constructorReceivers));
+    private readonly IUnlinkedNativeImportReporter _unlinkedNativeImports = unlinkedNativeImports ??
+        throw new ArgumentNullException(nameof(unlinkedNativeImports));
 
     public CompilationAnalysis Analyze(
         MetadataCompilationSnapshot metadata,
@@ -137,6 +140,7 @@ internal sealed class CompilationAnalysisBuilder(
             preparation.ComponentContract,
             methods,
             symbols);
+        _unlinkedNativeImports.Report(program, symbols);
         // Whether a constructor's this can be null depends on every call of it, so
         // its proof waits for the whole program.
         var proven = _constructorReceivers.Create(types, fields, methods, methodInstances, symbols,

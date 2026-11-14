@@ -6,6 +6,25 @@ namespace NetWasm.Sdk.Tests;
 public sealed class SdkRoutingTests
 {
     [Theory]
+    [InlineData("netwasm0.1", "", true)]
+    [InlineData("netwasm0.1", "netstandard2.1", true)]
+    [InlineData("netwasm0.1", "netstandard2.1;net472", false)]
+    [InlineData("net10.0", "netstandard2.1", false)]
+    public void StandardFallbackWarningPolicyIsScopedToTheOwnedFrameworkList(
+        string framework, string fallback, bool suppressed)
+    {
+        using var project = EvaluationProject.Create($"""
+            <TargetFramework>{framework}</TargetFramework>
+            <NoWarn>NU1603</NoWarn>
+            <AssetTargetFallback>{fallback}</AssetTargetFallback>
+            """);
+        var codes = project.Property("NoWarn").Split(';', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains("NU1603", codes);
+        Assert.Equal(suppressed, codes.Contains("NU1701", StringComparer.Ordinal));
+        Assert.DoesNotContain("NU1202", codes);
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(false, true)]
@@ -586,13 +605,16 @@ public sealed class SdkRoutingTests
     }
 
     // The compilation identity lists the declared import modules, so changing
-    // them recompiles; a generated worker client's reserved module is not one.
+    // them recompiles; a generated worker client's reserved module is not one. The identity follows the native
+    // libraries, which are collected through the project references, and resolving those reads the restore's
+    // assets; this evaluation runs no restore, so it is a design-time build, which resolves no packages.
     [Fact]
     public void CompilationIdentityListsTheDeclaredImportModules()
     {
         using var project = EvaluationProject.Create("""
             <TargetFramework>netwasm0.1</TargetFramework>
             <OutputType>Exe</OutputType>
+            <DesignTimeBuild>true</DesignTimeBuild>
             """,
             includeCompilerTargets: true,
             projectItems: """
@@ -1316,6 +1338,107 @@ public sealed class SdkRoutingTests
             project.Items("NetWasmSdkInnerPackageDependency"));
     }
 
+    // A netwasm0.1 build references NetWasm.App's two packs privately, at the SDK's version: the reference
+    // pack for C# (compile assets and its generators) and the implementations for the NetWasm compiler.
+    // DisableImplicitNetWasmAppReference compiles against CoreLib alone.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReferencesNetWasmAppUnlessDisabled(bool disabled)
+    {
+        using var project = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>" +
+            (disabled ? "<DisableImplicitNetWasmAppReference>true</DisableImplicitNetWasmAppReference>" : ""),
+            "netwasm0.1",
+            includePackageReference: true);
+        var references = project.Items("NetWasmSdkInnerPackageDependency");
+        var appRef = $"NetWasm.App.Ref|netwasm0.1|NetWasm,Version=v0.1|{project.Property("NetWasmAppRefPackageVersion")}|compile;analyzers|none|all";
+        var appRuntime = $"NetWasm.App.Runtime|netwasm0.1|NetWasm,Version=v0.1|{project.Property("NetWasmAppRuntimePackageVersion")}|all|none|all";
+
+        Assert.Equal(project.Property("NetWasmRefPackageVersion"), project.Property("NetWasmAppRefPackageVersion"));
+        Assert.Equal(project.Property("NetWasmRefPackageVersion"), project.Property("NetWasmAppRuntimePackageVersion"));
+        Assert.Equal(!disabled, references.Contains(appRef));
+        Assert.Equal(!disabled, references.Contains(appRuntime));
+        Assert.Contains(
+            $"NetWasm.Ref|netwasm0.1|NetWasm,Version=v0.1|{project.Property("NetWasmRefPackageVersion")}|compile;analyzers|none|all",
+            references);
+    }
+
+    // A netwasm0.1 restore prunes the packages NetWasm.App provides, as the .NET SDK prunes those the shared
+    // framework provides: Microsoft's, up to the version Microsoft.NETCore.App.Ref 11.0.0 lists, for its libraries and
+    // its framework facades, and the retired NetWasm.System.* in-box packages. Compiling against CoreLib alone prunes
+    // nothing.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PrunesThePackagesNetWasmAppProvides(bool disabled)
+    {
+        using var project = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>" +
+            (disabled ? "<DisableImplicitNetWasmAppReference>true</DisableImplicitNetWasmAppReference>" : ""),
+            "netwasm0.1");
+        var pruned = project.Items("PrunePackageReference");
+
+        Assert.Equal(!disabled, pruned.Contains("System.Text.Json|11.0.0"));
+        Assert.Equal(!disabled, pruned.Contains("System.Collections|4.3.0"));
+        Assert.Equal(!disabled, pruned.Contains("NetWasm.System.Linq|" + project.Property("NetWasmSdkPackageVersion")));
+        Assert.Equal(!disabled, pruned.Contains("System.Buffers|5.0.0"));
+        Assert.Equal(!disabled, pruned.Contains("System.Runtime|4.3.1"));
+        Assert.Equal(!disabled, pruned.Contains("System.Threading.Channels|11.0.0"));
+        Assert.DoesNotContain(pruned, item => item.StartsWith("System.Drawing.Common|", StringComparison.Ordinal));
+        if (!disabled)
+        {
+            Assert.Equal("true", project.Property("RestoreEnablePackagePruning"));
+            Assert.Equal(127, pruned.Count(item => item.StartsWith("System.", StringComparison.Ordinal) ||
+                item.StartsWith("NetWasm.System.", StringComparison.Ordinal)));
+        }
+    }
+
+    // LINQ's size-optimized mode follows the optimization preset: the speed presets take the speed-optimized
+    // iterators, the size presets, O0 and the unset Release default (Oz) the size-optimized ones, and a project's own
+    // setting wins.
+    [Theory]
+    [InlineData("", "true")]
+    [InlineData("<NetWasmOptimization>Oz</NetWasmOptimization>", "true")]
+    [InlineData("<NetWasmOptimization>Os</NetWasmOptimization>", "true")]
+    [InlineData("<NetWasmOptimization>O0</NetWasmOptimization>", "true")]
+    [InlineData("<NetWasmOptimization>O1</NetWasmOptimization>", "false")]
+    [InlineData("<NetWasmOptimization>O2</NetWasmOptimization>", "false")]
+    [InlineData("<NetWasmOptimization>O3</NetWasmOptimization>", "false")]
+    [InlineData("<NetWasmOptimization>O3</NetWasmOptimization><UseSizeOptimizedLinq>true</UseSizeOptimizedLinq>", "true")]
+    [InlineData("<UseSizeOptimizedLinq>false</UseSizeOptimizedLinq>", "false")]
+    public void SizeOptimizedLinqFollowsTheOptimizationPreset(string properties, string expected)
+    {
+        using var project = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>" + properties,
+            "netwasm0.1");
+
+        Assert.Equal(expected, project.Property("UseSizeOptimizedLinq"));
+    }
+
+    // The wasi:http service bridge is the SDK's, for a netwasm0.1 build with NetWasm.App (it compiles against
+    // System.Net.Http), after the toolchain targets that give the service world's WIT path; the serverless
+    // template therefore needs no package.
+    [Fact]
+    public void HttpServiceSupportIsTheSdksAndTheServerlessTemplateNeedsNoPackage()
+    {
+        var root = FindRepositoryRoot();
+        var sdkTargets = File.ReadAllText(Path.Combine(root, "src/NetWasm.Sdk/Sdk/Sdk.targets"));
+        var service = File.ReadAllText(Path.Combine(root, "src/NetWasm.Sdk/Sdk/NetWasm.HttpService.targets"));
+        var sdkProject = File.ReadAllText(Path.Combine(root, "src/NetWasm.Sdk/NetWasm.Sdk.csproj"));
+        var template = XDocument.Load(Path.Combine(root, "src/NetWasm.Templates/content/NetWasm.Serverless/NetWasmService.csproj"));
+
+        var toolchain = sdkTargets.IndexOf("NetWasm.Toolchain.targets\"", StringComparison.Ordinal);
+        var import = sdkTargets.IndexOf("NetWasm.HttpService.targets\"", StringComparison.Ordinal);
+        Assert.True(toolchain >= 0 && import > toolchain);
+        Assert.Contains("'$(DisableImplicitNetWasmAppReference)' != 'true'", sdkTargets[import..sdkTargets.IndexOf("/>", import, StringComparison.Ordinal)], StringComparison.Ordinal);
+        Assert.Contains("$(MSBuildThisFileDirectory)HttpServiceExports.cs.template", service, StringComparison.Ordinal);
+        Assert.Contains("PackagePath=\"Sdk/NetWasm.HttpService.targets\"", sdkProject, StringComparison.Ordinal);
+        Assert.Contains("PackagePath=\"Sdk/HttpServiceExports.cs.template\"", sdkProject, StringComparison.Ordinal);
+        Assert.Empty(template.Descendants("PackageReference"));
+        Assert.False(File.Exists(Path.Combine(root, "src/libraries/System.Net.Http/buildTransitive/NetWasm.System.Net.Http.targets")));
+    }
+
     [Fact]
     public void OuterPackEvidenceCollectsDirectReferencesFromEveryInnerTarget()
     {
@@ -1591,6 +1714,12 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedUnwrittenStaticFieldFolding=$(NetWasmManagedUnwrittenStaticFieldFolding)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmAppRefPackageVersion=$(NetWasmAppRefPackageVersion)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmAppRuntimePackageVersion=$(NetWasmAppRuntimePackageVersion)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__RestoreEnablePackagePruning=$(RestoreEnablePackagePruning)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__UseSizeOptimizedLinq=$(UseSizeOptimizedLinq)" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__PrunePackageReference=@(PrunePackageReference->'%(Identity)|%(Version)', '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NoWarn=$(NoWarn)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkPackRoute=@(NetWasmSdkPackRoute, '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkInnerPackageDependency=@(_NetWasmSdkInnerPackageDependency->'%(Identity)|%(TargetFrameworkAlias)|%(TargetFramework)|%(Version)|%(IncludeAssets)|%(ExcludeAssets)|%(PrivateAssets)', '{ItemSeparator}')" />

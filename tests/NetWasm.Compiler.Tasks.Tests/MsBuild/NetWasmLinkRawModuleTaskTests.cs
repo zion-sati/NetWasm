@@ -108,6 +108,7 @@ public sealed class NetWasmLinkRawModuleTaskTests
             ],
             sessions.WasmToolsCommand?.ArgumentPrefix);
         Assert.Equal("node", sessions.BinaryenConfiguration?.NodePath);
+        Assert.IsType<MsBuildProgressLoggerProvider>(sessions.Progress);
         Assert.Equal(
             [
                 new BinaryenToolScript(BinaryenToolIds.WasmOpt, "wasm-opt"),
@@ -260,10 +261,14 @@ public sealed class NetWasmLinkRawModuleTaskTests
         public BinaryenToolRunnerConfiguration? BinaryenConfiguration { get; private set; }
         public RecordingSession Session { get; private set; } = new();
 
+        public Microsoft.Extensions.Logging.ILoggerProvider? Progress { get; private set; }
+
         public IRawModuleLinkSession Create(
             ExternalToolCommand wasmToolsCommand,
-            BinaryenToolRunnerConfiguration binaryenConfiguration)
+            BinaryenToolRunnerConfiguration binaryenConfiguration,
+            Microsoft.Extensions.Logging.ILoggerProvider progress)
         {
+            Progress = progress;
             WasmToolsCommand = wasmToolsCommand;
             BinaryenConfiguration = binaryenConfiguration;
             Session = new() { Exception = Exception };

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Diagnostics.FileVersionInfo</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="System/Diagnostics/FileVersionInfo.NetWasm.cs" />
+    <Compile Include="System/Diagnostics/FileVersionInfo.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

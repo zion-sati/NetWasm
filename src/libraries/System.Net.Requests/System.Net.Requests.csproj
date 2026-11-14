@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Net.Requests</AssemblyName>
+    <!-- SYSLIB0014: WebRequest, HttpWebRequest, ServicePoint, and WebClient are obsolete (as upstream's project). -->
+    <NoWarn>$(NoWarn);SYSLIB0014</NoWarn>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);TARGET_UNIX</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="System/SR.cs" />
+    <!-- System.Net.Requests (its unix compile list), System.Net.WebProxy (the Wasm variant) and System.Net.WebClient at
+         dotnet/runtime 811225a4, copied verbatim or adapted where marked "NetWasm:". HttpWebRequest sends through
+         NetWasm.System.Net.Http with managed redirect and cookie stages; blocking waits, FTP, file access, system proxy
+         discovery and transport settings the WASI host cannot honor throw PlatformNotSupportedException. ServicePoint
+         and ServicePointManager are this assembly's, as upstream's; WebProxy is System.Net.WebProxy's. -->
+    <Compile Include="Common/System/**/*.cs" />
+    <Compile Include="System/Net/**/*.cs" />
+    <ProjectReference Include="../System.ComponentModel.EventBasedAsync/System.ComponentModel.EventBasedAsync.csproj" />
+    <ProjectReference Include="../System.Net.WebHeaderCollection/System.Net.WebHeaderCollection.csproj" />
+    <ProjectReference Include="../System.Net.Http/System.Net.Http.csproj" />
+    <ProjectReference Include="../System.Net.WebProxy/System.Net.WebProxy.csproj" />
+    <ProjectReference Include="../System.Web.HttpUtility/System.Web.HttpUtility.csproj" />
+    <ProjectReference Include="../System.Text.RegularExpressions/System.Text.RegularExpressions.csproj" />
+  </ItemGroup>
+</Project>

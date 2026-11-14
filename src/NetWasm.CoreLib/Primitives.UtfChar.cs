@@ -2,11 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // IUtfChar members from dotnet/runtime Byte.cs and Char.cs at
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 namespace System;
 
-public partial struct Byte : IUtfChar<byte>
+public readonly partial struct Byte : IUtfChar<byte>
 {
     static byte IUtfChar<byte>.CastFrom(byte value) => value;
     static byte IUtfChar<byte>.CastFrom(char value) => (byte)value;
@@ -16,7 +16,7 @@ public partial struct Byte : IUtfChar<byte>
     static uint IUtfChar<byte>.CastToUInt32(byte value) => value;
 }
 
-public partial struct Char : IUtfChar<char>
+public readonly partial struct Char : IUtfChar<char>
 {
     static char IUtfChar<char>.CastFrom(byte value) => (char)value;
     static char IUtfChar<char>.CastFrom(char value) => value;

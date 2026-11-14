@@ -16,7 +16,9 @@ public sealed class AttributeQueryMethodSpecializerFactoryTests
     [Fact]
     public void FeatureRegistrationProvidesTheSpecializerFactory()
     {
-        using var services = new ServiceCollection().AddAttributeAnalysis().BuildServiceProvider();
+        using var services = new ServiceCollection()
+            .AddSingleton<IMetadataCompilationMaterializationFactory, MetadataCompilationMaterializationFactory>()
+            .AddAttributeAnalysis().BuildServiceProvider();
         Assert.IsType<AttributeQueryMethodSpecializerFactory>(
             services.GetRequiredService<IAttributeQueryMethodSpecializerFactory>());
     }
@@ -46,17 +48,15 @@ public sealed class AttributeQueryMethodSpecializerFactoryTests
     [InlineData("System.Type", false)]
     [InlineData("System.Reflection.MemberInfo", false)]
     [InlineData("System.Reflection.ICustomAttributeProvider", false)]
-    public void EveryBoundQueryOwnerRejectsUnfilteredEnumeration(string owner, bool isStatic)
+    public void EveryBoundQueryOwnerKeepsUnfilteredEnumerationManaged(string owner, bool isStatic)
     {
         using var fixture = new Fixture();
         var definition = new MethodDefinitionModel(new(fixture.Assembly, 0x060000ff),
             fixture.FindType(owner).Key, "GetCustomAttributes", isStatic,
             MethodSignatureModel.Create(CliValueKind.ManagedReference), 0);
         fixture.Query = new(definition, CliTypeIdentity.FromDefinition(fixture.FindType(owner)), [], definition.Signature);
-        var error = Assert.Throws<CompilerException>(() => fixture.Create().Rewrite(fixture.Input));
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
-        Assert.Equal("Run", error.Diagnostic.Method);
-        Assert.Equal(0, error.Diagnostic.IlOffset);
+        // Unfiltered overloads keep their managed bodies and catchable platform fallbacks.
+        Assert.Same(fixture.Specialized, fixture.Create().Rewrite(fixture.Input));
         Assert.Equal(1, fixture.Specializations);
     }
 
@@ -134,7 +134,7 @@ public sealed class AttributeQueryMethodSpecializerFactoryTests
         }
 
         internal IMethodSpecializer Create(bool includeContracts = true) =>
-            ((IAttributeQueryMethodSpecializerFactory)new AttributeQueryMethodSpecializerFactory()).Create(this,
+            ((IAttributeQueryMethodSpecializerFactory)new AttributeQueryMethodSpecializerFactory(new MetadataCompilationMaterializationFactory())).Create(this,
                 includeContracts ? _metadata : _metadata with { Types = [FindType("System.Object")] },
                 this, this, this, this, this, this, this, this, this, this, this, this);
 

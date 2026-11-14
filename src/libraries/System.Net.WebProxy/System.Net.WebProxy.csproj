@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Net.WebProxy</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Net.Primitives/System.Net.Primitives.csproj" />
+    <ProjectReference Include="../System.Text.RegularExpressions/System.Text.RegularExpressions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Net/IWebProxyScript.cs" />
+    <Compile Include="System/Net/WebProxy.Wasm.cs" />
+    <Compile Include="System/Net/WebProxy.cs" />
+  </ItemGroup>
+</Project>

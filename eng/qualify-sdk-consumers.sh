@@ -994,8 +994,18 @@ fi
 mkdir -p "$test_log_root"
 mkdir -p "$test_root"
 cp "$app_root/global.json" "$test_root/global.json"
+# The released TUnit that NetWasm.App's suites pin.
+tunit_version="$(python3 - "$source_root/tests/libraries/Directory.Build.props" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+version = ET.parse(sys.argv[1]).getroot().findtext('PropertyGroup/NetWasmTUnitPackageVersion')
+if not version:
+    raise SystemExit('NetWasmTUnitPackageVersion is not set in tests/libraries/Directory.Build.props.')
+print(version)
+PY
+)"
 printf '<Project Sdk="NetWasm.Sdk/%s">\n' "$version" > "$test_root/RuntimeHostTests.csproj"
-cat >> "$test_root/RuntimeHostTests.csproj" <<'EOF'
+cat >> "$test_root/RuntimeHostTests.csproj" <<EOF
   <PropertyGroup>
     <TargetFramework>netwasm0.1</TargetFramework>
     <IsTestProject>true</IsTestProject>
@@ -1003,7 +1013,7 @@ cat >> "$test_root/RuntimeHostTests.csproj" <<'EOF'
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="NetWasm.TUnit" Version="0.4.1" />
+    <PackageReference Include="NetWasm.TUnit" Version="${tunit_version}" />
   </ItemGroup>
 </Project>
 EOF

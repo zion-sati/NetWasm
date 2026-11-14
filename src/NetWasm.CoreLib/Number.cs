@@ -6,6 +6,7 @@
 // Integer formatting is ported separately in Number.IntegerFormatting.cs.
 // The remaining parsing and floating-point support here uses invariant culture.
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Numerics;
 using System.Text;
 
@@ -13,140 +14,6 @@ namespace System
 {
     internal static partial class Number
     {
-        internal static bool TryParseUnsigned(
-            string? text,
-            int bits,
-            bool hexadecimal,
-            out ulong value,
-            out bool overflow)
-        {
-            value = 0;
-            overflow = false;
-            if (!TryBounds(text, out var start, out var end))
-            {
-                return false;
-            }
-            var source = text!;
-            var negative = false;
-            if (!hexadecimal && (source[start] is '+' or '-'))
-            {
-                negative = source[start] == '-';
-                start++;
-            }
-            if (start == end)
-            {
-                return false;
-            }
-            var maximum = negative
-                ? 0
-                : bits == 64 ? ulong.MaxValue : (1UL << bits) - 1;
-            var radix = hexadecimal ? 16UL : 10UL;
-            var overflowed = false;
-            for (var index = start; index < end; index++)
-            {
-                var digit = Digit(source[index], hexadecimal);
-                if (digit < 0)
-                {
-                    value = 0;
-                    return false;
-                }
-                if (overflowed)
-                {
-                    continue;
-                }
-                if (value > maximum / radix ||
-                    (value == maximum / radix && (ulong)digit > maximum % radix))
-                {
-                    overflowed = true;
-                    continue;
-                }
-                value = value * radix + (ulong)digit;
-            }
-            if (overflowed)
-            {
-                value = 0;
-                overflow = true;
-                return false;
-            }
-            return true;
-        }
-
-        internal static bool TryParseSigned(
-            string? text,
-            int bits,
-            bool hexadecimal,
-            out long value,
-            out bool overflow)
-        {
-            value = 0;
-            overflow = false;
-            if (hexadecimal)
-            {
-                if (!TryParseUnsigned(text, bits, true, out var raw, out overflow))
-                {
-                    return false;
-                }
-                if (bits == 64)
-                {
-                    value = unchecked((long)raw);
-                }
-                else
-                {
-                    var sign = 1UL << (bits - 1);
-                    value = (raw & sign) == 0 ? (long)raw : (long)(raw | ~((1UL << bits) - 1));
-                }
-                return true;
-            }
-            if (!TryBounds(text, out var start, out var end))
-            {
-                return false;
-            }
-            var negative = text![start] == '-';
-            if (negative || text[start] == '+')
-            {
-                start++;
-            }
-            if (start == end)
-            {
-                return false;
-            }
-            var positiveMaximum = bits == 64 ? (ulong)long.MaxValue : (1UL << (bits - 1)) - 1;
-            var maximum = negative ? positiveMaximum + 1 : positiveMaximum;
-            var magnitude = 0UL;
-            var overflowed = false;
-            for (var index = start; index < end; index++)
-            {
-                var digit = Digit(text[index], false);
-                if (digit < 0)
-                {
-                    value = 0;
-                    return false;
-                }
-                if (overflowed)
-                {
-                    continue;
-                }
-                if (magnitude > maximum / 10 ||
-                    (magnitude == maximum / 10 && (ulong)digit > maximum % 10))
-                {
-                    overflowed = true;
-                    continue;
-                }
-                magnitude = magnitude * 10 + (ulong)digit;
-            }
-            if (overflowed)
-            {
-                overflow = true;
-                return false;
-            }
-            value = negative
-                ? magnitude == 1UL << (bits - 1) && bits == 64
-                    ? long.MinValue
-                    : -(long)magnitude
-                : (long)magnitude;
-            return true;
-        }
-
         // ToString() with no format: the shortest round-trip form, without the
         // format string machinery.
         internal static string FormatSingle(float value) =>
@@ -155,127 +22,29 @@ namespace System
         internal static string FormatDouble(double value) =>
             FormatShortestFloating<double>(BitConverter.DoubleToUInt64Bits(value));
 
-        internal static bool TryParseSingle(string? text, out float value)
-        {
-            if (text == null)
-            {
-                value = default;
-                return false;
-            }
-
-            return TryParseFloat(
-                text.AsSpan(),
-                Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands,
-                Globalization.NumberFormatInfo.InvariantInfo,
-                out value,
-                out _);
-        }
-
-        internal static bool TryParseDouble(string? text, out double value)
-        {
-            if (text == null)
-            {
-                value = default;
-                return false;
-            }
-
-            return TryParseFloat(
-                text.AsSpan(),
-                Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands,
-                Globalization.NumberFormatInfo.InvariantInfo,
-                out value,
-                out _);
-        }
-
-        internal static TNumber RoundToDecimalDigits<TNumber>(
-            TNumber value,
-            int digits,
-            MidpointRounding mode)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            var bits = TNumber.FloatToBits(value);
-            var fractionBits = TNumber.NormalMantissaBits - 1;
-            var exponentMask = (1UL << TNumber.ExponentBits) - 1;
-            var exponent = (int)((bits >> fractionBits) & exponentMask);
-            var fraction = bits & ((1UL << fractionBits) - 1);
-            if (exponent == (int)exponentMask || exponent == 0 && fraction == 0 ||
-                digits > -TNumber.MinDecimalExponent + 2)
-            {
-                return value;
-            }
-
-            var negative = (bits >> (fractionBits + TNumber.ExponentBits)) != 0;
-            var mantissa = exponent == 0 ? fraction : fraction | 1UL << fractionBits;
-            var binaryPower = exponent == 0
-                ? TNumber.MinBinaryExponent - fractionBits
-                : exponent - TNumber.ExponentBias - fractionBits;
-            var numerator = new BigInteger(mantissa);
-            var denominator = BigInteger.One;
-            if (binaryPower >= 0) numerator <<= binaryPower;
-            else denominator <<= -binaryPower;
-
-            var decimalScale = BigInteger.Pow(new BigInteger(10), digits);
-            numerator *= decimalScale;
-            var quotient = BigInteger.DivRem(numerator, denominator, out var remainder);
-            if (remainder != BigInteger.Zero)
-            {
-                var comparison = (remainder << 1).CompareTo(denominator);
-                var roundUp = mode switch
-                {
-                    MidpointRounding.ToEven => comparison > 0 || comparison == 0 && !quotient.IsEven,
-                    MidpointRounding.AwayFromZero => comparison >= 0,
-                    MidpointRounding.ToZero => false,
-                    MidpointRounding.ToNegativeInfinity => negative,
-                    MidpointRounding.ToPositiveInfinity => !negative,
-                    _ => false,
-                };
-                if (roundUp) quotient += BigInteger.One;
-            }
-
-            var sign = negative ? 1UL << (fractionBits + TNumber.ExponentBits) : 0;
-            if (quotient.IsZero) return TNumber.BitsToFloat(sign);
-            var roundedDigits = quotient.ToString().ToCharArray();
-            var roundedBits = ConvertDecimalToFloatingBits<TNumber>(
-                roundedDigits,
-                roundedDigits.Length,
-                -digits,
-                negative);
-            return TNumber.BitsToFloat(roundedBits);
-        }
-
-        private static bool RoundsSmallestFixedUnitUp(
-            FloatingBigInteger numerator,
-            FloatingBigInteger denominator,
-            int precision)
-        {
-            var scaledNumerator = numerator.Clone();
-            scaledNumerator.MultiplyPower10(precision + 1);
-            var midpoint = denominator.Clone();
-            midpoint.Multiply(5u);
-            return FloatingBigInteger.Compare(scaledNumerator, midpoint) > 0;
-        }
-
-        internal static string FormatShortestFloating<TNumber>(ulong bits)
+        internal static string FormatShortestFloating<TNumber>(ulong bits, NumberFormatInfo? info = null)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
         {
             var builder = new ValueStringBuilder(32);
-            AppendShortestFloating<TNumber>(ref builder, bits);
+            AppendShortestFloating<TNumber>(ref builder, bits, info);
             return builder.ToString();
         }
 
-        // The shortest digits that round-trip, as ToString() writes them. It takes
-        // no format string, so a program that never passes one does not reach the
+        // The shortest digits that round-trip, as ToString() writes them, with the
+        // provider's symbols, or the current culture's without one. It takes no
+        // format string, so a program that never passes one does not reach the
         // custom format parser and formatter.
-        internal static void AppendShortestFloating<TNumber>(scoped ref ValueStringBuilder builder, ulong bits)
+        internal static void AppendShortestFloating<TNumber>(scoped ref ValueStringBuilder builder, ulong bits, NumberFormatInfo? info = null)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber> =>
-            AppendRoundTripFloating<TNumber>(ref builder, bits, TNumber.MaxRoundTripDigits, lowerExponent: false);
+            AppendRoundTripFloating<TNumber>(ref builder, bits, TNumber.MaxRoundTripDigits, lowerExponent: false, info);
 
         // The fewest digits, up to maxDigits, that convert back to the same value.
-        private static void AppendRoundTripFloating<TNumber>(
+        private static unsafe void AppendRoundTripFloating<TNumber>(
             scoped ref ValueStringBuilder builder,
             ulong bits,
             int maxDigits,
-            bool lowerExponent)
+            bool lowerExponent,
+            NumberFormatInfo? info)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
         {
             var fractionBits = TNumber.NormalMantissaBits - 1;
@@ -285,40 +54,36 @@ namespace System
             var fraction = bits & ((1UL << fractionBits) - 1);
             if (exponent == exponentMask)
             {
-                builder.Append(fraction != 0 ? "NaN" :
-                    (bits >> (fractionBits + exponentBits)) != 0 ? "-Infinity" : "Infinity");
+                builder.Append(fraction != 0 ? info?.NaNSymbol ?? NumberFormatInfo.CurrentNaNSymbol :
+                    (bits >> (fractionBits + exponentBits)) != 0
+                        ? info?.NegativeInfinitySymbol ?? NumberFormatInfo.CurrentNegativeInfinitySymbol
+                        : info?.PositiveInfinitySymbol ?? NumberFormatInfo.CurrentPositiveInfinitySymbol);
                 return;
             }
             var negative = (bits >> (fractionBits + exponentBits)) != 0;
             if (exponent == 0 && fraction == 0)
             {
-                builder.Append(negative ? "-0" : "0");
+                if (negative) builder.Append(info is null ? NumberFormatInfo.CurrentNegativeSignTChar<char>() : info.NegativeSignTChar<char>());
+                builder.Append('0');
                 return;
             }
 
-            var decimalExponent = GetFloatingDecimal<TNumber>(bits, out var numerator, out var denominator);
-            var selected = new char[maxDigits];
-            var selectedLength = maxDigits;
-            for (var candidatePrecision = 1; candidatePrecision <= maxDigits; candidatePrecision++)
+            // The shortest digits that round-trip, from upstream's Grisu3 with its Dragon4 fallback, as desktop
+            // computes them; a stack buffer holds them, so ToString allocates only its string.
+            byte* pDigits = stackalloc byte[TNumber.NumberBufferLength];
+            var number = new NumberBuffer(NumberBufferKind.FloatingPoint, pDigits, TNumber.NumberBufferLength);
+            var value = TNumber.BitsToFloat(bits);
+            if (!Grisu3.TryRun(value, -1, ref number))
             {
-                var candidate = GenerateRoundedDigits(
-                    numerator,
-                    denominator,
-                    decimalExponent,
-                    candidatePrecision,
-                    out var candidateExponent,
-                    out var candidateLength);
-                var candidateBits = ConvertDecimalToFloatingBits<TNumber>(
-                    candidate,
-                    candidateLength,
-                    candidateExponent - candidateLength + 1,
-                    negative);
-                if (candidateBits != bits) continue;
-                selected = candidate;
-                selectedLength = candidateLength;
-                decimalExponent = candidateExponent;
-                break;
+                Dragon4(value, -1, isSignificantDigits: true, ref number);
             }
+            Span<char> selected = stackalloc char[number.DigitsCount];
+            for (var index = 0; index < number.DigitsCount; index++)
+            {
+                selected[index] = (char)number.Digits[index];
+            }
+            var selectedLength = number.DigitsCount;
+            var decimalExponent = number.Scale - 1;
             AppendGeneralDigits(
                 ref builder,
                 selected,
@@ -326,35 +91,10 @@ namespace System
                 decimalExponent,
                 negative,
                 maxDigits,
-                lowerExponent);
-        }
-
-        // The value as numerator / denominator, and the exponent of its leading
-        // decimal digit.
-        private static int GetFloatingDecimal<TNumber>(
-            ulong bits,
-            out FloatingBigInteger numerator,
-            out FloatingBigInteger denominator)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            GetFloatingRational(
-                bits,
-                out numerator,
-                out denominator,
-                TNumber.ExponentBits,
-                TNumber.ExponentBias,
-                TNumber.NormalMantissaBits);
-            var binaryExponent = FloorBinaryExponent(numerator, denominator);
-            var decimalExponent = (int)(binaryExponent * 30_103L / 100_000L);
-            while (CompareToPower10(numerator, denominator, decimalExponent) < 0)
-            {
-                decimalExponent--;
-            }
-            while (CompareToPower10(numerator, denominator, decimalExponent + 1) >= 0)
-            {
-                decimalExponent++;
-            }
-            return decimalExponent;
+                lowerExponent,
+                info is null ? NumberFormatInfo.CurrentNegativeSignTChar<char>() : info.NegativeSignTChar<char>(),
+                info is null ? NumberFormatInfo.CurrentNumberDecimalSeparatorTChar<char>() : info.NumberDecimalSeparatorTChar<char>(),
+                info is null ? NumberFormatInfo.CurrentPositiveSignTChar<char>() : info.PositiveSignTChar<char>());
         }
 
         internal static ulong ConvertDecimalToFloatingBits<TNumber>(
@@ -453,103 +193,22 @@ namespace System
             return exponent;
         }
 
-        private static int CompareToPower10(
-            FloatingBigInteger numerator,
-            FloatingBigInteger denominator,
-            int exponent)
-        {
-            var left = numerator.Clone();
-            var right = denominator.Clone();
-            if (exponent >= 0) right.MultiplyPower10(exponent);
-            else left.MultiplyPower10(-exponent);
-            return FloatingBigInteger.Compare(left, right);
-        }
-
-        private static char[] GenerateRoundedDigits(
-            FloatingBigInteger numerator,
-            FloatingBigInteger denominator,
-            int decimalExponent,
-            int precision,
-            out int resultExponent,
-            out int resultLength)
-        {
-            var scaledNumerator = numerator.Clone();
-            var scaledDenominator = denominator.Clone();
-            if (decimalExponent >= 0) scaledDenominator.MultiplyPower10(decimalExponent);
-            else scaledNumerator.MultiplyPower10(-decimalExponent);
-            var digits = new char[precision];
-            var current = scaledNumerator;
-            for (var index = 0; index < precision; index++)
-            {
-                var digit = FloatingBigInteger.DivideToUInt64(
-                    current,
-                    scaledDenominator,
-                    out var remainder);
-                digits[index] = (char)('0' + digit);
-                current = remainder;
-                if (index + 1 < precision) current.Multiply(10);
-            }
-            var twice = current.Clone();
-            twice.Multiply(2);
-            var comparison = FloatingBigInteger.Compare(twice, scaledDenominator);
-            if (comparison > 0 || comparison == 0 && ((digits[precision - 1] - '0') & 1) != 0)
-            {
-                var index = precision - 1;
-                while (index >= 0 && digits[index] == '9')
-                {
-                    digits[index--] = '0';
-                }
-                if (index < 0)
-                {
-                    digits[0] = '1';
-                    decimalExponent++;
-                }
-                else
-                {
-                    digits[index]++;
-                }
-            }
-            resultLength = precision;
-            while (resultLength > 1 && digits[resultLength - 1] == '0') resultLength--;
-            resultExponent = decimalExponent;
-            return digits;
-        }
-
-        private static void GetFloatingRational(
-            ulong bits,
-            out FloatingBigInteger numerator,
-            out FloatingBigInteger denominator,
-            int exponentBits,
-            int bias,
-            int normalMantissaBits)
-        {
-            var fractionBits = normalMantissaBits - 1;
-            var fractionMask = (1UL << fractionBits) - 1;
-            var exponent = (int)((bits >> fractionBits) & ((1UL << exponentBits) - 1));
-            var fraction = bits & fractionMask;
-            var mantissa = exponent == 0 ? fraction : fraction | 1UL << fractionBits;
-            var power = exponent == 0
-                ? 1 - bias - fractionBits
-                : exponent - bias - fractionBits;
-            numerator = new FloatingBigInteger(mantissa);
-            denominator = new FloatingBigInteger(1U);
-            if (power >= 0) numerator.ShiftLeft(power);
-            else denominator.ShiftLeft(-power);
-        }
-
         private static void AppendGeneralDigits(
             scoped ref ValueStringBuilder builder,
-            char[] digits,
+            scoped ReadOnlySpan<char> digits,
             int digitCount,
             int decimalExponent,
             bool negative,
             int maxRoundTripDigits,
-            bool lowerExponent)
+            bool lowerExponent,
+            ReadOnlySpan<char> negativeSign,
+            ReadOnlySpan<char> decimalSeparator,
+            ReadOnlySpan<char> positiveSign)
         {
             var scientific = decimalExponent < -4 || decimalExponent >= maxRoundTripDigits;
             if (!scientific)
             {
-                if (negative) builder.Append('-');
+                if (negative) builder.Append(negativeSign);
                 if (decimalExponent >= 0)
                 {
                     var wholeDigits = decimalExponent + 1;
@@ -560,30 +219,30 @@ namespace System
                     }
                     if (fractionDigits != 0)
                     {
-                        builder.Append('.');
+                        builder.Append(decimalSeparator);
                         for (var index = wholeDigits; index < digitCount; index++) builder.Append(digits[index]);
                     }
                     return;
                 }
                 var zeros = -decimalExponent - 1;
                 builder.Append('0');
-                builder.Append('.');
+                builder.Append(decimalSeparator);
                 builder.Append('0', zeros);
-                builder.Append(digits.AsSpan(0, digitCount));
+                builder.Append(digits.Slice(0, digitCount));
                 return;
             }
 
             var absoluteExponent = decimalExponent < 0 ? -decimalExponent : decimalExponent;
             var exponentDigits = absoluteExponent >= 100 ? 3 : 2;
-            if (negative) builder.Append('-');
+            if (negative) builder.Append(negativeSign);
             builder.Append(digits[0]);
             if (digitCount > 1)
             {
-                builder.Append('.');
-                builder.Append(digits.AsSpan(1, digitCount - 1));
+                builder.Append(decimalSeparator);
+                builder.Append(digits.Slice(1, digitCount - 1));
             }
             builder.Append(lowerExponent ? 'e' : 'E');
-            builder.Append(decimalExponent < 0 ? '-' : '+');
+            builder.Append(decimalExponent < 0 ? negativeSign : positiveSign);
             Span<char> exponentBuffer = stackalloc char[10];
             var position = exponentBuffer.Length;
             for (var index = exponentDigits - 1; index >= 0; index--)
@@ -600,66 +259,5 @@ namespace System
         internal static int Compare(long left, long right) => left < right ? -1 : left > right ? 1 : 0;
         internal static int Compare(ulong left, ulong right) => left < right ? -1 : left > right ? 1 : 0;
 
-        private static int Digit(char value, bool hexadecimal)
-        {
-            if (value >= '0' && value <= '9')
-            {
-                return value - '0';
-            }
-            if (hexadecimal && value >= 'a' && value <= 'f')
-            {
-                return value - 'a' + 10;
-            }
-            if (hexadecimal && value >= 'A' && value <= 'F')
-            {
-                return value - 'A' + 10;
-            }
-            return -1;
-        }
-
-        private static bool TryBounds(string? text, out int start, out int end)
-        {
-            start = 0;
-            end = text == null ? 0 : text.Length;
-            if (text == null)
-            {
-                return false;
-            }
-            while (start < end && IsAsciiWhiteSpace(text[start]))
-            {
-                start++;
-            }
-            while (end > start && text[end - 1] == '\0')
-            {
-                end--;
-            }
-            while (end > start && IsAsciiWhiteSpace(text[end - 1]))
-            {
-                end--;
-            }
-            return start != end;
-        }
-
-        private static string Slice(char[] source, int start, int length)
-        {
-            var result = new char[length];
-            for (var index = 0; index < length; index++)
-            {
-                result[index] = source[start + index];
-            }
-            return new string(result);
-        }
-
-        // Upstream's ThrowOverflowException<TInteger> reads TInteger.OverflowMessage, which the
-        // primitive integers implement with the numeric parsing port; until then Decimal's
-        // narrowing conversions throw upstream's messages here.
-        [DoesNotReturn]
-        internal static void ThrowOverflowException<TInteger>() =>
-            throw new OverflowException(
-                typeof(TInteger) == typeof(byte) ? SR.Overflow_Byte :
-                typeof(TInteger) == typeof(sbyte) ? SR.Overflow_SByte :
-                typeof(TInteger) == typeof(short) ? SR.Overflow_Int16 :
-                typeof(TInteger) == typeof(ushort) ? SR.Overflow_UInt16 :
-                throw new ArgumentException(null, nameof(TInteger)));
     }
 }

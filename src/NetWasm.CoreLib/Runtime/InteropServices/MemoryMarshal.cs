@@ -14,7 +14,7 @@ namespace System.Runtime.InteropServices
     public static class MemoryMarshal
     {
         // TryGetString, AsMemory, CreateFromPinnedArray, TryGetArray and TryGetMemoryManager are
-        // upstream's, from the same file at 474ed963699fc29809015392738a15231aaae2de.
+        // upstream's, from the same file at deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
         public static bool TryGetString(ReadOnlyMemory<char> memory, [NotNullWhen(true)] out string? text, out int start, out int length)
         {

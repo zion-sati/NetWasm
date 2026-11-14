@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.IO.FileSystem.DriveInfo</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/HResults.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/IO/DriveInfo.Default.cs" />
+    <Compile Include="System/IO/DriveInfo.UnixOrDefault.cs" />
+    <Compile Include="System/IO/DriveInfo.cs" />
+    <Compile Include="System/IO/DriveNotFoundException.cs" />
+    <Compile Include="System/IO/DriveType.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

@@ -6,7 +6,4 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="NetWasm.System.Net.Http" Version="0.4.*" />
-  </ItemGroup>
 </Project>

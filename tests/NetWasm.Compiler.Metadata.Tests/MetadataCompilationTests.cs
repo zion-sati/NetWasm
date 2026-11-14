@@ -272,15 +272,18 @@ public sealed class MetadataCompilationTests
     }
 
     [Fact]
-    public void CompilationRejectsMissingAndDuplicateAssemblyClosure()
+    public void CompilationRejectsReachedMissingReferencesAndDuplicateAssemblies()
     {
         using var assets = TestAssets.Create();
-        var missing = Assert.Throws<CompilerException>(
-            () => MetadataCompilationTestFactory.Load(
-                assets.Application,
-                [assets.CoreLib]));
+        using var incomplete = MetadataCompilationTestFactory.Load(
+            assets.Application, [assets.CoreLib]);
+        var run = MetadataCapabilityTestData.MethodFinder(incomplete.Snapshot).FindMethod(
+            incomplete.Snapshot.EntryAssemblyIdentity,
+            "NetWasm.Fixtures.Application.EntryPoint", "Run");
+        var missing = Assert.Throws<CompilerException>(() =>
+            MetadataCapabilityTestData.MethodBodies(incomplete.Snapshot).ReadMethodBody(run));
         Assert.Equal(DiagnosticCode.AssemblyResolution, missing.Diagnostic.Code);
-        Assert.Contains("unresolved reference 'Fixture.Library'", missing.Message);
+        Assert.Contains("Fixture.Library", missing.Message);
 
         var duplicate = Assert.Throws<CompilerException>(
             () => MetadataCompilationTestFactory.Load(

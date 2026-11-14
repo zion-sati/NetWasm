@@ -8,6 +8,32 @@ namespace NetWasm.Compiler.Metadata.Tests;
 public sealed class MetadataTypeResolverTests
 {
     [Fact]
+    public void ForwardedDefinitionResolvesToThePlatformWithoutReadingOriginalMetadata()
+    {
+        var original = MetadataActorTestData.Type;
+        var platform = new AssemblyIdentity("Platform");
+        var target = original with { Key = original.Key with { Assembly = platform } };
+        var source = new MetadataAssemblySnapshot(original.Key.Assembly, null!,
+            new Dictionary<int, TypeDefinitionModel> { [0x02000001] = original },
+            new Dictionary<int, FieldDefinitionModel>(), new Dictionary<int, MethodDefinitionModel>(),
+            new Dictionary<int, EntityHandle>())
+        {
+            AssemblyIdentityAliases = new AssemblyIdentityAliases(
+                System.Collections.Immutable.ImmutableDictionary<string, string>.Empty,
+                System.Collections.Immutable.ImmutableDictionary<(AssemblyIdentity, string), AssemblyIdentity>.Empty
+                    .Add((original.Key.Assembly, original.FullName), platform))
+        };
+        var definitions = new RecordingTypeDefinitionResolver(target);
+        var resolver = new MetadataTypeResolver(definitions);
+
+        var result = ((IMetadataTypeResolver)resolver).Resolve(source, MetadataTokens.TypeDefinitionHandle(1));
+
+        Assert.Same(target, result);
+        Assert.Equal(platform, definitions.Identity!.Assembly);
+        Assert.Equal(original.FullName, definitions.Identity.FullName);
+    }
+
+    [Fact]
     public void ResolveReadsDefinitionAndRejectsUnsupportedHandleShape()
     {
         var type = MetadataActorTestData.Type;

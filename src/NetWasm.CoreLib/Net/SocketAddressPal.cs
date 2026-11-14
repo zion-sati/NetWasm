@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptation: the managed socket-address layout upstream uses for the
 // browser (SocketAddressPal.Browser.cs): AddressFamily values, network-order port, little-endian
 // IPv4 and the IPv6 address and scope id, so no native sockaddr conversion is involved.

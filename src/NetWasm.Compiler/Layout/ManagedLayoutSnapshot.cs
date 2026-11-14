@@ -9,7 +9,9 @@ public sealed class ManagedLayoutSnapshot :
     ITargetLayout,
     IRuntimeObjectLayout,
     ITypeDescriptorSource,
-    IEnumMetadataSource
+    IEnumMetadataSource,
+    IStructMarshallingSource,
+    IUninitializedObjectSource
 {
     public const int Wasm32ArrayLengthOffset = 4;
     // Static data starts above the first KiB, which nothing then uses, so wasm-opt may assume
@@ -62,6 +64,8 @@ public sealed class ManagedLayoutSnapshot :
     public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors =>
         StaticData.MetadataTypeDescriptors;
     public ImmutableArray<EnumMetadataLayout> EnumMetadata => StaticData.EnumMetadata;
+    public ImmutableArray<StructMarshallingLayout> StructMarshalling => StaticData.StructMarshalling;
+    public ImmutableArray<CliTypeIdentity> UninitializedObjectTypes => StaticData.UninitializedObjectTypes;
     public ImmutableArray<int> StaticRootAddresses => StaticData.StaticRootAddresses;
     public IReadOnlyDictionary<EntityKey, ObjectLayout> ObjectLayouts =>
         TypeLayouts.Objects;

@@ -1,11 +1,12 @@
 // Portions derived from dotnet/runtime System.Private.CoreLib at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements. The .NET
 // Foundation licenses this file to you under the MIT license.
 
 namespace System.Runtime.CompilerServices
 {
-    [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface | AttributeTargets.Delegate |
+        AttributeTargets.Enum | AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
     public sealed class AsyncMethodBuilderAttribute : Attribute
     {
         public AsyncMethodBuilderAttribute(Type builderType)
@@ -220,7 +221,7 @@ namespace System.Runtime.CompilerServices
         }
     }
 
-    [AttributeUsage(AttributeTargets.Method)]
+    [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
     public sealed class AsyncStateMachineAttribute : StateMachineAttribute
     {
         public AsyncStateMachineAttribute(Type stateMachineType)
@@ -471,6 +472,7 @@ namespace System.Runtime.CompilerServices
         }
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public struct AsyncValueTaskMethodBuilder
     {
         private Threading.Tasks.Task? _task;
@@ -549,6 +551,7 @@ namespace System.Runtime.CompilerServices
         }
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public struct AsyncValueTaskMethodBuilder<T>
     {
         private Threading.Tasks.Task<T>? _task;
@@ -632,6 +635,7 @@ namespace System.Runtime.CompilerServices
     // The pooling builders retain the public compiler contract on a reactor
     // target. There are no worker threads to pool; they delegate to the same
     // single-task completion path as the ordinary ValueTask builders.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public struct PoolingAsyncValueTaskMethodBuilder
     {
         private AsyncValueTaskMethodBuilder _builder;
@@ -657,6 +661,7 @@ namespace System.Runtime.CompilerServices
             _builder.AwaitUnsafeOnCompleted(ref awaiter, ref stateMachine);
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public struct PoolingAsyncValueTaskMethodBuilder<T>
     {
         private AsyncValueTaskMethodBuilder<T> _builder;
@@ -682,6 +687,7 @@ namespace System.Runtime.CompilerServices
             _builder.AwaitUnsafeOnCompleted(ref awaiter, ref stateMachine);
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public struct AsyncIteratorMethodBuilder
     {
         public static AsyncIteratorMethodBuilder Create() => new();
@@ -991,10 +997,12 @@ namespace System.Threading.Tasks
         internal const int InclusiveInt32Min = -1;
         internal const int ExclusiveInt32Max = 9;
 
+        // As upstream's cacheable tasks: shared, so Dispose leaves them alone.
         internal static Task<TResult> CreateCacheableTask<TResult>(TResult result)
         {
             var task = new Task<TResult>();
             task.SetResult(result);
+            task._doNotDispose = true;
             return task;
         }
 
@@ -1025,15 +1033,59 @@ namespace System.Threading.Tasks
 
     public partial class Task : IAsyncResult, IDisposable
     {
-        Threading.WaitHandle IAsyncResult.AsyncWaitHandle =>
-            throw new PlatformNotSupportedException("Task.AsyncWaitHandle host wait handles are not available on this NetWasm platform.");
+        public static TaskFactory Factory { get; } = new TaskFactory();
+        // As upstream: one event per task, set when the task completes. It lives beside the task rather than in it, so a
+        // task that never hands out its wait handle carries nothing for it.
+        Threading.WaitHandle IAsyncResult.AsyncWaitHandle
+        {
+            get
+            {
+                // Pay for use: Dispose reaches the table only through this hook, set by the first wait handle.
+                s_releaseCompletionEvent ??= static task =>
+                {
+                    if (CompletionEvents.Table.TryGetValue(task, out var completion))
+                    {
+                        completion.Event?.Dispose();
+                        completion.Event = null;
+                    }
+                };
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                var completion = CompletionEvents.Table.GetOrCreateValue(this);
+                if (completion.Event is null)
+                {
+                    completion.Event = new Threading.ManualResetEvent(IsCompleted);
+                    if (!IsCompleted)
+                    {
+                        RegisterContinuation(completion, runInlineIfCompleted: true);
+                    }
+                }
+                return completion.Event;
+            }
+        }
+
+        private static Action<Task>? s_releaseCompletionEvent;
+
+        private static class CompletionEvents
+        {
+            internal static readonly Runtime.CompilerServices.ConditionalWeakTable<Task, CompletionEvent> Table = new();
+        }
+
+        private sealed class CompletionEvent : TaskContinuation
+        {
+            internal Threading.ManualResetEvent? Event;
+
+            internal override void Run(Task antecedent, bool allowInline) => Event?.Set();
+        }
 
         private static int s_nextId;
         private static readonly Task s_completedTask = CreateCompletedTask();
         private static Task? s_currentTask;
 
+        // As upstream's Task.InternalCurrent: the task whose delegate is running on this thread.
+        internal static Task? InternalCurrent => s_currentTask;
+
         private int _status;
-        private readonly int _id;
+        private int _id;
         private readonly object? _asyncState;
         private readonly TaskCreationOptions _creationOptions;
         private Threading.CancellationToken _cancellationToken;
@@ -1049,7 +1101,120 @@ namespace System.Threading.Tasks
         private bool _exceptionIsAggregateContainer;
         private List<TaskContinuation>? _continuations;
         private TaskExceptionTracker? _exceptionTracker;
+        private Task? _parent;
+        private Task? _nextFaultedSibling;
+        // As upstream: a cached task ignores Dispose, and any other task remembers it was disposed.
+        internal bool _doNotDispose;
         private bool _disposed;
+        private bool _exceptionObservedByParent;
+        private AttachedChildren? _attachedChildren;
+
+        // Upstream's attached-child accounting: the parent completes once its delegate and every attached child have,
+        // and the faults of children it did not observe join its own. Allocated only when a child attaches.
+        private sealed class AttachedChildren
+        {
+            internal int Pending;
+            // Faulted children, newest first, chained through _nextFaultedSibling (no list to instantiate).
+            internal Task? FaultedChildren;
+            internal bool WaitingForChildren;
+            internal int OwnOutcome;
+            internal Exception? OwnException;
+            internal bool OwnExceptionIsAggregateContainer;
+        }
+
+        // The delegate has finished but attached children are still running: hold the delegate's outcome until the last
+        // child completes. False when there is nothing to wait for or merge.
+        private bool DeferForAttachedChildren(int outcome, Exception? exception, bool aggregateContainer)
+        {
+            var children = _attachedChildren;
+            if (children is null || children.WaitingForChildren || (children.Pending == 0 && children.FaultedChildren is null))
+            {
+                return false;
+            }
+
+            children.OwnOutcome = outcome;
+            children.OwnException = exception;
+            children.OwnExceptionIsAggregateContainer = aggregateContainer;
+            children.WaitingForChildren = true;
+            if (children.Pending == 0)
+            {
+                FinishWithAttachedChildren(children);
+            }
+
+            return true;
+        }
+
+        private void ProcessChildCompletion(Task child)
+        {
+            var children = _attachedChildren!;
+            if (child._status == 2)
+            {
+                child._nextFaultedSibling = children.FaultedChildren;
+                children.FaultedChildren = child;
+            }
+
+            if (--children.Pending == 0 && children.WaitingForChildren)
+            {
+                FinishWithAttachedChildren(children);
+            }
+        }
+
+        private void FinishWithAttachedChildren(AttachedChildren children)
+        {
+            _attachedChildren = null;
+            // As upstream: a child's fault counts unless the parent observed it (through Wait or Result) by now. Upstream
+            // adds them in completion order; the chain is newest first, so it is filled from the end.
+            int childFaults = 0;
+            for (var child = children.FaultedChildren; child is not null; child = child._nextFaultedSibling)
+            {
+                if (!child._exceptionObservedByParent)
+                {
+                    childFaults++;
+                }
+            }
+
+            if (children.OwnOutcome == 2 || childFaults != 0)
+            {
+                var own = children.OwnOutcome != 2 ? null
+                    : children.OwnExceptionIsAggregateContainer ? ((AggregateException)children.OwnException!).InnerExceptions
+                    : null;
+                int ownCount = children.OwnOutcome != 2 ? 0 : own?.Count ?? 1;
+                var exceptions = new Exception[ownCount + childFaults];
+                for (int index = 0; index < ownCount; index++)
+                {
+                    exceptions[index] = own is null ? children.OwnException! : own[index];
+                }
+
+                int next = exceptions.Length;
+                for (var child = children.FaultedChildren; child is not null; child = child._nextFaultedSibling)
+                {
+                    if (!child._exceptionObservedByParent)
+                    {
+                        exceptions[--next] = child.Exception!;
+                    }
+                }
+
+                TrySetException(new AggregateException(exceptions), aggregateContainer: true);
+            }
+            else if (children.OwnOutcome == 3)
+            {
+                TrySetCanceled(children.OwnException!);
+            }
+            else
+            {
+                TrySetResult();
+            }
+        }
+
+        // As upstream's FinishStageThree: an attached child tells its parent before its own continuations run.
+        private void NotifyParentOfCompletion()
+        {
+            if (_parent is { } parent)
+            {
+                _parent = null;
+                parent.ProcessChildCompletion(this);
+            }
+        }
 
         internal Task()
             : this((object?)null, TaskCreationOptions.None)
@@ -1069,13 +1234,15 @@ namespace System.Threading.Tasks
             {
                 throw new ArgumentOutOfRangeException(nameof(creationOptions));
             }
-            if ((creationOptions & TaskCreationOptions.AttachedToParent) != 0)
+            // As upstream: a task created with AttachedToParent while another task's delegate runs attaches to that
+            // task, unless the parent denies children.
+            if ((creationOptions & TaskCreationOptions.AttachedToParent) != 0 && s_currentTask is { } parent &&
+                (parent._creationOptions & TaskCreationOptions.DenyChildAttach) == 0)
             {
-                throw new PlatformNotSupportedException(
-                    "Attached child tasks are not supported.");
+                _parent = parent;
+                (parent._attachedChildren ??= new AttachedChildren()).Pending++;
             }
 
-            _id = ++s_nextId;
             _asyncState = state;
             _creationOptions = creationOptions;
             _cancellationToken = default;
@@ -1140,11 +1307,20 @@ namespace System.Threading.Tasks
             object? state,
             Threading.CancellationToken cancellationToken,
             TaskCreationOptions creationOptions)
+            : this(action, state, cancellationToken, creationOptions, false)
+        {
+        }
+
+        internal Task(Delegate? action, object? state, Threading.CancellationToken cancellationToken,
+            TaskCreationOptions creationOptions, bool queuedByRuntime)
             : this(state, creationOptions)
         {
             _action = action ?? throw new ArgumentNullException(nameof(action));
             _capturedContext = Threading.ExecutionContext.Capture();
             _cancellationToken = cancellationToken;
+            // Factory tasks are queued even when precanceled. ExecuteEntry checks
+            // cancellation at dispatch, matching upstream QueuedByRuntime behavior.
+            if (queuedByRuntime) return;
             if (cancellationToken.IsCancellationRequested)
             {
                 SetCanceled(new TaskCanceledException(
@@ -1169,15 +1345,36 @@ namespace System.Threading.Tasks
             1 => TaskStatus.RanToCompletion,
             2 => TaskStatus.Faulted,
             3 => TaskStatus.Canceled,
-            _ => _action is not null || _isContinuation
+            _ => _attachedChildren is { WaitingForChildren: true } ? TaskStatus.WaitingForChildrenToComplete
+                : _action is not null || _isContinuation
                 ? (_enteredExecution ? TaskStatus.Running : _started ? TaskStatus.WaitingToRun
                     : _isContinuation ? TaskStatus.WaitingForActivation : TaskStatus.Created)
                 : TaskStatus.WaitingForActivation,
         };
         public TaskCreationOptions CreationOptions => _creationOptions;
         public object? AsyncState => _asyncState;
-        public int Id => _id;
-        public static int? CurrentId => s_currentTask?._id;
+        // As upstream: a task's ID is assigned the first time it is read, and 0 is skipped when the counter wraps.
+        public int Id
+        {
+            get
+            {
+                if (_id == 0)
+                {
+                    int newId;
+                    do
+                    {
+                        newId = ++s_nextId;
+                    }
+                    while (newId == 0);
+
+                    _id = newId;
+                }
+
+                return _id;
+            }
+        }
+
+        public static int? CurrentId => s_currentTask?.Id;
         internal static TaskScheduler? InternalCurrentScheduler =>
             s_currentTask is { } task && (task._creationOptions & TaskCreationOptions.HideScheduler) == 0
                 ? task._scheduler
@@ -1195,6 +1392,7 @@ namespace System.Threading.Tasks
         {
             var task = new Task();
             task.SetResult();
+            task._doNotDispose = true;
             return task;
         }
 
@@ -2006,7 +2204,130 @@ namespace System.Threading.Tasks
             return materialized.ToArray();
         }
 
-        public static Task Run(Action action) => throw new PlatformNotSupportedException();
+        // As upstream's Task.Run: the work is queued to the default scheduler, which runs it on the reactor's one thread
+        // (as upstream's single-threaded WASI ThreadPool does), and attached children are denied.
+        public static Task Run(Action action) => Run(action, Threading.CancellationToken.None);
+
+        public static Task Run(Action action, Threading.CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            return Factory.StartNew(action, cancellationToken, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+        }
+
+        public static Task<TResult> Run<TResult>(Func<TResult> function) => Run(function, Threading.CancellationToken.None);
+
+        public static Task<TResult> Run<TResult>(Func<TResult> function, Threading.CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(function);
+            return Task<TResult>.Factory.StartNew(function, cancellationToken, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+        }
+
+        public static Task Run(Func<Task?> function) => Run(function, Threading.CancellationToken.None);
+
+        public static Task Run(Func<Task?> function, Threading.CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(function);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return FromCanceled(cancellationToken);
+            }
+
+            var outer = Task<Task?>.Factory.StartNew(function, cancellationToken, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+            var proxy = new Task();
+            outer.ContinueWith(static (completed, state) =>
+            {
+                var promise = (Task)state!;
+                if (TryCompleteRunProxy(promise, completed, lookForCancellation: true))
+                {
+                    return;
+                }
+
+                var inner = ((Task<Task?>)completed)._result;
+                if (inner is null)
+                {
+                    promise.TrySetCanceled(new TaskCanceledException(promise));
+                    return;
+                }
+
+                inner.ContinueWith(static (done, state) =>
+                {
+                    var promise = (Task)state!;
+                    if (!TryCompleteRunProxy(promise, done, lookForCancellation: false))
+                    {
+                        promise.TrySetResult();
+                    }
+                }, promise, Threading.CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            }, proxy, Threading.CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            return proxy;
+        }
+
+        public static Task<TResult> Run<TResult>(Func<Task<TResult>?> function) => Run(function, Threading.CancellationToken.None);
+
+        public static Task<TResult> Run<TResult>(Func<Task<TResult>?> function, Threading.CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(function);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return FromCanceled<TResult>(cancellationToken);
+            }
+
+            var outer = Task<Task<TResult>?>.Factory.StartNew(function, cancellationToken, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+            var proxy = new Task<TResult>();
+            outer.ContinueWith(static (completed, state) =>
+            {
+                var promise = (Task<TResult>)state!;
+                if (TryCompleteRunProxy(promise, completed, lookForCancellation: true))
+                {
+                    return;
+                }
+
+                var inner = ((Task<Task<TResult>?>)completed)._result;
+                if (inner is null)
+                {
+                    promise.TrySetCanceled(new TaskCanceledException(promise));
+                    return;
+                }
+
+                inner.ContinueWith(static (done, state) =>
+                {
+                    var promise = (Task<TResult>)state!;
+                    if (!TryCompleteRunProxy(promise, done, lookForCancellation: false))
+                    {
+                        promise.TrySetResult(((Task<TResult>)done)._result);
+                    }
+                }, promise, Threading.CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            }, proxy, Threading.CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            return proxy;
+        }
+
+        // Upstream's UnwrapPromise: a canceled or faulted source completes the proxy the same way, keeping every
+        // exception; for the outer task (lookForCancellation), an OperationCanceledException the function threw
+        // cancels the proxy instead of faulting it. False when the source ran to completion.
+        private static bool TryCompleteRunProxy(Task proxy, Task source, bool lookForCancellation)
+        {
+            switch (source._status)
+            {
+                case 2:
+                    var first = source._exceptionIsAggregateContainer
+                        ? ((AggregateException)source._exception!).InnerExceptions[0]
+                        : source._exception!;
+                    if (lookForCancellation && first is OperationCanceledException cancellation)
+                    {
+                        proxy.TrySetCanceled(cancellation);
+                    }
+                    else
+                    {
+                        proxy.TrySetException(source._exception!, source._exceptionIsAggregateContainer);
+                    }
+
+                    return true;
+                case 3:
+                    proxy.TrySetCanceled(source._exception!);
+                    return true;
+                default:
+                    return false;
+            }
+        }
 
         public static global::System.Runtime.CompilerServices.YieldAwaitable Yield() => new();
 
@@ -2117,6 +2438,24 @@ namespace System.Threading.Tasks
             _started = true;
             _scheduler = scheduler;
             try { scheduler.QueueTask(this); }
+            catch (Exception exception)
+            {
+                var failure = new TaskSchedulerException(exception);
+                TrySetException(failure);
+                _exceptionTracker?.Observe();
+                throw failure;
+            }
+        }
+
+        internal void StartFromFactory(TaskScheduler scheduler, bool tryInline = false)
+        {
+            _started = true;
+            _scheduler = scheduler;
+            try
+            {
+                if (!tryInline || !scheduler.TryRunInline(this, previouslyQueued: false))
+                    scheduler.QueueTask(this);
+            }
             catch (Exception exception)
             {
                 var failure = new TaskSchedulerException(exception);
@@ -2249,10 +2588,15 @@ namespace System.Threading.Tasks
             {
                 return false;
             }
+            if (DeferForAttachedChildren(1, null, false))
+            {
+                return true;
+            }
             _status = 1;
             _cancellationRegistration.Dispose();
             _cancellationRegistration = default;
             ClearExecutionReferences();
+            NotifyParentOfCompletion();
             DispatchContinuation();
             return true;
         }
@@ -2275,6 +2619,10 @@ namespace System.Threading.Tasks
             {
                 return false;
             }
+            if (DeferForAttachedChildren(2, exception, aggregateContainer))
+            {
+                return true;
+            }
             _exception = exception;
             _exceptionIsAggregateContainer = aggregateContainer;
             _exceptionTracker = new TaskExceptionTracker(this, exception, aggregateContainer);
@@ -2282,6 +2630,7 @@ namespace System.Threading.Tasks
             _cancellationRegistration.Dispose();
             _cancellationRegistration = default;
             ClearExecutionReferences();
+            NotifyParentOfCompletion();
             DispatchContinuation();
             return true;
         }
@@ -2301,6 +2650,10 @@ namespace System.Threading.Tasks
             {
                 return false;
             }
+            if (DeferForAttachedChildren(3, exception, false))
+            {
+                return true;
+            }
             _exception = exception;
             if (exception is OperationCanceledException cancellation)
             {
@@ -2310,6 +2663,7 @@ namespace System.Threading.Tasks
             _cancellationRegistration.Dispose();
             _cancellationRegistration = default;
             ClearExecutionReferences();
+            NotifyParentOfCompletion();
             DispatchContinuation(forceAsyncContinuations);
             return true;
         }
@@ -2324,11 +2678,30 @@ namespace System.Threading.Tasks
         internal void SetExceptionForJavaScriptInterop() =>
             SetException(new JSException());
 
+        // As upstream's WrappedTryRunInline (InternalWaitCore, WaitAllCore, GetResultCore): a wait with no timeout and no
+        // cancellation first runs this task on the waiting thread if it is still queued to its scheduler. A wait that
+        // would still block afterwards throws, .NET 11's rule for one thread. True when the task is complete.
+        internal bool TryCompleteInlineForWait()
+        {
+            if (!IsCompleted && ExecutingTaskScheduler is { } scheduler)
+            {
+                try
+                {
+                    scheduler.TryRunInline(this, previouslyQueued: true);
+                }
+                catch (Exception exception)
+                {
+                    throw new TaskSchedulerException(exception);
+                }
+            }
+            return IsCompleted;
+        }
+
         internal void GetVoidResult() => GetVoidResult(suppressThrowing: false);
 
         internal void GetVoidResult(bool suppressThrowing)
         {
-            if (!IsCompleted)
+            if (!IsCompleted && !TryCompleteInlineForWait())
             {
                 throw new PlatformNotSupportedException();
             }
@@ -2376,6 +2749,13 @@ namespace System.Threading.Tasks
             var exception = GetExceptions(includeTaskCanceledExceptions);
             if (exception is not null)
             {
+                // As upstream: a fault the parent itself observes through Wait or Result is handled, not added to the
+                // parent's exceptions.
+                if (_parent is not null && _parent == s_currentTask)
+                {
+                    _exceptionObservedByParent = true;
+                }
+
                 throw exception;
             }
         }
@@ -2589,17 +2969,168 @@ namespace System.Threading.Tasks
             }
         }
 
-        public void Dispose()
+        public static void WaitAll(params Task[] tasks) => WaitAll(tasks, Threading.Timeout.Infinite, default);
+
+        public static bool WaitAll(Task[] tasks, TimeSpan timeout) =>
+            WaitAll(tasks, Threading.WaitHandle.ToTimeoutMilliseconds(timeout), default);
+
+        public static bool WaitAll(Task[] tasks, int millisecondsTimeout) => WaitAll(tasks, millisecondsTimeout, default);
+
+        public static void WaitAll(Task[] tasks, Threading.CancellationToken cancellationToken) =>
+            WaitAll(tasks, Threading.Timeout.Infinite, cancellationToken);
+
+        public static bool WaitAll(Task[] tasks, int millisecondsTimeout, Threading.CancellationToken cancellationToken)
         {
-            if (_disposed)
+            ArgumentNullException.ThrowIfNull(tasks);
+            ArgumentOutOfRangeException.ThrowIfLessThan(millisecondsTimeout, -1);
+            cancellationToken.ThrowIfCancellationRequested();
+            var allCompleted = true;
+            for (var index = tasks.Length - 1; index >= 0; index--)
             {
-                return;
+                var task = tasks[index];
+                if (task is null)
+                {
+                    throw new ArgumentException("The tasks array included at least one null element.", nameof(tasks));
+                }
+                // As upstream's WaitAllCore: with no timeout and no cancellation, a task still queued runs inline.
+                if (!task.IsCompleted &&
+                    (millisecondsTimeout != Threading.Timeout.Infinite || cancellationToken.CanBeCanceled || !task.TryCompleteInlineForWait()))
+                {
+                    allCompleted = false;
+                }
+            }
+            // Match upstream timeout behavior: do not propagate completed faults
+            // while some tasks are still pending. No host wait service is available.
+            if (!allCompleted)
+            {
+                if (millisecondsTimeout == 0) return false;
+                throw new PlatformNotSupportedException("Task.WaitAll on incomplete tasks requires host blocking, which is not available on this NetWasm platform.");
+            }
+            Collections.Generic.List<Exception>? exceptions = null;
+            foreach (var task in tasks)
+            {
+                if (task.Exception is { } fault)
+                {
+                    exceptions ??= new Collections.Generic.List<Exception>();
+                    exceptions.AddRange(fault.InnerExceptions);
+                }
+                else if (task.IsCanceled)
+                {
+                    exceptions ??= new Collections.Generic.List<Exception>();
+                    exceptions.Add(new TaskCanceledException(task));
+                }
+            }
+            if (exceptions is not null) throw new AggregateException(exceptions);
+            return true;
+        }
+
+        public static int WaitAny(params Task[] tasks) => WaitAny(tasks, Threading.Timeout.Infinite, default);
+
+        public static int WaitAny(Task[] tasks, TimeSpan timeout) =>
+            WaitAny(tasks, Threading.WaitHandle.ToTimeoutMilliseconds(timeout), default);
+
+        public static int WaitAny(Task[] tasks, Threading.CancellationToken cancellationToken) =>
+            WaitAny(tasks, Threading.Timeout.Infinite, cancellationToken);
+
+        public static int WaitAny(Task[] tasks, int millisecondsTimeout) =>
+            WaitAny(tasks, millisecondsTimeout, default);
+
+        public static int WaitAny(Task[] tasks, int millisecondsTimeout, Threading.CancellationToken cancellationToken)
+        {
+            // Preserve upstream validation and first-completed selection. Only
+            // the host-blocking portion is unavailable in this profile.
+            ArgumentNullException.ThrowIfNull(tasks);
+            ArgumentOutOfRangeException.ThrowIfLessThan(millisecondsTimeout, -1);
+            cancellationToken.ThrowIfCancellationRequested();
+            var completedIndex = -1;
+            for (var index = 0; index < tasks.Length; index++)
+            {
+                var task = tasks[index];
+                if (task is null)
+                {
+                    throw new ArgumentException("The tasks array included at least one null element.", nameof(tasks));
+                }
+                if (completedIndex == -1 && task.IsCompleted)
+                {
+                    completedIndex = index;
+                }
+            }
+            if (completedIndex == -1 && tasks.Length != 0 && millisecondsTimeout != 0)
+            {
+                throw new PlatformNotSupportedException("Task.WaitAny on incomplete tasks requires host blocking, which is not available on this NetWasm platform.");
+            }
+            return completedIndex;
+        }
+
+        public void Wait() => Wait(Threading.Timeout.Infinite, default);
+
+        public void Wait(Threading.CancellationToken cancellationToken) =>
+            Wait(Threading.Timeout.Infinite, cancellationToken);
+
+        public bool Wait(int millisecondsTimeout) => Wait(millisecondsTimeout, default);
+
+        public bool Wait(TimeSpan timeout) =>
+            Wait(Threading.WaitHandle.ToTimeoutMilliseconds(timeout), default);
+
+        // Retain upstream completion/error ordering and nonblocking polling.
+        // This profile has no host blocking wait for an incomplete task.
+        public bool Wait(int millisecondsTimeout, Threading.CancellationToken cancellationToken)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(millisecondsTimeout, -1);
+            if (IsCompletedSuccessfully)
+            {
+                return true;
             }
             if (!IsCompleted)
             {
-                throw new InvalidOperationException();
+                if (millisecondsTimeout == 0)
+                {
+                    return false;
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (millisecondsTimeout != Threading.Timeout.Infinite || cancellationToken.CanBeCanceled || !TryCompleteInlineForWait())
+                {
+                    throw new PlatformNotSupportedException("Task.Wait on an incomplete task requires host blocking, which is not available on this NetWasm platform.");
+                }
             }
-            _disposed = true;
+            if (IsCanceled)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new AggregateException(new TaskCanceledException(this));
+            }
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+            return true;
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        // As upstream's disposal contract: disposing a completed task marks it disposed (its wait handle then throws
+        // ObjectDisposedException) and releases the completion event if one was handed out.
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // As upstream: a cached task ignores Dispose, before the completion check.
+                if (_doNotDispose)
+                {
+                    return;
+                }
+
+                if (!IsCompleted)
+                {
+                    throw new InvalidOperationException("A task may only be disposed if it is in a completion state (RanToCompletion, Faulted or Canceled).");
+                }
+
+                _disposed = true;
+                s_releaseCompletionEvent?.Invoke(this);
+            }
         }
 
         private static void EnsureCompletion(bool completed)
@@ -2613,6 +3144,7 @@ namespace System.Threading.Tasks
 
     public partial class Task<T> : Task
     {
+        public new static TaskFactory<T> Factory { get; } = new TaskFactory<T>();
         internal T _result = default!;
 
         internal Task()
@@ -2682,6 +3214,14 @@ namespace System.Threading.Tasks
             _functionState = state;
         }
 
+        internal Task(Delegate function, object? state, Threading.CancellationToken cancellationToken,
+            TaskCreationOptions creationOptions, bool queuedByRuntime)
+            : base(function, state, cancellationToken, creationOptions, queuedByRuntime)
+        {
+            _function = function;
+            _functionState = state;
+        }
+
         private Delegate? _function;
         private object? _functionState;
 
@@ -2689,7 +3229,7 @@ namespace System.Threading.Tasks
         {
             get
             {
-                if (!IsCompleted)
+                if (!IsCompleted && !TryCompleteInlineForWait())
                 {
                     throw new PlatformNotSupportedException();
                 }
@@ -2808,7 +3348,7 @@ namespace System.Threading.Tasks
 
         private void GetResultCore()
         {
-            if (!IsCompleted)
+            if (!IsCompleted && !TryCompleteInlineForWait())
             {
                 throw new PlatformNotSupportedException();
             }
@@ -3031,12 +3571,31 @@ namespace System.Threading.Tasks
 
     }
 
+    // As upstream's internal Task<VoidTaskResult>: the result type of a task with no result.
+    internal readonly struct VoidTaskResult
+    {
+    }
+
     [AsyncMethodBuilder(typeof(AsyncValueTaskMethodBuilder))]
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public readonly struct ValueTask : IEquatable<ValueTask>
     {
         private readonly Task? _task;
         private readonly IValueTaskSource? _source;
         private readonly short _token;
+
+        // As upstream's DangerousCreateFromTypedValueTask, which reinterprets the typed value task's object.
+        // NetWasm's ValueTask keeps typed and untyped sources apart, so a successful one yields a completed
+        // ValueTask (consuming its result, as awaiting it would) and any other goes through AsTask.
+        internal static ValueTask DangerousCreateFromTypedValueTask<TResult>(ValueTask<TResult> valueTask)
+        {
+            if (valueTask.IsCompletedSuccessfully)
+            {
+                _ = valueTask.Result;
+                return default;
+            }
+            return new ValueTask(valueTask.AsTask());
+        }
 
         public ValueTask(Task task)
         {
@@ -3216,6 +3775,7 @@ namespace System.Threading.Tasks
     }
 
     [AsyncMethodBuilder(typeof(AsyncValueTaskMethodBuilder<>))]
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public readonly struct ValueTask<T> : IEquatable<ValueTask<T>>
     {
         private readonly T _result;
@@ -3571,12 +4131,13 @@ namespace System.Threading.Tasks
                 : TrySetResult();
         }
 
+        // As upstream's promise-style Task: a TaskCompletionSource's task may attach to a parent and may run its
+        // continuations asynchronously, and nothing else.
         private static void ValidateCreationOptions(TaskCreationOptions options)
         {
-            if (options is not TaskCreationOptions.None and
-                not TaskCreationOptions.RunContinuationsAsynchronously)
+            if ((options & ~(TaskCreationOptions.AttachedToParent | TaskCreationOptions.RunContinuationsAsynchronously)) != 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(options));
+                throw new ArgumentOutOfRangeException("creationOptions");
             }
         }
 
@@ -3675,12 +4236,13 @@ namespace System.Threading.Tasks
                 : TrySetResult(task._result);
         }
 
+        // As upstream's promise-style Task: a TaskCompletionSource's task may attach to a parent and may run its
+        // continuations asynchronously, and nothing else.
         private static void ValidateCreationOptions(TaskCreationOptions options)
         {
-            if (options is not TaskCreationOptions.None and
-                not TaskCreationOptions.RunContinuationsAsynchronously)
+            if ((options & ~(TaskCreationOptions.AttachedToParent | TaskCreationOptions.RunContinuationsAsynchronously)) != 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(options));
+                throw new ArgumentOutOfRangeException("creationOptions");
             }
         }
 

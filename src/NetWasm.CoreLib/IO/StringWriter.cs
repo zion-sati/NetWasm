@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Adapted from dotnet/runtime System.Private.CoreLib (commit
-// 474ed963699fc29809015392738a15231aaae2de).
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce).
 
 using System.Text;
 using System.Globalization;
@@ -15,10 +15,15 @@ namespace System.IO
         private readonly StringBuilder _builder;
         private bool _isOpen;
         private Encoding? _encoding;
+        private readonly bool _capturedInvariantCulture;
 
-        public StringWriter() : this(new StringBuilder(), CultureInfo.CurrentCulture) { }
+        // NetWasm: upstream passes CultureInfo.CurrentCulture, capturing the current culture when the writer is
+        // created. The culture is captured from CurrentCultureMirror instead, which holds it unless it is the
+        // invariant culture, so a writer created with the default provider does not make CultureInfo reachable
+        // until its FormatProvider is read (by a numeric or formatted write, for example).
+        public StringWriter() : this(new StringBuilder()) { }
         public StringWriter(IFormatProvider? formatProvider) : this(new StringBuilder(), formatProvider) { }
-        public StringWriter(StringBuilder builder) : this(builder, CultureInfo.CurrentCulture) { }
+        public StringWriter(StringBuilder builder) : this(builder, CurrentCultureMirror.Culture, capturesCurrentCulture: true) { }
 
         public StringWriter(StringBuilder builder, IFormatProvider? formatProvider) : base(formatProvider)
         {
@@ -26,6 +31,16 @@ namespace System.IO
             _builder = builder;
             _isOpen = true;
         }
+
+        private StringWriter(StringBuilder builder, IFormatProvider? currentCulture, bool capturesCurrentCulture)
+            : this(builder, currentCulture)
+        {
+            _capturedInvariantCulture = capturesCurrentCulture && currentCulture is null;
+        }
+
+        // NetWasm: a writer that captured the invariant culture reports it, as upstream's captured provider would.
+        public override IFormatProvider FormatProvider =>
+            _capturedInvariantCulture ? CultureInfo.InvariantCulture : base.FormatProvider;
 
         public override void Close() => Dispose(true);
 

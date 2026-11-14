@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptations: sockets block by default and synchronous calls are
 // supported, because the platform network's blocking calls wait for their operation; IPv6
 // dual mode is the platform network's to provide (WasiNetwork emulates it) and does not test for

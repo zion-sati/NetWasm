@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime System.Private.CoreLib Dictionary.cs at commit
-// 474ed963699fc29809015392738a15231aaae2de. Only the reflection-based
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce. Only the reflection-based
 // legacy formatter surface is omitted from this profile.
 
 using System.Diagnostics;
@@ -13,8 +13,24 @@ namespace System.Collections.Generic
 {
     [TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     [Serializable]
-    public class Dictionary<TKey, TValue> : IDictionary<TKey, TValue>, IDictionary, IReadOnlyDictionary<TKey, TValue> where TKey : notnull
+    public class Dictionary<TKey, TValue> : IDictionary<TKey, TValue>, IDictionary, IReadOnlyDictionary<TKey, TValue>, System.Runtime.Serialization.ISerializable, System.Runtime.Serialization.IDeserializationCallback where TKey : notnull
     {
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        protected Dictionary(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new PlatformNotSupportedException("Dictionary formatter deserialization is not supported on this NetWasm platform.");
+
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        public virtual void GetObjectData(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new PlatformNotSupportedException("Dictionary formatter serialization is not supported on this NetWasm platform.");
+
+        public virtual void OnDeserialization(object? sender)
+        {
+            // Upstream returns when no saved formatter data exists. Formatter
+            // construction is unavailable here, so ordinary instances need no fixup.
+        }
+
         private int[]? _buckets;
         private Entry[]? _entries;
 #if TARGET_64BIT

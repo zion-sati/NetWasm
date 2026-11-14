@@ -62,6 +62,54 @@ public sealed class RepeatedArrayAccessPlannerTests
         Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
     }
 
+    // A method every call passes the same constant is specialized after the optimizer planned its proofs (constant
+    // arguments reach instance methods since 0.14), and its rewritten body plans them again, so the inner loop's Av[i]
+    // keeps its proven null check: before, the body kept a proof of its old instructions, which emission ignored, and
+    // every inner iteration checked Av for null again (SpectralNorm 9% slower, FannkuchRedux 5%).
+    [Fact]
+    public void ConstantArgumentSpecializationKeepsTheArrayProofs()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("SpecializedArrayProofs", """
+            public static class EntryPoint
+            {
+                public static int Run(int count) => (int)new Spectral().Bench(100);
+            }
+
+            public sealed class Spectral
+            {
+                public double Bench(int n)
+                {
+                    double[] u = new double[n], v = new double[n];
+                    for (int i = 0; i < n; i++) u[i] = 1;
+                    MultiplyAv(n, u, v);
+                    return v[0];
+                }
+
+                double A(int i, int j) => 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1);
+
+                void MultiplyAv(int n, double[] v, double[] Av)
+                {
+                    for (int i = 0; i < n; i++)
+                    {
+                        Av[i] = 0;
+                        for (int j = 0; j < n; j++) Av[i] += A(i, j) * v[j];
+                    }
+                }
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Optimization: FinalWasmOptimization.O3));
+        var body = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "MultiplyAv").Body;
+
+        Assert.Contains(body.Instructions, instruction => instruction is { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: 100 } });
+        var proof = Assert.IsType<ArrayBoundsProof>(body.ArrayBoundsProof);
+        Assert.True(proof.Describes(body.Instructions, body.Locals, body.LocalSignatureTypes));
+        Assert.Contains(body.Instructions.Single(instruction => instruction.Operation == CilOperation.LoadArrayElementAddress).Offset,
+            proof.NonNullOffsets);
+    }
+
     // A rectangular access skips the check of each dimension whose index an
     // earlier access to the same array in the block checked against it, and its
     // null check after any earlier access; the store of `grid[j, k] = ... +
@@ -88,7 +136,8 @@ public sealed class RepeatedArrayAccessPlannerTests
             public static class EntryPoint
             {
                 public static int Run(int count) =>
-                    Probe(new int[count + 4, count + 4], new int[count + 1, count + 1], new int[3, 3, 3], count % 3, 1, 2);
+                    // Indexes no call fixes, so Probe keeps its parameters rather than being specialized for constants.
+                    Probe(new int[count + 4, count + 4], new int[count + 1, count + 1], new int[3, 3, 3], count % 3, count % 2, count % 2 + 1);
 
                 [MethodImpl(MethodImplOptions.NoInlining)]
                 private static int Probe(int[,] grid, int[,] other, int[,,] cube, int i, int j, int k)

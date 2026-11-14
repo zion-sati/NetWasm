@@ -2,11 +2,13 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Deterministic managed port of dotnet/runtime System.Private.CoreLib AppContext.cs.
-// Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
-// Host-property probing, reflection-based target-framework discovery, and process
-// exit/event hooks are intentionally excluded from the NetWasm profile.
+// Upstream commit: deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// Reflection-based target-framework discovery and process exit/event hooks are intentionally excluded from the
+// NetWasm profile. The host properties .NET reads from runtimeconfig.json are the project's
+// RuntimeHostConfigurationOption items, which the compiler supplies.
 
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 namespace System;
 
@@ -14,6 +16,29 @@ public static partial class AppContext
 {
     private static Dictionary<string, object?>? s_dataStore;
     private static Dictionary<string, bool>? s_switches;
+
+    // The project's RuntimeHostConfigurationOption items, as .NET's host gives AppContext runtimeconfig.json's
+    // properties: each name and value followed by '\0'. The compiler gives this method its body
+    // (RuntimeConfigurationRewriter); read in place, so a program that reads no property keeps no table.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static string ConfigurationProperties() => string.Empty;
+
+    private static string? ConfiguredValue(string name)
+    {
+        string properties = ConfigurationProperties();
+        int index = 0;
+        while (index < properties.Length)
+        {
+            int nameEnd = properties.IndexOf('\0', index);
+            int valueEnd = properties.IndexOf('\0', nameEnd + 1);
+            if (properties.AsSpan(index, nameEnd - index).SequenceEqual(name))
+            {
+                return properties.Substring(nameEnd + 1, valueEnd - nameEnd - 1);
+            }
+            index = valueEnd + 1;
+        }
+        return null;
+    }
 
     public static string BaseDirectory
     {
@@ -32,15 +57,17 @@ public static partial class AppContext
         ArgumentNullException.ThrowIfNull(name);
 
         Dictionary<string, object?>? dataStore = s_dataStore;
-        if (dataStore is null)
+        if (dataStore is not null)
         {
-            return null;
+            lock (dataStore)
+            {
+                if (dataStore.TryGetValue(name, out var data))
+                {
+                    return data;
+                }
+            }
         }
-
-        lock (dataStore)
-        {
-            return dataStore.TryGetValue(name, out var data) ? data : null;
-        }
+        return ConfiguredValue(name);
     }
 
     public static void SetData(string name, object? data)

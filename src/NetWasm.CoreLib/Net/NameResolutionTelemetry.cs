@@ -1,5 +1,7 @@
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
-// NetWasm adaptation: no event counters (CoreLib has none); the events remain.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// NetWasm adaptation: no event counters (CoreLib has none); the events remain. Dns enters through BeginResolution and
+// EndResolution, which ask the conditions BeforeResolution and AfterResolution start with before building Log, so a
+// program that cannot enable diagnostics never builds it (pay for play).
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
@@ -35,6 +37,18 @@ namespace System.Net
 
         [NonEvent]
         public static bool AnyDiagnosticsEnabled() => !OperatingSystem.IsWasi() && (Log.IsEnabled() || NameResolutionMetrics.IsEnabled() || NameResolutionActivity.IsTracingEnabled());
+
+        // NetWasm: BeforeResolution, once AnyDiagnosticsEnabled() (its own first question) holds.
+        [NonEvent]
+        public static NameResolutionActivity BeginResolution(object hostNameOrAddress, long startingTimestamp = 0) =>
+            AnyDiagnosticsEnabled() ? Log.BeforeResolution(hostNameOrAddress, startingTimestamp) : default;
+
+        // NetWasm: AfterResolution, outside WASI (where it returns at once).
+        [NonEvent]
+        public static void EndResolution(object hostNameOrAddress, in NameResolutionActivity activity, object? answer, Exception? exception = null)
+        {
+            if (!OperatingSystem.IsWasi()) Log.AfterResolution(hostNameOrAddress, activity, answer, exception);
+        }
 
         [NonEvent]
         public NameResolutionActivity BeforeResolution(object hostNameOrAddress, long startingTimestamp = 0)

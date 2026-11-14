@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Net.Primitives</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Net/CredentialCacheKey.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.Associate.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.DumpBuffer.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.cs" />
+    <Compile Include="Common/System/Net/NegotiationInfoClass.cs" />
+    <Compile Include="Common/System/NotImplemented.cs" />
+    <Compile Include="System/Net/AuthenticationSchemes.cs" />
+    <Compile Include="System/Net/Cache/RequestCacheLevel.cs" />
+    <Compile Include="System/Net/Cache/RequestCachePolicy.cs" />
+    <Compile Include="System/Net/CredentialCache.cs" />
+    <Compile Include="System/Net/DecompressionMethods.cs" />
+    <Compile Include="System/Net/NetworkInformation/IPAddressCollection.cs" />
+    <Compile Include="System/Net/SecureProtocols/NegotiateEnumTypes.cs" />
+    <Compile Include="System/Net/Security/SslPolicyErrors.cs" />
+    <Compile Include="System/Net/TransportContext.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Security/Authentication/ExtendedProtection/ChannelBinding.cs" />
+    <Compile Include="System/Security/Authentication/ExtendedProtection/ChannelBindingKind.cs" />
+  </ItemGroup>
+</Project>

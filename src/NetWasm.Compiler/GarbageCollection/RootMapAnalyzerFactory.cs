@@ -43,6 +43,7 @@ public sealed class RootMapAnalyzerFactory(
             new StackStorageAnchorPlanner(continuations),
             _rootDecisions.Create(types, fields, methods, dispatchCallSites, typeClassifier),
             _calleeArguments.Create(types, methods, dispatchCallSites, typeClassifier),
-            _rootSlots);
+            _rootSlots,
+            new MemberExecutionAllocationCallClassifier(types, methods));
     }
 }

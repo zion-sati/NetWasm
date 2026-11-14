@@ -34,7 +34,11 @@ evidence of support.
   filesystem within the granted directories (`dotnet run` grants the working
   directory and a private temporary directory; a published command takes
   `--dir`); a browser page or worker mounts files with NetWasm's mount API.
-  Permissions, ownership, locking and watching are not available.
+  Permissions, ownership and locking are not available, and neither is
+  watching: WASI 0.3 has no file change notifications, so `FileSystemWatcher`
+  throws when it starts raising events (see
+  [.NET Standard libraries](netstandard-libraries.md) for turning off
+  Microsoft.Extensions.Hosting's configuration reload).
 - Networking is a WASI 0.3 subset. `System.Net.Sockets` (TCP, UDP, listeners),
   `Dns`, `ws://` WebSockets and `HttpClient` work where the host grants the
   network, but sockets cannot be made non-blocking, socket timeouts, `Poll` and

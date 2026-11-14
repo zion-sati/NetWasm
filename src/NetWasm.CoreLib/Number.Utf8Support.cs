@@ -9,19 +9,6 @@ namespace System;
 internal static partial class Number
 {
 
-    internal static T NumberToFloat<T>(ref NumberBuffer number) where T : struct
-    {
-        var text = NumberBufferToString(ref number);
-        if (typeof(T) == typeof(float))
-        {
-            TryParseSingle(text, out var value);
-            return (T)(object)value;
-        }
-
-        TryParseDouble(text, out var doubleValue);
-        return (T)(object)doubleValue;
-    }
-
     internal static unsafe bool TryNumberToDecimal(ref NumberBuffer number, ref decimal value)
     {
         const int DecimalPrecision = 29;
@@ -115,56 +102,6 @@ internal static partial class Number
             value = new decimal((int)low64, (int)(low64 >> 32), (int)high, sign, (byte)-e);
         }
         return true;
-    }
-
-    private static string NumberBufferToString(ref NumberBuffer number)
-    {
-        if (number.DigitsCount == 0)
-        {
-            return number.IsNegative ? "-0" : "0";
-        }
-
-        var exponent = (long)number.Scale - number.DigitsCount;
-        var length = number.DigitsCount + (number.IsNegative ? 1 : 0) + 2 + CountDigits(exponent);
-        var chars = new char[length];
-        var index = 0;
-        if (number.IsNegative)
-        {
-            chars[index++] = '-';
-        }
-
-        for (var digitIndex = 0; digitIndex < number.DigitsCount; digitIndex++)
-        {
-            chars[index++] = (char)number.Digits[digitIndex];
-        }
-
-        chars[index++] = 'e';
-        if (exponent >= 0)
-        {
-            chars[index++] = '+';
-        }
-        else
-        {
-            chars[index++] = '-';
-            exponent = -exponent;
-        }
-
-        var exponentStart = index;
-        do
-        {
-            chars[index++] = (char)('0' + exponent % 10);
-            exponent /= 10;
-        }
-        while (exponent != 0);
-
-        var exponentEnd = index;
-        for (var left = exponentStart; left < exponentStart + (exponentEnd - exponentStart) / 2; left++)
-        {
-            var right = exponentEnd - 1 - (left - exponentStart);
-            (chars[left], chars[right]) = (chars[right], chars[left]);
-        }
-
-        return new string(chars);
     }
 
     private static int CountDigits(long value)

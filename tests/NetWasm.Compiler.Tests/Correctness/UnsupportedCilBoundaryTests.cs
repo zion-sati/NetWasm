@@ -10,9 +10,7 @@ public sealed class UnsupportedCilBoundaryTests(CorrectnessTestRunner runner) : 
         { "tail.", [0xfe, 0x14, 0x2a] },
         { "jmp", [0x27, 0x2a] },
         { "arglist", [0xfe, 0x00, 0x2a] },
-        { "mkrefany", [0xc6, 0x2a] },
-        { "refanyval", [0xc2, 0x2a] },
-        { "refanytype", [0xfe, 0x1d, 0x2a] },
+        // mkrefany, refanyval and refanytype lower to TypedReference's helpers (TypedReferenceCompilationTests).
     };
 
     [Theory]

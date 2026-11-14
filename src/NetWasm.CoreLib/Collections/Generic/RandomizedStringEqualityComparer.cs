@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -106,7 +106,8 @@ namespace System.Collections.Generic
                 ReadOnlySpan<char> span) =>
                 span.ToString();
 
-            // The ordinal comparison directly, as NonRandomizedStringEqualityComparer does.
+            // The ordinal comparison directly, as NonRandomizedStringEqualityComparer: string.Equals(x, y,
+            // comparisonType) also binds the culture-aware branches.
             public override bool Equals(string? x, string? y) => string.EqualsOrdinalIgnoreCase(x, y);
 
             bool IAlternateEqualityComparer<ReadOnlySpan<char>, string?>.Equals(

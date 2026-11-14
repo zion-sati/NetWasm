@@ -48,9 +48,9 @@ public sealed class PipelineActorTests
                     .Select(parameter => NullDependency(parameter.ParameterType))
                     .ToArray();
                 arguments[index] = null!;
-                var exception = Assert.Throws<TargetInvocationException>(() =>
-                    constructor.Invoke(arguments));
-                Assert.IsType<ArgumentNullException>(exception.InnerException);
+                var exception = Record.Exception(() => constructor.Invoke(arguments));
+                Assert.True(exception is TargetInvocationException { InnerException: ArgumentNullException },
+                    $"{actorType.Name} accepts a null {parameters[index].Name}.");
             }
         }
     }

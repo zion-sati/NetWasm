@@ -231,7 +231,7 @@ public sealed class StringBuilderCompilationTests
             [assets.CoreLib],
             "StringBuilderSurfaceFixture.EntryPoint",
             "Run",
-            []));
+            [], Optimization: NetWasm.Compiler.ComponentModel.FinalWasmOptimization.None));
 
         Assert.Equal(44, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
     }

@@ -23,6 +23,7 @@ NetWasm.Compiler.Tests.CommandWorldAwaitCompilationTests
 NetWasm.Compiler.Tests.CompilerArchitectureTests
 NetWasm.Compiler.Tests.ConcurrentBagContractCompilationTests
 NetWasm.Compiler.Tests.ConcurrentQueueCompilationTests
+NetWasm.Compiler.Tests.ConsoleNumberFormattingPayForPlayCompilationTests
 NetWasm.Compiler.Tests.ConstantStaticFieldCompilationTests
 NetWasm.Compiler.Tests.ConstructedGenericCastCompilationTests
 NetWasm.Compiler.Tests.ControlTransferCompilationTests
@@ -198,6 +199,7 @@ NetWasm.Compiler.Tests.Correctness.ValueTypeDefaultInterfaceMethodCorpusTests
 NetWasm.Compiler.Tests.Correctness.VectorValueShapesCorpusTests
 NetWasm.Compiler.Tests.Correctness.WalkLoopUnrollerCorpusTests
 NetWasm.Compiler.Tests.Correctness.WideIntegerEdgeTests
+NetWasm.Compiler.Tests.CurrentCultureFlowFormattingCompilationTests
 NetWasm.Compiler.Tests.DateTimeCompilationTests
 NetWasm.Compiler.Tests.DateTimeConvertibleCompilationTests
 NetWasm.Compiler.Tests.DecimalCompilationTests
@@ -229,6 +231,7 @@ NetWasm.Compiler.Tests.GCCompatibilityCompilationTests
 NetWasm.Compiler.Tests.GCHandleCompatibilityCompilationTests
 NetWasm.Compiler.Tests.GcRuntimeTargetMatrixCompilationTests
 NetWasm.Compiler.Tests.GenericArgumentDescriptorCompilationTests
+NetWasm.Compiler.Tests.GenericMathConversionCompilationTests
 NetWasm.Compiler.Tests.GenericMetadataOperandCompilationTests
 NetWasm.Compiler.Tests.GenericMethodDispatchCompilationTests
 NetWasm.Compiler.Tests.HostInteropCompilationTests
@@ -248,6 +251,7 @@ NetWasm.Compiler.Tests.IteratorCompilationTests
 NetWasm.Compiler.Tests.JavaScriptDisposeWithoutHostCompilationTests
 NetWasm.Compiler.Tests.LambdaCompilationTests
 NetWasm.Compiler.Tests.LanguageSurfaceCompilationTests
+NetWasm.Compiler.Tests.LeaveThroughHandlerFinallyCompilationTests
 NetWasm.Compiler.Tests.Legality.AccumulatorSplitLegalityTests
 NetWasm.Compiler.Tests.Legality.ConditionalStoreMergingLegalityTests
 NetWasm.Compiler.Tests.Legality.ConstantStaticFieldLegalityTests
@@ -327,6 +331,7 @@ NetWasm.Compiler.Tests.SplitStructStackDepthCompilationTests
 NetWasm.Compiler.Tests.StatementCompilationTests
 NetWasm.Compiler.Tests.StaticRootRegistrationCompilationTests
 NetWasm.Compiler.Tests.StringConstructionCompilationTests
+NetWasm.Compiler.Tests.StringWriterPayForPlayCompilationTests
 NetWasm.Compiler.Tests.StructArgumentSpillCompilationTests
 NetWasm.Compiler.Tests.StructElementCopyCompilationTests
 NetWasm.Compiler.Tests.StructScalarReplacementCompilationTests

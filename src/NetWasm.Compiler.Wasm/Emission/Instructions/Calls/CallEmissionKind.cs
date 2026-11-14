@@ -4,6 +4,7 @@ internal enum CallEmissionKind
 {
     DelegateInvoke,
     VirtualDispatch,
+    SharedObjectDispatch,
     RuntimeIntrinsic,
     AsyncJSImport,
     JavaScriptImport,

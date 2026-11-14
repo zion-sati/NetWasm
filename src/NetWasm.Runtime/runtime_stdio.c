@@ -22,10 +22,13 @@
  *
  * NetWasm adaptation: retain musl buffering and error behavior, but delegate
  * to the ordinary POSIX entry points backed by the Preview 2 stream adapter.
- * Native AIO is outside this runtime's supported profile.
+ * Native AIO is outside this runtime's supported profile. Native code reads
+ * no stream: there is no standard input, and files do not open
+ * (runtime_posix_unavailable.c), so a read fails as musl's does on an error.
  */
 #include "musl/src/include/features.h"
 #include "stdio_impl.h"
+#include <errno.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -64,6 +67,15 @@ size_t __stdio_write(FILE *f, const unsigned char *buf, size_t len)
         iov[0].iov_base = (char *)iov[0].iov_base + cnt;
         iov[0].iov_len -= (size_t)cnt;
     }
+}
+
+size_t __stdio_read(FILE *f, unsigned char *buf, size_t len)
+{
+    (void)buf;
+    (void)len;
+    errno = EBADF;
+    f->flags |= F_ERR;
+    return 0;
 }
 
 int __stdio_close(FILE *f)

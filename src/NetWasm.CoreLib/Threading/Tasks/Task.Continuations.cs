@@ -104,10 +104,6 @@ public partial class Task
             (continuationOptions & (TaskContinuationOptions.LongRunning | TaskContinuationOptions.ExecuteSynchronously)) ==
                 (TaskContinuationOptions.LongRunning | TaskContinuationOptions.ExecuteSynchronously))
             throw new ArgumentOutOfRangeException(nameof(continuationOptions));
-        // Parent/child completion accounting is not part of the reactor Task
-        // implementation. Reject it instead of silently treating attachment as a hint.
-        if ((continuationOptions & TaskContinuationOptions.AttachedToParent) != 0)
-            throw new PlatformNotSupportedException("Attached child tasks are not supported.");
     }
 
     internal static Task CreateActionContinuation<TAntecedent>(
@@ -162,6 +158,35 @@ public partial class Task
     private abstract class TaskContinuation
     {
         internal abstract void Run(Task antecedent, bool allowInline);
+    }
+
+    // As upstream's AddCompletionAction (deae2e32): an internal action run when the task completes, in order with the
+    // other continuations or before them, and at once if the task has already completed. As upstream, an action that
+    // may run arbitrary code is deferred to the thread pool when continuations must run asynchronously.
+    internal void AddCompletionAction(ITaskCompletionAction action, bool addBeforeOthers = false)
+    {
+        var continuation = new CompletionActionContinuation(action);
+        if (IsCompleted)
+        {
+            action.Invoke(this);
+            return;
+        }
+        var continuations = _continuations ??= new Collections.Generic.List<TaskContinuation>();
+        if (addBeforeOthers)
+            continuations.Insert(0, continuation);
+        else
+            continuations.Add(continuation);
+    }
+
+    private sealed class CompletionActionContinuation(ITaskCompletionAction action) : TaskContinuation
+    {
+        internal override void Run(Task antecedent, bool allowInline)
+        {
+            if (!allowInline && action.InvokeMayRunArbitraryCode)
+                ThreadPool.UnsafeQueueUserWorkItem(_ => action.Invoke(antecedent), null);
+            else
+                action.Invoke(antecedent);
+        }
     }
 
     private sealed class ContinueWithRegistration(

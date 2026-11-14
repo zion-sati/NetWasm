@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Portions adapted from dotnet/runtime System.Private.CoreLib at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Runtime.InteropServices;
 
@@ -51,6 +51,18 @@ namespace System.Threading
 
         public virtual void OperationCompleted()
         {
+        }
+
+        [CLSCompliant(false)]
+        public virtual int Wait(IntPtr[] waitHandles, bool waitAll, int millisecondsTimeout) =>
+            WaitHelper(waitHandles, waitAll, millisecondsTimeout);
+
+        [CLSCompliant(false)]
+        protected static int WaitHelper(IntPtr[] waitHandles, bool waitAll, int millisecondsTimeout)
+        {
+            ArgumentNullException.ThrowIfNull(waitHandles);
+
+            return WaitHandle.WaitMultipleIgnoringSyncContext(waitHandles, waitAll, millisecondsTimeout);
         }
 
         public static void SetSynchronizationContext(SynchronizationContext? context) =>

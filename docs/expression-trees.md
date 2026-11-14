@@ -14,81 +14,95 @@ interpreter. The `preferInterpretation` value does not select a second backend.
 
 ## Executable boundary
 
-An executable lambda has exactly one non-by-reference parameter and a non-void
-result. `Func<T, TResult>` and custom delegate types are supported when their
-`Invoke` signature has that shape. Parameter and result values can be references,
-enums with an integer underlying type, nullable forms of the admitted value
-types, or one of these primitive value types:
+A lambda can take up to 16 parameters, as `Func` and `Action` do, and can return
+a value or nothing. Custom delegate types work when their `Invoke` signature has
+that shape. Parameters cannot be by-reference.
 
-- `bool` and `char`;
-- `sbyte`, `byte`, `short`, `ushort`, `int`, `uint`, `long`, and `ulong`; or
-- `float` and `double`.
-
-`decimal`, `nint`, `nuint`, pointers, by-reference values, function pointers,
-open types, and other structs are not executable in this profile. An
-interface-typed reference can still contain a boxed value type when an admitted
-member access dispatches through that interface.
+Parameters, locals, constants, array elements and results can be references
+(classes, interfaces, arrays and delegates), any value type (the primitives,
+`decimal`, enums, `DateTime`, user structs), or the nullable form of a value
+type. The interpreter holds every value boxed, as upstream's interpreter does.
+By-reference-like types (`Span<T>` and other `ref struct` types), pointers,
+function pointers and open generic types are not executable.
 
 | Node | Supported shape |
 | --- | --- |
-| `Parameter` and `Constant` | Admitted primitive or reference values. |
-| `Default` | Admitted primitive zero/default values and null references. |
-| `Add` | Built-in unchecked `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `float`, and `double` addition. |
-| `Negate` | Built-in unchecked `short`, `int`, `long`, `float`, and `double` negation. |
-| `GreaterThan` and `LessThan` | Built-in signed, unsigned, and floating comparisons for the `Add` numeric set. |
-| `Equal` | Built-in primitive and nullable-primitive equality, reference identity, selected string value equality, or an explicitly supplied executable equality method. Enum and nullable-enum equality are not yet supported. |
-| `Convert` | Unchecked conversions among signed/unsigned 8-, 16-, 32-, and 64-bit integers, `float`, and `double`. |
-| `AndAlso` | Built-in Boolean short-circuit evaluation. |
-| `Conditional` | Boolean test with compatible admitted result branches, including void use inside a block. |
-| `Block` | Lexically scoped admitted locals, including shadowing and default initialization on every invocation. |
-| `Assign` | Assignment to a lambda parameter or block local; the non-void form returns the assigned value. |
-| `MemberAccess` | A readable instance field or parameterless property whose receiver is another executable reference expression. |
-| `Call` | A bounded static or reference-instance method with admitted primitive, enum, or reference arguments and a non-void admitted result. Closed generic declaring types and closed generic methods are supported. The ordinary `Call(MethodInfo, ...)` array and enumerable forwarding overloads are available without runtime method discovery. |
+| `Parameter`, `Constant` and `Default` | Any admitted value. `Default` of a value type is its zero value. |
+| `New` | A constructor the compiler has planned, of a class or a struct; `New(Type)` of a value type, which is its zero value; and `New(typeof(C))` of a class, as C# builds `new C()`, which the compiler gives C's parameterless constructor. |
+| Arithmetic | `Add`, `Subtract`, `Multiply` and `Negate` with their checked forms, and `Divide`, `Modulo`, `UnaryPlus`, `Increment` and `Decrement`, on the primitive numeric types and `decimal` (`Negate` on signed types), lifted over nullable operands as C# lifts them. |
+| Bitwise and shifts | `And`, `Or`, `ExclusiveOr`, `Not` and `OnesComplement` on integers and `bool`; `LeftShift` and `RightShift` of an integer by an `int`. |
+| Comparisons | `LessThan`, `LessThanOrEqual`, `GreaterThan` and `GreaterThanOrEqual` on numeric operands and `decimal`, lifted as C# lifts them. |
+| `Equal` and `NotEqual` | Primitive, nullable-primitive and `decimal` equality, reference identity, string value equality, or an executable operator method. |
+| Operator methods | A user-defined operator or conversion the compiler has planned runs as a call, and `Power` as `Math.Pow`. Over nullable operands the operator is lifted as C# lifts it: a null operand gives null, `false` for an ordering comparison, and for `==` and `!=` whether both are null. |
+| `AndAlso`, `OrElse`, `IsTrue` and `IsFalse` | Built-in Boolean logic with short-circuit evaluation. |
+| `Coalesce` | Operands that need no conversion to the result type. |
+| `Convert` and `ConvertChecked` | Numeric conversions among the primitive numeric types and `decimal`, boxing and unboxing, reference and interface casts, and nullable wrapping and unwrapping, with the CLR's exceptions. |
+| `TypeIs`, `TypeEqual`, `TypeAs` and `Unbox` | Type tests and casts against the program's type table. |
+| `Conditional` and `Switch` | A Boolean test, or a switch with case values and an optional static comparison method the compiler has planned, with value or void branches. |
+| `Block` and `Assign` | Lexically scoped locals, default-initialized on every invocation; assignment to a parameter, a local, an array element, a field, or a property through a setter the compiler has planned. |
+| `MemberInit` and `ListInit` | Member assignments, nested bindings on a member that holds an object, collection bindings, and collection initializers, as C# builds them. A struct initializer starts from a new zero value each time. |
+| `Loop`, `Label` and `Goto` | Loops with break and continue labels, and jumps that do not leave a `finally` or `fault` block. |
+| `Try` and `Throw` | `catch` without a filter, `finally`, `fault` and rethrow, as upstream's interpreter runs them. |
+| Arrays | `NewArrayInit`, one-dimensional `NewArrayBounds`, `ArrayLength`, `ArrayIndex` and `Index` on an array. |
+| `MemberAccess` | A readable field, or a parameterless property whose getter the compiler has planned, on a reference or value-type receiver, or static. |
+| `Call` | A static method, or an instance method on a reference or value-type receiver, with a result or none, that the compiler has planned. Closed generic declaring types and closed generic methods are supported. |
+| `Lambda` (nested) | A lambda inside the tree becomes a delegate of the type it names, such as the predicate of `items.Any(i => i > n)`. It captures the variables of the lambdas around it, which it and they share. |
+| `Quote` | The quoted expression as a value, as C# builds a lambda whose type is an expression. A variable it captures is read through the box the closures share. |
+| `Invoke` | A lambda, or a quoted lambda, called with arguments: its body runs in place with the arguments as its parameters. |
+
+A variable a nested lambda or quote captures lives in a box shared by the lambda
+that defines it and every closure that captures it, so a change made through a
+closure is seen by the others, as in compiled C#. Each entry to a block makes
+new boxes for its variables, so closures made in a loop keep their own values.
+A captured catch variable is the handler's exception, and `Rethrow` still throws
+the exception the handler took.
 
 Member receivers can be composed, such as `model.Child.Value`. Ordinary C#
 captures work when the generated display-class object is represented as a
-constant followed by admitted field reads. Captured values are read when the
-delegate runs, so mutation after `Compile()` remains observable. Direct member
-access on a value-type receiver remains outside this profile.
+constant followed by field reads. Captured values are read when the delegate
+runs, so mutation after `Compile()` remains observable.
 
 Method calls use closed-world compiler facts rather than reflection. Static,
-nonvirtual, virtual, and interface calls are supported. An interface receiver
-can contain a boxed value type, but a value type cannot be used as the direct
-receiver expression. Every parameter and result must use the admitted value
-set above; nullable parameters, by-reference parameters, and void results are
-rejected. Selected nullable results are supported. Compiler
-intrinsics are not exposed indirectly through expression execution.
+nonvirtual, virtual and interface calls are supported. A value-type receiver's
+member runs on the value the interpreter holds, so a method that changes its
+struct changes that value, as a call on a variable does in compiled code. A
+static field or property, or a constructor, runs its type's initializer first,
+as an ordinary access does. A virtual call through `object` or an interface on
+a boxed enum is not executable, because the enum's `ToString` and its kin are
+compiler intrinsics, and compiler intrinsics are not exposed indirectly through
+expression execution. Members of a nullable value (`HasValue`, `Value`) are not
+executable either: the interpreter holds a nullable as its underlying value's
+box.
 
 Extension-method calls use the ordinary static-call expression shape. Their
 formatted expression text therefore uses static-call notation rather than
 desktop extension-call syntax; this avoids retaining runtime extension-method
 metadata.
 
-Evaluation is left-to-right. `AndAlso` and `Conditional` execute only the
-selected path, but all paths are validated before `Compile()` returns. A method
-receiver is evaluated before its arguments, and arguments retain their declared
-order. Static initialization uses the same once-only policy as an ordinary
-static call and occurs after argument evaluation. Numeric
-operations use unchecked semantics, preserve signed-zero and NaN behavior where
-the underlying operation requires it, and box the exact declared result type.
-Each invocation owns its local/evaluation frame, including during reentrant
-delegate calls.
+Evaluation is left-to-right. `AndAlso`, `OrElse`, `Conditional` and `Switch`
+execute only the selected path, but all paths are validated before `Compile()`
+returns. A method receiver is evaluated before its arguments, and arguments
+retain their declared order. Static initialization uses the same once-only
+policy as an ordinary static call and occurs after argument evaluation. Numeric
+operations preserve signed-zero and NaN behavior where the underlying operation
+requires it, and box the exact declared result type. Each invocation owns its
+local and evaluation frame, including during reentrant delegate calls.
 
 ## Deliberately unsupported shapes
 
 The interpreter rejects the following with `NotSupportedException`:
 
-- zero-parameter or multi-parameter lambdas, by-reference parameters, and void
-  delegates;
-- method-backed arithmetic or conversions, lifted method execution, and checked
-  conversion nodes; explicitly supplied non-lifted equality methods are the
-  bounded exception;
-- constructors, member assignment, delegate invocation, and method calls with
-  excluded signatures or receivers;
-- nested executable lambdas, `Quote`, and `Invoke`;
-- direct value-type member receivers and nonprimitive value-type operations;
-- enum equality, nullable-enum equality, `decimal`, `nint`, `nuint`, pointer,
-  function-pointer, open, and other excluded value shapes; and
+- lambdas of more than 16 parameters and by-reference parameters;
+- a user-defined operator given without its `MethodInfo`, which the factory
+  would have to find by name (C# passes the method with the tree);
+- assignment to a constant, a read-only field or a field of a nullable type, and nested bindings on a member that
+  holds a value type;
+- `New(Type)` of a class whose `Type` is only known at run time, which needs a constructor lookup;
+- members of a nullable value, and constant (literal) fields read as fields;
+- multidimensional `NewArrayBounds`;
+- catch filters;
+- enum equality and nullable-enum equality without an operator method;
+- by-reference-like, pointer, function-pointer and open value shapes; and
 - expression node families not listed in the executable table.
 
 This rejection is atomic. An unsupported node in an unselected conditional or
@@ -118,7 +132,8 @@ tree whose shape is created at runtime.
 Delegate adapters and member-execution descriptors remain closed-world compiler
 facts. Only reachable delegate signatures and reachable members are emitted.
 A lambda's delegate type is one the program names, so `Expression<TDelegate>`
-validates and invokes its own `Invoke` signature. Constructing
+validates and invokes its own `Invoke` signature; a nested lambda's delegate
+comes from the same adapter as an outer lambda's. Constructing
 `Expression.Invoke` over any other delegate-typed expression, such as a
 parameter or a constant, throws `PlatformNotSupportedException`: only the run
 knows that delegate's type (see

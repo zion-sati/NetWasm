@@ -14,54 +14,46 @@ using System.Text;
 
 namespace System.Globalization
 {
-    public sealed partial class NumberFormatInfo : IFormatProvider
+    // NetWasm's parse-style validation and invariant symbol constants; the public members are in
+    // Globalization/NumberFormatInfo.cs.
+    public sealed partial class NumberFormatInfo
     {
         internal const string InvariantNaNSymbol = "NaN";
         internal const string InvariantPositiveInfinitySymbol = "Infinity";
         internal const string InvariantNegativeInfinitySymbol = "-Infinity";
         internal const string InvariantNegativeSign = "-";
 
-        private static readonly NumberFormatInfo s_invariant = new();
-
-        public static NumberFormatInfo CurrentInfo => s_invariant;
-
-        public static NumberFormatInfo InvariantInfo => s_invariant;
-
-        // The current culture is invariant, so its negative sign needs no
-        // instance: integer formatting reads it without initializing this type.
-        internal static string CurrentNegativeSign => InvariantNegativeSign;
-
-        public NumberFormatInfo()
-        {
-        }
-
-        // NetWasm is intentionally invariant-only, but these standard properties are
-        // still exposed so the provider remains useful to formatting clients.
-        public string NaNSymbol => InvariantNaNSymbol;
-        public string PositiveInfinitySymbol => InvariantPositiveInfinitySymbol;
-        public string NegativeInfinitySymbol => InvariantNegativeInfinitySymbol;
-        public string PositiveSign => "+";
-        public string NegativeSign => InvariantNegativeSign;
-        public string NumberDecimalSeparator => ".";
-        public string NumberGroupSeparator => ",";
-        public int NumberDecimalDigits => 2;
-        public string CurrencySymbol => _currencySymbol;
-        public int CurrencyDecimalDigits => 2;
-        public string PercentSymbol => "%";
-        public int PercentDecimalDigits => 2;
-
-        internal static NumberFormatInfo GetInstance(IFormatProvider? provider)
-        {
-            if (provider is NumberFormatInfo numberFormat) return numberFormat;
-            if (provider is CultureInfo culture) return culture.NumberFormat;
-            return provider?.GetFormat(typeof(NumberFormatInfo)) as NumberFormatInfo ?? s_invariant;
-        }
-
-        public object? GetFormat(Type? formatType) => formatType == typeof(NumberFormatInfo) ? this : null;
-
         internal static void ValidateParseStyleDecimal(NumberStyles style) => Validate(style, allowExponent: true, allowDecimalPoint: true);
 
-        internal static void ValidateParseStyleFloatingPoint(NumberStyles style) => Validate(style, allowExponent: true, allowDecimalPoint: true);
+        // As upstream (dotnet/runtime deae2e32): floating point accepts NumberStyles.HexFloat (.NET 11).
+        private const NumberStyles InvalidNumberStyles = ~(NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite
+                                                           | NumberStyles.AllowLeadingSign | NumberStyles.AllowTrailingSign
+                                                           | NumberStyles.AllowParentheses | NumberStyles.AllowDecimalPoint
+                                                           | NumberStyles.AllowThousands | NumberStyles.AllowExponent
+                                                           | NumberStyles.AllowCurrencySymbol | NumberStyles.AllowHexSpecifier
+                                                           | NumberStyles.AllowBinarySpecifier);
+
+        internal static void ValidateParseStyleFloatingPoint(NumberStyles style)
+        {
+            // Check for undefined flags, AllowBinarySpecifier (never valid for float), or AllowHexSpecifier with anything other than HexFloat flags.
+            // When AllowHexSpecifier is specified, AllowExponent must also be specified; this reserves
+            // AllowHexSpecifier without AllowExponent for possible future use (e.g. optional p exponent).
+            if ((style & (InvalidNumberStyles | NumberStyles.AllowBinarySpecifier | NumberStyles.AllowHexSpecifier)) != 0 &&
+                ((style & ~NumberStyles.HexFloat) != 0 ||
+                 (style & NumberStyles.AllowHexSpecifier) != 0 && (style & NumberStyles.AllowExponent) == 0))
+            {
+                ThrowInvalid(style);
+
+                static void ThrowInvalid(NumberStyles value)
+                {
+                    throw new ArgumentException(
+                        (value & InvalidNumberStyles) != 0 ? SR.Argument_InvalidNumberStyles :
+                        (value & NumberStyles.AllowBinarySpecifier) != 0 ? SR.Arg_BinaryStyleNotSupported :
+                        SR.Arg_InvalidHexFloatStyle,
+                        nameof(style));
+                }
+            }
+        }
 
         internal static void ValidateParseStyleInteger(NumberStyles style)
         {
@@ -154,13 +146,6 @@ namespace System
         internal const string ArgumentOutOfRange_IndexCountBuffer = "Index and count must refer to a location within the buffer.";
         internal const string ArgumentOutOfRange_IndexMustBeLessOrEqual = "Index was out of range. Must be non-negative and less than or equal to the size of the collection.";
         internal const string Argument_ExtraNotValid = "Extra portion of URI not valid.";
-        internal const string Argument_IdnBadBidi = "Left to right characters may not be mixed with right to left characters in IDN labels.";
-        internal const string Argument_IdnBadLabelSize = "IDN labels must be between 1 and 63 characters long.";
-        internal const string Argument_IdnBadNameSize = "IDN names must be between 1 and {0} characters long.";
-        internal const string Argument_IdnBadPunycode = "Invalid IDN encoded string.";
-        internal const string Argument_IdnBadStd3 = "Label contains character '{0}' not allowed with UseStd3AsciiRules";
-        internal const string Argument_IdnIllegalName = "Decoded string is not a valid IDN name.";
-        internal const string Argument_InvalidCharSequence = "Invalid Unicode code point found at index {0}.";
         internal const string Argument_InvalidUriSubcomponent = "The subcomponent, {0}, of this uri is not valid.";
         internal const string net_uri_AlreadyRegistered = "A URI scheme name '{0}' already has a registered custom parser.";
         internal const string net_uri_BadAuthority = "Invalid URI: The Authority/Host could not be parsed.";
@@ -240,124 +225,6 @@ namespace System
         private static TValue NumberToDecimalIeee754<TDecimal, TValue>(ref NumberBuffer number)
             where TDecimal : unmanaged, IDecimalIeee754ParseAndFormatInfo<TDecimal, TValue>
             where TValue : unmanaged, IBinaryInteger<TValue> => NumberToDecimalIeee754Bits<TDecimal, TValue>(ref number);
-
-        internal static bool TryFloatingPointBitsFromMantissa<TFloat>(ulong mantissa, int exponent, out ulong bits)
-            where TFloat : unmanaged, IBinaryFloatParseAndFormatInfo<TFloat>
-        {
-            var digits = UInt64ToDecStr(mantissa).ToCharArray();
-            bits = ConvertDecimalToFloatingBits<TFloat>(
-                digits,
-                digits.Length,
-                exponent,
-                negative: false);
-            return true;
-        }
-
-        // A compact Dragon4-compatible front end. The exact rational is produced by
-        // the existing binary decomposition, then rounded directly to the requested
-        // decimal precision by the same integer long-division routine used by the
-        // invariant floating formatter.
-        internal static void Dragon4<TFloat>(
-            TFloat value,
-            int cutoffNumber,
-            bool isSignificantDigits,
-            ref NumberBuffer number,
-            out bool isExact)
-            where TFloat : unmanaged, IBinaryFloatParseAndFormatInfo<TFloat>
-        {
-            var bits = TFloat.FloatToBits(value);
-            GetFloatingRational(
-                bits,
-                out var numerator,
-                out var denominator,
-                TFloat.ExponentBits,
-                TFloat.ExponentBias,
-                TFloat.NormalMantissaBits);
-            var binaryExponent = FloorBinaryExponent(numerator, denominator);
-            var decimalExponent = (int)(binaryExponent * 30_103L / 100_000L);
-            while (CompareToPower10(numerator, denominator, decimalExponent) < 0) decimalExponent--;
-            while (CompareToPower10(numerator, denominator, decimalExponent + 1) >= 0) decimalExponent++;
-
-            var requested = cutoffNumber == int.MaxValue
-                ? Math.Min(number.Digits.Length - 1, 80)
-                : Math.Min(cutoffNumber, number.Digits.Length - 1);
-            requested = Math.Max(requested, 1);
-            var digits = GenerateRoundedDigitsExact(
-                numerator,
-                denominator,
-                decimalExponent,
-                requested,
-                out var resultExponent,
-                out var resultLength,
-                out isExact);
-            for (var i = 0; i < resultLength; i++) number.Digits[i] = (byte)digits[i];
-            number.Digits[resultLength] = 0;
-            number.DigitsCount = resultLength;
-            // Dragon4's exponent is the adjusted exponent of the first digit (10^e), whereas
-            // NumberBuffer.Scale is the decimal point position after the coefficient digits.
-            // The latter is therefore e + 1, independent of how many trailing zeros we retained.
-            number.Scale = resultExponent + 1;
-            number.HasNonZeroTail = cutoffNumber == int.MaxValue && !isExact;
-        }
-
-        internal static void Dragon4<TFloat>(
-            TFloat value,
-            int cutoffNumber,
-            bool isSignificantDigits,
-            ref NumberBuffer number)
-            where TFloat : unmanaged, IBinaryFloatParseAndFormatInfo<TFloat>
-        {
-            Dragon4(value, cutoffNumber, isSignificantDigits, ref number, out _);
-        }
-
-        private static char[] GenerateRoundedDigitsExact(
-            FloatingBigInteger numerator,
-            FloatingBigInteger denominator,
-            int decimalExponent,
-            int precision,
-            out int resultExponent,
-            out int resultLength,
-            out bool isExact)
-        {
-            var scaledNumerator = numerator.Clone();
-            var scaledDenominator = denominator.Clone();
-            if (decimalExponent >= 0) scaledDenominator.MultiplyPower10(decimalExponent);
-            else scaledNumerator.MultiplyPower10(-decimalExponent);
-
-            var digits = new char[precision];
-            var current = scaledNumerator;
-            for (var index = 0; index < precision; index++)
-            {
-                var digit = FloatingBigInteger.DivideToUInt64(current, scaledDenominator, out var remainder);
-                digits[index] = (char)('0' + digit);
-                current = remainder;
-                if (index + 1 < precision) current.Multiply(10);
-            }
-
-            isExact = current.IsZero;
-            var twice = current.Clone();
-            twice.Multiply(2);
-            var comparison = FloatingBigInteger.Compare(twice, scaledDenominator);
-            if (comparison > 0 || comparison == 0 && ((digits[precision - 1] - '0') & 1) != 0)
-            {
-                var index = precision - 1;
-                while (index >= 0 && digits[index] == '9') digits[index--] = '0';
-                if (index < 0)
-                {
-                    digits[0] = '1';
-                    decimalExponent++;
-                }
-                else
-                {
-                    digits[index]++;
-                }
-            }
-
-            resultLength = precision;
-            while (resultLength > 1 && digits[resultLength - 1] == '0') resultLength--;
-            resultExponent = decimalExponent;
-            return digits;
-        }
 
         internal static string FormatDecimalIeee754<TDecimal, TValue>(TValue value, string? format, NumberFormatInfo info)
             where TDecimal : unmanaged, IDecimalIeee754ParseAndFormatInfo<TDecimal, TValue>
@@ -759,7 +626,10 @@ namespace System
                 decimalExponent,
                 negative,
                 precision < 0 ? int.MaxValue : precision,
-                specifier is 'g');
+                specifier is 'g',
+                "-",
+                ".",
+                "+");
         }
 
         private static void AppendFixed(

@@ -2,9 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Adapted from dotnet/runtime System.Private.CoreLib (commit
-// 474ed963699fc29809015392738a15231aaae2de). MarshalByRefObject and
-// remoting members are intentionally omitted for NetWasm; Task/ValueTask
-// reads use the platform scheduler.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce). Task/ValueTask reads use
+// the platform scheduler.
 
 using System.Buffers;
 using System.Runtime.CompilerServices;
@@ -17,7 +16,7 @@ namespace System.IO
 {
     // This abstract base class represents a reader that can read a sequential
     // stream of characters. A subclass must minimally implement Peek() and Read().
-    public abstract class TextReader : IDisposable
+    public abstract class TextReader : MarshalByRefObject, IDisposable
     {
         public static readonly TextReader Null = new StreamReader.NullStreamReader();
 

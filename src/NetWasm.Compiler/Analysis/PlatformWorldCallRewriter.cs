@@ -4,15 +4,16 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis;
 
-// Replaces calls to CoreLib's PlatformWorld switches with the selected world's values, so the
-// constant-branch rules that follow remove the composition a world cannot bind before
-// reachability, whatever the optimization settings.
+// Replaces calls to CoreLib's PlatformWorld and NetWasmHost switches with the selected world's
+// and host's values, so the constant-branch rules that follow remove the composition a world
+// cannot bind, and the other host's code, before reachability, whatever the optimization settings.
 internal sealed class PlatformWorldCallRewriter(
     ICalledMethodResolver calledMethods,
     ISymbolFormatter symbols,
     PlatformWorldCapabilities world) : IMethodRewriteRule
 {
     private const string PlatformWorldType = "System.Runtime.InteropServices.PlatformWorld";
+    private const string NetWasmHostType = "System.Runtime.InteropServices.NetWasmHost";
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -25,19 +26,19 @@ internal sealed class PlatformWorldCallRewriter(
             var call = instructions[index];
             if (call.Operation != CilOperation.Call ||
                 calledMethods.Resolve(call) is not { } target ||
-                !target.Definition.IsStatic ||
-                symbols.Format(target.Definition.DeclaringType) != PlatformWorldType)
+                !target.Definition.IsStatic)
             {
                 continue;
             }
-            var value = target.Definition.Name switch
+            var value = (symbols.Format(target.Definition.DeclaringType), target.Definition.Name) switch
             {
-                "ImportsEventLoop" => world.EventLoop,
-                "ImportsMonotonicClock" => world.MonotonicClock,
-                "ImportsProcessExit" => world.ProcessExit,
-                "HasSynchronousExports" => world.SynchronousExports,
-                "HasHostEventLoop" => world.HostEventLoop,
-                "ProvidesWasi" => world.Wasi,
+                (PlatformWorldType, "ImportsEventLoop") => world.EventLoop,
+                (PlatformWorldType, "ImportsMonotonicClock") => world.MonotonicClock,
+                (PlatformWorldType, "ImportsProcessExit") => world.ProcessExit,
+                (PlatformWorldType, "HasSynchronousExports") => world.SynchronousExports,
+                (PlatformWorldType, "HasHostEventLoop") => world.HostEventLoop,
+                (PlatformWorldType, "ProvidesWasi") => world.Wasi,
+                (NetWasmHostType, "get_IsJavaScriptHost") => world.JavaScriptHost,
                 _ => (bool?)null,
             };
             if (value is not { } known)

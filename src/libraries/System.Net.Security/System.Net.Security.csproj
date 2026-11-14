@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Net.Security</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Net.Primitives/System.Net.Primitives.csproj" />
+    <ProjectReference Include="../System.Memory/System.Memory.csproj" />
+    <ProjectReference Include="../System.Security.Claims/System.Security.Claims.csproj" />
+    <ProjectReference Include="../System.Security.Cryptography/System.Security.Cryptography.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/HexConverter.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.Associate.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.DumpBuffer.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.cs" />
+    <Compile Include="Common/System/Net/NegotiationInfoClass.cs" />
+    <Compile Include="Common/System/Net/UriScheme.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Net/NegotiateAuthenticationPal.NetWasm.cs" />
+    <Compile Include="System/Net/NegotiateAuthenticationPal.Unsupported.cs" />
+    <Compile Include="System/Net/NegotiateAuthenticationPal.cs" />
+    <Compile Include="System/Net/Security/AuthenticatedStream.cs" />
+    <Compile Include="System/Net/Security/NegotiateAuthentication.cs" />
+    <Compile Include="System/Net/Security/NegotiateAuthenticationClientOptions.cs" />
+    <Compile Include="System/Net/Security/NegotiateAuthenticationServerOptions.cs" />
+    <Compile Include="System/Net/Security/NegotiateAuthenticationStatusCode.cs" />
+    <Compile Include="System/Net/Security/NegotiateStream.cs" />
+    <Compile Include="System/Net/Security/ProtectionLevel.cs" />
+    <Compile Include="System/Net/Security/SR.cs" />
+    <Compile Include="System/Net/Security/SslApplicationProtocol.cs" />
+    <Compile Include="System/Net/Security/SslClientAuthenticationOptions.cs" />
+    <Compile Include="System/Net/Security/SslServerAuthenticationOptions.cs" />
+    <Compile Include="System/Net/Security/SslStream.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Security/Authentication/AuthenticationException.cs" />
+    <Compile Include="System/Security/Authentication/ExtendedProtection/ExtendedProtectionPolicy.cs" />
+    <Compile Include="System/Security/Authentication/ExtendedProtection/PolicyEnforcement.cs" />
+    <Compile Include="System/Security/Authentication/ExtendedProtection/ProtectionScenario.cs" />
+    <Compile Include="System/Security/Authentication/ExtendedProtection/ServiceNameCollection.cs" />
+  </ItemGroup>
+</Project>

@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
@@ -7,6 +8,45 @@ using static CompilerTestSupport;
 
 public sealed class RectangularArrayCompilationTests
 {
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CompilerPreservesArrayMembersInsideGenericClasses(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var executor = (ICompilationScenarioExecutor)new CompilationScenarioExecutor(assets);
+        var result = executor.Execute(new CompilationScenario(
+            "GenericClassArrayFixture",
+            """
+            namespace GenericClassArrayFixture;
+            public static class Storage<T>
+            {
+                public static T[,] Create(T value)
+                {
+                    var values = new T[2, 2];
+                    values[1, 1] = value;
+                    return values;
+                }
+                public static T Read(T[,] values) => values[1, 1];
+                public static ref T Address(T[,] values) => ref values[1, 1];
+            }
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    var values = Storage<double>.Create(input);
+                    Storage<double>.Address(values) += 1;
+                    var strings = Storage<string>.Create("answer");
+                    return Storage<string>.Read(strings) == "answer"
+                        ? (int)Storage<double>.Read(values) : -1;
+                }
+            }
+            """,
+            "GenericClassArrayFixture.EntryPoint", false, target, 41, [])
+        { Optimization = FinalWasmOptimization.None });
+        Assert.Equal(42, result);
+    }
+
     [Theory]
     [InlineData(false, WasmTarget.Wasm32)]
     [InlineData(false, WasmTarget.Wasm64)]

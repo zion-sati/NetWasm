@@ -4,8 +4,8 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis;
 
-// What the selected WIT world provides to CoreLib's world-dependent composition
-// (System.Runtime.InteropServices.PlatformWorld). Every component has an event loop: the
+// What the compile target, the host and the selected WIT world provide to CoreLib's
+// composition (System.Runtime.InteropServices.PlatformWorld and NetWasmHost). Every component has an event loop: the
 // Component Model's waitable sets wait for its subtasks, streams and futures. A delay also needs
 // the monotonic clock's wait-for; the world declaring the clock is enough, since CoreLib calls
 // wait-for as a Component Model built-in that wit-component resolves against the world, whether
@@ -17,6 +17,13 @@ public sealed record PlatformWorldCapabilities(bool EventLoop, bool MonotonicClo
     internal const string MonotonicClockInterface = "wasi:clocks/monotonic-clock@0.3.2";
 
     internal const string ExitInterface = "wasi:cli/exit@0.3.2";
+
+    // The compiled target's native integer and pointer size: IntPtr.Size, UIntPtr.Size and sizeof(nint).
+    public required int NativeIntegerSize { get; init; }
+
+    // Whether a JavaScript host runs the program (a raw build, or one with the JavaScript export
+    // boundary): NetWasmHost.IsJavaScriptHost, behind OperatingSystem.IsBrowser and IsWasi.
+    public required bool JavaScriptHost { get; init; }
 
     // A module a JavaScript host runs (a raw build): the host runs its event loop and can
     // complete a task through a JavaScript promise the program awaits.
@@ -33,9 +40,20 @@ public sealed record PlatformWorldCapabilities(bool EventLoop, bool MonotonicClo
     // The program's declared platform (NetWasmPlatformAttribute), or null for the default one.
     public PlatformServices.DeclaredPlatform? DeclaredPlatform { get; init; }
 
-    public static PlatformWorldCapabilities From(ComponentBoundaryContract contract)
+    // The project's feature switches the compiler folds (Trim="true" RuntimeHostConfigurationOption items with a
+    // Boolean value): calls to their [FeatureSwitchDefinition] getters become these values.
+    public System.Collections.Immutable.ImmutableDictionary<string, bool> FeatureSwitches { get; init; } =
+        System.Collections.Immutable.ImmutableDictionary<string, bool>.Empty;
+
+    // The project's RuntimeHostConfigurationOption items, which AppContext reads as .NET reads runtimeconfig.json's
+    // properties.
+    public System.Collections.Immutable.ImmutableArray<(string Name, string Value)> RuntimeProperties { get; init; } = [];
+
+    public static PlatformWorldCapabilities From(
+        ComponentBoundaryContract contract, int nativeIntegerSize, bool javaScriptHost)
     {
         ArgumentNullException.ThrowIfNull(contract);
+        if (nativeIntegerSize is not (4 or 8)) throw new ArgumentOutOfRangeException(nameof(nativeIntegerSize));
         var component = contract.World.Length != 0;
         return new(
             component,
@@ -43,6 +61,8 @@ public sealed record PlatformWorldCapabilities(bool EventLoop, bool MonotonicClo
             contract.Exports.Any(export => export.Kind is
                 CanonicalAbiFunctionKind.Function or CanonicalAbiFunctionKind.ExportedResourceDestructor))
         {
+            NativeIntegerSize = nativeIntegerSize,
+            JavaScriptHost = javaScriptHost,
             ProcessExit = component && Declares(contract, ExitInterface, "exit-with-code"),
         };
     }

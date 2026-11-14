@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Reflection.Metadata;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.UnsafeAccessors;
 
@@ -14,6 +15,7 @@ internal sealed class UnsafeAccessorTargetResolver : IUnsafeAccessorTargetResolv
     private readonly ITypeFinder _types;
     private readonly IMethodRepository _methods;
     private readonly IMetadataStackTypeResolver _stackTypes;
+    private readonly IUnsafeAccessorTypeNameResolver _typeNames;
 
     public UnsafeAccessorTargetResolver(
         IUnsafeAccessorSignatureReader signatures,
@@ -21,7 +23,8 @@ internal sealed class UnsafeAccessorTargetResolver : IUnsafeAccessorTargetResolv
         ImmutableDictionary<UnsafeAccessorMemberKind, IUnsafeAccessorMemberResolver> members,
         ITypeFinder types,
         IMethodRepository methods,
-        IMetadataStackTypeResolver stackTypes)
+        IMetadataStackTypeResolver stackTypes,
+        IUnsafeAccessorTypeNameResolver typeNames)
     {
         _signatures = signatures ?? throw new ArgumentNullException(nameof(signatures));
         _definitions = definitions ?? throw new ArgumentNullException(nameof(definitions));
@@ -29,6 +32,7 @@ internal sealed class UnsafeAccessorTargetResolver : IUnsafeAccessorTargetResolv
         _types = types ?? throw new ArgumentNullException(nameof(types));
         _methods = methods ?? throw new ArgumentNullException(nameof(methods));
         _stackTypes = stackTypes ?? throw new ArgumentNullException(nameof(stackTypes));
+        _typeNames = typeNames ?? throw new ArgumentNullException(nameof(typeNames));
         if (members.Count != Enum.GetValues<UnsafeAccessorMemberKind>().Length ||
             Enum.GetValues<UnsafeAccessorMemberKind>().Any(kind => !members.ContainsKey(kind)))
             throw new ArgumentException("Every accessor kind requires exactly one member resolver.", nameof(members));
@@ -43,12 +47,15 @@ internal sealed class UnsafeAccessorTargetResolver : IUnsafeAccessorTargetResolv
             !_members.TryGetValue((UnsafeAccessorMemberKind)declaration.Kind, out var members))
             return Failure(UnsafeAccessorFailure.BadImageFormat);
 
-        if (declaration.HasTypeTranslation)
-            throw new CompilerException(new CompilerDiagnostic(DiagnosticCode.UnsupportedMetadata,
-                "UnsafeAccessorTypeAttribute type translation is not supported"));
-
         var kind = (UnsafeAccessorMemberKind)declaration.Kind;
         var signature = _signatures.Read(accessor.Definition);
+        if (declaration.TypeTranslations is { } translations)
+        {
+            // A name the program does not define fails at the call, as the CLR fails to load it.
+            if (Translate(signature, translations, accessor.Definition.Key.Assembly) is not { } translated)
+                return Failure(UnsafeAccessorFailure.TypeLoad);
+            signature = translated;
+        }
         var resultType = Unmodified(signature.ReturnType);
         var isConstructor = kind == UnsafeAccessorMemberKind.Constructor;
         var isField = kind is UnsafeAccessorMemberKind.Field or UnsafeAccessorMemberKind.StaticField;
@@ -99,6 +106,44 @@ internal sealed class UnsafeAccessorTargetResolver : IUnsafeAccessorTargetResolv
             return isConstructor ? new UnsafeAccessorBinding.Constructor(instance) : new UnsafeAccessorBinding.Method(instance);
         }
     }
+
+    // Each translated position stands for the type its UnsafeAccessorTypeAttribute names, so member matching
+    // compares the target's signature with that type.
+    private MethodSignature<CliTypeIdentity>? Translate(MethodSignature<CliTypeIdentity> signature,
+        UnsafeAccessorTypeTranslations translations, AssemblyIdentity accessorAssembly)
+    {
+        var returnType = signature.ReturnType;
+        if (translations.Return is { } returnName)
+        {
+            if (Translated(returnName, returnType) is not { } translatedReturn) return null;
+            returnType = translatedReturn;
+        }
+
+        var parameters = signature.ParameterTypes.ToBuilder();
+        for (var index = 0; index < parameters.Count; index++)
+        {
+            if (translations.Parameter(index) is not { } name) continue;
+            if (Translated(name, parameters[index]) is not { } type) return null;
+            parameters[index] = type;
+        }
+        return new MethodSignature<CliTypeIdentity>(signature.Header, returnType,
+            signature.RequiredParameterCount, signature.GenericParameterCount, parameters.ToImmutable());
+
+        CliTypeIdentity? Translated(string name, CliTypeIdentity declared)
+        {
+            if (!Unmodified(declared).Equals(ObjectType))
+                throw new CompilerException(new CompilerDiagnostic(DiagnosticCode.UnsupportedMetadata,
+                    "UnsafeAccessorTypeAttribute is supported on object parameters and return values only"));
+            if (_typeNames.Resolve(name, accessorAssembly) is not { } definition) return null;
+            if (definition.IsValueType || definition.GenericArity != 0)
+                throw new CompilerException(new CompilerDiagnostic(DiagnosticCode.UnsupportedMetadata,
+                    $"UnsafeAccessorTypeAttribute type '{name}' is a value type or generic, which is not supported"));
+            return CliTypeIdentity.FromDefinition(definition);
+        }
+    }
+
+    private static readonly CliTypeIdentity ObjectType =
+        CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference, isValueType: false);
 
     private UnsafeAccessorBinding.Failure Failure(UnsafeAccessorFailure failure)
     {

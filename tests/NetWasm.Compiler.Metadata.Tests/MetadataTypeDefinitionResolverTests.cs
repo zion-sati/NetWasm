@@ -23,6 +23,7 @@ public sealed class MetadataTypeDefinitionResolverTests
     [InlineData("nativeuint", "UIntPtr")]
     [InlineData("string", "String")]
     [InlineData("object", "Object")]
+    [InlineData("typedref", "TypedReference")]
     public void ResolveTypeIdentityMapsEverySupportedPrimitive(
         string primitiveName,
         string typeName)
@@ -39,6 +40,19 @@ public sealed class MetadataTypeDefinitionResolverTests
             CliTypeIdentity.Primitive(primitiveName, CliValueKind.I4));
 
         Assert.Same(type, result);
+    }
+
+    [Fact]
+    public void APrimitiveWithoutATypeDefinitionIsUnsupported()
+    {
+        var availability = MetadataActorTestData.CreateAvailabilityValidator();
+        var resolver = new MetadataTypeDefinitionResolver([], ImmutableDictionary<string, string>.Empty,
+            new MetadataTypeFinder([], availability), availability);
+
+        var error = Assert.Throws<CompilerException>(() => ((ITypeDefinitionResolver)resolver).ResolveTypeIdentity(
+            CliTypeIdentity.Primitive("unknown", CliValueKind.I4)));
+
+        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
     }
 
     [Fact]
@@ -73,7 +87,7 @@ public sealed class MetadataTypeDefinitionResolverTests
     }
 
     [Fact]
-    public void ResolveTypeIdentityRejectsNullUnsupportedPrimitiveMalformedAndMissingIdentities()
+    public void ResolveTypeIdentityRejectsNullMalformedAndMissingIdentities()
     {
         var availability = MetadataActorTestData.CreateAvailabilityValidator();
         var resolver = new MetadataTypeDefinitionResolver(
@@ -83,9 +97,6 @@ public sealed class MetadataTypeDefinitionResolverTests
             availability);
         Assert.Throws<ArgumentNullException>(() =>
             ((ITypeDefinitionResolver)resolver).ResolveTypeIdentity(null!));
-        Assert.Throws<CompilerException>(() =>
-            ((ITypeDefinitionResolver)resolver).ResolveTypeIdentity(
-                CliTypeIdentity.Primitive("typedref", CliValueKind.Unknown)));
         Assert.Throws<CompilerException>(() =>
             ((ITypeDefinitionResolver)resolver).ResolveTypeIdentity(
                 CliTypeIdentity.SzArray(

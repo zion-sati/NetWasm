@@ -24,7 +24,8 @@ internal sealed class RuntimeModuleMaterializer(
     IRuntimeInlineIntentWriter inlineIntents,
     ICommandInvoker commands,
     IArtifactDigestCalculator artifactDigests,
-    IRuntimeNativeModuleMaterializer nativeModules) : IRuntimeModuleMaterializer
+    IRuntimeNativeModuleMaterializer nativeModules,
+    ILinkerCommandFactory linkerCommands) : IRuntimeModuleMaterializer
 {
     private const string DisableExperimentalWarningOption =
         "--disable-warning=ExperimentalWarning";
@@ -108,7 +109,7 @@ internal sealed class RuntimeModuleMaterializer(
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!);
         Directory.CreateDirectory(request.LogDirectory);
-        commands.Invoke(new(
+        commands.Invoke(linkerCommands.Create(
             request.WasmLdPath,
             arguments,
             Path.Combine(request.LogDirectory, "runtime-link.log")));

@@ -71,6 +71,10 @@ public sealed record WasmEmissionRequest(
     public MemberExecutionPlan MemberExecution { get; init; } =
         MemberExecutionPlan.Empty;
 
+    // The shared body each of object's virtual calls uses at its many-target sites, by declaration.
+    public ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
     public EntityKey? EntryPointArgumentFactory { get; init; }
     // CoreLib's process-exit method, which the process entry calls after Main.
     public EntityKey? EntryPointExit { get; init; }

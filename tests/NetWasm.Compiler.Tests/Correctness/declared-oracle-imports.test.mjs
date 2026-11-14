@@ -35,6 +35,14 @@ test("permits explicitly declared zero-returning simulations", () => {
   assert.equal(imports.simulated(), 0);
 });
 
+test("resolves accepted native entry points to functions that throw when called", () => {
+  const imports = createDeclaredOracleImports("test", {}, name => name.startsWith("CryptoNative_"));
+  const entryPoint = imports.CryptoNative_EvpCipherCreate2;
+  assert.equal(typeof entryPoint, "function");
+  assert.throws(() => entryPoint(), /Native entry point not linked by the oracle: test.CryptoNative_EvpCipherCreate2/);
+  assert.throws(() => imports.allocate, /Undeclared oracle import: test.allocate/);
+});
+
 test("rejects absent module names and declaration objects", () => {
   for (const name of [undefined, null, 1, ""]) {
     assert.throws(() => createDeclaredOracleImports(name, {}), TypeError);
@@ -42,4 +50,5 @@ test("rejects absent module names and declaration objects", () => {
   for (const values of [undefined, null, 1, "", () => 0]) {
     assert.throws(() => createDeclaredOracleImports("test", values), TypeError);
   }
+  assert.throws(() => createDeclaredOracleImports("test", {}, "CryptoNative_"), TypeError);
 });

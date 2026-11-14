@@ -3,7 +3,7 @@
 //
 // Char generic conversion contracts are retained from the pinned
 // dotnet/runtime System.Private.CoreLib sources (commit
-// 474ed963699fc29809015392738a15231aaae2de).
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce).
 
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
@@ -11,7 +11,7 @@ using System.Runtime.CompilerServices;
 
 namespace System;
 
-public partial struct Char
+public readonly partial struct Char
 {
     /// <inheritdoc cref="INumberBase{TSelf}.TryConvertFromChecked{TOther}(TOther, out TSelf)" />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

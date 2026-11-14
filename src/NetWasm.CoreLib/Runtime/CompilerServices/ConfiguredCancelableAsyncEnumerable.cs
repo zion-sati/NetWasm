@@ -1,5 +1,5 @@
 // Portions derived from dotnet/runtime System.Private.CoreLib's
-// ConfiguredCancelableAsyncEnumerable<T> at commit 474ed963699fc29809015392738a15231aaae2de.
+// ConfiguredCancelableAsyncEnumerable<T> at commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements; the .NET
 // Foundation licenses this file to you under the MIT license.
 
@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 
 namespace System.Runtime.CompilerServices
 {
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public readonly struct ConfiguredCancelableAsyncEnumerable<T>
         where T : allows ref struct
     {
@@ -35,6 +36,7 @@ namespace System.Runtime.CompilerServices
         public Enumerator GetAsyncEnumerator() =>
             new(_enumerable.GetAsyncEnumerator(_cancellationToken), _continueOnCapturedContext);
 
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
         public readonly struct Enumerator
         {
             private readonly IAsyncEnumerator<T> _enumerator;

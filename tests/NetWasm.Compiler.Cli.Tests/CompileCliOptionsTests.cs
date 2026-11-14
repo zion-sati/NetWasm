@@ -38,6 +38,9 @@ public sealed class CompileCliOptionsTests
         var options = Parse(
             "-target:function", "-entry:Example.Entry::Run", "App.dll", "-out:app.wasm",
             "-reference:first.dll,second.dll", "-r:third.dll;fourth.dll", "-r:fifth.dll",
+            "-metadatareference:view.dll,other-view.dll", "-originalcontract:contract.dll",
+            "-referenceorigin:first.dll;package=Example.Library;version=13.0.3;asset=lib/netstandard2.0/first.dll",
+            "-referenceorigin:view.dll;original=contract.dll",
             "-export:add=Example.Math::Add", "-export:sub=Example.Math::Sub", "-platform:wasm64",
             "-optimize:O3", "-pathmap:/src=/_/", "-source:Entry.cs", "-source:Math.cs",
             "-interopmanifest:interop.json", "-runtimelayout:layout.json", "-compilermetadata:metadata.json",
@@ -81,6 +84,15 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("Example.Entry", options.EntryType);
         Assert.Equal("Run", options.EntryMethod);
         Assert.Equal(["first.dll", "second.dll", "third.dll", "fourth.dll", "fifth.dll"], options.References);
+        Assert.Equal(["view.dll", "other-view.dll"], options.MetadataReferences);
+        Assert.Equal(["contract.dll"], options.OriginalContracts);
+        Assert.Equal(
+            [
+                new CompilationReferenceOrigin("first.dll", CompilationReferenceRole.Implementation,
+                    "Example.Library", "13.0.3", "lib/netstandard2.0/first.dll"),
+                new CompilationReferenceOrigin("view.dll", CompilationReferenceRole.Metadata, OriginalReferencePath: "contract.dll"),
+            ],
+            options.ReferenceOrigins);
         Assert.Equal(
             [new RequestedExport("add", "Example.Math", "Add"), new RequestedExport("sub", "Example.Math", "Sub")],
             options.Exports);
@@ -226,6 +238,11 @@ public sealed class CompileCliOptionsTests
         "App.dll", "-out:a.wasm", "-wasmtoolsnode:node")]
     [InlineData("-wasmtoolsnode, -wasmtoolscommand and -wasmtoolsmodule must be given together",
         "App.dll", "-out:a.wasm", "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs")]
+    [InlineData("-referenceorigin must start with a reference file", "App.dll", "-out:a.wasm", "-referenceorigin:;")]
+    [InlineData("-referenceorigin names 'other.dll', which is not a -reference or -metadatareference",
+        "App.dll", "-out:a.wasm", "-referenceorigin:other.dll")]
+    [InlineData("-referenceorigin facts are package=, version=, asset= and original=, not 'bogus=1'",
+        "App.dll", "-out:a.wasm", "-r:first.dll", "-referenceorigin:first.dll;bogus=1")]
     [InlineData("-wasmtoolsnode, -wasmtoolscommand and -wasmtoolsmodule must be given together",
         "App.dll", "-out:a.wasm", "-wasmtoolsmodule:wasm-tools.wasm")]
     public void RejectsAnInvalidCommandLine(string message, params string[] arguments)
@@ -234,6 +251,17 @@ public sealed class CompileCliOptionsTests
 
         Assert.Equal(DiagnosticCode.InvalidCommandLine, exception.Diagnostic.Code);
         Assert.Equal(message, exception.Diagnostic.Message);
+    }
+
+    // A fact without a value leaves that fact unset.
+    [Fact]
+    public void AReferenceOriginFactWithoutAValueIsUnset()
+    {
+        var origin = Assert.Single(Parse("App.dll", "-out:a.wasm", "-r:first.dll", "-referenceorigin:first.dll;package")
+            .ReferenceOrigins);
+
+        Assert.Equal("first.dll", origin.Path);
+        Assert.Null(origin.PackageId);
     }
 
     [Fact]
@@ -290,6 +318,42 @@ public sealed class CompileCliOptionsTests
     [InlineData(null, "-verifycompiledunits+", true)]
     public void UnitsAreVerifiedWhereTheEnvironmentOrTheSwitchesAsk(string? environment, string option, bool verified) =>
         Assert.Equal(verified, CompileCliCommand.VerifiesCompiledUnits(environment, Parse("App.dll", "-out:app.wasm", option)));
+
+    [Fact]
+    public void ReadsFeatureSwitchesAndLinkedNativeLibraries()
+    {
+        var options = Parse("App.dll", "-out:app.wasm", "-featureswitch:Example.A=true", "-featureswitch:Example.B=False",
+            "-featureswitch:Example.A=false", "-linkednativeonly+", "-nativelibrary:libz", "-nativelibrary:libgpu",
+            "-runtimeproperty:Example.Z=a=b", "-runtimeproperty:Example.A=", "-runtimeproperty:Example.Z=last");
+
+        Assert.Equal(
+            new Dictionary<string, bool> { ["Example.A"] = false, ["Example.B"] = false },
+            options.FeatureSwitches);
+        Assert.True(options.LinkedNativeOnly);
+        Assert.Equal(["libz", "libgpu"], options.NativeLibraries);
+        Assert.Equal([("Example.A", ""), ("Example.Z", "last")], options.RuntimeProperties);
+        Assert.Equal("a=b", Parse("App.dll", "-out:app.wasm", "-runtimeproperty:Example.Z=a=b").RuntimeProperties[0].Value);
+    }
+
+    [Fact]
+    public void RejectsARuntimePropertyWithoutAName()
+    {
+        var exception = Assert.Throws<CompilerException>(() => Parse("App.dll", "-out:app.wasm", "-runtimeproperty:=value"));
+
+        Assert.Equal("-runtimeproperty '=value' must be name=value", exception.Diagnostic.Message);
+    }
+
+    [Theory]
+    [InlineData("-featureswitch:Example.A=yes")]
+    [InlineData("-featureswitch:=true")]
+    [InlineData("-featureswitch:Example.A")]
+    public void RejectsAFeatureSwitchWithoutANameAndBooleanValue(string argument)
+    {
+        var exception = Assert.Throws<CompilerException>(() => Parse("App.dll", "-out:app.wasm", argument));
+
+        Assert.Equal(DiagnosticCode.InvalidCommandLine, exception.Diagnostic.Code);
+        Assert.StartsWith("-featureswitch '", exception.Diagnostic.Message, StringComparison.Ordinal);
+    }
 
     private static CompileCliOptions Parse(params string[] arguments) =>
         CompileCliOptions.Parse(NwcTestArguments.Read(CompileCliOptions.Names, arguments));

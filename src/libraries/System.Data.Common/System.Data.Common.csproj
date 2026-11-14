@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Data.Common</AssemblyName>
+    <!-- Its public surface does not claim CLS compliance yet (unsigned members are not marked). -->
+    <CLSCompliant>false</CLSCompliant>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Upstream System.Data.Common builds with SYSLIB0038 suppressed (its own SerializationFormat.Binary use). -->
+    <NoWarn>$(NoWarn);SYSLIB0038</NoWarn>
+    <NetWasmRegexSourceGenerator>$(NETCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/System.Text.RegularExpressions.Generator.dll</NetWasmRegexSourceGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/HResults.cs" />
+    <!-- System.Data.Common at dotnet/runtime 811225a4, copied verbatim and adapted where marked "NetWasm:"; the
+         .NET 5+ batching, data-source and savepoint members are left out to keep netstandard 2.1's membership. -->
+    <Compile Include="Common/System/**/*.cs" />
+    <Compile Include="System/Data/**/*.cs" />
+    <Compile Include="System/Xml/**/*.cs" />
+    <ProjectReference Include="../System.Runtime.Serialization.Formatters/System.Runtime.Serialization.Formatters.csproj" />
+    <ProjectReference Include="../System.Xml/System.Xml.csproj" />
+    <ProjectReference Include="../System.Transactions.Local/System.Transactions.Local.csproj" />
+    <ProjectReference Include="../System.ComponentModel.TypeConverter/System.ComponentModel.TypeConverter.csproj" />
+    <ProjectReference Include="../System.Text.RegularExpressions/System.Text.RegularExpressions.csproj" />
+    <ProjectReference Include="../System.Linq/System.Linq.csproj" />
+    <Analyzer Include="$(NetWasmRegexSourceGenerator)" />
+  </ItemGroup>
+</Project>

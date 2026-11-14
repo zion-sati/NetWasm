@@ -7,7 +7,7 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis;
 
 internal sealed class StaticDataViewResolver(
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     IMethodSpecializer specializer,
     ITypeRepository types,
     IMethodRepository methods) : IStaticDataViewResolver
@@ -44,7 +44,12 @@ internal sealed class StaticDataViewResolver(
             return Resolution.NotProven;
         }
 
-        var body = specializer.Rewrite(methodBodies.ReadMethodBody(producer)) with
+        if (!methodBodies.TryReadMethodBody(producer, out var read))
+        {
+            return Resolution.NotProven;
+        }
+
+        var body = specializer.Rewrite(read) with
         {
             MethodInstance = producer,
         };

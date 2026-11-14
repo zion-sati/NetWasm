@@ -9,6 +9,7 @@ using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Metadata.UnsafeAccessors;
 
 namespace NetWasm.Compiler.Metadata;
@@ -49,7 +50,9 @@ public sealed class ManagedAssembly : IDisposable
             IValueTypeDefinitionStackKindResolver stackKinds,
             INativeImportDeclarationReader nativeImports,
             INativeCallbackDeclarationReader nativeCallbacks,
-            IUnsafeAccessorDeclarationReader unsafeAccessors)
+            IUnsafeAccessorDeclarationReader unsafeAccessors,
+            INativeImportBinder nativeBinding,
+            IFeatureSwitchSubstitutionReader substitutions)
     {
         Path = path;
         _image = image;
@@ -63,7 +66,13 @@ public sealed class ManagedAssembly : IDisposable
             stackKinds,
             nativeImports,
             nativeCallbacks,
-            unsafeAccessors);
+            unsafeAccessors,
+            nativeBinding);
+        foreach (var (token, stubs) in substitutions.Read(_peReader, Reader))
+        {
+            if (_methods.TryGetValue(token, out var method))
+                _methods[token] = method with { FeatureSwitchStubs = stubs };
+        }
         _baseTypes = _types.ToDictionary(
             pair => pair.Key,
             pair => Reader.GetTypeDefinition(
@@ -134,7 +143,8 @@ public sealed class ManagedAssembly : IDisposable
             AssemblyIdentityAliases assemblyIdentityAliases,
             IValueTypeDefinitionStackKindResolver stackKinds,
             INativeImportDeclarationReader nativeImports,
-            INativeCallbackDeclarationReader nativeCallbacks)
+            INativeCallbackDeclarationReader nativeCallbacks,
+            INativeImportBinder? nativeBinding = null)
     {
         ArgumentNullException.ThrowIfNull(stackKinds);
         ArgumentNullException.ThrowIfNull(nativeImports);
@@ -149,7 +159,9 @@ public sealed class ManagedAssembly : IDisposable
                 stackKinds,
                 nativeImports,
                 nativeCallbacks,
-                new UnsafeAccessorDeclarationReader(new CustomAttributeTypeNameProvider()));
+                new UnsafeAccessorDeclarationReader(new CustomAttributeTypeNameProvider()),
+                nativeBinding ?? NativeLibraryBinding.All,
+                SubstitutionReader());
         }
         catch (BadImageFormatException exception)
         {
@@ -158,6 +170,13 @@ public sealed class ManagedAssembly : IDisposable
                     DiagnosticCode.UnsupportedMetadata,
                     $"'{path}' is not a valid managed assembly: {exception.Message}"));
         }
+    }
+
+    // The substitution reader, its type and signature names given by one naming Strategy.
+    private static FeatureSwitchSubstitutionReader SubstitutionReader()
+    {
+        var names = new SubstitutionSignatureTypeNameProvider();
+        return new(new EmbeddedResourceReader(), new TypeDefinitionNameFormatter(names), new MethodSignatureNameFormatter(names));
     }
 
     public void Dispose()
@@ -179,7 +198,8 @@ public sealed class ManagedAssembly : IDisposable
         IValueTypeDefinitionStackKindResolver stackKinds,
         INativeImportDeclarationReader nativeImports,
         INativeCallbackDeclarationReader nativeCallbacks,
-        IUnsafeAccessorDeclarationReader unsafeAccessors)
+        IUnsafeAccessorDeclarationReader unsafeAccessors,
+        INativeImportBinder nativeBinding)
     {
         // Sized from the metadata tables, so CoreLib's definitions never rehash.
         var types = new Dictionary<int, TypeDefinitionModel>(Reader.TypeDefinitions.Count);
@@ -243,6 +263,8 @@ public sealed class ManagedAssembly : IDisposable
                 var (Import, Export, WitImport, WitExport, WitPostReturn) =
                     ReadInteropDeclarations(method, methodKey, signature.ParameterTypes.Length);
                 var methodName = Reader.GetString(method.Name);
+                var nativeImport = nativeImports.Read(Reader, method);
+                var binds = nativeImport is null || nativeBinding.Binds(nativeImport);
                 methods.Add(
                     methodToken,
                     new MethodDefinitionModel(
@@ -260,7 +282,8 @@ public sealed class ManagedAssembly : IDisposable
                         WitImport = WitImport,
                         WitExport = WitExport,
                         WitPostReturn = WitPostReturn,
-                        NativeImport = nativeImports.Read(Reader, method),
+                        NativeImport = binds ? nativeImport : null,
+                        UnboundNativeImport = binds ? null : nativeImport,
                         NativeCallback = nativeCallbacks.Read(Reader, method),
                         UnsafeAccessor = unsafeAccessors.Read(Reader, method),
                         GenericArity = method.GetGenericParameters().Count,
@@ -289,6 +312,11 @@ public sealed class ManagedAssembly : IDisposable
                     genericContext: null);
                 var accessors = property.GetAccessors();
                 var propertyToken = MetadataTokens.GetToken(propertyHandle);
+                if (!accessors.Getter.IsNil && FeatureSwitchName(property) is { } featureSwitch)
+                {
+                    var getterToken = MetadataTokens.GetToken(accessors.Getter);
+                    methods[getterToken] = methods[getterToken] with { FeatureSwitch = featureSwitch };
+                }
                 properties.Add(
                     propertyToken,
                     new PropertyDefinitionModel(
@@ -472,6 +500,21 @@ public sealed class ManagedAssembly : IDisposable
             .Select(handle => Reader.GetCustomAttribute(handle))
             .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
                 "System.Runtime.CompilerServices.PreserveBaseOverridesAttribute");
+
+    // [FeatureSwitchDefinition(featureName)]: its one constructor argument, a string.
+    private string? FeatureSwitchName(PropertyDefinition property)
+    {
+        foreach (var handle in property.GetCustomAttributes())
+        {
+            var attribute = Reader.GetCustomAttribute(handle);
+            if (GetAttributeTypeName(attribute.Constructor) !=
+                "System.Diagnostics.CodeAnalysis.FeatureSwitchDefinitionAttribute")
+                continue;
+            var value = Reader.GetBlobReader(attribute.Value);
+            return value.ReadUInt16() == 1 ? value.ReadSerializedString() : null;
+        }
+        return null;
+    }
 
     private bool HasStackTraceHiddenAttribute(CustomAttributeHandleCollection attributes) =>
         attributes

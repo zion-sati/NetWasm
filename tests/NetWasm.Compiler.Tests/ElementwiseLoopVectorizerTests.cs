@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Loops;
+using NetWasm.Compiler.Analysis.Loops.Elementwise;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Tests;
@@ -302,7 +303,19 @@ public sealed class ElementwiseLoopVectorizerTests
         return new(definition, CliTypeIdentity.Named(Assembly, ns, type, isValueType: false), [.. arguments], signature);
     }
 
-    private static ElementwiseLoopVectorizer Vectorizer() => new(new FakeVectorMethods(), new OperandCalledMethodResolver(), true);
+    private static ElementwiseLoopVectorizer Vectorizer()
+    {
+        var methods = new FakeVectorMethods();
+        var calledMethods = new OperandCalledMethodResolver();
+        var parser = new ElementwiseBodyParser(calledMethods);
+        return new(
+            new ElementwiseLoopMatcher(parser, new ElementwiseLaneSelector()),
+            new ElementwiseWalkMatcher(parser),
+            new ElementwiseLoopPrefixEmitter(methods),
+            new ElementwiseWalkPrefixEmitter(methods),
+            calledMethods,
+            true);
+    }
 
     // a[i] = b[i] + value, over int arrays a and b in arguments 0 and 1.
     private static CilMethodBody Shape(string shape) => shape switch

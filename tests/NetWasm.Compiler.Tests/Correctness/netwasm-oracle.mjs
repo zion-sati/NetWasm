@@ -4,6 +4,11 @@ import { createRefreshableDataView } from "./refreshable-data-view.mjs";
 import { createDeclaredOracleImports } from "./declared-oracle-imports.mjs";
 import { readRuntimeTypeTable } from "./runtime-type-table.cjs";
 
+// Output the guest writes, captured into the observation (declared first: the run starts
+// before the rest of the module is evaluated).
+var capturedStdout = [];
+var capturedStderr = [];
+
 var [modulePath, inputText, target = "wasm32", staticDataEndOrConfiguration,
   explicitHostConfigurationPath] =
   process.argv.slice(2);
@@ -82,7 +87,8 @@ var plus = (value, offset) => memory64
 var raw = size => {
   size = Number(size);
   var pointer = heap;
-  heap = (heap + size + 3) & ~3;
+  // Not `& ~3`: JavaScript's bitwise operators wrap at 2 GiB, and this bump heap never collects.
+  heap = Math.ceil((heap + size) / 4) * 4;
   var pages = Math.ceil(heap / 65536);
   var current = memory.buffer.byteLength / 65536;
   if (pages > current) memory.grow(memory64
@@ -201,6 +207,10 @@ var wasiEnvironment = {
     }
     writeAddress(view, result, 0, elements);
     writeAddress(view, result, addressSize, argumentList.length);
+  },
+  // option<string>: the oracle gives no initial working directory.
+  "get-initial-cwd"(result) {
+    createRefreshableDataView(memory).setUint8(asNumber(result), 0);
   },
 };
 // The program's sidecars, mounted under /netwasm-sidecars as a NetWasm host mounts them; the oracle serves
@@ -816,7 +826,7 @@ var runtimeValues = {
   memory,
   initialize(staticEnd) {
     if (runtimeInitialized) return;
-    heap = (Number(staticEnd) + 7) & ~7;
+    heap = Math.ceil(Number(staticEnd) / 8) * 8;
     runtimeInitialized = true;
   },
   allocate,
@@ -1056,7 +1066,18 @@ var runtimeValues = {
   },
   gc_handle_release(handle) { gcHandles[handle >> 2] = null; },
   gc_handle_address(handle) {
-    return gcHandles[handle >> 2]?.target ?? zeroAddress();
+    // Mirrors object_data_address_resolve: arrays expose their data pointer, strings their
+    // characters and other objects the bytes after the type-id header.
+    const target = gcHandles[handle >> 2]?.target;
+    if (!target) return zeroAddress();
+    const view = createRefreshableDataView(memory);
+    const type = view.getInt32(asNumber(target), true);
+    if (cloneArrayTypes.has(type)) {
+      return memory64
+        ? view.getBigUint64(asNumber(plus(target, 16)), true)
+        : view.getUint32(asNumber(plus(target, 8)), true);
+    }
+    return plus(target, cloneStringTypes.has(type) ? (memory64 ? 12 : 8) : (memory64 ? 8 : 4));
   },
   object_contains_references(object) {
     var type = createRefreshableDataView(memory).getInt32(asNumber(object), true);
@@ -1159,7 +1180,11 @@ var runtimeValues = {
   },
   finalizer_safepoint: zeroAddress,
 };
-var runtime = createDeclaredOracleImports("netwasm.runtime.v1", runtimeValues);
+// NetWasm.App.Runtime's cryptography shim (libSystem.Security.Cryptography.Native.OpenSsl) is not linked here, nor are the
+// address getters of the callbacks a native link would provide.
+var runtime = createDeclaredOracleImports("netwasm.runtime.v1", runtimeValues,
+  name => name.startsWith("CryptoNative_") || name.startsWith("NetWasmCryptoNative_") ||
+    name.startsWith("__netwasm_callback_address_"));
 var host = createDeclaredOracleImports("netwasm.host.v1", {
   write_i32: zero,
   // Report through the oracle observation, not an ignored host callback.
@@ -1179,6 +1204,7 @@ var host = createDeclaredOracleImports("netwasm.host.v1", {
 
 try {
   var bytes = await readFile(modulePath);
+  var compiledModule = await WebAssembly.compile(bytes);
   var observations = [];
   for (var inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
         var inputDescriptor = inputs[inputIndex];
@@ -1191,7 +1217,7 @@ try {
     currentInput = input;
     try {
       var canonicalPrefix = memory64 ? "cm64p2" : "cm32p2";
-      var instantiated = await WebAssembly.instantiate(bytes, {
+      application = await WebAssembly.instantiate(compiledModule, addUnprovidedWasiImports(compiledModule, {
         "netwasm.runtime.v1": runtime,
         "netwasm.host.v1": host,
         "$root": componentBuiltIns,
@@ -1206,8 +1232,9 @@ try {
         [`${canonicalPrefix}|wasi:clocks/monotonic-clock@0.3`]: wasiMonotonicClock,
         "wasi:clocks/monotonic-clock@0.3.2": wasiMonotonicClockBuiltIns,
         [`${canonicalPrefix}|wasi:random/random@0.3`]: wasiRandom,
-        });
-      application = instantiated.instance;
+        ...createStandardStreamOracleImports(),
+        ...createSocketOracleImports(),
+        }));
       var initialize = application.exports[
         memory64 ? "cm64p2_initialize" : "cm32p2_initialize"];
       hostPhase = "initialization";
@@ -1252,6 +1279,130 @@ try {
 } catch (error) {
   var observation = createException(error);
   emit(batched ? inputs.map(() => observation) : observation);
+}
+
+// The oracle's network only creates and drops TCP sockets (as a client does before it observes a
+// cancelled connect), and its file system holds only the time zone asset. A program may link more
+// of wasi:sockets or wasi:filesystem than that (ClientWebSocket reaches name lookup, for example)
+// and still run without calling it, so each such function the module imports exists and fails if
+// it is called. Nothing else is filled in: an undeclared import still fails to link.
+function createSocketOracleImports() {
+  var prefix = memory64 ? "cm64p2" : "cm32p2";
+  return {
+    [`${prefix}|wasi:sockets/types@0.3`]: {
+      // result<tcp-socket, error-code>: error-code's other case holds an option<string>, so the
+      // payload is pointer-aligned.
+      "[static]tcp-socket.create"(family, result) {
+        var view = createRefreshableDataView(memory);
+        view.setUint8(asNumber(result), 0);
+        var handle = newComponentHandle({ kind: "tcp-socket", family });
+        view.setInt32(asNumber(plus(result, memory64 ? 8 : 4)), handle, true);
+      },
+      "tcp-socket_drop"(handle) {
+        if (componentHandles.get(handle)?.kind !== "tcp-socket") {
+          throw new TypeError(`Unknown tcp-socket: ${handle}`);
+        }
+        componentHandles.delete(handle);
+      },
+    },
+  };
+}
+
+function addUnprovidedWasiImports(module, imports) {
+  var completed = { ...imports };
+  for (const { module: moduleName, name, kind } of WebAssembly.Module.imports(module)) {
+    if (kind !== "function" || !/^(cm(32|64)p2\|)?wasi:(sockets|filesystem)\//.test(moduleName)) continue;
+    if (completed[moduleName]?.[name] !== undefined) continue;
+    completed[moduleName] = { ...completed[moduleName] };
+    completed[moduleName][name] = () => {
+      throw new Error(`the oracle does not provide ${moduleName} ${name}`);
+    };
+  }
+  return completed;
+}
+
+// wasi:cli's standard streams. stdout and stderr are captured into the observation, standard
+// input is empty and no stream is a terminal. Like every other operation here, a copy completes
+// at once. write-via-stream receives the readable end of a stream the guest created; the guest
+// writes into the writable end, so the oracle routes each pair's bytes to the sink its readable
+// end was handed to. Each future<result<_, error-code>> resolves to ok.
+function createStandardStreamOracleImports() {
+  var prefix = memory64 ? "cm64p2" : "cm32p2";
+  var take = (handle, kind) => {
+    var value = componentHandles.get(handle);
+    if (value?.kind !== kind) throw new TypeError(`Unknown ${kind}: ${handle}`);
+    return value;
+  };
+  var drop = (handle, kind) => {
+    take(handle, kind);
+    componentHandles.delete(handle);
+  };
+  var readOk = (future, result) => {
+    take(future, "future");
+    createRefreshableDataView(memory).setUint8(asNumber(result), 0);
+    return copyCompleted;
+  };
+  var output = (name, sink) => ({
+    [`${prefix}|wasi:cli/${name}@0.3`]: {
+      "write-via-stream"(readable) {
+        take(readable, "stream-readable").pair.sink = sink;
+        componentHandles.delete(readable);
+        return newComponentHandle({ kind: "future" });
+      },
+    },
+    [`wasi:cli/${name}@0.3.2`]: {
+      "[stream-new-0]write-via-stream"() {
+        var pair = { sink: null };
+        var readable = newComponentHandle({ kind: "stream-readable", pair });
+        var writable = newComponentHandle({ kind: "stream-writable", pair });
+        return (BigInt(writable) << 32n) | BigInt(readable);
+      },
+      "[async-lower][stream-write-0]write-via-stream"(writable, buffer, length) {
+        var { pair } = take(writable, "stream-writable");
+        if (pair.sink === null) throw new Error(`${name} was written before write-via-stream`);
+        var count = asNumber(length);
+        pair.sink.push(new Uint8Array(memory.buffer, asNumber(buffer), count).slice());
+        return count * 16 + copyCompleted;
+      },
+      "[stream-drop-writable-0]write-via-stream": writable => drop(writable, "stream-writable"),
+      "[async-lower][future-read-1]write-via-stream": readOk,
+      "[future-drop-readable-1]write-via-stream": future => drop(future, "future"),
+    },
+  });
+  var noTerminal = result => createRefreshableDataView(memory).setUint8(asNumber(result), 0);
+  return {
+    ...output("stdout", capturedStdout),
+    ...output("stderr", capturedStderr),
+    [`${prefix}|wasi:cli/stdin@0.3`]: {
+      "read-via-stream"(result) {
+        var view = createRefreshableDataView(memory);
+        view.setInt32(asNumber(result), newComponentHandle({ kind: "stream-readable" }), true);
+        view.setInt32(asNumber(plus(result, 4)), newComponentHandle({ kind: "future" }), true);
+      },
+    },
+    "wasi:cli/stdin@0.3.2": {
+      "[async-lower][stream-read-0]read-via-stream"(readable) {
+        take(readable, "stream-readable");
+        return copyDropped;
+      },
+      "[stream-drop-readable-0]read-via-stream": readable => drop(readable, "stream-readable"),
+      "[async-lower][future-read-1]read-via-stream": readOk,
+      "[future-drop-readable-1]read-via-stream": future => drop(future, "future"),
+    },
+    [`${prefix}|wasi:cli/terminal-stdin@0.3`]: { "get-terminal-stdin": noTerminal },
+    [`${prefix}|wasi:cli/terminal-stdout@0.3`]: { "get-terminal-stdout": noTerminal },
+    [`${prefix}|wasi:cli/terminal-stderr@0.3`]: { "get-terminal-stderr": noTerminal },
+    [`${prefix}|wasi:cli/terminal-input@0.3`]: {
+      "terminal-input_drop"() { throw new Error("the oracle has no terminal"); },
+    },
+    [`${prefix}|wasi:cli/terminal-output@0.3`]: {
+      "terminal-output_drop"() { throw new Error("the oracle has no terminal"); },
+    },
+  };
+}
+
+function decodeCapturedOutput(chunks) {
+  return Buffer.concat(chunks.map(chunk => Buffer.from(chunk))).toString("utf8");
 }
 
 function resetRuntimeState() {
@@ -1337,6 +1488,8 @@ function createValue(value) {
     wasiPreopenReads,
     wasiEnvironmentResult,
     wasiEnvironmentLength,
+    stdout: decodeCapturedOutput(capturedStdout),
+    stderr: decodeCapturedOutput(capturedStderr),
     sidecarOpens,
     standardError,
   };

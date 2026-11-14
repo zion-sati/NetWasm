@@ -1,5 +1,5 @@
 // Portions derived from dotnet/runtime System.Linq.Expressions at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements. The .NET
 // Foundation licenses this file to you under the MIT license.
 
@@ -55,25 +55,23 @@ namespace System.Linq.Expressions.Interpreter
         internal void EmitLoadField(FieldInfo field) =>
             Emit(new LoadFieldInstruction(field));
 
-        internal void EmitCall(MethodInfo method, int argumentCount) =>
-            Emit(new CallInstruction(method, argumentCount));
+        internal void EmitCall(MethodBase method, int argumentCount, bool producesValue = true) =>
+            Emit(new CallInstruction(method, argumentCount, producesValue));
 
-        internal void EmitAdd(Type type) => Emit(AddInstruction.Create(type));
+        internal void EmitBinaryOperator(ExpressionType @operator, Type type) =>
+            Emit(new BinaryOperatorInstruction(@operator, type));
 
-        internal void EmitNegate(Type type) =>
-            Emit(NegateInstruction.Create(type));
+        internal void EmitUnaryOperator(ExpressionType @operator, Type type) =>
+            Emit(new UnaryOperatorInstruction(@operator, type));
 
-        internal void EmitLessThan(Type type) =>
-            Emit(ComparisonInstruction.Create(type, NumericComparison.LessThan));
+        internal void EmitComparison(Type type, NumericComparison comparison, bool liftedToNull) =>
+            Emit(new ComparisonInstruction(type, comparison, liftedToNull));
 
-        internal void EmitGreaterThan(Type type) =>
-            Emit(ComparisonInstruction.Create(type, NumericComparison.GreaterThan));
+        internal void EmitEqual(Type type, bool liftedToNull, bool notEqual, bool comparesStringValues) =>
+            Emit(new EqualInstruction(type, liftedToNull, notEqual, comparesStringValues));
 
-        internal void EmitEqual(Type type, bool liftedToNull) =>
-            Emit(new EqualInstruction(type, liftedToNull));
-
-        internal void EmitNumericConvert(TypeCode from, TypeCode to, bool liftedToNull) =>
-            Emit(new NumericConvertInstruction(from, to, liftedToNull));
+        internal void EmitNumericConvert(TypeCode from, TypeCode to, bool liftedToNull, bool isChecked) =>
+            Emit(new NumericConvertInstruction(from, to, liftedToNull, isChecked));
 
         internal void EmitNullableValue() => Emit(new NullableValueInstruction());
 
@@ -91,6 +89,13 @@ namespace System.Linq.Expressions.Interpreter
             var instruction = new BranchFalseInstruction();
             Emit(instruction);
             label.AddBranch(this, Count - 1, _currentStackDepth);
+        }
+
+        internal void EmitCoalescingBranch(BranchLabel label)
+        {
+            var targetStackDepth = _currentStackDepth;
+            Emit(new CoalescingBranchInstruction());
+            label.AddBranch(this, Count - 1, targetStackDepth);
         }
 
         internal void EmitBranch(BranchLabel label, bool preservesValue)

@@ -15,7 +15,7 @@ public sealed class CommandInvokerTests
             ImmutableArray.Create("--version"),
             directory.PathTo("logs/tool.log"));
 
-        var invoker = Assert.IsAssignableFrom<ICommandInvoker>(new CommandInvoker());
+        var invoker = Assert.IsAssignableFrom<ICommandInvoker>(new CommandInvoker(new ToolOutputExcerptFormatter()));
         invoker.Invoke(command);
 
         Assert.NotEmpty(File.ReadAllText(command.LogPath));
@@ -30,14 +30,36 @@ public sealed class CommandInvokerTests
             ImmutableArray.Create("--definitely-invalid-netwasm-option"),
             directory.PathTo("logs/tool.log"));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
+        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
 
         Assert.Contains(Path.GetFullPath(command.LogPath), exception.Message, StringComparison.Ordinal);
         Assert.True(File.Exists(command.LogPath));
+        Assert.Contains($"('{Path.GetFileName(command.ExecutablePath)}') failed with exit code ", exception.Message,
+            StringComparison.Ordinal);
     }
 
+    // A failed tool's last lines are in the message, which is often all a build log keeps: the build's NWPACK001
+    // error otherwise names only a log file a CI run does not keep.
     [Fact]
-    public void ReportsToolStartFailureWithoutRawProcessOutput()
+    public void ReportsToolFailureWithItsLastOutput()
+    {
+        using var directory = new TemporaryDirectory();
+        var command = new RuntimeCommand(
+            NetWasm.TestInfrastructure.DotNetHost.Executable,
+            ImmutableArray.Create("--definitely-invalid-netwasm-option"),
+            directory.PathTo("logs/tool.log"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
+
+        var log = File.ReadAllText(command.LogPath).ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
+        Assert.NotEmpty(log[^1]);
+        Assert.Contains(" Its last output:\n", exception.Message, StringComparison.Ordinal);
+        Assert.EndsWith(log[^1], exception.Message, StringComparison.Ordinal);
+    }
+
+    // NWPACK001 shows only the message, so it names the tool and why it could not start (zion-sati/NetWasm#236).
+    [Fact]
+    public void ReportsToolStartFailureWithItsCause()
     {
         using var directory = new TemporaryDirectory();
         var command = new RuntimeCommand(
@@ -45,12 +67,14 @@ public sealed class CommandInvokerTests
             [],
             directory.PathTo("logs/tool.log"));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
+        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
 
-        Assert.Equal("A NetWasm runtime tool could not be executed.", exception.Message);
+        Assert.StartsWith($"A NetWasm runtime tool could not be executed ('{command.ExecutablePath}'): ", exception.Message,
+            StringComparison.Ordinal);
+        Assert.EndsWith(exception.InnerException!.Message, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void RejectsNullCommand() =>
-        Assert.Throws<ArgumentNullException>(() => new CommandInvoker().Invoke(null!));
+        Assert.Throws<ArgumentNullException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(null!));
 }

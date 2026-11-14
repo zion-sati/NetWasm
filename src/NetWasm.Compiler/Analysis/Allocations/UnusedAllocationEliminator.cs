@@ -17,7 +17,7 @@ namespace NetWasm.Compiler.Analysis.Allocations;
 // runs a static constructor first (ECMA-335 I.8.9.5). .NET's JIT removes such
 // allocations once escape analysis proves them unused.
 internal sealed class UnusedAllocationEliminator(
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     IFinalizerResolver finalizers,
     IMethodInitializationTriggerClassifier initializationTriggers,
@@ -25,7 +25,7 @@ internal sealed class UnusedAllocationEliminator(
 {
     // Constructor chains are short; deeper ones stay allocations.
     private const int MaximumConstructorDepth = 8;
-    private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly IFinalizerResolver _finalizers = finalizers ?? throw new ArgumentNullException(nameof(finalizers));
     private readonly IMethodInitializationTriggerClassifier _initializationTriggers = initializationTriggers ??
@@ -115,8 +115,7 @@ internal sealed class UnusedAllocationEliminator(
 
     private bool StoresOnlyIntoItself(MethodInstanceModel constructor, int depth)
     {
-        var body = _methodBodies.ReadMethodBody(constructor);
-        if (!body.ExceptionRegions.IsEmpty)
+        if (!_methodBodies.TryReadMethodBody(constructor, out var body) || !body.ExceptionRegions.IsEmpty)
         {
             return false;
         }

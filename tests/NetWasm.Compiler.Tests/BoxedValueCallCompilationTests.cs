@@ -48,7 +48,7 @@ public sealed class BoxedValueCallCompilationTests
             4,
             []));
 
-        Assert.Equal(4095, result);
+        Assert.Equal(16383, result);
     }
 
     private const string Source = """
@@ -112,6 +112,16 @@ public sealed class BoxedValueCallCompilationTests
 
         public readonly struct Empty;
 
+        // base.Equals(obj) and base.GetHashCode() call ValueType's members on a boxed copy, with no constrained
+        // prefix: `box Overriding; ldarg.1; call ValueType::Equals(object)`.
+        public struct Overriding
+        {
+            public int Number;
+            public string Text;
+            public override bool Equals(object obj) => base.Equals(obj);
+            public override int GetHashCode() => base.GetHashCode();
+        }
+
         public static class EntryPoint
         {
             public static int Run(int input)
@@ -159,6 +169,14 @@ public sealed class BoxedValueCallCompilationTests
                 if (new Empty().Equals(new Empty()) &&
                     !boxedLeft.Equals(null) &&
                     !boxedLeft.Equals(new Nested(1))) result |= 2048;
+                var overriding = new Overriding { Number = input, Text = new string('x', 1) };
+                var overridingEqual = new Overriding { Number = input, Text = new string('x', 1) };
+                var overridingOther = new Overriding { Number = input + 1, Text = "x" };
+                if (overriding.Equals(overridingEqual) && !overriding.Equals(overridingOther) &&
+                    !overriding.Equals(null) && !overriding.Equals(new Nested(1)) &&
+                    overriding.GetHashCode() == overridingEqual.GetHashCode()) result |= 4096;
+                object boxedOverriding = overriding;
+                if (boxedOverriding.Equals(overridingEqual) && !boxedOverriding.Equals(overridingOther)) result |= 8192;
                 return result;
             }
         }

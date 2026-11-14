@@ -7,6 +7,15 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis;
 
+// Activator.CreateInstance<T>() is managed code, as upstream's: it asks HasDefaultConstructor<T>()
+// and HasNonPublicDefaultConstructor<T>() about the closed T, and constructs through
+// CreateDefaultInstance<T>() inside the handler that wraps a constructor's exception in
+// TargetInvocationException. This rule answers both questions and replaces the construction as
+// .NET classifies T: a value type is constructed, or takes its zero value when it declares no
+// parameterless constructor; a concrete class with a public parameterless constructor is
+// constructed; a non-public parameterless constructor is reported as such; string, arrays,
+// interfaces, abstract classes and classes without a parameterless constructor leave the managed
+// body to throw what .NET throws for them. A delegate to CreateInstance<T> runs the same body.
 internal sealed class ActivatorCallRewriter(
     ITypeDefinitionResolver typeDefinitions,
     IMethodRepository methods,
@@ -24,45 +33,60 @@ internal sealed class ActivatorCallRewriter(
                 call.Operand is not CilOperand.MethodInstance activator ||
                 symbols.Format(activator.Value.Definition.DeclaringType) !=
                     "System.Activator" ||
-                activator.Value.Definition.Name != "CreateInstance")
+                activator.Value.Definition.Name is not
+                    ("HasDefaultConstructor" or "HasNonPublicDefaultConstructor" or "CreateDefaultInstance"))
             {
                 continue;
             }
             var createdType = AssertSingleClosedArgument(activator.Value);
-            if (Replacement(activator.Value, createdType) is not { } replacement)
+            var (kind, constructor) = Classify(createdType);
+            switch (activator.Value.Definition.Name, kind)
             {
-                continue;
+                case ("HasDefaultConstructor", _):
+                    instructions[index] = Constant(call, kind is Construction.ZeroValue or Construction.Constructor);
+                    break;
+                case ("HasNonPublicDefaultConstructor", _):
+                    instructions[index] = Constant(call, kind is Construction.NonPublicConstructor);
+                    break;
+                case (_, Construction.ZeroValue):
+                    instructions[index] = call with
+                    {
+                        Operation = CilOperation.DefaultValue,
+                        Operand = new CilOperand.TypeIdentity(createdType),
+                    };
+                    break;
+                case (_, Construction.Constructor):
+                    instructions[index] = call with
+                    {
+                        Operation = CilOperation.NewObject,
+                        Operand = new CilOperand.MethodInstance(ConstructedInstance(
+                            constructor!,
+                            createdType.Shape == CliTypeShape.GenericInstantiation
+                                ? createdType.TypeArguments
+                                : [])),
+                    };
+                    break;
+                default:
+                    // The managed wrapper throws for this T before it constructs.
+                    continue;
             }
-            instructions[index] = call with
-            {
-                Operation = replacement.Operation,
-                Operand = replacement.Operand,
-            };
             changed = true;
         }
         return changed ? body with { Instructions = [.. instructions] } : body;
     }
 
-    // What Activator.CreateInstance<T>() compiles to, as .NET behaves: construction for a value
-    // type or a concrete class with a public parameterless constructor, a value type's zero
-    // value when it declares none, and a throw of MissingMethodException for a parameterless
-    // constructor that is not public. Null leaves the call, whose body throws what .NET throws
-    // for string, arrays, pointers, interfaces, abstract classes and classes without a
-    // parameterless constructor.
-    private (CilOperation Operation, CilOperand Operand)? Replacement(
-        MethodInstanceModel activator,
-        CliTypeIdentity createdType)
+    private (Construction Kind, MethodDefinitionModel? Constructor) Classify(CliTypeIdentity createdType)
     {
         if (createdType.Shape is not (CliTypeShape.Primitive or CliTypeShape.Named or
                 CliTypeShape.GenericInstantiation) ||
             createdType.CanonicalName == "primitive:string")
         {
-            return null;
+            return (Construction.None, null);
         }
         var definition = typeDefinitions.ResolveTypeIdentity(createdType);
         if (!createdType.IsValueType && (definition.IsInterface || definition.IsAbstract))
         {
-            return null;
+            return (Construction.None, null);
         }
         var constructor = definition.Methods
             .Select(methods.GetMethod)
@@ -72,43 +96,23 @@ internal sealed class ActivatorCallRewriter(
                 candidate.Signature.ParameterTypes.IsEmpty);
         return constructor switch
         {
-            null when createdType.IsValueType =>
-                (CilOperation.DefaultValue, new CilOperand.TypeIdentity(createdType)),
-            null => null,
-            { IsPublic: true } =>
-                (CilOperation.NewObject, new CilOperand.MethodInstance(ConstructedInstance(
-                    constructor,
-                    createdType.Shape == CliTypeShape.GenericInstantiation
-                        ? createdType.TypeArguments
-                        : []))),
-            _ => (CilOperation.Call, new CilOperand.MethodInstance(
-                NonPublicConstructorThrow(activator, createdType))),
+            null when createdType.IsValueType => (Construction.ZeroValue, null),
+            null => (Construction.None, null),
+            { IsPublic: true } => (Construction.Constructor, constructor),
+            _ => (Construction.NonPublicConstructor, null),
         };
     }
 
-    private MethodInstanceModel NonPublicConstructorThrow(
-        MethodInstanceModel activator,
-        CliTypeIdentity createdType)
+    private static CilInstruction Constant(CilInstruction call, bool value) => call with
     {
-        var assembly = activator.Definition.Key.Assembly;
-        var thrower = typeDefinitions
-            .ResolveTypeIdentity(CliTypeIdentity.Named(assembly, "System", "Activator", false))
-            .Methods
-            .Select(methods.GetMethod)
-            .Single(method => method.Name == "CreateInstanceWithNonPublicConstructor");
-        return methodInstances.ResolveMethodInstance(
-            assembly,
-            thrower.Key.MetadataToken,
-            symbols.Format(thrower),
-            0,
-            new CliGenericContext([], [createdType]));
-    }
+        Operation = CilOperation.LoadInt32,
+        Operand = new CilOperand.ConstantI4(value ? 1 : 0),
+    };
 
     private static CliTypeIdentity AssertSingleClosedArgument(MethodInstanceModel method)
     {
         if (method.MethodArguments.Length != 1 ||
-            method.MethodArguments[0].Shape is CliTypeShape.GenericMethodParameter or
-                CliTypeShape.GenericTypeParameter)
+            method.MethodArguments[0].ContainsGenericParameters)
         {
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.UnsupportedMetadata,
@@ -126,4 +130,12 @@ internal sealed class ActivatorCallRewriter(
             symbols.Format(method),
             0,
             new CliGenericContext(typeArguments, []));
+
+    private enum Construction
+    {
+        None,
+        ZeroValue,
+        Constructor,
+        NonPublicConstructor,
+    }
 }

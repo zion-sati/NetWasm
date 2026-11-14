@@ -33,6 +33,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- TestAssets compiles fixtures against NetWasm.App's assemblies, which this collects. -->
+    <ProjectReference Include="../../src/NetWasm.App.Runtime/NetWasm.App.Runtime.csproj" ReferenceOutputAssembly="false" />
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestSupport/TestAssets.cs" />
     <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
     <Compile Remove="Fixtures/**/*.cs" />

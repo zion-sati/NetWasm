@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptation: a socket closes through Interop.Sys.CloseSocket, as files own Close.
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
@@ -153,10 +153,10 @@ namespace System.Net.Sockets
         internal bool IsUnderlyingHandleBlocking => !AsyncContext.IsHandleNonBlocking;
 
         /// <summary>
-        /// Sets the underlying socket to blocking mode.
+        /// Attempts to set the underlying socket to blocking mode.
         /// Only sets blocking if the user hasn't explicitly set Blocking = false (i.e., IsNonBlocking is false).
         /// This is only safe to call when the socket is guaranteed by construction to not be used concurrently
-        /// with any other operation, such as at the completion of ConnectAsync.
+        /// with any other I/O operation, such as at the completion of ConnectAsync. Concurrent disposal is allowed.
         /// </summary>
         internal void SetBlocking()
         {

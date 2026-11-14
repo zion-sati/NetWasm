@@ -67,19 +67,44 @@ public sealed class ObjectArrayDelegateAdapterPlannerTests
         Assert.Equal([Scalar, result], f.Resolutions[1].Context!.Value.MethodArguments.ToArray());
     }
 
+    // A delegate of any arity up to Func's and Action's 16 binds to InvokeN, or InvokeVoidN for a void result,
+    // instantiated with its parameter types and then its result type.
     [Theory]
-    [InlineData(0, false, false, false)]
-    [InlineData(2, false, false, false)]
-    [InlineData(1, true, false, false)]
-    [InlineData(1, false, true, false)]
-    [InlineData(1, false, false, true)]
-    public void UnsupportedSignaturesSelectExplicitThrowTarget(int count, bool byrefParameter, bool voidResult, bool byrefResult)
+    [InlineData(0, false)]
+    [InlineData(2, false)]
+    [InlineData(16, false)]
+    [InlineData(0, true)]
+    [InlineData(3, true)]
+    public void PlanBindsDelegatesOfAnyArityAndVoidResults(int arity, bool returnsVoid)
+    {
+        var f = new ExecutionPlannerFixture();
+        var type = Type("Callback");
+        var factory = f.Factory(type);
+        var result = returnsVoid ? CliTypeIdentity.FromStackKind(CliValueKind.Void) : CliTypeIdentity.FromStackKind(CliValueKind.F8);
+        var invoke = f.Method(2, "Invoke", type, result, parameters: [.. Enumerable.Repeat(Scalar, arity)]);
+        f.RegisterDelegate(type, invoke);
+        var target = f.ArityAdapter(arity, returnsVoid);
+
+        var plan = Assert.Single(f.AdapterPlanner().Plan([factory])).Value;
+
+        Assert.True(plan.IsSupported);
+        Assert.Same(target, plan.Target);
+        Assert.Equal(
+            returnsVoid ? Enumerable.Repeat(Scalar, arity).ToArray() : [.. Enumerable.Repeat(Scalar, arity), result],
+            f.Resolutions[1].Context!.Value.MethodArguments.ToArray());
+    }
+
+    [Theory]
+    [InlineData(17, false, false)]
+    [InlineData(1, true, false)]
+    [InlineData(1, false, true)]
+    public void UnsupportedSignaturesSelectExplicitThrowTarget(int count, bool byrefParameter, bool byrefResult)
     {
         var f = new ExecutionPlannerFixture();
         var type = Type("Unsupported");
         var factory = f.Factory(type);
         var parameter = byrefParameter ? CliTypeIdentity.ManagedByReference(Scalar) : Scalar;
-        var result = voidResult ? CliTypeIdentity.FromStackKind(CliValueKind.Void) : byrefResult ? CliTypeIdentity.ManagedByReference(Scalar) : Scalar;
+        var result = byrefResult ? CliTypeIdentity.ManagedByReference(Scalar) : Scalar;
         var invoke = f.Method(2, "Invoke", type, result, parameters: [.. Enumerable.Repeat(parameter, count)]);
         f.RegisterDelegate(type, invoke);
         var target = f.UnsupportedSupport();
@@ -119,6 +144,10 @@ public sealed class ObjectArrayDelegateAdapterPlannerTests
             AssertUnsupported(parameter: signature, result: Scalar);
             AssertUnsupported(parameter: Scalar, result: signature);
         }
+        // A void parameter, and a managed address that is not a by-reference shape, have no boxed form either.
+        AssertUnsupported(parameter: CliTypeIdentity.FromStackKind(CliValueKind.Void), result: Scalar);
+        AssertUnsupported(parameter: CliTypeIdentity.FromStackKind(CliValueKind.ManagedAddress), result: Scalar);
+        AssertUnsupported(parameter: Scalar, result: CliTypeIdentity.FromStackKind(CliValueKind.ManagedAddress));
 
         static void AssertUnsupported(
             CliTypeIdentity parameter,
@@ -218,7 +247,7 @@ public sealed class ObjectArrayDelegateAdapterPlannerTests
         var f = new ExecutionPlannerFixture();
         var type = Type("Callback");
         var factory = f.Factory(type);
-        var invoke = f.Method(2, "Invoke", type, parameters: supported ? [Scalar] : []);
+        var invoke = f.Method(2, "Invoke", type, parameters: supported ? [Scalar] : [CliTypeIdentity.ManagedByReference(Scalar)]);
         f.RegisterDelegate(type, invoke);
         var supportName = supported ? "Invoke1" : "ThrowUnsupported";
         var candidates = Enumerable.Range(10, count).Select(row => f.Method(row, supportName,
@@ -241,7 +270,7 @@ public sealed class ObjectArrayDelegateAdapterPlannerTests
         var f = new ExecutionPlannerFixture();
         var type = Type("Callback");
         var factory = f.Factory(type);
-        f.RegisterDelegate(type, f.Method(2, "Invoke", type, parameters: supported ? [Scalar] : []));
+        f.RegisterDelegate(type, f.Method(2, "Invoke", type, parameters: supported ? [Scalar] : [CliTypeIdentity.ManagedByReference(Scalar)]));
         var target = supported ? f.UnarySupport() : f.UnsupportedSupport();
         var name = supported ? "Invoke1" : "ThrowUnsupported";
         var wrongName = f.Method(10, "Other", isStatic: !supported, genericArity: 2, parameters: supported ? [Scalar] : []);

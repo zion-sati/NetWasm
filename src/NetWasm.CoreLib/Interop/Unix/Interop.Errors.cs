@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce
 // src/libraries/Common/src/Interop/Unix/Interop.Errors.cs. NetWasm adaptation: there is no
 // System.Native, so the last error is the one NetWasm's file system shim recorded
 // (Interop.FileSystem.NetWasm.cs), and the platform errno values and messages are Linux's

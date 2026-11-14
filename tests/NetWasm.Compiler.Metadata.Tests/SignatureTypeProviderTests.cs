@@ -10,6 +10,49 @@ namespace NetWasm.Compiler.Metadata.Tests;
 public sealed class SignatureTypeProviderTests
 {
     [Fact]
+    public void AppliesTypeForwardersToDefinitionsLocalReferencesAndNestedReferences()
+    {
+        var metadata = new MetadataBuilder();
+        metadata.AddModule(0, metadata.GetOrAddString("Backport.dll"),
+            metadata.GetOrAddGuid(Guid.NewGuid()), default, default);
+        var outer = metadata.AddTypeDefinition(TypeAttributes.Public,
+            metadata.GetOrAddString("Example"), metadata.GetOrAddString("Outer"),
+            default, default, default);
+        var nested = metadata.AddTypeDefinition(TypeAttributes.NestedPublic,
+            default, metadata.GetOrAddString("Nested"), default, default, default);
+        metadata.AddNestedType(nested, outer);
+        var local = metadata.AddTypeReference(MetadataTokens.EntityHandle(1),
+            metadata.GetOrAddString("Example"), metadata.GetOrAddString("Outer"));
+        var nestedReference = metadata.AddTypeReference(local, default, metadata.GetOrAddString("Nested"));
+        var unrelatedAssembly = metadata.AddAssemblyReference(metadata.GetOrAddString("Unrelated"),
+            new Version(1, 0), default, default, default, default);
+        var unrelated = metadata.AddTypeReference(unrelatedAssembly,
+            metadata.GetOrAddString("Example"), metadata.GetOrAddString("Outer"));
+        var image = new BlobBuilder();
+        new MetadataRootBuilder(metadata).Serialize(image, 0, 0);
+        using var readerProvider = MetadataReaderProvider.FromMetadataImage(image.ToImmutableArray());
+        var reader = readerProvider.GetMetadataReader();
+        var source = new AssemblyIdentity("Backport");
+        var platform = new AssemblyIdentity("Platform");
+        var nestedPlatform = new AssemblyIdentity("NestedPlatform");
+        var forwards = ImmutableDictionary<(AssemblyIdentity, string), AssemblyIdentity>.Empty
+            .Add((source, "Example.Outer"), platform)
+            .Add((source, "Example.Outer+Nested"), nestedPlatform);
+        var aliases = new AssemblyIdentityAliases(ImmutableDictionary<string, string>.Empty
+            .Add("Backport", "Fallback"), forwards);
+        var provider = new SignatureTypeProvider(source, reader, aliases);
+
+        Assert.Equal(platform, provider.GetTypeFromDefinition(reader, outer, 0x12).Assembly);
+        Assert.Equal(nestedPlatform, provider.GetTypeFromDefinition(reader, nested, 0x12).Assembly);
+        Assert.Equal(platform, provider.GetTypeFromReference(reader, local, 0x12).Assembly);
+        var nestedIdentity = provider.GetTypeFromReference(reader, nestedReference, 0x12);
+        Assert.Equal(nestedPlatform, nestedIdentity.Assembly);
+        Assert.Equal("Example.Outer+Nested", nestedIdentity.FullName);
+        Assert.Equal(new AssemblyIdentity("Unrelated"),
+            provider.GetTypeFromReference(reader, unrelated, 0x12).Assembly);
+    }
+
+    [Fact]
     public void AccessorMatchingCanPreserveNonCallingConventionModifiers()
     {
         var provider = new SignatureTypeProvider(new("System.Runtime"), preserveCustomModifiers: true);

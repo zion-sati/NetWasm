@@ -7,6 +7,12 @@ namespace System.Diagnostics
 {
     internal static class SR
     {
+        internal const string DebugAssertBanner =
+            "---- DEBUG ASSERTION FAILED ----";
+        internal const string DebugAssertLongMessage =
+            "---- Assert Long Message ----";
+        internal const string DebugAssertShortMessage =
+            "---- Assert Short Message ----";
         internal const string ActivityIdFormatInvalid = "\"Value must be a valid ActivityIdFormat value\"";
         internal const string ActivityListener_RefreshSourceFilters_PredicateThrew = "One or more 'ShouldListenTo' callbacks threw while refreshing the listener's source filters. See InnerExceptions for details.";
         internal const string ActivityNotRunning = "Trying to set an Activity that is not running";
@@ -28,7 +34,15 @@ namespace System.Diagnostics
         internal const string InvalidHistogramExplicitBucketBoundaries = "Histogram explicit bucket boundaries must be specified in ascending order and cannot contain duplicate values.";
         internal const string UnsupportedType = "The metric value type is not supported by the portable diagnostics profile.";
 
+        // System.Diagnostics.Process resources (dotnet/runtime 474ed96 Strings.resx) and the NetWasm
+        // platform-boundary messages for processes, process handles, stack traces and file versions.
+        internal const string StackTraceNotSupported = "Stack trace capture requires NetWasm's managed stack trace instrumentation (NetWasmManagedStackTrace).";
+
         internal static string Format(string format, object? arg) =>
             format.Replace("{0}", arg?.ToString() ?? string.Empty);
+
+        internal static string Format(string format, object? arg0, object? arg1) =>
+            format.Replace("{0}", arg0?.ToString() ?? string.Empty)
+                .Replace("{1}", arg1?.ToString() ?? string.Empty);
     }
 }

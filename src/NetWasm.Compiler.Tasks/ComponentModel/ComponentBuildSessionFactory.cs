@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Node;
@@ -5,20 +6,22 @@ using NetWasm.Compiler.ComponentModel.Node;
 namespace NetWasm.Compiler.Tasks.ComponentModel;
 
 internal sealed class ComponentBuildSessionFactory(
-    Func<ExternalToolCommand, BinaryenToolRunnerConfiguration,
+    Func<ExternalToolCommand, BinaryenToolRunnerConfiguration, ILoggerProvider,
         IComponentBuildSession> create) : IComponentBuildSessionFactory
 {
-    private readonly Func<ExternalToolCommand, BinaryenToolRunnerConfiguration,
+    private readonly Func<ExternalToolCommand, BinaryenToolRunnerConfiguration, ILoggerProvider,
         IComponentBuildSession> _create =
         create ?? throw new ArgumentNullException(nameof(create));
 
     public IComponentBuildSession Create(
         ExternalToolCommand wasmToolsCommand,
-        BinaryenToolRunnerConfiguration binaryenConfiguration)
+        BinaryenToolRunnerConfiguration binaryenConfiguration,
+        ILoggerProvider progress)
     {
         ArgumentNullException.ThrowIfNull(wasmToolsCommand);
         ArgumentNullException.ThrowIfNull(binaryenConfiguration);
-        return _create(wasmToolsCommand, binaryenConfiguration);
+        ArgumentNullException.ThrowIfNull(progress);
+        return _create(wasmToolsCommand, binaryenConfiguration, progress);
     }
 }
 

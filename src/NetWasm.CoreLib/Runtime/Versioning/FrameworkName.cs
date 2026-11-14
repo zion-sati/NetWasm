@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Deterministic port of dotnet/runtime System.Private.CoreLib FrameworkName.cs.
-// Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
+// Upstream commit: deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Reflection and culture-specific services are not required by this managed parser.
 
 using System.Diagnostics.CodeAnalysis;

@@ -22,8 +22,11 @@ internal static class LinkingServiceCollectionExtensions
         services.AddSingleton<IWasmCoreModuleInlineAnnotationEditor, WasmCoreModuleInlineAnnotationEditor>();
         services.AddSingleton<IWasmCoreModuleMerger, WasmCoreModuleMerger>();
         services.AddSingleton<IComponentCoreModuleMergeRunner, WasmCoreModuleMergeRunner>();
-        services.AddSingleton<IComponentCoreModuleOptimizer,
-            ComponentCoreModuleOptimizer>();
+        services.AddSingleton<ComponentCoreModuleOptimizer>();
+        services.AddSingleton<IComponentCoreModuleOptimizer>(provider => new ReportingComponentCoreModuleOptimizer(
+            provider.GetRequiredService<ComponentCoreModuleOptimizer>(),
+            provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ReportingComponentCoreModuleOptimizer>>(),
+            provider.GetRequiredService<TimeProvider>()));
         services.AddSingleton<INetWasmHostComponentShimWriter, PortableCommandHostComponentShimWriter>();
         services.AddSingleton<IManagedExecutableComponentAdapterWriter>(provider =>
             new ManagedExecutableComponentAdapterWriter(

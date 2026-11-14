@@ -15,7 +15,8 @@ internal sealed class CilDecoderFactory(
     IMetadataFieldReferenceResolver fieldReferences,
     IMetadataTypeSignatureResolver typeSignatures,
     IMetadataCallSiteSignatureResolver callSiteSignatures,
-    IMetadataStackTypeResolver stackTypes) : ICilDecoderFactory
+    IMetadataStackTypeResolver stackTypes,
+    ITypedReferenceCallResolver typedReferences) : ICilDecoderFactory
 {
     public ICilDecoder Create() =>
         new CilDecoder(
@@ -28,5 +29,7 @@ internal sealed class CilDecoderFactory(
             callSiteSignatures,
             stackTypes,
             new CilSwitchLowerer(),
-            new CilTryReentryLowerer());
+            new PlatformGuardPlanner(new RawCilInstructionReader()),
+            new CilTryReentryLowerer(),
+            typedReferences);
 }

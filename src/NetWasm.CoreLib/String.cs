@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de:
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce:
 // src/libraries/System.Private.CoreLib/src/System/String.cs, less the members String.NetWasm.cs
-// supplies: the fields and Empty, Length, the indexer, GetRawStringData, IsNormalized and Normalize.
+// supplies: the fields and Empty, Length, the indexer and GetRawStringData.
 // NetWasm adaptations: NetWasm's string declares no fields; the compiler reaches its characters and
 // length through GetRawStringData() and Length, which replace upstream's _firstChar and _stringLength.
 // The constructors are extern rather than extern safe, a modifier the SDK's C# does not have yet; as
@@ -685,6 +685,28 @@ namespace System
         object IConvertible.ToType(Type type, IFormatProvider? provider)
         {
             return Convert.DefaultToType((IConvertible)this, type, provider);
+        }
+
+        // Normalization Methods
+        // These just wrap calls to Normalization class
+        public bool IsNormalized()
+        {
+            return IsNormalized(NormalizationForm.FormC);
+        }
+
+        public bool IsNormalized(NormalizationForm normalizationForm)
+        {
+            return Normalization.IsNormalized(this, normalizationForm);
+        }
+
+        public string Normalize()
+        {
+            return Normalize(NormalizationForm.FormC);
+        }
+
+        public string Normalize(NormalizationForm normalizationForm)
+        {
+            return Normalization.Normalize(this, normalizationForm);
         }
 
         //

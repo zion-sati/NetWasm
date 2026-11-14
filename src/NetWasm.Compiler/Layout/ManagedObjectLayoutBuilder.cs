@@ -10,6 +10,7 @@ namespace NetWasm.Compiler.Layout;
 
 internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
 {
+    private readonly IFieldLayoutFailureBinder _failures;
     private readonly ITypeRepository _typeRepository;
     private readonly IFieldRepository _fieldsRepository;
     private readonly ITypeFinder _types;
@@ -35,8 +36,10 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         WasmTargetLayout target,
         ManagedTypeLayoutBuildState state,
         IValueLayoutResolver valueLayouts,
-        IExplicitValueLayoutResolver explicitLayouts)
+        IExplicitValueLayoutResolver explicitLayouts,
+        IFieldLayoutFailureBinder failures)
     {
+        _failures = failures ?? throw new ArgumentNullException(nameof(failures));
         _typeRepository = typeRepository ?? throw new ArgumentNullException(nameof(typeRepository));
         _fieldsRepository = fields ?? throw new ArgumentNullException(nameof(fields));
         _types = types ?? throw new ArgumentNullException(nameof(types));
@@ -99,7 +102,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
                      .Where(field => !field.IsStatic)
                      .OrderBy(field => field.Key.MetadataToken))
         {
-            var storage = _valueLayouts.Resolve(field.SignatureType);
+            var storage = ResolveFieldStorage(field, field.SignatureType, _identities.GetTypeIdentity(typeKey));
             offset = Align(offset, storage.Alignment);
             _fields.Add(field.Key, new FieldLayout(offset)
             {
@@ -196,7 +199,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
                      .OrderBy(field => field.Key.MetadataToken))
         {
             var fieldType = field.SignatureType.Substitute(type.TypeArguments);
-            var storage = _valueLayouts.Resolve(fieldType);
+            var storage = ResolveFieldStorage(field, fieldType, type);
             offset = Align(offset, storage.Alignment);
             var instance = new FieldInstanceModel(field, type, fieldType);
             _constructedFields.Add(instance.CanonicalName, new FieldLayout(offset)
@@ -215,6 +218,18 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
             references.ToImmutable());
         _state.ConstructedObjects.Add(type, layout);
         return layout;
+    }
+
+    private ValueLayout ResolveFieldStorage(FieldDefinitionModel field, CliTypeIdentity fieldType, CliTypeIdentity owner)
+    {
+        try
+        {
+            return _valueLayouts.Resolve(fieldType);
+        }
+        catch (CompilerException failure)
+        {
+            throw _failures.Bind(failure, new(field.Key, fieldType.CanonicalName) { DeclaringType = owner });
+        }
     }
 
     private ObjectLayout CreateValueTypeObjectLayout(CliTypeIdentity type, ObjectLayout? baseLayout)

@@ -15,6 +15,7 @@ public sealed class UnitProviderTests
         new AssemblyIdentity("Program"), "", "Point", isValueType: true);
     private static readonly ImmutableArray<ValueTypeDescriptorLayout> Values = [new(Point, 7, 16, 8, [])];
     private static readonly ImmutableArray<MetadataTypeDescriptorLayout> Metadata = [new(Point, 9)];
+    private static readonly ImmutableArray<StructMarshallingLayout> Marshalled = [new(Point, 7, 160)];
 
     [Fact]
     public void WholeProgramDataIsRecordedOncePerMethodAndAnsweredUnchanged()
@@ -44,6 +45,31 @@ public sealed class UnitProviderTests
                 (UnitQueryKind.MetadataTypeDescriptors, ""),
             ],
             dependencies.Select(dependency => (dependency.Kind, dependency.Key)).Order());
+    }
+
+    // The structure-marshalling and uninitialized-object tables are recorded whole too, and a
+    // descriptor source that publishes neither answers empty tables.
+    [Fact]
+    public void RuntimeTypeDataTablesAreRecordedWhole()
+    {
+        var log = new UnitDependencyLog();
+        var published = new RecordingTypeDescriptorSource(new RuntimeDataDescriptors(), log);
+        var unpublished = new RecordingTypeDescriptorSource(new Descriptors(), log);
+
+        log.Begin();
+        Assert.Equal(Marshalled, published.StructMarshalling);
+        Assert.Equal(Marshalled, published.StructMarshalling);
+        Assert.Equal([Point], published.UninitializedObjectTypes);
+        var dependencies = log.End();
+        log.Begin();
+        Assert.Empty(unpublished.StructMarshalling);
+        Assert.Empty(unpublished.UninitializedObjectTypes);
+        var empty = log.End();
+
+        Assert.Equal(
+            [(UnitQueryKind.StructMarshalling, ""), (UnitQueryKind.UninitializedObjectTypes, "")],
+            dependencies.Select(dependency => (dependency.Kind, dependency.Key)).Order());
+        Assert.Equal(2, empty.Length);
     }
 
     [Fact]
@@ -116,7 +142,9 @@ public sealed class UnitProviderTests
             ((UnitQueryKind.MemberDescriptorOffsets, "declaring-type-id"), 4),
             ((UnitQueryKind.MemberDescriptorOffsets, "requires-declaring-type"), 8),
             ((UnitQueryKind.ValueTypeDescriptors, ""), Values),
-            ((UnitQueryKind.MetadataTypeDescriptors, ""), Metadata));
+            ((UnitQueryKind.MetadataTypeDescriptors, ""), Metadata),
+            ((UnitQueryKind.StructMarshalling, ""), Marshalled),
+            ((UnitQueryKind.UninitializedObjectTypes, ""), ImmutableArray.Create(Point)));
         var data = new ReplayStaticDataLayout(answers);
         var members = new ReplayMemberDescriptorLayout(answers);
         var descriptors = new ReplayTypeDescriptorSource(answers);
@@ -135,6 +163,8 @@ public sealed class UnitProviderTests
         Assert.Equal(8, members.RequiresDeclaringTypeOffset);
         Assert.Equal(Values, descriptors.ValueTypeDescriptors);
         Assert.Equal(Metadata, descriptors.MetadataTypeDescriptors);
+        Assert.Equal(Marshalled, descriptors.StructMarshalling);
+        Assert.Equal([Point], descriptors.UninitializedObjectTypes);
     }
 
     [Fact]
@@ -241,6 +271,18 @@ public sealed class UnitProviderTests
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => Values;
         public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors => Metadata;
         public ImmutableArray<EnumMetadataLayout> EnumMetadata => [];
+    }
+
+    private sealed class RuntimeDataDescriptors :
+        ITypeDescriptorSource, IEnumMetadataSource, IStructMarshallingSource, IUninitializedObjectSource
+    {
+        public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => [];
+        public ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors => [];
+        public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
+        public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors => [];
+        public ImmutableArray<EnumMetadataLayout> EnumMetadata => [];
+        public ImmutableArray<StructMarshallingLayout> StructMarshalling => Marshalled;
+        public ImmutableArray<CliTypeIdentity> UninitializedObjectTypes => [Point];
     }
 
     private sealed class NoMethods : IMethodRepository

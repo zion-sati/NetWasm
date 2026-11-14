@@ -54,6 +54,7 @@ public sealed class StaticDataViewResolverTests
     [InlineData(ProducerFault.ExtraOperation)]
     [InlineData(ProducerFault.WrongSpan)]
     [InlineData(ProducerFault.WrongElement)]
+    [InlineData(ProducerFault.Undecodable)]
     public void AnyUnprovenProducerFactFallsBack(ProducerFault fault)
     {
         var fixture = new Fixture(fault: fault);
@@ -84,6 +85,7 @@ public sealed class StaticDataViewResolverTests
         ExtraOperation,
         WrongSpan,
         WrongElement,
+        Undecodable,
     }
 
     private sealed class Fixture
@@ -206,7 +208,7 @@ public sealed class StaticDataViewResolverTests
                 },
                 definition,
                 initializer);
-            Bodies = new(body);
+            Bodies = new(body, undecodable: fault == ProducerFault.Undecodable);
         }
 
         public CliTypeIdentity Element { get; }
@@ -224,17 +226,28 @@ public sealed class StaticDataViewResolverTests
         private EntityKey Key(int token) => new(_assembly, token);
     }
 
-    private sealed class RecordingBodyReader(CilMethodBody body) : IMethodBodyReader
+    private sealed class RecordingBodyReader(CilMethodBody body, bool undecodable) : IMethodBodyReader, ICalleeMethodBodyReader
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         public int ReadCount { get; private set; }
 
         public CilMethodBody ReadMethodBody(MethodDefinitionModel method) =>
             throw new InvalidOperationException();
 
+        // An undecodable producer references something missing; its own analysis reports that.
         public CilMethodBody ReadMethodBody(MethodInstanceModel method)
         {
             ReadCount++;
-            return body;
+            return undecodable ? throw new CompilerException(new(DiagnosticCode.MissingApi, "missing")) : body;
         }
     }
 

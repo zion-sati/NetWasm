@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyVersion>8.1.0.0</AssemblyVersion>
+    <AssemblyName>System.Runtime.Serialization.Formatters</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Collections.NonGeneric/System.Collections.NonGeneric.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Collections/HashHelpers.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Runtime/Serialization/Formatter.cs" />
+    <Compile Include="System/Runtime/Serialization/FormatterConverter.cs" />
+    <Compile Include="System/Runtime/Serialization/FormatterServices.cs" />
+    <Compile Include="System/Runtime/Serialization/Formatters/Binary/BinaryFormatter.Removed.cs" />
+    <Compile Include="System/Runtime/Serialization/Formatters/Binary/BinaryFormatter.cs" />
+    <Compile Include="System/Runtime/Serialization/Formatters/CommonEnums.cs" />
+    <Compile Include="System/Runtime/Serialization/Formatters/IFieldInfo.cs" />
+    <Compile Include="System/Runtime/Serialization/IFormatter.cs" />
+    <Compile Include="System/Runtime/Serialization/ISerializationSurrogate.cs" />
+    <Compile Include="System/Runtime/Serialization/ISurrogateSelector.cs" />
+    <Compile Include="System/Runtime/Serialization/ObjectIDGenerator.cs" />
+    <Compile Include="System/Runtime/Serialization/ObjectManager.cs" />
+    <Compile Include="System/Runtime/Serialization/SerializationBinder.cs" />
+    <Compile Include="System/Runtime/Serialization/SerializationObjectManager.cs" />
+    <Compile Include="System/Runtime/Serialization/SurrogateSelector.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

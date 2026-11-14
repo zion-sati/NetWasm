@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Generated from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de resources;
+// Generated from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce resources;
 // only the strings this namespace references are included.
 
 namespace System.Linq.Expressions
@@ -107,8 +107,6 @@ namespace System.Linq.Expressions
             "The specified key '{0}' does not exist in the ExpandoObject.";
         internal const string LambdaTypeMustBeDerivedFromSystemDelegate =
             "Lambda type parameter must be derived from System.MulticastDelegate";
-        internal const string LiftingInExpressionRequiresDynamicCode =
-            "Nullable lifting on non-primitive type '{0}' is only supported in expression trees when dynamic code generation is available.";
         internal const string LogicalOperatorMustHaveBooleanOperators =
             "The user-defined operator method '{1}' for operator '{0}' must have associated boolean True and False operators.";
         internal const string MethodContainsGenericParameters =
@@ -195,10 +193,6 @@ namespace System.Linq.Expressions
         // which the System.Linq and System.Linq.AsyncEnumerable friend assemblies declare their own in.
         internal const string ArgumentNotValid =
             "Argument {0} is not valid";
-        internal const string PlatformNotSupported_QueryableConstruction =
-            "NetWasm cannot construct a generic query type at run time; use AsQueryable<TElement> or IQueryProvider.CreateQuery<TElement>.";
-        internal const string PlatformNotSupported_QueryExecution =
-            "NetWasm cannot execute an in-memory query: rewriting it to Enumerable calls needs reflection and run-time code generation.";
         internal const string PlatformNotSupported_ConstructorLookup =
             "NetWasm cannot look up a reference type's parameterless constructor; pass the ConstructorInfo instead.";
         internal const string PlatformNotSupported_OperatorLookup =

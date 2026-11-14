@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime System.Private.CoreLib; upstream commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Rune members of upstream Rune.cs that compare and categorize.
 
 namespace System.Text;

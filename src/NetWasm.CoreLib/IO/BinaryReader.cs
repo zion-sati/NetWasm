@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Adapted from dotnet/runtime System.Private.CoreLib (commit
-// 474ed963699fc29809015392738a15231aaae2de). Async members and runtime-private
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce). Async members and runtime-private
 // MemoryStream fast paths are retained; asynchronous members remain outside the
 // current NetWasm profile.
 

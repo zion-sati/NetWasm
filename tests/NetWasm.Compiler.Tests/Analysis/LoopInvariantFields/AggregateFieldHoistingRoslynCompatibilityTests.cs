@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.LoopInvariantFields;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -33,7 +34,7 @@ public sealed class AggregateFieldHoistingRoslynCompatibilityTests
         var calledMethods = new CalledMethodResolver(methods, methodInstances, symbols);
         var projections = Assert.IsAssignableFrom<IFieldProjectionResolver>(
             new FieldProjectionResolver(
-                bodies,
+                new CalleeMethodBodyReader(bodies),
                 calledMethods,
                 MetadataCompilationTestActors.Fields(snapshot),
                 MetadataCompilationTestActors.TypeDefinitions(snapshot)));

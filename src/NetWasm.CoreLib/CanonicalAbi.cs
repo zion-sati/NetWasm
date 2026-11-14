@@ -42,6 +42,14 @@ namespace System.Runtime.InteropServices.WebAssembly
         // the Component Model forbids blocking until the export returns.
         public static SynchronousExportScope EnterSynchronousExport() => SynchronousExportScope.Enter();
 
+        // Runs an asynchronous binding call synchronously, blocking as NetWasm's synchronous file and socket I/O
+        // does: the streams its arguments send are copied once the call's subtask has started, and each stream copy
+        // and subtask is waited for in place. Futures, which the other end may take only after the call, stay on the
+        // event loop. The event loop does not run meanwhile, so no other code does; the call must complete without
+        // awaiting anything else.
+        public static T RunSynchronously<T>(Func<Threading.Tasks.Task<T>> call) =>
+            PlatformServices.RunSynchronously(call);
+
         public static Threading.Tasks.Task AwaitSubtask(int status) =>
             PlatformServices.AwaitSubtask(status);
 

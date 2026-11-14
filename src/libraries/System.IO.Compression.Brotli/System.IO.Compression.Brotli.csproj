@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>ECMA</StrongNameKeyId>
+    <AssemblyName>System.IO.Compression.Brotli</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Interop.Brotli's LibraryImport declarations, generated as upstream generates them: SafeHandle results and
+         arguments are marshalled in managed code around pointer-sized native calls. -->
+    <NetWasmLibraryImportGenerator>$(NETCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/Microsoft.Interop.LibraryImportGenerator.dll</NetWasmLibraryImportGenerator>
+    <NetWasmInteropSourceGeneration>$(NETCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/Microsoft.Interop.SourceGeneration.dll</NetWasmInteropSourceGeneration>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Analyzer Include="$(NetWasmLibraryImportGenerator)" />
+    <Analyzer Include="$(NetWasmInteropSourceGeneration)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.IO.Compression/System.IO.Compression.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/Interop/Interop.Brotli.cs" />
+    <Compile Include="Common/Interop/Unix/Interop.Libraries.cs" />
+    <Compile Include="Common/Interop/Windows/Interop.BOOL.cs" />
+    <Compile Include="Common/Microsoft/Win32/SafeHandles/SafeBrotliHandle.cs" />
+    <Compile Include="System/IO/Compression/BrotliCodecOperations.NetWasm.cs" />
+    <Compile Include="System/IO/Compression/BrotliStream.cs" />
+    <Compile Include="System/IO/Compression/BrotliUtils.cs" />
+    <Compile Include="System/IO/Compression/dec/BrotliDecoder.cs" />
+    <Compile Include="System/IO/Compression/dec/BrotliStream.Decompress.cs" />
+    <Compile Include="System/IO/Compression/enc/BrotliCompressionOptions.cs" />
+    <Compile Include="System/IO/Compression/enc/BrotliEncoder.cs" />
+    <Compile Include="System/IO/Compression/enc/BrotliEncoderOperation.cs" />
+    <Compile Include="System/IO/Compression/enc/BrotliEncoderParameter.cs" />
+    <Compile Include="System/IO/Compression/enc/BrotliStream.Compress.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

@@ -21,6 +21,22 @@ public sealed class PayForPlayFormattingCompilationTests
         "FormatExponent",
     ];
 
+    // The culture machinery a null provider must not reach on the netstandard branch, where NumberFormatInfo is
+    // upstream's: its field getters behind the current-culture mirror are legitimately reached, but no instance
+    // may be constructed and no culture consulted.
+    private static readonly string[] CultureMachinery =
+    [
+        "System.Globalization.CultureInfo",
+        "System.Globalization.CultureData",
+        "System.Globalization.DateTimeFormatInfo",
+        "System.Globalization.Calendar",
+        "System.Globalization.GregorianCalendar",
+        "System.Globalization.NumberFormatInfo::.ctor",
+        "System.Globalization.NumberFormatInfo::get_InvariantInfo",
+        "System.Globalization.NumberFormatInfo::get_CurrentInfo",
+        "System.Globalization.NumberFormatInfo::GetInstance",
+    ];
+
     [Theory]
     [InlineData("(input - 7).ToString()")]
     [InlineData("((long)input - 7).ToString()")]
@@ -32,13 +48,16 @@ public sealed class PayForPlayFormattingCompilationTests
         Assert.DoesNotContain(reached, method => method.Contains("DiyFp128", StringComparison.Ordinal));
         Assert.DoesNotContain(reached, method => method.Contains("Tables::", StringComparison.Ordinal));
         Assert.DoesNotContain(reached, method => method.Contains("FormatPatterns::", StringComparison.Ordinal));
-        Assert.DoesNotContain(reached, method => method.StartsWith("System.Globalization.", StringComparison.Ordinal));
+        Assert.DoesNotContain(reached, method => CultureMachinery.Any(name => method.StartsWith(name, StringComparison.Ordinal)));
         Assert.Contains(reached, method => method.StartsWith("System.Number::", StringComparison.Ordinal));
     }
 
     // The console writes integers as their ToString() does: its provider is the current culture,
     // whose number format is always the invariant one here, so the text is the same and writing an
-    // integer builds no culture state.
+    // integer builds no culture state. The negative sign is read through NumberFormatInfo's static
+    // CurrentNegativeSign, the current culture's mirror (owner decision 2026-10-25); where nothing sets
+    // a culture its load folds to null and it returns the invariant sign, so it is the one Globalization
+    // method reached.
     [Theory]
     [InlineData("Console.WriteLine(input - 7);")]
     [InlineData("Console.Write(input - 7);")]
@@ -49,7 +68,9 @@ public sealed class PayForPlayFormattingCompilationTests
         var reached = ReachedMethodsOfStatement(statement);
 
         Assert.DoesNotContain(reached, method => method.EndsWith("WithoutFormat", StringComparison.Ordinal));
-        Assert.DoesNotContain(reached, method => method.StartsWith("System.Globalization.", StringComparison.Ordinal));
+        Assert.Equal(
+            ["System.Globalization.NumberFormatInfo::get_CurrentNegativeSign"],
+            reached.Where(method => method.StartsWith("System.Globalization.", StringComparison.Ordinal)).Distinct());
         Assert.Contains(reached, method => method.StartsWith("System.Number::", StringComparison.Ordinal));
     }
 
@@ -68,17 +89,21 @@ public sealed class PayForPlayFormattingCompilationTests
     }
 
     [Theory]
-    [InlineData("(input + 0.5f).ToString()")]
-    [InlineData("(input + 0.5).ToString()")]
-    [InlineData("((System.Half)(input + 0.5f)).ToString()")]
-    [InlineData("(input + 0.5).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
-    public void FloatingToStringWithoutAFormatReachesNoFormatStringMachinery(string expression)
+    [InlineData("(input + 0.5f).ToString()", false)]
+    [InlineData("(input + 0.5).ToString()", false)]
+    [InlineData("((System.Half)(input + 0.5f)).ToString()", false)]
+    [InlineData("(input + 0.5).ToString(System.Globalization.CultureInfo.InvariantCulture)", true)]
+    public void FloatingToStringWithoutAFormatReachesNoFormatStringMachinery(string expression, bool passesACulture)
     {
         var reached = ReachedMethods(expression);
 
         Assert.DoesNotContain(reached, method => FormatStringMachinery.Any(name =>
             method.EndsWith("::" + name, StringComparison.Ordinal)));
-        Assert.DoesNotContain(reached, method => method.Contains("CultureData", StringComparison.Ordinal));
+        // Passing a CultureInfo reaches the culture it names; a null provider reaches none.
+        if (!passesACulture)
+        {
+            Assert.DoesNotContain(reached, method => CultureMachinery.Any(name => method.StartsWith(name, StringComparison.Ordinal)));
+        }
     }
 
     // Every number written without a format, through ToString(IFormatProvider) or a hole without one in
@@ -105,7 +130,11 @@ public sealed class PayForPlayFormattingCompilationTests
 
         Assert.DoesNotContain(reached, method => FormatStringMachinery.Any(name =>
             method.EndsWith("::" + name, StringComparison.Ordinal)));
-        Assert.DoesNotContain(reached, method => method.Contains("CultureData", StringComparison.Ordinal));
+        // A culture argument constructs that culture on this branch, whose CultureInfo is upstream's.
+        if (!expression.Contains("CultureInfo", StringComparison.Ordinal))
+        {
+            Assert.DoesNotContain(reached, method => method.Contains("CultureData", StringComparison.Ordinal));
+        }
     }
 
     [Theory]

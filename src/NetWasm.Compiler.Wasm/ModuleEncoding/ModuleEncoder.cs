@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Encoding;
@@ -317,8 +318,9 @@ public sealed class ModuleEncoder : IModuleEncoder
     {
         var payloadBuffer = new WasmBinaryBuffer();
         var payload = _writerFactory(payloadBuffer);
-        _unsigned.Encode(payload, (uint)segments.Count);
-        foreach (var segment in segments)
+        var coalesced = Coalesce(segments);
+        _unsigned.Encode(payload, (uint)coalesced.Count);
+        foreach (var segment in coalesced)
         {
             payload.Write([0x00]);
             var instructions = _instructionWriterFactory(payload);
@@ -339,6 +341,42 @@ public sealed class ModuleEncoder : IModuleEncoder
             payload.Write(segment.Data.AsSpan());
         }
         _sections.Write(module, 11, _snapshotReaderFactory(payloadBuffer).Read());
+    }
+
+    // A segment that starts where the one before it ends joins it: the same bytes at the same addresses, written
+    // in the same order, so the memory image does not change. One segment per string, descriptor and stack-trace
+    // name would otherwise pass the 100,000 data segments that engines and validators accept.
+    private static List<DataSegment> Coalesce(IReadOnlyList<DataSegment> segments)
+    {
+        var coalesced = new List<DataSegment>();
+        var first = 0;
+        while (first < segments.Count)
+        {
+            var start = segments[first];
+            var end = (long)start.Address + start.Data.Length;
+            var next = first + 1;
+            while (next < segments.Count && segments[next].Address == end)
+            {
+                end += segments[next].Data.Length;
+                next++;
+            }
+
+            if (next == first + 1)
+            {
+                coalesced.Add(start);
+            }
+            else
+            {
+                var data = ImmutableArray.CreateBuilder<byte>(checked((int)(end - start.Address)));
+                for (var index = first; index < next; index++)
+                {
+                    data.AddRange(segments[index].Data);
+                }
+                coalesced.Add(new(start.Address, data.MoveToImmutable()));
+            }
+            first = next;
+        }
+        return coalesced;
     }
 
     private void WriteNameSection(

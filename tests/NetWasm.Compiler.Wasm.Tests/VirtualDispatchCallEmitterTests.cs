@@ -271,6 +271,109 @@ public sealed class VirtualDispatchCallEmitterTests
                 instruction.Opcode == WasmOpcodes.Branch));
     }
 
+    // A virtual call on object with SharedDispatchPolicy.MinimumTargets targets or more calls the shared body for
+    // it instead of dispatching itself; the shared body's own call, a call with fewer targets, a call constrained to
+    // a value type and a non-virtual call dispatch. The kind resolver chooses the emitter.
+    [Theory]
+    [InlineData(SharedDispatchPolicy.MinimumTargets, SharedBody.Separate, CilOperation.CallVirtual, false, true)]
+    [InlineData(SharedDispatchPolicy.MinimumTargets - 1, SharedBody.Separate, CilOperation.CallVirtual, false, false)]
+    [InlineData(SharedDispatchPolicy.MinimumTargets, SharedBody.Caller, CilOperation.CallVirtual, false, false)]
+    [InlineData(SharedDispatchPolicy.MinimumTargets, SharedBody.None, CilOperation.CallVirtual, false, false)]
+    [InlineData(SharedDispatchPolicy.MinimumTargets, SharedBody.Separate, CilOperation.Call, false, false)]
+    [InlineData(SharedDispatchPolicy.MinimumTargets, SharedBody.Separate, CilOperation.CallVirtual, true, false)]
+    public void ManyTargetCallsOnObjectCallTheSharedBody(
+        int targetCount, SharedBody shared, CilOperation operation, bool constrainedToValue, bool redirected)
+    {
+        var signature = MethodSignatureModel.Create(CliValueKind.I4);
+        var declaration = Method(Key(0x06000050), ReferenceType(), signature);
+        var targets = Enumerable.Range(0, targetCount)
+            .Select(index =>
+            {
+                var receiver = CliTypeIdentity.Named(Assembly, "Test", $"Receiver{index}", isValueType: false);
+                return new DispatchTargetModel(receiver, Method(Key(0x06000100 + index), receiver, signature));
+            })
+            .ToImmutableArray();
+        var request = CreateDispatchRequest(
+            declaration, targets, [CliValueKind.ManagedReference], consumed: 1, out var indices, operation: operation,
+            shared: shared);
+        if (constrainedToValue)
+            request = request with { ConstrainedType = CliTypeIdentity.Named(Assembly, "Test", "Value", isValueType: true) };
+        var layouts = new RecordingLayoutProvider();
+
+        var kind = new CallEmissionKindResolver(new FakeProgram(), new FakeIntrinsics())
+            .Resolve(request, GetCodeWriter(request.Instruction));
+        Assert.Equal(redirected ? CallEmissionKind.SharedObjectDispatch : CallEmissionKind.VirtualDispatch, kind);
+        if (constrainedToValue)
+            return;
+        Emit(redirected
+            ? new SharedObjectDispatchCallEmitter(layouts, new ImplicitExceptionEmitter(layouts),
+                new ConstrainedReferenceReceiverEmitter(layouts))
+            : (ICallEmitter)CreateEmitter(layouts), request, indices);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request.Instruction)).ToInstructions();
+        Assert.Equal(redirected, instructions.Any(instruction =>
+            instruction.Opcode == WasmOpcodes.Call && instruction.Operand?.UnsignedValue == 200));
+        // A call that dispatches loads the receiver's type id; the shared call does not.
+        Assert.Equal(!redirected, instructions.Any(instruction => instruction.Opcode == WasmOpcodes.I32Load));
+        Assert.Equal([CliValueKind.I4], request.Instruction.Stack);
+    }
+
+    // The shared body takes the receiver and the call's arguments; a receiver the analysis proved non-null needs no
+    // check, and a wasm64 receiver tests with i64.eqz.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, false, WasmOpcodes.I32EqualZero)]
+    [InlineData(WasmTarget.Wasm64, false, WasmOpcodes.I64EqualZero)]
+    [InlineData(WasmTarget.Wasm64, true, WasmOpcodes.I64EqualZero)]
+    public void TheSharedBodyCallPassesTheArgumentsAndChecksAnUnprovenReceiver(
+        WasmTarget target, bool proven, byte equalZero)
+    {
+        var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.ManagedReference);
+        var declaration = Method(Key(0x06000051), ReferenceType(), signature);
+        var targets = Enumerable.Range(0, SharedDispatchPolicy.MinimumTargets)
+            .Select(index =>
+            {
+                var receiver = CliTypeIdentity.Named(Assembly, "Test", $"Shared{index}", isValueType: false);
+                return new DispatchTargetModel(receiver, Method(Key(0x06000200 + index), receiver, signature));
+            })
+            .ToImmutableArray();
+        var request = CreateDispatchRequest(declaration, targets,
+            [CliValueKind.ManagedReference, CliValueKind.ManagedReference], consumed: 2, out var indices,
+            shared: SharedBody.Separate);
+        if (proven)
+            request = request with { Instruction = WithNonNullProof(request.Instruction, stale: false) };
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+
+        Emit(new SharedObjectDispatchCallEmitter(layouts, new ImplicitExceptionEmitter(layouts),
+            new ConstrainedReferenceReceiverEmitter(layouts)), request, indices);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request.Instruction)).ToInstructions();
+        Assert.Equal(!proven, instructions.Any(instruction => instruction.Opcode == equalZero));
+        // The receiver for its check, then the receiver and the argument for the call.
+        Assert.Equal(proven ? 2 : 3, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.LocalGet));
+        Assert.Contains(instructions, instruction =>
+            instruction.Opcode == WasmOpcodes.Call && instruction.Operand?.UnsignedValue == 200);
+        Assert.Equal([CliValueKind.I4], request.Instruction.Stack);
+    }
+
+    [Fact]
+    public void TheSharedBodyCallNeedsItsCollaboratorsAndRequest()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var exceptions = new ImplicitExceptionEmitter(layouts);
+        var receivers = new ConstrainedReferenceReceiverEmitter(layouts);
+        var emitter = new SharedObjectDispatchCallEmitter(layouts, exceptions, receivers);
+        var request = CreateDispatchRequest(Method(Key(0x06000052), ReferenceType(), MethodSignatureModel.Create(
+            CliValueKind.Void)), [], [CliValueKind.ManagedReference], consumed: 1, out var indices);
+        var code = GetCodeWriter(request.Instruction);
+
+        Assert.Throws<ArgumentNullException>(() => new SharedObjectDispatchCallEmitter(null!, exceptions, receivers));
+        Assert.Throws<ArgumentNullException>(() => new SharedObjectDispatchCallEmitter(layouts, null!, receivers));
+        Assert.Throws<ArgumentNullException>(() => new SharedObjectDispatchCallEmitter(layouts, exceptions, null!));
+        Assert.Throws<ArgumentNullException>(() => emitter.Emit(null!, code, indices));
+        Assert.Throws<ArgumentNullException>(() => emitter.Emit(request, null!, indices));
+        Assert.Throws<ArgumentNullException>(() => emitter.Emit(request, code, null!));
+    }
+
     // A case serves a run of receiver type ids: its target's code is emitted once, behind one
     // unsigned comparison of the type id's distance from the run's start (issue 222).
     [Theory]
@@ -839,7 +942,8 @@ public sealed class VirtualDispatchCallEmitterTests
         CilOperation operation = CilOperation.CallVirtual,
         bool includeCaller = true,
         bool includeSite = true,
-        MethodEmissionContext? context = null)
+        MethodEmissionContext? context = null,
+        SharedBody shared = SharedBody.None)
     {
         var program = new FakeProgram();
         var callerDefinition = program.GetMethod(EntryKey);
@@ -849,11 +953,25 @@ public sealed class VirtualDispatchCallEmitterTests
             callerType,
             [],
             callerDefinition.Signature);
+        var sharedBody = shared switch
+        {
+            SharedBody.Separate => new MethodInstanceModel(
+                new MethodDefinitionModel(Key(0x06000900), TypeKey, "DispatchGetHashCode", true,
+                    MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.ManagedReference), 1),
+                ReferenceType(), [], MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.ManagedReference)),
+            SharedBody.Caller => caller,
+            _ => null,
+        };
+        // As the program builder marks a site: many targets, and a shared body that is not the caller.
         var site = new DispatchCallSiteModel(
             caller.CanonicalName,
             0,
             method,
-            targets);
+            targets)
+        {
+            SharesObjectDispatch = shared == SharedBody.Separate &&
+                targets.Length >= SharedDispatchPolicy.MinimumTargets,
+        };
         var target = CreateInstructionModuleTarget(program) with
         {
             DispatchCallSites = Lookups.Of(includeSite
@@ -861,6 +979,9 @@ public sealed class VirtualDispatchCallEmitterTests
                     site.Key,
                     site)
                 : ImmutableDictionary<string, DispatchCallSiteModel>.Empty),
+            SharedObjectDispatch = sharedBody is null
+                ? ImmutableDictionary<string, MethodInstanceModel>.Empty
+                : ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(method.CanonicalName, sharedBody),
         };
         var values = stack.ToArray();
         var instruction = new InstructionEmissionRequest(
@@ -876,11 +997,20 @@ public sealed class VirtualDispatchCallEmitterTests
         var directMethods = targets
             .Select((dispatchTarget, index) =>
                 (dispatchTarget.Method.Definition.Key, new WasmFunctionIndex(80 + index)))
+            .Append(sharedBody is null ? default : (sharedBody.Definition.Key, new WasmFunctionIndex(200)))
+            .Where(pair => pair.Item2 != default)
             .DistinctBy(pair => pair.Key)
             .ToImmutableDictionary(pair => pair.Key, pair => pair.Item2);
         var indices = new FunctionIndexMap(directMethods, [], [], []);
         functionIndices = CreateFunctionIndexResolver(program, indices);
         return new CallEmissionRequest(instruction, method, 0, consumed);
+    }
+
+    public enum SharedBody
+    {
+        None,
+        Separate,
+        Caller,
     }
 
     private static CliTypeIdentity ReferenceType() =>

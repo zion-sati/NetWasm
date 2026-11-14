@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using NetWasm.TestInfrastructure;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
@@ -65,7 +66,9 @@ internal sealed class CorpusCompilerRequestFactory(
             : [.. compilation.Sources.Select(source => source.Path)];
         return new(
             compilation.NetWasm.AssemblyPath,
-            [environment.CoreLibPath, .. compilation.Fixture.NetWasmReferencePaths],
+            [.. TestAssets.WithFrameworkReferences(
+                compilation.NetWasm.AssemblyPath,
+                [environment.CoreLibPath, .. compilation.Fixture.NetWasmReferencePaths])],
             compilation.Fixture.EntryType,
             compilation.Fixture.WasmEntryMethod,
             exports, target, tracePath, sources, aliases,

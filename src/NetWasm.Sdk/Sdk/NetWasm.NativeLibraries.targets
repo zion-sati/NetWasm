@@ -27,7 +27,7 @@
        Use that seam for ordinary root Remove/Update of returned source assets. -->
   <Target Name="NetWasmGetNativeLibraries"
           DependsOnTargets="NetWasmCollectNativeLibraries"
-          BeforeTargets="NetWasmRuntimePackMaterialize"
+          BeforeTargets="NetWasmWriteCompilationIdentity;NetWasmRuntimePackMaterialize"
           Condition="'$(TargetFramework)' != ''"
           Returns="@(_NetWasmResolvedNativeLibrary)"
           KeepDuplicateOutputs="true">

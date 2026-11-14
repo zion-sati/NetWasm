@@ -10,6 +10,108 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class ManagedLayoutPhaseTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void StaticFieldFailurePreservesMostSpecificContext(bool constructed, bool existingContext)
+    {
+        var owner = CliTypeIdentity.Named(new("Library"), "Tests", "Owner", false);
+        var type = CliTypeIdentity.Named(new("Dependency"), "Tests", "Value", true);
+        var field = new FieldDefinitionModel(new(new("Library"), 2), new(new("Library"), 1), "Data", type, true);
+        var instance = new FieldInstanceModel(field, owner, type);
+        var context = existingContext ? new CompilerDiagnosticContext(new(new("Nested"), 3)) : null;
+        var failure = new CompilerException(new(DiagnosticCode.AssemblyResolution, "Missing field type")
+        {
+            Context = context,
+        });
+        var program = constructed
+            ? EmptyProgram() with
+            {
+                ConstructedFields = ImmutableDictionary<string, FieldInstanceModel>.Empty.Add(instance.CanonicalName, instance),
+            }
+            : EmptyProgram() with { Fields = [field.Key] };
+        var resolver = As<IStaticFieldValueLayoutResolver>(new StaticFieldValueLayoutResolver(
+            new FieldRepository([field]), program, new FailingValueLayouts(failure),
+            new MappingIdentities(new Dictionary<EntityKey, CliTypeIdentity> { [field.DeclaringType] = owner }), new FieldLayoutFailureBinder()));
+
+        var actual = Assert.Throws<CompilerException>(() => resolver.Resolve());
+
+        if (existingContext)
+        {
+            Assert.Same(failure, actual.InnerException);
+            Assert.Same(context, actual.Diagnostic.Context);
+        }
+        else
+        {
+            Assert.Same(failure, actual.InnerException);
+            Assert.Equal(field.Key, actual.Diagnostic.Context!.Source);
+            Assert.Equal(type.CanonicalName, actual.Diagnostic.Context.InstanceIdentity);
+            Assert.Equal(owner, actual.Diagnostic.Context.DeclaringType);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void ObjectFieldFailurePreservesOrAddsSourceContext(bool constructed, bool existingContext)
+    {
+        var key = new EntityKey(new("Library"), 1);
+        var fieldKey = new EntityKey(key.Assembly, 2);
+        var definition = Definition(key, "Tests.Container", false) with
+        {
+            Fields = [fieldKey],
+            GenericArity = constructed ? 1 : 0,
+        };
+        var identity = CliTypeIdentity.FromDefinition(definition);
+        var fieldType = CliTypeIdentity.Named(new("Dependency"), "Tests", "Value", true);
+        var field = new FieldDefinitionModel(fieldKey, key, "Data", fieldType, false);
+        var context = existingContext ? new CompilerDiagnosticContext(new(new("Nested"), 3)) : null;
+        var failure = new CompilerException(new(DiagnosticCode.AssemblyResolution, "Missing field type")
+        {
+            Context = context,
+        });
+        var bases = new BaseTypes();
+        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(
+            new TypeRepository([definition]), new FieldRepository([field]), new TypeFinder([definition]),
+            new TypeDefinitions([definition]), new MappingIdentities(new Dictionary<EntityKey, CliTypeIdentity>
+            {
+                [key] = identity,
+            }), bases, bases, WasmTargetLayout.For(WasmTarget.Wasm32),
+            new ManagedTypeLayoutBuildState(new ManagedValueLayoutState()), new FailingValueLayouts(failure), new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+
+        var actual = Assert.Throws<CompilerException>(() =>
+        {
+            if (constructed)
+                builder.Build(CliTypeIdentity.GenericInstantiation(identity, [fieldType]));
+            else
+                builder.Build(key);
+        });
+
+        if (existingContext)
+        {
+            Assert.Same(failure, actual.InnerException);
+            Assert.Same(context, actual.Diagnostic.Context);
+        }
+        else
+        {
+            Assert.Same(failure, actual.InnerException);
+            Assert.Equal(fieldKey, actual.Diagnostic.Context!.Source);
+            Assert.Equal(fieldType.CanonicalName, actual.Diagnostic.Context.InstanceIdentity);
+            Assert.Equal(constructed ? CliTypeIdentity.GenericInstantiation(identity, [fieldType]) : identity,
+                actual.Diagnostic.Context.DeclaringType);
+        }
+    }
+
+    private sealed class FailingValueLayouts(CompilerException failure) : IValueLayoutResolver
+    {
+        public ValueLayout Resolve(CliTypeIdentity type) => throw failure;
+        public ValueLayout Resolve(CliTypeIdentity type, TypeDefinitionModel definition) => throw failure;
+    }
+
     [Fact]
     public void ValueTypeLayoutResolverDoesNotMaterializeOpenGenericRuntimeDescriptors()
     {
@@ -305,7 +407,7 @@ public sealed class ManagedLayoutPhaseTests
             new StaticFieldValueLayoutResolver(
                 new FieldRepository([field]),
                 EmptyProgram() with { Fields = [fieldKey] },
-                staticValues)));
+                staticValues, new UnusedTypeIdentities(), new FieldLayoutFailureBinder())));
         Assert.Contains("primitive:i4", staticValues.Types.Select(type => type.CanonicalName));
 
         var method = MethodWithLocalValue();
@@ -623,17 +725,18 @@ public sealed class ManagedLayoutPhaseTests
 
         var valueStorageIdentities = identities;
 
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(null!, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, null!, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, null!, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, null!, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, null!, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, null!, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, null!, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, null!, typeState, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, null!, valueResolver, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, null!, new ExplicitValueLayoutResolver()));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, null!));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(null!, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, null!, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, null!, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, null!, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, null!, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, null!, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, null!, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, null!, typeState, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, null!, valueResolver, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, null!, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, null!, new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver(), null!));
 
         ThrowsNull(() => new ManagedStaticDataBuilderFactory(null!, new NoAssignableTypes(), new NoInterfaces()));
         ThrowsNull(() => new ManagedStaticDataBuilderFactory(exceptionNames, null!, new NoInterfaces()));
@@ -685,9 +788,11 @@ public sealed class ManagedLayoutPhaseTests
             typeRepository, fields, program, null!, staticState));
         ThrowsNull(() => new StaticFieldStorageBuilder(
             typeRepository, fields, program, types, null!));
-        ThrowsNull(() => new StaticFieldValueLayoutResolver(null!, program, valueResolver));
-        ThrowsNull(() => new StaticFieldValueLayoutResolver(fields, null!, valueResolver));
-        ThrowsNull(() => new StaticFieldValueLayoutResolver(fields, program, null!));
+        ThrowsNull(() => new StaticFieldValueLayoutResolver(null!, program, valueResolver, new UnusedTypeIdentities(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new StaticFieldValueLayoutResolver(fields, null!, valueResolver, new UnusedTypeIdentities(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new StaticFieldValueLayoutResolver(fields, program, null!, new UnusedTypeIdentities(), new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new StaticFieldValueLayoutResolver(fields, program, valueResolver, null!, new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new StaticFieldValueLayoutResolver(fields, program, valueResolver, identities, null!));
         ThrowsNull(() => new StringDataBuilder(null!, program, types, target, staticState));
         ThrowsNull(() => new StringDataBuilder(finder, null!, types, target, staticState));
         ThrowsNull(() => new StringDataBuilder(finder, program, null!, target, staticState));
@@ -712,17 +817,19 @@ public sealed class ManagedLayoutPhaseTests
             staticState, null!));
         ThrowsNull(() => new ValueLayoutResolver(
             null!, fields, new ExplicitValueLayoutResolver(), target,
-            new ManagedValueLayoutState()));
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         ThrowsNull(() => new ValueLayoutResolver(
             definitions, null!, new ExplicitValueLayoutResolver(), target,
-            new ManagedValueLayoutState()));
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         ThrowsNull(() => new ValueLayoutResolver(
-            definitions, fields, null!, target, new ManagedValueLayoutState()));
+            definitions, fields, null!, target, new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         ThrowsNull(() => new ValueLayoutResolver(
             definitions, fields, new ExplicitValueLayoutResolver(), null!,
-            new ManagedValueLayoutState()));
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         ThrowsNull(() => new ValueLayoutResolver(
-            definitions, fields, new ExplicitValueLayoutResolver(), target, null!));
+            definitions, fields, new ExplicitValueLayoutResolver(), target, null!, new FieldLayoutFailureBinder()));
+        ThrowsNull(() => new ValueLayoutResolver(
+            definitions, fields, new ExplicitValueLayoutResolver(), target, new ManagedValueLayoutState(), null!));
         ThrowsNull(() => new ValueTypeDescriptorBuilder(
             null!, valueStorageIdentities, types, target, staticState));
         ThrowsNull(() => new ValueTypeDescriptorBuilder(
@@ -884,7 +991,7 @@ public sealed class ManagedLayoutPhaseTests
             []);
         var target = WasmTargetLayout.For(WasmTarget.Wasm32);
         var state = new ManagedTypeLayoutBuildState(new ManagedValueLayoutState());
-        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository([definition]), new FieldRepository([]), new TypeFinder([definition]), new TypeDefinitions([definition]), new TypeIdentities(assembly, "Tests.Node", key), new BaseTypes(), new BaseTypes(), target, state, new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver()));
+        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository([definition]), new FieldRepository([]), new TypeFinder([definition]), new TypeDefinitions([definition]), new TypeIdentities(assembly, "Tests.Node", key), new BaseTypes(), new BaseTypes(), target, state, new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
 
         var first = BuildObject(builder, key);
         var second = BuildObject(builder, key);
@@ -925,7 +1032,7 @@ public sealed class ManagedLayoutPhaseTests
                 new BaseTypes(),
                 WasmTargetLayout.For(wasmTarget),
                 state,
-                new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver()));
+                new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
 
             if (rankOneFirst)
             {
@@ -974,7 +1081,7 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             target,
             state,
-            values, new ExplicitValueLayoutResolver()));
+            values, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
 
         var layout = BuildObject(builder, key);
 
@@ -1018,7 +1125,7 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             target,
             state,
-            values, new ExplicitValueLayoutResolver()));
+            values, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
 
         var layout = BuildObject(builder, key);
 
@@ -1057,7 +1164,7 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             target,
             state,
-            values, new ExplicitValueLayoutResolver()));
+            values, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
 
         var byReferenceLayout = builder.Build(byReference);
         var pointerLayout = builder.Build(pointer);
@@ -1216,6 +1323,30 @@ public sealed class ManagedLayoutPhaseTests
         Assert.Empty(state.Segments);
     }
 
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void PointerArrayStorageHasAnAtomicTargetSizedDescriptor(WasmTarget targetKind)
+    {
+        var target = WasmTargetLayout.For(targetKind);
+        var pointer = CliTypeIdentity.UnmanagedPointer(CliTypeIdentity.FromStackKind(CliValueKind.I4));
+        var types = EmptyLayouts(target) with
+        {
+            ConstructedObjects = ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty
+                .Add(pointer, new ObjectLayout(7, target.ObjectHeaderSize, [])),
+        };
+        types.ValueLayoutState.Values.Add(pointer, new ValueLayout(pointer, target.ObjectReferenceSize, target.ObjectReferenceAlignment, []));
+        var state = new ManagedStaticDataBuildState();
+        BuildValueTypeDescriptors(new ValueTypeDescriptorBuilder(new TypeRepository([]),
+            new UnusedTypeIdentities(), types, target, state));
+        var descriptor = Assert.Single(state.ValueTypeDescriptors);
+        Assert.Equal(pointer, descriptor.Type);
+        Assert.Equal(7, descriptor.TypeId);
+        Assert.Equal(target.ObjectReferenceSize, descriptor.Size);
+        // A pointer is not a reference: the collector traces nothing in it.
+        Assert.Empty(descriptor.ReferenceOffsets);
+    }
+
     [Fact]
     public void ValueTypeDescriptorsSkipDescriptorOnlyElementModifiers()
     {
@@ -1275,7 +1406,7 @@ public sealed class ManagedLayoutPhaseTests
                 definition.Name,
                 false));
         var state = new ManagedTypeLayoutBuildState(new ManagedValueLayoutState());
-        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository([]), new MappedTypeFinder(firstPrivate, canonicalType), new TypeDefinitions([canonicalType]), new MappingIdentities(identities), new BaseTypes(), new BaseTypes(), WasmTargetLayout.For(WasmTarget.Wasm32), state, new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver()));
+        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository([]), new MappedTypeFinder(firstPrivate, canonicalType), new TypeDefinitions([canonicalType]), new MappingIdentities(identities), new BaseTypes(), new BaseTypes(), WasmTargetLayout.For(WasmTarget.Wasm32), state, new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
 
         _ = BuildObject(builder, firstPrivateKey);
         _ = BuildObject(builder, secondPrivateKey);
@@ -1383,7 +1514,7 @@ public sealed class ManagedLayoutPhaseTests
             [valueIdentity] = baseValueIdentity,
             [generic] = genericBase,
         });
-        var builder = new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository(fields), new TypeFinder(definitions), new TypeDefinitions(definitions), identities, entityBases, identityBases, WasmTargetLayout.For(WasmTarget.Wasm32), state, new ReferenceValueLayoutResolver(), new ExplicitValueLayoutResolver());
+        var builder = new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository(fields), new TypeFinder(definitions), new TypeDefinitions(definitions), identities, entityBases, identityBases, WasmTargetLayout.For(WasmTarget.Wasm32), state, new ReferenceValueLayoutResolver(), new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder());
 
         builder.Build(valueKey);
         builder.Build(referenceKey);
@@ -1846,7 +1977,7 @@ public sealed class ManagedLayoutPhaseTests
         Assert.Equal(2, state.StaticRoots.Count);
 
         var resolved = new RecordingValueLayoutResolver();
-        new StaticFieldValueLayoutResolver(fields, program, resolved).Resolve();
+        new StaticFieldValueLayoutResolver(fields, program, resolved, new UnusedTypeIdentities(), new FieldLayoutFailureBinder()).Resolve();
         Assert.Contains("[StaticFieldBranchTests]Tests.Value", resolved.Types
             .Select(type => type.CanonicalName));
 

@@ -13,7 +13,13 @@ internal sealed class MetadataTypeResolver(
     {
         if (handle.Kind == HandleKind.TypeDefinition)
         {
-            return source.Types[MetadataTokens.GetToken(handle)];
+            var definition = source.Types[MetadataTokens.GetToken(handle)];
+            var canonicalAssembly = source.AssemblyIdentityAliases.Canonicalize(
+                definition.Key.Assembly, definition.FullName);
+            return canonicalAssembly == definition.Key.Assembly
+                ? definition
+                : typeDefinitions.ResolveTypeIdentity(CliTypeIdentity.Named(
+                    canonicalAssembly, "", definition.FullName, definition.IsValueType));
         }
         var provider = new SignatureTypeProvider(
             source.Identity,

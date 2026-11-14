@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Text.Encodings.Web</AssemblyName>
+    <!-- Its public surface does not claim CLS compliance yet (unsigned members are not marked). -->
+    <CLSCompliant>false</CLSCompliant>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="System/Text/Encodings/Web/AllowedBmpCodePointsBitmap.cs" />
+    <Compile Include="System/Text/Encodings/Web/AsciiByteMap.cs" />
+    <Compile Include="System/Text/Encodings/Web/DefaultJavaScriptEncoder.cs" />
+    <Compile Include="System/Text/Encodings/Web/JavaScriptEncoder.cs" />
+    <Compile Include="System/Text/Encodings/Web/OptimizedInboxTextEncoder.Ascii.cs" />
+    <Compile Include="System/Text/Encodings/Web/OptimizedInboxTextEncoder.cs" />
+    <Compile Include="System/Text/Encodings/Web/ScalarEscaperBase.cs" />
+    <Compile Include="System/Text/Encodings/Web/TextEncoder.cs" />
+    <Compile Include="System/Text/Encodings/Web/TextEncoderSettings.cs" />
+    <Compile Include="System/Text/Encodings/Web/ThrowHelper.cs" />
+    <Compile Include="System/Text/Unicode/UnicodeHelpers.cs" />
+    <Compile Include="System/Text/Unicode/UnicodeHelpers.generated.cs" />
+    <Compile Include="System/Text/Unicode/UnicodeRange.cs" />
+    <Compile Include="System/Text/Unicode/UnicodeRanges.cs" />
+    <Compile Include="System/Text/Unicode/UnicodeRuntimePrimitives.cs" />
+    <Compile Include="System/Text/Encodings/Web/EncoderDebug.cs" />
+  </ItemGroup>
+</Project>

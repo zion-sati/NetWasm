@@ -20,30 +20,46 @@ public sealed class UnsupportedBoundaryCompilationTests
                 }
                 """));
 
-        Assert.Equal(["CS1980"], exception.DiagnosticCodes);
+        // DynamicAttribute is part of the platform surface, but the C# runtime binder is not, so a
+        // dynamic operation still fails to compile.
+        Assert.Equal(["CS0656"], exception.DiagnosticCodes);
     }
 
     [Fact]
-    public void ManagedThreadsAreAbsentFromThePlatformSurface()
+    public void ManagedThreadStartIsACatchablePlatformBoundary()
     {
         using var assets = TestAssets.Create();
-
-        var exception = Assert.Throws<RoslynCompilationException>(() =>
-            assets.CompileSource(
-                "ThreadFixture",
-                """
-                public static class EntryPoint
+        var assembly = assets.CompileSource(
+            "ThreadFixture",
+            """
+            public static class EntryPoint
+            {
+                public static int Run(int input)
                 {
-                    public static int Run(int input)
+                    var started = false;
+                    try
                     {
-                        var thread = new System.Threading.Thread(() => { });
-                        thread.Start();
-                        return input;
+                        new System.Threading.Thread(() => started = true).Start();
                     }
-                }
-                """));
+                    catch (System.PlatformNotSupportedException)
+                    {
+                        return started ? 2 : input;
+                    }
 
-        Assert.Equal(["CS0234"], exception.DiagnosticCodes);
+                    return 1;
+                }
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "EntryPoint",
+            "Run",
+            []));
+
+        // The standard Thread surface binds; creating a native thread throws without
+        // running the callback, because the platform has a single managed reactor.
+        Assert.Equal(42, CompilerTestSupport.ExecuteWithNode(result.ApplicationModule, assets.Directory, 42));
     }
 
     [Fact]

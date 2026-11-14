@@ -13,8 +13,10 @@ internal sealed class ValueLayoutResolver(
     IFieldRepository fields,
     IExplicitValueLayoutResolver explicitLayouts,
     WasmTargetLayout target,
-    ManagedValueLayoutState state) : IValueLayoutResolver
+    ManagedValueLayoutState state,
+    IFieldLayoutFailureBinder failures) : IValueLayoutResolver
 {
+    private readonly IFieldLayoutFailureBinder _failures = failures ?? throw new ArgumentNullException(nameof(failures));
     private readonly ITypeDefinitionResolver _types = types ??
         throw new ArgumentNullException(nameof(types));
     private readonly IFieldRepository _fields = fields ??
@@ -93,7 +95,7 @@ internal sealed class ValueLayoutResolver(
             {
                 var resolvedFields = instanceFields.Select(field => new ExplicitFieldStorage(
                     field,
-                    ResolveFieldLayout(type, layout, field.SignatureType.Substitute(typeArguments), next)))
+                    ResolveFieldLayout(type, layout, field, field.SignatureType.Substitute(typeArguments), next)))
                     .ToImmutableArray();
                 var plan = _explicitLayouts.Resolve(type, definition, resolvedFields, _target);
                 for (var index = 0; index < instanceFields.Length; index++)
@@ -111,7 +113,7 @@ internal sealed class ValueLayoutResolver(
             foreach (var field in instanceFields)
             {
                 var fieldType = field.SignatureType.Substitute(typeArguments);
-                var fieldLayout = ResolveFieldLayout(type, layout, fieldType, next);
+                var fieldLayout = ResolveFieldLayout(type, layout, field, fieldType, next);
                 var fieldAlignment = definition.PackingSize == 0
                     ? fieldLayout.Alignment
                     : Math.Min(definition.PackingSize, fieldLayout.Alignment);
@@ -182,6 +184,11 @@ internal sealed class ValueLayoutResolver(
 
         return type.Shape switch
         {
+            // The CLI typedref primitive is laid out as CoreLib's System.TypedReference, NativeAOT's value
+            // reference and type handle.
+            CliTypeShape.Primitive when type.CanonicalName == "primitive:typedref" => new ValueLayoutSeed(
+                new ValueLayout(type, Size: 0, Alignment: 1, []),
+                PublishDefinitionFields: true),
             CliTypeShape.Primitive => new ValueLayoutSeed(
                 ResolvePrimitive(type),
                 PublishDefinitionFields: false),
@@ -200,12 +207,21 @@ internal sealed class ValueLayoutResolver(
     private ValueLayout ResolveFieldLayout(
         CliTypeIdentity owner,
         ValueLayout ownerLayout,
+        FieldDefinitionModel definition,
         CliTypeIdentity field,
         ImmutableHashSet<string> activeTypes)
-        => owner.Shape == CliTypeShape.Primitive && owner.Equals(field)
-            ? ownerLayout
-            : Resolve(field, activeTypes);
-
+    {
+        try
+        {
+            return owner.Shape == CliTypeShape.Primitive && owner.Equals(field)
+                ? ownerLayout
+                : Resolve(field, activeTypes);
+        }
+        catch (CompilerException failure)
+        {
+            throw _failures.Bind(failure, new(definition.Key, field.CanonicalName) { DeclaringType = owner });
+        }
+    }
 
     private ValueLayout ResolvePrimitive(CliTypeIdentity type) =>
         type.CanonicalName switch

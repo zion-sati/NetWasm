@@ -86,10 +86,9 @@ public sealed class AttributeQueryClassifierTests
     [Theory]
     [InlineData("get_CustomAttributes")]
     [InlineData("GetCustomAttributesData")]
-    public void MetadataEnumerationIsRejected(string name)
+    public void MetadataEnumerationUsesItsManagedContract(string name)
     {
-        var exception = Assert.Throws<CompilerException>(() => Classify(Create(), Method(InstanceKey, name, false, [], [])));
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
+        Assert.Null(Classify(Create(), Method(InstanceKey, name, false, [], [])));
     }
 
     [Theory]
@@ -103,7 +102,7 @@ public sealed class AttributeQueryClassifierTests
     [InlineData(7)]
     [InlineData(8)]
     [InlineData(9)]
-    public void UnsupportedOverloadsAreRejected(int shape)
+    public void OtherOverloadsRetainTheirManagedBodies(int shape)
     {
         var method = shape switch
         {
@@ -120,9 +119,7 @@ public sealed class AttributeQueryClassifierTests
             _ => throw new ArgumentOutOfRangeException(nameof(shape)),
         };
 
-        var exception = Assert.Throws<CompilerException>(() => Classify(Create(), method));
-
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
+        Assert.Null(Classify(Create(), method));
     }
 
     [Fact]

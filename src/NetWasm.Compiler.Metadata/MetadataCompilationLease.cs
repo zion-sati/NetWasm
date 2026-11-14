@@ -25,7 +25,8 @@ public sealed class MetadataCompilationLease : IMetadataCompilationLease
         ImmutableArray<ManagedAssembly> assemblies,
         ImmutableDictionary<string, string> referenceAssemblyAliases,
         IMetadataCompilationDisposer disposer,
-        MetadataLifetime lifetime)
+        MetadataLifetime lifetime,
+        ImmutableArray<ManagedAssembly> originalContracts = default)
     {
         ArgumentNullException.ThrowIfNull(entryAssembly);
         ArgumentNullException.ThrowIfNull(referenceAssemblyAliases);
@@ -41,7 +42,10 @@ public sealed class MetadataCompilationLease : IMetadataCompilationLease
             [.. assemblies.SelectMany(assembly => assembly.Types.Values)],
             [.. assemblies.SelectMany(assembly => assembly.Methods.Values)],
             [.. entryAssembly.Methods.Values],
-            referenceAssemblyAliases);
+            referenceAssemblyAliases)
+        {
+            OriginalContractAssemblies = originalContracts,
+        };
     }
 
     public void Dispose() => _disposer.Dispose();

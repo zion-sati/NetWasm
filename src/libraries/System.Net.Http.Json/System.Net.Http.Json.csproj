@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Net.Http.Json</AssemblyName>
+    <!-- Its public surface does not claim CLS compliance yet (unsigned members are not marked). -->
+    <CLSCompliant>false</CLSCompliant>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="System/Net/Http/Json/*.cs" />
+    <ProjectReference Include="../System.Net.Http/System.Net.Http.csproj" />
+    <ProjectReference Include="../System.Text.Json/System.Text.Json.csproj" />
+  </ItemGroup>
+</Project>

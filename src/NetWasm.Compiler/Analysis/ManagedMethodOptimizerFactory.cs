@@ -9,17 +9,30 @@ using NetWasm.Compiler.Analysis.AddressTakenValues;
 using NetWasm.Compiler.Analysis.Inlining;
 using NetWasm.Compiler.Analysis.Arrays;
 using NetWasm.Compiler.Analysis.Loops;
+using NetWasm.Compiler.Analysis.Loops.Elementwise;
 
 namespace NetWasm.Compiler.Analysis;
 
 internal sealed class ManagedMethodOptimizerFactory(
     ITypedStackValidatorFactory stackValidators,
-    IControlFlowGraphBuilderFactory graphBuilders) : IManagedMethodOptimizerFactory
+    IControlFlowGraphBuilderFactory graphBuilders,
+    Arrays.IArrayBoundsCheckEliminatorFactory arrayBounds,
+    Arrays.IRepeatedArrayAccessEliminatorFactory repeatedAccesses,
+    NullChecks.IConstructedObjectNullCheckEliminatorFactory constructedObjects,
+    IIntegerCheckEliminatorFactory integerChecks) : IManagedMethodOptimizerFactory
 {
     private readonly ITypedStackValidatorFactory _stackValidators = stackValidators ??
         throw new ArgumentNullException(nameof(stackValidators));
     private readonly IControlFlowGraphBuilderFactory _graphBuilders = graphBuilders ??
         throw new ArgumentNullException(nameof(graphBuilders));
+    private readonly Arrays.IArrayBoundsCheckEliminatorFactory _arrayBounds = arrayBounds ??
+        throw new ArgumentNullException(nameof(arrayBounds));
+    private readonly Arrays.IRepeatedArrayAccessEliminatorFactory _repeatedAccesses = repeatedAccesses ??
+        throw new ArgumentNullException(nameof(repeatedAccesses));
+    private readonly NullChecks.IConstructedObjectNullCheckEliminatorFactory _constructedObjects = constructedObjects ??
+        throw new ArgumentNullException(nameof(constructedObjects));
+    private readonly IIntegerCheckEliminatorFactory _integerChecks = integerChecks ??
+        throw new ArgumentNullException(nameof(integerChecks));
 
     public IManagedMethodOptimizer Create(
         IMethodBodyReader methodBodies,
@@ -55,10 +68,11 @@ internal sealed class ManagedMethodOptimizerFactory(
         ArgumentNullException.ThrowIfNull(settings);
         var graphBuilder = _graphBuilders.Create();
         var stackValidator = _stackValidators.Create(types, fields, methods);
+        var calleeBodies = new CalleeMethodBodyReader(methodBodies);
         var staticDataViews = new StaticDataViewEliminator(
             calledMethods,
             new StaticDataViewResolver(
-                methodBodies,
+                calleeBodies,
                 specializer,
                 types,
                 methods),
@@ -66,7 +80,7 @@ internal sealed class ManagedMethodOptimizerFactory(
         var dominance = new ControlFlowDominanceAnalyzer();
         var induction = new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance);
         var accessors = new SimpleValueTypeAccessorCanonicalizer(
-            methodBodies,
+            calleeBodies,
             calledMethods,
             fields,
             settings.AddressTakenValuePromotion,
@@ -76,7 +90,7 @@ internal sealed class ManagedMethodOptimizerFactory(
             constantCallFolding,
             new ManagedMethodInliner(
                 new ManagedInliningResolver(
-                    methodBodies,
+                    calleeBodies,
                     new AccessorCanonicalizingMethodSpecializer(specializer, accessors),
                     calledMethods,
                     new ManagedInliningBodyValidator(
@@ -92,20 +106,15 @@ internal sealed class ManagedMethodOptimizerFactory(
             graphBuilder,
             stackValidator,
             accessors,
-            new ArrayBoundsCheckEliminator(graphBuilder, stackValidator,
-                new ArrayBoundsCheckEliminationPlanner(
-                    induction, dominance),
-                settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative),
+            _arrayBounds.Create(graphBuilder, stackValidator, dominance, settings),
             new ArrayLoopUnroller(graphBuilder, stackValidator,
                 // Bound expanded CIL work, not a presumed native cache capacity.
                 new ArrayLoopUnrollingPlanner(induction, intrinsics, expandedBodyBudget: 128),
                 settings.LoopUnrolling == LoopUnrollingPolicy.Bounded),
-            new RepeatedArrayAccessEliminator(graphBuilder, stackValidator,
-                new RepeatedArrayAccessPlanner(dominance),
-                settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative),
-            new Devirtualization.ExactReceiverDevirtualizer(calledMethods, dispatchTargets, methodBodies, fields, graphBuilder, stackValidator,
+            _repeatedAccesses.Create(graphBuilder, stackValidator, dominance, settings),
+            new Devirtualization.ExactReceiverDevirtualizer(calledMethods, dispatchTargets, calleeBodies, fields, graphBuilder, stackValidator,
                 dominance, settings.Devirtualization == DevirtualizationPolicy.ExactType),
-            new Allocations.UnusedAllocationEliminator(methodBodies, calledMethods, finalizers,
+            new Allocations.UnusedAllocationEliminator(calleeBodies, calledMethods, finalizers,
                 new MethodInitializationTriggerClassifier(types),
                 settings.AllocationElimination == AllocationEliminationPolicy.Unused),
             new RvaSpanLocalEliminator(graphBuilder, dominance,
@@ -118,23 +127,21 @@ internal sealed class ManagedMethodOptimizerFactory(
             new ReductionLoopRewriter(calledMethods, arrayLoopMethods, spanLengths, settings.ArrayLoopIdioms == ArrayLoopIdiomPolicy.Bulk),
             new PureCallReuser(calledMethods, settings.PureCallReuse == PureCallReusePolicy.RepeatedArguments),
             new LoopInvariantCallHoister(calledMethods, settings.LoopVectorization == LoopVectorizationPolicy.CountedLoops),
-            new ElementwiseLoopVectorizer(vectorLoopMethods, calledMethods,
+            CreateElementwiseLoopVectorizer(vectorLoopMethods, calledMethods,
                 settings.LoopVectorization == LoopVectorizationPolicy.CountedLoops),
             new LoopStoreForwarder(graphBuilder, stackValidator, new ControlFlowNaturalLoopAnalyzer(dominance), intrinsics,
                 settings.LoopStoreForwarding == LoopStoreForwardingPolicy.Elements),
             new ConditionalStoreMerger(fields, settings.ConditionalStoreMerging == ConditionalStoreMergingPolicy.SameFieldArms),
             new FieldLoadReuser(graphBuilder, calledMethods, fields, settings.FieldLoadReuse == FieldLoadReusePolicy.AvailableLoads),
             new QuotientReuser(graphBuilder, stackValidator, settings.QuotientReuse == QuotientReusePolicy.AvailableQuotients),
-            new IntegerCheckEliminator(graphBuilder, stackValidator,
-                new IntegerRangeAnalysis(new StackEffectResolver(calledMethods)),
-                settings.IntegerCheckElimination == IntegerCheckEliminationPolicy.ProvenRanges),
+            _integerChecks.Create(graphBuilder, stackValidator, calledMethods, settings),
             new BeforeFieldInitEntryInitializer(graphBuilder, dominance, types, methods, fields,
                 settings.StaticInitializationHoisting == StaticInitializationHoistingPolicy.MethodEntry),
             new EmptyFinallyRemover(settings.EmptyFinallyRemoval == EmptyFinallyRemovalPolicy.EmptyHandlers),
             new StructLocalScalarReplacer(graphBuilder, stackValidator, new ControlFlowNaturalLoopAnalyzer(dominance),
                 typeDefinitions, fields,
                 settings.StructScalarReplacement == StructScalarReplacementPolicy.FieldAccessedLocals),
-            new Allocations.NonEscapingAllocationReplacer(graphBuilder, stackValidator, methodBodies, calledMethods, fields,
+            new Allocations.NonEscapingAllocationReplacer(graphBuilder, stackValidator, calleeBodies, calledMethods, fields,
                 finalizers, new MethodInitializationTriggerClassifier(types),
                 new StackValueConsumerFinder(new StackEffectResolver(calledMethods)),
                 settings.AllocationScalarReplacement == AllocationScalarReplacementPolicy.NonEscapingObjects),
@@ -146,12 +153,26 @@ internal sealed class ManagedMethodOptimizerFactory(
                 settings.LoopStrengthReduction == LoopStrengthReductionPolicy.AddressInduction),
             new WholeLocalBlockCopyFolder(graphBuilder, stackValidator, calledMethods, typeDefinitions, fields,
                 settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled),
-            new NullChecks.ConstructedObjectNullCheckEliminator(graphBuilder, stackValidator,
-                new NullChecks.ConstructedReceiverPlanner(dominance, new StackEffectResolver(calledMethods), calledMethods),
-                settings.NewObjectNullCheckElimination != NewObjectNullCheckEliminationPolicy.Disabled),
+            _constructedObjects.Create(graphBuilder, stackValidator, dominance, calledMethods, settings),
             new RangeBranchRewriter(graphBuilder, stackValidator,
                 new IntegerRangeAnalysis(new StackEffectResolver(calledMethods)),
                 Constants.ConstantBranchFoldingFactory.Create(graphBuilder),
                 settings.RangeBranchFolding == RangeBranchFoldingPolicy.ProvenRanges));
+    }
+
+    // Matching (the body parser, the lane selector), then rewriting (the prefixes).
+    private static ElementwiseLoopVectorizer CreateElementwiseLoopVectorizer(
+        IVectorLoopMethodResolver vectorLoopMethods,
+        ICalledMethodResolver calledMethods,
+        bool enabled)
+    {
+        var parser = new ElementwiseBodyParser(calledMethods);
+        return new ElementwiseLoopVectorizer(
+            new ElementwiseLoopMatcher(parser, new ElementwiseLaneSelector()),
+            new ElementwiseWalkMatcher(parser),
+            new ElementwiseLoopPrefixEmitter(vectorLoopMethods),
+            new ElementwiseWalkPrefixEmitter(vectorLoopMethods),
+            calledMethods,
+            enabled);
     }
 }

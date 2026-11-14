@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Collections.Concurrent</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Collections/Concurrent/IProducerConsumerCollectionDebugView.cs" />
+    <Compile Include="System/Collections/Concurrent/BlockingCollection.cs" />
+    <Compile Include="System/Collections/Concurrent/CDSCollectionETWBCLProvider.cs" />
+    <Compile Include="System/Collections/Concurrent/ConcurrentBag.cs" />
+    <Compile Include="System/Collections/Concurrent/ConcurrentStack.cs" />
+    <Compile Include="System/Collections/Concurrent/OrderablePartitioner.cs" />
+    <Compile Include="System/Collections/Concurrent/Partitioner.cs" />
+    <Compile Include="System/Collections/Concurrent/PartitionerStatic.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

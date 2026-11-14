@@ -12,6 +12,7 @@ public sealed class KeptCompilationFactsTests
     public static TheoryData<string> Changes => new()
     {
         "export", "entry token", "diagnostic trace", "world", "source", "alias", "import module", "stack trace",
+        "feature switch", "runtime property", "native library",
     };
 
     // The facts keep the result's sidecars, which a compile served from them writes again.
@@ -47,6 +48,9 @@ public sealed class KeptCompilationFactsTests
             "source" => Base with { SourcePaths = ["Program.cs"] },
             "alias" => Base with { ReferenceAssemblyAliases = ImmutableDictionary<string, string>.Empty.Add("System.Runtime", "NetWasm.CoreLib") },
             "import module" => Base with { ImportModules = ["host"] },
+            "feature switch" => Base with { FeatureSwitches = ImmutableDictionary<string, bool>.Empty.Add("Feature", true) },
+            "runtime property" => Base with { RuntimeProperties = [("Name", "Value")] },
+            "native library" => Base with { LinkedNativeLibraries = ["libz"] },
             _ => Base with { EmitStackTrace = true },
         };
 

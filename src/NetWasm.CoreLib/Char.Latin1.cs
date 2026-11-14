@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Char.cs:
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/System.Private.CoreLib/src/System/Char.cs:
 // the Latin-1 character table and the checks that read it.
 
 using System.Diagnostics;
@@ -8,7 +8,8 @@ using System.Diagnostics;
 namespace System;
 
 [Serializable]
-public partial struct Char
+[System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+public readonly partial struct Char
 {
     private const byte IsWhiteSpaceFlag = 0x80;
     private const byte IsUpperCaseLetterFlag = 0x40;

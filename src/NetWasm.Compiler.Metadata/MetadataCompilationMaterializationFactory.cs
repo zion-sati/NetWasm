@@ -23,23 +23,28 @@ public sealed class MetadataCompilationMaterializationFactory :
     private static MetadataCompilationMaterialization Materialize(
         MetadataCompilationSnapshot snapshot)
     {
+        var metadataAssemblies = snapshot.Assemblies.ToImmutableDictionary(
+            assembly => assembly.Identity.Name,
+            assembly => assembly.Metadata,
+            StringComparer.Ordinal);
         // Built once, then only read by every worker: frozen maps look up without a tree walk.
         return new MetadataCompilationMaterialization(
             snapshot.Assemblies,
             Freeze(snapshot.Types, type => type.Key),
             Freeze(snapshot.Assemblies.SelectMany(assembly => assembly.Fields.Values), field => field.Key),
             Freeze(snapshot.Methods, method => method.Key),
-            snapshot.Assemblies.ToImmutableDictionary(
-                assembly => assembly.Identity.Name,
-                assembly => assembly.Metadata,
-                StringComparer.Ordinal),
+            metadataAssemblies,
             snapshot.ReferenceAssemblyAliases ?? ImmutableDictionary<string, string>.Empty)
         {
+            OriginalContractTypes = snapshot.OriginalContractAssemblies
+                .SelectMany(assembly => assembly.Types.Values.Select(type =>
+                    new OriginalContractType(assembly.Metadata, type)))
+                .ToImmutableDictionary(contract => (contract.Source.Identity, contract.Definition.FullName)),
             Properties = Freeze(
                 snapshot.Assemblies.SelectMany(assembly => assembly.Properties.Values),
                 property => property.Key),
             TypesByName = MetadataTypeDefinitionResolver.Index(snapshot.Types),
-            TypesByFullName = MetadataTypeFinder.Index(snapshot.Types),
+            TypesByFullName = MetadataTypeFinder.Index(snapshot.Types, metadataAssemblies),
         };
     }
 

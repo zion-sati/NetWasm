@@ -145,9 +145,14 @@ internal sealed class CompilationPreparationBuilder(
                     .Distinct(),
             ],
         };
-        var world = PlatformWorldCapabilities.From(componentContract) with
+        var world = PlatformWorldCapabilities.From(
+            componentContract,
+            WasmTargetLayout.For(options.Target).AddressSize,
+            options.UseJavaScriptExportBoundary || options.WitPath is null) with
         {
             HostEventLoop = options.UseJavaScriptExportBoundary,
+            FeatureSwitches = options.FeatureSwitches,
+            RuntimeProperties = options.RuntimeProperties,
         };
         if (options.PlainCoreModule)
         {

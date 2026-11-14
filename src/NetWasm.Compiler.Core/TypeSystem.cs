@@ -793,16 +793,25 @@ public sealed record MethodDefinitionModel(
     public WitExportDeclaration? WitExport { get; init; }
     public WitPostReturnDeclaration? WitPostReturn { get; init; }
     public NativeImportDeclaration? NativeImport { get; init; }
+    // A native import whose library the program does not link (NativeLibraryBinding): the method has no NativeImport
+    // and compiles to a body that throws DllNotFoundException.
+    public NativeImportDeclaration? UnboundNativeImport { get; init; }
     public NativeCallbackDeclaration? NativeCallback { get; init; }
     public UnsafeAccessors.UnsafeAccessorDeclaration? UnsafeAccessor { get; init; }
     public bool IsDelegateAsynchronousCall { get; init; }
+    // The feature switch a getter answers ([FeatureSwitchDefinition(name)] on its property), which a project's
+    // Trim="true" RuntimeHostConfigurationOption folds to a constant at its call sites.
+    public string? FeatureSwitch { get; init; }
+    // The method's ILLink.Substitutions.xml stubs, which the project's folded feature switches select.
+    public ImmutableArray<FeatureSwitchStub> FeatureSwitchStubs { get; init; } = [];
 
     public bool HasBody => RelativeVirtualAddress != 0;
 
     // Physical metadata readers still use HasBody. Managed analysis may also
     // consume compiler-generated accessor wrappers and the runtime-provided
-    // delegate BeginInvoke/EndInvoke bodies, which have no physical RVA.
-    public bool HasManagedBody => HasBody || UnsafeAccessor is not null || IsDelegateAsynchronousCall;
+    // delegate BeginInvoke/EndInvoke bodies and unbound native imports' throwing bodies, which have no physical RVA.
+    public bool HasManagedBody =>
+        HasBody || UnsafeAccessor is not null || IsDelegateAsynchronousCall || UnboundNativeImport is not null;
 
     public ImmutableArray<CliValueKind> WasmParameterTypes => IsStatic
         ? Signature.ParameterTypes
@@ -870,6 +879,9 @@ public sealed record MethodInstanceModel(
             Definition.IsStackTraceHidden == other.Definition.IsStackTraceHidden &
             Definition.UnsafeAccessor == other.Definition.UnsafeAccessor &
             Definition.NativeImport == other.Definition.NativeImport &
+            Definition.UnboundNativeImport == other.Definition.UnboundNativeImport &
+            StringComparer.Ordinal.Equals(Definition.FeatureSwitch, other.Definition.FeatureSwitch) &
+            Definition.FeatureSwitchStubs.SequenceEqual(other.Definition.FeatureSwitchStubs) &
             (Definition.NativeCallback is null
                 ? other.Definition.NativeCallback is null
                 : Definition.NativeCallback.HasEquivalentFacts(
@@ -983,6 +995,14 @@ public sealed record DispatchTargetModel(
     CliTypeIdentity ReceiverType,
     MethodInstanceModel Method);
 
+// A virtual call on object (Equals, GetHashCode, ToString) with at least this many targets calls CoreLib's shared
+// body for it (SharedObjectDispatch) instead of carrying its own dispatch: under whole-program analysis such a call
+// dispatches to every allocated type, and each value type's default Equals and GetHashCode is a case of its own.
+public static class SharedDispatchPolicy
+{
+    public const int MinimumTargets = 32;
+}
+
 public sealed record DispatchCallSiteModel(
     string Caller,
     int IlOffset,
@@ -990,6 +1010,10 @@ public sealed record DispatchCallSiteModel(
     ImmutableArray<DispatchTargetModel> Targets)
 {
     public string Key => $"{Caller}@{IlOffset:x8}";
+
+    // The call uses the shared body for its declaration (SharedDispatchPolicy): it is an unbounded virtual call
+    // on object, so its targets are every allocated type, as the shared body's own call's are.
+    public bool SharesObjectDispatch { get; init; }
 }
 
 public sealed record TypeTestSiteModel(
@@ -1141,6 +1165,7 @@ public enum RuntimeIntrinsic
     MemberExecuteMethod,
     DelegateDynamicInvoke,
     MemberReadField,
+    MemberWriteField,
     EphemeronHandleCreate,
     EphemeronHandleGetKey,
     EphemeronHandleGetValue,
@@ -1148,6 +1173,16 @@ public enum RuntimeIntrinsic
     EphemeronHandleSetValue,
     EphemeronHandleRelease,
     FloatingCopySign,
+    ObjectClone,
+    ArrayElementType,
+    ArraySetValue,
+    ArrayCreateInstance,
+    JavaScriptHost,
+    ArrayCreateRectangularInstance,
+    RunClassConstructor,
+    AllocateUninitializedObject,
+    StructMarshallingData,
+    StructMarshallingFieldNames,
     FloatingMaximum,
     FloatingMinimum,
     SimdAdd,
@@ -1207,11 +1242,7 @@ public enum RuntimeIntrinsic
     ObjectContainsReferences,
     TypeBaseId,
     TypeIsAssignable,
-    ArrayElementType,
-    ArraySetValue,
     PreallocatedOutOfMemoryException,
-    ObjectClone,
-    JavaScriptHost,
     StackTraceRegisterSymbol,
 }
 

@@ -128,6 +128,8 @@ projects=(
   tools/NetWasm.Wit.Bindings/NetWasm.Wit.Bindings.csproj
   src/NetWasm.Hosting/NetWasm.Hosting.csproj
   src/NetWasm.Hosting.Build/NetWasm.Hosting.Build.csproj
+  src/NetWasm.App.Ref/NetWasm.App.Ref.csproj
+  src/NetWasm.App.Runtime/NetWasm.App.Runtime.csproj
   src/NetWasm.Ref/NetWasm.Ref.csproj
   src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj
   src/NetWasm.Runtime.Wasm32/NetWasm.Runtime.Wasm32.csproj

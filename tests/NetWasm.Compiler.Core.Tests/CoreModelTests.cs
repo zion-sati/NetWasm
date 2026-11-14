@@ -203,6 +203,39 @@ public sealed class CoreModelTests
             new CompilerDiagnostic(DiagnosticCode.GenericExpansion, "limit").Id);
     }
 
+    // A diagnostic names each step of the dependency chain that required its source: an instance by its
+    // identity, a definition by its key.
+    [Fact]
+    public void DiagnosticsNameTheirDependencyChain()
+    {
+        var diagnostic = new CompilerDiagnostic(DiagnosticCode.InvalidCil, "bad body")
+        {
+            DependencyChain =
+            [
+                new(new(TypeKey), CompilerDependencyKind.MethodDependency),
+                new(new(TypeKey, "Example<int>"), CompilerDependencyKind.TypeArgument),
+            ],
+        };
+
+        Assert.Equal(
+            "NW1002: bad body [required through Fixture:0x02000001 (MethodDependency) -> Example<int> (TypeArgument)]",
+            diagnostic.ToString());
+    }
+
+    // A stub's conditions are an array, so its equality compares their sequence.
+    [Fact]
+    public void FeatureSwitchStubsCompareTheirConditionsAndResult()
+    {
+        var stub = new FeatureSwitchStub([("Feature", true)], Result: false);
+        var same = new FeatureSwitchStub([("Feature", true)], Result: false);
+
+        Assert.Equal(stub, same);
+        Assert.Equal(stub.GetHashCode(), same.GetHashCode());
+        Assert.NotEqual(stub, same with { Result = true });
+        Assert.NotEqual(stub, new FeatureSwitchStub([("Feature", false)], Result: false));
+        Assert.False(stub.Equals(null));
+    }
+
     [Fact]
     public void IdentitiesAndEntityKeysHaveStableText()
     {

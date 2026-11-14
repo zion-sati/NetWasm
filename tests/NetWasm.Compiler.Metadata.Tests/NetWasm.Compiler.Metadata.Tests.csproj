@@ -10,6 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="../../src/NetWasm.Compiler.Metadata/NetWasm.Compiler.Metadata.csproj" />
     <Compile Include="../TestInfrastructure/MethodSignatureModelFactories.cs" Link="MethodSignatureModelFactories.cs" />
+    <!-- TestAssets compiles fixtures against NetWasm.App's assemblies, which this collects. -->
+    <ProjectReference Include="../../src/NetWasm.App.Runtime/NetWasm.App.Runtime.csproj" ReferenceOutputAssembly="false" />
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
     <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
   </ItemGroup>

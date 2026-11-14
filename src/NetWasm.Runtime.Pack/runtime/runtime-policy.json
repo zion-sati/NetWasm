@@ -12,6 +12,8 @@
     { "export": "allocation_run", "preference": "Aggressive" },
     { "export": "allocation_runs_enabled", "preference": "Aggressive" },
     { "export": "allocation_slot", "preference": "Aggressive" },
+    { "export": "gc_handle_new", "preference": "Aggressive" },
+    { "export": "gc_handle_release", "preference": "Aggressive" },
     { "export": "root_frame_enter", "preference": "Aggressive" },
     { "export": "root_frame_leave", "preference": "Aggressive" },
     { "export": "value_frame_enter", "preference": "Aggressive" },

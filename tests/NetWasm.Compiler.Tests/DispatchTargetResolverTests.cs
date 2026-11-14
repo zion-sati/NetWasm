@@ -14,6 +14,28 @@ public sealed class DispatchTargetResolverTests
     private static readonly CliTypeIdentity String = CliTypeIdentity.Named(Assembly, "System", "String", false);
     private static readonly CliTypeIdentity Object = CliTypeIdentity.Named(Assembly, "System", "Object", false);
 
+    // The managed optimizer resolves through one resolver from every analysis worker at once; each resolution, made
+    // concurrently and repeatedly across many receivers, finds the override, as one made alone does.
+    [Fact]
+    public void ResolvesConcurrentlyFromManyWorkers()
+    {
+        var program = new Program();
+        var a = program.Type("A");
+        var slot = program.Method(a, "M", newSlot: true);
+        var receivers = Enumerable.Range(0, 64).Select(index => program.Type($"B{index}", a)).ToArray();
+        var overrides = receivers.Select(receiver => program.Method(receiver, "M")).ToArray();
+        var resolver = new Resolver(program);
+
+        var results = new DispatchTargetModel?[receivers.Length * 32];
+        Parallel.For(0, results.Length, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2 }, index =>
+            results[index] = resolver.Resolve(slot, receivers[index % receivers.Length]));
+
+        for (var index = 0; index < results.Length; index++)
+        {
+            Assert.Equal(overrides[index % receivers.Length].Definition.Key, Assert.IsType<DispatchTargetModel>(results[index]).Method.Definition.Key);
+        }
+    }
+
     [Fact]
     public void AnOverrideReplacesTheSlotsBody()
     {

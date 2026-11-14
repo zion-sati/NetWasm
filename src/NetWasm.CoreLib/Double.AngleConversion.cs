@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // The correctly rounded DegreesToRadians and RadiansToDegrees from System.Private.CoreLib
-// Double.cs at runtime commit 474ed963699fc29809015392738a15231aaae2de.
+// Double.cs at runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics.Arm;
@@ -11,7 +11,8 @@ using System.Runtime.Intrinsics.X86;
 namespace System
 {
     [Serializable]
-    public partial struct Double
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    public readonly partial struct Double
     {
         // `pi / 180` and `180 / pi` are not exactly representable, so each is carried as a
         // `head + mid + tail` triple giving about 159 significant bits, where each term is the

@@ -1,12 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 //
-// Ported verbatim from dotnet/runtime v11.0.0-rc.3.26522.148
-// (474ed963699fc29809015392738a15231aaae2de), src/libraries/System.Private.CoreLib/src/System/Decimal.DecCalc.cs.
-// NetWasm differences are marked "NetWasm:". Wasm has native 64-bit integer arithmetic on wasm32
-// and wasm64 alike, so this file takes upstream's 64-bit paths.
-//
-// NetWasm: the fields drop upstream's C# 15 `safe` modifier; CoreLib builds with C# 14.
+// Ported verbatim from dotnet/runtime v11.0.0 (deae2e32bf0e018e09d64597b7c59b62b73bb3ce),
+// src/libraries/System.Private.CoreLib/src/System/Decimal.DecCalc.cs. Wasm has native 64-bit integer
+// arithmetic on wasm32 and wasm64 alike, so this file takes upstream's 64-bit paths.
 #define TARGET_64BIT
 
 using System.Diagnostics;
@@ -50,10 +47,10 @@ namespace System
             // NOTE: Do not change the offsets of these fields. This structure must have the same layout as Decimal.
             /// <safety>Non-reference uint that overlaps no other field; the explicit layout only mirrors Decimal's flags word.</safety>
             [FieldOffset(0)]
-            private uint uflags;
+            private safe uint uflags;
             /// <safety>Non-reference uint holding the high 32 bits of the coefficient; it overlaps no other field.</safety>
             [FieldOffset(4)]
-            private uint uhi;
+            private safe uint uhi;
 #if BIGENDIAN
             /// <safety>Non-reference uint overlapping only the low half of the ulomid integer view, so the union cannot forge a managed reference.</safety>
             [FieldOffset(8)]
@@ -64,10 +61,10 @@ namespace System
 #else
             /// <safety>Non-reference uint overlapping only the low half of the ulomid integer view, so the union cannot forge a managed reference.</safety>
             [FieldOffset(8)]
-            private uint ulo;
+            private safe uint ulo;
             /// <safety>Non-reference uint overlapping only the high half of the ulomid integer view, so the union cannot forge a managed reference.</safety>
             [FieldOffset(12)]
-            private uint umid;
+            private safe uint umid;
 #endif
 
             /// <summary>
@@ -75,7 +72,7 @@ namespace System
             /// </summary>
             /// <safety>64-bit integer view over the ulo and umid uints; every overlapping field is a non-reference integer, so the union cannot forge a managed reference.</safety>
             [FieldOffset(8)]
-            private ulong ulomid;
+            private safe ulong ulomid;
 
             private uint High
             {
@@ -1680,10 +1677,207 @@ namespace System
                 result.High = (uint)(mantissa >> 64);
             }
 
-            // NetWasm: upstream's VarR4FromDec, VarR8FromDec, DecimalToFloatingPoint and
-            // DecimalToFloatingPointExact are not here yet. They need Number.ComputeFloat and
-            // Number.Pow10DoubleTable from Number.NumberToFloatingPointBits.cs, which arrive with the
-            // numeric parsing port; until then decimal to float and double use Decimal.DecimalMath.
+            /// <summary>
+            /// Convert Decimal to float
+            /// </summary>
+            internal static float VarR4FromDec(in decimal value)
+            {
+                float flt = DecimalToFloatingPoint<float>(value.Low64, value.High, value.Scale);
+                return decimal.IsNegative(value) ? -flt : flt;
+            }
+
+            /// <summary>
+            /// Convert Decimal to double
+            /// </summary>
+            internal static double VarR8FromDec(in decimal value)
+            {
+                double dbl = DecimalToFloatingPoint<double>(value.Low64, value.High, value.Scale);
+                return decimal.IsNegative(value) ? -dbl : dbl;
+            }
+
+            internal static Half VarHalfFromDec(in decimal value)
+            {
+                Half result = DecimalToFloatingPoint<Half>(value.Low64, value.High, value.Scale);
+                return decimal.IsNegative(value) ? -result : result;
+            }
+
+            internal static BFloat16 VarBFloat16FromDec(in decimal value)
+            {
+                BFloat16 result = DecimalToFloatingPoint<BFloat16>(value.Low64, value.High, value.Scale);
+                return decimal.IsNegative(value) ? -result : result;
+            }
+
+            /// <summary>
+            /// Correctly round the magnitude of a Decimal (mantissa is (<paramref name="high"/>,
+            /// <paramref name="low64"/>) and the value is <c>mantissa / 10^<paramref name="scale"/></c>) to the
+            /// nearest <typeparamref name="TFloat"/>.
+            /// </summary>
+            /// <remarks>
+            /// When the mantissa fits in 64 bits this reuses the correctly-rounded fast paths from the
+            /// floating-point parser (Clinger's exact-arithmetic path and the Eisel-Lemire path in
+            /// <see cref="Number.ComputeFloat{TFloat}(long, ulong)"/>), which avoid the integer division that
+            /// dominates the general case. Everything else - a mantissa wider than 64 bits, or the rare input
+            /// the Eisel-Lemire path cannot decide - falls back to <see cref="DecimalToFloatingPointExact"/>,
+            /// which is always correctly rounded.
+            /// </remarks>
+            private static TFloat DecimalToFloatingPoint<TFloat>(ulong low64, uint high, int scale)
+                where TFloat : unmanaged, IBinaryFloatParseAndFormatInfo<TFloat>
+            {
+                if ((low64 | high) == 0)
+                    return TFloat.Zero;
+
+                if (high == 0)
+                {
+                    // The mantissa fits in 64 bits, so the value is exactly low64 * 10^-scale.
+
+                    // Clinger's fast path: when both the mantissa and 10^scale are exactly representable, a
+                    // single floating-point divide is guaranteed to be correctly rounded.
+                    if ((low64 <= TFloat.MaxMantissaFastPath) && (scale <= TFloat.MaxExponentFastPath))
+                    {
+                        return TFloat.CreateSaturating((double)low64 / Number.Pow10DoubleTable[scale]);
+                    }
+
+                    // Eisel-Lemire: a division-free correctly-rounded approximation that succeeds for all but a
+                    // rare set of inputs, which it signals with a non-positive exponent so they fall through to
+                    // the exact path below. Its tie-to-even correction only covers exponents down to
+                    // MinExponentRoundToEven.
+                    if (-scale >= TFloat.MinExponentRoundToEven)
+                    {
+                        (int Exponent, ulong Mantissa) am = Number.ComputeFloat<TFloat>(-scale, low64);
+                        if (am.Exponent > 0)
+                        {
+                            ulong bits = am.Mantissa | ((ulong)(uint)am.Exponent << TFloat.DenormalMantissaBits);
+                            return TFloat.BitsToFloat(bits);
+                        }
+                    }
+                }
+
+                // Round directly to the target precision. The resulting value is exactly representable as a double,
+                // so converting it to TFloat does not introduce another rounding step.
+                return TFloat.CreateSaturating(
+                    DecimalToFloatingPointExact(low64, high, scale, TFloat.MinBinaryExponent, TFloat.DenormalMantissaBits));
+            }
+
+            /// <summary>
+            /// Correctly round a Decimal magnitude to a binary floating-point value with the specified format.
+            /// </summary>
+            /// <remarks>
+            /// Subnormal values are rounded to the format's fixed subnormal spacing. Normal values are rounded to
+            /// its significand precision. The value is <c>mantissa / 10^scale = round(mantissa / 5^scale) * 2^-scale</c>;
+            /// the power of two is exact for the Decimal range, so a single 128-bit division can provide the rounding
+            /// bits and sticky bit needed for round-to-nearest-even.
+            /// </remarks>
+            private static double DecimalToFloatingPointExact(ulong low64, uint high, int scale, int minBinaryExponent, int denormalMantissaBits)
+            {
+                UInt128 mantissa = new UInt128(high, low64);
+                Debug.Assert(mantissa != UInt128.Zero);
+
+                UInt128 divisor = Pow5(scale);
+
+                int mantissaBits = 128 - (int)UInt128.LeadingZeroCount(mantissa);
+                int divisorBits = 128 - (int)UInt128.LeadingZeroCount(divisor);
+                int minNormalShift = scale + minBinaryExponent;
+
+                // Compare against the minimum normal value without shifting beyond UInt128.
+                bool isSubnormal;
+                if (minNormalShift >= 0)
+                {
+                    int minNormalBits = divisorBits + minNormalShift;
+                    isSubnormal = minNormalBits > mantissaBits;
+                    if (minNormalBits == mantissaBits)
+                    {
+                        isSubnormal = mantissa < (divisor << minNormalShift);
+                    }
+                }
+                else
+                {
+                    int scaledMantissaBits = mantissaBits - minNormalShift;
+                    isSubnormal = scaledMantissaBits < divisorBits;
+                    if (scaledMantissaBits == divisorBits)
+                    {
+                        isSubnormal = (mantissa << -minNormalShift) < divisor;
+                    }
+                }
+
+                if (isSubnormal)
+                {
+                    // Subnormals are integer multiples of 2^(minBinaryExponent - denormalMantissaBits).
+                    int subnormalExponent = minBinaryExponent - denormalMantissaBits;
+                    int subnormalShift = -scale - subnormalExponent;
+
+                    UInt128 subnormalNumerator, subnormalDenominator;
+                    if (subnormalShift >= 0)
+                    {
+                        Debug.Assert(mantissaBits + subnormalShift <= 128);
+                        subnormalNumerator = mantissa << subnormalShift;
+                        subnormalDenominator = divisor;
+                    }
+                    else
+                    {
+                        Debug.Assert(divisorBits - subnormalShift <= 128);
+                        subnormalNumerator = mantissa;
+                        subnormalDenominator = divisor << -subnormalShift;
+                    }
+
+                    (UInt128 subnormalQuotient, UInt128 subnormalRemainder) = UInt128.DivRem(subnormalNumerator, subnormalDenominator);
+                    UInt128 twiceSubnormalRemainder = subnormalRemainder << 1;
+                    if ((twiceSubnormalRemainder > subnormalDenominator) ||
+                        ((twiceSubnormalRemainder == subnormalDenominator) && ((subnormalQuotient & UInt128.One) != UInt128.Zero)))
+                    {
+                        subnormalQuotient++;
+                    }
+
+                    return Math.ScaleB((double)(ulong)subnormalQuotient, subnormalExponent);
+                }
+
+                // Scale the operands so the quotient has two extra bits for rounding, on top of the significand.
+                // The shifted operands are provably within 128 bits.
+                int significandBits = denormalMantissaBits + 1;
+                int shift = (significandBits + 1) - (mantissaBits - divisorBits);
+
+                UInt128 numerator, denominator;
+                if (shift >= 0)
+                {
+                    numerator = mantissa << shift;
+                    denominator = divisor;
+                }
+                else
+                {
+                    numerator = mantissa;
+                    denominator = divisor << -shift;
+                }
+
+                (UInt128 quotient, UInt128 remainder) = UInt128.DivRem(numerator, denominator);
+
+                // The quotient has either (significandBits + 1) or (significandBits + 2) bits.
+                int quotientBits = 128 - (int)UInt128.LeadingZeroCount(quotient);
+                int drop = quotientBits - significandBits;
+                Debug.Assert(drop is 1 or 2, "The scaling above guarantees one guard bit and at most one extra bit, so the ulong shifts and masks below stay in range.");
+
+                ulong keep = (ulong)(quotient >> drop);
+                ulong roundBits = (ulong)(quotient & ((UInt128.One << drop) - 1));
+                ulong half = 1UL << (drop - 1);
+                bool sticky = (remainder != UInt128.Zero) || ((roundBits & (half - 1)) != 0);
+
+                bool roundUp;
+                if (roundBits > half)
+                    roundUp = true;
+                else if (roundBits < half)
+                    roundUp = false;
+                else
+                    roundUp = sticky || ((keep & 1) != 0); // exactly halfway: round to even
+
+                if (roundUp && (++keep == (1UL << significandBits)))
+                {
+                    // The increment carried out of the significand; drop the now-redundant low bit and account
+                    // for it in the exponent instead.
+                    keep >>= 1;
+                    drop++;
+                }
+
+                int exponent = drop - shift - scale;
+                return Math.ScaleB((double)keep, exponent);
+            }
 
             /// <summary>
             /// 5 raised to <paramref name="exponent"/> as a <see cref="UInt128"/>, for <c>0 &lt;= exponent &lt;= DEC_SCALE_MAX</c>.
@@ -2367,20 +2561,20 @@ namespace System
             {
                 /// <safety>Non-reference uint overlapping the low half of the ulo64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(0 * 4)]
-                public uint U0;
+                public safe uint U0;
                 /// <safety>Non-reference uint overlapping the ulo64LE and uhigh64LE integer views; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(1 * 4)]
-                public uint U1;
+                public safe uint U1;
                 /// <safety>Non-reference uint overlapping the high half of the uhigh64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(2 * 4)]
-                public uint U2;
+                public safe uint U2;
 
                 /// <safety>64-bit integer view over the U0/U1 uints; every overlapping field is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(0)]
-                private ulong ulo64LE;
+                private safe ulong ulo64LE;
                 /// <safety>64-bit integer view over the U1/U2 uints; every overlapping field is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(4)]
-                private ulong uhigh64LE;
+                private safe ulong uhigh64LE;
 
                 public ulong Low64
                 {
@@ -2413,23 +2607,23 @@ namespace System
             {
                 /// <safety>Non-reference uint overlapping the all-integer Low96 buffer; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(0 * 4)]
-                public uint U0;
+                public safe uint U0;
                 /// <safety>Non-reference uint overlapping the all-integer Low96 and High96 buffers; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(1 * 4)]
-                public uint U1;
+                public safe uint U1;
                 /// <safety>Non-reference uint overlapping the all-integer Low96 and High96 buffers; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(2 * 4)]
-                public uint U2;
+                public safe uint U2;
                 /// <safety>Non-reference uint overlapping the all-integer High96 buffer; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(3 * 4)]
-                public uint U3;
+                public safe uint U3;
 
                 /// <safety>Overlaps the U0-U2 uints; Buf12 is itself an all-integer buffer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(0)]
-                public Buf12 Low96;
+                public safe Buf12 Low96;
                 /// <safety>Overlaps the U1-U3 uints; Buf12 is itself an all-integer buffer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(4)]
-                public Buf12 High96;
+                public safe Buf12 High96;
 
                 public ulong Low64
                 {
@@ -2449,32 +2643,32 @@ namespace System
             {
                 /// <safety>Non-reference uint overlapping the low half of the ulo64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(0 * 4)]
-                public uint U0;
+                public safe uint U0;
                 /// <safety>Non-reference uint overlapping the high half of the ulo64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(1 * 4)]
-                public uint U1;
+                public safe uint U1;
                 /// <safety>Non-reference uint overlapping the low half of the umid64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(2 * 4)]
-                public uint U2;
+                public safe uint U2;
                 /// <safety>Non-reference uint overlapping the high half of the umid64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(3 * 4)]
-                public uint U3;
+                public safe uint U3;
                 /// <safety>Non-reference uint overlapping the low half of the uhigh64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(4 * 4)]
-                public uint U4;
+                public safe uint U4;
                 /// <safety>Non-reference uint overlapping the high half of the uhigh64LE integer view; every field of this buffer is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(5 * 4)]
-                public uint U5;
+                public safe uint U5;
 
                 /// <safety>64-bit integer view over the U0/U1 uints; every overlapping field is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(0 * 8)]
-                private ulong ulo64LE;
+                private safe ulong ulo64LE;
                 /// <safety>64-bit integer view over the U2/U3 uints; every overlapping field is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(1 * 8)]
-                private ulong umid64LE;
+                private safe ulong umid64LE;
                 /// <safety>64-bit integer view over the U4/U5 uints; every overlapping field is a non-reference integer, so the union cannot forge a managed reference.</safety>
                 [FieldOffset(2 * 8)]
-                private ulong uhigh64LE;
+                private safe ulong uhigh64LE;
 
                 public ulong Low64
                 {

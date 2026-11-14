@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Web.HttpUtility</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Collections.Specialized/System.Collections.Specialized.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/HexConverter.cs" />
+    <Compile Include="Common/System/Text/ValueStringBuilder.AppendSpanFormattable.cs" />
+    <Compile Include="Common/System/Text/ValueStringBuilder.cs" />
+    <Compile Include="System/Web/HttpUtility.cs" />
+    <Compile Include="System/Web/IHtmlString.cs" />
+    <Compile Include="System/Web/Util/HttpEncoder.cs" />
+    <Compile Include="System/Web/Util/UriUtil.cs" />
+  </ItemGroup>
+</Project>

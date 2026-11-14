@@ -21,7 +21,7 @@ public sealed class ReachableMethodAnalyzerTests
         var analyzer = new ReachableMethodAnalyzer(
             new FixedMethodBodyReader(managed.Body),
             new UnusedTypeRepository(), new UnusedFieldRepository(), new UnusedMethodRepository(),
-            specializer, optimizer, new RecordingIntegerChecks(), new NoExceptionDiscovery(),
+            specializer, optimizer, new RecordingProofs(), new NoExceptionDiscovery(),
             new FixedStackValidatorFactory(new RejectingStackValidator(failure)), graphs, instructions);
 
         var exception = Assert.Throws<CompilerException>(() => analyzer.Analyze(new(managed.Method)));
@@ -79,7 +79,7 @@ public sealed class ReachableMethodAnalyzerTests
         var graphBuilder = new RecordingGraphBuilder();
         var specializer = new RecordingSpecializer(specializerChanges);
         var optimizer = new IdentityOptimizer(optimizerChanges);
-        var integerChecks = new RecordingIntegerChecks();
+        var proofs = new RecordingProofs();
         var analyzer = new ReachableMethodAnalyzer(
             new FixedMethodBodyReader(body),
             new UnusedTypeRepository(),
@@ -87,7 +87,7 @@ public sealed class ReachableMethodAnalyzerTests
             new UnusedMethodRepository(),
             specializer,
             optimizer,
-            integerChecks,
+            proofs,
             new NoExceptionDiscovery(),
             new FixedStackValidatorFactory(),
             graphBuilder,
@@ -113,13 +113,13 @@ public sealed class ReachableMethodAnalyzerTests
             Assert.Same(request.RewrittenBody, result.Body.Body);
             Assert.Equal(0, optimizer.Calls);
             // A rewritten body was optimized before its rewrite; only its integer check proof is found again.
-            Assert.Same(request.RewrittenBody, integerChecks.Rewritten);
+            Assert.Same(request.RewrittenBody, proofs.Rewritten);
         }
         else
         {
             Assert.Same(request.Method, specializer.ObservedMethod);
             Assert.Equal(1, optimizer.Calls);
-            Assert.Null(integerChecks.Rewritten);
+            Assert.Null(proofs.Rewritten);
         }
         Assert.Same(graphBuilder.Graph, result.Body.ControlFlow.Graph);
         // The specialized body is validated once; an optimized one again.
@@ -158,10 +158,10 @@ public sealed class ReachableMethodAnalyzerTests
         }
     }
 
-    private sealed class RecordingIntegerChecks : IIntegerCheckEliminator
+    private sealed class RecordingProofs : IMethodBodyProver
     {
         public CilMethodBody? Rewritten { get; private set; }
-        public CilMethodBody Rewrite(CilMethodBody body) => Rewritten = body;
+        public CilMethodBody Prove(CilMethodBody body) => Rewritten = body;
     }
 
     private sealed class NoExceptionDiscovery : IImplicitExceptionDiscovery

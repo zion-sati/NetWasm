@@ -1,0 +1,21 @@
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+namespace System.Net
+{
+    internal static class CookieFields
+    {
+        internal const string CommentAttributeName = "Comment";
+        internal const string CommentUrlAttributeName = "CommentURL";
+        internal const string DiscardAttributeName = "Discard";
+        internal const string DomainAttributeName = "Domain";
+        internal const string ExpiresAttributeName = "Expires";
+        internal const string MaxAgeAttributeName = "Max-Age";
+        internal const string PathAttributeName = "Path";
+        internal const string PortAttributeName = "Port";
+        internal const string SecureAttributeName = "Secure";
+        internal const string VersionAttributeName = "Version";
+        internal const string HttpOnlyAttributeName = "HttpOnly";
+    }
+}

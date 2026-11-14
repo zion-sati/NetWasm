@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Collections</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>SYSTEM_COLLECTIONS;$(DefineConstants)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Collections/Generic/BitHelper.cs" />
+    <Compile Include="Common/System/Collections/Generic/DebugViewDictionaryItem.cs" />
+    <Compile Include="Common/System/Collections/Generic/EnumerableHelpers.cs" />
+    <Compile Include="Common/System/Collections/Generic/ICollectionDebugView.cs" />
+    <Compile Include="Common/System/Collections/Generic/IDictionaryDebugView.cs" />
+    <Compile Include="Common/System/Collections/HashHelpers.cs" />
+    <Compile Include="Common/System/Collections/ObjectModel/CollectionHelpers.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Collections/Generic/LinkedList.cs" />
+    <Compile Include="System/Collections/Generic/OrderedDictionary.cs" />
+    <Compile Include="System/Collections/Generic/OrderedDictionaryDebugView.cs" />
+    <Compile Include="System/Collections/Generic/PriorityQueue.cs" />
+    <Compile Include="System/Collections/Generic/PriorityQueueDebugView.cs" />
+    <Compile Include="System/Collections/Generic/SortedDictionary.cs" />
+    <Compile Include="System/Collections/Generic/SortedList.cs" />
+    <Compile Include="System/Collections/Generic/SortedSet.TreeSubSet.cs" />
+    <Compile Include="System/Collections/Generic/SortedSet.cs" />
+    <Compile Include="System/Collections/Generic/SortedSetEqualityComparer.cs" />
+    <Compile Include="System/Collections/Generic/Stack.cs" />
+    <Compile Include="System/Collections/Generic/StackDebugView.cs" />
+    <Compile Include="System/Collections/StructuralComparisons.cs" />
+    <Compile Include="System/Collections/ThrowHelper.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

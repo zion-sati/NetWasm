@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Text.Json</AssemblyName>
+    <!-- The upstream JSON sources expose unsigned overloads in the public reader, writer and document
+         contracts without CLSCompliant(false) markers. -->
+    <CLSCompliant>false</CLSCompliant>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NetWasmJsonSourceGenerator>$(NETCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/System.Text.Json.SourceGeneration.dll</NetWasmJsonSourceGenerator>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Shared J01A contracts/common helpers. -->
+    <Compile Include="Common/System/Text/Json/*.cs" />
+    <Compile Include="Common/System/Text/ValueStringBuilder.cs" />
+    <Compile Include="Common/System/HexConverter.cs" />
+    <Compile Include="Common/System/Marvin.cs" />
+    <Compile Include="Common/System/Net/ArrayBuffer.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/SR.cs" />
+
+    <!-- Reader and writer lanes own their source; these globs include their files once present. -->
+    <Compile Include="System/Text/Json/Reader/**/*.cs" Exclude="System/Text/Json/Reader/JsonReaderHelper.netstandard.cs" />
+    <Compile Include="System/Text/Json/Writer/**/*.cs" />
+    <Compile Include="System/Text/Json/Serialization/**/*.cs" />
+
+    <Compile Include="System/Text/Json/AppContextSwitchHelper.cs" />
+    <Compile Include="System/Text/Json/BitStack.cs" />
+    <Compile Include="System/Text/Json/ValueQueue.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.DbRow.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.MetadataDb.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.Parse.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.PropertyNameSet.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.StackRow.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.StackRowStack.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.TryGetProperty.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocument.cs" />
+    <Compile Include="System/Text/Json/Document/JsonDocumentOptions.cs" />
+    <Compile Include="System/Text/Json/Document/JsonElement.ArrayEnumerator.cs" />
+    <Compile Include="System/Text/Json/Document/JsonElement.ObjectEnumerator.cs" />
+    <Compile Include="System/Text/Json/Document/JsonElement.Parse.cs" />
+    <Compile Include="System/Text/Json/Document/JsonElement.cs" />
+    <Compile Include="System/Text/Json/Document/JsonProperty.cs" />
+    <Compile Include="System/Text/Json/Document/JsonValueKind.cs" />
+
+    <!-- Mutable JSON DOM (JsonNode/JsonObject/JsonArray/JsonValue). These are
+         the pinned upstream Nodes closure and intentionally compile as part of
+         the ordinary System.Text.Json assembly. -->
+    <Compile Include="System/Text/Json/Nodes/**/*.cs" />
+
+    <Compile Include="System/Text/Json/JsonConstants.cs" />
+    <Compile Include="System/Text/Json/JsonEncodedText.cs" />
+    <Compile Include="System/Text/Json/JsonException.cs" />
+    <Compile Include="System/Text/Json/JsonHelpers.Escaping.cs" />
+    <Compile Include="System/Text/Json/JsonHelpers.Date.cs" />
+    <Compile Include="System/Text/Json/JsonHelpers.cs" />
+    <Compile Include="System/Text/Json/JsonTokenType.cs" />
+    <Compile Include="System/Text/Json/ThrowHelper.cs" />
+    <Compile Include="System/Text/Json/ThrowHelper.Serialization.cs" />
+    <Compile Include="System/Text/Json/ThrowHelper.Node.cs" />
+    <ProjectReference Include="../System.Collections/System.Collections.csproj" />
+    <ProjectReference Include="../System.Collections.NonGeneric/System.Collections.NonGeneric.csproj" />
+    <ProjectReference Include="../System.Collections.Specialized/System.Collections.Specialized.csproj" />
+    <ProjectReference Include="../System.Memory/System.Memory.csproj" />
+    <ProjectReference Include="../System.Text.Encodings.Web/System.Text.Encodings.Web.csproj" />
+    <ProjectReference Include="../System.IO.Pipelines/System.IO.Pipelines.csproj" />
+    <None Include="$(NetWasmJsonSourceGenerator)"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs/System.Text.Json.SourceGeneration.dll" />
+  </ItemGroup>
+</Project>

@@ -71,7 +71,7 @@ internal sealed record UnitRuntimeObjectLayout(
 internal static class UnitPlanCodec
 {
     private const uint Magic = 0x4C504E4E; // "NNPL"
-    private const int Version = 8;
+    private const int Version = 9;
 
     public static byte[] Encode(InstructionModuleTarget target, IRuntimeObjectLayout runtimeObjects, UnitProgramFacts program)
     {
@@ -129,6 +129,13 @@ internal static class UnitPlanCodec
         writer.Bool(target.InlineSmallBlockOperations);
         writer.Bool(target.InlineArrayData);
         writer.Bool(target.InlineObjectAllocation);
+        // The shared object dispatch bodies a sharing call site calls, by the declaration it dispatches.
+        writer.Int(target.SharedObjectDispatch.Count);
+        foreach (var (declaration, body) in target.SharedObjectDispatch.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            writer.String(declaration);
+            writer.Method(body);
+        }
         writer.Int(runtimeObjects.StringLengthOffset);
         writer.Int(runtimeObjects.StringDataOffset);
         writer.Int(runtimeObjects.ArrayLengthOffset);
@@ -205,12 +212,25 @@ internal static class UnitPlanCodec
             InlineSmallBlockOperations = reader.Bool(),
             InlineArrayData = reader.Bool(),
             InlineObjectAllocation = reader.Bool(),
+            SharedObjectDispatch = SharedObjectDispatch(reader),
         };
         var runtimeObjects = new UnitRuntimeObjectLayout(reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(),
             reader.Int(), reader.Int(), reader.Int(), reader.Int());
         var program = Program(reader);
         if (!reader.AtEnd) throw new InvalidDataException("A compile's kept plans are longer than they read.");
         return new(target, runtimeObjects, program) { StackTraces = numbering };
+    }
+
+    private static ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch(UnitModelReader reader)
+    {
+        var count = reader.Int();
+        var bodies = ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
+        for (var index = 0; index < count; index++)
+        {
+            var declaration = reader.String()!;
+            bodies.Add(declaration, reader.Method());
+        }
+        return bodies.ToImmutable();
     }
 
     private static void Program(UnitModelWriter writer, UnitProgramFacts program)

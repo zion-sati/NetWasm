@@ -170,6 +170,8 @@ jobs:
           MODE: ${{ steps.train-state.outputs.mode }}
           PREVIEW_VERSION: ${{ steps.release.outputs.preview_version }}
           STABLE_VERSION: ${{ steps.release.outputs.stable_version }}
+          # NetWasm.App.Runtime builds the compression and cryptography native archives with it.
+          NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           export NETWASM_TOOLCHAIN_CACHE="$RUNNER_TEMP/toolchain-cache"

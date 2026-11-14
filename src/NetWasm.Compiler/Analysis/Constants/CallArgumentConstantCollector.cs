@@ -17,15 +17,31 @@ internal sealed class CallArgumentConstantCollector(ICalledMethodResolver calls)
         foreach (var block in method.ControlFlow.Graph.Blocks)
         {
             var stack = new List<ScalarConstant?>();
+            var unmodelled = false;
             foreach (var instruction in block.Instructions)
             {
                 if (!method.ControlFlow.InstructionEntryStacks.TryGetValue(instruction.Offset, out var entry)) continue;
-                if (stack.Count != entry.Length)
+                if (unmodelled)
+                {
+                    // An unmodelled instruction pops from the top and pushes at most one value (dup is modelled), so
+                    // the entries below what it touched keep their facts and the top is unknown.
+                    var kept = entry.Length == 0 ? 0 : Math.Min(stack.Count, entry.Length - 1);
+                    stack.RemoveRange(kept, stack.Count - kept);
+                    while (stack.Count < entry.Length) stack.Add(null);
+                    unmodelled = false;
+                }
+                else if (stack.Count != entry.Length)
                 {
                     stack.Clear();
                     for (var index = 0; index < entry.Length; index++) stack.Add(null);
                 }
-                if (instruction.Operation == CilOperation.Call && _calls.Resolve(instruction) is { Definition.IsStatic: true } target)
+                // Static calls, direct calls to instance methods (constructor chaining and base calls included),
+                // callvirt to non-virtual methods (C#'s null-checked instance calls) and newobj. The recorded
+                // arguments are the declared parameters, without the receiver.
+                if (instruction.Operation is CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject &&
+                    _calls.Resolve(instruction) is { } target &&
+                    (instruction.Operation != CilOperation.CallVirtual || !target.Definition.IsVirtual) &&
+                    (instruction.Operation != CilOperation.NewObject || !target.Definition.IsStatic))
                 {
                     var count = target.Signature.ParameterTypes.Length;
                     if (count > stack.Count) throw new InvalidOperationException("Validated call stack is shorter than its signature.");
@@ -55,9 +71,8 @@ internal sealed class CallArgumentConstantCollector(ICalledMethodResolver calls)
                         stack.RemoveAt(stack.Count - 1);
                         break;
                     default:
-                        // The validated next entry restores stack height, but no
-                        // value facts survive an unmodelled operation or call.
-                        stack.Clear();
+                        // The next validated entry fixes the height: see above.
+                        unmodelled = true;
                         break;
                 }
             }

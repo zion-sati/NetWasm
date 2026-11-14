@@ -1,5 +1,5 @@
 // Derived from dotnet/runtime CompareInfo invariant-mode paths at
-// 811225a482702af7ecc35d817966bc70b88a3a23.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // NetWasm runs upstream's invariant globalization mode only: every culture shares this invariant
@@ -14,9 +14,15 @@ using System.Diagnostics.CodeAnalysis;
 namespace System.Globalization;
 
 [Serializable]
+[System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
 public sealed partial class CompareInfo
 {
     internal static readonly CompareInfo Invariant = new();
+
+    // Upstream's, in invariant mode.
+    internal int CompareOptionIgnoreCase(ReadOnlySpan<char> string1, ReadOnlySpan<char> string2) =>
+        InvariantModeCasing.CompareStringIgnoreCase(ref System.Runtime.InteropServices.MemoryMarshal.GetReference(string1), string1.Length,
+            ref System.Runtime.InteropServices.MemoryMarshal.GetReference(string2), string2.Length);
 
     private const CompareOptions ValidCompareOptions = CompareOptions.IgnoreCase |
         CompareOptions.IgnoreSymbols | CompareOptions.IgnoreNonSpace |

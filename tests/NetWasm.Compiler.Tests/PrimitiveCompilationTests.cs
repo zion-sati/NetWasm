@@ -38,7 +38,7 @@ public sealed class PrimitiveCompilationTests
                     if ((-1).ToString("X") != "FFFFFFFF") return 13;
                     if (((ushort)0xabcd).ToString("x") != "abcd") return 14;
                     if (int.Parse("FFFFFFFF", NumberStyles.HexNumber) != -1) return 22;
-                    if (!uint.TryParse("abcdef", NumberStyles.HexNumber, out var hex) ||
+                    if (!uint.TryParse("abcdef", NumberStyles.HexNumber, null, out var hex) ||
                         hex != 0xabcdefU) return 23;
                     if (!int.TryParse("+42", out var parsed) || parsed != 42) return 15;
                     if (int.TryParse("2147483648", out parsed) || parsed != 0) return 16;
@@ -219,7 +219,7 @@ public sealed class PrimitiveCompilationTests
                     if (Int128.Parse("120e-1", NumberStyles.AllowExponent, null) != 12) return 8;
                     if (Int128.TryParse("12.5", NumberStyles.AllowDecimalPoint, null, out _)) return 9;
                     if (Int128.Parse("(42)", NumberStyles.AllowParentheses, null) != -42) return 10;
-                    if (UInt128.Parse("$42", NumberStyles.AllowCurrencySymbol, null) != 42) return 11;
+                    if (UInt128.Parse("\u00a442", NumberStyles.AllowCurrencySymbol, null) != 42) return 11;
                     if (Int128.Parse("42-", NumberStyles.AllowTrailingSign, null) != -42) return 12;
 
                     var utf8 = new byte[] { (byte)'3', (byte)'4', (byte)'0', (byte)'2', (byte)'8', (byte)'2',
@@ -405,7 +405,9 @@ public sealed class PrimitiveCompilationTests
                     if (!double.TryParse("(42.5)", NumberStyles.AllowParentheses |
                         NumberStyles.AllowDecimalPoint, null, out var parenthesized) ||
                         parenthesized != -42.5) return 14;
-                    if (!double.TryParse("$1.5", NumberStyles.AllowCurrencySymbol |
+                    // A null provider is the invariant NumberFormatInfo until a culture is assigned, so the
+                    // currency symbol is U+00A4, as desktop .NET with invariant globalization.
+                    if (!double.TryParse("\u00a41.5", NumberStyles.AllowCurrencySymbol |
                         NumberStyles.AllowDecimalPoint, null, out var currency) || currency != 1.5) return 15;
 
                     if (!float.TryParsePartial("12.5tail", NumberStyles.Float, null,
@@ -567,11 +569,11 @@ public sealed class PrimitiveCompilationTests
 
                     var currencyStyle = NumberStyles.AllowCurrencySymbol |
                         NumberStyles.AllowDecimalPoint;
-                    if (!decimal.TryParse("$1.2", currencyStyle, null, out var currency) ||
+                    if (!decimal.TryParse("\u00a41.2", currencyStyle, null, out var currency) ||
                         currency != 1.2m) return 9;
-                    if (decimal.TryParse("1$2", currencyStyle, null, out _)) return 10;
-                    if (decimal.TryParse("$$1.2", currencyStyle, null, out _)) return 11;
-                    if (decimal.TryParse("1.2$$", currencyStyle, null, out _)) return 12;
+                    if (decimal.TryParse("1\u00a42", currencyStyle, null, out _)) return 10;
+                    if (decimal.TryParse("\u00a4\u00a41.2", currencyStyle, null, out _)) return 11;
+                    if (decimal.TryParse("1.2\u00a4\u00a4", currencyStyle, null, out _)) return 12;
 
                     return input - input;
                 }
@@ -653,6 +655,20 @@ public sealed class PrimitiveCompilationTests
                     if (utf8[5] != 0xE2) return 25;
                     if (utf8[6] != 0x80) return 26;
                     if (utf8[7] != 0xB0) return 27;
+
+                    // Number format: exact fixed digits with invariant three-digit groups.
+                    if (doubleValue.ToString("N") != "12,345.68") return 28;
+                    if (doubleValue.ToString("n0") != "12,346") return 29;
+                    if ((-1234567.891).ToString("N2") != "-1,234,567.89") return 30;
+                    if (0.5.ToString("N3") != "0.500") return 31;
+                    if (123456789012345.678.ToString("N2") != "123,456,789,012,345.67") return 32;
+                    if (double.NaN.ToString("N2") != "NaN") return 33;
+                    if (double.NegativeInfinity.ToString("N") != "-Infinity") return 34;
+                    if (1234.5f.ToString("N1") != "1,234.5") return 35;
+                    if ((-0.004).ToString("N2") != "-0.00") return 36;
+                    if (999.0.ToString("N0") != "999") return 37;
+                    if (1000.0.ToString("N0") != "1,000") return 38;
+                    if (0.0.ToString("N") != "0.00") return 39;
 
                     return input - input;
                 }
@@ -803,11 +819,11 @@ public sealed class PrimitiveCompilationTests
                     if (decimal.TryParsePartial(overflow, NumberStyles.Any, null,
                         out value, out consumed) || value != 0m || consumed != 0) return 4;
 
-                    if (!decimal.TryParsePartial("($1.25)tail".AsSpan(), NumberStyles.Any, null,
+                    if (!decimal.TryParsePartial("(\u00a41.25)tail".AsSpan(), NumberStyles.Any, null,
                         out value, out consumed) || value != -1.25m || consumed != 7) return 5;
-                    if (!decimal.TryParsePartial("$-12.5tail".AsSpan(), NumberStyles.Any, null,
+                    if (!decimal.TryParsePartial("\u00a4-12.5tail".AsSpan(), NumberStyles.Any, null,
                         out value, out consumed) || value != -12.5m || consumed != 6) return 6;
-                    if (!decimal.TryParsePartial("123$-tail", NumberStyles.Any, null,
+                    if (!decimal.TryParsePartial("123\u00a4-tail", NumberStyles.Any, null,
                         out value, out consumed) || value != -123m || consumed != 5) return 7;
 
                     ReadOnlySpan<byte> utf8 = "42.5rest"u8;

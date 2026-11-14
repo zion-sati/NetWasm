@@ -11,6 +11,7 @@ internal static class LoadingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IManagedAssemblyImageReader, ManagedAssemblyImageReader>();
         services.AddSingleton<IManagedAssemblyLoader, ManagedAssemblyLoader>();
+        services.AddSingleton<ITypeForwarderReader, TypeForwarderReader>();
         services.AddSingleton<INativeImportDeclarationReader, NativeImportDeclarationReader>();
         services.AddSingleton<INativeCallbackDeclarationReader,
             NativeCallbackDeclarationReader>();
@@ -40,7 +41,6 @@ internal static class LoadingServiceCollectionExtensions
         services.AddSingleton<IMethodBodyReaderFactory, MetadataMethodBodyReaderFactory>();
         services.AddSingleton<IMethodFinderFactory, MetadataMethodFinderFactory>();
         services.AddSingleton<ISymbolFormatterFactory, MetadataSymbolFormatterFactory>();
-        services.AddSingleton<IReferenceClosureValidator, ReferenceClosureValidator>();
         services.AddSingleton<IMetadataCompilationFactory, MetadataCompilationFactory>();
         services.AddSingleton<IMetadataCompilationLoader, MetadataCompilationLoader>();
         services.AddSingleton<IAssemblyIdentityFormatterFactory,

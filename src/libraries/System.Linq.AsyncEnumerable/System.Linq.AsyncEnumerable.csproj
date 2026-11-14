@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Linq.AsyncEnumerable</AssemblyName>
+    <NoWarn>$(NoWarn);CS1998</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- CoreLib provides this helper through its System.Linq.AsyncEnumerable friend assembly. -->
+    <ProjectReference Include="../System.Linq/System.Linq.csproj" />
+  </ItemGroup>
+</Project>

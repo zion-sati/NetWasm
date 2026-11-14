@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.IO.FileSystem.Watcher</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.ComponentModel.Primitives/System.ComponentModel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/IO/PathInternal.CaseSensitivity.cs" />
+    <Compile Include="Common/System/IO/PathInternal.Unix.cs" />
+    <Compile Include="Common/System/IO/PathInternal.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="Common/System/Text/ValueStringBuilder.AppendSpanFormattable.cs" />
+    <Compile Include="Common/System/Text/ValueStringBuilder.cs" />
+    <Compile Include="System/HResults.cs" />
+    <Compile Include="System/IO/ErrorEventArgs.cs" />
+    <Compile Include="System/IO/ErrorEventHandler.cs" />
+    <Compile Include="System/IO/FileSystemEventArgs.cs" />
+    <Compile Include="System/IO/FileSystemEventHandler.cs" />
+    <Compile Include="System/IO/FileSystemWatcher.NetWasm.cs" />
+    <Compile Include="System/IO/FileSystemWatcher.cs" />
+    <Compile Include="System/IO/InternalBufferOverflowException.cs" />
+    <Compile Include="System/IO/NotifyFilters.cs" />
+    <Compile Include="System/IO/RenamedEventArgs.cs" />
+    <Compile Include="System/IO/RenamedEventHandler.cs" />
+    <Compile Include="System/IO/WaitForChangedResult.cs" />
+    <Compile Include="System/IO/WatcherChangeTypes.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

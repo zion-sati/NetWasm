@@ -369,7 +369,7 @@ public sealed class NativeCallbackCacheIntegrationTests
                 .Select(export => export.Name),
             exports.Contains);
         var observation = output + ".observations.json";
-        new CommandInvoker().Invoke(new(
+        new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(new(
             Path.Combine(tools, "node" + suffix),
             [Path.Combine(AppContext.BaseDirectory, "IntegrationAssets", "callback-cache-runner.mjs"),
                 assets.Root, target, Path.Combine(variant.Root, "interop.json"), output,

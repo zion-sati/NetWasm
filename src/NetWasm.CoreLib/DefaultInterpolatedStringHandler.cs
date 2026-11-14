@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime DefaultInterpolatedStringHandler.cs at commit
-// 474ed963699fc29809015392738a15231aaae2de. Enums format through their
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce. Enums format through their
 // ISpanFormattable implementation, as Enum.TryFormatUnconstrained does.
 
 using System.Buffers;
@@ -339,11 +339,37 @@ namespace System.Runtime.CompilerServices
             if (TryFormatCustom(value, format, provider, out var custom)) return custom;
             // A string is its own text; the type test folds, so a string hole binds no IFormattable.ToString.
             if (typeof(T) == typeof(string)) return (string?)(object?)value ?? string.Empty;
+            if (value is ISpanFormattable)
+            {
+                return FormatSpanFormattable(value, format, provider);
+            }
             if (value is IFormattable)
             {
                 return ((IFormattable)value).ToString(format, provider) ?? string.Empty;
             }
             return value?.ToString() ?? string.Empty;
+        }
+
+        // As upstream, a span-formattable value is formatted into the buffer, and each attempt works on a fresh
+        // copy of the value: a struct that changes itself while refusing a short destination formats again
+        // from the caller's state.
+        private static string FormatSpanFormattable<T>(T value, string? format, IFormatProvider? provider)
+        {
+            char[]? rented = null;
+            Span<char> buffer = stackalloc char[128];
+            while (true)
+            {
+                if (((ISpanFormattable)value!).TryFormat(buffer, out var written, format, provider))
+                {
+                    var text = new string(buffer[..written]);
+                    if (rented is not null) System.Buffers.ArrayPool<char>.Shared.Return(rented);
+                    return text;
+                }
+                var length = buffer.Length * 2;
+                if (rented is not null) System.Buffers.ArrayPool<char>.Shared.Return(rented);
+                rented = System.Buffers.ArrayPool<char>.Shared.Rent(length);
+                buffer = rented;
+            }
         }
 
         // A provider's custom formatter formats every hole, as in .NET.

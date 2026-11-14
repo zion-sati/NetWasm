@@ -13,13 +13,19 @@ namespace NetWasm.Compiler.ComponentModel;
 /// reading a WIT package, a world's dummy core module, and parsing text. Each build
 /// asked them of the same WIT packages again, a Node process apiece. A result is kept
 /// under the command, its arguments and its input files' contents; only successes
-/// are kept, and a command that names a directory always runs.
+/// are kept, and a command that names a directory always runs. The directory is held
+/// to a capacity: a hit marks its entry as used, and a new entry that takes the total
+/// past the capacity removes the least recently used entries until three quarters remain.
 /// </summary>
 public sealed class CachingWasmTools(
     IWasmTools tools,
     ExternalToolCommand command,
-    string cacheDirectory) : IWasmTools
+    string cacheDirectory,
+    long capacity = CachingWasmTools.DefaultCapacity) : IWasmTools
 {
+    /// <summary>The default capacity of the cache directory, in bytes.</summary>
+    public const long DefaultCapacity = 256L * 1024 * 1024;
+
     private const uint EntryMagic = 0x4357544E;
 
     private static readonly ImmutableArray<ImmutableArray<string>> PureCommands =
@@ -34,6 +40,9 @@ public sealed class CachingWasmTools(
     private readonly string _cacheDirectory = !string.IsNullOrWhiteSpace(cacheDirectory)
         ? cacheDirectory
         : throw new ArgumentException("The wasm-tools cache needs a directory.", nameof(cacheDirectory));
+    private readonly long _capacity = capacity > 0
+        ? capacity
+        : throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "The wasm-tools cache needs a positive capacity.");
 
     public ToolResult Run(params IEnumerable<string> arguments)
     {
@@ -49,12 +58,13 @@ public sealed class CachingWasmTools(
             (outputPath is null) == (output is null) &&
             TryRestore(outputPath, output))
         {
+            MarkUsed(entryPath);
             return cached;
         }
         var result = _tools.Run(values);
-        if (result.ExitCode == 0)
+        if (result.ExitCode == 0 && Write(entryPath, result, outputPath))
         {
-            Write(entryPath, result, outputPath);
+            Trim();
         }
         return result;
     }
@@ -155,13 +165,62 @@ public sealed class CachingWasmTools(
             File.WriteAllBytes(outputPath, output!);
             return true;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsFileSystemFailure(exception))
         {
             return false;
         }
     }
 
-    private static void Write(string path, ToolResult result, string? outputPath)
+    // An entry's write time is its last use.
+    private static void MarkUsed(string path) =>
+        TolerateSharing(() => File.SetLastWriteTimeUtc(path, DateTime.UtcNow));
+
+    // Removes the least recently used files once the directory holds more than the capacity.
+    private void Trim() => TolerateSharing(() =>
+    {
+        var files = new DirectoryInfo(_cacheDirectory).EnumerateFiles("*", SearchOption.AllDirectories).ToList();
+        var total = files.Sum(file => file.Length);
+        if (total <= _capacity)
+        {
+            return;
+        }
+        var target = _capacity / 4 * 3;
+        foreach (var file in files.OrderBy(file => file.LastWriteTimeUtc))
+        {
+            if (total <= target)
+            {
+                break;
+            }
+            // Delete invalidates the file's cached length, so it is read first.
+            var length = file.Length;
+            if (TolerateSharing(file.Delete))
+            {
+                total -= length;
+            }
+        }
+    });
+
+    // What a file operation in a shared directory may meet: a file another build removed or is replacing, or one
+    // this build may not change.
+    private static bool IsFileSystemFailure(Exception exception) =>
+        exception is IOException or UnauthorizedAccessException;
+
+    // Builds share the directory, so a file another build removed or is replacing, or one this build may not
+    // change, is left as it is.
+    private static bool TolerateSharing(Action action)
+    {
+        try
+        {
+            action();
+            return true;
+        }
+        catch (Exception exception) when (IsFileSystemFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool Write(string path, ToolResult result, string? outputPath)
     {
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -182,10 +241,12 @@ public sealed class CachingWasmTools(
                 }
             }
             File.Move(temporary, path, overwrite: true);
+            return true;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsFileSystemFailure(exception))
         {
             // The cache only saves time.
+            return false;
         }
         finally
         {

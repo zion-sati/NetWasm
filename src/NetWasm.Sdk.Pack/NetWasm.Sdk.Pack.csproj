@@ -7,6 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- The SDK embeds this task and its metadata writer as a private tool payload. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- Release task payloads are embedded in the SDK package.  Omitting
          portable PDBs keeps that payload independent of build-root paths;
          Debug remains symbol-rich for focused test and coverage builds. -->
@@ -22,6 +24,7 @@
        Compile against the versions .NET SDK 10.0.1xx ships, so the task loads in every
        supported .NET 10 SDK as well as newer ones. -->
   <ItemGroup>
+    <PackageReference Include="Mono.Cecil" PrivateAssets="all" GeneratePathProperty="true" />
     <PackageReference Include="Microsoft.Build.Framework" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />

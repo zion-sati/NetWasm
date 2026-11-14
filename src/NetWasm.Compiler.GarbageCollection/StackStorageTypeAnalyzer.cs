@@ -165,7 +165,15 @@ public sealed class StackStorageTypeAnalyzer(
                     identity = locals[local];
                     copySource = new(StackStorageLocationKind.Local, local);
                 }
-                if (instruction.Operation == CilOperation.LoadFieldAddress)
+                if (instruction.Operation == CilOperation.LoadFieldAddress &&
+                    controlFlow.InstructionEntryStacks[instruction.Offset][^1] == CliValueKind.NativeInt)
+                {
+                    // A field of an unmanaged pointer's target (SharpCompress's ZStandard port, fixed buffers) lies in
+                    // native memory or in an object its pointer's fixed statement pins; the collector does not move
+                    // objects, so the address needs no root.
+                    identity = identity with { BackingCovered = true, CompleteBackingKnown = true };
+                }
+                else if (instruction.Operation == CilOperation.LoadFieldAddress)
                 {
                     copySource = new(StackStorageLocationKind.EvaluationStack, stack.Count - 1);
                     identity = identity with

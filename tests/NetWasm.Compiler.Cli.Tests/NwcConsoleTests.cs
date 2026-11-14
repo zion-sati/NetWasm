@@ -8,6 +8,8 @@ public sealed class NwcConsoleTests
 {
     [Theory]
     [InlineData(NwcConsoleLoggerProvider.ProgressCategory, LogLevel.Information, true)]
+    [InlineData(NwcConsoleLoggerProvider.OptimizationCategory, LogLevel.Information, true)]
+    [InlineData(NwcConsoleLoggerProvider.OptimizationCategory, LogLevel.Debug, false)]
     [InlineData("NetWasm.Compiler.Cli.CompilerCli", LogLevel.Error, true)]
     [InlineData("NetWasm.Compiler.Cli.CompilerCli", LogLevel.Debug, false)]
     [InlineData("NetWasm.Compiler.Diagnostics.CompilerDiagnosticFileLogger", LogLevel.Information, false)]

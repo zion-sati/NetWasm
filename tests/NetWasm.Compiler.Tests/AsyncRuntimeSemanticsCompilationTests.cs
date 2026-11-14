@@ -120,16 +120,9 @@ public sealed class AsyncRuntimeSemanticsCompilationTests
                     Check(synchronousTask.IsCompletedSuccessfully, 29);
                     Check(synchronousTask.Result == input + 1, 33);
 
-                    try
-                    {
-                        _ = new Task(
-                            static () => { },
-                            TaskCreationOptions.AttachedToParent);
-                        Check(false, 91);
-                    }
-                    catch (PlatformNotSupportedException)
-                    {
-                    }
+                    // Outside a running task there is no parent to attach to; the option is kept.
+                    var unattached = new Task(static () => { }, TaskCreationOptions.AttachedToParent);
+                    Check(unattached.CreationOptions == TaskCreationOptions.AttachedToParent && unattached.Status == TaskStatus.Created, 91);
                     try
                     {
                         _ = new Task<int>(

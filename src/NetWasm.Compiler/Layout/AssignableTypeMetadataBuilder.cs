@@ -27,8 +27,9 @@ internal sealed class AssignableTypeMetadataBuilder(
                 target.Type))
             .ToArray();
 
-    // The runtime types filed under their own relationship key, and those without one.
-    private Dictionary<string, List<(CliTypeIdentity Type, int TypeId)>>? _targetsByKey;
+    // The runtime types filed under their own relationship key with their first type argument's key, and those
+    // without a key.
+    private Dictionary<string, List<(CliTypeIdentity Type, int TypeId, string? Argument)>>? _targetsByKey;
     private readonly List<(CliTypeIdentity Type, int TypeId)> _unboundedTargets = [];
 
     public ImmutableArray<int> Build(CliTypeIdentity candidate)
@@ -66,20 +67,37 @@ internal sealed class AssignableTypeMetadataBuilder(
                 }
                 else if (_targetsByKey.TryGetValue(keys.Own, out var filed))
                 {
-                    filed.Add(target);
+                    filed.Add((target.Type, target.TypeId, keys.ArgumentKey));
                 }
                 else
                 {
-                    _targetsByKey.Add(keys.Own, [target]);
+                    _targetsByKey.Add(keys.Own, [(target.Type, target.TypeId, keys.ArgumentKey)]);
                 }
             }
         }
         var candidateKeys = relationshipKeys.Resolve(candidate);
-        return candidateKeys.Unbounded
-            ? _runtimeAssignableTypes
-            : candidateKeys.Reachable
-                .SelectMany(key => _targetsByKey.GetValueOrDefault(key) ?? [])
-                .Concat(_unboundedTargets);
+        if (candidateKeys.Unbounded)
+        {
+            return _runtimeAssignableTypes;
+        }
+        // Instantiations of a generic definition the candidate reaches are filtered by their first type argument:
+        // every array type would otherwise be classified against every IEnumerable<T>, IList<T> and
+        // IReadOnlyList<T> in the program, and Newtonsoft.Json's program held over 12 GB of such pairs.
+        return candidateKeys.Reachable
+            .SelectMany(key =>
+            {
+                var filed = _targetsByKey.GetValueOrDefault(key);
+                if (filed is null)
+                {
+                    return [];
+                }
+                IReadOnlySet<string>? admitted = null;
+                var filtered = candidateKeys.Arguments?.TryGetValue(key, out admitted) == true && admitted is not null;
+                return filed
+                    .Where(target => !filtered || target.Argument is null || admitted!.Contains(target.Argument))
+                    .Select(target => (target.Type, target.TypeId));
+            })
+            .Concat(_unboundedTargets);
     }
 
     private static bool IsClosedRuntimeAssignableTarget(

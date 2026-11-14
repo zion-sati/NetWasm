@@ -368,6 +368,35 @@ public sealed class WasmBinaryTests
         Assert.True(module.AsSpan().IndexOf(data) >= 0);
     }
 
+    // A segment that starts where the previous one ends joins it; a gap starts a new segment, and a segment that
+    // overwrites earlier bytes keeps its place after them. Without this a large Debug program has more than the
+    // 100,000 data segments engines accept.
+    [Fact]
+    public void ModuleBuilderCoalescesTouchingDataSegmentsInOrder()
+    {
+        var module = CreateModuleBuilder().Build(
+            [],
+            "runtime",
+            "memory",
+            [],
+            [],
+            [
+                new DataSegment(16, [1, 2]),
+                new DataSegment(18, [3]),
+                new DataSegment(19, [4, 5]),
+                new DataSegment(32, [6]),
+                new DataSegment(33, [7]),
+                new DataSegment(17, [9]),
+            ]);
+
+        var dataSection = Bytes(
+            0x0b, 0x18, 0x03,
+            0x00, 0x41, 0x10, 0x0b, 0x05, 1, 2, 3, 4, 5,
+            0x00, 0x41, 0x20, 0x0b, 0x02, 6, 7,
+            0x00, 0x41, 0x11, 0x0b, 0x01, 9);
+        Assert.True(module.AsSpan().IndexOf(dataSection) >= 0);
+    }
+
     [Fact]
     public void ModuleBuilderSupportsNoDataAndRejectsInvalidArguments()
     {

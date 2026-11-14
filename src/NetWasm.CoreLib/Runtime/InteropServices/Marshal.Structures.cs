@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de: the structure-layout
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce: the structure-layout
 // members of Marshal.cs with native AOT's helpers (Marshal.NativeAot.cs) and struct interop data
 // lookups (RuntimeInteropData.cs). NetWasm adaptations: the compiler publishes a structure-
 // marshalling descriptor for each type the program names, or allocates as a boxed value, in place
@@ -21,21 +21,18 @@ using System.Runtime.CompilerServices;
 
 namespace System.Runtime.InteropServices
 {
-    // NetWasm: structure marshalling needs compiler intrinsics this platform does not have
-    // (see StructureMarshallingRuntime), so these members stay internal instead of being public
-    // APIs that no program could compile.
     public static partial class Marshal
     {
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the SizeOf<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        internal static int SizeOf(object structure)
+        public static int SizeOf(object structure)
         {
             ArgumentNullException.ThrowIfNull(structure);
 
             return SizeOfHelper(structure.GetType(), throwIfNotMarshalable: true);
         }
 
-        internal static int SizeOf<T>(T structure)
+        public static int SizeOf<T>(T structure)
         {
             ArgumentNullException.ThrowIfNull(structure);
 
@@ -44,7 +41,7 @@ namespace System.Runtime.InteropServices
 
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the SizeOf<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        internal static int SizeOf(Type t)
+        public static int SizeOf(Type t)
         {
             ArgumentNullException.ThrowIfNull(t);
 
@@ -56,7 +53,7 @@ namespace System.Runtime.InteropServices
             return SizeOfHelper(t, throwIfNotMarshalable: true);
         }
 
-        internal static int SizeOf<T>()
+        public static int SizeOf<T>()
         {
             Type t = typeof(T);
             if (t.IsGenericType)
@@ -67,10 +64,10 @@ namespace System.Runtime.InteropServices
             return SizeOfHelper(t, throwIfNotMarshalable: true);
         }
 
-        internal static IntPtr OffsetOf<T>(string fieldName) => OffsetOf(typeof(T), fieldName);
+        public static IntPtr OffsetOf<T>(string fieldName) => OffsetOf(typeof(T), fieldName);
 
         [EditorBrowsable(EditorBrowsableState.Never)]
-        internal static IntPtr OffsetOf(Type t, string fieldName)
+        public static IntPtr OffsetOf(Type t, string fieldName)
         {
             ArgumentNullException.ThrowIfNull(t);
 
@@ -85,7 +82,7 @@ namespace System.Runtime.InteropServices
 
         [UnconditionalSuppressMessage("AotAnalysis", "IL3050:AotUnfriendlyApi",
             Justification = "AOT compilers can see the T.")]
-        internal static void StructureToPtr<T>([DisallowNull] T structure, IntPtr ptr, bool fDeleteOld)
+        public static void StructureToPtr<T>([DisallowNull] T structure, IntPtr ptr, bool fDeleteOld)
         {
             StructureToPtr((object)structure!, ptr, fDeleteOld);
         }
@@ -96,7 +93,7 @@ namespace System.Runtime.InteropServices
         /// </summary>
         [RequiresDynamicCode("Marshalling code for the object might not be available")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        internal static object? PtrToStructure(IntPtr ptr,
+        public static object? PtrToStructure(IntPtr ptr,
             [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)]
             Type structureType)
         {
@@ -117,7 +114,7 @@ namespace System.Runtime.InteropServices
             return structure;
         }
 
-        internal static T? PtrToStructure<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr ptr)
+        public static T? PtrToStructure<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr ptr)
         {
             if (ptr == IntPtr.Zero)
             {
@@ -141,7 +138,7 @@ namespace System.Runtime.InteropServices
 
         [UnconditionalSuppressMessage("AotAnalysis", "IL3050:AotUnfriendlyApi",
             Justification = "AOT compilers can see the T.")]
-        internal static void DestroyStructure<T>(IntPtr ptr) => DestroyStructure(ptr, typeof(T));
+        public static void DestroyStructure<T>(IntPtr ptr) => DestroyStructure(ptr, typeof(T));
 
         internal static int SizeOfHelper(Type t, bool throwIfNotMarshalable)
         {
@@ -176,7 +173,7 @@ namespace System.Runtime.InteropServices
 
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the DestroyStructure<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        internal static void DestroyStructure(IntPtr ptr, Type structuretype)
+        public static void DestroyStructure(IntPtr ptr, Type structuretype)
         {
             ArgumentNullException.ThrowIfNull(ptr);
             ArgumentNullException.ThrowIfNull(structuretype);
@@ -197,7 +194,7 @@ namespace System.Runtime.InteropServices
 
         [RequiresDynamicCode("Marshalling code for the object might not be available. Use the StructureToPtr<T> overload instead.")]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        internal static unsafe void StructureToPtr(object structure, IntPtr ptr, bool fDeleteOld)
+        public static unsafe void StructureToPtr(object structure, IntPtr ptr, bool fDeleteOld)
         {
             ArgumentNullException.ThrowIfNull(structure);
             ArgumentNullException.ThrowIfNull(ptr);

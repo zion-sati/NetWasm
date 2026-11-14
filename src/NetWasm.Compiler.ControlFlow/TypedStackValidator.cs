@@ -1050,14 +1050,16 @@ public sealed class TypedStackValidator(
         List<CliValueKind> stack)
     {
         var value = Pop(body, instruction, stack);
+        // An object reference converts too: compilers before C# 7.3 lower fixed (char* p = text) to a pinned string
+        // local, conv.u and RuntimeHelpers.OffsetToStringData, as CoreCLR accepts.
         if (value is not (CliValueKind.I4 or CliValueKind.I8 or
                 CliValueKind.NativeInt or CliValueKind.F4 or CliValueKind.F8 or
-                CliValueKind.ManagedAddress))
+                CliValueKind.ManagedAddress or CliValueKind.ManagedReference))
         {
             throw Invalid(
                 body,
                 instruction,
-                "operation requires a numeric or managed-address operand");
+                "operation requires a numeric, managed-address or object operand");
         }
         return value;
     }

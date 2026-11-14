@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime System.Private.CoreLib Marvin.cs at commit
-// 474ed963699fc29809015392738a15231aaae2de. Seed acquisition is adapted to
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce. Seed acquisition is adapted to
 // NetWasm's small runtime ABI so hashing does not require a selected WIT world.
 
 using System.Diagnostics;

@@ -8,7 +8,8 @@ namespace NetWasm.Compiler.Analysis.Attributes;
 
 // Abstract Factory: compose bounded attribute lowering for one compilation.
 // Metadata selection, provenance, construction and rewriting stay in their actors.
-internal sealed class AttributeQueryMethodSpecializerFactory : IAttributeQueryMethodSpecializerFactory
+internal sealed class AttributeQueryMethodSpecializerFactory(
+    IMetadataCompilationMaterializationFactory materializations) : IAttributeQueryMethodSpecializerFactory
 {
     public IMethodSpecializer Create(
         IMethodSpecializer specializer,
@@ -80,7 +81,7 @@ internal sealed class AttributeQueryMethodSpecializerFactory : IAttributeQueryMe
             new AttributeQueryResolver(typeDefinitions, relationships, typeIdentities.GetTypeIdentity(attributeType.Key),
                 synthesizedAttributes),
             new AttributeQueryPlanner(attributeMatches, new AttributeConstructionPlanner(methodInstances,
-                attributeValues, new CustomAttributeMemberResolverFactory().Create(metadata, typeDefinitions,
+                attributeValues, new CustomAttributeMemberResolverFactory(materializations).Create(metadata, typeDefinitions,
                     typeIdentities, typeRepository, fieldRepository, methodRepository, methodInstances),
                 new AttributeArgumentDecoder(typeIdentities.GetTypeIdentity(typeType.Key)), baseTypes)),
             new AttributeQueryCilBuilder(new AttributeConstructionCilBuilder(

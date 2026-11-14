@@ -80,10 +80,11 @@ internal sealed class ObjectArrayDelegateAdapterPlanner(
         }
 
         var invoke = ResolveInvoke(factory, delegateType);
-        bool supported = invoke.Signature.ParameterSignatureTypes.Length == 1 &&
-            IsRepresentableGenericArgument(
-                invoke.Signature.ParameterSignatureTypes[0]) &&
-            IsRepresentableGenericArgument(invoke.Signature.ReturnSignatureType);
+        var parameters = invoke.Signature.ParameterSignatureTypes;
+        var returnsVoid = invoke.Signature.ReturnSignatureType.StackKind == CliValueKind.Void;
+        bool supported = parameters.Length <= MaximumArity &&
+            parameters.All(IsRepresentableGenericArgument) &&
+            (returnsVoid || IsRepresentableGenericArgument(invoke.Signature.ReturnSignatureType));
         if (!supported)
         {
             return new(
@@ -94,20 +95,21 @@ internal sealed class ObjectArrayDelegateAdapterPlanner(
                 IsSupported: false);
         }
 
-        var unaryAdapter = ResolveUnaryAdapter(factory);
+        // InvokeN<T0, ..., TResult>, or InvokeVoidN<T0, ...> for a void result, on ObjectArrayDelegateTarget.
+        var adapter = ResolveAdapter(factory, parameters.Length, returnsVoid);
         var target = _methodInstances.ResolveMethodInstance(
-            unaryAdapter.Key.Assembly,
-            unaryAdapter.Key.MetadataToken,
-            _symbols.Format(unaryAdapter),
+            adapter.Key.Assembly,
+            adapter.Key.MetadataToken,
+            _symbols.Format(adapter),
             0,
             new CliGenericContext(
                 [],
-                [
-                    invoke.Signature.ParameterSignatureTypes[0],
-                    invoke.Signature.ReturnSignatureType,
-                ]));
+                returnsVoid ? parameters : [.. parameters, invoke.Signature.ReturnSignatureType]));
         return new(factory, delegateType, invoke, target, IsSupported: true);
     }
+
+    // Func and Action stop at 16 parameters; so do the adapters.
+    internal const int MaximumArity = 16;
 
     private static bool IsRepresentableGenericArgument(CliTypeIdentity type)
     {
@@ -156,25 +158,28 @@ internal sealed class ObjectArrayDelegateAdapterPlanner(
                 []));
     }
 
-    private MethodDefinitionModel ResolveUnaryAdapter(
-        MethodInstanceModel factory)
+    private MethodDefinitionModel ResolveAdapter(
+        MethodInstanceModel factory,
+        int arity,
+        bool returnsVoid)
     {
+        var name = returnsVoid ? $"InvokeVoid{arity}" : $"Invoke{arity}";
         var candidates = _typeFinder.FindType(
                 "System.Runtime.CompilerServices.ObjectArrayDelegateTarget")
             .Methods
             .Select(_methods.GetMethod)
             .Where(method =>
-                method.Name == "Invoke1" &&
+                method.Name == name &&
                 !method.IsStatic &&
-                method.GenericArity == 2 &&
-                method.Signature.ParameterSignatureTypes.Length == 1)
+                method.GenericArity == arity + (returnsVoid ? 0 : 1) &&
+                method.Signature.ParameterSignatureTypes.Length == arity)
             .Take(2)
             .ToArray();
         if (candidates.Length != 1)
         {
             throw RuntimeContract(
                 factory,
-                "object-array delegate support must define exactly one unary adapter");
+                $"object-array delegate support must define exactly one '{name}' adapter");
         }
         return candidates[0];
     }

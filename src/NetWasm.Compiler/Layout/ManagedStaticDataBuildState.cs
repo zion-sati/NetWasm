@@ -33,6 +33,9 @@ internal sealed class ManagedStaticDataBuildState
     public Dictionary<CliTypeIdentity, PendingEnumMetadata> PendingEnumMetadata { get; } = [];
     public ImmutableArray<EnumMetadataLayout>.Builder EnumMetadata { get; } =
         ImmutableArray.CreateBuilder<EnumMetadataLayout>();
+    public List<PendingStructMarshalling> PendingStructMarshalling { get; } = [];
+    public ImmutableArray<StructMarshallingLayout>.Builder StructMarshalling { get; } =
+        ImmutableArray.CreateBuilder<StructMarshallingLayout>();
     public Dictionary<string, int> MethodDescriptors { get; } =
         new(StringComparer.Ordinal);
     public Dictionary<string, int> FieldDescriptors { get; } =

@@ -17,7 +17,7 @@ public sealed class SignatureTypeComparerTests
 
         Assert.True(compare(i4, i4));
         Assert.True(compare(int32, i4));
-        Assert.True(compare(leftNamed, rightNamed));
+        Assert.False(compare(leftNamed, rightNamed));
         Assert.True(compare(
             CliTypeIdentity.SzArray(i4),
             CliTypeIdentity.SzArray(int32)));
@@ -32,7 +32,7 @@ public sealed class SignatureTypeComparerTests
             CliTypeIdentity.Array(int32, 2)));
         Assert.True(compare(
             CliTypeIdentity.GenericInstantiation(leftNamed, [i4]),
-            CliTypeIdentity.GenericInstantiation(rightNamed, [int32])));
+            CliTypeIdentity.GenericInstantiation(leftNamed, [int32])));
         Assert.False(compare(i4, i8));
         Assert.False(compare(i4, CliTypeIdentity.SzArray(i4)));
         Assert.False(compare(
@@ -47,6 +47,30 @@ public sealed class SignatureTypeComparerTests
         Assert.False(compare(
             CliTypeIdentity.GenericInstantiation(leftNamed, [i4]),
             CliTypeIdentity.GenericInstantiation(rightNamed, [i8])));
-        Assert.True(compare(CliTypeIdentity.SzArray(leftNamed), CliTypeIdentity.SzArray(rightNamed)));
+        Assert.False(compare(CliTypeIdentity.SzArray(leftNamed), CliTypeIdentity.SzArray(rightNamed)));
+    }
+
+    // Unequal identities reach each shape's structural comparison, which compares their parts.
+    [Fact]
+    public void UnequalIdentitiesCompareByTheirParts()
+    {
+        var compare = ((ISignatureTypeComparer)new SignatureTypeComparer()).Compare;
+        var i4 = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var i8 = CliTypeIdentity.Primitive("i8", CliValueKind.I8);
+        var box = CliTypeIdentity.Named(new("Left"), "Test", "Box`1", false);
+        var other = CliTypeIdentity.Named(new("Left"), "Test", "Other`1", false);
+
+        Assert.False(compare(box, other));
+        Assert.False(compare(CliTypeIdentity.ManagedByReference(i4), CliTypeIdentity.ManagedByReference(i8)));
+        Assert.False(compare(CliTypeIdentity.UnmanagedPointer(i4), CliTypeIdentity.UnmanagedPointer(i8)));
+        Assert.False(compare(CliTypeIdentity.GenericInstantiation(box, [i4]), CliTypeIdentity.GenericInstantiation(box, [i4, i8])));
+        Assert.False(compare(CliTypeIdentity.GenericInstantiation(box, [i4]), CliTypeIdentity.GenericInstantiation(box, [i8])));
+        Assert.False(compare(box, CliTypeIdentity.SzArray(box)));
+        Assert.False(compare(CliTypeIdentity.SzArray(i4), box));
+        Assert.False(compare(CliTypeIdentity.Array(i4, 2), CliTypeIdentity.SzArray(i4)));
+        Assert.False(compare(CliTypeIdentity.GenericInstantiation(box, [i4]), box));
+        Assert.False(compare(CliTypeIdentity.ManagedByReference(i4), CliTypeIdentity.UnmanagedPointer(i4)));
+        Assert.False(compare(CliTypeIdentity.UnmanagedPointer(i4), CliTypeIdentity.ManagedByReference(i4)));
+        Assert.False(compare(CliTypeIdentity.GenericParameter(false, 0), CliTypeIdentity.GenericParameter(true, 0)));
     }
 }

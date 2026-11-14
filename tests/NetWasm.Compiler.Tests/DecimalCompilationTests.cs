@@ -1036,17 +1036,23 @@ public sealed class DecimalCompilationTests
             }
             """);
 
+        // Calls through IConvertible may reach string's, whose ToDateTime and ToType parse dates, and date
+        // parsing reads the local time zone: the program needs the platform world.
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             [assets.CoreLib],
             "DecimalBehaviorFixture.EntryPoint",
             "Run",
-            []));
+            [new("run", "DecimalBehaviorFixture.EntryPoint", "Run")],
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
-        Assert.Equal(65535, ExecuteWithNode(
+        Assert.Equal(65535, ExecuteWithStandardWasiNode(
             compilation.ApplicationModule,
             assets.Directory,
-            41));
+            41,
+            WasmTarget.Wasm32,
+            compilation.StaticDataEnd));
     }
 
     [Fact]

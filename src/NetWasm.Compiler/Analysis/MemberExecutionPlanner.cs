@@ -16,7 +16,8 @@ internal sealed class MemberExecutionPlanner(
     IMethodRepository methods,
     IMethodInstanceResolver methodInstances,
     ISymbolFormatter symbols,
-    INullableTypeResolver nullableTypes) : IMemberExecutionPlanner
+    INullableTypeResolver nullableTypes,
+    ITypeDefinitionResolver typeDefinitions) : IMemberExecutionPlanner
 {
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
@@ -32,6 +33,8 @@ internal sealed class MemberExecutionPlanner(
         throw new ArgumentNullException(nameof(symbols));
     private readonly INullableTypeResolver _nullableTypes = nullableTypes ??
         throw new ArgumentNullException(nameof(nullableTypes));
+    private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ??
+        throw new ArgumentNullException(nameof(typeDefinitions));
 
     public MemberExecutionPlan Plan(
         IEnumerable<MethodInstanceModel> reachableMethods,
@@ -50,7 +53,8 @@ internal sealed class MemberExecutionPlanner(
             .Where(demand => demand.Intrinsic is
                 RuntimeIntrinsic.MemberExecuteMethod or
                 RuntimeIntrinsic.DelegateDynamicInvoke or
-                RuntimeIntrinsic.MemberReadField)
+                RuntimeIntrinsic.MemberReadField or
+                RuntimeIntrinsic.MemberWriteField)
             .ToArray();
         var demand = demands.Select(item => item.Intrinsic).ToHashSet();
         if (demand.Count == 0)
@@ -67,11 +71,12 @@ internal sealed class MemberExecutionPlanner(
                     method => method.CanonicalName,
                     method => new MemberMethodExecutionPlan(
                         method,
-                        method.Definition.IsVirtual,
+                        RequiresDispatch(method),
                         []),
                     StringComparer.Ordinal)
             : ImmutableDictionary<string, MemberMethodExecutionPlan>.Empty;
-        var plannedFields = demand.Contains(RuntimeIntrinsic.MemberReadField)
+        var plannedFields = demand.Contains(RuntimeIntrinsic.MemberReadField) ||
+            demand.Contains(RuntimeIntrinsic.MemberWriteField)
             ? fieldDescriptors
                 .Where(IsSupportedField)
                 .DistinctBy(field => field.CanonicalName)
@@ -99,7 +104,8 @@ internal sealed class MemberExecutionPlanner(
                 ResolveSupportTarget("ThrowTargetInvocation", 1))
             : null;
         var memberSupport = demand.Contains(RuntimeIntrinsic.MemberExecuteMethod) ||
-            demand.Contains(RuntimeIntrinsic.MemberReadField)
+            demand.Contains(RuntimeIntrinsic.MemberReadField) ||
+            demand.Contains(RuntimeIntrinsic.MemberWriteField)
                 ? ResolveSupportTarget("ThrowUnsupported", 0)
                 : null;
         return new(plannedMethods, plannedFields, memberSupport)
@@ -111,18 +117,73 @@ internal sealed class MemberExecutionPlanner(
         };
     }
 
-    private bool IsSupportedMethod(MethodInstanceModel method) =>
-        (!method.Definition.IsAbstract || method.Definition.IsVirtual) &&
-        (method.Definition.IsStatic || !method.DeclaringType.IsValueType) &&
-        !_delegateTypes.Recognize(method.DeclaringType) &&
-        method.Signature.ParameterSignatureTypes.All(IsSupportedValue) &&
-        !_intrinsics.TryGetIntrinsic(method.Definition.Key, out _) &&
-        IsSupportedResult(method.Signature.ReturnSignatureType);
+    // A value type's methods need no dispatch: the type is sealed, and the call runs on the box's contents.
+    internal static bool RequiresDispatch(MethodInstanceModel method) =>
+        method.Definition.IsVirtual && !method.DeclaringType.IsValueType;
+
+    // Methods of reference types and of value types (on a box's contents), constructors, static methods; struct
+    // values travel boxed. Nullable and by-reference-like owners stay out: a nullable's box is its underlying value's
+    // box, and a ref struct has no box.
+    private bool IsSupportedMethod(MethodInstanceModel method)
+    {
+        var definition = method.Definition;
+        if (definition.Name == ".cctor" ||
+            _intrinsics.TryGetIntrinsic(definition.Key, out _) ||
+            _delegateTypes.Recognize(method.DeclaringType) ||
+            !method.Signature.ParameterSignatureTypes.All(IsSupportedParameter))
+        {
+            return false;
+        }
+        // ".ctor" names only instance constructors; the type initializer is ".cctor".
+        if (definition.Name == ".ctor")
+        {
+            return IsConstructible(method.DeclaringType);
+        }
+        return (!definition.IsAbstract || definition.IsVirtual) &&
+            (definition.IsStatic || IsSupportedOwner(method.DeclaringType)) &&
+            (method.Signature.ReturnSignatureType.StackKind == CliValueKind.Void ||
+                IsSupportedResult(method.Signature.ReturnSignatureType));
+    }
 
     private bool IsSupportedField(FieldInstanceModel field) =>
-        !field.Definition.IsStatic &&
-        !field.DeclaringType.IsValueType &&
+        (field.Definition.IsStatic
+            ? !field.Definition.IsLiteral && !field.DeclaringType.ContainsGenericParameters
+            : IsSupportedOwner(field.DeclaringType)) &&
         IsSupportedResult(field.FieldType);
+
+    private bool IsSupportedOwner(CliTypeIdentity type) =>
+        !type.ContainsGenericParameters &&
+        (!type.IsValueType || type.StackKind != CliValueKind.ValueType || IsSupportedStruct(type));
+
+    private bool IsConstructible(CliTypeIdentity type)
+    {
+        if (type.ContainsGenericParameters || type.CanonicalName == "primitive:string" ||
+            type.Shape is not (CliTypeShape.Named or CliTypeShape.GenericInstantiation or CliTypeShape.Primitive))
+        {
+            return false;
+        }
+        if (type.IsValueType)
+        {
+            return IsSupportedStruct(type);
+        }
+        var definition = _typeDefinitions.ResolveTypeIdentity(type);
+        return !definition.IsAbstract && !definition.IsInterface;
+    }
+
+    // A closed struct that is neither nullable nor by-reference-like, held boxed.
+    private bool IsSupportedStruct(CliTypeIdentity type) =>
+        type.StackKind == CliValueKind.ValueType &&
+        NamesDefinition(type) &&
+        !type.ContainsGenericParameters &&
+        _nullableTypes.Resolve(type) is null &&
+        !_typeDefinitions.ResolveTypeIdentity(type).IsByRefLike;
+
+    // A named type always carries its assembly and full name.
+    private static bool NamesDefinition(CliTypeIdentity type) =>
+        (type.Shape == CliTypeShape.GenericInstantiation ? type.ElementType! : type).Shape == CliTypeShape.Named;
+
+    private bool IsSupportedParameter(CliTypeIdentity type) =>
+        IsSupportedValue(type) || IsSupportedStruct(type);
 
     private bool IsSupportedDelegateInvoke(MethodInstanceModel method) =>
         method.Definition.Name == "Invoke" &&
@@ -170,6 +231,7 @@ internal sealed class MemberExecutionPlanner(
 
     private bool IsSupportedResult(CliTypeIdentity type) =>
         IsSupportedValue(type) ||
+        IsSupportedStruct(type) ||
         type.StackKind == CliValueKind.ValueType &&
         !type.ContainsGenericParameters &&
         _nullableTypes.Resolve(type) is

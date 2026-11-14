@@ -3,8 +3,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Globalization;
-
 namespace System;
 
 internal static class EnumAlgorithms
@@ -316,25 +314,44 @@ internal static class EnumAlgorithms
         return true;
     }
 
+    // The underlying value's ToString(), as upstream's Enum.ToString writes it: the current culture's negative
+    // sign through NumberFormatInfo's mirror, with no provider resolved, so enum formatting reaches no CultureInfo.
+    // (CA1305 asks for a provider; resolving one is exactly what this avoids.)
+#pragma warning disable CA1305
     private static string FormatDecimal(ulong value, int typeCode) => typeCode switch
     {
-        1 => unchecked((sbyte)value).ToString(CultureInfo.InvariantCulture),
-        2 => unchecked((byte)value).ToString(CultureInfo.InvariantCulture),
-        3 => unchecked((short)value).ToString(CultureInfo.InvariantCulture),
-        4 or 9 => unchecked((ushort)value).ToString(CultureInfo.InvariantCulture),
-        5 => unchecked((int)value).ToString(CultureInfo.InvariantCulture),
-        6 => unchecked((uint)value).ToString(CultureInfo.InvariantCulture),
-        7 => unchecked((long)value).ToString(CultureInfo.InvariantCulture),
-        _ => value.ToString(CultureInfo.InvariantCulture),
+        1 => unchecked((sbyte)value).ToString(),
+        2 => unchecked((byte)value).ToString(),
+        3 => unchecked((short)value).ToString(),
+        4 or 9 => unchecked((ushort)value).ToString(),
+        5 => unchecked((int)value).ToString(),
+        6 => unchecked((uint)value).ToString(),
+        7 => unchecked((long)value).ToString(),
+        _ => value.ToString(),
     };
 
+#pragma warning restore CA1305
+
+    // Upstream formats with "X2".."X16"; the digits are written here so the format-string parser and the
+    // provider lookup stay unreachable (this file also compiles on desktop for the oracle tests).
     private static string FormatHex(ulong value, int typeCode) => typeCode switch
     {
-        1 or 2 => unchecked((byte)value).ToString("X2", CultureInfo.InvariantCulture),
-        3 or 4 or 9 => unchecked((ushort)value).ToString("X4", CultureInfo.InvariantCulture),
-        5 or 6 => unchecked((uint)value).ToString("X8", CultureInfo.InvariantCulture),
-        _ => value.ToString("X16", CultureInfo.InvariantCulture),
+        1 or 2 => FormatHexDigits(value, 2),
+        3 or 4 or 9 => FormatHexDigits(value, 4),
+        5 or 6 => FormatHexDigits(value, 8),
+        _ => FormatHexDigits(value, 16),
     };
+
+    private static string FormatHexDigits(ulong value, int digits) =>
+        string.Create(digits, value, static (destination, value) =>
+        {
+            for (var index = destination.Length - 1; index >= 0; index--)
+            {
+                var digit = (int)(value & 0xF);
+                destination[index] = (char)(digit < 10 ? '0' + digit : 'A' + digit - 10);
+                value >>= 4;
+            }
+        });
 
     private static ulong Normalize(ulong value, int typeCode) => typeCode switch
     {

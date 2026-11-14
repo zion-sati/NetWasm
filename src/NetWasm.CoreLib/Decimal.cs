@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 //
-// Ported verbatim from dotnet/runtime v11.0.0-rc.3.26522.148
-// (474ed963699fc29809015392738a15231aaae2de), src/libraries/System.Private.CoreLib/src/System/Decimal.cs,
+// Ported verbatim from dotnet/runtime v11.0.0
+// (deae2e32bf0e018e09d64597b7c59b62b73bb3ce), src/libraries/System.Private.CoreLib/src/System/Decimal.cs,
 // up to IConvertible; generic math is in Decimal.GenericMath.cs. NetWasm differences are marked
 // "NetWasm:".
 
@@ -454,10 +454,9 @@ namespace System
             return d;
         }
 
-        // NetWasm: upstream's ToString, TryFormat, Parse and TryParse members go through
-        // Number.FormatDecimal and Number.TryParseDecimal, which arrive with the numeric parsing and
-        // formatting port. Until then ToString(), Parse(string) and TryParse(string?, out decimal) are
-        // below and the other overloads are in Decimal.GenericMath.cs.
+        // NetWasm: upstream's ToString(format, provider), TryFormat, Parse and TryParse members are in
+        // Decimal.GenericMath.cs. ToString() and the overloads given neither a format nor a provider
+        // write the general form without NumberFormatInfo (DecimalMath.Format, below).
 
         // Returns a binary representation of a Decimal. The return value is an
         // integer array with four elements. Elements 0, 1, and 2 contain the low,
@@ -664,7 +663,7 @@ namespace System
         //
         public static double ToDouble(decimal d)
         {
-            return DecimalMath.ToDouble(d); // NetWasm: DecCalc.VarR8FromDec needs Number.ComputeFloat.
+            return DecCalc.VarR8FromDec(in d);
         }
 
         // Converts a Decimal to an integer. The Decimal value is rounded towards
@@ -773,7 +772,7 @@ namespace System
         //
         public static float ToSingle(decimal d)
         {
-            return DecimalMath.ToSingle(d); // NetWasm: DecCalc.VarR4FromDec needs Number.ComputeFloat.
+            return DecCalc.VarR4FromDec(in d);
         }
 
         // Truncates a Decimal to an integer value. The Decimal argument is rounded
@@ -854,9 +853,13 @@ namespace System
         [CLSCompliant(false)]
         public static explicit operator ulong(decimal value) => ToUInt64(value);
 
-        public static explicit operator float(decimal value) => DecimalMath.ToSingle(value); // NetWasm: as ToSingle.
+        public static explicit operator float(decimal value) => DecCalc.VarR4FromDec(in value);
 
-        public static explicit operator double(decimal value) => DecimalMath.ToDouble(value); // NetWasm: as ToDouble.
+        public static explicit operator double(decimal value) => DecCalc.VarR8FromDec(in value);
+
+        internal static Half VarHalfFromDec(in decimal value) => DecCalc.VarHalfFromDec(in value);
+
+        internal static BFloat16 VarBFloat16FromDec(in decimal value) => DecCalc.VarBFloat16FromDec(in value);
 
         public static decimal operator +(decimal d) => d;
 
@@ -980,12 +983,12 @@ namespace System
 
         float IConvertible.ToSingle(IFormatProvider? provider)
         {
-            return DecimalMath.ToSingle(this); // NetWasm: as ToSingle.
+            return DecCalc.VarR4FromDec(in this);
         }
 
         double IConvertible.ToDouble(IFormatProvider? provider)
         {
-            return DecimalMath.ToDouble(this); // NetWasm: as ToDouble.
+            return DecCalc.VarR8FromDec(in this);
         }
 
         decimal IConvertible.ToDecimal(IFormatProvider? provider)
@@ -1030,9 +1033,8 @@ namespace System
         /// <inheritdoc cref="INumberBase{TSelf}.IsNegative(TSelf)" />
         public static bool IsNegative(decimal value) => value._flags < 0;
 
-        // NetWasm: interim members until the numeric parsing and formatting port, which also
-        // brings Number.ComputeFloat for decimal to float and double. Parse(string) and
-        // TryParse(string?, out decimal) are upstream's; the rest is not from upstream.
+        // NetWasm: Parse(string) and TryParse(string?, out decimal) are upstream's. The rest is not:
+        // DecimalMath writes the general form without NumberFormatInfo.
 
         private const int MaximumScale = 28;
 
@@ -1049,11 +1051,11 @@ namespace System
 
         public override string ToString() => DecimalMath.Format(this);
 
-        // What ToString() writes, into a destination, for Number.TryFormatWithoutFormat.
-        internal static bool TryFormatWithoutFormat(decimal value, Span<char> destination, out int charsWritten)
+        // What ToString(provider) writes, into a destination, for Number.TryFormatWithoutFormat.
+        internal static bool TryFormatWithoutFormat(decimal value, NumberFormatInfo? info, Span<char> destination, out int charsWritten)
         {
             var builder = new Text.ValueStringBuilder(destination);
-            DecimalMath.AppendFormat(ref builder, value);
+            DecimalMath.AppendFormat(ref builder, value, info);
             return builder.TryCopyTo(destination, out charsWritten);
         }
 
@@ -1075,269 +1077,6 @@ namespace System
                     (uint)(value.Scale - decimals),
                     mode);
                 return value;
-            }
-
-            internal static double ToDouble(decimal value)
-            {
-                var result = value.High == 0 &&
-                    value.Low64 <= 2UL << 52 &&
-                    value.Scale <= 22
-                        ? (double)value.Low64 / PowerOfTenDouble(value.Scale)
-                        : DecimalToFloatingPointExact(
-                            value.Low64, value.High, value.Scale, 53);
-                return value.IsNegativeValue ? -result : result;
-            }
-
-            internal static float ToSingle(decimal value)
-            {
-                var result = value.High == 0 &&
-                    value.Low64 <= 2UL << 23 &&
-                    value.Scale <= 10
-                        ? (float)((double)value.Low64 / PowerOfTenDouble(value.Scale))
-                        : (float)DecimalToFloatingPointExact(
-                            value.Low64, value.High, value.Scale, 24);
-                return value.IsNegativeValue ? -result : result;
-            }
-
-            private static double PowerOfTenDouble(int exponent) => Pow10DoubleTable[exponent];
-
-            private static ReadOnlySpan<double> Pow10DoubleTable =>
-            [
-                1d, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7,
-                1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
-                1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
-            ];
-
-            private static double DecimalToFloatingPointExact(ulong low64, uint high, int scale, int significandBits)
-            {
-                var mantissa = new UInt128(high, low64);
-                if (mantissa == UInt128.Zero)
-                {
-                    return 0.0;
-                }
-                var divisor = PowerOfFive(scale);
-                var mantissaBits = 128 - (int)UInt128.LeadingZeroCount(mantissa);
-                var divisorBits = 128 - (int)UInt128.LeadingZeroCount(divisor);
-
-                // Port of Decimal.DecCalc's .NET 11 exact path. Divide by 5^scale
-                // with one guard bit and at most one extra bit. Both shifted
-                // operands fit UInt128 for the full 96-bit/28-scale domain.
-                var shift = (significandBits + 1) - (mantissaBits - divisorBits);
-                UInt128 numerator, denominator;
-                if (shift >= 0)
-                {
-                    numerator = mantissa << shift;
-                    denominator = divisor;
-                }
-                else
-                {
-                    numerator = mantissa;
-                    denominator = divisor << -shift;
-                }
-                var (quotient, remainder) = UInt128.DivRem(numerator, denominator);
-                var quotientBits = 128 - (int)UInt128.LeadingZeroCount(quotient);
-                var drop = quotientBits - significandBits;
-                var keep = (ulong)(quotient >> drop);
-                var roundBits = (ulong)(quotient & ((UInt128.One << drop) - 1));
-                var half = 1UL << (drop - 1);
-                var sticky = remainder != UInt128.Zero || (roundBits & (half - 1)) != 0;
-
-                bool roundUp;
-                if (roundBits > half)
-                {
-                    roundUp = true;
-                }
-                else if (roundBits < half)
-                {
-                    roundUp = false;
-                }
-                else
-                {
-                    roundUp = sticky || (keep & 1) != 0;
-                }
-                if (roundUp && ++keep == (1UL << significandBits))
-                {
-                    keep >>= 1;
-                    drop++;
-                }
-                // Decimal's range is normal and finite in both formats. Scaling
-                // the already-rounded significand by this power of two is exact.
-                return Math.ScaleB((double)keep, drop - shift - scale);
-            }
-
-            private static UInt128 PowerOfFive(int exponent)
-            {
-                ReadOnlySpan<ulong> powers =
-                [
-                    1, 5, 25, 125, 625, 3125, 15625, 78125, 390625, 1953125,
-                    9765625, 48828125, 244140625, 1220703125, 6103515625, 30517578125,
-                    152587890625, 762939453125, 3814697265625, 19073486328125,
-                    95367431640625, 476837158203125, 2384185791015625, 11920928955078125,
-                    59604644775390625, 298023223876953125, 1490116119384765625,
-                    7450580596923828125, 359414837200037393
-                ];
-                return new UInt128(exponent == MaximumScale ? 2U : 0U, powers[exponent]);
-            }
-
-            internal static bool TryParse(
-                string? text,
-                out decimal result,
-                out bool overflow)
-            {
-                if (text == null)
-                {
-                    result = Zero;
-                    overflow = false;
-                    return false;
-                }
-                return TryParse(text.AsSpan(), out result, out overflow);
-            }
-
-            internal static bool TryParse(
-                ReadOnlySpan<char> text,
-                out decimal result,
-                out bool overflow)
-            {
-                result = Zero;
-                overflow = false;
-                if (text.Length == 0)
-                {
-                    return false;
-                }
-                var start = 0;
-                var end = text.Length;
-                for (var scan = 0; scan < text.Length; scan++)
-                {
-                    if (scan == start && text[scan] == ' ')
-                    {
-                        start++;
-                    }
-                }
-                for (var scan = text.Length - 1; scan >= 0; scan--)
-                {
-                    if (scan == end - 1 && text[scan] == ' ')
-                    {
-                        end--;
-                    }
-                }
-                if (start == end)
-                {
-                    return false;
-                }
-                var index = start;
-                var negative = false;
-                if (text[index] == '+' || text[index] == '-')
-                {
-                    negative = text[index++] == '-';
-                    if (index == end)
-                    {
-                        return false;
-                    }
-                }
-                var coefficient = ZeroValue();
-                var digits = 0;
-                var fractionalDigits = 0;
-                var decimalPoint = false;
-                var mantissa = true;
-                var coefficientValid = true;
-                for (var scan = index; scan < end; scan++)
-                {
-                    var character = text[scan];
-                    if (mantissa && character >= '0' && character <= '9')
-                    {
-                        if (coefficientValid)
-                        {
-                            coefficientValid = TryAppendDigit(
-                                ref coefficient,
-                                (uint)(character - '0'));
-                        }
-                        digits++;
-                        if (decimalPoint)
-                        {
-                            fractionalDigits++;
-                        }
-                        index = scan + 1;
-                    }
-                    else if (mantissa && character == '.' && !decimalPoint)
-                    {
-                        decimalPoint = true;
-                        index = scan + 1;
-                    }
-                    else
-                    {
-                        mantissa = false;
-                    }
-                }
-                if (digits == 0)
-                {
-                    return false;
-                }
-                if (!coefficientValid)
-                {
-                    overflow = true;
-                    return false;
-                }
-                var exponent = 0;
-                if (index < end && (text[index] == 'e' || text[index] == 'E'))
-                {
-                    index++;
-                    var exponentNegative = false;
-                    if (index < end && (text[index] == '+' || text[index] == '-'))
-                    {
-                        exponentNegative = text[index++] == '-';
-                    }
-                    if (index == end)
-                    {
-                        return false;
-                    }
-                    var exponentDigits = 0;
-                    var exponentActive = true;
-                    for (var scan = index; scan < end; scan++)
-                    {
-                        var character = text[scan];
-                        if (exponentActive && character >= '0' && character <= '9')
-                        {
-                            if (exponent < 1_000)
-                            {
-                                exponent = exponent * 10 + character - '0';
-                            }
-                            exponentDigits++;
-                            index = scan + 1;
-                        }
-                        else
-                        {
-                            exponentActive = false;
-                        }
-                    }
-                    if (exponentDigits == 0)
-                    {
-                        return false;
-                    }
-                    if (exponentNegative)
-                    {
-                        exponent = -exponent;
-                    }
-                }
-                if (index != end)
-                {
-                    return false;
-                }
-                var scale = fractionalDigits - exponent;
-                if (scale < 0)
-                {
-                    MultiplyPower10(ref coefficient, -scale);
-                    scale = 0;
-                }
-                try
-                {
-                    result = Create(coefficient, scale, negative);
-                    return true;
-                }
-                catch (OverflowException)
-                {
-                    overflow = true;
-                    return false;
-                }
             }
 
             internal struct WideInteger
@@ -1375,28 +1114,15 @@ namespace System
                 }
             }
 
-            private static bool TryAppendDigit(ref WideInteger coefficient, uint digit)
-            {
-                try
-                {
-                    MultiplyWordInPlace(ref coefficient, 10);
-                    AddWordInPlace(ref coefficient, digit);
-                    return true;
-                }
-                catch (OverflowException)
-                {
-                    return false;
-                }
-            }
-
-            internal static string Format(decimal value)
+            // The general form with the info's symbols, or the current culture's mirrors without one.
+            internal static string Format(decimal value, NumberFormatInfo? info = null)
             {
                 var builder = new Text.ValueStringBuilder(32);
-                AppendFormat(ref builder, value);
+                AppendFormat(ref builder, value, info);
                 return builder.ToString();
             }
 
-            internal static void AppendFormat(scoped ref Text.ValueStringBuilder builder, decimal value)
+            internal static void AppendFormat(scoped ref Text.ValueStringBuilder builder, decimal value, NumberFormatInfo? info = null)
             {
                 var coefficient = Coefficient(value);
                 var digits = ToDigits(coefficient);
@@ -1405,7 +1131,7 @@ namespace System
                 // A negative zero formats as zero, as upstream's NumberToString does.
                 if (value.IsNegativeValue && value != 0m)
                 {
-                    builder.Append('-');
+                    builder.Append((info is null ? NumberFormatInfo.CurrentNegativeSignTChar<char>() : info.NegativeSignTChar<char>()));
                 }
                 if (scale == 0)
                 {
@@ -1415,7 +1141,7 @@ namespace System
                 if (integerDigits <= 0)
                 {
                     builder.Append('0');
-                    builder.Append('.');
+                    builder.Append((info is null ? NumberFormatInfo.CurrentNumberDecimalSeparatorTChar<char>() : info.NumberDecimalSeparatorTChar<char>()));
                     for (var zero = integerDigits; zero < 0; zero++)
                     {
                         builder.Append('0');
@@ -1427,7 +1153,7 @@ namespace System
                 {
                     if (index == integerDigits)
                     {
-                        builder.Append('.');
+                        builder.Append((info is null ? NumberFormatInfo.CurrentNumberDecimalSeparatorTChar<char>() : info.NumberDecimalSeparatorTChar<char>()));
                     }
                     builder.Append(digits[index]);
                 }

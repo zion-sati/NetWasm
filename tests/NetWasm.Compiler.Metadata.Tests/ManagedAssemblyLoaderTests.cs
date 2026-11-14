@@ -88,6 +88,37 @@ public sealed class ManagedAssemblyLoaderTests
         Assert.Throws<ArgumentException>(() => new ManagedAssemblyImageReader().Read(""));
     }
 
+    // A [FeatureSwitchDefinition] getter names its switch; an attribute blob without the 0x0001 prolog names none.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AFeatureSwitchGetterNamesItsSwitchFromAWellFormedAttribute(bool malformed)
+    {
+        const string name = "NetWasm.Tests.PrologueSwitch";
+        using var assets = TestAssets.Create();
+        var path = assets.CompileSource("FeatureSwitchPrologue", $$"""
+            public static class Switches
+            {
+                [System.Diagnostics.CodeAnalysis.FeatureSwitchDefinition("{{name}}")]
+                public static bool Enabled => true;
+            }
+            """);
+        if (malformed)
+        {
+            var image = File.ReadAllBytes(path);
+            byte[] blob = [0x01, 0x00, (byte)name.Length, .. System.Text.Encoding.UTF8.GetBytes(name)];
+            var at = image.AsSpan().IndexOf(blob);
+            Assert.True(at >= 0);
+            image[at] = 0;
+            File.WriteAllBytes(path, image);
+        }
+
+        using var assembly = ManagedAssemblyTestFactory.Load(path);
+
+        var getter = assembly.Methods.Values.Single(method => method.Name == "get_Enabled");
+        Assert.Equal(malformed ? null : name, getter.FeatureSwitch);
+    }
+
     [Fact]
     public void ExtractsEnumConstantsAndFlagsWithoutLoadingTypes()
     {

@@ -253,7 +253,7 @@ public static class Interlocked
         location1 |= value;
         return previous;
     }
-    // The integer-primitive and integer-enum forms of dotnet/runtime 474ed963's generic And and Or,
+    // The integer-primitive and integer-enum forms of dotnet/runtime deae2e32's generic And and Or,
     // which System.Net.Http's header flags use. As the sized forms above, each combines in place.
     public static T And<T>(ref T location1, T value) where T : struct
     {
@@ -325,6 +325,183 @@ public static class Interlocked
         {
             throw new NotSupportedException(SR.NotSupported_ReferenceEnumOrPrimitiveTypeRequired);
         }
+    }
+
+    // Upstream's unsigned and small-integer overloads, sequential like the rest.
+    [CLSCompliant(false)]
+    public static uint Increment(ref uint location) => Add(ref location, 1u);
+
+    [CLSCompliant(false)]
+    public static uint Decrement(ref uint location) => Add(ref location, unchecked((uint)-1));
+
+    [CLSCompliant(false)]
+    public static uint Add(ref uint location1, uint value)
+    {
+        ValidateLocation(ref location1);
+        return location1 = unchecked(location1 + value);
+    }
+
+    [CLSCompliant(false)]
+    public static ulong Increment(ref ulong location) => Add(ref location, 1ul);
+
+    [CLSCompliant(false)]
+    public static ulong Decrement(ref ulong location) => Add(ref location, unchecked((ulong)-1));
+
+    [CLSCompliant(false)]
+    public static ulong Add(ref ulong location1, ulong value)
+    {
+        ValidateLocation(ref location1);
+        return location1 = unchecked(location1 + value);
+    }
+
+    public static byte Exchange(ref byte location1, byte value)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        location1 = value;
+        return previous;
+    }
+
+    public static byte CompareExchange(ref byte location1, byte value, byte comparand)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        if (previous == comparand)
+        {
+            location1 = value;
+        }
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static sbyte Exchange(ref sbyte location1, sbyte value)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        location1 = value;
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static sbyte CompareExchange(ref sbyte location1, sbyte value, sbyte comparand)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        if (previous == comparand)
+        {
+            location1 = value;
+        }
+        return previous;
+    }
+
+    public static short Exchange(ref short location1, short value)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        location1 = value;
+        return previous;
+    }
+
+    public static short CompareExchange(ref short location1, short value, short comparand)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        if (previous == comparand)
+        {
+            location1 = value;
+        }
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static ushort Exchange(ref ushort location1, ushort value)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        location1 = value;
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static ushort CompareExchange(ref ushort location1, ushort value, ushort comparand)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        if (previous == comparand)
+        {
+            location1 = value;
+        }
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static uint Exchange(ref uint location1, uint value)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        location1 = value;
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static uint CompareExchange(ref uint location1, uint value, uint comparand)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        if (previous == comparand)
+        {
+            location1 = value;
+        }
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static ulong Exchange(ref ulong location1, ulong value)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        location1 = value;
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static ulong CompareExchange(ref ulong location1, ulong value, ulong comparand)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        if (previous == comparand)
+        {
+            location1 = value;
+        }
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static nuint Exchange(ref nuint location1, nuint value)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        location1 = value;
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static nuint CompareExchange(ref nuint location1, nuint value, nuint comparand)
+    {
+        ValidateLocation(ref location1);
+        var previous = location1;
+        if (previous == comparand)
+        {
+            location1 = value;
+        }
+        return previous;
+    }
+
+    [CLSCompliant(false)]
+    public static ulong Read(ref ulong location)
+    {
+        ValidateLocation(ref location);
+        return location;
     }
 
     private static void ValidateLocation<T>(ref T location)

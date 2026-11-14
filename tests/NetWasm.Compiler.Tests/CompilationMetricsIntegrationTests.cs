@@ -149,7 +149,10 @@ public sealed class CompilationMetricsIntegrationTests
         IMetadataCompilationLease IMetadataCompilationLoader.Load(
             string entryAssemblyPath,
             IEnumerable<string> referencePaths,
-            ImmutableDictionary<string, string>? aliases) =>
+            ImmutableDictionary<string, string>? aliases,
+            IEnumerable<string>? metadataReferencePaths,
+            IEnumerable<string>? originalContractReferencePaths,
+            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding) =>
             throw new OperationCanceledException();
     }
 }

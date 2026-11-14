@@ -2,8 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Adapted from dotnet/runtime System.Private.CoreLib (commit
-// 474ed963699fc29809015392738a15231aaae2de). File/path members are
-// intentionally omitted for the managed NetWasm profile; async members are
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce). File/path constructors expose the standard contract but throw
+// PlatformNotSupportedException until filesystem capabilities are available; async members are
 // inherited from TextReader's scheduler-backed surface.
 
 using System.Buffers.Binary;

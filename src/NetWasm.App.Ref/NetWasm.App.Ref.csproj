@@ -1,0 +1,233 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.App.Ref</AssemblyName>
+    <RootNamespace>NetWasm.App.Ref</RootNamespace>
+    <PackageId>NetWasm.App.Ref</PackageId>
+    <Version>0.4.2</Version>
+    <Description>Reference assemblies for NetWasm.App, the framework libraries of the NetWasm netwasm0.1 profile, with netstandard.dll and the libraries' source generators.</Description>
+    <PackageTags>netwasm;reference;framework;metadata</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CoreLibProjectPath>$(MSBuildProjectDirectory)/../NetWasm.CoreLib/NetWasm.CoreLib.csproj</CoreLibProjectPath>
+    <CoreLibReferenceAssemblyPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../NetWasm.CoreLib/bin/$(Configuration)/net10.0/ref/NetWasm.CoreLib.dll'))</CoreLibReferenceAssemblyPath>
+    <CoreLibReferenceAssemblyPath Condition="$([System.IO.Path]::IsPathRooted('$(BaseOutputPath)'))">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'ref', 'NetWasm.CoreLib.dll'))</CoreLibReferenceAssemblyPath>
+    <!-- As NetWasm.Ref: built on net10.0, packed by the NetWasm SDK's canonical pack task for the
+         custom profile, which replaces Pack before any stock PackTask runs. -->
+    <NetWasmSdkRefPackEnabled>true</NetWasmSdkRefPackEnabled>
+    <NetWasmSdkContractPackTarget>NetWasmAppRefPack</NetWasmSdkContractPackTarget>
+    <NuGetBuildTasksPackTargets>$(MSBuildProjectDirectory)/../NetWasm.Sdk/Sdk/NuGetBuildTasksPackTargets.targets</NuGetBuildTasksPackTargets>
+    <ImportNuGetBuildTasksPackTargetsFromSdk>true</ImportNuGetBuildTasksPackTargetsFromSdk>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmSdkPackTaskAssemblyFile>$(NetWasmPackTaskOutput)</NetWasmSdkPackTaskAssemblyFile>
+    <!-- The System.Text.Json and Regex source generators Microsoft.NETCore.App.Ref carries, from the exact
+         net10.0 targeting-pack archive, as NetWasm.Ref takes its LibraryImport generator: consumers load them
+         into their compiler, which may be .NET 10's. -->
+    <NetWasmRefGeneratorProvenanceName>source-generators</NetWasmRefGeneratorProvenanceName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <NetWasmRefGeneratorAssembly Include="System.Text.Json.SourceGeneration;System.Text.RegularExpressions.Generator" />
+  </ItemGroup>
+
+  <Import Project="../NetWasm.Ref/NetWasm.Ref.ImportGenerator.targets" />
+
+  <!-- Producer input only: the .NET Standard 2.1 contract the facade forwards. -->
+  <ItemGroup>
+    <PackageDownload Include="NETStandard.Library.Ref" Version="[$(NetWasmStandardContractPackageVersion)]" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <_NetWasmAppLibraryProject Include="$(MSBuildProjectDirectory)/../libraries/*/*.csproj" />
+    <ProjectReference Include="@(_NetWasmAppLibraryProject)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <ProjectReference Include="$(CoreLibProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.References.GenerateStandardFacadeTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+  <UsingTask TaskName="NetWasm.Sdk.Pack.References.GenerateFrameworkFacadesTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+  <!-- Contracts NetWasm.App owns only in part that still get a facade: the .NET Framework and .NET Standard 1.x
+       contract names, whose missing types (Registry, ArgIterator, code access security) no .NET Standard library
+       names. Other partial contracts also ship as packages, which keep their implementations. -->
+  <ItemGroup>
+    <NetWasmLegacyFacadeContract Include="mscorlib;System;System.Core;System.Data;System.Net;System.Runtime;System.Runtime.Extensions;System.Runtime.Serialization;System.Transactions;System.Linq.Expressions;System.Net.NameResolution;System.Net.WebClient;System.Reflection.Emit;System.Security.Cryptography.Algorithms" />
+  </ItemGroup>
+
+  <Target Name="NetWasmAppRefBuildContracts"
+          BeforeTargets="PrepareForPack;Pack">
+    <MSBuild Projects="$(CoreLibProjectPath)"
+             Targets="Build"
+             Condition="'$(NoBuild)' != 'true'"
+             Properties="Configuration=$(Configuration);ProduceReferenceAssembly=true;ProduceReferenceAssemblyInOutDir=true" />
+    <Error Condition="!Exists('$(CoreLibReferenceAssemblyPath)')"
+           Code="NWRF001"
+           Text="The NetWasm.CoreLib metadata-only reference assembly was not produced." />
+    <MSBuild Projects="@(_NetWasmAppLibraryProject)"
+             Targets="Build"
+             Condition="'$(NoBuild)' != 'true'"
+             Properties="Configuration=$(Configuration)" />
+    <MSBuild Projects="@(_NetWasmAppLibraryProject)"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmAppLibraryOutput" />
+    </MSBuild>
+    <ItemGroup>
+      <_NetWasmAppReferenceAssembly Include="@(_NetWasmAppLibraryOutput->'%(ReferenceAssembly)')" />
+    </ItemGroup>
+    <Error Condition="'@(_NetWasmAppReferenceAssembly)' == '' OR '@(_NetWasmAppReferenceAssembly->Count())' != '@(_NetWasmAppLibraryProject->Count())'"
+           Code="NWRF009"
+           Text="Every NetWasm.App library must produce a reference assembly." />
+    <Error Condition="!Exists('%(_NetWasmAppReferenceAssembly.Identity)')"
+           Code="NWRF009"
+           Text="The NetWasm.App reference assembly '%(_NetWasmAppReferenceAssembly.Identity)' was not produced." />
+  </Target>
+
+  <Target Name="NetWasmAppRefResolvePackTaskOutput"
+          BeforeTargets="Pack">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Condition="'$(NoBuild)' != 'true'"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <!-- netstandard.dll forwards each .NET Standard 2.1 type to its owner: CoreLib or the NetWasm.App library
+       that declares it publicly. -->
+  <Target Name="NetWasmAppRefGenerateStandardFacade"
+          DependsOnTargets="NetWasmAppRefBuildContracts;NetWasmAppRefResolvePackTaskOutput">
+    <PropertyGroup>
+      <_NetWasmStandardContractPath>$([MSBuild]::NormalizePath('$(NuGetPackageRoot)', 'netstandard.library.ref', '$(NetWasmStandardContractPackageVersion)', 'ref', 'netstandard2.1', 'netstandard.dll'))</_NetWasmStandardContractPath>
+      <_NetWasmGeneratedStandardFacadePath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'standard-facade', 'netstandard.dll'))</_NetWasmGeneratedStandardFacadePath>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NetWasmStandardFacadeOwner Include="$(CoreLibReferenceAssemblyPath);@(_NetWasmAppReferenceAssembly)" />
+    </ItemGroup>
+    <GenerateStandardFacadeTask ContractPath="$(_NetWasmStandardContractPath)"
+                                Owners="@(_NetWasmStandardFacadeOwner)"
+                                OutputPath="$(_NetWasmGeneratedStandardFacadePath)" />
+  </Target>
+
+  <!-- Framework facades: each Microsoft.NETCore.App.Ref assembly NetWasm.App does not ship, with its identity,
+       forwarding the types NetWasm.App defines, as the shared framework's facades do. A package built against
+       System.Runtime, System.Buffers or System.Threading.Tasks.Extensions binds through them, for C# and for the
+       NetWasm compiler, which takes the NetWasm.App.Ref assemblies with no NetWasm.App implementation as metadata
+       facades. -->
+  <Target Name="NetWasmAppRefGenerateFrameworkFacades"
+          DependsOnTargets="NetWasmAppRefBuildContracts;NetWasmAppRefResolvePackTaskOutput">
+    <ItemGroup>
+      <!-- The .NET 11 SDK's targeting pack, in the SDK's own packs folder (the generator import points
+           NetCoreTargetingPackRoot at its downloads): the facades take only its type names and assembly identities.
+           The generators' net10.0 pack is a PackageDownload of the same package, which NuGet takes in one version. -->
+      <_NetWasmFrameworkContract Include="$([MSBuild]::NormalizeDirectory('$(NetCoreRoot)', 'packs', 'Microsoft.NETCore.App.Ref', '$(NetWasmFrameworkContractPackageVersion)', 'ref', 'net11.0'))*.dll" />
+      <_NetWasmFrameworkFacadeOwner Include="$(CoreLibReferenceAssemblyPath);@(_NetWasmAppReferenceAssembly)" />
+    </ItemGroup>
+    <Error Condition="'@(_NetWasmFrameworkContract)' == ''"
+           Code="NWRF007"
+           Text="The .NET 11 SDK's Microsoft.NETCore.App.Ref $(NetWasmFrameworkContractPackageVersion) targeting pack is not installed under $(NetCoreRoot)packs." />
+    <GenerateFrameworkFacadesTask Contracts="@(_NetWasmFrameworkContract)"
+                                  Owners="@(_NetWasmFrameworkFacadeOwner)"
+                                  LegacyContracts="@(NetWasmLegacyFacadeContract)"
+                                  OutputDirectory="$(IntermediateOutputPath)framework-facades">
+      <Output TaskParameter="Facades" ItemName="_NetWasmFrameworkFacade" />
+    </GenerateFrameworkFacadesTask>
+  </Target>
+
+  <!-- The build also leaves netstandard.dll in $(OutDir)standard-facade, where the compiler tests take it. -->
+  <Target Name="NetWasmAppRefCollectStandardFacade" AfterTargets="Build" DependsOnTargets="NetWasmAppRefGenerateStandardFacade">
+    <Copy SourceFiles="$(_NetWasmGeneratedStandardFacadePath)"
+          DestinationFolder="$(OutDir)standard-facade"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="NetWasmAppRefPack"
+          DependsOnTargets="NetWasmAppRefBuildContracts;NetWasmAppRefResolvePackTaskOutput;NetWasmRefResolveImportGeneratorAssets;NetWasmAppRefGenerateStandardFacade;NetWasmAppRefGenerateFrameworkFacades;_InitializeNuspecRepositoryInformationProperties"
+          Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'">
+    <PropertyGroup>
+      <NetWasmAppRefPackageFilePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmAppRefPackageFilePath>
+      <NetWasmAppRefNuspecFilePath>$([System.IO.Path]::Combine('$(NuspecOutputPath)', '$(PackageId).nuspec'))</NetWasmAppRefNuspecFilePath>
+      <NetWasmAppRefManifestFilePath>$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.manifest.json'))</NetWasmAppRefManifestFilePath>
+      <NetWasmAppRefDiagnosticFilePath>$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.diagnostic.json'))</NetWasmAppRefDiagnosticFilePath>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NetWasmAppRefTargetProfile Include="netwasm0.1">
+        <Alias>netwasm0.1</Alias>
+        <Identifier>NetWasm</Identifier>
+        <Version>v0.1</Version>
+        <AssetFolder>NetWasm,Version=v0.1</AssetFolder>
+        <DependencyGroup>NetWasm,Version=v0.1</DependencyGroup>
+      </_NetWasmAppRefTargetProfile>
+      <_NetWasmAppRefPackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))">
+        <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))</SourcePath>
+        <PackagePath>README.md</PackagePath>
+        <PackKind>Content</PackKind>
+      </_NetWasmAppRefPackageFile>
+      <_NetWasmAppRefPackageFile Include="@(_NetWasmAppReferenceAssembly)">
+        <SourcePath>%(_NetWasmAppReferenceAssembly.FullPath)</SourcePath>
+        <PackagePath>ref/NetWasm,Version=v0.1/%(_NetWasmAppReferenceAssembly.Filename)%(_NetWasmAppReferenceAssembly.Extension)</PackagePath>
+        <TargetFrameworkAlias>netwasm0.1</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmAppRefPackageFile>
+      <_NetWasmAppRefPackageFile Include="$(_NetWasmGeneratedStandardFacadePath)">
+        <SourcePath>$(_NetWasmGeneratedStandardFacadePath)</SourcePath>
+        <PackagePath>ref/NetWasm,Version=v0.1/netstandard.dll</PackagePath>
+        <TargetFrameworkAlias>netwasm0.1</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmAppRefPackageFile>
+      <_NetWasmAppRefPackageFile Include="@(_NetWasmFrameworkFacade)">
+        <SourcePath>%(_NetWasmFrameworkFacade.FullPath)</SourcePath>
+        <PackagePath>ref/NetWasm,Version=v0.1/%(_NetWasmFrameworkFacade.Filename)%(_NetWasmFrameworkFacade.Extension)</PackagePath>
+        <TargetFrameworkAlias>netwasm0.1</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmAppRefPackageFile>
+      <_NetWasmAppRefPackageFile Include="@(_NetWasmRefGeneratorPackageFile)" />
+    </ItemGroup>
+    <CanonicalPackMsBuildTask
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      Authors="$(Authors)"
+      Description="$(Description)"
+      PackageOutputPath="$(NetWasmAppRefPackageFilePath)"
+      CanonicalTargetFramework="NetWasm,Version=v0.1"
+      TargetProfiles="@(_NetWasmAppRefTargetProfile)"
+      PackageFiles="@(_NetWasmAppRefPackageFile)"
+      IncludeBuildOutput="true"
+      IncludeContentInPack="true"
+      SuppressDependenciesWhenPacking="true"
+      PackageOwners="$(PackageOwners)"
+      PackageProjectUrl="$(PackageProjectUrl)"
+      PackageLicenseExpression="$(PackageLicenseExpression)"
+      PackageLicenseFile="$(PackageLicenseFile)"
+      PackageReadmeFile="$(PackageReadmeFile)"
+      PackageCopyright="$(Copyright)"
+      PackageTags="$(PackageTags)"
+      RepositoryUrl="$(RepositoryUrl)"
+      RepositoryType="$(RepositoryType)"
+      RepositoryBranch="$(RepositoryBranch)"
+      RepositoryCommit="$(RepositoryCommit)"
+      PublishRepositoryUrl="$(PublishRepositoryUrl)"
+      NuspecOutputPath="$(NetWasmAppRefNuspecFilePath)"
+      ManifestOutputPath="$(NetWasmAppRefManifestFilePath)"
+      DiagnosticOutputPath="$(NetWasmAppRefDiagnosticFilePath)"
+      NoBuild="$(NoBuild)"
+      SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

@@ -91,7 +91,10 @@ public sealed class RuntimeNativeProviderSelectorTests
     public void RejectsMissingOrWrongTargetProvider()
     {
         var selector = new RuntimeNativeProviderSelector();
-        Assert.Throws<InvalidOperationException>(() => selector.Select(new("wasm32", [Import("mule", "sum")], [])));
+        var missing = Assert.Throws<InvalidOperationException>(() => selector.Select(new("wasm32", [Import("mule", "sum")], [])));
+        // The message names the import and its library, so a build failure says which P/Invoke reached it.
+        Assert.Contains("'mule'", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("'sum'", missing.Message, StringComparison.Ordinal);
         Assert.Throws<InvalidOperationException>(() => selector.Select(new("wasm32", [Import("mule", "sum")], [Provider("wasm64")])));
     }
 

@@ -8,11 +8,14 @@ public sealed class ManyEnumDispatchCompilationTests(CorrectnessTestRunner runne
 {
     private const int EnumCount = 200;
 
+    // Convert.ChangeType reaches string's IConvertible.ToDateTime, and date parsing reads the local time zone (as
+    // upstream's does), so the program needs the platform world.
     [Fact]
     public void ManyBoxedEnumsDispatchThroughEnumsCodeOnce() =>
         runner.Run(new("ManyEnumDispatch", "ManyEnumDispatch", Source, [0, 1, 2, 3, 4, 5, 6])
         {
             Matrix = new(CorpusMatrixProfile.Family),
+            RequiresReactor = true,
         });
 
     private static readonly string Source = $$"""

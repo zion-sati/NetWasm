@@ -1,5 +1,5 @@
 // Portions adapted from dotnet/runtime System.Private.CoreLib GCMemoryInfo.cs
-// at commit 474ed963699fc29809015392738a15231aaae2de.
+// at commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // The upstream implementation is licensed under the MIT license.
 
 namespace System;
@@ -54,10 +54,8 @@ public readonly struct GCMemoryInfo
         _pinnedObjectsCount = pinnedObjectsCount;
     }
 
-    // These properties preserve the upstream value contract for a future true
-    // completed-collection snapshot. GC.GetGCMemoryInfo currently reports the
-    // snapshot capability as unsupported rather than fabricating one from live
-    // collector counters.
+    // GC.GetGCMemoryInfo fills this from the collector's current counters, as Mono's
+    // does; the values the collector does not keep report zero.
     public bool Compacted => false;
     public bool Concurrent => false;
     public long FinalizationPendingCount => 0;

@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Diagnostics.TraceSource</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Collections.NonGeneric/System.Collections.NonGeneric.csproj" />
+    <ProjectReference Include="../System.Collections.Specialized/System.Collections.Specialized.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="System/Diagnostics/BooleanSwitch.cs" />
+    <Compile Include="System/Diagnostics/CorrelationManager.cs" />
+    <Compile Include="System/Diagnostics/DefaultTraceListener.cs" />
+    <Compile Include="System/Diagnostics/DiagnosticsConfiguration.cs" />
+    <Compile Include="System/Diagnostics/InitializingSwitchEventArgs.cs" />
+    <Compile Include="System/Diagnostics/InitializingTraceSourceEventArgs.cs" />
+    <Compile Include="System/Diagnostics/SeverityFilter.cs" />
+    <Compile Include="System/Diagnostics/SourceFilter.cs" />
+    <Compile Include="System/Diagnostics/SourceLevels.cs" />
+    <Compile Include="System/Diagnostics/SourceSwitch.cs" />
+    <Compile Include="System/Diagnostics/Switch.cs" />
+    <Compile Include="System/Diagnostics/SwitchAttribute.cs" />
+    <Compile Include="System/Diagnostics/SwitchLevelAttribute.cs" />
+    <Compile Include="System/Diagnostics/Trace.cs" />
+    <Compile Include="System/Diagnostics/TraceEventCache.cs" />
+    <Compile Include="System/Diagnostics/TraceEventType.cs" />
+    <Compile Include="System/Diagnostics/TraceFilter.cs" />
+    <Compile Include="System/Diagnostics/TraceInternal.cs" />
+    <Compile Include="System/Diagnostics/TraceLevel.cs" />
+    <Compile Include="System/Diagnostics/TraceListener.cs" />
+    <Compile Include="System/Diagnostics/TraceListeners.cs" />
+    <Compile Include="System/Diagnostics/TraceOptions.cs" />
+    <Compile Include="System/Diagnostics/TraceSource.cs" />
+    <Compile Include="System/Diagnostics/TraceSwitch.cs" />
+    <Compile Include="System/Diagnostics/TraceUtils.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

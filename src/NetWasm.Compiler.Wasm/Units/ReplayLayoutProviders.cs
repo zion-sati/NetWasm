@@ -96,7 +96,8 @@ internal sealed class ReplayManagedExceptionObjectProvider(UnitAnswers answers) 
     public int GetExceptionObject(ManagedExceptionKind kind) => answers.Get<int>(UnitQueryKind.ExceptionObject, kind.ToString());
 }
 
-internal sealed class ReplayTypeDescriptorSource(UnitAnswers answers) : ITypeDescriptorSource, IEnumMetadataSource
+internal sealed class ReplayTypeDescriptorSource(UnitAnswers answers) :
+    ITypeDescriptorSource, IEnumMetadataSource, IStructMarshallingSource, IUninitializedObjectSource
 {
     public ImmutableArray<TypeDescriptorLayout> TypeDescriptors =>
         answers.Get<ImmutableArray<TypeDescriptorLayout>>(UnitQueryKind.TypeDescriptors, "");
@@ -112,6 +113,12 @@ internal sealed class ReplayTypeDescriptorSource(UnitAnswers answers) : ITypeDes
 
     public ImmutableArray<EnumMetadataLayout> EnumMetadata =>
         answers.Get<ImmutableArray<EnumMetadataLayout>>(UnitQueryKind.EnumMetadata, "");
+
+    public ImmutableArray<StructMarshallingLayout> StructMarshalling =>
+        answers.Get<ImmutableArray<StructMarshallingLayout>>(UnitQueryKind.StructMarshalling, "");
+
+    public ImmutableArray<CliTypeIdentity> UninitializedObjectTypes =>
+        answers.Get<ImmutableArray<CliTypeIdentity>>(UnitQueryKind.UninitializedObjectTypes, "");
 }
 
 /// <summary>The target layout of a compile that lays nothing out itself.</summary>

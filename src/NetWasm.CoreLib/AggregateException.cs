@@ -1,5 +1,5 @@
 // Portions derived from dotnet/runtime System.Private.CoreLib AggregateException at
-// commit 474ed963699fc29809015392738a15231aaae2de.
+// commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
@@ -9,8 +9,14 @@ using System.Collections.ObjectModel;
 namespace System
 {
     [Serializable]
-    public class AggregateException : Exception
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    public partial class AggregateException : Exception
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected AggregateException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("AggregateException formatter deserialization is not available on this NetWasm platform.");
+
         private readonly Exception[] _innerExceptions;
         private ReadOnlyCollection<Exception>? _rocView;
 

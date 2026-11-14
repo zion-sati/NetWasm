@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Core.GenericConstraints;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Metadata;
@@ -14,5 +15,6 @@ internal interface IReachabilityImportClassifierFactory
         IJavaScriptAsyncBindingResolver javaScriptAsyncBindings,
         IJavaScriptConversionResolver conversions,
         IRuntimeIntrinsicRegistry intrinsics,
-        ISymbolFormatter symbols);
+        ISymbolFormatter symbols,
+        IClosedGenericConstraintValidator constraints);
 }

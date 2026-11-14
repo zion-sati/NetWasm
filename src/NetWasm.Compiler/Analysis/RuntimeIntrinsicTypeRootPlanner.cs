@@ -9,7 +9,8 @@ namespace NetWasm.Compiler.Analysis;
 internal sealed class RuntimeIntrinsicTypeRootPlanner(
     IRuntimeIntrinsicRegistry intrinsics,
     INullableTypeResolver nullableTypes,
-    ITypeDefinitionResolver typeDefinitions) : IRuntimeIntrinsicTypeRootPlanner
+    ITypeDefinitionResolver typeDefinitions,
+    IArrayCreationRootPlanner arrayCreation) : IRuntimeIntrinsicTypeRootPlanner
 {
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
@@ -18,9 +19,17 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
     private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ??
         throw new ArgumentNullException(nameof(typeDefinitions));
 
+    private readonly IArrayCreationRootPlanner _arrayCreation = arrayCreation ??
+        throw new ArgumentNullException(nameof(arrayCreation));
+
+    private static readonly System.Collections.Immutable.ImmutableArray<int> RectangularCreationRanks = [2, 3];
+
     public RuntimeIntrinsicTypeRootPlan Plan(
         IEnumerable<MethodInstanceModel> reachableMethods,
-        IEnumerable<CliTypeIdentity> reachableTypes)
+        IEnumerable<CliTypeIdentity> reachableTypes,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> arrayElementSeeds = default,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> typeHandleSeeds = default,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> programAllocatedTypes = default)
     {
         ArgumentNullException.ThrowIfNull(reachableMethods);
         ArgumentNullException.ThrowIfNull(reachableTypes);
@@ -31,13 +40,23 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
             .ToArray();
         var inspectNullable = demands.Any(demand =>
             demand.Intrinsic is RuntimeIntrinsic.NullableGetUnderlyingType or RuntimeIntrinsic.ArraySetValue);
+        var createArrays = demands.Any(demand => demand.Intrinsic == RuntimeIntrinsic.ArrayCreateInstance);
+        var createRectangularArrays = demands.Any(demand =>
+            demand.Intrinsic == RuntimeIntrinsic.ArrayCreateRectangularInstance);
+        var runClassConstructors = demands.Any(demand =>
+            demand.Intrinsic == RuntimeIntrinsic.RunClassConstructor);
+        var allocateUninitialized = demands.Any(demand =>
+            demand.Intrinsic == RuntimeIntrinsic.AllocateUninitializedObject);
+        var marshalStructures = demands.Any(demand => demand.Intrinsic is
+            RuntimeIntrinsic.StructMarshallingData or RuntimeIntrinsic.StructMarshallingFieldNames);
         var enumNames = demands.Any(demand => demand.Intrinsic == RuntimeIntrinsic.EnumGetNames);
         var boxEnums = demands.Any(demand => demand.Intrinsic == RuntimeIntrinsic.EnumToObject);
         var boxArrayElements = demands.Any(demand =>
             demand.Intrinsic == RuntimeIntrinsic.ArrayGetValue);
         var enumValues = demands.Where(demand => demand.Intrinsic == RuntimeIntrinsic.EnumGetValues)
             .Select(demand => demand.Method).ToArray();
-        if (!inspectNullable && !enumNames && !boxEnums && !boxArrayElements &&
+        if (!createArrays && !createRectangularArrays && !runClassConstructors && !allocateUninitialized &&
+            !marshalStructures && !inspectNullable && !enumNames && !boxEnums && !boxArrayElements &&
             enumValues.Length == 0)
         {
             return RuntimeIntrinsicTypeRootPlan.Empty;
@@ -46,12 +65,27 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
         var runtimeTypes = new HashSet<CliTypeIdentity>();
         var allocatedTypes = new HashSet<CliTypeIdentity>();
         var types = reachableTypes.Distinct().ToArray();
+        var elementSeeds = arrayElementSeeds.IsDefault ? [] : arrayElementSeeds;
+        if (createArrays)
+        {
+            var creation = _arrayCreation.Plan(elementSeeds);
+            runtimeTypes.UnionWith(creation.RuntimeTypes);
+            allocatedTypes.UnionWith(creation.AllocatedTypes);
+        }
+        if (createRectangularArrays)
+        {
+            // The fixed-rank Array.CreateInstance overloads create rank 2 and 3; other ranks
+            // use rectangular array types the program constructs itself.
+            var creation = _arrayCreation.Plan(elementSeeds, RectangularCreationRanks);
+            runtimeTypes.UnionWith(creation.RuntimeTypes);
+            allocatedTypes.UnionWith(creation.AllocatedTypes);
+        }
         if (boxArrayElements)
         {
-            foreach (var array in types.Where(type => type.Shape == CliTypeShape.SzArray))
+            foreach (var array in types.Where(type => type.Shape is CliTypeShape.SzArray or CliTypeShape.Array))
             {
                 var element = _nullableTypes.Resolve(array.ElementType!) ?? array.ElementType!;
-                if (!element.IsValueType)
+                if (!element.IsValueType || element.Shape is CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer)
                 {
                     continue;
                 }
@@ -109,11 +143,51 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
                 : method.MethodArguments[0]);
         }
 
-        return runtimeTypes.Count == 0 && allocatedTypes.Count == 0
+        // Like native AOT, RunClassConstructor compiles the initializers of types whose handles
+        // the program names directly (type tokens and type operands); other types keep only the
+        // initializers their own static accesses require.
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> initializedTypes =
+            runClassConstructors && !typeHandleSeeds.IsDefault
+                ? [.. typeHandleSeeds
+                    .Where(type => !type.ContainsGenericParameters &&
+                        type.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation)
+                    .Distinct()
+                    .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)]
+                : [];
+        var seeds = typeHandleSeeds.IsDefault ? [] : typeHandleSeeds;
+        var programAllocated = programAllocatedTypes.IsDefault ? [] : programAllocatedTypes;
+        // GetUninitializedObject creates the types the program names or already allocates, as
+        // native AOT creates only types it has seen constructed.
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> uninitializedObjectTypes =
+            allocateUninitialized
+                ? [.. seeds.Concat(programAllocated)
+                    .Select(UninitializedObjectType)
+                    .OfType<CliTypeIdentity>()
+                    .Distinct()
+                    .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)]
+                : [];
+        // Marshal's structure members receive the types the program names, or boxed values of
+        // the value types it allocates.
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> structMarshallingTypes =
+            marshalStructures
+                ? [.. seeds.Where(IsStructMarshallingCandidate)
+                    .Concat(programAllocated.Where(type => type.IsValueType && IsStructMarshallingCandidate(type)))
+                    .Distinct()
+                    .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)]
+                : [];
+        return runtimeTypes.Count == 0 && allocatedTypes.Count == 0 && initializedTypes.IsEmpty &&
+            uninitializedObjectTypes.IsEmpty && !marshalStructures
             ? RuntimeIntrinsicTypeRootPlan.Empty
             : new(
             [.. runtimeTypes.OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
-            [.. allocatedTypes.OrderBy(type => type.CanonicalName, StringComparer.Ordinal)]);
+            [.. allocatedTypes.OrderBy(type => type.CanonicalName, StringComparer.Ordinal)])
+            {
+                InitializedTypes = initializedTypes,
+                UninitializedObjectTypes = uninitializedObjectTypes,
+                StructMarshallingTypes = structMarshallingTypes,
+                StructMarshallingFieldNames = demands.Any(demand =>
+                    demand.Intrinsic == RuntimeIntrinsic.StructMarshallingFieldNames),
+            };
 
         void AddArray(CliTypeIdentity element)
         {
@@ -127,6 +201,36 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
             }
         }
     }
+
+    // Upstream rejects abstract types, interfaces, strings, arrays, pointers, byref-like and open
+    // types before allocating, and creates T for Nullable<T>.
+    private CliTypeIdentity? UninitializedObjectType(CliTypeIdentity type)
+    {
+        if (type.ContainsGenericParameters)
+            return null;
+        type = _nullableTypes.Resolve(type) ?? type;
+        switch (type.Shape)
+        {
+            case CliTypeShape.Primitive:
+                return type.CanonicalName is "primitive:void" or "primitive:string" or "primitive:typedref"
+                    ? null : type;
+            case CliTypeShape.Named:
+            case CliTypeShape.GenericInstantiation:
+                var definition = _typeDefinitions.ResolveTypeIdentity(type);
+                return definition.IsInterface || definition.IsAbstract || definition.IsByRefLike ||
+                    type.Shape == CliTypeShape.Named && definition.GenericArity != 0
+                    ? null : type;
+            default:
+                return null;
+        }
+    }
+
+    // Upstream rejects generic types before reading interop data, so only non-generic named types
+    // and the primitive value types can carry a descriptor.
+    private static bool IsStructMarshallingCandidate(CliTypeIdentity type) =>
+        type.Shape == CliTypeShape.Named && !type.ContainsGenericParameters ||
+        type.Shape == CliTypeShape.Primitive && type.IsValueType &&
+            type.CanonicalName is not ("primitive:void" or "primitive:typedref");
 
     private TypeDefinitionModel? ResolveEnum(CliTypeIdentity type)
     {

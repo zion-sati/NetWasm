@@ -3,7 +3,7 @@
 
 namespace System
 {
-    public static class Environment
+    public static partial class Environment
     {
         private static Collections.Generic.KeyValuePair<string, string>[]? s_environment;
 
@@ -13,6 +13,9 @@ namespace System
 
         // NetWasm currently supports a single managed execution thread.
         public static int ProcessorCount => 1;
+
+        // As upstream's Environment.cs.
+        internal static bool IsSingleProcessor => ProcessorCount == 1;
 
         private static string? s_currentDirectory;
 
@@ -70,15 +73,35 @@ namespace System
                 (message ?? "Runtime operation halted by call to System.Environment.FailFast(). (0x80131623)") +
                 NewLineConst + (exception is null ? string.Empty : exception + NewLineConst));
 
-        public static string MachineName => throw new PlatformNotSupportedException();
+        // A guest has no host name of its own; upstream's browser build answers the same.
+        public static string MachineName => "localhost";
 
-        public static string UserName => throw new PlatformNotSupportedException();
+        /// <summary>The time the process has spent on the CPU, as upstream's (.NET 9).</summary>
+        public readonly struct ProcessCpuUsage
+        {
+            public TimeSpan UserTime { get; internal init; }
 
-        public static string UserDomainName => throw new PlatformNotSupportedException();
+            public TimeSpan PrivilegedTime { get; internal init; }
 
-        public static int ProcessId => throw new PlatformNotSupportedException();
+            public TimeSpan TotalTime => UserTime + PrivilegedTime;
+        }
 
-        public static bool Is64BitOperatingSystem => throw new PlatformNotSupportedException();
+        // WASI has no process CPU clock; upstream marks this member unsupported on browser.
+        public static ProcessCpuUsage CpuUsage => throw new PlatformNotSupportedException(
+            "Process CPU usage is not available on WASI.");
+
+        // The guest has no host user or process identity, so these name themselves rather than invent one.
+        public static string UserName => throw new PlatformNotSupportedException(
+            "Environment.UserName is not available on NetWasm: the guest has no host user.");
+
+        public static string UserDomainName => throw new PlatformNotSupportedException(
+            "Environment.UserDomainName is not available on NetWasm: the guest has no host user.");
+
+        public static int ProcessId => throw new PlatformNotSupportedException(
+            "Environment.ProcessId is not available on NetWasm: the guest has no host process.");
+
+        // Upstream's on Unix, browser and WASI (Environment.UnixOrBrowser.cs): a 32-bit process has no 64-bit host.
+        public static bool Is64BitOperatingSystem => Is64BitProcess;
 
         // Environment.UnixOrBrowser.cs: WASI and the browser use Unix line endings.
         internal const string NewLineConst = "\n";

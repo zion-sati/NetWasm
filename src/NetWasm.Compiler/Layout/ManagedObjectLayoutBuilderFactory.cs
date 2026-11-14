@@ -27,5 +27,6 @@ internal sealed class ManagedObjectLayoutBuilderFactory(IExplicitValueLayoutReso
             target,
             state,
             valueLayouts,
-            explicitLayouts);
+            explicitLayouts,
+            new FieldLayoutFailureBinder());
 }

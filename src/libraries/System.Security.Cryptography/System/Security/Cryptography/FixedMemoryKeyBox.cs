@@ -1,0 +1,98 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+
+using System.Runtime.InteropServices;
+
+namespace System.Security.Cryptography
+{
+    internal sealed unsafe class FixedMemoryKeyBox : SafeHandle
+    {
+        private readonly int _length;
+
+        internal FixedMemoryKeyBox(ReadOnlySpan<byte> key) : base(IntPtr.Zero, ownsHandle: true)
+        {
+            void* memory = NativeMemory.Alloc((nuint)key.Length);
+            key.CopyTo(new Span<byte>(memory, key.Length));
+            SetHandle((IntPtr)memory);
+            _length = key.Length;
+        }
+
+        internal ReadOnlySpan<byte> DangerousKeySpan => new ReadOnlySpan<byte>((void*)handle, _length);
+
+        protected override bool ReleaseHandle()
+        {
+            CryptographicOperations.ZeroMemory(new Span<byte>((void*)handle, _length));
+            NativeMemory.Free((void*)handle);
+            return true;
+        }
+
+        public override bool IsInvalid => handle == IntPtr.Zero;
+
+        internal TRet UseKey<TState, TRet>(
+            TState state,
+            Func<TState, ReadOnlySpan<byte>, TRet> func)
+        {
+            bool addedRef = false;
+
+            try
+            {
+                DangerousAddRef(ref addedRef);
+                return func(state, DangerousKeySpan);
+            }
+            finally
+            {
+                if (addedRef)
+                {
+                    DangerousRelease();
+                }
+            }
+        }
+
+        internal TRet UseKey<TState, TRet>(
+            ReadOnlySpan<byte> state1,
+            TState state2,
+            Func<ReadOnlySpan<byte>, TState, ReadOnlySpan<byte>, TRet> func)
+        {
+            bool addedRef = false;
+
+            try
+            {
+                DangerousAddRef(ref addedRef);
+                return func(state1, state2, DangerousKeySpan);
+            }
+            finally
+            {
+                if (addedRef)
+                {
+                    DangerousRelease();
+                }
+            }
+        }
+
+        internal void UseKey<TState1, TState2, TState3>(
+            TState1 state1,
+            TState2 state2,
+            TState3 state3,
+            Action<TState1, TState2, TState3, ReadOnlySpan<byte>> func)
+        where TState1 : allows ref struct
+        where TState2 : allows ref struct
+        where TState3 : allows ref struct
+        {
+            bool addedRef = false;
+
+            try
+            {
+                DangerousAddRef(ref addedRef);
+                func(state1, state2, state3, DangerousKeySpan);
+            }
+            finally
+            {
+                if (addedRef)
+                {
+                    DangerousRelease();
+                }
+            }
+        }
+    }
+}

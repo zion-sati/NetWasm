@@ -16,6 +16,7 @@ namespace System
     // are runtime-provided members lowered by the compiler; the managed
     // members below provide the shared System.Array surface.
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public abstract class Array : ICollection, IEnumerable, IList, IStructuralComparable,
         IStructuralEquatable, ICloneable
     {
@@ -593,12 +594,12 @@ namespace System
         {
             if (comparison is null) throw new ArgumentNullException();
             ArgumentNullException.ThrowIfNull(array);
-            ArraySortHelper<T>.Sort(new Span<T>(array), comparison);
+            ArraySortHelper<T>.Sort(SortSpan(array, 0, array.Length), comparison);
         }
         public static void Sort<T>(T[] array, int index, int length, IComparer<T>? comparer)
         {
             ValidateRange(array, index, length);
-            ArraySortHelper<T>.Default.Sort(new Span<T>(array, index, length), comparer);
+            ArraySortHelper<T>.Default.Sort(SortSpan(array, index, length), comparer);
         }
 
         public static void Sort<TKey, TValue>(TKey[] keys, TValue[]? items) =>
@@ -619,15 +620,20 @@ namespace System
             if (items is null)
             {
                 ArraySortHelper<TKey>.Default.Sort(
-                    new Span<TKey>(keys, index, length),
+                    SortSpan(keys, index, length),
                     comparer);
                 return;
             }
             ArraySortHelper<TKey, TValue>.Default.Sort(
-                new Span<TKey>(keys, index, length),
-                new Span<TValue>(items, index, length),
+                SortSpan(keys, index, length),
+                SortSpan(items, index, length),
                 comparer);
         }
+
+        // Sorting only permutes an array's own elements, so a covariant array (a string[] passed as an object[])
+        // sorts through a span of its static element type, as upstream does; new Span<T>(T[]) rejects such arrays.
+        private static Span<T> SortSpan<T>(T[] array, int index, int length) =>
+            new(ref Unsafe.Add(ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(array), (nint)(uint)index), length);
 
         public static void Sort(Array array) => Sort(array, 0, array?.Length ?? 0, null);
         public static void Sort(Array array, IComparer? comparer) =>
@@ -686,13 +692,13 @@ namespace System
                 if (itemValues is null)
                 {
                     ArraySortHelper<object?>.Default.Sort(
-                        new Span<object?>(keyValues, physicalIndex, length),
+                        SortSpan<object?>(keyValues, physicalIndex, length),
                         adapter);
                     return;
                 }
                 ArraySortHelper<object?, object?>.Default.Sort(
-                    new Span<object?>(keyValues, physicalIndex, length),
-                    new Span<object?>(itemValues, physicalIndex, length),
+                    SortSpan<object?>(keyValues, physicalIndex, length),
+                    SortSpan<object?>(itemValues, physicalIndex, length),
                     adapter);
                 return;
             }
@@ -947,6 +953,103 @@ namespace System
                 _ => (object)(unsigned ? (double)unchecked((ulong)integer) : (double)integer),
             };
         }
+
+        public static Array CreateInstance(Type elementType, int length)
+        {
+            ArgumentNullException.ThrowIfNull(elementType);
+            ArgumentOutOfRangeException.ThrowIfNegative(length);
+            return InternalCreateInstance(elementType.SemanticTypeId, length) ??
+                throw new NotSupportedException("The requested array element type is not available in this compiled program.");
+        }
+
+        public static Array CreateInstance(Type elementType, int length1, int length2)
+        {
+            ArgumentNullException.ThrowIfNull(elementType);
+            ArgumentOutOfRangeException.ThrowIfNegative(length1);
+            ArgumentOutOfRangeException.ThrowIfNegative(length2);
+            return CreateRectangularInstance(elementType, new[] { length1, length2 }, null);
+        }
+
+        public static Array CreateInstance(Type elementType, int length1, int length2, int length3)
+        {
+            ArgumentNullException.ThrowIfNull(elementType);
+            ArgumentOutOfRangeException.ThrowIfNegative(length1);
+            ArgumentOutOfRangeException.ThrowIfNegative(length2);
+            ArgumentOutOfRangeException.ThrowIfNegative(length3);
+            return CreateRectangularInstance(elementType, new[] { length1, length2, length3 }, null);
+        }
+
+        public static Array CreateInstance(Type elementType, params int[] lengths)
+        {
+            ArgumentNullException.ThrowIfNull(elementType);
+            ArgumentNullException.ThrowIfNull(lengths);
+            if (lengths.Length == 0) throw new ArgumentException();
+            ThrowIfNegativeLength(lengths);
+            return CreateRectangularInstance(elementType, lengths, null);
+        }
+
+        public static Array CreateInstance(Type elementType, int[] lengths, int[] lowerBounds)
+        {
+            ArgumentNullException.ThrowIfNull(elementType);
+            ArgumentNullException.ThrowIfNull(lengths);
+            ArgumentNullException.ThrowIfNull(lowerBounds);
+            if (lengths.Length != lowerBounds.Length) throw new ArgumentException();
+            if (lengths.Length == 0) throw new ArgumentException();
+            ThrowIfNegativeLength(lengths);
+            return CreateRectangularInstance(elementType, lengths, lowerBounds);
+        }
+
+        public static Array CreateInstance(Type elementType, params long[] lengths)
+        {
+            ArgumentNullException.ThrowIfNull(lengths);
+            var intLengths = new int[lengths.Length];
+            for (var index = 0; index < lengths.Length; index++)
+            {
+                var length = lengths[index];
+                var intLength = (int)length;
+                if (length != intLength) throw new ArgumentOutOfRangeException("len");
+                intLengths[index] = intLength;
+            }
+            return CreateInstance(elementType, intLengths);
+        }
+
+        private static void ThrowIfNegativeLength(int[] lengths)
+        {
+            for (var index = 0; index < lengths.Length; index++)
+                if (lengths[index] < 0) throw new ArgumentOutOfRangeException("lengths[" + index + "]");
+        }
+
+        // Copies the shape before allocation, as upstream does, so the caller cannot change it.
+        // A rank-1 shape without a lower bound is a vector; any other shape is a rectangular
+        // array type that the compiled program provides.
+        private static unsafe Array CreateRectangularInstance(Type elementType, int[] lengths, int[]? lowerBounds)
+        {
+            const int MaxRank = 32;
+            var rank = lengths.Length;
+            if (rank > MaxRank)
+                throw new NotSupportedException("The requested array type is not available in this compiled program.");
+            var bounds = stackalloc int[rank * 2];
+            var bounded = false;
+            for (var dimension = 0; dimension < rank; dimension++)
+            {
+                var lowerBound = lowerBounds is null ? 0 : lowerBounds[dimension];
+                if ((long)lowerBound + lengths[dimension] > (long)int.MaxValue + 1)
+                    throw new ArgumentOutOfRangeException();
+                bounds[dimension] = lengths[dimension];
+                bounds[rank + dimension] = lowerBound;
+                bounded |= lowerBound != 0;
+            }
+            if (rank == 1 && !bounded) return CreateInstance(elementType, bounds[0]);
+            return InternalCreateRectangularInstance(elementType.SemanticTypeId, rank, bounds, bounded) ??
+                throw new NotSupportedException("The requested array type is not available in this compiled program.");
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        private static extern Array? InternalCreateInstance(int elementTypeId, int length);
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        private static extern unsafe Array? InternalCreateRectangularInstance(
+            int elementTypeId, int rank, int* bounds, bool bounded);
 
         // Compiler intrinsics: the array's element type, and the runtime's store of a value of the
         // element's own type, which returns nonzero for any other value.

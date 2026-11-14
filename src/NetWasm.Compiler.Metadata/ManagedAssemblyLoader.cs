@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Metadata;
 
@@ -23,12 +25,15 @@ public sealed class ManagedAssemblyLoader(
 
     public ManagedAssembly Load(
         string path,
-        ImmutableDictionary<string, string> referenceAssemblyAliases) =>
+        ImmutableDictionary<string, string> referenceAssemblyAliases,
+        ImmutableDictionary<(AssemblyIdentity Assembly, string FullName), AssemblyIdentity>? typeForwarders = null,
+        INativeImportBinder? nativeBinding = null) =>
         ManagedAssembly.Parse(
             path,
             _images.Read(path),
-            new AssemblyIdentityAliases(referenceAssemblyAliases),
+            new AssemblyIdentityAliases(referenceAssemblyAliases, typeForwarders),
             _stackKinds,
             _nativeImports,
-            _nativeCallbacks);
+            _nativeCallbacks,
+            nativeBinding);
 }

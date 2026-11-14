@@ -14,4 +14,16 @@ namespace NetWasm.Compiler.Analysis;
 internal sealed record TypeRelationshipKeys(
     string Own,
     IReadOnlySet<string> Reachable,
-    bool Unbounded);
+    bool Unbounded)
+{
+    // For each generic definition the type reaches through one of its instantiations, the keys an assignable
+    // instantiation's first type argument can have; a null set allows any. An array's entry under the array key
+    // admits the element keys of the array types it converts to. An invariant parameter, or a value type
+    // argument, admits only the argument's own key; a covariant reference argument admits the keys of its own
+    // hierarchy; a contravariant one admits any. Null when no argument facts were resolved, which admits any.
+    public IReadOnlyDictionary<string, IReadOnlySet<string>?>? Arguments { get; init; }
+
+    // A generic instantiation's first type argument's own key, or an array's element's, by which it is filed as a
+    // target; null otherwise.
+    public string? ArgumentKey { get; init; }
+}

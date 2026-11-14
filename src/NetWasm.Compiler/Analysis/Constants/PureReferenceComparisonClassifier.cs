@@ -7,14 +7,14 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis.Constants;
 
 internal sealed class PureReferenceComparisonClassifier(
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     ITypeDefinitionResolver typeDefinitions,
     IMethodRepository methods,
     IMethodRewriteRule returnEpilogues,
     IRuntimeIntrinsicRegistry intrinsics) : IPureReferenceComparisonClassifier
 {
-    private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ?? throw new ArgumentNullException(nameof(typeDefinitions));
     private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
@@ -42,8 +42,7 @@ internal sealed class PureReferenceComparisonClassifier(
                 return null;
             }
 
-            var body = _methodBodies.ReadMethodBody(method);
-            if (!body.ExceptionRegions.IsEmpty)
+            if (!_methodBodies.TryReadMethodBody(method, out var body) || !body.ExceptionRegions.IsEmpty)
             {
                 return null;
             }

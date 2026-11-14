@@ -228,7 +228,7 @@ const request = {
   environment: [],
   grants: {
     environment: [], preopens: [], network: "denyAll",
-    clocks: [], randomness: true, temporaryDirectory: false, workingDirectory: false,
+    clocks: ["wall", "monotonic"], randomness: true, temporaryDirectory: false, workingDirectory: false,
   },
   applicationImports: [],
 };
@@ -251,8 +251,10 @@ that reads the wall clock fails with
 request grants no clocks. Branch on `code` and show `detail` to people. The
 local launcher replaces host paths in `detail` with `<host-path>`.
 
-The example grants randomness, which the NetWasm runtime uses to seed string
-hashing, and no network, clocks, environment variables or filesystem mounts.
+The example grants both clocks, as the SDK's own launchers do: date
+formatting and parsing read the wall clock, and timers and `Stopwatch` the
+monotonic one. It grants randomness, which the NetWasm runtime uses to seed
+string hashing, and no network, environment variables or filesystem mounts.
 `workingDirectory` and `temporaryDirectory` mount the program's directory and
 a private temporary directory, which only the local launcher does; a browser
 request sets both to `false`.

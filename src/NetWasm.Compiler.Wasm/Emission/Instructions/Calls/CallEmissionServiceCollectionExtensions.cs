@@ -22,6 +22,7 @@ internal static class CallEmissionServiceCollectionExtensions
         services.AddSingleton<IVirtualDispatchCasePlanner, VirtualDispatchCasePlanner>();
         services.AddSingleton<DelegateInvokeCallEmitter>();
         services.AddSingleton<VirtualDispatchCallEmitter>();
+        services.AddSingleton<SharedObjectDispatchCallEmitter>();
         services.AddSingleton<IJSImportInvocationEmitter, JSImportInvocationEmitter>();
         services.AddSingleton<JSImportCallEmitter>();
         services.AddSingleton<AsyncJSImportCallEmitter>();
@@ -35,6 +36,9 @@ internal static class CallEmissionServiceCollectionExtensions
         services.AddSingleton<CallEmissionRegistration>(provider => new(
             CallEmissionKind.VirtualDispatch,
             provider.GetRequiredService<VirtualDispatchCallEmitter>()));
+        services.AddSingleton<CallEmissionRegistration>(provider => new(
+            CallEmissionKind.SharedObjectDispatch,
+            provider.GetRequiredService<SharedObjectDispatchCallEmitter>()));
         services.AddSingleton<CallEmissionRegistration>(provider => new(
             CallEmissionKind.RuntimeIntrinsic,
             new InitializingCallEmitter(provider.GetRequiredService<RuntimeIntrinsicCallEmitter>(),

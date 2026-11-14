@@ -22,7 +22,7 @@ public sealed class PackedValueLayoutResolverTests
         var state = new ManagedValueLayoutState();
         var resolver = Assert.IsAssignableFrom<IValueLayoutResolver>(new ValueLayoutResolver(
             new DefinitionResolver(definition), new Fields([first, second]),
-            new ExplicitValueLayoutResolver(), WasmTargetLayout.Wasm32, state));
+            new ExplicitValueLayoutResolver(), WasmTargetLayout.Wasm32, state, new FieldLayoutFailureBinder()));
         Assert.Equal(4, resolver.Resolve(Type, definition).Size);
         Assert.Equal(state.Fields[first.Key], state.Fields[second.Key]);
         Assert.Equal((0, 4), (state.Fields[first.Key].Offset, state.Fields[first.Key].Size));
@@ -133,7 +133,7 @@ public sealed class PackedValueLayoutResolverTests
         };
         var state = new ManagedValueLayoutState();
         return (new ValueLayoutResolver(new DefinitionResolver(definition), new Fields(fields),
-            new ExplicitValueLayoutResolver(), target, state), state, definition);
+            new ExplicitValueLayoutResolver(), target, state, new FieldLayoutFailureBinder()), state, definition);
     }
 
     private sealed class DefinitionResolver(TypeDefinitionModel definition) : ITypeDefinitionResolver

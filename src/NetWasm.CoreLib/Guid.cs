@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Ported from dotnet/runtime System.Private.CoreLib Guid.cs.
-// Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
+// Upstream commit: deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Guid.NewGuid uses the narrow WASI cryptographically secure entropy bridge;
 // no weak pseudo-random or JavaScript fallback is permitted.
 
@@ -14,6 +14,7 @@ namespace System;
 
 // Represents a Globally Unique Identifier.
 [Serializable]
+[System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
 public readonly partial struct Guid : IComparable,
     IComparable<Guid>,
     IEquatable<Guid>,

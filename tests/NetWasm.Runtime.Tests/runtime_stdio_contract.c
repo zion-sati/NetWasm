@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -76,6 +77,11 @@ int main(void)
     check(3, (ssize_t[]){4, -1}, 2, 1, "abcd", 1);
     check(0, (ssize_t[]){1, -1}, 2, 1, "d", 1);
     FILE file = {.fd = 2};
+    unsigned char read_buffer[4];
+    FILE input = { .flags = 0, .fd = 0 };
+    errno = 0;
+    assert(__stdio_read(&input, read_buffer, sizeof(read_buffer)) == 0);
+    assert(input.flags == F_ERR && errno == EBADF);
     assert(__stdio_close(&file) == -7 && closed_descriptor == 2);
     assert(__stdio_seek(&file, 77, 2) == 123);
     assert(seek_descriptor == 2 && seek_offset == 77 && seek_whence == 2);

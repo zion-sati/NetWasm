@@ -1,0 +1,26 @@
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net11.0;netwasm0.1</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <TUnitSourceGenerationMode>ClosedWorldCatalog</TUnitSourceGenerationMode>
+    <NoWarn>$(NoWarn);TUnit0034;TUnit0038</NoWarn>
+    <DisableImplicitFrameworkReferences Condition="'$(TargetFramework)' == 'net11.0'">false</DisableImplicitFrameworkReferences>
+    <NoStdLib Condition="'$(TargetFramework)' == 'net11.0'">false</NoStdLib>
+    <NoStandardLibraries Condition="'$(TargetFramework)' == 'net11.0'">false</NoStandardLibraries>
+    <NoCompilerStandardLib Condition="'$(TargetFramework)' == 'net11.0'">false</NoCompilerStandardLib>
+    <DisableStandardFrameworkResolution Condition="'$(TargetFramework)' == 'net11.0'">true</DisableStandardFrameworkResolution>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants Condition="'$(TargetFramework)' == 'netwasm0.1'">$(DefineConstants);NETWASM</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="Xunit" />
+    <PackageReference Include="NetWasm.TUnit" Version="[$(NetWasmTUnitPackageVersion)]" />
+  </ItemGroup>
+
+</Project>

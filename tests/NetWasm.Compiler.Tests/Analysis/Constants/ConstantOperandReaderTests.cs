@@ -11,9 +11,9 @@ public sealed class ConstantOperandReaderTests
     public void RejectsMissingDependenciesAndProducers()
     {
         var facts = new MethodFacts();
-        Assert.Throws<ArgumentNullException>(() => new ConstantOperandReader(null!, facts, facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new ConstantOperandReader(facts, null!, facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new ConstantOperandReader(facts, facts, null!, facts));
+        Assert.Throws<ArgumentNullException>(() => new ConstantOperandReader(null!, facts, facts, Constructors(facts)));
+        Assert.Throws<ArgumentNullException>(() => new ConstantOperandReader(facts, null!, facts, Constructors(facts)));
+        Assert.Throws<ArgumentNullException>(() => new ConstantOperandReader(facts, facts, null!, Constructors(facts)));
         Assert.Throws<ArgumentNullException>(() => new ConstantOperandReader(facts, facts, facts, null!));
         Assert.Throws<ArgumentNullException>(() => AsReader(Operands(facts)).Read(null!));
     }

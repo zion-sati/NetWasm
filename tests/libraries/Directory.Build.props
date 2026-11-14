@@ -1,0 +1,20 @@
+<Project>
+  <!-- NetWasm.App's suites: TUnit projects run in two lanes, netwasm0.1 and desktop .NET 11 (the oracle), through
+       eng/test-netwasm-app.sh. They are SDK consumers, so they take the repository's determinism settings but not
+       the xUnit conventions of tests/Directory.Build.props. -->
+  <Import Project="../../Directory.Build.props" />
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <!-- NetWasm qualifies against the previous TUnit release. -->
+    <NetWasmTUnitPackageVersion>0.12.0</NetWasmTUnitPackageVersion>
+    <!-- System.Text.Encodings.Web, System.Net.Requests and System.Net.Http grant their suites internals under
+         upstream's Open key. -->
+    <SignAssembly>true</SignAssembly>
+    <PublicSign>true</PublicSign>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)../../src/libraries/snk/Open.snk</AssemblyOriginatorKeyFile>
+    <!-- A public-signed suite references unsigned assemblies (TUnit, NetWasm's CoreLib); .NET does not validate
+         strong names, so the warning says nothing. -->
+    <NoWarn>$(NoWarn);CS8002</NoWarn>
+  </PropertyGroup>
+</Project>

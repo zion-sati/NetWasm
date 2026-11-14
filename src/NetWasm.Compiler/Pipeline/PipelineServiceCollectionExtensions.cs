@@ -1,3 +1,5 @@
+using NetWasm.Compiler.Diagnostics;
+using NetWasm.Compiler.Analysis;
 using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -17,6 +19,8 @@ internal static class PipelineServiceCollectionExtensions
         services.AddSingleton<IComponentReachabilityValidator,
             ComponentReachabilityValidator>();
         services.AddSingleton<IPlainCoreModuleValidator, PlainCoreModuleValidator>();
+        services.AddSingleton<IUnlinkedNativeImportReporter, UnlinkedNativeImportReporter>();
+        services.AddSingleton<INativeImportBinderFactory, NativeImportBinderFactory>();
         services.AddSingleton<ICompilationPreparationBuilder,
             CompilationPreparationBuilder>();
         services.AddSingleton<ICompilationAnalysisBuilder,
@@ -53,6 +57,8 @@ internal static class PipelineServiceCollectionExtensions
             CompilationElapsedTimeCalculator>();
         services.AddSingleton<ICompilationMetricsRequestFactory,
             CompilationMetricsRequestFactory>();
+        services.AddSingleton<ICompilerDiagnosticOriginBinder, CompilerDiagnosticOriginBinder>();
+        services.AddSingleton<ICompilerDiagnosticDependencyPathBinder, CompilerDiagnosticDependencyPathBinder>();
         services.AddSingleton<NetWasm.Compiler.Metadata.Inputs.ICompilationInputReader,
             NetWasm.Compiler.Metadata.Inputs.CompilationInputReader>();
         services.AddSingleton<ICompilationInputDetector, CompilationInputDetector>();

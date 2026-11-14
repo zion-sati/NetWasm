@@ -1,6 +1,6 @@
 // Adapted from dotnet/runtime System.Private.CoreLib exception implementations.
 // AggregateException support and dictionary-enumerator wiring are based on
-// dotnet/runtime commit 474ed963699fc29809015392738a15231aaae2de.
+// dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
 using System.Collections.Generic;
@@ -11,6 +11,7 @@ using System.Runtime.Serialization;
 namespace System
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class Exception : ISerializable
     {
         private readonly string? _message;
@@ -105,6 +106,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class SystemException : Exception
     {
         [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
@@ -116,6 +118,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class PlatformNotSupportedException : NotSupportedException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -129,6 +132,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class NotSupportedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -142,6 +146,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class InvalidOperationException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -155,6 +160,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class ObjectDisposedException : InvalidOperationException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -199,6 +205,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class OperationCanceledException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -235,6 +242,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class NullReferenceException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -248,6 +256,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class IndexOutOfRangeException : SystemException
     {
         public IndexOutOfRangeException() => HResult = HResults.COR_E_INDEXOUTOFRANGE;
@@ -256,6 +265,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class ArithmeticException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -269,6 +279,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class DivideByZeroException : ArithmeticException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -282,6 +293,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class OverflowException : ArithmeticException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -295,6 +307,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class FormatException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -308,6 +321,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class InvalidCastException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -322,6 +336,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class OutOfMemoryException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -335,6 +350,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class ArgumentException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -382,6 +398,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class ArgumentNullException : ArgumentException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -413,9 +430,19 @@ namespace System
         {
             if (argument == IntPtr.Zero) throw new ArgumentNullException(paramName);
         }
+
+        // Upstream's internal overload for CoreLib callers that name the argument with ExceptionArgument.
+        internal static void ThrowIfNull([NotNull] object? argument, ExceptionArgument paramName)
+        {
+            if (argument is null)
+            {
+                ThrowHelper.ThrowArgumentNullException(paramName);
+            }
+        }
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class ArgumentOutOfRangeException : ArgumentException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -492,6 +519,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class ArrayTypeMismatchException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -508,6 +536,7 @@ namespace System
 namespace System
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class AccessViolationException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -517,6 +546,7 @@ namespace System
         public AccessViolationException() => HResult = HResults.E_POINTER; public AccessViolationException(string? message) : base(message) => HResult = HResults.E_POINTER; public AccessViolationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_POINTER;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class AppDomainUnloadedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -526,6 +556,7 @@ namespace System
         public AppDomainUnloadedException() => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_APPDOMAINUNLOADED; public AppDomainUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPDOMAINUNLOADED;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class ApplicationException : Exception
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -535,6 +566,7 @@ namespace System
         public ApplicationException() => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message) : base(message) => HResult = HResults.COR_E_APPLICATION; public ApplicationException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_APPLICATION;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class CannotUnloadAppDomainException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -544,6 +576,7 @@ namespace System
         public CannotUnloadAppDomainException() => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message) : base(message) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN; public CannotUnloadAppDomainException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CANNOTUNLOADAPPDOMAIN;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class ContextMarshalException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -553,16 +586,23 @@ namespace System
         public ContextMarshalException() => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message) : base(message) => HResult = HResults.COR_E_CONTEXTMARSHAL; public ContextMarshalException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_CONTEXTMARSHAL;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class DataMisalignedException : SystemException { public DataMisalignedException() => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message) : base(message) => HResult = HResults.COR_E_DATAMISALIGNED; public DataMisalignedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_DATAMISALIGNED; }
     [Serializable]
+    [Obsolete("ExecutionEngineException previously indicated an unspecified fatal error in the runtime. The runtime no longer raises this exception so this type is obsolete.")]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class ExecutionEngineException : SystemException { public ExecutionEngineException() => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message) : base(message) => HResult = HResults.COR_E_EXECUTIONENGINE; public ExecutionEngineException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_EXECUTIONENGINE; }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class InsufficientExecutionStackException : SystemException { public InsufficientExecutionStackException() => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; public InsufficientExecutionStackException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTEXECUTIONSTACK; }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class InsufficientMemoryException : OutOfMemoryException { public InsufficientMemoryException() => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message) : base(message) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; public InsufficientMemoryException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INSUFFICIENTMEMORY; }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class InvalidProgramException : SystemException { public InvalidProgramException() => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDPROGRAM; public InvalidProgramException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDPROGRAM; }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("System.Core, Version=3.5.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class InvalidTimeZoneException : Exception
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -574,6 +614,7 @@ namespace System
         public InvalidTimeZoneException(string? message, Exception? innerException) : base(message, innerException) { }
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class MemberAccessException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -583,6 +624,7 @@ namespace System
         public MemberAccessException() => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message) : base(message) => HResult = HResults.COR_E_MEMBERACCESS; public MemberAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MEMBERACCESS;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class MethodAccessException : MemberAccessException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -592,8 +634,10 @@ namespace System
         public MethodAccessException() => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message) : base(message) => HResult = HResults.COR_E_METHODACCESS; public MethodAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_METHODACCESS;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class MulticastNotSupportedException : SystemException { public MulticastNotSupportedException() => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message) : base(message) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; public MulticastNotSupportedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MULTICASTNOTSUPPORTED; }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class NotImplementedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -603,6 +647,7 @@ namespace System
         public NotImplementedException() => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message) : base(message) => HResult = HResults.E_NOTIMPL; public NotImplementedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.E_NOTIMPL;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class RankException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -612,8 +657,10 @@ namespace System
         public RankException() => HResult = HResults.COR_E_RANK; public RankException(string? message) : base(message) => HResult = HResults.COR_E_RANK; public RankException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_RANK;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class StackOverflowException : SystemException { public StackOverflowException() => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message) : base(message) => HResult = HResults.COR_E_STACKOVERFLOW; public StackOverflowException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_STACKOVERFLOW; }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class TimeoutException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -623,6 +670,7 @@ namespace System
         public TimeoutException() => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message) : base(message) => HResult = HResults.COR_E_TIMEOUT; public TimeoutException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TIMEOUT;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("System.Core, Version=3.5.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class TimeZoneNotFoundException : Exception
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -634,6 +682,7 @@ namespace System
         public TimeZoneNotFoundException(string? message, Exception? innerException) : base(message, innerException) { }
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class TypeUnloadedException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -643,6 +692,7 @@ namespace System
         public TypeUnloadedException() => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message) : base(message) => HResult = HResults.COR_E_TYPEUNLOADED; public TypeUnloadedException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEUNLOADED;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class UnauthorizedAccessException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -653,6 +703,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class BadImageFormatException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -694,6 +745,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class DuplicateWaitObjectException : ArgumentException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -717,6 +769,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class EntryPointNotFoundException : TypeLoadException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -726,6 +779,7 @@ namespace System
         public EntryPointNotFoundException() => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class FieldAccessException : MemberAccessException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -735,6 +789,7 @@ namespace System
         public FieldAccessException() => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message) : base(message) => HResult = HResults.COR_E_FIELDACCESS; public FieldAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_FIELDACCESS;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class DllNotFoundException : TypeLoadException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -745,6 +800,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class MissingMemberException : MemberAccessException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -773,6 +829,7 @@ namespace System
         }
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class MissingFieldException : MissingMemberException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -789,6 +846,7 @@ namespace System
             : "Field '" + ClassName + "." + MemberName + "' not found.";
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class MissingMethodException : MissingMemberException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -806,6 +864,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class NotFiniteNumberException : ArithmeticException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -839,6 +898,7 @@ namespace System
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class TypeLoadException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -857,6 +917,7 @@ namespace System
         }
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class TypeAccessException : TypeLoadException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -866,6 +927,7 @@ namespace System
         public TypeAccessException() => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message) : base(message) => HResult = HResults.COR_E_TYPEACCESS; public TypeAccessException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_TYPEACCESS;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed partial class TypeInitializationException : SystemException
     {
         private readonly string? _typeName;
@@ -891,6 +953,7 @@ namespace System.Diagnostics
 namespace System.Runtime
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("System.Runtime, Version=4.2.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a")]
     public sealed class AmbiguousImplementationException : System.Exception
     {
         public AmbiguousImplementationException() => HResult = System.HResults.COR_E_AMBIGUOUSIMPLEMENTATION;
@@ -902,6 +965,7 @@ namespace System.Runtime
 namespace System.Runtime.CompilerServices
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed partial class RuntimeWrappedException : System.Exception
     {
         private readonly object? _wrappedException;
@@ -917,6 +981,7 @@ namespace System.Runtime.CompilerServices
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("System.Runtime.Extensions, Version=4.2.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a")]
     public sealed partial class SwitchExpressionException : System.InvalidOperationException
     {
         private readonly object? _unmatchedValue;
@@ -939,6 +1004,7 @@ namespace System.Runtime.CompilerServices
 namespace System.Runtime.InteropServices
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class InvalidComObjectException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -948,6 +1014,7 @@ namespace System.Runtime.InteropServices
         public InvalidComObjectException() => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDCOMOBJECT; public InvalidComObjectException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDCOMOBJECT;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class InvalidOleVariantTypeException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -957,6 +1024,7 @@ namespace System.Runtime.InteropServices
         public InvalidOleVariantTypeException() => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message) : base(message) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE; public InvalidOleVariantTypeException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_INVALIDOLEVARIANTTYPE;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class MarshalDirectiveException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -966,6 +1034,7 @@ namespace System.Runtime.InteropServices
         public MarshalDirectiveException() => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message) : base(message) => HResult = HResults.COR_E_MARSHALDIRECTIVE; public MarshalDirectiveException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_MARSHALDIRECTIVE;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class SafeArrayRankMismatchException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -975,6 +1044,7 @@ namespace System.Runtime.InteropServices
         public SafeArrayRankMismatchException() => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message) : base(message) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH; public SafeArrayRankMismatchException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_SAFEARRAYRANKMISMATCH;
     }
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class SafeArrayTypeMismatchException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -988,6 +1058,7 @@ namespace System.Runtime.InteropServices
 namespace System.Security.Cryptography
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class CryptographicException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -1006,6 +1077,7 @@ namespace System.Security.Cryptography
 namespace System.Security
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class SecurityException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -1055,6 +1127,7 @@ namespace System.Security
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class VerificationException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.
@@ -1099,6 +1172,7 @@ namespace System.Runtime.ExceptionServices
 namespace System.Collections.Generic
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class KeyNotFoundException : SystemException
     {
         // Retain the standard constructor for derived-library compatibility.

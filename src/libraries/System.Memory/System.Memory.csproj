@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Memory</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);MAKE_ABW_PUBLIC</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="System/Buffers/IBufferWriter.cs" />
+    <Compile Include="System/Buffers/ArrayBufferWriter.cs" />
+    <Compile Include="System/Buffers/BuffersExtensions.cs" />
+    <Compile Include="System/Buffers/ReadOnlySequence.cs" />
+    <Compile Include="System/Buffers/ReadOnlySequence.Helpers.cs" />
+    <Compile Include="System/Buffers/ReadOnlySequenceSegment.cs" />
+    <Compile Include="System/Buffers/ReadOnlySequenceDebugView.cs" />
+    <Compile Include="System/SequencePosition.cs" />
+    <Compile Include="System/ThrowHelper.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Buffers/SequenceReader.cs" />
+    <Compile Include="System/Buffers/SequenceReader.Search.cs" />
+    <Compile Include="System/Buffers/SequenceReaderExtensions.Binary.cs" />
+    <Compile Include="System/Buffers/MemoryPool.cs" />
+    <Compile Include="System/Buffers/ArrayMemoryPool.cs" />
+    <Compile Include="System/Buffers/ArrayMemoryPool.ArrayMemoryPoolBuffer.cs" />
+    <Compile Include="System/Buffers/ReadOnlySequenceStream.cs" />
+    <Compile Include="System/Runtime/InteropServices/SequenceMarshal.cs" />
+    <Compile Include="System/Text/EncodingExtensions.cs" />
+  </ItemGroup>
+</Project>

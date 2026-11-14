@@ -20,6 +20,10 @@ internal sealed class MetadataMethodReferenceResolver(
     IMethodRepository methods,
     IRuntimeProvidedMethodResolver runtimeProvidedMethods,
     IMetadataStackTypeResolver stackTypes,
+    IFrameworkMethodContractValidator contracts,
+    IRuntimeTypeDefinitions runtimeDefinitions,
+    ImmutableDictionary<(AssemblyIdentity Assembly, string FullName), OriginalContractType> originalContracts,
+    IMetadataCrossAssemblyPrivateAccessValidator privateAccess,
     IBaseTypeIdentityResolver baseTypes) : IMetadataMethodReferenceResolver
 {
     // A token resolves the same way in the same generic context every time it is met, and
@@ -85,6 +89,20 @@ internal sealed class MetadataMethodReferenceResolver(
             var definition = source.Methods[metadataToken];
             var directDeclaringDefinition = GetTypeDefinition(
                 definition.DeclaringType);
+            var canonicalAssembly = source.AssemblyIdentityAliases.Canonicalize(
+                directDeclaringDefinition.Key.Assembly, directDeclaringDefinition.FullName);
+            if (canonicalAssembly != directDeclaringDefinition.Key.Assembly)
+            {
+                var canonicalIdentity = CliTypeIdentity.Named(canonicalAssembly, "",
+                    directDeclaringDefinition.FullName, directDeclaringDefinition.IsValueType);
+                directDeclaringDefinition = ResolveTypeIdentity(canonicalIdentity);
+                var originalDefinition = definition;
+                definition = MatchDefinition(directDeclaringDefinition, canonicalIdentity,
+                    definition.Name, definition.GenericArity, definition.IsStatic,
+                    definition.Signature.Substitute(context.TypeArguments), context.TypeArguments,
+                    () => originalDefinition.Signature, methodDisplayName, ilOffset);
+                contracts.Validate(new(originalDefinition, definition, methodDisplayName, ilOffset));
+            }
             var declaringType = GetTypeIdentity(directDeclaringDefinition);
             if (directDeclaringDefinition.GenericArity != 0 &&
                 context.TypeArguments.Length == directDeclaringDefinition.GenericArity)
@@ -114,10 +132,14 @@ internal sealed class MetadataMethodReferenceResolver(
             (MemberReferenceHandle)handle);
         var declaringIdentity = signatureTypeResolver.Resolve(
             source, reference.Parent, context);
-        var typeArguments =
-            declaringIdentity.Shape == CliTypeShape.GenericInstantiation
-                ? declaringIdentity.TypeArguments
-                : [];
+        // Array member signatures use the caller's generic parameters. Unlike a
+        // constructed named type, the array has no independent generic scope.
+        var typeArguments = declaringIdentity.Shape switch
+        {
+            CliTypeShape.GenericInstantiation => declaringIdentity.TypeArguments,
+            CliTypeShape.Array => context.TypeArguments,
+            _ => [],
+        };
         var referenceSignature =
             reference.DecodeMethodSignature(
                 new SignatureTypeProvider(
@@ -148,95 +170,164 @@ internal sealed class MetadataMethodReferenceResolver(
             return runtimeProvided;
         }
 
-        var declaringDefinition = ResolveTypeIdentity(declaringIdentity);
-        HashSet<EntityKey>? visited = null;
-        MethodDefinitionModel[] matches;
-        while (true)
+        // A member reference names its overload by its declared signature, in which the
+        // type's parameters stay parameters (ECMA-335 II.23.2.1).
+        MethodSignatureModel DeclaredSignature()
         {
-            matches = Matching(declaringDefinition, name, referenceSignature.GenericParameterCount,
-                typeArguments, expected);
-            if (matches.Length != 0 || name is ".ctor" or ".cctor")
-                break;
-            visited ??= [];
-            if (!visited.Add(declaringDefinition.Key))
-                break;
-            var baseIdentity = baseTypes.GetBaseTypeIdentity(declaringIdentity);
-            if (baseIdentity is null)
-                break;
-            declaringIdentity = baseIdentity;
-            declaringDefinition = ResolveTypeIdentity(declaringIdentity);
-            typeArguments = declaringIdentity.Shape == CliTypeShape.GenericInstantiation
-                ? declaringIdentity.TypeArguments : [];
-        }
-        if (matches.Length > 1)
-        {
-            // Overloads such as Vector<T>(ReadOnlySpan<T>) and
-            // Vector<T>(ReadOnlySpan<byte>) coincide once T is byte. A member
-            // reference names the overload by its declared signature, in which
-            // the type's parameters stay parameters (ECMA-335 II.23.2.1).
             var declared = reference.DecodeMethodSignature(
                 new SignatureTypeProvider(
                     source.Identity,
                     source.Reader,
                     source.AssemblyIdentityAliases),
                 new CliGenericContext([], []));
+            return new(declared.ReturnType, declared.ParameterTypes);
+        }
+
+        var declaringDefinition = ResolveTypeIdentity(declaringIdentity);
+        var resolved = MatchInheritedDefinition(declaringDefinition, declaringIdentity,
+            name, referenceSignature.GenericParameterCount, !referenceSignature.Header.IsInstance,
+            expected, typeArguments, DeclaredSignature, methodDisplayName, ilOffset);
+        var definitionMatch = resolved.Definition;
+        privateAccess.Validate(new(source.Identity, definitionMatch.Key, methodDisplayName, ilOffset));
+        if (source.AssemblyIdentityAliases.HasTypeForwarders || !originalContracts.IsEmpty)
+        {
+            var originalIdentity = ReadOriginalDeclaringIdentity(source, reference.Parent, context);
+            var originalType = originalIdentity.Shape == CliTypeShape.GenericInstantiation
+                ? originalIdentity.ElementType! : originalIdentity;
+            if (originalType.Assembly is { } contractAssembly && originalType.FullName is { } contractName &&
+                originalContracts.TryGetValue((contractAssembly, contractName), out var originalContract))
+            {
+                var originalDefinition = MatchDefinition(originalContract.Definition, originalIdentity,
+                    name, referenceSignature.GenericParameterCount, !referenceSignature.Header.IsInstance,
+                    expected, typeArguments, DeclaredSignature, methodDisplayName, ilOffset, originalContract.Source);
+                contracts.Validate(new(originalDefinition, definitionMatch, methodDisplayName, ilOffset)
+                {
+                    OriginalSource = originalContract.Source,
+                });
+            }
+            else if (originalType.Assembly is { } originalAssembly && originalType.FullName is { } fullName &&
+                runtimeDefinitions.Defines(originalAssembly, fullName) &&
+                source.AssemblyIdentityAliases.Canonicalize(originalAssembly, fullName) != originalAssembly)
+            {
+                var originalDefinition = MatchDefinition(ResolveTypeIdentity(originalType), originalIdentity,
+                    name, referenceSignature.GenericParameterCount, !referenceSignature.Header.IsInstance,
+                    expected, typeArguments, DeclaredSignature, methodDisplayName, ilOffset);
+                contracts.Validate(new(originalDefinition, definitionMatch, methodDisplayName, ilOffset));
+            }
+        }
+        return new MethodInstanceModel(
+            definitionMatch,
+            resolved.DeclaringType,
+            [],
+            stackTypes.Resolve(
+                definitionMatch.Signature,
+                new CliGenericContext(resolved.TypeArguments, [])));
+    }
+
+    private static CliTypeIdentity ReadOriginalDeclaringIdentity(MetadataAssemblySnapshot source,
+        EntityHandle handle, CliGenericContext context)
+    {
+        // Decode identity only: a metadata-only facade need not have executable types.
+        // The parent already resolved as a type, so it is a definition, reference or specification.
+        var provider = new SignatureTypeProvider(source.Identity, source.Reader);
+        return handle.Kind switch
+        {
+            HandleKind.TypeDefinition => provider.GetTypeFromDefinition(source.Reader, (TypeDefinitionHandle)handle, 0x12),
+            HandleKind.TypeReference => provider.GetTypeFromReference(source.Reader, (TypeReferenceHandle)handle, 0x12),
+            _ => provider.GetTypeFromSpecification(source.Reader, context, (TypeSpecificationHandle)handle, 0x12),
+        };
+    }
+
+    private (MethodDefinitionModel Definition, CliTypeIdentity DeclaringType,
+        ImmutableArray<CliTypeIdentity> TypeArguments) MatchInheritedDefinition(
+        TypeDefinitionModel declaringDefinition, CliTypeIdentity declaringIdentity,
+        string name, int genericArity, bool isStatic, MethodSignatureModel expected,
+        ImmutableArray<CliTypeIdentity> typeArguments, Func<MethodSignatureModel> declared,
+        string methodDisplayName, int ilOffset)
+    {
+        HashSet<EntityKey>? visited = null;
+        while (true)
+        {
+            var matches = FindMatches(declaringDefinition, name, genericArity, isStatic,
+                expected, typeArguments, declared, null);
+            if (matches.Length == 1)
+                return (matches[0], declaringIdentity, typeArguments);
+            if (matches.Length != 0 || name is ".ctor" or ".cctor")
+                break;
+            visited ??= [];
+            if (!visited.Add(declaringDefinition.Key))
+                break;
+            var parent = baseTypes.GetBaseTypeIdentity(declaringIdentity);
+            if (parent is null)
+                break;
+            declaringIdentity = parent;
+            declaringDefinition = ResolveTypeIdentity(parent);
+            typeArguments = parent.Shape == CliTypeShape.GenericInstantiation ? parent.TypeArguments : [];
+        }
+        // Preserve the existing diagnostic for a missing or ambiguous definition.
+        return (MatchDefinition(declaringDefinition, declaringIdentity, name, genericArity,
+            isStatic, expected, typeArguments, declared, methodDisplayName, ilOffset),
+            declaringIdentity, typeArguments);
+    }
+
+    private MethodDefinitionModel[] FindMatches(TypeDefinitionModel declaringDefinition,
+        string name, int genericArity, bool isStatic, MethodSignatureModel expected,
+        ImmutableArray<CliTypeIdentity> typeArguments, Func<MethodSignatureModel> declared,
+        MetadataAssemblySnapshot? originalSource)
+    {
+        var matches = declaringDefinition.Methods
+            .Select(key => originalSource is null ? GetMethod(key) : originalSource.Methods[key.MetadataToken])
+            .Where(method => method.Name == name && method.IsStatic == isStatic &&
+                method.GenericArity == genericArity)
+            .Where(method =>
+            {
+                var candidate = method.Signature.Substitute(typeArguments);
+                return signatureTypes.Compare(
+                           candidate.ReturnSignatureType,
+                           expected.ReturnSignatureType) &&
+                       candidate.ParameterSignatureTypes.Length ==
+                           expected.ParameterSignatureTypes.Length &&
+                       candidate.ParameterSignatureTypes.Zip(
+                               expected.ParameterSignatureTypes)
+                           .All(pair => signatureTypes.Compare(
+                               pair.First,
+                               pair.Second));
+            })
+            .ToArray();
+        if (matches.Length > 1)
+        {
+            // Overloads such as Vector<T>(ReadOnlySpan<T>) and Vector<T>(ReadOnlySpan<byte>)
+            // coincide once T is byte; the declared signature tells them apart.
+            var signature = declared();
             matches = matches
                 .Where(method => signatureTypes.Compare(
                         method.Signature.ReturnSignatureType,
-                        declared.ReturnType) &&
-                    method.Signature.ParameterSignatureTypes.Zip(declared.ParameterTypes)
+                        signature.ReturnSignatureType) &&
+                    method.Signature.ParameterSignatureTypes.Zip(signature.ParameterSignatureTypes)
                         .All(pair => signatureTypes.Compare(pair.First, pair.Second)))
                 .ToArray();
         }
-        var definitionMatch = matches.Length == 1
+        return matches;
+    }
+
+    private MethodDefinitionModel MatchDefinition(TypeDefinitionModel declaringDefinition,
+        CliTypeIdentity declaringIdentity, string name, int genericArity, bool isStatic,
+        MethodSignatureModel expected, ImmutableArray<CliTypeIdentity> typeArguments,
+        Func<MethodSignatureModel> declared, string methodDisplayName, int ilOffset,
+        MetadataAssemblySnapshot? originalSource = null)
+    {
+        var matches = FindMatches(declaringDefinition, name, genericArity, isStatic,
+            expected, typeArguments, declared, originalSource);
+        return matches.Length == 1
             ? matches[0]
             : throw new CompilerException(
                 new CompilerDiagnostic(
-                    DiagnosticCode.AssemblyResolution,
+                    matches.Length == 0 ? DiagnosticCode.MissingApi : DiagnosticCode.AssemblyResolution,
                     $"method reference '{declaringIdentity}::{name}' did not resolve uniquely " +
                     $"({matches.Length} matches; expected {expected.ReturnSignatureType} " +
                     $"({string.Join(", ", expected.ParameterSignatureTypes)}))",
                     methodDisplayName,
                     ilOffset));
-        return new MethodInstanceModel(
-            definitionMatch,
-            declaringIdentity,
-            [],
-            stackTypes.Resolve(
-                definitionMatch.Signature,
-                new CliGenericContext(typeArguments, [])));
-    }
-
-    // The type's methods of this name and arity whose signature, in the type's
-    // instantiation, is the expected one.
-    private MethodDefinitionModel[] Matching(
-        TypeDefinitionModel type,
-        string name,
-        int genericArity,
-        ImmutableArray<CliTypeIdentity> typeArguments,
-        MethodSignatureModel expected)
-    {
-        List<MethodDefinitionModel>? matches = null;
-        foreach (var key in type.Methods)
-        {
-            var method = GetMethod(key);
-            if (method.GenericArity != genericArity || !string.Equals(method.Name, name, StringComparison.Ordinal))
-                continue;
-            var candidate = method.Signature.Substitute(typeArguments);
-            if (!signatureTypes.Compare(candidate.ReturnSignatureType, expected.ReturnSignatureType) ||
-                candidate.ParameterSignatureTypes.Length != expected.ParameterSignatureTypes.Length)
-            {
-                continue;
-            }
-            var same = true;
-            for (var index = 0; index < candidate.ParameterSignatureTypes.Length && same; index++)
-            {
-                same = signatureTypes.Compare(candidate.ParameterSignatureTypes[index],
-                    expected.ParameterSignatureTypes[index]);
-            }
-            if (same) (matches ??= []).Add(method);
-        }
-        return matches is null ? [] : [.. matches];
     }
 
     // A resolution's inputs: the token's assembly and the generic context's arguments,

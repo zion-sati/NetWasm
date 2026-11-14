@@ -48,6 +48,35 @@ public sealed class ReachableProgramBuilderTests
         Assert.Empty(program.FieldDescriptors);
     }
 
+    // A finalizer also reached as an equal but separately built instance is the instance the program compiles; one
+    // reached only as a finalizer is its own.
+    [Fact]
+    public void AFinalizerIsTheInstanceTheProgramCompiles()
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var entry = new MethodDefinitionModel(new EntityKey(assembly, 1), new EntityKey(assembly, 2), "Run", true,
+            MethodSignatureModel.Create(CliValueKind.Void), 1);
+        var finalize = new MethodDefinitionModel(new EntityKey(assembly, 3), new EntityKey(assembly, 2), "Finalize", false,
+            MethodSignatureModel.Create(CliValueKind.Void), 1);
+        var compiled = CliTypeIdentity.Named(assembly, "Fixtures", "Compiled", false);
+        var separate = CliTypeIdentity.Named(assembly, "Fixtures", "Separate", false);
+        MethodInstanceModel Finalizer(CliTypeIdentity owner) => new(finalize, owner, [], finalize.Signature);
+        var instance = Finalizer(compiled);
+        var ledger = new ReachabilityLedgerFactory().Create();
+        ledger.MethodInstances.Add(instance.CanonicalName, instance);
+        ledger.Finalizers[compiled] = Finalizer(compiled);
+        var only = Finalizer(separate);
+        ledger.Finalizers[separate] = only;
+        var builder = new ReachableProgramBuilder(
+            new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), new EmptyDelegateBindingPlanner());
+
+        var program = builder.Build(entry, [], ReachabilityLedgerSnapshot.From(ledger), new NoDelegateTypeRecognizer(),
+            new EmptyTypeTestPlanner());
+
+        Assert.Same(instance, program.Finalizers[compiled]);
+        Assert.Same(only, program.Finalizers[separate]);
+    }
+
     [Fact]
     public void BuilderPublishesManagedByRefEffectAnalysis()
     {

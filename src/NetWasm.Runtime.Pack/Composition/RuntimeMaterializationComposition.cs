@@ -25,9 +25,10 @@ internal static class RuntimeMaterializationComposition
             new RuntimeArtifactPublisher(new Sha256ArtifactDigestCalculator(), writer),
             writer,
             new RuntimeInlineIntentWriter(),
-            new CommandInvoker(),
+            new CommandInvoker(new ToolOutputExcerptFormatter()),
             new Sha256ArtifactDigestCalculator(),
-            CreateNativeMaterializer());
+            CreateNativeMaterializer(),
+            new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())));
     }
 
     public static IRuntimeNativeModuleMaterializer CreateNativeMaterializer()
@@ -53,14 +54,15 @@ internal static class RuntimeMaterializationComposition
             new RuntimeInlineIntentWriter(),
             new RuntimeArtifactReader(),
             new RuntimeNativeArchiveSnapshotter(new RuntimeNativeArchiveReader()),
-            new CommandInvoker(),
+            new CommandInvoker(new ToolOutputExcerptFormatter()),
             new RuntimeNativeLinkWorkspaceFactory(),
             new RuntimeLinkExportPlanBuilder(),
             new RuntimeLinkedImportValidator(new RuntimeNativeValidationProfileValidator()),
-            new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker()),
+            new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker(new ToolOutputExcerptFormatter())),
             new RuntimeNativeValidationProfileValidator(),
             new RuntimeNativeArchiveFeatureValidator(
-                new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker()),
-                new RuntimeArtifactReader()));
+                new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker(new ToolOutputExcerptFormatter())),
+                new RuntimeArtifactReader()),
+            new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())));
     }
 }

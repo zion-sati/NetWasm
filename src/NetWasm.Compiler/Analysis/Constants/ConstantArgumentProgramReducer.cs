@@ -45,20 +45,22 @@ internal sealed class ConstantArgumentProgramReducer(
         var result = ImmutableDictionary.CreateBuilder<string, CilMethodBody>(StringComparer.Ordinal);
         foreach (var method in bodies)
         {
-            if (!method.Method.Definition.IsStatic || boundaryKeys.Contains(method.Method.Definition.Key) ||
+            if (boundaryKeys.Contains(method.Method.Definition.Key) ||
                 boundaries.Contains(method.Method.CanonicalName) || !inputs.TryGetValue(method.Method.CanonicalName, out var known)) continue;
+            // An instance method's argument 0 is its receiver; the collected constants are its declared parameters.
+            var receiver = method.Method.Definition.IsStatic ? 0 : 1;
             foreach (var instruction in method.Body.Instructions)
             {
                 if (instruction is { Operation: CilOperation.LoadArgumentAddress or CilOperation.StoreArgument, Operand: CilOperand.Index index } &&
-                    (uint)index.Value < (uint)known.Length) known[index.Value] = null;
+                    (uint)(index.Value - receiver) < (uint)known.Length) known[index.Value - receiver] = null;
             }
 
             var changed = false;
             var instructions = method.Body.Instructions.Select(instruction =>
             {
                 if (instruction is not { Operation: CilOperation.LoadArgument, Operand: CilOperand.Index index } ||
-                    (uint)index.Value >= (uint)known.Length || known[index.Value] is not { } constant) return instruction;
-                var kind = method.Method.Signature.ParameterTypes[index.Value];
+                    (uint)(index.Value - receiver) >= (uint)known.Length || known[index.Value - receiver] is not { } constant) return instruction;
+                var kind = method.Method.Signature.ParameterTypes[index.Value - receiver];
                 if (constant is ScalarConstant.Int32 integer && kind == CliValueKind.I4)
                 {
                     changed = true;

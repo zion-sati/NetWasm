@@ -1,0 +1,60 @@
+using System.Collections.Immutable;
+using NetWasm.Runtime.Pack.Materialization;
+using NetWasm.Runtime.Pack.Tests.TestSupport;
+
+namespace NetWasm.Runtime.Pack.Tests.Materialization;
+
+// The response file linker as the runtime pack composes it, end to end: wasm-ld takes its arguments from a response file,
+// so the command line stays short on Windows (zion-sati/NetWasm#236).
+public sealed class ResponseFileLinkerCommandFactoryTests
+{
+    [Fact]
+    public void ArgumentsGoInAQuotedResponseFileNextToTheLog()
+    {
+        using var directory = new TemporaryDirectory();
+        var log = directory.PathTo("logs/link.log");
+        var factory = Assert.IsAssignableFrom<ILinkerCommandFactory>(new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())));
+
+        var command = factory.Create("wasm-ld", ["--undefined=run", @"C:\with space\it's.o", ""], log);
+
+        var responseFile = Path.ChangeExtension(Path.GetFullPath(log), ".rsp");
+        Assert.Equal("wasm-ld", command.ExecutablePath);
+        Assert.Equal(log, command.LogPath);
+        Assert.Equal(["--rsp-quoting=posix", "@" + responseFile], command.Arguments);
+        Assert.Equal(["'--undefined=run'", @"'C:\\with space\\it\'s.o'", "''"], File.ReadAllLines(responseFile));
+    }
+
+    [Fact]
+    public void RejectsAMissingLinkerOrLog()
+    {
+        var factory = new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter()));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(null!, [], "link.log"));
+        Assert.Throws<ArgumentException>(() => factory.Create("wasm-ld", [], ""));
+    }
+
+    // wasm-ld reads a path with a space, a backslash, a single quote and many arguments back exactly: it names the
+    // missing input as given. A backslash inside quotes is an escape to wasm-ld's tokenizer, so before it was escaped
+    // every Windows link lost its path separators ("cannot open D:a_temp...").
+    [Fact]
+    public void WasmLdReadsTheResponseFileBackExactly()
+    {
+        using var directory = new TemporaryDirectory();
+        var emsdk = Environment.GetEnvironmentVariable("NETWASM_EMSDK_ROOT") ??
+            Environment.GetEnvironmentVariable("EMSDK") ?? Environment.GetEnvironmentVariable("EMSDK_ROOT") ??
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "emsdk");
+        var linker = Path.Combine(emsdk, "upstream", "bin", "wasm-ld" + (OperatingSystem.IsWindows() ? ".exe" : ""));
+        Assert.True(File.Exists(linker), linker);
+        var input = directory.PathTo(@"with space/back\slash it's missing.o");
+        ImmutableArray<string> arguments =
+        [
+            .. Enumerable.Range(0, 2_000).Select(index => $"--undefined=native_library_entry_point_number_{index:D4}"),
+            input,
+            "-o", directory.PathTo("out.wasm"),
+        ];
+        var command = new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())).Create(linker, arguments, directory.PathTo("logs/link.log"));
+
+        Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
+
+        Assert.Contains($"cannot open {input}", File.ReadAllText(command.LogPath), StringComparison.Ordinal);
+    }
+}

@@ -73,14 +73,13 @@ public sealed class AttributeQueryLowererTests
     [InlineData(CilOperation.LoadFunction)]
     [InlineData(CilOperation.LoadVirtualFunction)]
     [InlineData(CilOperation.LoadMethodToken)]
-    public void QueryHandlesFailBeforeControlFlowAnalysis(CilOperation operation)
+    public void QueryHandlesRetainManagedBodiesWhileDirectCallsAreLowered(CilOperation operation)
     {
         var fixture = new Fixture(operation);
-        var exception = Assert.Throws<CompilerException>(() => fixture.Lower());
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
-        Assert.Equal(101, exception.Diagnostic.IlOffset);
-        Assert.Equal("Test.Target.Caller", exception.Diagnostic.Method);
-        Assert.Empty(fixture.Stages);
+        Assert.Same(fixture.Output, fixture.Lower());
+        Assert.NotNull(fixture.Replacements);
+        Assert.Equal([3], fixture.Replacements.Keys);
+        Assert.Single(fixture.Requests);
     }
 
     [Fact]
@@ -92,14 +91,30 @@ public sealed class AttributeQueryLowererTests
     }
 
     [Fact]
-    public void MissingProofFailsBeforeResolutionOrRewriting()
+    public void MissingProofLeavesManagedCallsWithoutResolutionOrRewriting()
     {
         var fixture = new Fixture { HasProof = false };
-        var exception = Assert.Throws<CompilerException>(() => fixture.Lower());
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
-        Assert.Equal(101, exception.Diagnostic.IlOffset);
+        Assert.Same(fixture.Body, fixture.Lower());
         Assert.Equal(["graph", "stacks", "proofs"], fixture.Stages);
         Assert.Null(fixture.Replacements);
+    }
+
+    [Fact]
+    public void IneligibleQueriesRetainManagedCallsWithoutPlanning()
+    {
+        var fixture = new Fixture { Eligible = false };
+        Assert.Same(fixture.Body, fixture.Lower());
+        Assert.Equal(["graph", "stacks", "proofs", "resolve", "resolve"], fixture.Stages);
+        Assert.Null(fixture.Replacements);
+        Assert.Empty(fixture.Requests);
+    }
+
+    [Fact]
+    public void CallsWithoutResolvedMethodsRemainUnchanged()
+    {
+        var fixture = new Fixture { ResolveMethods = false };
+        Assert.Same(fixture.Body, fixture.Lower());
+        Assert.Empty(fixture.Stages);
     }
 
     [Fact]
@@ -147,6 +162,8 @@ public sealed class AttributeQueryLowererTests
         internal CilMethodBody Body { get; }
         internal CilMethodBody Output { get; }
         internal bool RecognizeQueries { get; init; } = true;
+        internal bool ResolveMethods { get; init; } = true;
+        internal bool Eligible { get; init; } = true;
         internal bool HasProof { get; init; } = true;
         internal string? FailureStage { get; init; }
         internal List<string> Stages { get; } = [];
@@ -160,7 +177,7 @@ public sealed class AttributeQueryLowererTests
         internal CilMethodBody Lower() => ((IAttributeQueryLowerer)Create()).Lower(Body);
 
         public MethodInstanceModel? Resolve(CilInstruction instruction) =>
-            instruction.Operation == CilOperation.LoadMethodToken ? null : instruction.Offset switch
+            !ResolveMethods || instruction.Operation == CilOperation.LoadMethodToken ? null : instruction.Offset switch
             {
                 1 or 3 => QueryMethod,
                 2 => OrdinaryMethod,
@@ -196,13 +213,13 @@ public sealed class AttributeQueryLowererTests
             return HasProof ? result.Add(1, _proof).Add(3, _proof) : result;
         }
 
-        public ResolvedAttributeQuery Resolve(AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack)
+        public ResolvedAttributeQuery? Resolve(AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack)
         {
             Assert.Same(_call, call);
             Assert.Equal(_proof, stack);
             Stages.Add("resolve");
             FailAt("resolve");
-            return _query;
+            return Eligible ? _query : null;
         }
 
         public AttributeQueryEntry Plan(ResolvedAttributeQuery query)

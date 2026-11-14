@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Linq.Queryable</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Linq/System.Linq.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Linq/EnumerableExecutor.cs" />
+    <Compile Include="System/Linq/EnumerableQuery.cs" />
+    <Compile Include="System/Linq/Error.cs" />
+    <Compile Include="System/Linq/Queryable.cs" />
+    <Compile Include="System/Linq/Strings.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

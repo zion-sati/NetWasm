@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using NetWasm.TestInfrastructure;
 using System.Security.Cryptography;
 
 namespace NetWasm.Compiler.Tests.Correctness;
@@ -85,9 +86,18 @@ internal sealed class RoslynCorpusCompiler(
         ImmutableArray<string> sourcePaths,
         string outputDirectory)
     {
-        var references = ImmutableArray.CreateBuilder<string>(
-            fixture.NetWasmReferencePaths.Length + 1);
+        // NetWasm's side compiles against CoreLib and NetWasm.App's assemblies, as an application compiles
+        // against the framework, with the fixture's own references.
+        var references = ImmutableArray.CreateBuilder<string>();
         references.Add("-reference:" + environment.CoreLibPath);
+        var own = fixture.NetWasmReferencePaths
+            .Select(path => Path.GetFileNameWithoutExtension(path))
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var frameworkPath in TestAssets.FrameworkAssemblies(environment.RepositoryRoot)
+                     .Where(path => !own.Contains(Path.GetFileNameWithoutExtension(path))))
+        {
+            references.Add("-reference:" + frameworkPath);
+        }
         foreach (var referencePath in fixture.NetWasmReferencePaths)
         {
             references.Add("-reference:" + referencePath);

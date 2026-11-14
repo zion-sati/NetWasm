@@ -3,7 +3,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace System
@@ -82,6 +84,9 @@ namespace System
         public static TimeOnly MinValue { get { return new(0); } }
         public static TimeOnly MaxValue { get { return new(TimeSpan.TicksPerDay - 1); } }
         public long Ticks { get { return _ticks; } }
+
+        // Upstream's: the time as a DateTime on 0001-01-01.
+        internal DateTime ToDateTime() => new DateTime(_ticks);
         public int Hour { get { return (int)(_ticks / TimeSpan.TicksPerHour); } }
         public int Minute { get { return (int)(_ticks / TimeSpan.TicksPerMinute % 60); } }
         public int Second { get { return (int)(_ticks / TimeSpan.TicksPerSecond % 60); } }
@@ -170,273 +175,643 @@ namespace System
             millisecond = Millisecond;
             microsecond = Microsecond;
         }
-        public string ToLongTimeString() => ToString("T");
-        public string ToShortTimeString() => ToString();
-        public string ToString(IFormatProvider? provider) => FormatInvariant(null, provider);
-        public string ToString([StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format) =>
-            FormatInvariant(format, null);
-        public string ToString(
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format,
-            IFormatProvider? provider) => FormatInvariant(format, provider);
-        public override string ToString() => FormatInvariant(null, null);
+        // Text members ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+        private const ParseFlags ParseFlagsTimeMask = ParseFlags.HaveYear | ParseFlags.HaveMonth | ParseFlags.HaveDay | ParseFlags.HaveDate | ParseFlags.TimeZoneUsed |
+                                                      ParseFlags.TimeZoneUtc | ParseFlags.ParsedMonthName | ParseFlags.CaptureOffset | ParseFlags.UtcSortPattern;
 
-        public bool TryFormat(Span<char> destination, out int charsWritten,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)]
-            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
-            TryFormatCore(
-                MemoryMarshal.Cast<char, Utf16Char>(destination),
-                out charsWritten,
-                format,
-                provider);
-
-        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)]
-            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
-            TryFormatCore(
-                MemoryMarshal.Cast<byte, Utf8Char>(utf8Destination),
-                out bytesWritten,
-                format,
-                provider);
-
-        public static TimeOnly Parse(string s) =>
-            Parse(s, null, System.Globalization.DateTimeStyles.None);
-
-        public static TimeOnly Parse(string s, IFormatProvider? provider) =>
-            Parse(s, provider, System.Globalization.DateTimeStyles.None);
-
-        public static TimeOnly Parse(string s, IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None)
+        /// <summary>
+        /// Converts a memory span that contains string representation of a time to its TimeOnly equivalent by using culture-specific format information and a formatting style.
+        /// </summary>
+        /// <param name="s">The memory span that contains the string to parse.</param>
+        /// <param name="provider">An object that supplies culture-specific format information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that indicates the permitted format of s. A typical value to specify is None.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by provider and styles.</returns>
+        /// <inheritdoc cref="ISpanParsable{TSelf}.Parse(ReadOnlySpan{char}, IFormatProvider?)" />
+        public static TimeOnly Parse(ReadOnlySpan<char> s, IFormatProvider? provider = default, DateTimeStyles style = DateTimeStyles.None)
         {
-            ArgumentNullException.ThrowIfNull(s);
+            if ((style & ~DateTimeStyles.AllowWhiteSpaces) != 0)
+            {
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
+            }
+
+            ParseFailureKind result = TryParseInternal(s, provider, style, out TimeOnly timeOnly);
+            if (result != ParseFailureKind.None)
+            {
+                ThrowOnError(result, s);
+            }
+
+            return timeOnly;
+        }
+
+        private const string OFormat = "HH':'mm':'ss'.'fffffff";
+        private const string RFormat = "HH':'mm':'ss";
+
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified format, culture-specific format information, and style.
+        /// The format of the string representation must match the specified format exactly or an exception is thrown.
+        /// </summary>
+        /// <param name="s">A span containing the characters that represent a time to convert.</param>
+        /// <param name="format">A span containing the characters that represent a format specifier that defines the required format of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that indicates the permitted format of s. A typical value to specify is None.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by format, provider, and style.</returns>
+        public static TimeOnly ParseExact(ReadOnlySpan<char> s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format, IFormatProvider? provider = default, DateTimeStyles style = DateTimeStyles.None)
+        {
+            if ((style & ~DateTimeStyles.AllowWhiteSpaces) != 0)
+            {
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
+            }
+
+            ParseFailureKind result = TryParseExactInternal(s, format, provider, style, out TimeOnly timeOnly);
+            if (result != ParseFailureKind.None)
+            {
+                ThrowOnError(result, s);
+            }
+
+            return timeOnly;
+        }
+
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified array of formats.
+        /// The format of the string representation must match at least one of the specified formats exactly or an exception is thrown.
+        /// </summary>
+        /// <param name="s">A span containing the characters that represent a time to convert.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by format, provider, and style.</returns>
+        public static TimeOnly ParseExact(ReadOnlySpan<char> s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats) => ParseExact(s, formats, null, DateTimeStyles.None);
+
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified array of formats, culture-specific format information, and style.
+        /// The format of the string representation must match at least one of the specified formats exactly or an exception is thrown.
+        /// </summary>
+        /// <param name="s">A span containing the characters that represent a time to convert.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that indicates the permitted format of s. A typical value to specify is None.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by format, provider, and style.</returns>
+        public static TimeOnly ParseExact(ReadOnlySpan<char> s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats, IFormatProvider? provider, DateTimeStyles style = DateTimeStyles.None)
+        {
+            if ((style & ~DateTimeStyles.AllowWhiteSpaces) != 0)
+            {
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
+            }
+
+            if (formats == null)
+            {
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
+            }
+
+            // Validate formats array for null/empty entries upfront
+            for (int i = 0; i < formats.Length; i++)
+            {
+                if (string.IsNullOrEmpty(formats[i]))
+                {
+                    throw new FormatException(SR.Argument_BadFormatSpecifier);
+                }
+            }
+
+            ParseFailureKind result = TryParseExactInternal(s, formats, provider, style, out TimeOnly timeOnly);
+            if (result != ParseFailureKind.None)
+            {
+                ThrowOnError(result, s);
+            }
+
+            return timeOnly;
+        }
+
+        /// <summary>
+        /// Converts a string that contains string representation of a time to its TimeOnly equivalent by using the conventions of the current culture.
+        /// </summary>
+        /// <param name="s">The string that contains the string to parse.</param>
+        /// <returns>An object that is equivalent to the time contained in s.</returns>
+        public static TimeOnly Parse(string s) => Parse(s, null, DateTimeStyles.None);
+
+        /// <summary>
+        /// Converts a string that contains string representation of a time to its TimeOnly equivalent by using culture-specific format information and a formatting style.
+        /// </summary>
+        /// <param name="s">The string that contains the string to parse.</param>
+        /// <param name="provider">An object that supplies culture-specific format information about s.</param>
+        /// <param name="style">A bitwise combination of the enumeration values that indicates the style elements that can be present in s for the parse operation to succeed, and that defines how to interpret the parsed date. A typical value to specify is None.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by provider and styles.</returns>
+        public static TimeOnly Parse(string s, IFormatProvider? provider, DateTimeStyles style = DateTimeStyles.None)
+        {
+            if (s == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.s);
             return Parse(s.AsSpan(), provider, style);
         }
 
-        public static TimeOnly Parse(ReadOnlySpan<char> s, IFormatProvider? provider) =>
-            Parse(s, provider, System.Globalization.DateTimeStyles.None);
+        /// <summary>
+        /// Converts the specified string representation of a time to its TimeOnly equivalent using the specified format.
+        /// The format of the string representation must match the specified format exactly or an exception is thrown.
+        /// </summary>
+        /// <param name="s">A string containing the characters that represent a time to convert.</param>
+        /// <param name="format">A string that represent a format specifier that defines the required format of s.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by format.</returns>
+        public static TimeOnly ParseExact(string s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string format) => ParseExact(s, format, null, DateTimeStyles.None);
 
-        public static TimeOnly Parse(ReadOnlySpan<char> s, IFormatProvider? provider = null,
-            System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None)
+        /// <summary>
+        /// Converts the specified string representation of a time to its TimeOnly equivalent using the specified format, culture-specific format information, and style.
+        /// The format of the string representation must match the specified format exactly or an exception is thrown.
+        /// </summary>
+        /// <param name="s">A string containing the characters that represent a time to convert.</param>
+        /// <param name="format">A string containing the characters that represent a format specifier that defines the required format of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of the enumeration values that provides additional information about s, about style elements that may be present in s, or about the conversion from s to a TimeOnly value. A typical value to specify is None.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by format, provider, and style.</returns>
+        public static TimeOnly ParseExact(string s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string format, IFormatProvider? provider, DateTimeStyles style = DateTimeStyles.None)
         {
-            ValidateStyles(style);
-            return InvariantDateOnlyTimeOnlyParser.TryParseTime(
-                s,
-                System.Globalization.DateTimeFormatInfo.GetInstance(provider),
-                style,
-                out var result)
-                ? result
-                : throw new FormatException();
-        }
-
-        public static bool TryParse([NotNullWhen(true)] string? s, out TimeOnly result) =>
-            TryParse(s, null, System.Globalization.DateTimeStyles.None, out result);
-
-        public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, out TimeOnly result) =>
-            TryParse(s, provider, System.Globalization.DateTimeStyles.None, out result);
-
-        public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style, out TimeOnly result)
-        {
-            if (s is null)
-            {
-                result = default;
-                return false;
-            }
-            return TryParse(s.AsSpan(), provider, style, out result);
-        }
-
-        public static bool TryParse(ReadOnlySpan<char> s, out TimeOnly result) =>
-            TryParse(s, null, System.Globalization.DateTimeStyles.None, out result);
-
-        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider,
-            out TimeOnly result) => TryParse(s, provider, System.Globalization.DateTimeStyles.None, out result);
-
-        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style, out TimeOnly result)
-        {
-            ValidateStyles(style);
-            return InvariantDateOnlyTimeOnlyParser.TryParseTime(
-                s,
-                System.Globalization.DateTimeFormatInfo.GetInstance(provider),
-                style,
-                out result);
-        }
-
-        public static TimeOnly ParseExact(
-            string s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string format) =>
-            ParseExact(s, format, null, System.Globalization.DateTimeStyles.None);
-
-        public static TimeOnly ParseExact(
-            string s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string format,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None)
-        {
-            ArgumentNullException.ThrowIfNull(s);
-            ArgumentNullException.ThrowIfNull(format);
+            if (s == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.s);
+            if (format == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.format);
             return ParseExact(s.AsSpan(), format.AsSpan(), provider, style);
         }
 
-        public static TimeOnly ParseExact(
-            string s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats) =>
-            ParseExact(s, formats, null, System.Globalization.DateTimeStyles.None);
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified array of formats.
+        /// The format of the string representation must match at least one of the specified formats exactly or an exception is thrown.
+        /// </summary>
+        /// <param name="s">A span containing the characters that represent a time to convert.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by format, provider, and style.</returns>
+        public static TimeOnly ParseExact(string s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats) => ParseExact(s, formats, null, DateTimeStyles.None);
 
-        public static TimeOnly ParseExact(
-            string s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None)
+        /// <summary>
+        /// Converts the specified string representation of a time to its TimeOnly equivalent using the specified array of formats, culture-specific format information, and style.
+        /// The format of the string representation must match at least one of the specified formats exactly or an exception is thrown.
+        /// </summary>
+        /// <param name="s">A string containing the characters that represent a time to convert.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that indicates the permitted format of s. A typical value to specify is None.</param>
+        /// <returns>An object that is equivalent to the time contained in s, as specified by format, provider, and style.</returns>
+        public static TimeOnly ParseExact(string s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats, IFormatProvider? provider, DateTimeStyles style = DateTimeStyles.None)
         {
-            ArgumentNullException.ThrowIfNull(s);
+            if (s == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.s);
             return ParseExact(s.AsSpan(), formats, provider, style);
         }
 
-        public static TimeOnly ParseExact(
-            ReadOnlySpan<char> s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format,
-            IFormatProvider? provider = null,
-            System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None)
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent and returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A span containing the characters representing the time to convert.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is empty string, or does not contain a valid string representation of a time. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        public static bool TryParse(ReadOnlySpan<char> s, out TimeOnly result) => TryParse(s, null, DateTimeStyles.None, out result);
+
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified array of formats, culture-specific format information, and style. And returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A string containing the characters that represent a time to convert.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that indicates the permitted format of s. A typical value to specify is None.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is empty string, or does not contain a valid string representation of a date. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        /// <inheritdoc cref="ISpanParsable{TSelf}.TryParse(ReadOnlySpan{char}, IFormatProvider?, out TSelf)" />
+        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
         {
-            ValidateStyles(style);
-            var parseResult = TryParseExactCore(s, format, provider, style, out var result);
-            return parseResult switch
+            if ((style & ~DateTimeStyles.AllowWhiteSpaces) != 0)
             {
-                InvariantDateTimeParseResult.Success => result,
-                _ => throw new FormatException(),
-            };
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
+            }
+
+            ParseFailureKind failureKind = TryParseInternal(s, provider, style, out result);
+            return failureKind == ParseFailureKind.None;
         }
-
-        public static TimeOnly ParseExact(
-            ReadOnlySpan<char> s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats) =>
-            ParseExact(s, formats, null, System.Globalization.DateTimeStyles.None);
-
-        public static TimeOnly ParseExact(
-            ReadOnlySpan<char> s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string[] formats,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None)
+        private static ParseFailureKind TryParseInternal(ReadOnlySpan<char> s, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
         {
-            return TryParseExact(s, formats, provider, style, out var result)
-                ? result
-                : throw new FormatException();
-        }
+            DateTimeResult dtResult = default;
 
-        public static bool TryParseExact(
-            [NotNullWhen(true)] string? s,
-            [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format,
-            out TimeOnly result) =>
-            TryParseExact(s, format, null, System.Globalization.DateTimeStyles.None, out result);
+            dtResult.Init(s);
 
-        public static bool TryParseExact(
-            [NotNullWhen(true)] string? s,
-            [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style, out TimeOnly result)
-        {
-            if (s is null || format is null)
+            if (!DateTimeParse.TryParse(s, DateTimeFormatInfo.GetInstance(provider), style, ref dtResult))
             {
                 result = default;
-                return false;
+                return ParseFailureKind.Format_BadTimeOnly;
             }
-            return TryParseExact(s.AsSpan(), format.AsSpan(), provider, style, out result);
-        }
 
-        public static bool TryParseExact(
-            [NotNullWhen(true)] string? s,
-            [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats,
-            out TimeOnly result) =>
-            TryParseExact(s, formats, null, System.Globalization.DateTimeStyles.None, out result);
-
-        public static bool TryParseExact(
-            [NotNullWhen(true)] string? s,
-            [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style, out TimeOnly result)
-        {
-            if (s is null)
+            if ((dtResult.flags & ParseFlagsTimeMask) != 0)
             {
                 result = default;
-                return false;
+                return ParseFailureKind.Format_DateTimeOnlyContainsNoneDateParts;
             }
-            return TryParseExact(s.AsSpan(), formats, provider, style, out result);
+
+            result = FromDateTime(dtResult.parsedDate);
+            return ParseFailureKind.None;
         }
 
-        public static bool TryParseExact(
-            ReadOnlySpan<char> s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format,
-            out TimeOnly result) => TryParseExact(s, format, null,
-                System.Globalization.DateTimeStyles.None, out result);
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified format and style.
+        /// The format of the string representation must match the specified format exactly. The method returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A span containing the characters representing a time to convert.</param>
+        /// <param name="format">The required format of s.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s is empty string, or does not contain a time that correspond to the pattern specified in format. This parameter is passed uninitialized.</param>
+        /// <returns>true if s was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact(ReadOnlySpan<char> s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format, out TimeOnly result) => TryParseExact(s, format, null, DateTimeStyles.None, out result);
 
-        public static bool TryParseExact(
-            ReadOnlySpan<char> s,
-            [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style,
-            out TimeOnly result)
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified format, culture-specific format information, and style.
+        /// The format of the string representation must match the specified format exactly. The method returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A span containing the characters representing a time to convert.</param>
+        /// <param name="format">The required format of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of one or more enumeration values that indicate the permitted format of s.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s is empty string, or does not contain a time that correspond to the pattern specified in format. This parameter is passed uninitialized.</param>
+        /// <returns>true if s was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact(ReadOnlySpan<char> s, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
         {
-            ValidateStyles(style);
-            var parseResult = TryParseExactCore(s, format, provider, style, out result);
-            if (parseResult == InvariantDateTimeParseResult.BadFormat)
+            if ((style & ~DateTimeStyles.AllowWhiteSpaces) != 0)
             {
-                throw new FormatException();
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
             }
-            return parseResult == InvariantDateTimeParseResult.Success;
-        }
 
-        public static bool TryParseExact(
-            ReadOnlySpan<char> s,
-            [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats,
-            out TimeOnly result) => TryParseExact(s, formats, null,
-                System.Globalization.DateTimeStyles.None, out result);
-
-        public static bool TryParseExact(
-            ReadOnlySpan<char> s,
-            [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style,
-            out TimeOnly result)
-        {
-            ValidateStyles(style);
-            if (formats is null)
+            ParseFailureKind failureKind = TryParseExactInternal(s, format, provider, style, out result);
+            if (failureKind != ParseFailureKind.None)
             {
-                throw new ArgumentException(null, nameof(style));
-            }
-            for (var index = 0; index < formats.Length; index++)
-            {
-                if (string.IsNullOrEmpty(formats[index]))
+                if (failureKind == ParseFailureKind.Argument_BadFormatSpecifier)
                 {
-                    throw new FormatException();
+                    throw new FormatException(SR.Argument_BadFormatSpecifier);
+                }
+                return false;
+            }
+            return true;
+        }
+
+        private static ParseFailureKind TryParseExactInternal(ReadOnlySpan<char> s, ReadOnlySpan<char> format, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
+        {
+            if (format.Length == 1)
+            {
+                switch (format[0] | 0x20)
+                {
+                    case 'o':
+                        format = OFormat;
+                        provider = DateTimeFormat.InvariantFormatInfo;
+                        break;
+
+                    case 'r':
+                        format = RFormat;
+                        provider = DateTimeFormat.InvariantFormatInfo;
+                        break;
                 }
             }
 
-            var dateTimeFormat = System.Globalization.DateTimeFormatInfo.GetInstance(provider);
-            for (var index = 0; index < formats.Length; index++)
+            DateTimeResult dtResult = default;
+            dtResult.Init(s);
+
+            if (!DateTimeParse.TryParseExact(s, format, DateTimeFormatInfo.GetInstance(provider), style, ref dtResult))
             {
-                var format = formats[index]!.AsSpan();
-                var formatInfo = IsInvariantStandardFormat(format)
-                    ? System.Globalization.DateTimeFormatInfo.InvariantInfo
-                    : dateTimeFormat;
-                var parseResult = InvariantDateOnlyTimeOnlyParser.TryParseTimeExact(
-                    s,
-                    format,
-                    formatInfo,
-                    style,
-                    out result);
-                if (parseResult == InvariantDateTimeParseResult.Success)
+                result = default;
+                return dtResult.failure == ParseFailureKind.Argument_BadFormatSpecifier
+                    ? ParseFailureKind.Argument_BadFormatSpecifier
+                    : ParseFailureKind.Format_BadTimeOnly;
+            }
+
+            if ((dtResult.flags & ParseFlagsTimeMask) != 0)
+            {
+                result = default;
+                return ParseFailureKind.Format_DateTimeOnlyContainsNoneDateParts;
+            }
+
+            result = FromDateTime(dtResult.parsedDate);
+            return ParseFailureKind.None;
+        }
+
+        /// <summary>
+        /// Converts the specified char span of a time to its TimeOnly equivalent and returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">The span containing the string to parse.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is Empty, or does not contain a valid string representation of a time. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact(ReadOnlySpan<char> s, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats, out TimeOnly result) => TryParseExact(s, formats, null, DateTimeStyles.None, out result);
+
+        /// <summary>
+        /// Converts the specified char span of a time to its TimeOnly equivalent and returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">The span containing the string to parse.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that defines how to interpret the parsed time. A typical value to specify is None.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is Empty, or does not contain a valid string representation of a time. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact(ReadOnlySpan<char> s, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
+        {
+            if ((style & ~DateTimeStyles.AllowWhiteSpaces) != 0)
+            {
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
+            }
+
+            if (formats == null)
+            {
+                throw new ArgumentException(SR.Argument_InvalidDateStyles, nameof(style));
+            }
+
+            // Validate formats array for null/empty entries upfront
+            for (int i = 0; i < formats.Length; i++)
+            {
+                if (string.IsNullOrEmpty(formats[i]))
                 {
-                    return true;
+                    throw new FormatException(SR.Argument_BadFormatSpecifier);
                 }
-                if (parseResult == InvariantDateTimeParseResult.BadFormat)
+            }
+
+            return TryParseExactInternal(s, formats, provider, style, out result) == ParseFailureKind.None;
+        }
+
+        private static ParseFailureKind TryParseExactInternal(ReadOnlySpan<char> s, string?[]? formats, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
+        {
+            DateTimeFormatInfo dtfi = DateTimeFormatInfo.GetInstance(provider);
+
+            for (int i = 0; i < formats!.Length; i++)
+            {
+                DateTimeFormatInfo dtfiToUse = dtfi;
+                string? format = formats[i];
+
+                if (format!.Length == 1)
                 {
-                    break;
+                    switch (format[0] | 0x20)
+                    {
+                        case 'o':
+                            format = OFormat;
+                            dtfiToUse = DateTimeFormat.InvariantFormatInfo;
+                            break;
+
+                        case 'r':
+                            format = RFormat;
+                            dtfiToUse = DateTimeFormat.InvariantFormatInfo;
+                            break;
+                    }
+                }
+
+                // Create a new result each time to ensure the runs are independent. Carry through
+                // flags from the caller and return the result.
+                DateTimeResult dtResult = default;
+                dtResult.Init(s);
+                if (DateTimeParse.TryParseExact(s, format, dtfiToUse, style, ref dtResult) && ((dtResult.flags & ParseFlagsTimeMask) == 0))
+                {
+                    result = FromDateTime(dtResult.parsedDate);
+                    return ParseFailureKind.None;
+                }
+
+                if (dtResult.failure == ParseFailureKind.Argument_BadFormatSpecifier)
+                {
+                    result = default;
+                    return ParseFailureKind.Argument_BadFormatSpecifier;
                 }
             }
 
             result = default;
-            return false;
+            return ParseFailureKind.Format_BadTimeOnly;
         }
+
+        /// <summary>
+        /// Converts the specified string representation of a time to its TimeOnly equivalent and returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A string containing the characters representing the time to convert.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is empty string, or does not contain a valid string representation of a time. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        public static bool TryParse([NotNullWhen(true)] string? s, out TimeOnly result) => TryParse(s, null, DateTimeStyles.None, out result);
+
+        /// <summary>
+        /// Converts the specified string representation of a time to its TimeOnly equivalent using the specified array of formats, culture-specific format information, and style. And returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A string containing the characters that represent a time to convert.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that indicates the permitted format of s. A typical value to specify is None.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is empty string, or does not contain a valid string representation of a time. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
+        {
+            if (s == null)
+            {
+                result = default;
+                return false;
+            }
+
+            return TryParse(s.AsSpan(), provider, style, out result);
+        }
+
+        /// <summary>
+        /// Converts the specified string representation of a time to its TimeOnly equivalent using the specified format and style.
+        /// The format of the string representation must match the specified format exactly. The method returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A string containing the characters representing a time to convert.</param>
+        /// <param name="format">The required format of s.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s is empty string, or does not contain a time that correspond to the pattern specified in format. This parameter is passed uninitialized.</param>
+        /// <returns>true if s was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact([NotNullWhen(true)] string? s, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format, out TimeOnly result) => TryParseExact(s, format, null, DateTimeStyles.None, out result);
+
+        /// <summary>
+        /// Converts the specified span representation of a time to its TimeOnly equivalent using the specified format, culture-specific format information, and style.
+        /// The format of the string representation must match the specified format exactly. The method returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">A span containing the characters representing a time to convert.</param>
+        /// <param name="format">The required format of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of one or more enumeration values that indicate the permitted format of s.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s is empty string, or does not contain a time that correspond to the pattern specified in format. This parameter is passed uninitialized.</param>
+        /// <returns>true if s was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact([NotNullWhen(true)] string? s, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
+        {
+            if (s == null || format == null)
+            {
+                result = default;
+                return false;
+            }
+
+            return TryParseExact(s.AsSpan(), format.AsSpan(), provider, style, out result);
+        }
+
+        /// <summary>
+        /// Converts the specified string of a time to its TimeOnly equivalent and returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">The string containing time to parse.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <param name="result">When this method returns, contains the timeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is Empty, or does not contain a valid string representation of a time. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact([NotNullWhen(true)] string? s, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats, out TimeOnly result) => TryParseExact(s, formats, null, DateTimeStyles.None, out result);
+
+        /// <summary>
+        /// Converts the specified string of a time to its TimeOnly equivalent and returns a value that indicates whether the conversion succeeded.
+        /// </summary>
+        /// <param name="s">The string containing the time to parse.</param>
+        /// <param name="formats">An array of allowable formats of s.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information about s.</param>
+        /// <param name="style">A bitwise combination of enumeration values that defines how to interpret the parsed date. A typical value to specify is None.</param>
+        /// <param name="result">When this method returns, contains the TimeOnly value equivalent to the time contained in s, if the conversion succeeded, or MinValue if the conversion failed. The conversion fails if the s parameter is Empty, or does not contain a valid string representation of a time. This parameter is passed uninitialized.</param>
+        /// <returns>true if the s parameter was converted successfully; otherwise, false.</returns>
+        public static bool TryParseExact([NotNullWhen(true)] string? s, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string?[]? formats, IFormatProvider? provider, DateTimeStyles style, out TimeOnly result)
+        {
+            if (s == null)
+            {
+                result = default;
+                return false;
+            }
+
+            return TryParseExact(s.AsSpan(), formats, provider, style, out result);
+        }
+
+        private static void ThrowOnError(ParseFailureKind result, ReadOnlySpan<char> s)
+        {
+            Debug.Assert(result != ParseFailureKind.None);
+            switch (result)
+            {
+                case ParseFailureKind.Argument_InvalidDateStyles: throw new ArgumentException(SR.Argument_InvalidDateStyles, "style");
+                case ParseFailureKind.Argument_BadFormatSpecifier: throw new FormatException(SR.Argument_BadFormatSpecifier);
+                case ParseFailureKind.Format_BadTimeOnly: throw new FormatException(SR.Format(SR.Format_BadTimeOnly, s.ToString()));
+                default:
+                    Debug.Assert(result == ParseFailureKind.Format_DateTimeOnlyContainsNoneDateParts);
+                    throw new FormatException(SR.Format(SR.Format_DateTimeOnlyContainsNoneDateParts, s.ToString(), nameof(TimeOnly)));
+            }
+        }
+
+        /// <summary>
+        /// Converts the value of the current TimeOnly object to its equivalent long date string representation.
+        /// </summary>
+        /// <returns>A string that contains the long time string representation of the current TimeOnly object.</returns>
+        public string ToLongTimeString() => ToString("T");
+
+        /// <summary>
+        /// Converts the value of the current TimeOnly object to its equivalent short time string representation.
+        /// </summary>
+        /// <returns>A string that contains the short time string representation of the current TimeOnly object.</returns>
+        public string ToShortTimeString() => ToString();
+
+        /// <summary>
+        /// Converts the value of the current TimeOnly object to its equivalent string representation using the formatting conventions of the current culture.
+        /// The TimeOnly object will be formatted in short form.
+        /// </summary>
+        /// <returns>A string that contains the short time string representation of the current TimeOnly object.</returns>
+        // NetWasm: see InvariantDateTimeDefaults.
+        public override string ToString() =>
+            DateTimeFormatInfo.s_currentInfo is null
+                ? InvariantDateTimeDefaults.ShortTime(ToDateTime())
+                : DateTimeFormat.Format(ToDateTime(), "t", null);
+
+        /// <summary>
+        /// Converts the value of the current TimeOnly object to its equivalent string representation using the specified format and the formatting conventions of the current culture.
+        /// </summary>
+        /// <param name="format">A standard or custom time format string.</param>
+        /// <returns>A string representation of value of the current TimeOnly object as specified by format.</returns>
+        /// <remarks>The accepted standard formats are 'r', 'R', 'o', 'O', 't' and 'T'. </remarks>
+        public string ToString([StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format) => ToString(format, null);
+
+        /// <summary>
+        /// Converts the value of the current TimeOnly object to its equivalent string representation using the specified culture-specific format information.
+        /// </summary>
+        /// <param name="provider">An object that supplies culture-specific formatting information.</param>
+        /// <returns>A string representation of value of the current TimeOnly object as specified by provider.</returns>
+        public string ToString(IFormatProvider? provider) => DateTimeFormat.Format(ToDateTime(), "t", provider);
+
+        /// <summary>
+        /// Converts the value of the current TimeOnly object to its equivalent string representation using the specified culture-specific format information.
+        /// </summary>
+        /// <param name="format">A standard or custom time format string.</param>
+        /// <param name="provider">An object that supplies culture-specific formatting information.</param>
+        /// <returns>A string representation of value of the current TimeOnly object as specified by format and provider.</returns>
+        /// <remarks>The accepted standard formats are 'r', 'R', 'o', 'O', 't' and 'T'. </remarks>
+        public string ToString([StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] string? format, IFormatProvider? provider)
+        {
+            if (string.IsNullOrEmpty(format))
+            {
+                format = "t";
+            }
+
+            if (format.Length == 1)
+            {
+                return (format[0] | 0x20) switch
+                {
+                    'o' => string.Create(16, this, (destination, value) =>
+                           {
+                               DateTimeFormat.TryFormatTimeOnlyO(value, destination, out int charsWritten);
+                               Debug.Assert(charsWritten == destination.Length);
+                           }),
+
+                    'r' => string.Create(8, this, (destination, value) =>
+                           {
+                               DateTimeFormat.TryFormatTimeOnlyR(value, destination, out int charsWritten);
+                               Debug.Assert(charsWritten == destination.Length);
+                           }),
+
+                    't' => DateTimeFormat.Format(ToDateTime(), format, provider),
+
+                    _ => throw new FormatException(SR.Format_InvalidString),
+                };
+            }
+
+            DateTimeFormat.IsValidCustomTimeOnlyFormat(format.AsSpan(), throwOnError: true);
+            return DateTimeFormat.Format(ToDateTime(), format, provider);
+        }
+
+        /// <summary>
+        /// Tries to format the value of the current TimeOnly instance into the provided span of characters.
+        /// </summary>
+        /// <param name="destination">When this method returns, this instance's value formatted as a span of characters.</param>
+        /// <param name="charsWritten">When this method returns, the number of characters that were written in destination.</param>
+        /// <param name="format">A span containing the characters that represent a standard or custom format string that defines the acceptable format for destination.</param>
+        /// <param name="provider">An optional object that supplies culture-specific formatting information for destination.</param>
+        /// <returns>true if the formatting was successful; otherwise, false.</returns>
+        /// <remarks>The accepted standard formats are 'r', 'R', 'o', 'O', 't' and 'T'. </remarks>
+        public bool TryFormat(Span<char> destination, out int charsWritten, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format = default, IFormatProvider? provider = null) =>
+            TryFormatCore(destination, out charsWritten, format, provider);
+
+        /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat" />
+        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format = default, IFormatProvider? provider = null) =>
+            TryFormatCore(utf8Destination, out bytesWritten, format, provider);
+
+        private bool TryFormatCore<TChar>(Span<TChar> destination, out int written, [StringSyntax(StringSyntaxAttribute.TimeOnlyFormat)] ReadOnlySpan<char> format, IFormatProvider? provider) where TChar : unmanaged, IUtfChar<TChar>
+        {
+            if (format.Length == 0)
+            {
+                format = "t";
+            }
+
+            if (format.Length == 1)
+            {
+                switch (format[0] | 0x20)
+                {
+                    case 'o':
+                        return DateTimeFormat.TryFormatTimeOnlyO(this, destination, out written);
+
+                    case 'r':
+                        return DateTimeFormat.TryFormatTimeOnlyR(this, destination, out written);
+
+                    case 't':
+                        return DateTimeFormat.TryFormat(ToDateTime(), destination, out written, format, provider);
+
+                    default:
+                        ThrowHelper.ThrowFormatException_BadFormatSpecifier();
+                        break;
+                }
+            }
+
+            if (!DateTimeFormat.IsValidCustomTimeOnlyFormat(format, throwOnError: false))
+            {
+                throw new FormatException(SR.Format(SR.Format_DateTimeOnlyContainsNoneDateParts, format.ToString(), nameof(TimeOnly)));
+            }
+
+            return DateTimeFormat.TryFormat(ToDateTime(), destination, out written, format, provider);
+        }
+
+        //
+        // IParsable
+        //
+
+        /// <inheritdoc cref="IParsable{TSelf}.Parse(string, IFormatProvider?)" />
+        public static TimeOnly Parse(string s, IFormatProvider? provider) => Parse(s, provider, DateTimeStyles.None);
+
+        /// <inheritdoc cref="IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)" />
+        public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, out TimeOnly result) => TryParse(s, provider, DateTimeStyles.None, out result);
+
+        //
+        // ISpanParsable
+        //
+
+        /// <inheritdoc cref="ISpanParsable{TSelf}.Parse(ReadOnlySpan{char}, IFormatProvider?)" />
+        public static TimeOnly Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, provider, DateTimeStyles.None);
+
+        /// <inheritdoc cref="ISpanParsable{TSelf}.TryParse(ReadOnlySpan{char}, IFormatProvider?, out TSelf)" />
+        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out TimeOnly result) => TryParse(s, provider, DateTimeStyles.None, out result);
+
         public static TimeSpan operator -(TimeOnly left, TimeOnly right)
         {
             var difference = left._ticks - right._ticks;
@@ -476,285 +851,6 @@ namespace System
         {
             ticks %= TimeSpan.TicksPerDay;
             return ticks < 0 ? ticks + TimeSpan.TicksPerDay : ticks;
-        }
-
-        private string FormatInvariant(string? format, IFormatProvider? provider)
-        {
-            if (string.IsNullOrEmpty(format))
-            {
-                format = "t";
-            }
-
-            if (format.Length == 1)
-            {
-                switch (format[0])
-                {
-                    case 'O':
-                    case 'o':
-                        return InvariantDateTimeText.TwoDigits(Hour) + ":" +
-                            InvariantDateTimeText.TwoDigits(Minute) + ":" +
-                            InvariantDateTimeText.TwoDigits(Second) + "." +
-                            (_ticks % TimeSpan.TicksPerSecond).ToString().PadLeft(7, '0');
-                    case 'R':
-                    case 'r':
-                        return FormatCustom("HH:mm:ss");
-                    case 't':
-                        {
-                            var dateTimeFormat =
-                                System.Globalization.DateTimeFormatInfo.GetInstance(provider);
-                            return FormatCustom(dateTimeFormat.ShortTimePattern);
-                        }
-                    case 'T':
-                        {
-                            var dateTimeFormat =
-                                System.Globalization.DateTimeFormatInfo.GetInstance(provider);
-                            return FormatCustom(dateTimeFormat.LongTimePattern);
-                        }
-                    default:
-                        throw new FormatException();
-                }
-            }
-
-            if (!IsValidCustomTimeFormat(format, throwOnError: true))
-            {
-                throw new FormatException();
-            }
-            System.Globalization.DateTimeFormatInfo.GetInstance(provider);
-            return FormatCustom(format);
-        }
-
-        private string FormatCustom(string format) => InvariantDateTimePattern.Format(
-            new DateTime(_ticks),
-            format,
-            hasOffset: false,
-            default,
-            explicitOffset: false);
-
-        private bool TryFormatCore<TChar>(
-            Span<TChar> destination,
-            out int charsWritten,
-            ReadOnlySpan<char> format,
-            IFormatProvider? provider)
-            where TChar : unmanaged, IUtfChar<TChar>
-        {
-            if (format.Length == 0)
-            {
-                format = "t";
-            }
-
-            if (format.Length == 1)
-            {
-                switch (format[0])
-                {
-                    case 'O':
-                    case 'o':
-                        return TryFormatO(destination, out charsWritten);
-                    case 'R':
-                    case 'r':
-                        return TryFormatR(destination, out charsWritten);
-                    case 't':
-                        format = System.Globalization.DateTimeFormatInfo
-                            .GetInstance(provider).ShortTimePattern;
-                        break;
-                    case 'T':
-                        format = System.Globalization.DateTimeFormatInfo
-                            .GetInstance(provider).LongTimePattern;
-                        break;
-                    default:
-                        throw new FormatException();
-                }
-            }
-            else
-            {
-                if (!IsValidCustomTimeFormat(format, throwOnError: false))
-                {
-                    throw new FormatException();
-                }
-                System.Globalization.DateTimeFormatInfo.GetInstance(provider);
-            }
-
-            Span<char> initialBuffer = stackalloc char[64];
-            var output = new Text.ValueStringBuilder(initialBuffer);
-            try
-            {
-                InvariantDateTimePattern.AppendFormat(
-                    ref output,
-                    new DateTime(_ticks),
-                    format,
-                    hasOffset: false,
-                    default,
-                    explicitOffset: false);
-                return TryCopyOutput(ref output, destination, out charsWritten);
-            }
-            finally
-            {
-                output.Dispose();
-            }
-        }
-
-        private bool TryFormatO<TChar>(Span<TChar> destination, out int charsWritten)
-            where TChar : unmanaged, IUtfChar<TChar>
-        {
-            if (destination.Length < 16)
-            {
-                charsWritten = 0;
-                return false;
-            }
-
-            WriteTwoDigits(destination, 0, Hour);
-            destination[2] = TChar.CastFrom(':');
-            WriteTwoDigits(destination, 3, Minute);
-            destination[5] = TChar.CastFrom(':');
-            WriteTwoDigits(destination, 6, Second);
-            destination[8] = TChar.CastFrom('.');
-            WriteSevenDigits(
-                destination,
-                9,
-                (int)(_ticks % TimeSpan.TicksPerSecond));
-            charsWritten = 16;
-            return true;
-        }
-
-        private bool TryFormatR<TChar>(Span<TChar> destination, out int charsWritten)
-            where TChar : unmanaged, IUtfChar<TChar>
-        {
-            if (destination.Length < 8)
-            {
-                charsWritten = 0;
-                return false;
-            }
-
-            WriteTwoDigits(destination, 0, Hour);
-            destination[2] = TChar.CastFrom(':');
-            WriteTwoDigits(destination, 3, Minute);
-            destination[5] = TChar.CastFrom(':');
-            WriteTwoDigits(destination, 6, Second);
-            charsWritten = 8;
-            return true;
-        }
-
-        private static bool TryCopyOutput<TChar>(
-            ref Text.ValueStringBuilder output,
-            Span<TChar> destination,
-            out int charsWritten)
-            where TChar : unmanaged, IUtfChar<TChar>
-        {
-            var source = output.AsSpan();
-            if (typeof(TChar) == typeof(Utf8Char))
-            {
-                var bytes = MemoryMarshal.Cast<TChar, byte>(destination);
-                var byteCount = Text.Encoding.UTF8.GetByteCount(source);
-                if (bytes.Length < byteCount)
-                {
-                    charsWritten = 0;
-                    return false;
-                }
-
-                charsWritten = Text.Encoding.UTF8.GetBytes(source, bytes);
-                return true;
-            }
-
-            if (destination.Length < source.Length)
-            {
-                charsWritten = 0;
-                return false;
-            }
-
-            for (var index = 0; index < source.Length; index++)
-            {
-                destination[index] = TChar.CastFrom(source[index]);
-            }
-            charsWritten = source.Length;
-            return true;
-        }
-
-        private static void WriteTwoDigits<TChar>(
-            Span<TChar> destination,
-            int offset,
-            int value)
-            where TChar : unmanaged, IUtfChar<TChar>
-        {
-            destination[offset] = TChar.CastFrom('0' + value / 10);
-            destination[offset + 1] = TChar.CastFrom('0' + value % 10);
-        }
-
-        private static void WriteSevenDigits<TChar>(
-            Span<TChar> destination,
-            int offset,
-            int value)
-            where TChar : unmanaged, IUtfChar<TChar>
-        {
-            var divisor = 1_000_000;
-            for (var index = 0; index < 7; index++)
-            {
-                destination[offset + index] = TChar.CastFrom('0' + value / divisor % 10);
-                divisor /= 10;
-            }
-        }
-
-        private static bool IsValidCustomTimeFormat(ReadOnlySpan<char> format, bool throwOnError)
-        {
-            for (var index = 0; index < format.Length; index++)
-            {
-                switch (format[index])
-                {
-                    case '\\':
-                        if (++index < format.Length) continue;
-                        break;
-                    case '\'':
-                    case '"':
-                        {
-                            var quote = format[index++];
-                            while (index < format.Length && format[index] != quote) index++;
-                            if (index < format.Length) continue;
-                            break;
-                        }
-                    case 'd':
-                    case 'M':
-                    case 'y':
-                    case '/':
-                    case 'z':
-                    case 'k':
-                        if (!throwOnError) return false;
-                        throw new FormatException();
-                    default:
-                        continue;
-                }
-
-                if (!throwOnError) return false;
-                throw new FormatException();
-            }
-
-            return true;
-        }
-
-        private static InvariantDateTimeParseResult TryParseExactCore(
-            ReadOnlySpan<char> s,
-            ReadOnlySpan<char> format,
-            IFormatProvider? provider,
-            System.Globalization.DateTimeStyles style,
-            out TimeOnly result)
-        {
-            var formatInfo = IsInvariantStandardFormat(format)
-                ? System.Globalization.DateTimeFormatInfo.InvariantInfo
-                : System.Globalization.DateTimeFormatInfo.GetInstance(provider);
-            return InvariantDateOnlyTimeOnlyParser.TryParseTimeExact(
-                s,
-                format,
-                formatInfo,
-                style,
-                out result);
-        }
-
-        private static bool IsInvariantStandardFormat(ReadOnlySpan<char> format) =>
-            format.Length == 1 && (format[0] | 0x20) is 'o' or 'r';
-
-        private static void ValidateStyles(System.Globalization.DateTimeStyles style)
-        {
-            if ((style & ~System.Globalization.DateTimeStyles.AllowWhiteSpaces) != 0)
-            {
-                throw new ArgumentException(null, nameof(style));
-            }
         }
 
     }

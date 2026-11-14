@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime System.Private.CoreLib Hashtable.cs at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 /*============================================================
 **
@@ -63,9 +63,7 @@ namespace System.Collections
     [Serializable]
     [TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class Hashtable : IDictionary,
-#if FEATURE_LEGACY_FORMATTER
         ISerializable, IDeserializationCallback,
-#endif
         ICloneable
     {
         /*
@@ -384,6 +382,11 @@ namespace System.Collections
             // we'll just cache this.  The graph is not valid until OnDeserialization has been called.
             HashHelpers.SerializationInfoTable.Add(this, info);
         }
+#else
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        protected Hashtable(SerializationInfo info, StreamingContext context) =>
+            throw new PlatformNotSupportedException("Hashtable formatter deserialization is not supported on this NetWasm platform.");
 #endif
 
         // ?InitHash? is basically an implementation of classic DoubleHashing (see http://en.wikipedia.org/wiki/Double_hashing)
@@ -1182,6 +1185,18 @@ namespace System.Collections
 
             HashHelpers.SerializationInfoTable.Remove(this);
         }
+#else
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        public virtual void GetObjectData(SerializationInfo info, StreamingContext context) =>
+            throw new PlatformNotSupportedException("Hashtable formatter serialization is not supported on this NetWasm platform.");
+
+        public virtual void OnDeserialization(object? sender)
+        {
+            // Preserve upstream's no-op for ordinary initialized instances.
+            if (_buckets != null) return;
+            throw new SerializationException("OnDeserialization method was called while the object was not being deserialized.");
+        }
 #endif
 
         // Implements a Collection for the keys of a hashtable. An instance of this
@@ -1264,13 +1279,12 @@ namespace System.Collections
                 _table = table;
             }
 
-#if FEATURE_LEGACY_FORMATTER
             [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
             public override void GetObjectData(SerializationInfo info, StreamingContext context)
             {
                 throw new PlatformNotSupportedException();
             }
-#endif
+
 
             public override int Count => _table.Count;
 
@@ -1386,14 +1400,13 @@ namespace System.Collections
                 }
             }
 
-#if FEATURE_LEGACY_FORMATTER
             public override void OnDeserialization(object? sender)
             {
                 // Does nothing.  We have to implement this because our parent HT implements it,
                 // but it doesn't do anything meaningful.  The real work will be done when we
                 // call OnDeserialization on our parent table.
             }
-#endif
+
 
 #if FEATURE_DEBUGGER_VIEWS
             internal override DebugViewDictionaryItem<object, object?>[] ToDebugViewDictionaryItemArray()

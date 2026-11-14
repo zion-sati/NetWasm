@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 namespace System.Reflection;
 
-public static class CustomAttributeExtensions
+public static partial class CustomAttributeExtensions
 {
     public static Attribute? GetCustomAttribute(
         this MemberInfo element,

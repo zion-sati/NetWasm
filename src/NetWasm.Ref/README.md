@@ -8,6 +8,9 @@ support/resource assemblies as ordinary NuGet analyzer assets. The SDK discovers
 them automatically; consumers need no desktop targeting pack or manual analyzer
 paths. Unsupported marshalling remains outside the static-native scalar profile.
 
+`netstandard.dll`, which forwards each .NET Standard type to its owner, ships in `NetWasm.App.Ref`, with
+the reference assemblies of the framework libraries beyond CoreLib.
+
 The NetWasm SDK consumes this package privately for a `netwasm0.1` inner build.
 The linker receives implementation assemblies from the selected NetWasm runtime
 pack.

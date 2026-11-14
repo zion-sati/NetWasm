@@ -39,7 +39,7 @@ public sealed class NativeLinkedMemoryLayoutIntegrationTests
         var archiver = Path.Combine(tools, "llvm-ar" + executableSuffix);
         var optimizer = Path.Combine(tools, "wasm-opt" + executableSuffix);
         Assert.All(new[] { clang, linker, archiver, optimizer }, path => Assert.True(File.Exists(path)));
-        var commands = new CommandInvoker();
+        var commands = new CommandInvoker(new ToolOutputExcerptFormatter());
         var source = Path.Combine(AppContext.BaseDirectory, "IntegrationAssets", "native-mule.c");
         var objectPath = Path.Combine(cell, "mule.o");
         var archive = Path.Combine(cell, "libmule.a");

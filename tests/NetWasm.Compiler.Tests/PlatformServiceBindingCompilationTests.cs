@@ -92,6 +92,48 @@ public sealed class PlatformServiceBindingCompilationTests
             ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 5, target, result.StaticDataEnd));
     }
 
+    // The platform search reads each assembly's NetWasmPlatformAttribute by name, so another assembly attribute whose
+    // type's assembly the compile does not have (System.Runtime.CompilerServices.Unsafe 4.5.3's references
+    // [System.Runtime]AssemblyProductAttribute) does not fail the build.
+    [Fact]
+    public void AssemblyAttributesFromAssembliesTheCompileLacksArePassedOver()
+    {
+        using var assets = TestAssets.Create();
+        var attributes = assets.CompileSource("AbsentAttributes", """
+            using System;
+
+            namespace AbsentAttributes;
+
+            [AttributeUsage(AttributeTargets.Assembly)]
+            public sealed class TagAttribute : Attribute
+            {
+            }
+            """);
+        var library = assets.CompileSource("TaggedPackage", """
+            [assembly: AbsentAttributes.Tag]
+
+            namespace TaggedPackage;
+
+            public static class Values
+            {
+                public static int Next(int input) => input + 1;
+            }
+            """, attributes);
+        var application = assets.CompileSource("TaggedApplication", """
+            namespace TaggedApplication;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => TaggedPackage.Values.Next(input);
+            }
+            """, library);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            application, [assets.CoreLib, library], "TaggedApplication.EntryPoint", "Run", []));
+
+        Assert.Contains(result.Program.Methods.Values, body => body.Method.DeclaringType.FullName == "TaggedPackage.Values");
+    }
+
     // A host package can ship and declare the platform; the application can declare its own instead.
     [Fact]
     public void APlatformFromALibraryBindsAndTheApplicationsDeclarationWins()

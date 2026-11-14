@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptations: a socket is blocking and cannot be made non-blocking (no readiness polling);
 // an IPv6 socket starts IPv6-only, as on Unix (the platform network provides dual mode).
 // Licensed to the .NET Foundation under one or more agreements.
@@ -1082,13 +1082,6 @@ namespace System.Net.Sockets
 
         public static SocketError SetBlocking(SafeSocketHandle handle, bool shouldBlock, out bool willBlock)
         {
-            if (!shouldBlock)
-            {
-                throw new PlatformNotSupportedException(
-                    "Sockets are blocking: the platform network completes operations rather than reporting readiness. Use the asynchronous socket methods instead of a non-blocking socket.");
-            }
-
-
             handle.IsNonBlocking = !shouldBlock;
             willBlock = shouldBlock;
             return SocketError.Success;

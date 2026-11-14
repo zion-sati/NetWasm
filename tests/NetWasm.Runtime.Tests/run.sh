@@ -155,6 +155,27 @@ cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
   \
   "${frame_linker_flags[@]}" -I"$workspace_dir/src/NetWasm.Runtime" \
   -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "${netwasm_gc_sources[@]}" "$script_dir/object_clone_contract.c" \
+  -o "$output_dir/object_clone_contract"
+"$output_dir/object_clone_contract"
+cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -DCLONE_TEST_HOOKS "${frame_linker_flags[@]}" \
+  -I"$workspace_dir/src/NetWasm.Runtime" -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "${netwasm_gc_sources[@]}" "$script_dir/object_clone_contract.c" \
+  -o "$output_dir/object_clone_hooks_contract"
+"$output_dir/object_clone_hooks_contract"
+echo "Object shallow clone and collector lifetime contract PASS"
+cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  "${frame_linker_flags[@]}" -I"$workspace_dir/src/NetWasm.Runtime" \
+  -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "${netwasm_gc_sources[@]}" "$script_dir/array_set_value_contract.c" \
+  -o "$output_dir/array_set_value_contract"
+"$output_dir/array_set_value_contract"
+echo "Array boxed-value storage and collector lifetime contract PASS"
+
+cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  "${frame_linker_flags[@]}" -I"$workspace_dir/src/NetWasm.Runtime" \
+  -I"$workspace_dir/src/NetWasm.Runtime/collector" \
   "${netwasm_gc_sources[@]}" "$script_dir/nullable_array_readback_contract.c" \
   -o "$output_dir/nullable_array_readback_contract"
 "$output_dir/nullable_array_readback_contract"
@@ -381,4 +402,13 @@ cc -std=c11 -Wall -Wextra -Werror \
   "$script_dir/runtime_posix_exit_contract.c" \
   -o "$output_dir/runtime_posix_exit_contract"
 "$output_dir/runtime_posix_exit_contract"
+
+# fopen and opendir are renamed so the executable's own C library keeps them.
+cc -std=c11 -Wall -Wextra -Werror \
+  -Dfopen=netwasm_contract_fopen -Dopendir=netwasm_contract_opendir \
+  -I"$workspace_dir/src/NetWasm.Runtime" \
+  "$workspace_dir/src/NetWasm.Runtime/runtime_posix_unavailable.c" \
+  "$script_dir/runtime_posix_unavailable_contract.c" \
+  -o "$output_dir/runtime_posix_unavailable_contract"
+"$output_dir/runtime_posix_unavailable_contract"
 echo "Runtime POSIX facade contracts PASS"

@@ -3,6 +3,7 @@ using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Values;
+using NetWasm.Compiler.Wasm.Emission.Values.AggregateAnalysis;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -995,21 +996,19 @@ public sealed class ManagedAggregateValueAnalyzerTests
         var method = fixture.LoopMethod();
         var request = fixture.Request(method, fixture.EmptyRootMap());
 
-        var constructors = new (string Parameter, Func<ManagedAggregateValueAnalyzer> Create)[]
+        // Every collaborator the fixture composes rejects each missing dependency by name.
+        Assert.Equal(13, fixture.Constructions.Count);
+        foreach (var (type, arguments) in fixture.Constructions)
         {
-            ("fieldRepository", () => new(null!, fixture, fixture, fixture, fixture, fixture, fixture, fixture, fixture)),
-            ("methodRepository", () => new(fixture, null!, fixture, fixture, fixture, fixture, fixture, fixture, fixture)),
-            ("typeDefinitions", () => new(fixture, fixture, null!, fixture, fixture, fixture, fixture, fixture, fixture)),
-            ("values", () => new(fixture, fixture, fixture, null!, fixture, fixture, fixture, fixture, fixture)),
-            ("fields", () => new(fixture, fixture, fixture, fixture, null!, fixture, fixture, fixture, fixture)),
-            ("argumentTypes", () => new(fixture, fixture, fixture, fixture, fixture, null!, fixture, fixture, fixture)),
-            ("typeOperands", () => new(fixture, fixture, fixture, fixture, fixture, fixture, null!, fixture, fixture)),
-            ("layouts", () => new(fixture, fixture, fixture, fixture, fixture, fixture, fixture, null!, fixture)),
-            ("intrinsics", () => new(fixture, fixture, fixture, fixture, fixture, fixture, fixture, fixture, null!)),
-        };
-        foreach (var (parameter, create) in constructors)
-        {
-            Assert.Equal(parameter, Assert.Throws<ArgumentNullException>(create).ParamName);
+            var constructor = Assert.Single(type.GetConstructors());
+            for (var index = 0; index < arguments.Length; index++)
+            {
+                var missing = (object?[])arguments.Clone();
+                missing[index] = null;
+                var error = Assert.Throws<System.Reflection.TargetInvocationException>(() => constructor.Invoke(missing));
+                Assert.Equal(constructor.GetParameters()[index].Name,
+                    Assert.IsType<ArgumentNullException>(error.InnerException).ParamName);
+            }
         }
         Assert.Throws<ArgumentNullException>(() => fixture.Analyzer.Analyze(null!));
         Assert.Throws<ArgumentNullException>(() =>
@@ -1202,7 +1201,28 @@ public sealed class ManagedAggregateValueAnalyzerTests
                 Container,
                 [],
                 _aliasTarget.Signature);
-            Analyzer = new(this, this, this, this, this, this, this, this, this);
+            var fields = Make<ManagedAggregateFieldResolver>(this, this, this);
+            var rootObligations = Make<ManagedAggregateRootObligationRecorder>();
+            var instructions = Make<ManagedAggregateInstructionTransfer>(
+                this,
+                Make<ManagedAggregateFieldAddressResolver>(fields),
+                Make<ManagedAggregateFieldAccessRecorder>(fields),
+                Make<ManagedAggregateObjectAccessRecorder>(this, this),
+                Make<ManagedAggregateClearRecorder>(this, this, this),
+                Make<ManagedAggregateCallEffectApplier>(this, this, this));
+            Analyzer = Make<ManagedAggregateValueAnalyzer>(
+                Make<ManagedAggregateStorageFinder>(this, this, this),
+                Make<ManagedAggregateBlockTransfer>(this, rootObligations, instructions),
+                Make<UnamortizedAggregateStoreRejector>(Make<StructuredLoopDepthMeasurer>()));
+        }
+
+        // The analyzer's collaborators as the fixture made them, with their constructors' arguments.
+        public List<(Type Type, object[] Arguments)> Constructions { get; } = [];
+
+        private T Make<T>(params object[] arguments)
+        {
+            Constructions.Add((typeof(T), arguments));
+            return (T)Assert.Single(typeof(T).GetConstructors()).Invoke(arguments);
         }
 
         public ManagedAggregateValueAnalyzer Analyzer { get; }

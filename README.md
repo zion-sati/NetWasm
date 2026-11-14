@@ -268,10 +268,9 @@ raw wasm64 and JavaScript-host integration are advanced alternatives; wasm64
 Components remain blocked by upstream tooling.
 
 Runtime reflection, `dynamic`, runtime assembly loading and managed threading
-are outside the profile. General `System.IO.File`/`Directory`/`FileStream`, raw
-sockets and subprocess APIs are not yet implemented. Existing NuGet packages
-work only when their reachable code and API dependencies fit the supported
-profile.
+are outside the profile, and so are child processes. Existing NuGet packages,
+including those built for .NET Standard, work when their reachable code and API
+dependencies fit the supported profile.
 
 [Supported APIs and limitations](docs/support-status.md) ·
 [Documentation index](docs/index.md)
@@ -284,6 +283,7 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - ✅ WASI 0.3, with broader WASI coverage (NetWasm 0.12.0);
 - globalization modes and optional culture data;
 - expression-tree completion;
+- runtime async, for faster and smaller async programs;
 - ✅ a faster incremental development loop (NetWasm 0.11.0);
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.

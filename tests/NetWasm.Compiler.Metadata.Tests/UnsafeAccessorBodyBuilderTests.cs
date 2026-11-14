@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.UnsafeAccessors;
 using NetWasm.Compiler.Metadata.UnsafeAccessors;
 
 namespace NetWasm.Compiler.Metadata.Tests;
@@ -92,6 +93,45 @@ public sealed class UnsafeAccessorBodyBuilderTests
             });
     }
 
+    // An UnsafeAccessorTypeAttribute argument is declared object, so it is cast to the type the target takes.
+    [Theory]
+    [InlineData("constructor")]
+    [InlineData("static-method")]
+    [InlineData("instance-method")]
+    [InlineData("instance-field")]
+    public void TranslatedArgumentsAreCastToTheTargetsTypes(string shape)
+    {
+        var target = Method(shape == "constructor" ? ".ctor" : "Target", shape == "static-method", 2);
+        var translated = shape is "constructor" or "static-method" ? 1 : 0;
+        var names = new string?[translated + 2];
+        names[translated + 1] = "Test.Owner, Test";
+        var accessor = Translated(Method("Access", true, shape switch { "constructor" => 2, "instance-field" => 1, _ => 3 }), names);
+        var field = new FieldInstanceModel(new FieldDefinitionModel(new(new("Test"), 0x04000001),
+            accessor.Definition.DeclaringType, "Value", CliValueKind.I4, false), target.DeclaringType,
+            CliTypeIdentity.FromStackKind(CliValueKind.I4));
+        UnsafeAccessorBinding binding = shape switch
+        {
+            "constructor" => new UnsafeAccessorBinding.Constructor(target),
+            "instance-field" => new UnsafeAccessorBinding.Field(field),
+            _ => new UnsafeAccessorBinding.Method(target),
+        };
+
+        var body = Builder().Build(accessor, binding);
+
+        var load = body.Instructions.Single(instruction => instruction.Operation == CilOperation.LoadArgument &&
+            ((CilOperand.Index)instruction.Operand).Value == translated);
+        var cast = body.Instructions[load.Offset + 1];
+        Assert.Equal(CilOperation.CastClass, cast.Operation);
+        var expected = shape switch
+        {
+            "constructor" => target.Signature.ParameterSignatureTypes[1],
+            "static-method" => target.Signature.ParameterSignatureTypes[0],
+            _ => target.DeclaringType,
+        };
+        Assert.Equal(expected, Assert.IsType<CilOperand.TypeIdentity>(cast.Operand).Value);
+        Assert.Single(body.Instructions, instruction => instruction.Operation == CilOperation.CastClass);
+    }
+
     [Fact]
     public void MissingInputsFailAtTheBuilderBoundary()
     {
@@ -112,6 +152,15 @@ public sealed class UnsafeAccessorBodyBuilderTests
         return new MethodInstanceModel(definition,
             CliTypeIdentity.Named(new("Test"), "Test", "Owner", false), [], signature);
     }
+
+    private static MethodInstanceModel Translated(MethodInstanceModel method, string?[] names) =>
+        method with
+        {
+            Definition = method.Definition with
+            {
+                UnsafeAccessor = new(1, null, false, false, new([.. names])),
+            },
+        };
 
     private static void AssertBody(CilMethodBody body, MethodInstanceModel accessor, int maxStack)
     {

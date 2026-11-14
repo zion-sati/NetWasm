@@ -2,83 +2,15 @@
 // dotnet/runtime System.Private.CoreLib primitive sources.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
-// Pinned upstream runtime commit: 474ed963699fc29809015392738a15231aaae2de.
+// Pinned upstream runtime commit: deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace System;
 
 internal static class PrimitiveIntegralConversions
 {
-    internal delegate bool PartialParser<T>(string value, out T result);
-
-    internal static bool TryParsePartial<T>(string? value, Globalization.NumberStyles style, PartialParser<T> parser, out T result, out int consumed)
-    {
-        result = default!;
-        if (value is null) { consumed = 0; return false; }
-
-        var radix = (style & Globalization.NumberStyles.AllowHexSpecifier) != 0 ? 16 :
-            (style & Globalization.NumberStyles.AllowBinarySpecifier) != 0 ? 2 : 10;
-        var index = 0;
-        if ((style & Globalization.NumberStyles.AllowLeadingWhite) != 0)
-        {
-            while (index < value.Length && char.IsWhiteSpace(value[index])) index++;
-        }
-        if ((style & Globalization.NumberStyles.AllowParentheses) != 0 && index < value.Length && value[index] == '(') index++;
-        if ((style & Globalization.NumberStyles.AllowCurrencySymbol) != 0 && index < value.Length && value[index] == '$') index++;
-        if (radix == 10 && (style & Globalization.NumberStyles.AllowLeadingSign) != 0 && index < value.Length && value[index] is '+' or '-') index++;
-        if ((style & Globalization.NumberStyles.AllowCurrencySymbol) != 0 && index < value.Length && value[index] == '$') index++;
-
-        var sawDigit = false;
-        var sawDecimalPoint = false;
-        while (index < value.Length)
-        {
-            var character = value[index];
-            var digit = character is >= '0' and <= '9' ? character - '0' :
-                character is >= 'a' and <= 'f' ? character - 'a' + 10 :
-                character is >= 'A' and <= 'F' ? character - 'A' + 10 : -1;
-            if (digit >= 0 && digit < radix)
-            {
-                sawDigit = true;
-                index++;
-                continue;
-            }
-            if (radix == 10 && (style & Globalization.NumberStyles.AllowThousands) != 0 && character == ',')
-            {
-                index++;
-                continue;
-            }
-            if (radix == 10 && !sawDecimalPoint && (style & Globalization.NumberStyles.AllowDecimalPoint) != 0 && character == '.')
-            {
-                sawDecimalPoint = true;
-                index++;
-                continue;
-            }
-            if (radix == 10 && sawDigit && (style & Globalization.NumberStyles.AllowExponent) != 0 && character is 'e' or 'E')
-            {
-                index++;
-                if (index < value.Length && value[index] is '+' or '-') index++;
-                while (index < value.Length && value[index] is >= '0' and <= '9') index++;
-            }
-            break;
-        }
-
-        if (!sawDigit) { consumed = 0; return false; }
-        if ((style & Globalization.NumberStyles.AllowTrailingSign) != 0 && index < value.Length && value[index] is '+' or '-') index++;
-        if ((style & Globalization.NumberStyles.AllowCurrencySymbol) != 0 && index < value.Length && value[index] == '$') index++;
-        if ((style & Globalization.NumberStyles.AllowParentheses) != 0 && index < value.Length && value[index] == ')') index++;
-        if ((style & Globalization.NumberStyles.AllowTrailingWhite) != 0)
-        {
-            while (index < value.Length && char.IsWhiteSpace(value[index])) index++;
-        }
-
-        consumed = index;
-        if (parser(value.Substring(0, consumed), out result)) return true;
-        result = default!;
-        consumed = 0;
-        return false;
-    }
-
     internal static int Log10Signed(long value) => value < 0 ? throw new ArgumentOutOfRangeException() : Log10((ulong)value);
 
     internal static int Log10(ulong value)
@@ -107,43 +39,101 @@ internal static class PrimitiveIntegralConversions
 
 }
 
-internal static class PrimitiveScalarContracts
+public readonly partial struct Int16 : IBinaryIntegerParseAndFormatInfo<short>
 {
-    internal static string Utf8ToString(ReadOnlySpan<byte> value)
-    {
-        var characters = new char[value.Length];
-        for (var index = 0; index < value.Length; index++)
-        {
-            characters[index] = (char)value[index];
-        }
+    // Parsing is dotnet/runtime 474ed96's Int16.cs, over Number.Parsing's integer parser.
+    public static short Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
 
-        return new string(characters);
+    public static short Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static short Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static short Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
     }
 
-    internal static string? Format(ReadOnlySpan<char> format) =>
-        format.Length == 0 ? null : new string(format);
-
-    internal static bool TryFormat(string text, Span<char> destination, out int charsWritten)
+    public static short Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
     {
-        if (text.Length > destination.Length)
-        {
-            charsWritten = 0;
-            return false;
-        }
-
-        var characters = text.ToCharArray();
-        for (var index = 0; index < characters.Length; index++)
-        {
-            destination[index] = characters[index];
-        }
-
-        charsWritten = characters.Length;
-        return true;
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, short>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
     }
-}
 
-public partial struct Int16
-{
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out short result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out short result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out short result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out short result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out short result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out short result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out short result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out short result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out short result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static short Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out short result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static short Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, short>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out short result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static short Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out short result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<short>.IsSigned => true;
+
+    static int IBinaryIntegerParseAndFormatInfo<short>.MaxDigitCount => 5; // 32_767
+
+    static int IBinaryIntegerParseAndFormatInfo<short>.MaxHexDigitCount => 4; // 0x7FFF
+
+    static short IBinaryIntegerParseAndFormatInfo<short>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<short>.OverflowMessage => SR.Overflow_Int16;
+
+    static bool IBinaryIntegerParseAndFormatInfo<short>.IsGreaterThanAsUnsigned(short left, short right) => (ushort)(left) > (ushort)(right);
+
+    static short IBinaryIntegerParseAndFormatInfo<short>.MultiplyBy10(short value) => (short)(value * 10);
+
+    static short IBinaryIntegerParseAndFormatInfo<short>.MultiplyBy16(short value) => (short)(value * 16);
+
     // Number's format-free entry point: what the default format writes, without the format string parser.
     public string ToString(IFormatProvider? provider) => Number.FormatInt32WithoutFormat(this, provider);
 
@@ -157,17 +147,105 @@ public partial struct Int16
         IFormatProvider? provider = null) =>
         Number.TryFormatInt32(this, 0x0000FFFF, format, provider, destination, out charsWritten);
 
-    public static short Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out short result) =>
-        TryParse(value, out result);
-
     static short Numerics.IMinMaxValue<short>.MinValue => MinValue;
     static short Numerics.IMinMaxValue<short>.MaxValue => MaxValue;
 }
 
-public partial struct UInt16
+public readonly partial struct UInt16 : IBinaryIntegerParseAndFormatInfo<ushort>
 {
+    // Parsing is dotnet/runtime 474ed96's UInt16.cs, over Number.Parsing's integer parser.
+    public static ushort Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
+
+    public static ushort Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static ushort Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static ushort Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static ushort Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, ushort>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out ushort result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out ushort result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out ushort result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out ushort result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static ushort Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out ushort result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static ushort Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, ushort>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static ushort Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out ushort result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<ushort>.IsSigned => false;
+
+    static int IBinaryIntegerParseAndFormatInfo<ushort>.MaxDigitCount => 5; // 65_535
+
+    static int IBinaryIntegerParseAndFormatInfo<ushort>.MaxHexDigitCount => 4; // 0xFFFF
+
+    static ushort IBinaryIntegerParseAndFormatInfo<ushort>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<ushort>.OverflowMessage => SR.Overflow_UInt16;
+
+    static bool IBinaryIntegerParseAndFormatInfo<ushort>.IsGreaterThanAsUnsigned(ushort left, ushort right) => left > right;
+
+    static ushort IBinaryIntegerParseAndFormatInfo<ushort>.MultiplyBy10(ushort value) => (ushort)(value * 10);
+
+    static ushort IBinaryIntegerParseAndFormatInfo<ushort>.MultiplyBy16(ushort value) => (ushort)(value * 16);
+
     public string ToString(IFormatProvider? provider) => Number.UInt32ToDecStr(this);
 
     public string ToString(string? format, IFormatProvider? provider) =>
@@ -180,30 +258,111 @@ public partial struct UInt16
         IFormatProvider? provider = null) =>
         Number.TryFormatUInt32(this, format, provider, destination, out charsWritten);
 
-    public static ushort Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out ushort result) =>
-        TryParse(value, out result);
-
     static ushort Numerics.IMinMaxValue<ushort>.MinValue => MinValue;
     static ushort Numerics.IMinMaxValue<ushort>.MaxValue => MaxValue;
 }
 
-public partial struct Int32
+public readonly partial struct Int32 : IBinaryIntegerParseAndFormatInfo<int>
 {
+    // Parsing is dotnet/runtime 474ed96's Int32.cs, over Number.Parsing's integer parser.
+    public static int Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
+
+    public static int Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static int Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static int Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static int Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, int>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out int result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out int result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out int result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out int result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out int result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out int result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out int result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out int result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out int result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static int Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out int result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static int Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, int>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out int result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static int Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out int result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<int>.IsSigned => true;
+
+    static int IBinaryIntegerParseAndFormatInfo<int>.MaxDigitCount => 10; // 2_147_483_647
+
+    static int IBinaryIntegerParseAndFormatInfo<int>.MaxHexDigitCount => 8; // 0x7FFF_FFFF
+
+    static int IBinaryIntegerParseAndFormatInfo<int>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<int>.OverflowMessage => SR.Overflow_Int32;
+
+    static bool IBinaryIntegerParseAndFormatInfo<int>.IsGreaterThanAsUnsigned(int left, int right) => (uint)(left) > (uint)(right);
+
+    static int IBinaryIntegerParseAndFormatInfo<int>.MultiplyBy10(int value) => value * 10;
+
+    static int IBinaryIntegerParseAndFormatInfo<int>.MultiplyBy16(int value) => value * 16;
+
     public TypeCode GetTypeCode() => TypeCode.Int32;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatInt32(this, ~0, format, provider, destination, out bytesWritten);
     public static long BigMul(int left, int right) => (long)left * right;
+
     public static int Log10(int value) => PrimitiveIntegralConversions.Log10Signed(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out int result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out int result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out int result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out int parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out int result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out int result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);
@@ -224,6 +383,188 @@ public partial struct Int32
 
 public readonly partial struct IntPtr
 {
+    // Parsing follows dotnet/runtime 474ed96's IntPtr.cs, which forwards to the integer of the
+    // target's width; NetWasm compiles one CoreLib for both widths, so it forwards on IntPtr.Size.
+    public static nint Parse(string s) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(s) : (nint)int.Parse(s);
+
+    public static nint Parse(string s, Globalization.NumberStyles style) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(s, style) : (nint)int.Parse(s, style);
+
+    public static nint Parse(string s, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(s, provider) : (nint)int.Parse(s, provider);
+
+    public static nint Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(s, style, provider) : (nint)int.Parse(s, style, provider);
+
+    public static nint Parse(ReadOnlySpan<char> s, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(s, provider) : (nint)int.Parse(s, provider);
+
+    public static nint Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(s, style, provider) : (nint)int.Parse(s, style, provider);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(s, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(s, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(s, provider, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(s, provider, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(s, style, provider, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(s, style, provider, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(s, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(s, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(utf8Text, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(utf8Text, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(s, provider, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(s, provider, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(s, style, provider, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(s, style, provider, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out nint result, out int charsConsumed)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParsePartial(s, style, provider, out long wideValue, out charsConsumed);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParsePartial(s, style, provider, out int narrowValue, out charsConsumed);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out nint result, out int charsConsumed)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParsePartial(s, style, provider, out long wideValue, out charsConsumed);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParsePartial(s, style, provider, out int narrowValue, out charsConsumed);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out nint result, out int bytesConsumed)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParsePartial(utf8Text, style, provider, out long wideValue, out bytesConsumed);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParsePartial(utf8Text, style, provider, out int narrowValue, out bytesConsumed);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static nint Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(utf8Text, style, provider) : (nint)int.Parse(utf8Text, style, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(utf8Text, style, provider, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(utf8Text, style, provider, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static nint Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nint)long.Parse(utf8Text, provider) : (nint)int.Parse(utf8Text, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out nint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = long.TryParse(utf8Text, provider, out long wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = int.TryParse(utf8Text, provider, out int narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
     public unsafe IntPtr(void* value) => _value = (nint)value;
     public static unsafe explicit operator IntPtr(void* value) => new(value);
     public static unsafe explicit operator void*(IntPtr value) => (void*)value._value;
@@ -245,19 +586,8 @@ public readonly partial struct IntPtr
         low = (int)result;
         return (int)(result >>> 32);
     }
+
     public static nint Log10(nint value) => (nint)PrimitiveIntegralConversions.Log10Signed((long)value._value);
-    public static nint Parse(ReadOnlySpan<byte> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(PrimitiveScalarContracts.Utf8ToString(value), style, provider);
-    public static nint Parse(ReadOnlySpan<byte> value, IFormatProvider? provider) => Parse(value, System.Globalization.NumberStyles.Integer, provider);
-    public static bool TryParse(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result) => TryParse(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, IFormatProvider? provider, out nint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out nint result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<char> value, out nint result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out nint parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     public static bool operator ==(nint left, nint right) => left._value == right._value;
     public static bool operator !=(nint left, nint right) => left._value != right._value;
     public static nint operator +(nint value, int offset) => value._value + offset;
@@ -266,6 +596,188 @@ public readonly partial struct IntPtr
 
 public readonly partial struct UIntPtr
 {
+    // Parsing follows dotnet/runtime 474ed96's UIntPtr.cs, which forwards to the integer of the
+    // target's width; NetWasm compiles one CoreLib for both widths, so it forwards on IntPtr.Size.
+    public static nuint Parse(string s) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(s) : (nuint)uint.Parse(s);
+
+    public static nuint Parse(string s, Globalization.NumberStyles style) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(s, style) : (nuint)uint.Parse(s, style);
+
+    public static nuint Parse(string s, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(s, provider) : (nuint)uint.Parse(s, provider);
+
+    public static nuint Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(s, style, provider) : (nuint)uint.Parse(s, style, provider);
+
+    public static nuint Parse(ReadOnlySpan<char> s, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(s, provider) : (nuint)uint.Parse(s, provider);
+
+    public static nuint Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(s, style, provider) : (nuint)uint.Parse(s, style, provider);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(s, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(s, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(s, provider, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(s, provider, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(s, style, provider, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(s, style, provider, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(s, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(s, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(utf8Text, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(utf8Text, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(s, provider, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(s, provider, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(s, style, provider, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(s, style, provider, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result, out int charsConsumed)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParsePartial(s, style, provider, out ulong wideValue, out charsConsumed);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParsePartial(s, style, provider, out uint narrowValue, out charsConsumed);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result, out int charsConsumed)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParsePartial(s, style, provider, out ulong wideValue, out charsConsumed);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParsePartial(s, style, provider, out uint narrowValue, out charsConsumed);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result, out int bytesConsumed)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParsePartial(utf8Text, style, provider, out ulong wideValue, out bytesConsumed);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParsePartial(utf8Text, style, provider, out uint narrowValue, out bytesConsumed);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static nuint Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(utf8Text, style, provider) : (nuint)uint.Parse(utf8Text, style, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(utf8Text, style, provider, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(utf8Text, style, provider, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
+    public static nuint Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) =>
+        IntPtr.Size == 8 ? (nuint)ulong.Parse(utf8Text, provider) : (nuint)uint.Parse(utf8Text, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out nuint result)
+    {
+        if (IntPtr.Size == 8)
+        {
+            bool parsedWide = ulong.TryParse(utf8Text, provider, out ulong wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        bool parsedNarrow = uint.TryParse(utf8Text, provider, out uint narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+
     public unsafe UIntPtr(void* value) => _value = (nuint)value;
     public static unsafe explicit operator UIntPtr(void* value) => new(value);
     public static unsafe explicit operator void*(UIntPtr value) => (void*)value._value;
@@ -285,40 +797,115 @@ public readonly partial struct UIntPtr
         low = (uint)result;
         return (uint)(result >>> 32);
     }
+
     public static nuint Log10(nuint value) => (nuint)PrimitiveIntegralConversions.Log10((ulong)value._value);
-    public static nuint Parse(ReadOnlySpan<byte> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(PrimitiveScalarContracts.Utf8ToString(value), style, provider);
-    public static nuint Parse(ReadOnlySpan<byte> value, IFormatProvider? provider) => Parse(value, System.Globalization.NumberStyles.Integer, provider);
-    public static bool TryParse(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result) => TryParse(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, IFormatProvider? provider, out nuint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out nuint result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<char> value, out nuint result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out nuint parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     public static bool operator ==(nuint left, nuint right) => left._value == right._value;
     public static bool operator !=(nuint left, nuint right) => left._value != right._value;
     public static nuint operator +(nuint value, int offset) => value._value + (nuint)offset;
     public static nuint operator -(nuint value, int offset) => value._value - (nuint)offset;
 }
 
-public partial struct UInt32
+public readonly partial struct UInt32 : IBinaryIntegerParseAndFormatInfo<uint>
 {
+    // Parsing is dotnet/runtime 474ed96's UInt32.cs, over Number.Parsing's integer parser.
+    public static uint Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
+
+    public static uint Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static uint Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static uint Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static uint Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, uint>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out uint result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out uint result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out uint result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out uint result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out uint result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out uint result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out uint result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out uint result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out uint result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static uint Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out uint result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static uint Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, uint>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out uint result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static uint Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out uint result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<uint>.IsSigned => false;
+
+    static int IBinaryIntegerParseAndFormatInfo<uint>.MaxDigitCount => 10; // 4_294_967_295
+
+    static int IBinaryIntegerParseAndFormatInfo<uint>.MaxHexDigitCount => 8; // 0xFFFF_FFFF
+
+    static uint IBinaryIntegerParseAndFormatInfo<uint>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<uint>.OverflowMessage => SR.Overflow_UInt32;
+
+    static bool IBinaryIntegerParseAndFormatInfo<uint>.IsGreaterThanAsUnsigned(uint left, uint right) => left > right;
+
+    static uint IBinaryIntegerParseAndFormatInfo<uint>.MultiplyBy10(uint value) => value * 10;
+
+    static uint IBinaryIntegerParseAndFormatInfo<uint>.MultiplyBy16(uint value) => value * 16;
+
     public TypeCode GetTypeCode() => TypeCode.UInt32;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatUInt32(this, format, provider, destination, out bytesWritten);
     public static ulong BigMul(uint left, uint right) => (ulong)left * right;
+
     public static uint Log10(uint value) => (uint)PrimitiveIntegralConversions.Log10(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out uint result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out uint result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out uint result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out uint parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out uint result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out uint result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);
@@ -337,21 +924,107 @@ public partial struct UInt32
     object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => PrimitiveIntegralConversions.ToType(this, conversionType, provider);
 }
 
-public partial struct Int64
+public readonly partial struct Int64 : IBinaryIntegerParseAndFormatInfo<long>
 {
+    // Parsing is dotnet/runtime 474ed96's Int64.cs, over Number.Parsing's integer parser.
+    public static long Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
+
+    public static long Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static long Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static long Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static long Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, long>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out long result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out long result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out long result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out long result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out long result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out long result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out long result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out long result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out long result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static long Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out long result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static long Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, long>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out long result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static long Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out long result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<long>.IsSigned => true;
+
+    static int IBinaryIntegerParseAndFormatInfo<long>.MaxDigitCount => 19; // 9_223_372_036_854_775_807
+
+    static int IBinaryIntegerParseAndFormatInfo<long>.MaxHexDigitCount => 16; // 0x7FFF_FFFF_FFFF_FFFF
+
+    static long IBinaryIntegerParseAndFormatInfo<long>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<long>.OverflowMessage => SR.Overflow_Int64;
+
+    static bool IBinaryIntegerParseAndFormatInfo<long>.IsGreaterThanAsUnsigned(long left, long right) => (ulong)(left) > (ulong)(right);
+
+    static long IBinaryIntegerParseAndFormatInfo<long>.MultiplyBy10(long value) => value * 10;
+
+    static long IBinaryIntegerParseAndFormatInfo<long>.MultiplyBy16(long value) => value * 16;
+
     public TypeCode GetTypeCode() => TypeCode.Int64;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatInt64(this, format, provider, destination, out bytesWritten);
     public static Int128 BigMul(long left, long right) => (Int128)left * right;
+
     public static long Log10(long value) => PrimitiveIntegralConversions.Log10Signed(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out long result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out long result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out long result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out long parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out long result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out long result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);
@@ -370,21 +1043,107 @@ public partial struct Int64
     object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => PrimitiveIntegralConversions.ToType(this, conversionType, provider);
 }
 
-public partial struct UInt64
+public readonly partial struct UInt64 : IBinaryIntegerParseAndFormatInfo<ulong>
 {
+    // Parsing is dotnet/runtime 474ed96's UInt64.cs, over Number.Parsing's integer parser.
+    public static ulong Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
+
+    public static ulong Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static ulong Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static ulong Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static ulong Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, ulong>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out ulong result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out ulong result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out ulong result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out ulong result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static ulong Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out ulong result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static ulong Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, ulong>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static ulong Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out ulong result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<ulong>.IsSigned => false;
+
+    static int IBinaryIntegerParseAndFormatInfo<ulong>.MaxDigitCount => 20; // 18_446_744_073_709_551_615
+
+    static int IBinaryIntegerParseAndFormatInfo<ulong>.MaxHexDigitCount => 16; // 0xFFFF_FFFF_FFFF_FFFF
+
+    static ulong IBinaryIntegerParseAndFormatInfo<ulong>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<ulong>.OverflowMessage => SR.Overflow_UInt64;
+
+    static bool IBinaryIntegerParseAndFormatInfo<ulong>.IsGreaterThanAsUnsigned(ulong left, ulong right) => left > right;
+
+    static ulong IBinaryIntegerParseAndFormatInfo<ulong>.MultiplyBy10(ulong value) => value * 10;
+
+    static ulong IBinaryIntegerParseAndFormatInfo<ulong>.MultiplyBy16(ulong value) => value * 16;
+
     public TypeCode GetTypeCode() => TypeCode.UInt64;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatUInt64(this, format, provider, destination, out bytesWritten);
     public static UInt128 BigMul(ulong left, ulong right) => (UInt128)left * right;
+
     public static ulong Log10(ulong value) => (ulong)PrimitiveIntegralConversions.Log10(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out ulong result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out ulong result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out ulong parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);
@@ -403,7 +1162,7 @@ public partial struct UInt64
     object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => PrimitiveIntegralConversions.ToType(this, conversionType, provider);
 }
 
-public partial struct Int32
+public readonly partial struct Int32
 {
 
     // Number's format-free entry point: what the default format writes, without the format string parser.
@@ -419,13 +1178,9 @@ public partial struct Int32
         IFormatProvider? provider = null) =>
         Number.TryFormatInt32(this, ~0, format, provider, destination, out charsWritten);
 
-    public static int Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out int result) =>
-        TryParse(value, out result);
 }
 
-public partial struct UInt32
+public readonly partial struct UInt32
 {
 
     public string ToString(IFormatProvider? provider) => Number.UInt32ToDecStr(this);
@@ -440,13 +1195,9 @@ public partial struct UInt32
         IFormatProvider? provider = null) =>
         Number.TryFormatUInt32(this, format, provider, destination, out charsWritten);
 
-    public static uint Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out uint result) =>
-        TryParse(value, out result);
 }
 
-public partial struct Int64
+public readonly partial struct Int64
 {
     // Number's format-free entry point: what the default format writes, without the format string parser.
     public string ToString(IFormatProvider? provider) => Number.FormatInt64WithoutFormat(this, provider);
@@ -461,13 +1212,27 @@ public partial struct Int64
         IFormatProvider? provider = null) =>
         Number.TryFormatInt64(this, format, provider, destination, out charsWritten);
 
-    public static long Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out long result) =>
-        TryParse(value, out result);
 }
 
-public partial struct UInt64
+public readonly partial struct UInt32
+{
+    // Lookup table for power-of-10 boundaries corrections
+    internal static ReadOnlySpan<uint> PowersOf10 =>
+    [
+        1,
+        10,
+        100,
+        1_000,
+        10_000,
+        100_000,
+        1_000_000,
+        10_000_000,
+        100_000_000,
+        1_000_000_000,
+    ];
+}
+
+public readonly partial struct UInt64
 {
     internal static ReadOnlySpan<ulong> PowersOf10 =>
     [
@@ -505,16 +1270,91 @@ public partial struct UInt64
         IFormatProvider? provider = null) =>
         Number.TryFormatUInt64(this, format, provider, destination, out charsWritten);
 
-    public static ulong Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out ulong result) =>
-        TryParse(value, out result);
 }
 
-public partial struct Single
+public readonly partial struct Single
 {
-    // Without a format a provider changes nothing: NetWasm's NumberFormatInfo is the invariant one.
-    public string ToString(IFormatProvider? provider) => ToString();
+    // Parsing is dotnet/runtime 474ed96's Single.cs, over Number.Parsing's floating-point parser.
+    public static float Parse(string s) => Parse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null);
+
+    public static float Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static float Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider);
+
+    public static float Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null)
+        {
+            throw new ArgumentNullException(nameof(s));
+        }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static float Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.ParseFloat<char, float>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out float result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out float result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out float result) => TryParse(utf8Text, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out float result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _);
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out float result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _);
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out float result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed);
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out float result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed);
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out float result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed);
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out float result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider, out result);
+
+    public static float Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out float result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider, out result);
+
+    public static float Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.ParseFloat<byte, float>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out float result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _);
+    }
+
+    public static float Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out float result) => TryParse(utf8Text, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider, out result);
+
+    public string ToString(IFormatProvider? provider) => provider is null ? ToString() : Number.FormatFloat(this, null, provider);
 
     public string ToString(string? format, IFormatProvider? provider) =>
         Number.FormatFloat(this, format, provider);
@@ -525,11 +1365,6 @@ public partial struct Single
         ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>),
         IFormatProvider? provider = null) =>
         Number.TryFormatFloat(this, format, provider, destination, out charsWritten);
-
-    public static float Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out float result) =>
-        TryParse(value, out result);
 
     public static bool IsPow2(float value)
     {
@@ -577,30 +1412,6 @@ public partial struct Single
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null)
     {
         return Number.TryFormatFloat(this, format, provider, destination, out bytesWritten);
-    }
-
-    private const Globalization.NumberStyles SingleParseStyle = Globalization.NumberStyles.AllowDecimalPoint | Globalization.NumberStyles.AllowExponent | Globalization.NumberStyles.AllowLeadingSign | Globalization.NumberStyles.AllowLeadingWhite | Globalization.NumberStyles.AllowThousands | Globalization.NumberStyles.AllowTrailingWhite;
-
-    public static float Parse(string value, Globalization.NumberStyles style) => Parse(value.AsSpan(), style, null);
-
-    public static float Parse(ReadOnlySpan<byte> value, System.Globalization.NumberStyles style = System.Globalization.NumberStyles.AllowDecimalPoint | System.Globalization.NumberStyles.AllowExponent | System.Globalization.NumberStyles.AllowLeadingSign | System.Globalization.NumberStyles.AllowLeadingWhite | System.Globalization.NumberStyles.AllowThousands | System.Globalization.NumberStyles.AllowTrailingWhite, IFormatProvider? provider = null)
-    {
-        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
-        return Number.ParseFloat<byte, float>(value, style, Globalization.NumberFormatInfo.GetInstance(provider));
-    }
-    public static bool TryParse(ReadOnlySpan<char> value, out float result) => TryParse(value, SingleParseStyle, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out float result) => TryParse(value, SingleParseStyle, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out float result) => TryParseFloat(value, style, provider, false, out result, out _);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out float result, out int charsConsumed) => TryParseFloat(value.AsSpan(), style, provider, true, out result, out charsConsumed);
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out float result, out int charsConsumed) => TryParseFloat(value, style, provider, true, out result, out charsConsumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out float result, out int bytesConsumed) => TryParseFloat(value, style, provider, true, out result, out bytesConsumed);
-
-    private static bool TryParseFloat<TChar>(ReadOnlySpan<TChar> value, Globalization.NumberStyles style, IFormatProvider? provider, bool allowTrailingInvalid, out float result, out int consumed)
-        where TChar : unmanaged
-    {
-        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
-        if (allowTrailingInvalid) style |= Number.AllowTrailingInvalidCharacters;
-        return Number.TryParseFloat(value, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out consumed);
     }
 
     public static TInteger ConvertToInteger<TInteger>(float value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
@@ -688,10 +1499,89 @@ public partial struct Single
         throw new InvalidCastException();
 }
 
-public partial struct Double
+public readonly partial struct Double
 {
-    // Without a format a provider changes nothing: NetWasm's NumberFormatInfo is the invariant one.
-    public string ToString(IFormatProvider? provider) => ToString();
+    // Parsing is dotnet/runtime 474ed96's Double.cs, over Number.Parsing's floating-point parser.
+    public static double Parse(string s) => Parse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null);
+
+    public static double Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static double Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider);
+
+    public static double Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null)
+        {
+            throw new ArgumentNullException(nameof(s));
+        }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static double Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.ParseFloat<char, double>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out double result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out double result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out double result) => TryParse(utf8Text, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out double result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _);
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out double result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _);
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out double result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed);
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out double result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed);
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out double result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed);
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out double result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider, out result);
+
+    public static double Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out double result) => TryParse(s, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider, out result);
+
+    public static double Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.ParseFloat<byte, double>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out double result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
+        return Number.TryParseFloat(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _);
+    }
+
+    public static double Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out double result) => TryParse(utf8Text, Globalization.NumberStyles.Float | Globalization.NumberStyles.AllowThousands, provider, out result);
+
+    public string ToString(IFormatProvider? provider) => provider is null ? ToString() : Number.FormatFloat(this, null, provider);
 
     public string ToString(string? format, IFormatProvider? provider) =>
         Number.FormatFloat(this, format, provider);
@@ -702,11 +1592,6 @@ public partial struct Double
         ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>),
         IFormatProvider? provider = null) =>
         Number.TryFormatFloat(this, format, provider, destination, out charsWritten);
-
-    public static double Parse(string value, IFormatProvider? provider) => Parse(value);
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out double result) =>
-        TryParse(value, out result);
 
     public static bool IsPow2(double value)
     {
@@ -753,30 +1638,6 @@ public partial struct Double
 
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatFloat(this, format, provider, destination, out bytesWritten);
-
-    private const Globalization.NumberStyles DoubleParseStyle = Globalization.NumberStyles.AllowDecimalPoint | Globalization.NumberStyles.AllowExponent | Globalization.NumberStyles.AllowLeadingSign | Globalization.NumberStyles.AllowLeadingWhite | Globalization.NumberStyles.AllowThousands | Globalization.NumberStyles.AllowTrailingWhite;
-
-    public static double Parse(string value, Globalization.NumberStyles style) => Parse(value.AsSpan(), style, null);
-
-    public static double Parse(ReadOnlySpan<byte> value, System.Globalization.NumberStyles style = System.Globalization.NumberStyles.AllowDecimalPoint | System.Globalization.NumberStyles.AllowExponent | System.Globalization.NumberStyles.AllowLeadingSign | System.Globalization.NumberStyles.AllowLeadingWhite | System.Globalization.NumberStyles.AllowThousands | System.Globalization.NumberStyles.AllowTrailingWhite, IFormatProvider? provider = null)
-    {
-        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
-        return Number.ParseFloat<byte, double>(value, style, Globalization.NumberFormatInfo.GetInstance(provider));
-    }
-    public static bool TryParse(ReadOnlySpan<char> value, out double result) => TryParse(value, DoubleParseStyle, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out double result) => TryParse(value, DoubleParseStyle, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out double result) => TryParseDouble(value, style, provider, false, out result, out _);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out double result, out int charsConsumed) => TryParseDouble(value.AsSpan(), style, provider, true, out result, out charsConsumed);
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out double result, out int charsConsumed) => TryParseDouble(value, style, provider, true, out result, out charsConsumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out double result, out int bytesConsumed) => TryParseDouble(value, style, provider, true, out result, out bytesConsumed);
-
-    private static bool TryParseDouble<TChar>(ReadOnlySpan<TChar> value, Globalization.NumberStyles style, IFormatProvider? provider, bool allowTrailingInvalid, out double result, out int consumed)
-        where TChar : unmanaged
-    {
-        Globalization.NumberFormatInfo.ValidateParseStyleFloatingPoint(style);
-        if (allowTrailingInvalid) style |= Number.AllowTrailingInvalidCharacters;
-        return Number.TryParseFloat(value, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out consumed);
-    }
 
     public static TInteger ConvertToInteger<TInteger>(double value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
     public static TInteger ConvertToIntegerNative<TInteger>(double value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
@@ -874,7 +1735,7 @@ public partial struct Double
         throw new InvalidCastException();
 }
 
-public partial struct Single
+public readonly partial struct Single
 {
     // These bit-layout helpers are internal runtime conveniences used by the
     // Half/BFloat16 conversion code.  Keep them in the support partial so the
@@ -984,7 +1845,7 @@ public partial struct Single
     static float Numerics.IFloatingPointConstants<float>.Tau => Tau;
 }
 
-public partial struct Double
+public readonly partial struct Double
 {
     // See the corresponding Single helpers above.  These constants/methods
     // are consumed by the binary floating-point conversion implementations.
@@ -1234,42 +2095,6 @@ public readonly partial struct IntPtr
         Size == 8 ? ((long)_value).TryFormat(destination, out charsWritten, format, provider) : ((int)_value).TryFormat(destination, out charsWritten, format, provider);
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Size == 8 ? ((long)_value).TryFormat(destination, out bytesWritten, format, provider) : ((int)_value).TryFormat(destination, out bytesWritten, format, provider);
-    // As upstream, through the fixed-width type of the target's width.
-    public static nint Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Size == 8
-        ? (nint)long.Parse(value, style, provider)
-        : int.Parse(value, style, provider);
-    public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result)
-    {
-        if (Size == 8)
-        {
-            var parsedWide = long.TryParse(value, style, provider, out var wideValue);
-            result = (nint)wideValue;
-            return parsedWide;
-        }
-        var parsedNarrow = int.TryParse(value, style, provider, out var narrowValue);
-        result = narrowValue;
-        return parsedNarrow;
-    }
-    public static nint Parse(string value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
-    public static bool TryParse(string? value, IFormatProvider? provider, out nint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
-    public static nint Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
-    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out nint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
-    public static nint Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Size == 8
-        ? (nint)long.Parse(value, style, provider)
-        : int.Parse(value, style, provider);
-    public static bool TryParse(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result)
-    {
-        if (Size == 8)
-        {
-            var parsedWide = long.TryParse(value, style, provider, out var wideValue);
-            result = (nint)wideValue;
-            return parsedWide;
-        }
-        var parsedNarrow = int.TryParse(value, style, provider, out var narrowValue);
-        result = narrowValue;
-        return parsedNarrow;
-    }
-
     static nint Numerics.INumberBase<nint>.One => One;
     static nint Numerics.INumberBase<nint>.Zero => Zero;
     static int Numerics.INumberBase<nint>.Radix => Radix;
@@ -1439,42 +2264,6 @@ public readonly partial struct UIntPtr
         Size == 8 ? ((ulong)_value).TryFormat(destination, out charsWritten, format, provider) : ((uint)_value).TryFormat(destination, out charsWritten, format, provider);
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Size == 8 ? ((ulong)_value).TryFormat(destination, out bytesWritten, format, provider) : ((uint)_value).TryFormat(destination, out bytesWritten, format, provider);
-    // As upstream, through the fixed-width type of the target's width.
-    public static nuint Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Size == 8
-        ? (nuint)ulong.Parse(value, style, provider)
-        : uint.Parse(value, style, provider);
-    public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result)
-    {
-        if (Size == 8)
-        {
-            var parsedWide = ulong.TryParse(value, style, provider, out var wideValue);
-            result = (nuint)wideValue;
-            return parsedWide;
-        }
-        var parsedNarrow = uint.TryParse(value, style, provider, out var narrowValue);
-        result = narrowValue;
-        return parsedNarrow;
-    }
-    public static nuint Parse(string value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
-    public static bool TryParse(string? value, IFormatProvider? provider, out nuint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
-    public static nuint Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
-    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out nuint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
-    public static nuint Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Size == 8
-        ? (nuint)ulong.Parse(value, style, provider)
-        : uint.Parse(value, style, provider);
-    public static bool TryParse(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result)
-    {
-        if (Size == 8)
-        {
-            var parsedWide = ulong.TryParse(value, style, provider, out var wideValue);
-            result = (nuint)wideValue;
-            return parsedWide;
-        }
-        var parsedNarrow = uint.TryParse(value, style, provider, out var narrowValue);
-        result = narrowValue;
-        return parsedNarrow;
-    }
-
     static nuint Numerics.INumberBase<nuint>.One => One;
     static nuint Numerics.INumberBase<nuint>.Zero => Zero;
     static int Numerics.INumberBase<nuint>.Radix => Radix;
@@ -1537,20 +2326,103 @@ public readonly partial struct UIntPtr
 
 }
 
-public partial struct Byte
+public readonly partial struct Byte : IBinaryIntegerParseAndFormatInfo<byte>
 {
+    // Parsing is dotnet/runtime 474ed96's Byte.cs, over Number.Parsing's integer parser.
+    public static byte Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
+
+    public static byte Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static byte Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static byte Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static byte Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, byte>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out byte result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out byte result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out byte result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out byte result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out byte result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out byte result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out byte result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out byte result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out byte result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static byte Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out byte result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static byte Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, byte>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out byte result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static byte Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out byte result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<byte>.IsSigned => false;
+
+    static int IBinaryIntegerParseAndFormatInfo<byte>.MaxDigitCount => 3; // 255
+
+    static int IBinaryIntegerParseAndFormatInfo<byte>.MaxHexDigitCount => 2; // 0xFF
+
+    static byte IBinaryIntegerParseAndFormatInfo<byte>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<byte>.OverflowMessage => SR.Overflow_Byte;
+
+    static bool IBinaryIntegerParseAndFormatInfo<byte>.IsGreaterThanAsUnsigned(byte left, byte right) => left > right;
+
+    static byte IBinaryIntegerParseAndFormatInfo<byte>.MultiplyBy10(byte value) => (byte)(value * 10);
+
+    static byte IBinaryIntegerParseAndFormatInfo<byte>.MultiplyBy16(byte value) => (byte)(value * 16);
+
     public TypeCode GetTypeCode() => TypeCode.Byte;
     public static byte Log10(byte value) => (byte)PrimitiveIntegralConversions.Log10(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out byte result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out byte result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out byte result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out byte parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out byte result, out int consumed) =>
-        TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out byte result, out int consumed) =>
-        TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);
@@ -1569,20 +2441,103 @@ public partial struct Byte
     object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => PrimitiveIntegralConversions.ToType(this, conversionType, provider);
 }
 
-public partial struct SByte
+public readonly partial struct SByte : IBinaryIntegerParseAndFormatInfo<sbyte>
 {
+    // Parsing is dotnet/runtime 474ed96's SByte.cs, over Number.Parsing's integer parser.
+    public static sbyte Parse(string s) => Parse(s, Globalization.NumberStyles.Integer, provider: null);
+
+    public static sbyte Parse(string s, Globalization.NumberStyles style) => Parse(s, style, provider: null);
+
+    public static sbyte Parse(string s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static sbyte Parse(string s, Globalization.NumberStyles style, IFormatProvider? provider)
+    {
+        if (s is null) { throw new ArgumentNullException(nameof(s)); }
+        return Parse(s.AsSpan(), style, provider);
+    }
+
+    public static sbyte Parse(ReadOnlySpan<char> s, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<char, sbyte>(s, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, out sbyte result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<char> s, out sbyte result) => TryParse(s, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, out sbyte result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider: null, out result);
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<char> s, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result, out int charsConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(s, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result, out int bytesConsumed)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style | Number.AllowTrailingInvalidCharacters, Globalization.NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+    }
+
+    public static bool TryParse([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? s, IFormatProvider? provider, out sbyte result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static sbyte Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out sbyte result) => TryParse(s, Globalization.NumberStyles.Integer, provider, out result);
+
+    public static sbyte Parse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style = Globalization.NumberStyles.Integer, IFormatProvider? provider = null)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.ParseBinaryInteger<byte, sbyte>(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider));
+    }
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result)
+    {
+        Globalization.NumberFormatInfo.ValidateParseStyleInteger(style);
+        return Number.TryParseBinaryInteger(utf8Text, style, Globalization.NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+    }
+
+    public static sbyte Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, Globalization.NumberStyles.Integer, provider);
+
+    public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out sbyte result) => TryParse(utf8Text, Globalization.NumberStyles.Integer, provider, out result);
+
+    static bool IBinaryIntegerParseAndFormatInfo<sbyte>.IsSigned => true;
+
+    static int IBinaryIntegerParseAndFormatInfo<sbyte>.MaxDigitCount => 3; // 127
+
+    static int IBinaryIntegerParseAndFormatInfo<sbyte>.MaxHexDigitCount => 2; // 0x7F
+
+    static sbyte IBinaryIntegerParseAndFormatInfo<sbyte>.MaxValueDiv10 => MaxValue / 10;
+
+    static string IBinaryIntegerParseAndFormatInfo<sbyte>.OverflowMessage => SR.Overflow_SByte;
+
+    static bool IBinaryIntegerParseAndFormatInfo<sbyte>.IsGreaterThanAsUnsigned(sbyte left, sbyte right) => (byte)(left) > (byte)(right);
+
+    static sbyte IBinaryIntegerParseAndFormatInfo<sbyte>.MultiplyBy10(sbyte value) => (sbyte)(value * 10);
+
+    static sbyte IBinaryIntegerParseAndFormatInfo<sbyte>.MultiplyBy16(sbyte value) => (sbyte)(value * 16);
+
     public TypeCode GetTypeCode() => TypeCode.SByte;
     public static sbyte Log10(sbyte value) => (sbyte)PrimitiveIntegralConversions.Log10Signed(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out sbyte result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out sbyte result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out sbyte parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result, out int consumed) =>
-        TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out sbyte result, out int consumed) =>
-        TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => this;
@@ -1601,20 +2556,13 @@ public partial struct SByte
     object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => PrimitiveIntegralConversions.ToType(this, conversionType, provider);
 }
 
-public partial struct Int16
+public readonly partial struct Int16
 {
     public TypeCode GetTypeCode() => TypeCode.Int16;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatInt32(this, 0x0000FFFF, format, provider, destination, out bytesWritten);
+
     public static short Log10(short value) => (short)PrimitiveIntegralConversions.Log10Signed(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out short result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out short result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out short result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out short parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out short result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out short result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);
@@ -1633,20 +2581,13 @@ public partial struct Int16
     object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => PrimitiveIntegralConversions.ToType(this, conversionType, provider);
 }
 
-public partial struct UInt16
+public readonly partial struct UInt16
 {
     public TypeCode GetTypeCode() => TypeCode.UInt16;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatUInt32(this, format, provider, destination, out bytesWritten);
+
     public static ushort Log10(ushort value) => (ushort)PrimitiveIntegralConversions.Log10(value);
-    public static bool TryParse(ReadOnlySpan<char> value, out ushort result) => TryParse(value, null, out result);
-    public static bool TryParse(ReadOnlySpan<byte> value, out ushort result) => TryParse(value, null, out result);
-    public static bool TryParsePartial(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result, out int consumed)
-    {
-        return PrimitiveIntegralConversions.TryParsePartial(value, style, (string text, out ushort parsed) => TryParse(text, style, provider, out parsed), out result, out consumed);
-    }
-    public static bool TryParsePartial(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result, out int consumed) => TryParsePartial(value.ToString(), style, provider, out result, out consumed);
-    public static bool TryParsePartial(ReadOnlySpan<byte> value, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result, out int consumed) => TryParsePartial(PrimitiveScalarContracts.Utf8ToString(value), style, provider, out result, out consumed);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
     sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);

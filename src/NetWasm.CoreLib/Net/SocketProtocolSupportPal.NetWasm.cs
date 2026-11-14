@@ -1,4 +1,4 @@
-// NetWasm's counterpart of dotnet/runtime 474ed963699fc29809015392738a15231aaae2de's
+// NetWasm's counterpart of dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce's
 // SocketProtocolSupportPal.Unix.cs and the DisableIPv6 switch of LocalAppContextSwitches.Net.cs.
 // The platform network carries IPv4 and IPv6 sockets and no Unix domain sockets; asking it by
 // opening a socket, as Unix does, would fail on a platform without a network.

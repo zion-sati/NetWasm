@@ -35,7 +35,21 @@ internal sealed record ReachabilityLedgerSnapshot(
     ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding> JavaScriptAsyncBindings,
     ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites)
 {
+    internal ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    internal ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>> TypeDependencyPaths { get; init; } =
+        ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>>.Empty;
+
     internal ImmutableHashSet<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
+
+    internal ImmutableHashSet<CliTypeIdentity> UninitializedObjectTypes { get; init; } = [];
+
+    internal ImmutableHashSet<CliTypeIdentity> RequiredTypes { get; init; } = [];
+
+    internal ImmutableHashSet<CliTypeIdentity> StructMarshallingTypes { get; init; } = [];
+
+    internal bool StructMarshallingFieldNames { get; init; }
 
     internal ImmutableHashSet<EntityKey> ModuleInitializers { get; init; } = [];
 
@@ -113,15 +127,21 @@ internal sealed record ReachabilityLedgerSnapshot(
             ledger.JavaScriptAsyncBindings.ToImmutable(),
             ledger.ManagedCallSites.ToImmutable())
     {
+        TypeDependencyPaths = ledger.TypeDependencyPaths.ToImmutableDictionary(StringComparer.Ordinal),
         ModuleInitializers = ledger.ModuleInitializers.ToImmutable(),
         Contributions = ledger.Contributions.ToImmutableDictionary(StringComparer.Ordinal),
         JavaScriptConversions = ledger.JavaScriptConversions.ToImmutable(),
         EnumMetadataRequirements = ledger.EnumMetadataRequirements.ToImmutable(),
+        UninitializedObjectTypes = [.. ledger.UninitializedObjectTypes],
+        RequiredTypes = [.. ledger.RequiredTypes],
+        StructMarshallingTypes = [.. ledger.StructMarshallingTypes],
+        StructMarshallingFieldNames = ledger.StructMarshallingFieldNames,
         MethodDescriptors = ledger.MethodDescriptors.ToImmutable(),
         FieldDescriptors = ledger.FieldDescriptors.ToImmutable(),
         PropertyDescriptors = ledger.PropertyDescriptors.ToImmutable(),
         ObjectArrayDelegateAdapters = ledger.ObjectArrayDelegateAdapters.ToImmutable(),
         MemberExecution = ledger.MemberExecution,
+        SharedObjectDispatch = ledger.SharedObjectDispatch.ToImmutableDictionary(StringComparer.Ordinal),
         NamedMemberDescriptors = ledger.NamedMemberDescriptors.ToImmutable(),
         RequiresTypeFacts = ledger.RequiresTypeFacts,
         RequiresGenericArguments = ledger.RequiresGenericArguments,

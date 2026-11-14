@@ -45,6 +45,9 @@ repository.
 - [Compiler diagnostics](diagnostics.md) — every current
   `NetWasm.Compiler.Core.DiagnosticCode`, including cause, exact scope, and
   corrective action.
+- [.NET Standard libraries](netstandard-libraries.md): which packages restore, what
+  throws when a library reaches something NetWasm does not provide, and how library
+  authors avoid reflection, type-name probes and platform-specific paths.
 - [CoreLib and runtime compatibility](corelib-runtime.md) — the supported
   platform boundary, intentionally unsupported surfaces, and license split.
 - [Choosing a garbage collector](runtime-garbage-collection.md) — Compact's

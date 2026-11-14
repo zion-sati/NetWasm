@@ -3,7 +3,7 @@
 // NetWasm's runtime part of string, as String.CoreCLR.cs is CoreCLR's; String.cs and its partials
 // are upstream's. The compiler supplies FastAllocateString, Length, the indexer and
 // GetRawStringData, so their bodies only stand for the lowering, and string literals are interned
-// in a list. Normalization is not ported.
+// in a list.
 
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -16,26 +16,6 @@ namespace System
         // zeroed string of the length, and throws OverflowException past MaxLength.
         [MethodImpl(MethodImplOptions.InternalCall)]
         internal static extern string FastAllocateString(int length);
-
-        // The accessors of the Index and Range indexers NetWasm's string declared, which
-        // upstream does not have, for released binaries that call them. As methods, no
-        // element access binds to them, so `text[^1]` and `text[a..b]` lower to the int
-        // indexer and Substring, as they do on .NET. Delete them with Span.NetWasm.cs.
-        internal char get_Chars(Index index) => this[index.GetOffset(Length)];
-
-        internal string get_Chars(Range range)
-        {
-            var (offset, length) = range.GetOffsetAndLength(Length);
-            return Substring(offset, length);
-        }
-
-        // NetWasm's Create(char[]), which upstream does not have, for the released binaries that call
-        // it (the 0.4.1 compatibility libraries' Regex). Delete it with the accessors above.
-        internal static string Create(char[] characters)
-        {
-            ArgumentNullException.ThrowIfNull(characters);
-            return new string(characters);
-        }
 
         // Upstream Equals(a, b, StringComparison.OrdinalIgnoreCase) without the comparison switch, whose
         // culture-aware branches would make CultureInfo reachable from every case-insensitive dictionary.
@@ -71,10 +51,6 @@ namespace System
 
         internal ref char GetRawStringData() =>
             throw new PlatformNotSupportedException();
-
-        public bool IsNormalized() => throw new PlatformNotSupportedException();
-
-        public string Normalize() => throw new PlatformNotSupportedException();
 
         public static string Intern(string str)
         {

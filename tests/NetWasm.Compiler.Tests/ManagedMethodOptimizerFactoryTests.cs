@@ -1,3 +1,5 @@
+using NetWasm.Compiler.Analysis.NullChecks;
+using NetWasm.Compiler.Analysis.Arrays;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -50,12 +52,26 @@ public sealed class ManagedMethodOptimizerFactoryTests
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizerFactory(
                 null!,
-                new ControlFlowGraphBuilderFactory()));
+                new ControlFlowGraphBuilderFactory(),
+                new ArrayBoundsCheckEliminatorFactory(), new RepeatedArrayAccessEliminatorFactory(),
+                new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizerFactory(
                 new TypedStackValidatorFactory(
                     new StackTypeCompatibilityValidator()),
-                null!));
+                null!,
+                new ArrayBoundsCheckEliminatorFactory(), new RepeatedArrayAccessEliminatorFactory(),
+                new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
+        var stacks = new TypedStackValidatorFactory(new StackTypeCompatibilityValidator());
+        var graphs = new ControlFlowGraphBuilderFactory();
+        Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, null!,
+            new RepeatedArrayAccessEliminatorFactory(), new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
+        Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, new ArrayBoundsCheckEliminatorFactory(),
+            null!, new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
+        Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, new ArrayBoundsCheckEliminatorFactory(),
+            new RepeatedArrayAccessEliminatorFactory(), null!, new IntegerCheckEliminatorFactory()));
+        Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, new ArrayBoundsCheckEliminatorFactory(),
+            new RepeatedArrayAccessEliminatorFactory(), new ConstructedObjectNullCheckEliminatorFactory(), null!));
 
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
@@ -91,7 +107,9 @@ public sealed class ManagedMethodOptimizerFactoryTests
 
     private static ManagedMethodOptimizerFactory Factory() => new(
         new TypedStackValidatorFactory(new StackTypeCompatibilityValidator()),
-        new ControlFlowGraphBuilderFactory());
+        new ControlFlowGraphBuilderFactory(),
+        new ArrayBoundsCheckEliminatorFactory(), new RepeatedArrayAccessEliminatorFactory(),
+        new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory());
 
     private sealed class Dependencies :
         NetWasm.Compiler.Metadata.IMethodBodyReader,

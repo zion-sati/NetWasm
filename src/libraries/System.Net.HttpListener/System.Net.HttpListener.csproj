@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Net.HttpListener</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Security.Claims/System.Security.Claims.csproj" />
+    <ProjectReference Include="../System.Net.Http/System.Net.Http.csproj" />
+    <ProjectReference Include="../System.Net.Requests/System.Net.Requests.csproj" />
+    <ProjectReference Include="../System.Net.Security/System.Net.Security.csproj" />
+    <ProjectReference Include="../System.Net.WebHeaderCollection/System.Net.WebHeaderCollection.csproj" />
+    <ProjectReference Include="../System.Net.WebSockets/System.Net.WebSockets.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/HexConverter.cs" />
+    <Compile Include="Common/System/LocalAppContextSwitches.Common.cs" />
+    <Compile Include="Common/System/Net/CookieFields.cs" />
+    <Compile Include="Common/System/Net/CookieParser.cs" />
+    <Compile Include="Common/System/Net/HttpKnownHeaderNames.TryGetHeaderName.cs" />
+    <Compile Include="Common/System/Net/HttpKnownHeaderNames.cs" />
+    <Compile Include="Common/System/Net/HttpStatusDescription.cs" />
+    <Compile Include="Common/System/Net/LazyAsyncResult.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.Associate.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.DumpBuffer.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.cs" />
+    <Compile Include="Common/System/Net/UriScheme.cs" />
+    <Compile Include="Common/System/Net/WebSockets/WebSocketValidate.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Net/AuthenticationSchemeSelector.cs" />
+    <Compile Include="System/Net/AuthenticationTypes.cs" />
+    <Compile Include="System/Net/BoundaryType.cs" />
+    <Compile Include="System/Net/EntitySendFormat.cs" />
+    <Compile Include="System/Net/HttpListener.cs" />
+    <Compile Include="System/Net/HttpListenerBasicIdentity.cs" />
+    <Compile Include="System/Net/HttpListenerContext.cs" />
+    <Compile Include="System/Net/HttpListenerException.cs" />
+    <Compile Include="System/Net/HttpListenerPrefixCollection.cs" />
+    <Compile Include="System/Net/HttpListenerRequest.cs" />
+    <Compile Include="System/Net/HttpListenerRequestUriBuilder.cs" />
+    <Compile Include="System/Net/HttpListenerResponse.cs" />
+    <Compile Include="System/Net/HttpRequestStream.cs" />
+    <Compile Include="System/Net/HttpResponseStream.cs" />
+    <Compile Include="System/Net/ListenerClientCertState.cs" />
+    <Compile Include="System/Net/LocalAppContextSwitches.cs" />
+    <Compile Include="System/Net/Managed/ChunkStream.cs" />
+    <Compile Include="System/Net/Managed/ChunkedInputStream.cs" />
+    <Compile Include="System/Net/Managed/HttpConnection.cs" />
+    <Compile Include="System/Net/Managed/HttpEndPointListener.cs" />
+    <Compile Include="System/Net/Managed/HttpEndPointManager.cs" />
+    <Compile Include="System/Net/Managed/HttpHeaderStrings.cs" />
+    <Compile Include="System/Net/Managed/HttpListener.Certificates.cs" />
+    <Compile Include="System/Net/Managed/HttpListener.Managed.cs" />
+    <Compile Include="System/Net/Managed/HttpListenerContext.Managed.cs" />
+    <Compile Include="System/Net/Managed/HttpListenerRequest.Managed.cs" />
+    <Compile Include="System/Net/Managed/HttpListenerResponse.Managed.cs" />
+    <Compile Include="System/Net/Managed/HttpListenerTimeoutManager.Managed.cs" />
+    <Compile Include="System/Net/Managed/HttpRequestStream.Managed.cs" />
+    <Compile Include="System/Net/Managed/HttpResponseStream.Managed.cs" />
+    <Compile Include="System/Net/Managed/HttpStreamAsyncResult.cs" />
+    <Compile Include="System/Net/Managed/ListenerAsyncResult.Managed.cs" />
+    <Compile Include="System/Net/Managed/ListenerPrefix.cs" />
+    <Compile Include="System/Net/Managed/WebSockets/HttpWebSocket.Managed.cs" />
+    <Compile Include="System/Net/NetEventSource.HttpListener.cs" />
+    <Compile Include="System/Net/ServiceNameStore.cs" />
+    <Compile Include="System/Net/WebSockets/HttpListenerWebSocketContext.cs" />
+    <Compile Include="System/Net/WebSockets/HttpWebSocket.cs" />
+    <Compile Include="System/Net/Windows/CookieExtensions.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

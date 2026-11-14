@@ -40,9 +40,10 @@ public sealed class RawModuleLinkSessionTests
         Assert.Throws<ArgumentNullException>(() =>
             new RawModuleLinkSessionFactory(null!));
         var factory = AsFactory(new RawModuleLinkSessionFactory(
-            (_, _) => throw new InvalidOperationException()));
-        Assert.Throws<ArgumentNullException>(() => factory.Create(null!, Binaryen()));
-        Assert.Throws<ArgumentNullException>(() => factory.Create(Command(), null!));
+            (_, _, _) => throw new InvalidOperationException()));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(null!, Binaryen(), Progress));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(Command(), null!, Progress));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(Command(), Binaryen(), null!));
     }
 
     [Fact]
@@ -50,7 +51,7 @@ public sealed class RawModuleLinkSessionTests
     {
         var factory = AsFactory(
             CompilerTaskComposition.CreateRawModuleLinkSessionFactory());
-        using var session = factory.Create(Command(), Binaryen());
+        using var session = factory.Create(Command(), Binaryen(), Progress);
 
         Assert.IsType<RawModuleLinkSession>(session);
     }
@@ -87,4 +88,7 @@ public sealed class RawModuleLinkSessionTests
 
         public void Dispose() => IsDisposed = true;
     }
+
+    private static readonly Microsoft.Extensions.Logging.ILoggerProvider Progress =
+        Microsoft.Extensions.Logging.Abstractions.NullLoggerProvider.Instance;
 }

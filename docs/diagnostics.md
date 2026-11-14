@@ -9,7 +9,7 @@ The size-first Release profile normally leaves those optional features out.
 | SDK property | Debug default | Release default | Purpose |
 | --- | --- | --- | --- |
 | `NetWasmStructuredDiagnostics` | `true` | `false` | Structured managed failure reporting for the selected execution contract |
-| `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and the frame names in `<program>.wasm.method-symbols` |
+| `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and the frame names in `<program>.wasm.method-symbols`; also backs `System.Diagnostics.StackTrace` and `StackFrame` |
 | `NetWasmTypeNames` | `true` | `false` | Every type's and assembly's names in `<program>.wasm.type-symbols`, which the program reads. Without them a name reads `type#<id>`, an assembly name `<Assembly name unavailable>`, and looking a type up by name (`Type.GetType(string)`, `Assembly.GetType(string)`, `GetNestedType(string)`, `GetInterface(string)`) throws `PlatformNotSupportedException` |
 
 The switches are independent. Enable the desired features explicitly, for
@@ -106,11 +106,33 @@ reported by `NW1010`, see the [support status and roadmap](support-status.md).
 | `NW1013` `FunctionLimit` | Module encoding, right after emission and before linking or optimization | A method compiles to a WebAssembly function past a limit browsers, Node and Wasmtime put on one function: a body larger than 7,654,321 bytes, more than 50,000 locals (its parameters among them) or more than 1,000 parameters. The diagnostic names the managed method and the limit | Split the method, for example a large generated initializer, into smaller methods, or pass many values in an array or an object |
 | `NW1014` `HostFailure` | `nwc` reading inputs and writing outputs | The host failed outside the compiler, such as a missing input or an unwritable output directory. Correct the path or permission the message names. |
 | `NW1015` `PlatformService` | Preparing compilation, before reachability | A `NetWasmPlatformServiceAttribute` binding is invalid: it names a type that is not a platform service contract, binds one contract twice, binds an implementation that is an interface, abstract, a value type, generic, lacks a public parameterless constructor or does not implement the contract, or binds `ITimerScheduler` in a program with WASI, whose timers run on the Component Model's event loop | Correct the attribute the message names |
+| `NW1016` `MissingApi` | Method and field reference binding after the declaring type resolves | The selected implementation has no member matching the requested name, signature, static/instance shape and generic arity. Check that package and implementation versions agree. If they do, use a supported API or an alternative library path. Adding unrelated references does not supply a missing member on an already resolved type. |
+| `NW1017` `UnlinkedNativeLibrary` | Warning, after reachability | A reached P/Invoke names a native library that no `NativeLibrary` item provides, so it compiles to a body that throws `DllNotFoundException` when called. Reference the package or `NativeLibrary` item that provides the library, or leave the call unreached. See [static native interop](static-native-interop.md#library-and-package-propagation). |
 | `NWA2001` `GenericExpansion` | Identifier formatting only; no current production emitter | The enum reserves this identifier but no current source path emits it. Preserve and report the exact value if observed. |
 
 When available, method and IL offset are part of the diagnostic. The CLI also
 accepts diagnostic-log, diagnostic-trace, stack-symbol, and source-provenance
 paths; these are diagnostic artifacts rather than deployment outputs.
+
+## Package compatibility failures
+
+A missing API (`NW1016`) differs from a missing or ambiguous binding (`NW1004`).
+The former means the compiler found the declaring type but not the requested
+member contract. It can indicate a version mismatch or an API that the selected
+implementation does not provide; it does not by itself identify a compiler bug.
+Unsupported CIL, metadata shapes and static interop use their respective codes.
+An internal invariant failure (`NW1011`) should be reported as a compiler defect.
+
+A reached type cannot inherit from a base that the selected implementation seals.
+That inheritance is rejected as unsupported metadata. Direct use of the sealed
+type remains valid; the restriction concerns the deriving type's required contract.
+
+When available, errors include the originating NuGet package ID/version and
+selected asset, plus a requiring path from application code through library
+methods, type requirements or containing fields. The path describes the known
+compile-time requirement. It is not a managed runtime stack trace. Package details
+can be absent for direct DLL references, and independently rooted requirements do
+not invent an application caller.
 
 ## Compiler support bundles
 

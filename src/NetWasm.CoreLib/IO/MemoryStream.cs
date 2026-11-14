@@ -12,8 +12,8 @@ namespace System.IO
 {
     // A MemoryStream represents a Stream in memory. This implementation is
     // adapted from dotnet/runtime System.Private.CoreLib commit
-    // 474ed963699fc29809015392738a15231aaae2de.
-    public class MemoryStream : Stream
+    // deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+    public partial class MemoryStream : Stream
     {
         private byte[] _buffer;
         private readonly int _origin;

@@ -182,12 +182,16 @@ internal sealed class RecordingManagedExceptionObjectProvider(
 }
 
 // Emission requires the descriptor source to publish enum metadata too, as the layout
-// snapshot does; both tables are recorded whole.
+// snapshot does, and reads the structure-marshalling and uninitialized-object tables from it
+// where it publishes them; every table is recorded whole.
 internal sealed class RecordingTypeDescriptorSource(
     ITypeDescriptorSource inner,
-    IUnitDependencyRecorder recorder) : ITypeDescriptorSource, IEnumMetadataSource
+    IUnitDependencyRecorder recorder) :
+    ITypeDescriptorSource, IEnumMetadataSource, IStructMarshallingSource, IUninitializedObjectSource
 {
     private UnitFingerprint? _enums;
+    private UnitFingerprint? _marshalling;
+    private UnitFingerprint? _uninitialized;
     private UnitFingerprint? _types;
     private UnitFingerprint? _constructed;
     private UnitFingerprint? _values;
@@ -292,6 +296,33 @@ internal sealed class RecordingTypeDescriptorSource(
             });
             recorder.Record(UnitQueryKind.MetadataTypeDescriptors, "", _metadata.Value, descriptors);
             return descriptors;
+        }
+    }
+
+    public ImmutableArray<StructMarshallingLayout> StructMarshalling
+    {
+        get
+        {
+            var layouts = (inner as IStructMarshallingSource ?? EmptyRuntimeTypeDataSource.Instance).StructMarshalling;
+            _marshalling ??= UnitRecording.Of(layouts, static (ref builder, layout) =>
+            {
+                builder.Add(layout.Type);
+                builder.Add(layout.TypeId);
+                builder.Add(layout.Address);
+            });
+            recorder.Record(UnitQueryKind.StructMarshalling, "", _marshalling.Value, layouts);
+            return layouts;
+        }
+    }
+
+    public ImmutableArray<CliTypeIdentity> UninitializedObjectTypes
+    {
+        get
+        {
+            var types = (inner as IUninitializedObjectSource ?? EmptyRuntimeTypeDataSource.Instance).UninitializedObjectTypes;
+            _uninitialized ??= UnitRecording.Of(types, static (ref builder, type) => builder.Add(type));
+            recorder.Record(UnitQueryKind.UninitializedObjectTypes, "", _uninitialized.Value, types);
+            return types;
         }
     }
 }

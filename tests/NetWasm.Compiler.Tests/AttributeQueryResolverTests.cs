@@ -24,6 +24,7 @@ public sealed class AttributeQueryResolverTests
         var result = Resolve(resolver, ExplicitCall,
             [default, Type(Target), Type(Filter), new(AttributeValueKind.Int32, Integer: inherit)]);
 
+        Assert.NotNull(result);
         Assert.Equal(Target, result.Target);
         Assert.Equal(Filter, result.Filter);
         Assert.Equal(expected, result.InheritConstant);
@@ -35,6 +36,7 @@ public sealed class AttributeQueryResolverTests
     {
         var result = Resolve(Create(), ExplicitCall, [Type(Target), Type(Filter), default]);
 
+        Assert.NotNull(result);
         Assert.Equal(Target, result.Target);
         Assert.Equal(Filter, result.Filter);
         Assert.Null(result.InheritConstant);
@@ -45,6 +47,7 @@ public sealed class AttributeQueryResolverTests
     {
         var result = Resolve(Create(), new(AttributeQueryOperation.GetOne, 1, null, Filter, null), [Type(Target)]);
 
+        Assert.NotNull(result);
         Assert.Equal(Filter, result.Filter);
         Assert.True(result.InheritConstant);
     }
@@ -57,6 +60,7 @@ public sealed class AttributeQueryResolverTests
         var result = Resolve(Create(new Definitions(1)),
             new(AttributeQueryOperation.GetOne, 1, null, filter, null), [Type(target)]);
 
+        Assert.NotNull(result);
         Assert.Equal(target, result.Target);
         Assert.Equal(filter, result.Filter);
     }
@@ -66,7 +70,7 @@ public sealed class AttributeQueryResolverTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
-    public void UnknownNullOrTokenTargetsAreRejectedBeforeMetadataAccess(int kind)
+    public void UnknownNullOrTokenTargetsRemainUnresolvedBeforeMetadataAccess(int kind)
     {
         var definitions = new Definitions();
         var proof = kind switch
@@ -77,17 +81,17 @@ public sealed class AttributeQueryResolverTests
             _ => new AttributeValueProof(AttributeValueKind.Int32, Integer: 7),
         };
 
-        AssertUnsupported(() => Resolve(Create(definitions), ExplicitCall, [proof, Type(Filter), default]));
+        Assert.Null(Resolve(Create(definitions), ExplicitCall, [proof, Type(Filter), default]));
 
         Assert.Empty(definitions.Requests);
     }
 
     [Fact]
-    public void RuntimeFilterIsRejectedBeforeMetadataAccess()
+    public void RuntimeFilterRemainsUnresolvedBeforeMetadataAccess()
     {
         var definitions = new Definitions();
 
-        AssertUnsupported(() => Resolve(Create(definitions), ExplicitCall, [Type(Target), default, default]));
+        Assert.Null(Resolve(Create(definitions), ExplicitCall, [Type(Target), default, default]));
 
         Assert.Empty(definitions.Requests);
     }
@@ -95,12 +99,12 @@ public sealed class AttributeQueryResolverTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void CatchAllAndNonAttributeFiltersAreRejected(bool catchAll)
+    public void CatchAllAndNonAttributeFiltersRemainUnresolved(bool catchAll)
     {
         var relationships = new Relationships(false);
         var filter = catchAll ? Attribute : Filter;
 
-        AssertUnsupported(() => Resolve(new AttributeQueryResolver(new Definitions(), relationships, Attribute, []),
+        Assert.Null(Resolve(new AttributeQueryResolver(new Definitions(), relationships, Attribute, []),
             ExplicitCall, [Type(Target), Type(filter), default]));
 
         Assert.Equal(catchAll ? 0 : 1, relationships.Calls);
@@ -112,7 +116,7 @@ public sealed class AttributeQueryResolverTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
-    public void NonDeclarationAndOpenGenericTargetsAreRejected(int shape)
+    public void NonDeclarationAndOpenGenericTargetsRemainUnresolved(int shape)
     {
         var type = shape switch
         {
@@ -124,15 +128,15 @@ public sealed class AttributeQueryResolverTests
         };
         var definitions = new Definitions();
 
-        AssertUnsupported(() => Resolve(Create(definitions), ExplicitCall, [Type(type), Type(Filter), default]));
+        Assert.Null(Resolve(Create(definitions), ExplicitCall, [Type(type), Type(Filter), default]));
 
         Assert.Empty(definitions.Requests);
     }
 
     [Fact]
-    public void UninstantiatedNamedGenericDefinitionIsRejected()
+    public void UninstantiatedNamedGenericDefinitionRemainsUnresolved()
     {
-        AssertUnsupported(() => Resolve(Create(new Definitions(1)), ExplicitCall,
+        Assert.Null(Resolve(Create(new Definitions(1)), ExplicitCall,
             [Type(Target), Type(Filter), default]));
     }
 
@@ -148,26 +152,38 @@ public sealed class AttributeQueryResolverTests
     private static AttributeValueProof Type(CliTypeIdentity type) => new(AttributeValueKind.Type, type);
 
     [Fact]
-    public void SynthesizedAttributeFiltersAreRejectedByBoundIdentity()
+    public void SynthesizedAttributeFiltersRemainUnresolvedByBoundIdentity()
     {
         var resolver = new AttributeQueryResolver(new Definitions(), new Relationships(true), Attribute, [Filter]);
-        AssertUnsupported(() => Resolve(resolver, ExplicitCall, [Type(Target), Type(Filter), default]));
+        Assert.Null(Resolve(resolver, ExplicitCall, [Type(Target), Type(Filter), default]));
         var userType = CliTypeIdentity.Named(new("User"), "Example", "MarkerAttribute", false);
-        Assert.Equal(userType, Resolve(resolver, ExplicitCall, [Type(Target), Type(userType), default]).Filter);
+        Assert.Equal(userType, Resolve(resolver, ExplicitCall, [Type(Target), Type(userType), default])!.Filter);
+    }
+
+    [Fact]
+    public void TypeProofWithoutIdentityRemainsUnresolved()
+    {
+        var definitions = new Definitions();
+        Assert.Null(Resolve(Create(definitions), ExplicitCall,
+            [new(AttributeValueKind.Type), Type(Filter), default]));
+        Assert.Empty(definitions.Requests);
+    }
+
+    [Fact]
+    public void NonDeclarationFilterRemainsUnresolvedAfterTargetResolution()
+    {
+        var definitions = new Definitions();
+        Assert.Null(Resolve(Create(definitions), ExplicitCall,
+            [Type(Target), Type(CliTypeIdentity.SzArray(Filter)), default]));
+        Assert.Equal([Target], definitions.Requests);
     }
 
     private static AttributeQueryResolver Create(Definitions? definitions = null) =>
         new(definitions ?? new Definitions(), new Relationships(true), Attribute, []);
 
-    private static ResolvedAttributeQuery Resolve<TResolver>(TResolver resolver,
+    private static ResolvedAttributeQuery? Resolve<TResolver>(TResolver resolver,
         AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack)
         where TResolver : IAttributeQueryResolver => resolver.Resolve(call, stack);
-
-    private static void AssertUnsupported(Action action)
-    {
-        var exception = Assert.Throws<CompilerException>(action);
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
-    }
 
     private sealed class Definitions(int arity = 0) : ITypeDefinitionResolver
     {

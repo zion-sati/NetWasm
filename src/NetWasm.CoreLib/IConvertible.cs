@@ -6,6 +6,7 @@ namespace System
     // IConvertible is implemented by value types that expose conversions to the
     // primitive System types.  The provider argument is intentionally opaque;
     // each implementation decides whether it needs it for formatting.
+    [CLSCompliant(false)]
     public interface IConvertible
     {
         TypeCode GetTypeCode();

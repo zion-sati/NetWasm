@@ -6,12 +6,12 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis.LoopInvariantFields;
 
 internal sealed class FieldProjectionResolver(
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     IFieldRepository fields,
     ITypeDefinitionResolver typeDefinitions) : IFieldProjectionResolver
 {
-    private readonly IMethodBodyReader _methodBodies = methodBodies ??
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ??
         throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ??
         throw new ArgumentNullException(nameof(calledMethods));
@@ -61,8 +61,7 @@ internal sealed class FieldProjectionResolver(
             return null;
         }
 
-        var body = _methodBodies.ReadMethodBody(method);
-        if (!body.ExceptionRegions.IsEmpty)
+        if (!_methodBodies.TryReadMethodBody(method, out var body) || !body.ExceptionRegions.IsEmpty)
         {
             return null;
         }

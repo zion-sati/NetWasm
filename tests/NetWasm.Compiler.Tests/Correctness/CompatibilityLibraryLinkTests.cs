@@ -11,11 +11,11 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // internal, as their references to CoreLib internals are.
 public sealed class CompatibilityLibraryLinkTests
 {
-    // The reference assemblies the compiler maps onto CoreLib.
+    // The reference assemblies the compiler maps onto CoreLib. NetWasm.App's libraries (System.Collections,
+    // System.Runtime.InteropServices and the rest) are assemblies of their own that forward CoreLib's types.
     private static readonly ImmutableHashSet<string> CoreLibNames =
     [
-        "NetWasm.CoreLib", "System.Private.CoreLib", "System.Runtime", "System.Collections",
-        "System.Reflection", "System.Runtime.InteropServices", "System.Text",
+        "NetWasm.CoreLib", "System.Private.CoreLib", "System.Runtime", "System.Reflection", "System.Text",
         "System.Runtime.CompilerServices.Unsafe", "System.Buffers",
     ];
 

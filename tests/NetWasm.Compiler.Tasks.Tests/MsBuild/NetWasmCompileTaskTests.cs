@@ -21,7 +21,16 @@ public sealed class NetWasmCompileTaskTests
         task.References =
         [
             new TaskItem("CoreLib.dll"), new TaskItem("lib dir/Other.dll"), new TaskItem("lib/NetWasm,Version=v0.1/Lib.dll"),
+            new TaskItem("contract-view.dll"),
         ];
+        task.References[1].SetMetadata("NuGetPackageId", "Example.Library");
+        task.References[1].SetMetadata("NuGetPackageVersion", "13.0.3");
+        task.References[1].SetMetadata("PathInPackage", "lib/netstandard2.0/Other.dll");
+        // A metadata facade listed among the references is compiled as metadata only.
+        task.MetadataReferences = [new TaskItem("contract-view.dll")];
+        task.MetadataReferences[0].SetMetadata("NuGetPackageId", "Framework.Backport");
+        task.MetadataReferences[0].SetMetadata("NuGetPackageVersion", "4.5.5");
+        task.MetadataReferences[0].SetMetadata("NetWasmOriginalReference", "original-contract.dll");
         task.Sources = [new TaskItem("Program.cs")];
         task.TypeSymbolsPath = "app.wasm.type-symbols";
         task.EmitStackTrace = true;
@@ -60,6 +69,9 @@ public sealed class NetWasmCompileTaskTests
             [
                 "-nologo", "App.dll", "-target:library", "-platform:wasm64", "-optimize:O3", "-out:app.wasm",
                 "-r:CoreLib.dll", "-r:\"lib dir/Other.dll\"", "-r:\"lib/NetWasm,Version=v0.1/Lib.dll\"",
+                "-metadatareference:contract-view.dll", "-originalcontract:original-contract.dll",
+                "-referenceorigin:\"lib dir/Other.dll\";package=Example.Library;version=13.0.3;asset=lib/netstandard2.0/Other.dll",
+                "-referenceorigin:contract-view.dll;package=Framework.Backport;version=4.5.5;original=original-contract.dll",
                 "-source:Program.cs", "-runtimelayout:layout.json",
                 "-interopmanifest:interop.json", "-compilermetadata:metadata.json", "-callbackobject:app.callbacks.o",
                 "-typesymbols:app.wasm.type-symbols", "-methodsymbols:app.wasm.method-symbols", "-typenames+",
@@ -118,6 +130,63 @@ public sealed class NetWasmCompileTaskTests
                 "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
             ],
             Lines(task.ResponseFileCommands));
+    }
+
+    [Fact]
+    public void PassesFoldedFeatureSwitchesAndTheTargetsLinkedLibraries()
+    {
+        var task = CreateTask();
+        task.Target = "wasm32";
+        task.RuntimeHostConfigurationOptions =
+        [
+            Option("System.Diagnostics.Tracing.EventSource.IsSupported", "false", trim: true),
+            Option("Example.Data", "text", trim: true),
+            Option("System.Globalization.Invariant", "true", trim: false),
+            Option("System.Diagnostics.Metrics.Meter.IsSupported", "true", trim: true),
+            Option("System.Diagnostics.Metrics.Meter.IsSupported", "False", trim: true),
+        ];
+        task.LinkedNativeOnly = true;
+        task.NativeLibraries =
+        [
+            Library("libz", "wasm32"), Library("libz", "wasm32"), Library("libgpu", "wasm64"), Library("libplain", ""),
+        ];
+
+        var lines = Lines(task.ResponseFileCommands);
+
+        Assert.Equal(
+            [
+                "-featureswitch:System.Diagnostics.Metrics.Meter.IsSupported=false",
+                "-featureswitch:System.Diagnostics.Tracing.EventSource.IsSupported=false",
+            ],
+            lines.Where(line => line.StartsWith("-featureswitch:", StringComparison.Ordinal)));
+        Assert.Equal(
+            [
+                "-runtimeproperty:Example.Data=text",
+                "-runtimeproperty:System.Diagnostics.Metrics.Meter.IsSupported=False",
+                "-runtimeproperty:System.Diagnostics.Tracing.EventSource.IsSupported=false",
+                "-runtimeproperty:System.Globalization.Invariant=true",
+            ],
+            lines.Where(line => line.StartsWith("-runtimeproperty:", StringComparison.Ordinal)));
+        Assert.Contains("-linkednativeonly+", lines);
+        Assert.Equal(
+            ["-nativelibrary:libplain", "-nativelibrary:libz"],
+            lines.Where(line => line.StartsWith("-nativelibrary:", StringComparison.Ordinal)));
+
+        static TaskItem Option(string name, string value, bool trim)
+        {
+            var item = new TaskItem(name);
+            item.SetMetadata("Value", value);
+            if (trim) item.SetMetadata("Trim", "true");
+            return item;
+        }
+
+        static TaskItem Library(string name, string target)
+        {
+            var item = new TaskItem($"/native/{name}.a");
+            item.SetMetadata("NetWasmLibraryName", name);
+            item.SetMetadata("WasmTarget", target);
+            return item;
+        }
     }
 
     [Fact]

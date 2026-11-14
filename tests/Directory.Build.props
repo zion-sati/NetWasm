@@ -17,8 +17,14 @@
          app host pack whenever the SDK has none installed for net10.0, as with the .NET 11 SDK. -->
     <OutputType Condition="$(MSBuildProjectName.EndsWith('.Tests'))">Exe</OutputType>
     <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">None</NetWasmOptimization>
+    <!-- A test host's GC heap limit, in bytes (24 GiB). Tests compile whole programs in parallel in one process, so a
+         compiler runaway would otherwise take the machine's memory before it fails; with the limit it fails that
+         test with OutOfMemoryException, below any 32 GB process cap so the kernel never has to step in. Machines with
+         less memory than this keep .NET's default limit. -->
+    <NetWasmTestHeapHardLimit Condition="'$(NetWasmTestHeapHardLimit)' == ''">25769803776</NetWasmTestHeapHardLimit>
   </PropertyGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="$(NetWasmTestHeapHardLimit)" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,173 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// NetWasm: dotnet/runtime 811225a4's Globals.cs constants and qualified names. Its Type caches and reflection
+// helpers serve the DataContract engine, which NetWasm does not port.
+
+using System.Reflection;
+using System.Xml;
+
+namespace System.Runtime.Serialization
+{
+    internal static partial class Globals
+    {
+        // From DataContract.cs, for the serializer surfaces' trimming and AOT annotations.
+        internal const string SerializerTrimmerWarning = "Data Contract Serialization and Deserialization might require types that cannot be statically analyzed. Make sure all of the " +
+            "required types are preserved.";
+        internal const string SerializerAOTWarning = "Data Contract Serialization and Deserialization might require types that cannot be statically analyzed.";
+
+        internal const BindingFlags ScanAllMembers = BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        public const bool DefaultIsRequired = false;
+        public const bool DefaultEmitDefaultValue = true;
+        public const int DefaultOrder = 0;
+        public const bool DefaultIsReference = false;
+        public const string NullObjectId = null;
+        public const string FullSRSInternalsVisiblePattern = @"^[\s]*System\.Runtime\.Serialization[\s]*,[\s]*PublicKey[\s]*=[\s]*(?i:00240000048000009400000006020000002400005253413100040000010001008d56c76f9e8649383049f383c44be0ec204181822a6c31cf5eb7ef486944d032188ea1d3920763712ccb12d75fb77e9811149e6148e5d32fbaab37611c1878ddc19e20ef135d0cb2cff2bfec3d115810c3d9069638fe4be215dbf795861920e5ab6f7db2e2ceef136ac23d5dd2bf031700aec232f6c6b1c785b4305c123b37ab)[\s]*$";
+        public const char SpaceChar = ' ';
+        public const char OpenBracketChar = '[';
+        public const char CloseBracketChar = ']';
+        public const char CommaChar = ',';
+        public const string Space = " ";
+        public const string XsiPrefix = "i";
+        public const string XsdPrefix = "x";
+        public const string SerPrefix = "z";
+        public const string SerPrefixForSchema = "ser";
+        public const string ElementPrefix = "q";
+        public const string DataContractXsdBaseNamespace = "http://schemas.datacontract.org/2004/07/";
+        public const string DataContractXmlNamespace = DataContractXsdBaseNamespace + "System.Xml";
+        public const string SchemaInstanceNamespace = "http://www.w3.org/2001/XMLSchema-instance";
+        public const string SchemaNamespace = "http://www.w3.org/2001/XMLSchema";
+        public const string XsiNilLocalName = "nil";
+        public const string XsiTypeLocalName = "type";
+        public const string TnsPrefix = "tns";
+        public const string OccursUnbounded = "unbounded";
+        public const string AnyTypeLocalName = "anyType";
+        public const string StringLocalName = "string";
+        public const string IntLocalName = "int";
+        public const string True = "true";
+        public const string False = "false";
+        public const string ArrayPrefix = "ArrayOf";
+        public const string XmlnsNamespace = "http://www.w3.org/2000/xmlns/";
+        public const string XmlnsPrefix = "xmlns";
+        public const string SchemaLocalName = "schema";
+        public const string CollectionsNamespace = "http://schemas.microsoft.com/2003/10/Serialization/Arrays";
+        public const string DefaultClrNamespace = "GeneratedNamespace";
+        public const string DefaultTypeName = "GeneratedType";
+        public const string DefaultGeneratedMember = "GeneratedMember";
+        public const string DefaultFieldSuffix = "Field";
+        public const string DefaultPropertySuffix = "Property";
+        public const string DefaultMemberSuffix = "Member";
+        public const string NameProperty = "Name";
+        public const string NamespaceProperty = "Namespace";
+        public const string OrderProperty = "Order";
+        public const string IsReferenceProperty = "IsReference";
+        public const string IsRequiredProperty = "IsRequired";
+        public const string EmitDefaultValueProperty = "EmitDefaultValue";
+        public const string ClrNamespaceProperty = "ClrNamespace";
+        public const string ItemNameProperty = "ItemName";
+        public const string KeyNameProperty = "KeyName";
+        public const string ValueNameProperty = "ValueName";
+        public const string SerializationInfoPropertyName = "SerializationInfo";
+        public const string SerializationInfoFieldName = "info";
+        public const string NodeArrayPropertyName = "Nodes";
+        public const string NodeArrayFieldName = "nodesField";
+        public const string ExportSchemaMethod = "ExportSchema";
+        public const string IsAnyProperty = "IsAny";
+        public const string ContextFieldName = "context";
+        public const string GetObjectDataMethodName = "GetObjectData";
+        public const string GetEnumeratorMethodName = "GetEnumerator";
+        public const string MoveNextMethodName = "MoveNext";
+        public const string AddValueMethodName = "AddValue";
+        public const string CurrentPropertyName = "Current";
+        public const string ValueProperty = "Value";
+        public const string EnumeratorFieldName = "enumerator";
+        public const string SerializationEntryFieldName = "entry";
+        public const string ExtensionDataSetMethod = "set_ExtensionData";
+        public const string ExtensionDataSetExplicitMethod = "System.Runtime.Serialization.IExtensibleDataObject.set_ExtensionData";
+        public const string ExtensionDataObjectPropertyName = "ExtensionData";
+        public const string ExtensionDataObjectFieldName = "extensionDataField";
+        public const string AddMethodName = "Add";
+        public const string GetCurrentMethodName = "get_Current";
+        public const string SerializationNamespace = "http://schemas.microsoft.com/2003/10/Serialization/";
+        public const string ClrTypeLocalName = "Type";
+        public const string ClrAssemblyLocalName = "Assembly";
+        public const string IsValueTypeLocalName = "IsValueType";
+        public const string EnumerationValueLocalName = "EnumerationValue";
+        public const string SurrogateDataLocalName = "Surrogate";
+        public const string GenericTypeLocalName = "GenericType";
+        public const string GenericParameterLocalName = "GenericParameter";
+        public const string GenericNameAttribute = "Name";
+        public const string GenericNamespaceAttribute = "Namespace";
+        public const string GenericParameterNestedLevelAttribute = "NestedLevel";
+        public const string IsDictionaryLocalName = "IsDictionary";
+        public const string ActualTypeLocalName = "ActualType";
+        public const string ActualTypeNameAttribute = "Name";
+        public const string ActualTypeNamespaceAttribute = "Namespace";
+        public const string DefaultValueLocalName = "DefaultValue";
+        public const string EmitDefaultValueAttribute = "EmitDefaultValue";
+        public const string IdLocalName = "Id";
+        public const string RefLocalName = "Ref";
+        public const string ArraySizeLocalName = "Size";
+        public const string KeyLocalName = "Key";
+        public const string ValueLocalName = "Value";
+        public const string MscorlibAssemblyName = "0";
+        public const string ParseMethodName = "Parse";
+        public const string SafeSerializationManagerName = "SafeSerializationManager";
+        public const string SafeSerializationManagerNamespace = "http://schemas.datacontract.org/2004/07/System.Runtime.Serialization";
+        public const string ISerializableFactoryTypeLocalName = "FactoryType";
+        public const string SerializationSchema = @"<?xml version='1.0' encoding='utf-8'?>
+<xs:schema elementFormDefault='qualified' attributeFormDefault='qualified' xmlns:tns='http://schemas.microsoft.com/2003/10/Serialization/' targetNamespace='http://schemas.microsoft.com/2003/10/Serialization/' xmlns:xs='http://www.w3.org/2001/XMLSchema'>
+  <xs:element name='anyType' nillable='true' type='xs:anyType' />
+  <xs:element name='anyURI' nillable='true' type='xs:anyURI' />
+  <xs:element name='base64Binary' nillable='true' type='xs:base64Binary' />
+  <xs:element name='boolean' nillable='true' type='xs:boolean' />
+  <xs:element name='byte' nillable='true' type='xs:byte' />
+  <xs:element name='dateTime' nillable='true' type='xs:dateTime' />
+  <xs:element name='decimal' nillable='true' type='xs:decimal' />
+  <xs:element name='double' nillable='true' type='xs:double' />
+  <xs:element name='float' nillable='true' type='xs:float' />
+  <xs:element name='int' nillable='true' type='xs:int' />
+  <xs:element name='long' nillable='true' type='xs:long' />
+  <xs:element name='QName' nillable='true' type='xs:QName' />
+  <xs:element name='short' nillable='true' type='xs:short' />
+  <xs:element name='string' nillable='true' type='xs:string' />
+  <xs:element name='unsignedByte' nillable='true' type='xs:unsignedByte' />
+  <xs:element name='unsignedInt' nillable='true' type='xs:unsignedInt' />
+  <xs:element name='unsignedLong' nillable='true' type='xs:unsignedLong' />
+  <xs:element name='unsignedShort' nillable='true' type='xs:unsignedShort' />
+  <xs:element name='char' nillable='true' type='tns:char' />
+  <xs:simpleType name='char'>
+    <xs:restriction base='xs:int'/>
+  </xs:simpleType>
+  <xs:element name='duration' nillable='true' type='tns:duration' />
+  <xs:simpleType name='duration'>
+    <xs:restriction base='xs:duration'>
+      <xs:pattern value='\-?P(\d*D)?(T(\d*H)?(\d*M)?(\d*(\.\d*)?S)?)?' />
+      <xs:minInclusive value='-P10675199DT2H48M5.4775808S' />
+      <xs:maxInclusive value='P10675199DT2H48M5.4775807S' />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name='guid' nillable='true' type='tns:guid' />
+  <xs:simpleType name='guid'>
+    <xs:restriction base='xs:string'>
+      <xs:pattern value='[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}' />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:attribute name='FactoryType' type='xs:QName' />
+  <xs:attribute name='Id' type='xs:ID' />
+  <xs:attribute name='Ref' type='xs:IDREF' />
+  <xs:simpleType name='dateOnly'>
+    <xs:restriction base='xs:date'>
+      <xs:pattern value='([0-9]{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])' />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name='timeOnly'>
+    <xs:restriction base='xs:time'>
+      <xs:pattern value='([01][0-9]|2[0-3]):([0-5][0-9])(:([0-5][0-9])(\.[0-9]{1,7})?)?' />
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>
+";
+        internal static XmlQualifiedName IdQualifiedName => field ??= new XmlQualifiedName(Globals.IdLocalName, Globals.SerializationNamespace);
+        internal static XmlQualifiedName RefQualifiedName => field ??= new XmlQualifiedName(Globals.RefLocalName, Globals.SerializationNamespace);
+    }
+}

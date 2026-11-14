@@ -14,7 +14,8 @@ public sealed class RootMapAnalyzer(
     IStackStorageAnchorPlanner anchors,
     IRootDecisionClassifier rootDecisions,
     ICalleeArgumentRootingClassifier calleeArguments,
-    IRootSlotAllocator rootSlots) :
+    IRootSlotAllocator rootSlots,
+    IAllocationTemporaryCallClassifier? allocationCalls = null) :
     IRootMapAnalyzer
 {
     private readonly IValueLayoutProvider _layouts =
@@ -31,6 +32,7 @@ public sealed class RootMapAnalyzer(
         calleeArguments ?? throw new ArgumentNullException(nameof(calleeArguments));
     private readonly IRootSlotAllocator _rootSlots =
         rootSlots ?? throw new ArgumentNullException(nameof(rootSlots));
+    private readonly IAllocationTemporaryCallClassifier? _allocationCalls = allocationCalls;
 
     public MethodRootMap Analyze(RootMapAnalysisRequest request)
     {
@@ -139,7 +141,8 @@ public sealed class RootMapAnalyzer(
                 IsAllocatingConstructor(
                     instruction,
                     allocatingMethods,
-                    allocatingConstructedMethods))
+                    allocatingConstructedMethods) ||
+                _allocationCalls?.Classify(instruction) == true)
             {
                 roots.Add(new RootSource(RootSourceKind.AllocationTemporary, 0));
                 constructorRoots = Order(roots);

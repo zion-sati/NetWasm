@@ -114,9 +114,7 @@
   ],
   "referencePaths": [],
   "referenceAssemblyAliases": {
-    "System.Memory": "NetWasm.CoreLib",
-    "System.Runtime.CompilerServices.Unsafe": "NetWasm.CoreLib",
-    "System.Runtime.InteropServices": "NetWasm.CoreLib"
+    "System.Runtime.CompilerServices.Unsafe": "NetWasm.CoreLib"
   },
   "oracleMode": "SameIl",
   "matrixProfile": "Extended",

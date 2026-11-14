@@ -6,13 +6,13 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis.StaticArrays;
 
 internal sealed class ValueConstructorPurityClassifier(
-    IMethodBodyReader bodies,
+    ICalleeMethodBodyReader bodies,
     IFieldRepository fields,
     ITypeDefinitionResolver types,
     IMethodRepository methods,
     IRuntimeIntrinsicRegistry intrinsics) : IValueConstructorPurityClassifier
 {
-    private readonly IMethodBodyReader _bodies = bodies ?? throw new ArgumentNullException(nameof(bodies));
+    private readonly ICalleeMethodBodyReader _bodies = bodies ?? throw new ArgumentNullException(nameof(bodies));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly ITypeDefinitionResolver _types = types ?? throw new ArgumentNullException(nameof(types));
     private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
@@ -27,8 +27,7 @@ internal sealed class ValueConstructorPurityClassifier(
             _intrinsics.TryGetIntrinsic(method.Definition.Key, out _)) return false;
         var owner = _types.ResolveTypeIdentity(method.DeclaringType);
         if (!owner.IsBeforeFieldInit && owner.Methods.Any(key => _methods.GetMethod(key).Name == ".cctor")) return false;
-        var body = _bodies.ReadMethodBody(method);
-        if (!body.ExceptionRegions.IsEmpty) return false;
+        if (!_bodies.TryReadMethodBody(method, out var body) || !body.ExceptionRegions.IsEmpty) return false;
         var operations = body.Instructions.Where(instruction => instruction.Operation != CilOperation.Nop).ToArray();
         if (operations.Length == 0 || operations[^1].Operation != CilOperation.Return || (operations.Length - 1) % 3 != 0) return false;
         for (var index = 0; index < operations.Length - 1; index += 3)

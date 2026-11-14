@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime System.Private.CoreLib; upstream commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
 
@@ -19,17 +19,6 @@ namespace System
         IUtf8SpanFormattable,
         IUtf8SpanParsable<decimal>
     {
-        private const NumberStyles DecimalParseStyles =
-            NumberStyles.AllowLeadingWhite |
-            NumberStyles.AllowTrailingWhite |
-            NumberStyles.AllowLeadingSign |
-            NumberStyles.AllowTrailingSign |
-            NumberStyles.AllowParentheses |
-            NumberStyles.AllowDecimalPoint |
-            NumberStyles.AllowThousands |
-            NumberStyles.AllowExponent |
-            NumberStyles.AllowCurrencySymbol;
-
         static decimal IAdditiveIdentity<decimal, decimal>.AdditiveIdentity => Zero;
 
         static decimal IMultiplicativeIdentity<decimal, decimal>.MultiplicativeIdentity => One;
@@ -283,80 +272,78 @@ namespace System
 
         public static decimal Parse(string s, NumberStyles style, IFormatProvider? provider)
         {
-            if (s == null)
+            if (s is null)
             {
-                throw new ArgumentNullException();
+                throw new ArgumentNullException(nameof(s));
             }
-            return ParseCore(s, style);
+            return Parse(s.AsSpan(), style, provider);
         }
 
-        public static decimal Parse(ReadOnlySpan<char> s, System.Globalization.NumberStyles style = System.Globalization.NumberStyles.Number, IFormatProvider? provider = null) =>
-            ParseCore(s, style);
+        public static decimal Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Number, IFormatProvider? provider = null)
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.ParseDecimal(s, style, NumberFormatInfo.GetInstance(provider));
+        }
 
         public static decimal Parse(string s, NumberStyles style) => Parse(s, style, provider: null);
 
         public static decimal Parse(string s, IFormatProvider? provider) => Parse(s, NumberStyles.Number, provider);
 
-        public static decimal Parse(ReadOnlySpan<char> s, IFormatProvider? provider) =>
-            Parse(s, NumberStyles.Number, provider);
+        public static decimal Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, NumberStyles.Number, provider);
 
-        public static bool TryParse(
-            string? s,
-            NumberStyles style,
-            IFormatProvider? provider,
-            out decimal result) => TryParseCore(s, style, out result);
+        public static bool TryParse([NotNullWhen(true)] string? s, NumberStyles style, IFormatProvider? provider, out decimal result)
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.TryParseDecimal(s.AsSpan(), style, NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+        }
 
-        public static bool TryParse(
-            ReadOnlySpan<char> s,
-            NumberStyles style,
-            IFormatProvider? provider,
-            out decimal result) => TryParseCore(s, style, out result);
+        public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider? provider, out decimal result)
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.TryParseDecimal(s, style, NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+        }
 
-        public static bool TryParse(ReadOnlySpan<char> s, out decimal result) =>
-            TryParse(s, NumberStyles.Number, provider: null, out result);
+        public static bool TryParse(ReadOnlySpan<char> s, out decimal result) => TryParse(s, NumberStyles.Number, provider: null, out result);
 
-        public static bool TryParse(string? s, IFormatProvider? provider, out decimal result) =>
-            TryParse(s, NumberStyles.Number, provider, out result);
+        public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, out decimal result) => TryParse(s, NumberStyles.Number, provider, out result);
 
-        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out decimal result) =>
-            TryParse(s, NumberStyles.Number, provider, out result);
+        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out decimal result) => TryParse(s, NumberStyles.Number, provider, out result);
 
-        public static decimal Parse(ReadOnlySpan<byte> utf8Text, System.Globalization.NumberStyles style = System.Globalization.NumberStyles.Number, IFormatProvider? provider = null)
-            => ParseUtf8Core(utf8Text, style);
+        public static decimal Parse(ReadOnlySpan<byte> utf8Text, NumberStyles style = NumberStyles.Number, IFormatProvider? provider = null)
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.ParseDecimal(utf8Text, style, NumberFormatInfo.GetInstance(provider));
+        }
 
-        public static decimal Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) =>
-            Parse(utf8Text, NumberStyles.Number, provider);
+        public static decimal Parse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider) => Parse(utf8Text, NumberStyles.Number, provider);
 
-        public static bool TryParse(ReadOnlySpan<byte> utf8Text, out decimal result) =>
-            TryParse(utf8Text, NumberStyles.Number, provider: null, out result);
+        public static bool TryParse(ReadOnlySpan<byte> utf8Text, out decimal result) => TryParse(utf8Text, NumberStyles.Number, provider: null, out result);
 
-        public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out decimal result) =>
-            TryParse(utf8Text, NumberStyles.Number, provider, out result);
+        public static bool TryParse(ReadOnlySpan<byte> utf8Text, IFormatProvider? provider, out decimal result) => TryParse(utf8Text, NumberStyles.Number, provider, out result);
 
         public static bool TryParse(ReadOnlySpan<byte> utf8Text, NumberStyles style, IFormatProvider? provider, out decimal result)
-            => TryParseUtf8Core(utf8Text, style, out result);
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.TryParseDecimal(utf8Text, style, NumberFormatInfo.GetInstance(provider), out result, out _) == Number.ParsingStatus.OK;
+        }
 
-        public static bool TryParsePartial(
-            [NotNullWhen(true)] string? s,
-            NumberStyles style,
-            IFormatProvider? provider,
-            out decimal result,
-            out int charsConsumed) => TryParsePartialCore(s, style, out result, out charsConsumed);
+        public static bool TryParsePartial([NotNullWhen(true)] string? s, NumberStyles style, IFormatProvider? provider, out decimal result, out int charsConsumed)
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.TryParseDecimal(s.AsSpan(), style | Number.AllowTrailingInvalidCharacters, NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+        }
 
-        public static bool TryParsePartial(
-            ReadOnlySpan<char> s,
-            NumberStyles style,
-            IFormatProvider? provider,
-            out decimal result,
-            out int charsConsumed) => TryParsePartialCore(s, style, out result, out charsConsumed);
+        public static bool TryParsePartial(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider? provider, out decimal result, out int charsConsumed)
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.TryParseDecimal(s, style | Number.AllowTrailingInvalidCharacters, NumberFormatInfo.GetInstance(provider), out result, out charsConsumed) == Number.ParsingStatus.OK;
+        }
 
-        public static bool TryParsePartial(
-            ReadOnlySpan<byte> utf8Text,
-            NumberStyles style,
-            IFormatProvider? provider,
-            out decimal result,
-            out int bytesConsumed)
-            => TryParsePartialUtf8Core(utf8Text, style, out result, out bytesConsumed);
+        public static bool TryParsePartial(ReadOnlySpan<byte> utf8Text, NumberStyles style, IFormatProvider? provider, out decimal result, out int bytesConsumed)
+        {
+            NumberFormatInfo.ValidateParseStyleDecimal(style);
+            return Number.TryParseDecimal(utf8Text, style | Number.AllowTrailingInvalidCharacters, NumberFormatInfo.GetInstance(provider), out result, out bytesConsumed) == Number.ParsingStatus.OK;
+        }
 
         // A format or a provider takes upstream's layout with the provider's NumberFormatInfo;
         // with neither, the general form is written without that machinery.
@@ -367,8 +354,9 @@ namespace System
 
         public string ToString(string? format) => ToString(format, null);
 
-        // Without a format a provider changes nothing: NetWasm's NumberFormatInfo is the invariant one.
-        public string ToString(IFormatProvider? provider) => ToString();
+        // Without a format, the general form with the provider's symbols, without the format string parser.
+        public string ToString(IFormatProvider? provider) =>
+            provider is null ? ToString() : DecimalMath.Format(this, NumberFormatInfo.GetInstance(provider));
 
         public bool TryFormat(
             Span<char> destination,
@@ -773,561 +761,13 @@ namespace System
             string? s,
             NumberStyles style,
             IFormatProvider? provider,
-            [MaybeNullWhen(false)] out decimal result) => TryParseCore(s, style, out result);
+            [MaybeNullWhen(false)] out decimal result) => TryParse(s, style, provider, out result);
 
         static bool INumberBase<decimal>.TryParse(
             ReadOnlySpan<char> s,
             NumberStyles style,
             IFormatProvider? provider,
-            [MaybeNullWhen(false)] out decimal result) => TryParseCore(s, style, out result);
-
-        private static decimal ParseCore(string text, NumberStyles style) =>
-            ParseCore(text.AsSpan(), style);
-
-        private static decimal ParseCore(ReadOnlySpan<char> text, NumberStyles style)
-        {
-            if (!TryParseCore(text, style, out var result, out var overflow))
-            {
-                if (overflow)
-                {
-                    throw new OverflowException();
-                }
-                throw new FormatException();
-            }
-            return result;
-        }
-
-        private static bool TryParseCore(string? text, NumberStyles style, out decimal result)
-        {
-            if (text == null)
-            {
-                result = Zero;
-                ValidateDecimalParseStyle(style);
-                return false;
-            }
-            return TryParseCore(text.AsSpan(), style, out result);
-        }
-
-        private static bool TryParseCore(ReadOnlySpan<char> text, NumberStyles style, out decimal result)
-            => TryParseCore(text, style, out result, out _);
-
-        private static bool TryParseCore(
-            ReadOnlySpan<char> text,
-            NumberStyles style,
-            out decimal result,
-            out bool overflow)
-        {
-            result = Zero;
-            overflow = false;
-            ValidateDecimalParseStyle(style);
-            if (text.Length == 0)
-            {
-                return false;
-            }
-
-            var start = 0;
-            var end = text.Length;
-            var leadingWhite = (style & NumberStyles.AllowLeadingWhite) != 0;
-            var trailingWhite = (style & NumberStyles.AllowTrailingWhite) != 0;
-            while (end > start && text[end - 1] == '\0')
-            {
-                end--;
-            }
-            while (start < end && IsAsciiWhiteSpace(text[start]))
-            {
-                if (!leadingWhite)
-                {
-                    return false;
-                }
-                start++;
-            }
-            while (end > start && IsAsciiWhiteSpace(text[end - 1]))
-            {
-                if (!trailingWhite)
-                {
-                    return false;
-                }
-                end--;
-            }
-            if (start == end)
-            {
-                return false;
-            }
-
-            var negative = false;
-            var parentheses = false;
-            if (text[start] == '(')
-            {
-                if ((style & NumberStyles.AllowParentheses) == 0 || end <= start + 1 || text[end - 1] != ')')
-                {
-                    return false;
-                }
-                parentheses = true;
-                negative = true;
-                start++;
-                end--;
-            }
-
-            var currency = false;
-            if (start < end && text[start] == '$')
-            {
-                if ((style & NumberStyles.AllowCurrencySymbol) == 0) return false;
-                currency = true;
-                start++;
-            }
-
-            var leadingSign = false;
-            if (start < end && (text[start] == '+' || text[start] == '-'))
-            {
-                if (parentheses || (style & NumberStyles.AllowLeadingSign) == 0)
-                {
-                    return false;
-                }
-                leadingSign = true;
-                negative = text[start] == '-';
-                start++;
-            }
-            if (start < end && text[start] == '$')
-            {
-                if (currency || (style & NumberStyles.AllowCurrencySymbol) == 0) return false;
-                currency = true;
-                start++;
-            }
-
-            if (start < end && text[end - 1] == '$')
-            {
-                if (currency || (style & NumberStyles.AllowCurrencySymbol) == 0) return false;
-                currency = true;
-                end--;
-            }
-
-            var trailingSign = false;
-            if (start < end && (text[end - 1] == '+' || text[end - 1] == '-'))
-            {
-                if (parentheses || leadingSign || (style & NumberStyles.AllowTrailingSign) == 0)
-                {
-                    return false;
-                }
-                trailingSign = true;
-                negative = text[--end] == '-';
-                if (trailingWhite)
-                {
-                    while (end > start && IsAsciiWhiteSpace(text[end - 1])) end--;
-                }
-            }
-            if (start < end && text[end - 1] == '$')
-            {
-                if (currency || (style & NumberStyles.AllowCurrencySymbol) == 0) return false;
-                currency = true;
-                end--;
-            }
-            if (start >= end || (trailingSign && start >= end))
-            {
-                return false;
-            }
-
-            var normalizedCapacity = end - start + 1;
-            if (normalizedCapacity <= 128)
-            {
-                Span<char> normalized = stackalloc char[normalizedCapacity];
-                return TryNormalizeAndParseDecimal(
-                    text,
-                    start,
-                    end,
-                    negative,
-                    style,
-                    normalized,
-                    out result,
-                    out overflow);
-            }
-
-            return TryNormalizeAndParseDecimal(
-                text,
-                start,
-                end,
-                negative,
-                style,
-                new char[normalizedCapacity],
-                out result,
-                out overflow);
-        }
-
-        private static bool TryNormalizeAndParseDecimal(
-            ReadOnlySpan<char> text,
-            int start,
-            int end,
-            bool negative,
-            NumberStyles style,
-            Span<char> normalized,
-            out decimal result,
-            out bool overflow)
-        {
-            result = Zero;
-            overflow = false;
-            var normalizedLength = 0;
-            if (negative)
-            {
-                normalized[normalizedLength++] = '-';
-            }
-            var sawDigit = false;
-            var sawDecimalPoint = false;
-            var sawExponent = false;
-            for (var index = start; index < end; index++)
-            {
-                var character = text[index];
-                if (character >= '0' && character <= '9')
-                {
-                    sawDigit = true;
-                    normalized[normalizedLength++] = character;
-                    continue;
-                }
-                if (character == '.' && (style & NumberStyles.AllowDecimalPoint) != 0)
-                {
-                    if (sawDecimalPoint || sawExponent)
-                    {
-                        return false;
-                    }
-                    sawDecimalPoint = true;
-                    normalized[normalizedLength++] = character;
-                    continue;
-                }
-                if ((character == 'e' || character == 'E') && (style & NumberStyles.AllowExponent) != 0)
-                {
-                    if (!sawDigit || sawExponent)
-                    {
-                        return false;
-                    }
-                    sawExponent = true;
-                    normalized[normalizedLength++] = character;
-                    continue;
-                }
-                if ((character == '+' || character == '-') &&
-                    normalizedLength > 0 &&
-                    (normalized[normalizedLength - 1] == 'e' || normalized[normalizedLength - 1] == 'E'))
-                {
-                    normalized[normalizedLength++] = character;
-                    continue;
-                }
-                if (character == ',' && sawDigit && !sawDecimalPoint && !sawExponent &&
-                    (style & NumberStyles.AllowThousands) != 0)
-                {
-                    continue;
-                }
-                return false;
-            }
-            if (!sawDigit)
-            {
-                result = Zero;
-                return false;
-            }
-
-            return DecimalMath.TryParse(
-                normalized[..normalizedLength],
-                out result,
-                out overflow);
-        }
-
-        private static void ValidateDecimalParseStyle(NumberStyles style)
-        {
-            if (((int)style & ~(int)DecimalParseStyles) != 0)
-            {
-                throw new ArgumentException();
-            }
-        }
-
-        private static decimal ParseUtf8Core(ReadOnlySpan<byte> value, NumberStyles style)
-        {
-            char[]? rentedCharacters = null;
-            Span<char> characters = value.Length <= 128
-                ? stackalloc char[value.Length]
-                : rentedCharacters = ArrayPool<char>.Shared.Rent(value.Length);
-            try
-            {
-                if (!TryCopyAscii(value, characters))
-                {
-                    throw new FormatException();
-                }
-                return ParseCore(characters[..value.Length], style);
-            }
-            finally
-            {
-                if (rentedCharacters is not null)
-                {
-                    ArrayPool<char>.Shared.Return(rentedCharacters);
-                }
-            }
-        }
-
-        private static bool TryParseUtf8Core(
-            ReadOnlySpan<byte> value,
-            NumberStyles style,
-            out decimal result)
-        {
-            char[]? rentedCharacters = null;
-            Span<char> characters = value.Length <= 128
-                ? stackalloc char[value.Length]
-                : rentedCharacters = ArrayPool<char>.Shared.Rent(value.Length);
-            try
-            {
-                if (!TryCopyAscii(value, characters))
-                {
-                    result = Zero;
-                    return false;
-                }
-                return TryParseCore(characters[..value.Length], style, out result);
-            }
-            finally
-            {
-                if (rentedCharacters is not null)
-                {
-                    ArrayPool<char>.Shared.Return(rentedCharacters);
-                }
-            }
-        }
-
-        private static bool TryParsePartialUtf8Core(
-            ReadOnlySpan<byte> value,
-            NumberStyles style,
-            out decimal result,
-            out int bytesConsumed)
-        {
-            char[]? rentedCharacters = null;
-            Span<char> characters = value.Length <= 128
-                ? stackalloc char[value.Length]
-                : rentedCharacters = ArrayPool<char>.Shared.Rent(value.Length);
-            try
-            {
-                if (!TryCopyAscii(value, characters))
-                {
-                    result = Zero;
-                    bytesConsumed = 0;
-                    return false;
-                }
-                return TryParsePartialCore(
-                    characters[..value.Length],
-                    style,
-                    out result,
-                    out bytesConsumed);
-            }
-            finally
-            {
-                if (rentedCharacters is not null)
-                {
-                    ArrayPool<char>.Shared.Return(rentedCharacters);
-                }
-            }
-        }
-
-        private static bool TryCopyAscii(ReadOnlySpan<byte> source, Span<char> destination)
-        {
-            for (var index = 0; index < source.Length; index++)
-            {
-                if (source[index] > 0x7f)
-                {
-                    return false;
-                }
-                destination[index] = (char)source[index];
-            }
-            return true;
-        }
-
-        private static bool TryParsePartialCore(
-            string? text,
-            NumberStyles style,
-            out decimal result,
-            out int charsConsumed)
-        {
-            if (text == null)
-            {
-                result = Zero;
-                charsConsumed = 0;
-                ValidateDecimalParseStyle(style);
-                return false;
-            }
-            return TryParsePartialCore(text.AsSpan(), style, out result, out charsConsumed);
-        }
-
-        private static bool TryParsePartialCore(
-            ReadOnlySpan<char> text,
-            NumberStyles style,
-            out decimal result,
-            out int charsConsumed)
-        {
-            result = Zero;
-            charsConsumed = 0;
-            ValidateDecimalParseStyle(style);
-
-            var length = FindPartialDecimalLength(text, style);
-            if (length == 0)
-            {
-                return false;
-            }
-
-            if (!TryParseCore(text[..length], style, out result))
-            {
-                result = Zero;
-                return false;
-            }
-
-            charsConsumed = length;
-            return true;
-        }
-
-        private static int FindPartialDecimalLength(ReadOnlySpan<char> text, NumberStyles style)
-        {
-            var index = 0;
-            if ((style & NumberStyles.AllowLeadingWhite) != 0)
-            {
-                while (index < text.Length && IsAsciiWhiteSpace(text[index]))
-                {
-                    index++;
-                }
-            }
-            else if (index < text.Length && IsAsciiWhiteSpace(text[index]))
-            {
-                return 0;
-            }
-
-            var parenthesized = false;
-            if ((style & NumberStyles.AllowParentheses) != 0 && index < text.Length && text[index] == '(')
-            {
-                parenthesized = true;
-                index++;
-            }
-
-            var currency = false;
-            if ((style & NumberStyles.AllowCurrencySymbol) != 0 && index < text.Length && text[index] == '$')
-            {
-                currency = true;
-                index++;
-            }
-
-            var leadingSign = false;
-            if (index < text.Length && text[index] is '+' or '-')
-            {
-                if (parenthesized || (style & NumberStyles.AllowLeadingSign) == 0)
-                {
-                    return 0;
-                }
-                leadingSign = true;
-                index++;
-            }
-
-            if (!currency && (style & NumberStyles.AllowCurrencySymbol) != 0 &&
-                index < text.Length && text[index] == '$')
-            {
-                currency = true;
-                index++;
-            }
-
-            var sawDigit = false;
-            var sawDecimal = false;
-            var lastValid = 0;
-            while (index < text.Length)
-            {
-                var character = text[index];
-                if (character is >= '0' and <= '9')
-                {
-                    sawDigit = true;
-                    index++;
-                }
-                else if (!sawDecimal && character == '.' &&
-                    (style & NumberStyles.AllowDecimalPoint) != 0)
-                {
-                    sawDecimal = true;
-                    index++;
-                }
-                else if (character == ',' && (style & NumberStyles.AllowThousands) != 0)
-                {
-                    index++;
-                }
-                else
-                {
-                    break;
-                }
-
-                if (sawDigit && !parenthesized)
-                {
-                    lastValid = index;
-                }
-            }
-
-            if (!sawDigit)
-            {
-                return 0;
-            }
-
-            if (index < text.Length && text[index] is 'e' or 'E' &&
-                (style & NumberStyles.AllowExponent) != 0)
-            {
-                var exponentStart = index++;
-                if (index < text.Length && text[index] is '+' or '-')
-                {
-                    index++;
-                }
-                var exponentDigits = 0;
-                while (index < text.Length && text[index] is >= '0' and <= '9')
-                {
-                    exponentDigits++;
-                    index++;
-                    if (!parenthesized)
-                    {
-                        lastValid = index;
-                    }
-                }
-                if (exponentDigits == 0)
-                {
-                    index = exponentStart;
-                }
-            }
-
-            var trailingSign = false;
-            for (var token = 0; token < 2 && index < text.Length; token++)
-            {
-                if (!currency && (style & NumberStyles.AllowCurrencySymbol) != 0 && text[index] == '$')
-                {
-                    currency = true;
-                    index++;
-                }
-                else if (!trailingSign && !leadingSign && !parenthesized &&
-                    (style & NumberStyles.AllowTrailingSign) != 0 && text[index] is '+' or '-')
-                {
-                    trailingSign = true;
-                    index++;
-                }
-                else
-                {
-                    break;
-                }
-
-                if (!parenthesized)
-                {
-                    lastValid = index;
-                }
-            }
-
-            if (parenthesized)
-            {
-                if (index >= text.Length || text[index] != ')')
-                {
-                    return 0;
-                }
-                lastValid = ++index;
-            }
-
-            if ((style & NumberStyles.AllowTrailingWhite) != 0 && index == lastValid)
-            {
-                while (index < text.Length && IsAsciiWhiteSpace(text[index]))
-                {
-                    index++;
-                }
-                lastValid = index;
-            }
-
-            return lastValid;
-        }
-
-        private static bool IsAsciiWhiteSpace(char value) => value is ' ' or '\t' or '\r' or '\n' or '\f' or '\v';
+            [MaybeNullWhen(false)] out decimal result) => TryParse(s, style, provider, out result);
 
         private static void WriteUInt32BigEndian(Span<byte> destination, uint value)
         {

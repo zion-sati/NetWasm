@@ -59,6 +59,8 @@ public sealed class UnitQueryReplayerTests
         { nameof(UnitQueryKind.ValueTypeDescriptors), "" },
         { nameof(UnitQueryKind.MetadataTypeDescriptors), "" },
         { nameof(UnitQueryKind.EnumMetadata), "" },
+        { nameof(UnitQueryKind.StructMarshalling), "" },
+        { nameof(UnitQueryKind.UninitializedObjectTypes), "" },
         { nameof(UnitQueryKind.ManagedCallSite), "caller@0000001f" },
         { nameof(UnitQueryKind.ByRefEffects), "callee" },
         { nameof(UnitQueryKind.DispatchCallSite), "caller@4" },
@@ -93,6 +95,7 @@ public sealed class UnitQueryReplayerTests
     public static TheoryData<string, string> Unbuildable => new()
     {
         { nameof(UnitQueryKind.ObjectLayout), "Program::Missing" },
+        { nameof(UnitQueryKind.ObjectLayoutLookup), "Program::Missing" },
         { nameof(UnitQueryKind.ValueLayout), "[]" },
         { nameof(UnitQueryKind.ValueLayout), Point.CanonicalName + "[" },
         { nameof(UnitQueryKind.ValueLayout), "Program::Missing[]" },

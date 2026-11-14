@@ -18,6 +18,8 @@
     <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.4.2</NetWasmRefPackageVersion>
     <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.4.2</NetWasmRuntimePackageVersion>
     <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.4.2</NetWasmRuntimePackPackageVersion>
+    <NetWasmAppRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmAppRefPackageVersion)' == ''">0.4.2</NetWasmAppRefPackageVersion>
+    <NetWasmAppRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmAppRuntimePackageVersion)' == ''">0.4.2</NetWasmAppRuntimePackageVersion>
     <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.4.2</NetWasmToolchainPackageVersion>
     <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.4.2</NetWasmHostingPackageVersion>
     <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.4.2</NetWasmHostingBuildPackageVersion>
@@ -41,6 +43,9 @@
     <TargetFrameworkVersion>v0.1</TargetFrameworkVersion>
     <TargetFrameworkMoniker>NetWasm,Version=v0.1</TargetFrameworkMoniker>
     <NuGetTargetMoniker>NetWasm,Version=v0.1</NuGetTargetMoniker>
+    <!-- NuGet owns nearest compatible .NET Standard asset selection. The
+         application retains its NetWasm identity and exact assets win. -->
+    <AssetTargetFallback Condition="'$(AssetTargetFallback)' == ''">netstandard2.1</AssetTargetFallback>
     <DefineConstants>$(DefineConstants);NETWASM;NETWASM0_1</DefineConstants>
     <LangVersion Condition="'$(LangVersion)' == ''">latest</LangVersion>
     <NetWasmSdkTargetFrameworkAlias>netwasm0.1</NetWasmSdkTargetFrameworkAlias>
@@ -120,6 +125,23 @@
       <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmRefPackageVersion)</Version>
       <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmRefPackageVersion)</VersionOverride>
     </PackageReference>
+    <!-- NetWasm.App, the framework beyond CoreLib (System.Collections, System.Linq, System.Text.Json and
+         the rest): its reference assemblies, netstandard.dll and source generators for C#, and its
+         implementations for the NetWasm compiler. DisableImplicitNetWasmAppReference compiles against
+         CoreLib alone. -->
+    <PackageReference Include="NetWasm.App.Ref"
+                      PrivateAssets="all"
+                      IncludeAssets="compile;analyzers"
+                      Condition="'$(DisableImplicitNetWasmAppReference)' != 'true'">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmAppRefPackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmAppRefPackageVersion)</VersionOverride>
+    </PackageReference>
+    <PackageReference Include="NetWasm.App.Runtime"
+                      PrivateAssets="all"
+                      Condition="'$(DisableImplicitNetWasmAppReference)' != 'true'">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmAppRuntimePackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmAppRuntimePackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Compiler.Tasks"
                       PrivateAssets="all">
       <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmCompilerTasksPackageVersion)</Version>
@@ -176,4 +198,6 @@
                       ExcludeAssets="all"
                       Condition="('$(NetWasmRequiresHostTools)' == 'true' OR '@(NetWasmWit)' != '') AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' == 'true'" />
   </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)NetWasm.App.PackagePruning.props"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DisableImplicitNetWasmAppReference)' != 'true'" />
 </Project>

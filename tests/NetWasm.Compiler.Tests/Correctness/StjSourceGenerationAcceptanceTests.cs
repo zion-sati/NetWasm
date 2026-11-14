@@ -586,31 +586,16 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
         {
             references.AddRange(new[]
             {
-                ResolveCompatibilityReference(
-                    root,
-                    "NetWasm.System.Text.Json",
-                    "System.Text.Json.dll"),
-                ResolveCompatibilityReference(
-                    root,
-                    "NetWasm.System.Memory",
-                    "System.Memory.dll"),
-                ResolveCompatibilityReference(
-                    root,
-                    "NetWasm.System.Text.Encodings.Web",
-                    "System.Text.Encodings.Web.dll"),
-                ResolveCompatibilityReference(
-                    root,
-                    "NetWasm.System.IO.Pipelines",
-                    "System.IO.Pipelines.dll"),
+                ResolveCompatibilityReference(root, "System.Text.Json.dll"),
+                ResolveCompatibilityReference(root, "System.Memory.dll"),
+                ResolveCompatibilityReference(root, "System.Text.Encodings.Web.dll"),
+                ResolveCompatibilityReference(root, "System.IO.Pipelines.dll"),
             });
         }
 
         if (usesRegexDependencies)
         {
-            references.Add(ResolveCompatibilityReference(
-                root,
-                "NetWasm.System.Text.RegularExpressions",
-                "System.Text.RegularExpressions.dll"));
+            references.Add(ResolveCompatibilityReference(root, "System.Text.RegularExpressions.dll"));
         }
 
         foreach (var path in references)
@@ -621,30 +606,9 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
         return references.ToImmutable();
     }
 
-    private static string ResolveCompatibilityReference(
-        string repositoryRoot,
-        string project,
-        string assembly)
-    {
-        var preparedRoot = Environment.GetEnvironmentVariable(
-            "NETWASM_COMPATIBILITY_REFERENCE_ROOT");
-        if (string.IsNullOrWhiteSpace(preparedRoot))
-        {
-            return Path.Combine(
-                repositoryRoot,
-                "src",
-                project,
-                "bin/Release/netwasm0.1",
-                assembly);
-        }
-
-        if (!Path.IsPathFullyQualified(preparedRoot))
-        {
-            throw new InvalidOperationException(
-                "NETWASM_COMPATIBILITY_REFERENCE_ROOT must be an absolute path.");
-        }
-        return Path.Combine(preparedRoot, assembly);
-    }
+    // NetWasm.App's implementation, as src/NetWasm.App.Runtime collects it for the SDK.
+    private static string ResolveCompatibilityReference(string repositoryRoot, string assembly) =>
+        Path.Combine(repositoryRoot, "src", "NetWasm.App.Runtime", "bin", "Release", "net10.0", "framework", assembly);
 
     private static ImmutableDictionary<string, string> CreateReferenceAssemblyAliases(
         bool usesStjDependencies,
@@ -653,9 +617,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
         var aliases = ImmutableDictionary<string, string>.Empty
             .Add("System.Private.CoreLib", "NetWasm.CoreLib")
             .Add("System.Runtime", "NetWasm.CoreLib")
-            .Add("System.Collections", "NetWasm.CoreLib")
             .Add("System.Reflection", "NetWasm.CoreLib")
-            .Add("System.Runtime.InteropServices", "NetWasm.CoreLib")
             .Add("System.Text", "NetWasm.CoreLib")
             .Add("System.Runtime.CompilerServices.Unsafe", "NetWasm.CoreLib");
         aliases = usesStjDependencies
@@ -665,9 +627,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
                 .Add("System.Text.Json", "System.Text.Json")
                 .Add("System.Text.Encodings.Web", "System.Text.Encodings.Web")
                 .Add("System.IO.Pipelines", "System.IO.Pipelines")
-            : aliases
-                .Add("System.Buffers", "NetWasm.CoreLib")
-                .Add("System.Memory", "NetWasm.CoreLib");
+            : aliases.Add("System.Buffers", "NetWasm.CoreLib");
         return usesRegexDependencies
             ? aliases.Add("System.Text.RegularExpressions", "System.Text.RegularExpressions")
             : aliases;

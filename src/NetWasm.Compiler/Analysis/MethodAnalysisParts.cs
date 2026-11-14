@@ -156,7 +156,8 @@ internal sealed class MethodAnalysisParts
             _symbols = symbols,
             _intrinsics = intrinsics,
             _settings = optimizationSettings,
-            _operands = new ConstantOperandReader(calls, fieldRepository, typeRepository, methodRepository),
+            _operands = new ConstantOperandReader(calls, fieldRepository, typeRepository,
+                new PreciseStaticConstructorClassifier(methodRepository)),
             BaseTypes = baseTypes,
             Relationships = relationships,
             RelationshipKeys = relationshipKeys,
@@ -169,7 +170,7 @@ internal sealed class MethodAnalysisParts
         parts.ConstantCallFolding = optimizationSettings.ConstantCallFolding == ConstantCallFoldingPolicy.Conservative
             ? new ConstantCallFoldingRule(parts.ConstantCalls(), new MethodSpecializer(
             [
-                new KnownSizeRewriter(calls),
+                new KnownSizeRewriter(calls, world.NativeIntegerSize),
                 ConstantBranchFoldingFactory.Create(factories.GraphBuilders.Create()),
             ]))
             : null;
@@ -204,9 +205,11 @@ internal sealed class MethodAnalysisParts
     }
 
     internal IMethodRewriteRule ConstantCalls() => new ConstantCallRewriter(_factories.GraphBuilders.Create(), Calls,
-        new ConstantCallEvaluator(_methodBodies, Calls, _typeDefinitions, _methodRepository, _intrinsics, _operands,
+        new ConstantCallEvaluator(new CalleeMethodBodyReader(_methodBodies), Calls, _typeDefinitions,
+            new PreciseStaticConstructorClassifier(_methodRepository), _intrinsics, _operands,
             new ConstantComparisonEvaluator(_typeDefinitions), Specializer),
-        _operands);
+        _operands,
+        new EffectFreeLoadFinder(_fieldRepository, _typeRepository, new PreciseStaticConstructorClassifier(_methodRepository)));
 
     // One method analyzer; each worker of the closure gets its own.
     internal IReachableMethodAnalyzer CreateAnalyzer() => _factories.MethodAnalyzers.Create(
@@ -217,7 +220,7 @@ internal sealed class MethodAnalysisParts
         Specializer,
         Optimizer,
         Calls,
-        _settings.IntegerCheckElimination,
+        _settings,
         _factories.ExceptionDiscoveries.Create(_methodRepository, _symbols, _intrinsics),
         InstructionAnalyzer);
 }

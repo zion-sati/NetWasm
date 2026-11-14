@@ -1,12 +1,12 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de (OperatingSystem.cs's
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce (OperatingSystem.cs's
 // platform checks).
 // NetWasm adaptations: one CoreLib serves every host, so the platform name, IsBrowser and IsWasi
 // come from the compiled target (NetWasmHost, PlatformWorld) instead of TARGET_BROWSER and
 // TARGET_WASI, and a plain core module, which has no WASI, is no OS platform at all; every other
 // platform check keeps upstream's non-matching branch. Version checks compare against upstream's
-// wasm OS version, 1.0.0.0, because Environment.OSVersion stays unavailable. NonVersionable is
+// wasm OS version, 1.0.0.0, which Environment.OSVersion reports too. NonVersionable is
 // dropped; NetWasm has no versioning boundary for it to mark.
 
 using System.Runtime.CompilerServices;

@@ -20,3 +20,24 @@ and missing APIs are listed in the
 These are current boundaries, not release promises. See [targets and output
 formats](targets-and-outputs.md) and the [CLI/build/deployment guide](cli-build-deployment.md)
 for implemented alternatives.
+
+## Known problems
+
+### Release builds of large programs need a lot of memory
+
+Release builds optimize the whole program with Binaryen's `wasm-opt`, which holds all of it in memory and by
+default runs one thread per CPU core. Most programs peak well under 2 GB, but one that compiles large libraries can
+need much more: a program whose core module is about 50 MB peaks at about 16 GB on a 16-thread machine. Debug builds
+skip this optimization.
+
+If a Release build runs out of memory, give `wasm-opt` fewer threads with `BINARYEN_CORES`. With four threads the
+same program peaks at about 9 GB, and the optimization takes about 60% longer. With one thread it peaks at about
+6 GB, and the whole build takes about five times as long.
+
+```bash
+BINARYEN_CORES=4 dotnet build -c Release
+```
+
+```powershell
+$env:BINARYEN_CORES = 4; dotnet build -c Release
+```

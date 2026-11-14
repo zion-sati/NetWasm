@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 
 namespace NetWasm.TestInfrastructure;
@@ -33,6 +34,72 @@ public static class WasmModuleInspection
         }
 
         return [];
+    }
+
+    // The field names of the module's function imports.
+    public static IReadOnlySet<string> ReadFunctionImportNames(ReadOnlySpan<byte> module) =>
+        new HashSet<string>(ReadFunctionImports(module).Select(import => import.Name), StringComparer.Ordinal);
+
+    // The module and field names of the module's function imports, in order.
+    public static IReadOnlyList<(string Module, string Name)> ReadFunctionImports(ReadOnlySpan<byte> module)
+    {
+        var names = new List<(string Module, string Name)>();
+        var reader = new Reader(module);
+        Assert.True(reader.ReadBytes(Header.Length).SequenceEqual(Header));
+        while (!reader.IsAtEnd)
+        {
+            var sectionId = reader.ReadByte();
+            var section = new Reader(reader.ReadBytes(reader.ReadUnsigned()));
+            if (sectionId != 2)
+            {
+                continue;
+            }
+
+            var count = section.ReadUnsigned();
+            for (var index = 0u; index < count; index++)
+            {
+                var importModule = section.ReadString();
+                var field = section.ReadString();
+                var kind = section.ReadByte();
+                switch (kind)
+                {
+                    case 0:
+                        section.ReadUnsigned();
+                        names.Add((importModule, field));
+                        break;
+                    case 1:
+                        section.ReadByte();
+                        SkipLimits(ref section);
+                        break;
+                    case 2:
+                        SkipLimits(ref section);
+                        break;
+                    case 3:
+                        section.ReadBytes(2);
+                        break;
+                    case 4:
+                        section.ReadByte();
+                        section.ReadUnsigned();
+                        break;
+                    default:
+                        Assert.Fail($"Wasm import has an unknown kind {kind}.");
+                        break;
+                }
+            }
+            Assert.True(section.IsAtEnd);
+        }
+
+        return names;
+    }
+
+    private static void SkipLimits(ref Reader reader)
+    {
+        var flags = reader.ReadByte();
+        reader.ReadUnsigned();
+        if ((flags & 1) != 0)
+        {
+            reader.ReadUnsigned();
+        }
     }
 
     private ref struct Reader

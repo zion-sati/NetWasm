@@ -176,17 +176,25 @@ public partial class Type
         {
             throw new ArgumentException("The number of generic arguments provided doesn't equal the arity of the generic type definition.", "instantiation");
         }
+        return FindConstructedType(SemanticTypeId, arguments) ?? throw NotInProgram();
+    }
+
+    // The instantiation of a generic definition the program uses with these type arguments, or null: the type table
+    // holds only the instantiations a program names. Non-virtual, so a caller that needs only this (Nullable<T> for
+    // an expression's lifting) reaches nothing of MakeGenericType's validation and messages.
+    internal static Type? FindConstructedType(int definition, int[] arguments)
+    {
         for (int id = 1; id < RuntimeTypeTable.Capacity(); id++)
         {
             if ((RuntimeTypeTable.Flags(id) & (RuntimeTypeFactsFlags.GenericType | RuntimeTypeFactsFlags.GenericTypeDefinition)) ==
                     RuntimeTypeFactsFlags.GenericType &&
-                RuntimeTypeTable.GenericDefinition(id) == SemanticTypeId &&
+                RuntimeTypeTable.GenericDefinition(id) == definition &&
                 SameIds(RuntimeTypeTable.GenericArguments(id), arguments))
             {
                 return GetTypeFromSemanticId(id);
             }
         }
-        throw NotInProgram();
+        return null;
     }
 
     private static bool SameIds(int[]? left, int[] right)
