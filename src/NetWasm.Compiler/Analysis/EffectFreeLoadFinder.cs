@@ -33,8 +33,10 @@ internal sealed class EffectFreeLoadFinder(
 
     private bool IsEffectFree(CilInstruction instruction) => instruction switch
     {
-        { Operation: CilOperation.LoadArgument or CilOperation.LoadLocal or CilOperation.LoadInt32 or CilOperation.LoadInt64 or
-            CilOperation.LoadFloat32 or CilOperation.LoadFloat64 or CilOperation.LoadNull or CilOperation.LoadString } => true,
+        {
+            Operation: CilOperation.LoadArgument or CilOperation.LoadLocal or CilOperation.LoadInt32 or CilOperation.LoadInt64 or
+            CilOperation.LoadFloat32 or CilOperation.LoadFloat64 or CilOperation.LoadNull or CilOperation.LoadString
+        } => true,
         { Operation: CilOperation.LoadStaticField, Operand: CilOperand.Entity field } => InitializationIsOptional(field.Key),
         _ => false,
     };

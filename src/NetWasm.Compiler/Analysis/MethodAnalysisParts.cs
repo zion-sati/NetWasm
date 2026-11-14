@@ -208,7 +208,8 @@ internal sealed class MethodAnalysisParts
         new ConstantCallEvaluator(new CalleeMethodBodyReader(_methodBodies), Calls, _typeDefinitions,
             new PreciseStaticConstructorClassifier(_methodRepository), _intrinsics, _operands,
             new ConstantComparisonEvaluator(_typeDefinitions), Specializer),
-        _operands);
+        _operands,
+        new EffectFreeLoadFinder(_fieldRepository, _typeRepository, new PreciseStaticConstructorClassifier(_methodRepository)));
 
     // One method analyzer; each worker of the closure gets its own.
     internal IReachableMethodAnalyzer CreateAnalyzer() => _factories.MethodAnalyzers.Create(

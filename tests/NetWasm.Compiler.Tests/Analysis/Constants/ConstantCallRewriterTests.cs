@@ -17,11 +17,12 @@ public sealed class ConstantCallRewriterTests
         var graphs = Graph(body);
         var calls = new MethodFacts();
         var evaluator = new RecordingEvaluator(null);
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(null!, calls, evaluator, Operands(new MethodFacts())));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(graphs, null!, evaluator, Operands(new MethodFacts())));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(graphs, calls, null!, Operands(new MethodFacts())));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(graphs, calls, evaluator, null!));
-        Assert.Throws<ArgumentNullException>(() => AsRule(new ConstantCallRewriter(graphs, calls, evaluator, Operands(new MethodFacts()))).Rewrite(null!));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(null!, calls, evaluator, Operands(new MethodFacts()), Loads(new MethodFacts())));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(graphs, null!, evaluator, Operands(new MethodFacts()), Loads(new MethodFacts())));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(graphs, calls, null!, Operands(new MethodFacts()), Loads(new MethodFacts())));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(graphs, calls, evaluator, null!, Loads(new MethodFacts())));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallRewriter(graphs, calls, evaluator, Operands(new MethodFacts()), null!));
+        Assert.Throws<ArgumentNullException>(() => AsRule(new ConstantCallRewriter(graphs, calls, evaluator, Operands(new MethodFacts()), Loads(new MethodFacts()))).Rewrite(null!));
         Assert.Empty(evaluator.Requests);
     }
 
@@ -38,7 +39,7 @@ public sealed class ConstantCallRewriterTests
             Instruction(3, CilOperation.Call, new CilOperand.MethodInstance(method)),
             Instruction(4, CilOperation.Return));
         var evaluator = new RecordingEvaluator(new ScalarConstant.Int32(35));
-        var rule = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts())));
+        var rule = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts())));
 
         var result = rule.Rewrite(body);
 
@@ -47,7 +48,7 @@ public sealed class ConstantCallRewriterTests
         Assert.Equal(new CilOperand.ConstantI4(35), result.Instructions[3].Operand);
         var instance = method with { Definition = method.Definition with { IsStatic = false } };
         body = Body(Instruction(0, CilOperation.Call, new CilOperand.MethodInstance(instance)), Instruction(1, CilOperation.Return));
-        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()))).Rewrite(body));
+        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts()))).Rewrite(body));
         Assert.Single(evaluator.Requests);
     }
 
@@ -63,7 +64,7 @@ public sealed class ConstantCallRewriterTests
             Instruction(2, CilOperation.Call, new CilOperand.MethodInstance(method)),
             Instruction(3, CilOperation.Return));
         var evaluator = new RecordingEvaluator(nullResult ? new ScalarConstant.Null() : new ScalarConstant.Int32(1));
-        var rule = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts())));
+        var rule = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts())));
 
         var result = rule.Rewrite(body);
 
@@ -87,7 +88,7 @@ public sealed class ConstantCallRewriterTests
             Instruction(2, CilOperation.Call, new CilOperand.MethodInstance(method)),
             Instruction(3, CilOperation.Return));
         var unknown = new RecordingEvaluator(null);
-        var unknownRule = AsRule(new ConstantCallRewriter(Graph(unknownBody), new MethodFacts(), unknown, Operands(new MethodFacts())));
+        var unknownRule = AsRule(new ConstantCallRewriter(Graph(unknownBody), new MethodFacts(), unknown, Operands(new MethodFacts()), Loads(new MethodFacts())));
         Assert.Same(unknownBody, unknownRule.Rewrite(unknownBody));
         Assert.Single(unknown.Requests);
 
@@ -97,9 +98,32 @@ public sealed class ConstantCallRewriterTests
             Instruction(2, CilOperation.Call, new CilOperand.MethodInstance(method)),
             Instruction(3, CilOperation.Return));
         var forbidden = new RecordingEvaluator(new ScalarConstant.Int32(1));
-        var effectfulRule = AsRule(new ConstantCallRewriter(Graph(effectful), new MethodFacts(), forbidden, Operands(new MethodFacts())));
+        var effectfulRule = AsRule(new ConstantCallRewriter(Graph(effectful), new MethodFacts(), forbidden, Operands(new MethodFacts()), Loads(new MethodFacts())));
         Assert.Same(effectful, effectfulRule.Rewrite(effectful));
         Assert.Empty(forbidden.Requests);
+    }
+
+    // An argument a load without effects pushes reaches the evaluator as unknown; where the result does not depend on it,
+    // the call folds and the load goes (a static helper whose value a stubbed check decides).
+    [Fact]
+    public void FoldsCallsWhoseResultDoesNotDependOnAnUnknownArgument()
+    {
+        var method = Method();
+        var body = Body(
+            Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(1, CilOperation.LoadNull),
+            Instruction(2, CilOperation.Call, new CilOperand.MethodInstance(method)),
+            Instruction(3, CilOperation.Return));
+        var evaluator = new RecordingEvaluator(new ScalarConstant.Int32(0));
+        var rule = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts())));
+
+        var result = rule.Rewrite(body);
+
+        Assert.Collection(Assert.Single(evaluator.Requests).Arguments,
+            value => Assert.Null(value),
+            value => Assert.IsType<ScalarConstant.Null>(value));
+        Assert.Equal([CilOperation.Nop, CilOperation.Nop, CilOperation.LoadInt32, CilOperation.Return],
+            result.Instructions.Select(instruction => instruction.Operation));
     }
 
     [Fact]
@@ -113,7 +137,7 @@ public sealed class ConstantCallRewriterTests
             Instruction(3, CilOperation.Call, new CilOperand.MethodInstance(method)),
             Instruction(4, CilOperation.Return));
         var evaluator = new RecordingEvaluator(new ScalarConstant.Int32(1));
-        var rule = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts())));
+        var rule = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts())));
 
         Assert.Same(body, rule.Rewrite(body));
         Assert.Empty(evaluator.Requests);
@@ -125,7 +149,7 @@ public sealed class ConstantCallRewriterTests
         var body = Body(Instruction(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)), Instruction(1, CilOperation.Return));
         var evaluator = new RecordingEvaluator(new ScalarConstant.Int32(1));
 
-        Assert.Same(body, AsRule(new ConstantCallRewriter(new UnusedGraphs(), new MethodFacts(), evaluator, Operands(new MethodFacts()))).Rewrite(body));
+        Assert.Same(body, AsRule(new ConstantCallRewriter(new UnusedGraphs(), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts()))).Rewrite(body));
         Assert.Empty(evaluator.Requests);
     }
 
@@ -139,7 +163,7 @@ public sealed class ConstantCallRewriterTests
             Instruction(3, CilOperation.Return));
         var evaluator = new RecordingEvaluator(new ScalarConstant.Int32(0));
 
-        var result = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()))).Rewrite(body);
+        var result = AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts()))).Rewrite(body);
 
         Assert.Equal(new ScalarConstant?[] { Literal("a"), Literal("b") }, Assert.Single(evaluator.Requests).Arguments);
         Assert.Equal([CilOperation.Nop, CilOperation.Nop, CilOperation.LoadInt32, CilOperation.Return],
@@ -155,7 +179,7 @@ public sealed class ConstantCallRewriterTests
             Instruction(2, CilOperation.Return));
         var evaluator = new RecordingEvaluator(new ScalarConstant.Int32(0));
 
-        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()))).Rewrite(body));
+        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts()))).Rewrite(body));
         Assert.Empty(evaluator.Requests);
     }
 
@@ -171,7 +195,7 @@ public sealed class ConstantCallRewriterTests
         var body = Body([.. Utf8Literal(3), Instruction(3, CilOperation.Call, new CilOperand.MethodInstance(method)), Instruction(4, CilOperation.Return)]);
         var evaluator = new RecordingEvaluator(stringResult ? Literal("x") : new ScalarConstant.Int32(1));
 
-        var result = AsRule(new ConstantCallRewriter(Graph(body), facts, evaluator, Operands(facts))).Rewrite(body);
+        var result = AsRule(new ConstantCallRewriter(Graph(body), facts, evaluator, Operands(facts), Loads(facts))).Rewrite(body);
 
         Assert.Equal(new ScalarConstant?[] { new ScalarConstant.Bytes([80, 78, 71]) }, Assert.Single(evaluator.Requests).Arguments);
         Assert.All(result.Instructions.Take(3), instruction => Assert.Equal(CilOperation.Nop, instruction.Operation));
@@ -187,27 +211,27 @@ public sealed class ConstantCallRewriterTests
         })), Instruction(1, CilOperation.Return));
         var evaluator = new RecordingEvaluator(new ScalarConstant.Bytes([1]));
 
-        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()))).Rewrite(body));
+        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts()))).Rewrite(body));
         Assert.Single(evaluator.Requests);
     }
 
     [Fact]
-    public void RequiresEveryArgumentToBeALiteral()
+    public void RequiresEveryArgumentToBeALiteralOrALoadWithoutEffects()
     {
         var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.I4);
         var method = Method() with { Signature = signature };
-        // The first argument's producers exceed every recognized literal shape.
+        // The first argument is a call's result: neither a literal nor a load without effects.
         var body = Body(
             Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
             Instruction(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
             Instruction(2, CilOperation.LoadArgument, new CilOperand.Index(0)),
-            Instruction(3, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(3, CilOperation.Call),
             Instruction(4, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
             Instruction(5, CilOperation.Call, new CilOperand.MethodInstance(method)),
             Instruction(6, CilOperation.Return));
         var evaluator = new RecordingEvaluator(new ScalarConstant.Int32(1));
 
-        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()))).Rewrite(body));
+        Assert.Same(body, AsRule(new ConstantCallRewriter(Graph(body), new MethodFacts(), evaluator, Operands(new MethodFacts()), Loads(new MethodFacts()))).Rewrite(body));
         Assert.Empty(evaluator.Requests);
     }
 

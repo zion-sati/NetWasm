@@ -1,5 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// NetWasm: the query ID counter is in its own class, so taking an ID (every query does) does not initialize this
+// type and build Log while EventSource is unsupported (pay for play).
 
 // =+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
 //
@@ -33,13 +35,16 @@ namespace System.Linq.Parallel
         /// <remarks>If PLINQ ever supports other schedulers, that information will need to be passed into the query events.</remarks>
         private static readonly int s_defaultSchedulerId = TaskScheduler.Default.Id;
         /// <summary>Static counter used to generate unique IDs</summary>
-        private static int s_queryId;
+        private static class QueryIds
+        {
+            internal static int s_queryId;
+        }
 
         /// <summary>Generates the next consecutive query ID.</summary>
         [NonEvent]
         internal static int NextQueryId()
         {
-            return Interlocked.Increment(ref s_queryId);
+            return Interlocked.Increment(ref QueryIds.s_queryId);
         }
 
         /// <summary>Enabled for all keywords.</summary>

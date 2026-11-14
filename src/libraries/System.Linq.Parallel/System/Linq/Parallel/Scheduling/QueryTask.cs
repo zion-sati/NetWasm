@@ -1,5 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// NetWasm: each event call is asked IsEnabled() first, which its own body asks too, so while EventSource is unsupported
+// the compiler folds the call away and PlinqEtwProvider is never built (pay for play).
 
 // =+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
 //
@@ -94,7 +96,7 @@ namespace System.Linq.Parallel
             Debug.Assert(unused == null);
             TraceHelpers.TraceInfo("[timing]: {0}: Start work {1}", DateTime.Now.Ticks, _taskIndex);
 
-            PlinqEtwProvider.Log.ParallelQueryFork(_groupState.QueryId);
+            if (PlinqEtwProvider.Log.IsEnabled()) PlinqEtwProvider.Log.ParallelQueryFork(_groupState.QueryId);
 
             try
             {
@@ -102,7 +104,7 @@ namespace System.Linq.Parallel
             }
             finally
             {
-                PlinqEtwProvider.Log.ParallelQueryJoin(_groupState.QueryId);
+                if (PlinqEtwProvider.Log.IsEnabled()) PlinqEtwProvider.Log.ParallelQueryJoin(_groupState.QueryId);
             }
 
             TraceHelpers.TraceInfo("[timing]: {0}: End work {1}", DateTime.Now.Ticks, _taskIndex);

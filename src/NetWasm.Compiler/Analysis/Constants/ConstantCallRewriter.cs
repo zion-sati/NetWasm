@@ -5,16 +5,22 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis.Constants;
 
+// Replaces a call whose result its arguments decide with that result. An argument that is not a constant but that a load
+// without effects pushes (an argument, a local, a static field its type need not initialize for) reaches the evaluator
+// as unknown, and goes with the call where the result does not depend on it, as ILLink folds a call to a method whose
+// value is constant (HttpMessageInvoker.ShouldSendWithTelemetry(request) while EventSource is unsupported).
 internal sealed class ConstantCallRewriter(
     IControlFlowGraphBuilder graphs,
     ICalledMethodResolver calls,
     IConstantCallEvaluator constants,
-    IConstantOperandReader operands) : IMethodRewriteRule
+    IConstantOperandReader operands,
+    IEffectFreeLoadFinder loads) : IMethodRewriteRule
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ICalledMethodResolver _calls = calls ?? throw new ArgumentNullException(nameof(calls));
     private readonly IConstantCallEvaluator _constants = constants ?? throw new ArgumentNullException(nameof(constants));
     private readonly IConstantOperandReader _operands = operands ?? throw new ArgumentNullException(nameof(operands));
+    private readonly IEffectFreeLoadFinder _loads = loads ?? throw new ArgumentNullException(nameof(loads));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -40,7 +46,7 @@ internal sealed class ConstantCallRewriter(
                 for (var argument = count - 1; argument >= 0 && start >= 0; argument--)
                 {
                     arguments[argument] = ReadBackwards(operations, ref start);
-                    if (arguments[argument] is null) start = -1;
+                    if (arguments[argument] is null) start = _loads.FindStart(operations, start);
                 }
                 if (start < 0 || _constants.Evaluate(new(target, [.. arguments])) is not { } result ||
                     Replace(call, result) is not { } replacement)

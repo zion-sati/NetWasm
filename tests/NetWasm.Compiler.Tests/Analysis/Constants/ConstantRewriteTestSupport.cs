@@ -28,6 +28,8 @@ internal static class ConstantRewriteTestSupport
 
     internal static PreciseStaticConstructorClassifier Constructors(MethodFacts facts) => new(facts);
 
+    internal static EffectFreeLoadFinder Loads(MethodFacts facts) => new(facts, facts, Constructors(facts));
+
     internal static ConstantComparisonEvaluator Comparisons(MethodFacts facts) => new(facts);
 
     internal static ConstantCallEvaluator Evaluator(MethodFacts facts) =>

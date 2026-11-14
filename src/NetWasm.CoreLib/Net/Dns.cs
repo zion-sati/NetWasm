@@ -19,7 +19,7 @@ namespace System.Net
         /// <summary>Gets the host name of the local machine.</summary>
         public static string GetHostName()
         {
-            NameResolutionActivity activity = NameResolutionTelemetry.Log.BeforeResolution(string.Empty);
+            NameResolutionActivity activity = NameResolutionTelemetry.BeginResolution(string.Empty);
 
             string name;
             try
@@ -32,7 +32,7 @@ namespace System.Net
                 throw;
             }
 
-            NameResolutionTelemetry.Log.AfterResolution(string.Empty, activity, answer: name);
+            NameResolutionTelemetry.EndResolution(string.Empty, activity, answer: name);
 
             if (NetEventSource.Log.IsEnabled()) NetEventSource.Info(null, name);
             return name;
@@ -505,12 +505,12 @@ namespace System.Net
             }
 
             // NameResolutionActivity may have already been set if we're being called from RunAsync.
-            NameResolutionActivity activity = activityOrDefault ?? NameResolutionTelemetry.Log.BeforeResolution(hostName);
+            NameResolutionActivity activity = activityOrDefault ?? NameResolutionTelemetry.BeginResolution(hostName);
 
             // RFC 6761 Section 6.4: "invalid" domains must return NXDOMAIN.
             if (TryHandleRfc6761InvalidDomain(hostName, out SocketException? invalidDomainException))
             {
-                NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: null, exception: invalidDomainException);
+                NameResolutionTelemetry.EndResolution(hostName, activity, answer: null, exception: invalidDomainException);
                 throw invalidDomainException!;
             }
 
@@ -526,7 +526,7 @@ namespace System.Net
                     if (ShouldFallbackToLocalhost(hostName))
                     {
                         if (NetEventSource.Log.IsEnabled()) NetEventSource.Info(hostName, "RFC 6761: Localhost name resolution failed, falling back to 'localhost'");
-                        NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: null, exception: CreateException(errorCode, nativeErrorCode));
+                        NameResolutionTelemetry.EndResolution(hostName, activity, answer: null, exception: CreateException(errorCode, nativeErrorCode));
                         fallbackToLocalhost = true;
                     }
                     else
@@ -539,7 +539,7 @@ namespace System.Net
                 {
                     // RFC 6761 Section 6.3: If a localhost name returns empty addresses, fall back to plain "localhost".
                     if (NetEventSource.Log.IsEnabled()) NetEventSource.Info(hostName, "RFC 6761: Localhost name returned empty, falling back to 'localhost'");
-                    NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: justAddresses ? addresses : (object)new IPHostEntry { AddressList = addresses, HostName = newHostName!, Aliases = aliases }, exception: null);
+                    NameResolutionTelemetry.EndResolution(hostName, activity, answer: justAddresses ? addresses : (object)new IPHostEntry { AddressList = addresses, HostName = newHostName!, Aliases = aliases }, exception: null);
                     fallbackToLocalhost = true;
                 }
 
@@ -576,7 +576,7 @@ namespace System.Net
             }
 
             Debug.Assert(result is not null);
-            NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: result);
+            NameResolutionTelemetry.EndResolution(hostName, activity, answer: result);
 
             return result;
         }
@@ -598,7 +598,7 @@ namespace System.Net
 
             // Do a reverse lookup to get the host name.
             // NameResolutionActivity may have already been set if we're being called from RunAsync.
-            NameResolutionActivity activity = activityOrDefault ?? NameResolutionTelemetry.Log.BeforeResolution(address);
+            NameResolutionActivity activity = activityOrDefault ?? NameResolutionTelemetry.BeginResolution(address);
 
             SocketError errorCode;
             string? name;
@@ -618,7 +618,7 @@ namespace System.Net
                 throw;
             }
 
-            NameResolutionTelemetry.Log.AfterResolution(address, activity, answer: name);
+            NameResolutionTelemetry.EndResolution(address, activity, answer: name);
 
             if (!ValidateAddressFamily(ref addressFamily, name, justAddresses, out object? resultOnFailure))
             {
@@ -626,7 +626,7 @@ namespace System.Net
             }
 
             // Do the forward lookup to get the IPs for that host name
-            activity = NameResolutionTelemetry.Log.BeforeResolution(name);
+            activity = NameResolutionTelemetry.BeginResolution(name);
 
             object result;
             try
@@ -653,7 +653,7 @@ namespace System.Net
                 throw;
             }
 
-            NameResolutionTelemetry.Log.AfterResolution(name, activity, answer: result);
+            NameResolutionTelemetry.EndResolution(name, activity, answer: result);
 
             // One of three things happened:
             // 1. Success.
@@ -715,8 +715,8 @@ namespace System.Net
                 // RFC 6761 Section 6.4: "invalid" domains must return NXDOMAIN.
                 if (TryHandleRfc6761InvalidDomain(hostName, out SocketException? invalidDomainException))
                 {
-                    NameResolutionActivity activity = NameResolutionTelemetry.Log.BeforeResolution(hostName);
-                    NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: null, exception: invalidDomainException);
+                    NameResolutionActivity activity = NameResolutionTelemetry.BeginResolution(hostName);
+                    NameResolutionTelemetry.EndResolution(hostName, activity, answer: null, exception: invalidDomainException);
                     return justAddresses ? (Task)
                         Task.FromException<IPAddress[]>(invalidDomainException!) :
                         Task.FromException<IPHostEntry>(invalidDomainException!);
@@ -802,7 +802,7 @@ namespace System.Net
 
             static async Task<T> CompleteAsync(Task task, string hostName, bool justAddresses, AddressFamily addressFamily, bool shouldFallbackToLocalhost, long startingTimeStamp, CancellationToken cancellationToken)
             {
-                NameResolutionActivity activity = NameResolutionTelemetry.Log.BeforeResolution(hostName, startingTimeStamp);
+                NameResolutionActivity activity = NameResolutionTelemetry.BeginResolution(hostName, startingTimeStamp);
                 Exception? exception = null;
                 T? result = null;
                 bool fallbackOccurred = false;
@@ -814,7 +814,7 @@ namespace System.Net
                     if (shouldFallbackToLocalhost && result is IPAddress[] addresses && addresses.Length == 0)
                     {
                         if (NetEventSource.Log.IsEnabled()) NetEventSource.Info(hostName, "RFC 6761: Localhost name returned empty, falling back to 'localhost'");
-                        NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: result, exception: null);
+                        NameResolutionTelemetry.EndResolution(hostName, activity, answer: result, exception: null);
                         fallbackOccurred = true;
 
                         return await GetLocalhostAddressesAsync(addressFamily, cancellationToken).ConfigureAwait(false);
@@ -823,7 +823,7 @@ namespace System.Net
                     if (shouldFallbackToLocalhost && result is IPHostEntry entry && entry.AddressList.Length == 0)
                     {
                         if (NetEventSource.Log.IsEnabled()) NetEventSource.Info(hostName, "RFC 6761: Localhost name returned empty, falling back to 'localhost'");
-                        NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: result, exception: null);
+                        NameResolutionTelemetry.EndResolution(hostName, activity, answer: result, exception: null);
                         fallbackOccurred = true;
 
                         return await GetLocalhostEntryAsync(addressFamily, cancellationToken).ConfigureAwait(false);
@@ -835,7 +835,7 @@ namespace System.Net
                 {
                     // RFC 6761 Section 6.3: If a localhost name fails, fall back to resolving plain "localhost".
                     if (NetEventSource.Log.IsEnabled()) NetEventSource.Info(hostName, "RFC 6761: Localhost name resolution failed, falling back to 'localhost'");
-                    NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: null, exception: ex);
+                    NameResolutionTelemetry.EndResolution(hostName, activity, answer: null, exception: ex);
                     fallbackOccurred = true;
 
                     return justAddresses
@@ -851,7 +851,7 @@ namespace System.Net
                 {
                     if (!fallbackOccurred)
                     {
-                        NameResolutionTelemetry.Log.AfterResolution(hostName, activity, answer: result, exception: exception);
+                        NameResolutionTelemetry.EndResolution(hostName, activity, answer: result, exception: exception);
                     }
                 }
 
@@ -915,7 +915,7 @@ namespace System.Net
 
         private static bool LogFailure(object hostNameOrAddress, in NameResolutionActivity activity, Exception exception)
         {
-            NameResolutionTelemetry.Log.AfterResolution(hostNameOrAddress, activity, answer: null, exception: exception);
+            NameResolutionTelemetry.EndResolution(hostNameOrAddress, activity, answer: null, exception: exception);
             return false;
         }
 
@@ -937,7 +937,7 @@ namespace System.Net
         {
             bool tracingEnabled = NameResolutionActivity.IsTracingEnabled();
             Activity? activityToRestore = tracingEnabled ? Activity.Current : null;
-            NameResolutionActivity activity = NameResolutionTelemetry.Log.BeforeResolution(key);
+            NameResolutionActivity activity = NameResolutionTelemetry.BeginResolution(key);
             if (tracingEnabled)
             {
                 // Do not overwrite Activity.Current in the caller's ExecutionContext.
@@ -985,7 +985,7 @@ namespace System.Net
                             ((ICollection<KeyValuePair<object, Task>>)s_tasks).Remove(new KeyValuePair<object, Task>(key!, task));
                         }
                         // Since it was canceled, func(..) had not executed and call AfterResolution it needs to be called here.
-                        NameResolutionTelemetry.Log.AfterResolution(key!, activity, new OperationCanceledException());
+                        NameResolutionTelemetry.EndResolution(key!, activity, new OperationCanceledException());
                     }, key, CancellationToken.None, TaskContinuationOptions.OnlyOnCanceled | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 }
 
