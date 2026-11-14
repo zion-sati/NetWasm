@@ -93,6 +93,12 @@ def run_cells(*, root, env, feed, version, sdk_version, node, kinds, profiles, c
                     code = subprocess.run(command, cwd=cell, env=env, stdout=out, stderr=err).returncode
                 row['stages'][name] = code
                 save()
+                if code != 0:
+                    # The stage's own output, since the uploaded results carry only stderr and dotnet reports
+                    # build errors on stdout.
+                    for stream in ('stdout', 'stderr'):
+                        text = (cell / f'{name}.{stream}').read_text(errors='replace').splitlines()
+                        print(f'--- {kind}/{profile} {name} {stream} (last 80 lines)', *text[-80:], sep='\n')
                 assert code == 0, f'{kind}/{profile}: {name} failed'
 
             run('restore', ['dotnet', 'restore', 'App.csproj', '--configfile', 'NuGet.Config', *selection])
