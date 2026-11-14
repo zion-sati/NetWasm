@@ -20,6 +20,8 @@
     <Compile Include="../TestInfrastructure/StructuredSequenceFixtures.cs" Link="StructuredSequenceFixtures.cs" />
     <Compile Include="../TestInfrastructure/NetWasmCompiler.cs" Link="NetWasmCompiler.cs" />
     <Compile Include="../TestInfrastructure/MethodSignatureModelFactories.cs" Link="MethodSignatureModelFactories.cs" />
+    <!-- TestAssets compiles fixtures against NetWasm.App's assemblies, which this collects. -->
+    <ProjectReference Include="../../src/NetWasm.App.Runtime/NetWasm.App.Runtime.csproj" ReferenceOutputAssembly="false" />
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
     <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
     <Compile Include="../../src/NetWasm.CoreLib/EnumMetadataView.cs"
