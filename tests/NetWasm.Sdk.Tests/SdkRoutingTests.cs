@@ -605,13 +605,16 @@ public sealed class SdkRoutingTests
     }
 
     // The compilation identity lists the declared import modules, so changing
-    // them recompiles; a generated worker client's reserved module is not one.
+    // them recompiles; a generated worker client's reserved module is not one. The identity follows the native
+    // libraries, which are collected through the project references, and resolving those reads the restore's
+    // assets; this evaluation runs no restore, so it is a design-time build, which resolves no packages.
     [Fact]
     public void CompilationIdentityListsTheDeclaredImportModules()
     {
         using var project = EvaluationProject.Create("""
             <TargetFramework>netwasm0.1</TargetFramework>
             <OutputType>Exe</OutputType>
+            <DesignTimeBuild>true</DesignTimeBuild>
             """,
             includeCompilerTargets: true,
             projectItems: """
@@ -1381,11 +1384,12 @@ public sealed class SdkRoutingTests
         Assert.Equal(!disabled, pruned.Contains("NetWasm.System.Linq|" + project.Property("NetWasmSdkPackageVersion")));
         Assert.Equal(!disabled, pruned.Contains("System.Buffers|5.0.0"));
         Assert.Equal(!disabled, pruned.Contains("System.Runtime|4.3.1"));
+        Assert.Equal(!disabled, pruned.Contains("System.Threading.Channels|11.0.0"));
         Assert.DoesNotContain(pruned, item => item.StartsWith("System.Drawing.Common|", StringComparison.Ordinal));
         if (!disabled)
         {
             Assert.Equal("true", project.Property("RestoreEnablePackagePruning"));
-            Assert.Equal(126, pruned.Count(item => item.StartsWith("System.", StringComparison.Ordinal) ||
+            Assert.Equal(127, pruned.Count(item => item.StartsWith("System.", StringComparison.Ordinal) ||
                 item.StartsWith("NetWasm.System.", StringComparison.Ordinal)));
         }
     }

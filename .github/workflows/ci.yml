@@ -356,6 +356,9 @@ jobs:
       - name: Build candidate package graph
         id: version
         shell: bash
+        env:
+          # NetWasm.App.Runtime builds the compression and cryptography native archives with it.
+          NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
         run: |
           base_version="$(tr -d '[:space:]' < eng/NetWasm.ReleaseVersion.txt)"
           # Partial reruns reuse successful packages from this immutable run.
