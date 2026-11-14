@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { instantiateNetWasm } from "../../../src/NetWasm.Runtime/browser-host.mjs";
 import { createRuntimeContractImports } from "../../NetWasm.Runtime.Tests/runtime-contract-imports.mjs";
 import { createMonotonicClockImports } from "../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs";
+import { createSystemClockImports } from "../../NetWasm.Runtime.Tests/system-clock-imports.mjs";
 import { createReadOnlyAssetImports } from "../../NetWasm.Runtime.Tests/read-only-asset-imports.mjs";
 import { createLinkedCorpusProgram } from "./linked-corpus-program.mjs";
 
@@ -17,11 +18,14 @@ export const linkedCorpusProgramDependencies = Object.freeze({
   createRuntimeImports: (target, getMemory, getExports, sidecar) => ({
     ...createRuntimeContractImports(target, getMemory, getExports),
     ...createMonotonicClockImports(target, () => process.hrtime.bigint()),
-    // The program's sidecar under /netwasm-sidecars, read through WASI 0.3's filesystem.
-    ...(sidecar == null ? {} : createReadOnlyAssetImports(target, getMemory, (size, alignment) => {
+    // The fixed instant the oracle host reports, for a program that reads the time.
+    ...createSystemClockImports(target, getMemory),
+    // The program's sidecar under /netwasm-sidecars, read through WASI 0.3's filesystem; without one, no preopened
+    // directory, as in the oracle host, for a program that looks for files (the time zone reader).
+    ...createReadOnlyAssetImports(target, getMemory, (size, alignment) => {
       const address = target === "wasm64" ? BigInt : Number;
       return getExports().component_realloc(address(0), address(0), address(alignment), address(size));
-    }, { mountPath: "/netwasm-sidecars", fileName: sidecar.fileName, bytes: sidecar.bytes })),
+    }, sidecar == null ? null : { mountPath: "/netwasm-sidecars", fileName: sidecar.fileName, bytes: sidecar.bytes }),
   }),
 });
 const program = createLinkedCorpusProgram(linkedCorpusProgramDependencies);

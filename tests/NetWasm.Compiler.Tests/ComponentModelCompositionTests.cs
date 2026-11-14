@@ -16,7 +16,9 @@ public sealed class ComponentModelCompositionTests
     [Fact]
     public void RegistrationComposesEachComponentModelFeature()
     {
-        var services = new ServiceCollection();
+        // The host supplies logging and the clock, as AddNetWasmCompiler's diagnostics feature does: the final
+        // wasm-opt run reports its size, level and time through them.
+        var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System);
 
         Assert.Same(services, services.AddCompilerComponentModel());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions

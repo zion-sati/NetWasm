@@ -156,6 +156,20 @@ for (const target of ['wasm32', 'wasm64']) {
   });
 }
 
+for (const target of ['wasm32', 'wasm64']) {
+  test(`${target}: without an asset no directory is preopened`, () => {
+    const width = target === 'wasm64' ? 8 : 4;
+    const prefix = width === 8 ? 'cm64p2' : 'cm32p2';
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    new Uint8Array(memory.buffer).fill(0xff, 32, 32 + width * 2);
+    const imports = createReadOnlyAssetImports(target, () => memory,
+      () => assert.fail('An empty listing allocates nothing'));
+    imports[`${prefix}|wasi:filesystem/preopens@0.3`]['get-directories'](width === 8 ? 32n : 32);
+    assert.deepEqual([...new Uint8Array(memory.buffer, 32, width * 2)], Array(width * 2).fill(0));
+    assert.equal(typeof imports['wasi:filesystem/types@0.3.2']['[async-lower][method]descriptor.open-at'], 'function');
+  });
+}
+
 test('rejects invalid setup without invoking guest capabilities', () => {
   const unexpected = () => assert.fail('Invalid setup must not invoke capabilities');
   const asset = { mountPath: '/assets', fileName: 'data', bytes: new Uint8Array() };

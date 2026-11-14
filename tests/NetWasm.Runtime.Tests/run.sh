@@ -18,6 +18,10 @@ node --test --experimental-test-coverage \
   --test-coverage-include='**/monotonic-clock-imports.mjs' \
   --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 \
   "$script_dir/monotonic-clock-imports.test.mjs"
+node --test --experimental-test-coverage \
+  --test-coverage-include='**/system-clock-imports.mjs' \
+  --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 \
+  "$script_dir/system-clock-imports.test.mjs"
 node --test "$script_dir/runtime-build-additional-source.test.mjs"
 node --test --experimental-test-coverage \
   --test-coverage-include='**/output-stream-imports.mjs' \

@@ -30,6 +30,13 @@
   <ItemGroup Condition="'$(PublishAot)' == 'true' AND $(RuntimeIdentifier.StartsWith('win-'))">
     <LinkerArg Include="/Brepro" />
   </ItemGroup>
+  <!-- Apple's linker gives objc_msgSend two GOT slots, one for its plain stub and one for the selector stubs it
+       synthesizes, and orders the two differently from link to link, locally and on the macOS CI runners
+       (-reproducible does not change it). Small selector stubs branch to the plain stub, so there is one slot and a repeatable
+       Native AOT nwc. -->
+  <ItemGroup Condition="'$(PublishAot)' == 'true' AND $(RuntimeIdentifier.StartsWith('osx-'))">
+    <LinkerArg Include="-Wl,-objc_stubs_small" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../NetWasm.Compiler/NetWasm.Compiler.csproj" />
     <ProjectReference Include="../NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
