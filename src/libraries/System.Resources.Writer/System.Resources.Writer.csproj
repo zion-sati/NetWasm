@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Resources.Writer</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Collections/System.Collections.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Resources/ResourceTypeCode.cs" />
+    <Compile Include="Common/System/Resources/ResourceWriter.cs" />
+    <Compile Include="System/Resources/IResourceWriter.cs" />
+    <Compile Include="System/Resources/ResourceWriter.Core.cs" />
+    <Compile Include="System/Resources/__FastResourceComparer.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

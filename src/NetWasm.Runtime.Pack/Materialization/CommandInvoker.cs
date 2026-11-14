@@ -44,7 +44,9 @@ internal sealed class CommandInvoker : ICommandInvoker
         }
         catch (Exception exception)
         {
-            throw new InvalidOperationException("A NetWasm runtime tool could not be executed.", exception);
+            // The cause goes in the message: NWPACK001 reports only the message (zion-sati/NetWasm#236).
+            throw new InvalidOperationException(
+                $"A NetWasm runtime tool could not be executed ('{command.ExecutablePath}'): {exception.Message}", exception);
         }
     }
 }

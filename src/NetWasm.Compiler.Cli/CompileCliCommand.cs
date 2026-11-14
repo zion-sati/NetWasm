@@ -103,9 +103,15 @@ internal sealed class CompileCliCommand(
             PathMap: options.PathMap,
             StructuredDiagnostics: options.StructuredDiagnostics,
             Optimization: options.Optimization,
-            OptimizationOverrides: overrides)
+            OptimizationOverrides: overrides,
+            MetadataReferencePaths: options.MetadataReferences)
         {
             ImportModules = options.ImportModules,
+            LinkedNativeLibraries = options.LinkedNativeOnly ? options.NativeLibraries : null,
+            FeatureSwitches = options.FeatureSwitches,
+            RuntimeProperties = options.RuntimeProperties,
+            OriginalContractReferencePaths = options.OriginalContracts,
+            ReferenceOrigins = options.ReferenceOrigins,
             PlainCoreModule = options.Target == NwcTarget.CoreModule,
             CompiledUnits = CompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),
             VerifyCompiledUnits = VerifiesCompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),

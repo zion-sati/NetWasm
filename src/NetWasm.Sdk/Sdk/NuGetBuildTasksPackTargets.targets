@@ -21,8 +21,11 @@
     <NetWasmSdkOwnedPackDependsOn>$(BeforePack);_GetRestoreProjectStyle;_IntermediatePack;GenerateNuspec</NetWasmSdkOwnedPackDependsOn>
   </PropertyGroup>
 
+  <!-- A framework-contract package (NetWasm.Ref, NetWasm.App.Ref) names the target that builds its
+       package request; NetWasm.Ref's is NetWasmRefPack. -->
   <PropertyGroup Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'">
-    <NetWasmSdkOwnedPackDependsOn>$(BeforePack);NetWasmRefPack</NetWasmSdkOwnedPackDependsOn>
+    <NetWasmSdkContractPackTarget Condition="'$(NetWasmSdkContractPackTarget)' == ''">NetWasmRefPack</NetWasmSdkContractPackTarget>
+    <NetWasmSdkOwnedPackDependsOn>$(BeforePack);$(NetWasmSdkContractPackTarget)</NetWasmSdkOwnedPackDependsOn>
   </PropertyGroup>
 
   <UsingTask TaskName="NetWasm.Sdk.Pack.CanonicalPackMsBuildTask"

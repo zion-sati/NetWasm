@@ -182,6 +182,16 @@ internal sealed class TypeRelationshipClassifier(
             return true;
         }
 
+        if (left.Shape is CliTypeShape.UnmanagedPointer or CliTypeShape.ManagedByReference ||
+            right.Shape is CliTypeShape.UnmanagedPointer or CliTypeShape.ManagedByReference)
+        {
+            return left.Shape == right.Shape && SameType(left.ElementType!, right.ElementType!);
+        }
+        if (left.Shape == CliTypeShape.FunctionPointer || right.Shape == CliTypeShape.FunctionPointer)
+        {
+            return false; // Equal signatures already matched structural identity above.
+        }
+
         if (left.Shape == CliTypeShape.Primitive ||
             right.Shape == CliTypeShape.Primitive)
         {

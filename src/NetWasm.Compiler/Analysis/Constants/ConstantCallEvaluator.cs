@@ -7,7 +7,7 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis.Constants;
 
 internal sealed class ConstantCallEvaluator(
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     ITypeDefinitionResolver typeDefinitions,
     IMethodRepository methods,
@@ -16,7 +16,7 @@ internal sealed class ConstantCallEvaluator(
     IConstantComparisonEvaluator comparisons,
     IMethodSpecializer specializer) : IConstantCallEvaluator
 {
-    private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ?? throw new ArgumentNullException(nameof(typeDefinitions));
     private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
@@ -24,7 +24,7 @@ internal sealed class ConstantCallEvaluator(
     private readonly IConstantOperandReader _operands = operands ?? throw new ArgumentNullException(nameof(operands));
     private readonly IConstantComparisonEvaluator _comparisons = comparisons ?? throw new ArgumentNullException(nameof(comparisons));
     private readonly IMethodSpecializer _specializer = specializer ?? throw new ArgumentNullException(nameof(specializer));
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CilMethodBody> _bodies = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CilMethodBody?> _bodies = new(StringComparer.Ordinal);
 
     public ScalarConstant? Evaluate(ConstantCallEvaluation request)
     {
@@ -171,8 +171,9 @@ internal sealed class ConstantCallEvaluator(
         }
         // The callee as its closed instantiation specializes it, so its typeof
         // comparisons and sizes are already constants, as when it is inlined.
-        var body = _bodies.GetOrAdd(method.CanonicalName, _ => _specializer.Rewrite(_methodBodies.ReadMethodBody(method)));
-        if (!body.ExceptionRegions.IsEmpty || body.Instructions.IsEmpty) return null;
+        var body = _bodies.GetOrAdd(method.CanonicalName, _ =>
+            _methodBodies.TryReadMethodBody(method, out var read) ? _specializer.Rewrite(read) : null);
+        if (body is null || !body.ExceptionRegions.IsEmpty || body.Instructions.IsEmpty) return null;
         active.Add(method.CanonicalName);
         return new(request, body);
     }

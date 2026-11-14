@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptation: this is upstream's permanently disabled profile (IsSupported is false and no
 // switch can enable it, since NetWasm has no tracing backend). Members keep their upstream disabled
 // results. Code that runs only once a source is initialized or enabled (provider registration,

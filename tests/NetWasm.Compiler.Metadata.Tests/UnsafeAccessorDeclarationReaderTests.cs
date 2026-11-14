@@ -16,7 +16,7 @@ public sealed class UnsafeAccessorDeclarationReaderTests
     public void PreservesKindAndNamedArgumentDistinctions(bool named, string? name)
     {
         using var fixture = Create(named: named, name: name);
-        Assert.Equal(new UnsafeAccessorDeclaration(3, name, named, false, false), Read(fixture));
+        Assert.Equal(new UnsafeAccessorDeclaration(3, name, named, false), Read(fixture));
     }
 
     [Theory]
@@ -64,6 +64,20 @@ public sealed class UnsafeAccessorDeclarationReaderTests
         var result = Read(fixture)!;
         Assert.True(result.HasTypeTranslation);
         Assert.False(result.IsMalformed);
+        Assert.Equal(returnParameter ? TranslatedType : null, result.TypeTranslations!.Return);
+        Assert.Equal(returnParameter ? null : TranslatedType, result.TypeTranslations.Parameter(0));
+        Assert.Null(result.TypeTranslations.Parameter(1));
+    }
+
+    [Theory]
+    [InlineData("translation-malformed")]
+    [InlineData("translation-truncated")]
+    public void ATranslationThatNamesNoTypeIsMalformed(string shape)
+    {
+        using var fixture = Create(shape: shape);
+        var result = Read(fixture)!;
+        Assert.True(result.IsMalformed);
+        Assert.False(result.HasTypeTranslation);
     }
 
     [Fact]
@@ -74,6 +88,8 @@ public sealed class UnsafeAccessorDeclarationReaderTests
         Assert.False(result.HasTypeTranslation);
         Assert.False(result.IsMalformed);
     }
+
+    private const string TranslatedType = "Fixture.Target, Fixture";
 
     private static UnsafeAccessorDeclaration? Read(Fixture fixture)
     {
@@ -147,13 +163,26 @@ public sealed class UnsafeAccessorDeclarationReaderTests
         }
         if (shape != "absent") metadata.AddCustomAttribute(method, constructor, metadata.GetOrAddBlob(payload));
         if (shape == "duplicate") metadata.AddCustomAttribute(method, constructor, metadata.GetOrAddBlob(payload));
-        if (shape is "translation" or "unrelated-parameter")
+        if (shape is "translation" or "translation-malformed" or "translation-truncated" or "unrelated-parameter")
         {
+            // UnsafeAccessorTypeAttribute(string typeName); the malformed shape gives it an integer instead.
             var translation = metadata.AddTypeReference(module, metadata.GetOrAddString("System.Runtime.CompilerServices"),
-                metadata.GetOrAddString(shape == "translation" ? "UnsafeAccessorTypeAttribute" : "OtherAttribute"));
+                metadata.GetOrAddString(shape == "unrelated-parameter" ? "OtherAttribute" : "UnsafeAccessorTypeAttribute"));
+            var translationSignature = new BlobBuilder();
+            new BlobEncoder(translationSignature).MethodSignature(isInstanceMethod: true).Parameters(1, result => result.Void(),
+                parameters =>
+                {
+                    if (shape == "translation-malformed") parameters.AddParameter().Type().Int32();
+                    else parameters.AddParameter().Type().String();
+                });
             var translationConstructor = metadata.AddMemberReference(translation, metadata.GetOrAddString(".ctor"),
-                metadata.GetOrAddBlob(constructorSignature));
-            metadata.AddCustomAttribute(parameter, translationConstructor, metadata.GetOrAddBlob(payload));
+                metadata.GetOrAddBlob(translationSignature));
+            var translationPayload = new BlobBuilder();
+            translationPayload.WriteUInt16(1);
+            if (shape == "translation-malformed") translationPayload.WriteInt32(3);
+            else if (shape != "translation-truncated") translationPayload.WriteSerializedString(TranslatedType);
+            if (shape != "translation-truncated") translationPayload.WriteUInt16(0);
+            metadata.AddCustomAttribute(parameter, translationConstructor, metadata.GetOrAddBlob(translationPayload));
         }
         var image = new BlobBuilder();
         new MetadataRootBuilder(metadata).Serialize(image, 0, 0);

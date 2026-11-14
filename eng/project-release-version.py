@@ -26,6 +26,8 @@ XML_FIELDS = {
         "NetWasmRefPackageVersion",
         "NetWasmRuntimePackageVersion",
         "NetWasmRuntimePackPackageVersion",
+        "NetWasmAppRefPackageVersion",
+        "NetWasmAppRuntimePackageVersion",
         "NetWasmToolchainPackageVersion",
         "NetWasmHostingPackageVersion",
         "NetWasmHostingBuildPackageVersion",

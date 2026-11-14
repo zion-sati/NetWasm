@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Diagnostics.TextWriterTraceListener</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Diagnostics.TraceSource/System.Diagnostics.TraceSource.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="System/Diagnostics/ConsoleTraceListener.cs" />
+    <Compile Include="System/Diagnostics/DelimitedListTraceListener.cs" />
+    <Compile Include="System/Diagnostics/TextWriterTraceListener.cs" />
+  </ItemGroup>
+</Project>

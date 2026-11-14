@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Reflection.DispatchProxy</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="System/Reflection/DispatchProxy.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

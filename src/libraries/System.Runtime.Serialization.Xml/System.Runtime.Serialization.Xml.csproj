@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Runtime.Serialization.Xml</AssemblyName>
+    <!-- Its public surface does not claim CLS compliance yet (unsigned members are not marked). -->
+    <CLSCompliant>false</CLSCompliant>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="System/SR.cs" />
+    <!-- System.Private.DataContractSerialization at dotnet/runtime 811225a4: the XML dictionary readers and writers
+         (text, binary, canonical), the JSON token reader and writer, XmlObjectSerializer and XmlSerializableServices,
+         copied verbatim or adapted where marked "NetWasm:". The reflection-based DataContract engine is not ported:
+         DataContractSerializer, DataContractJsonSerializer and XsdDataContractExporter keep their construction and
+         configuration and throw PlatformNotSupportedException to serialize or export. -->
+    <Compile Include="Common/System/*.cs" />
+    <Compile Include="System/Xml/*.cs" />
+    <Compile Include="System/Text/*.cs" />
+    <Compile Include="System/Runtime/Serialization/**/*.cs" />
+    <ProjectReference Include="../System.Runtime.Serialization.Primitives/System.Runtime.Serialization.Primitives.csproj" />
+    <ProjectReference Include="../System.Xml/System.Xml.csproj" />
+  </ItemGroup>
+</Project>

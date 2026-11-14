@@ -2,11 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // The pi-scaled trigonometric functions from System.Private.CoreLib
-// Double.cs at runtime commit 474ed963699fc29809015392738a15231aaae2de.
+// Double.cs at runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 namespace System
 {
-    public partial struct Double
+    public readonly partial struct Double
     {
         /// <inheritdoc cref="ITrigonometricFunctions{TSelf}.CosPi(TSelf)" />
         public static double CosPi(double x)

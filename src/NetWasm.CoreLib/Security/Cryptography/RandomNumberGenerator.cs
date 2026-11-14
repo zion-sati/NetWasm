@@ -1,10 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime commit 474ed963699fc29809015392738a15231aaae2de.
-// Named algorithm lookup is unsupported; entropy is supplied by WASI.
+// Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// Named algorithm lookup uses the bounded CryptoConfig table; entropy is supplied by WASI.
 
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -16,15 +17,21 @@ namespace System.Security.Cryptography
 
         public static RandomNumberGenerator Create() => RandomNumberGeneratorImplementation.s_singleton;
 
-        [Obsolete("Cryptographic factory methods accepting an algorithm name are obsolete. Use the parameterless Create factory method on the algorithm type instead.", DiagnosticId = "SYSLIB0045", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [Obsolete(Obsoletions.CryptoStringFactoryMessage, DiagnosticId = Obsoletions.CryptoStringFactoryDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [RequiresUnreferencedCode("The default algorithm implementations might be removed, use strong type references like 'RSA.Create()' instead.")]
         public static RandomNumberGenerator? Create(string rngName)
         {
-            ArgumentNullException.ThrowIfNull(rngName);
-            // Named CryptoConfig lookup requires a separate algorithm registry
-            // and dynamic construction contract. Never guess a default for a
-            // caller's requested name; the parameterless factory is supported.
-            throw new PlatformNotSupportedException(
-                "Named cryptographic algorithm lookup is not supported. Use RandomNumberGenerator.Create().");
+            // As upstream, whose CryptoConfig.CreateFromName(name) reports the null.
+            ArgumentNullException.ThrowIfNull(rngName, "name");
+
+            // NetWasm: upstream asks CryptoConfig, which is System.Security.Cryptography's. Its only random number
+            // generator names resolve here, and CryptoConfig cannot gain others (AddAlgorithm throws). Another
+            // algorithm's name returns null, where upstream's cast of that algorithm throws InvalidCastException.
+#pragma warning disable SYSLIB0023 // RNGCryptoServiceProvider is obsolete
+            return rngName is "RandomNumberGenerator" or "System.Security.Cryptography.RandomNumberGenerator"
+                ? new RNGCryptoServiceProvider()
+                : null;
+#pragma warning restore SYSLIB0023
         }
 
         public void Dispose()

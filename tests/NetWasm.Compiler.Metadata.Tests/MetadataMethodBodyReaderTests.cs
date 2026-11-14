@@ -110,14 +110,14 @@ public sealed class MetadataMethodBodyReaderTests
     private sealed class Fixture : IDisposable, ICilDecoderFactory, ICilDecoder,
         IManagedAssemblyResolver, IMetadataMethodReferenceResolver, ISymbolFormatter,
         IUnsafeAccessorTargetResolverFactory, IUnsafeAccessorTargetResolver, IUnsafeAccessorBodyBuilder,
-        IDelegateAsynchronousCallBodyBuilder, IUnsafeIntrinsicBodyBuilder
+        IDelegateAsynchronousCallBodyBuilder, IUnsafeIntrinsicBodyBuilder, IUnboundNativeImportBodyBuilder
     {
         private readonly ManagedAssembly _assembly;
         private readonly UnsafeAccessorBinding _binding;
         internal MethodInstanceModel Method { get; }
         internal CilMethodBody Body { get; }
         internal int AssemblyReads, DecoderCreations, InstanceDecodes,
-            MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds, IntrinsicBuilds;
+            MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds, IntrinsicBuilds, UnboundNativeImportBuilds;
         internal Exception? BindingError { get; set; }
         // Whether the method is an Unsafe intrinsic, whose body the compiler builds.
         internal bool IntrinsicBody { get; init; }
@@ -134,7 +134,7 @@ public sealed class MetadataMethodBodyReaderTests
             var definition = new MethodDefinitionModel(new(_assembly.Identity, 0x06000001),
                 new(_assembly.Identity, 0x02000002), "Accessor", true, signature, physical ? 1 : 0)
             {
-                UnsafeAccessor = annotated ? new UnsafeAccessorDeclaration(1, "Target", true, false, false) : null,
+                UnsafeAccessor = annotated ? new UnsafeAccessorDeclaration(1, "Target", true, false) : null,
                 IsDelegateAsynchronousCall = delegateCall,
             };
             Method = new(definition, CliTypeIdentity.Named(_assembly.Identity, "", "Owner", false), [], signature);
@@ -143,7 +143,7 @@ public sealed class MetadataMethodBodyReaderTests
         }
 
         internal IMethodBodyReader CreateReader() => Assert.IsAssignableFrom<IMethodBodyReader>(
-            new MetadataMethodBodyReader(this, this, this, this, this, this, this, this));
+            new MetadataMethodBodyReader(this, this, this, this, this, this, this, this, this));
         public void Dispose() => _assembly.Dispose();
 
         ICilDecoder ICilDecoderFactory.Create() { DecoderCreations++; return this; }
@@ -203,6 +203,12 @@ public sealed class MetadataMethodBodyReaderTests
             Assert.Same(Method, method);
             IntrinsicBuilds++;
             return IntrinsicBody ? Body : null;
+        }
+        CilMethodBody IUnboundNativeImportBodyBuilder.Build(MethodInstanceModel method)
+        {
+            Assert.Same(Method, method);
+            UnboundNativeImportBuilds++;
+            return Body;
         }
     }
 }

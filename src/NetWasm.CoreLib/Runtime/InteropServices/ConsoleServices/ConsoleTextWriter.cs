@@ -4,9 +4,10 @@ using System.Text.Unicode;
 
 namespace System.Runtime.InteropServices.ConsoleServices;
 
-// Numbers are written with their no-provider ToString(). FormatProvider is always the current
-// culture here, whose number format is the invariant one, so the text is the same, and console
-// output does not make the provider-driven formatters or culture state reachable.
+// Numbers are formatted with a null provider. FormatProvider is always the current culture here,
+// and NumberFormatInfo.CurrentInfo mirrors that culture's NumberFormatInfo (see
+// CultureInfo.OnCurrentCultureChanged), so the text is the same as TextWriter's
+// value.ToString(FormatProvider) without making CultureInfo reachable from console output.
 // Text is encoded as Encoding.UTF8 encodes it, an unpaired surrogate becoming U+FFFD, without
 // constructing an Encoding: at most three bytes for each UTF-16 code unit, and a long text in
 // pieces of whole characters.

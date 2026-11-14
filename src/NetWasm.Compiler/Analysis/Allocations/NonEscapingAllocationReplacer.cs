@@ -32,7 +32,7 @@ internal interface INonEscapingAllocationReplacer
 internal sealed class NonEscapingAllocationReplacer(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     IFieldRepository fields,
     IFinalizerResolver finalizers,
@@ -45,7 +45,7 @@ internal sealed class NonEscapingAllocationReplacer(
     private const int Stale = -1;
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
-    private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly IFinalizerResolver _finalizers = finalizers ?? throw new ArgumentNullException(nameof(finalizers));
@@ -133,8 +133,7 @@ internal sealed class NonEscapingAllocationReplacer(
         {
             return null;
         }
-        var body = _methodBodies.ReadMethodBody(constructor);
-        if (!body.ExceptionRegions.IsEmpty)
+        if (!_methodBodies.TryReadMethodBody(constructor, out var body) || !body.ExceptionRegions.IsEmpty)
         {
             return null;
         }

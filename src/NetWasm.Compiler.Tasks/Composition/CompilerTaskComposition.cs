@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.ComponentModel;
@@ -85,9 +86,10 @@ internal static class CompilerTaskComposition
         new ComponentManifestWriter();
     private static ComponentBuildSession CreateComponentBuildSession(
         ExternalToolCommand wasmToolsCommand,
-        BinaryenToolRunnerConfiguration binaryenConfiguration)
+        BinaryenToolRunnerConfiguration binaryenConfiguration,
+        ILoggerProvider progress)
     {
-        var services = CreateCompilerServices(wasmToolsCommand, binaryenConfiguration);
+        var services = CreateCompilerServices(wasmToolsCommand, binaryenConfiguration, progress);
         return new ComponentBuildSession(
             services,
             services.GetRequiredService<IComponentBuilder>());
@@ -95,9 +97,10 @@ internal static class CompilerTaskComposition
 
     private static RawModuleLinkSession CreateRawModuleLinkSession(
         ExternalToolCommand wasmToolsCommand,
-        BinaryenToolRunnerConfiguration binaryenConfiguration)
+        BinaryenToolRunnerConfiguration binaryenConfiguration,
+        ILoggerProvider progress)
     {
-        var services = CreateCompilerServices(wasmToolsCommand, binaryenConfiguration);
+        var services = CreateCompilerServices(wasmToolsCommand, binaryenConfiguration, progress);
         return new(
             services,
             services.GetRequiredService<IRawModuleLinker>());
@@ -126,10 +129,17 @@ internal static class CompilerTaskComposition
 
     private static ServiceProvider CreateCompilerServices(
         ExternalToolCommand wasmToolsCommand,
-        BinaryenToolRunnerConfiguration? binaryenConfiguration = null)
+        BinaryenToolRunnerConfiguration? binaryenConfiguration = null,
+        ILoggerProvider? progress = null)
     {
         var services = new ServiceCollection()
             .AddNetWasmCompiler();
+        if (progress is not null)
+        {
+            services.AddLogging(logging => logging
+                .AddProvider(progress)
+                .AddFilter<MsBuildProgressLoggerProvider>(MsBuildProgressLoggerProvider.Shows));
+        }
         services.RemoveAll<IWasmTools>();
         services.AddSingleton<IWasmTools>(serviceProvider =>
         {

@@ -1,6 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// NetWasm adaptation: the cookies are held in a List<Cookie> in place of upstream's ArrayList, so a program that
+// reaches cookies does not retain ArrayList's object comparisons; CopyTo(Array) copies from an object array as
+// ArrayList does, so an incompatible array fails as it does upstream.
 
 using System.Collections;
 using System.Collections.Generic;
@@ -23,7 +26,7 @@ namespace System.Net
             SetToMaxUsed = 3,
         }
 
-        private readonly ArrayList m_list = new ArrayList();
+        private readonly List<Cookie> m_list = new List<Cookie>();
 
         private int m_version; // Do not rename (binary serialization). This field only exists for .NET Framework serialization compatibility.
         private DateTime m_TimeStamp = DateTime.MinValue; // Do not rename (binary serialization)
@@ -145,7 +148,17 @@ namespace System.Net
 
         public void CopyTo(Array array, int index)
         {
-            ((ICollection)m_list).CopyTo(array, index);
+            // ArrayList.CopyTo(Array, int): a multidimensional array is rejected, then the object array is copied.
+            if (array != null && array.Rank != 1)
+            {
+                throw new ArgumentException(System.SR.Arg_RankMultiDimNotSupported, nameof(array));
+            }
+            object[] items = new object[m_list.Count];
+            for (int i = 0; i < items.Length; i++)
+            {
+                items[i] = m_list[i];
+            }
+            Array.Copy(items, 0, array!, index, items.Length);
         }
 
         public void CopyTo(Cookie[] array, int index)

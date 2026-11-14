@@ -158,8 +158,18 @@ public sealed class SimpleValueTypeAccessorCanonicalizerTests
         ConstructedDefinitionField,
     }
 
-    private sealed class Fixture : IMethodBodyReader, ICalledMethodResolver, IFieldRepository, IMethodInitializationTriggerClassifier
+    private sealed class Fixture : IMethodBodyReader, ICalleeMethodBodyReader, ICalledMethodResolver, IFieldRepository, IMethodInitializationTriggerClassifier
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         private readonly MethodInstanceModel? _resolved;
         private readonly CilMethodBody _body;
         private readonly FieldDefinitionModel _field;

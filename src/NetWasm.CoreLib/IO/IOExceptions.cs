@@ -4,8 +4,14 @@
 namespace System.IO
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class DirectoryNotFoundException : IOException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected DirectoryNotFoundException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("DirectoryNotFoundException formatter deserialization is not available on this NetWasm platform.");
+
         private const int CorEDirectoryNotFound = unchecked((int)0x80070003);
 
         public DirectoryNotFoundException()
@@ -49,8 +55,14 @@ namespace System.IO
     }
 
     [Serializable]
-    public class FileLoadException : IOException
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    public partial class FileLoadException : IOException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected FileLoadException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("FileLoadException formatter deserialization is not available on this NetWasm platform.");
+
         private const int CorEFileLoad = unchecked((int)0x80131621);
         private readonly string? _message;
 
@@ -104,8 +116,14 @@ namespace System.IO
     }
 
     [Serializable]
-    public class FileNotFoundException : IOException
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    public partial class FileNotFoundException : IOException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected FileNotFoundException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("FileNotFoundException formatter deserialization is not available on this NetWasm platform.");
+
         private const int CorEFileNotFound = unchecked((int)0x80070002);
         private readonly string? _message;
 
@@ -159,6 +177,7 @@ namespace System.IO
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class InvalidDataException : SystemException
     {
         public InvalidDataException()
@@ -178,8 +197,14 @@ namespace System.IO
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class PathTooLongException : IOException
     {
+        // Retain the standard constructor for derived-library compatibility.
+        [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
+        protected PathTooLongException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new System.PlatformNotSupportedException("PathTooLongException formatter deserialization is not available on this NetWasm platform.");
+
         private const int CorEPathTooLong = unchecked((int)0x800700CE);
 
         public PathTooLongException()

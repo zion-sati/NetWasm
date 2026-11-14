@@ -76,6 +76,12 @@ internal sealed class ReachabilityLedger
     { get; } = ImmutableDictionary.CreateBuilder<CliTypeIdentity, MethodInstanceModel>();
     internal ImmutableHashSet<ManagedExceptionKind>.Builder ImplicitExceptions { get; } =
         ImmutableHashSet.CreateBuilder<ManagedExceptionKind>();
+    internal Dictionary<string, ImmutableStack<CompilerDependencyStep>> MethodDependencyPaths { get; } =
+        new(StringComparer.Ordinal);
+    internal Dictionary<string, ImmutableStack<CompilerDependencyStep>> DispatchDependencyPaths { get; } =
+        new(StringComparer.Ordinal);
+    internal Dictionary<string, ImmutableStack<CompilerDependencyStep>> TypeDependencyPaths { get; } =
+        new(StringComparer.Ordinal);
     internal Queue<MethodInstanceModel> Pending { get; } = new();
     internal Queue<(string DispatchKey, DispatchDeclaration Declaration,
         CliTypeIdentity Receiver)> PendingDispatches
@@ -83,7 +89,16 @@ internal sealed class ReachabilityLedger
     internal HashSet<string> Discovered { get; } = new(StringComparer.Ordinal);
     internal HashSet<string> ConstructedIdentities { get; } = new(StringComparer.Ordinal);
     internal HashSet<CliTypeIdentity> AllocatedTypes { get; } = [];
+    internal HashSet<CliTypeIdentity> UninitializedObjectTypes { get; } = [];
+
+    // Types that only managed optimization kept out of the program (ReachableMethodAnalysis.RequiredTypes).
+    internal HashSet<CliTypeIdentity> RequiredTypes { get; } = [];
+    internal HashSet<CliTypeIdentity> StructMarshallingTypes { get; } = [];
+    internal bool StructMarshallingFieldNames { get; set; }
     internal Dictionary<string, DispatchDeclaration> DispatchDeclarations { get; } =
+        new(StringComparer.Ordinal);
+    // Object's virtual calls whose many-target sites call a shared body, by declaration.
+    internal Dictionary<string, MethodInstanceModel> SharedObjectDispatch { get; } =
         new(StringComparer.Ordinal);
     internal Dictionary<string, Dictionary<string, DispatchTargetModel>> DispatchTargets
     { get; } = new(StringComparer.Ordinal);

@@ -132,6 +132,7 @@ namespace System.Runtime.CompilerServices
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
+    [Obsolete("DisablePrivateReflectionAttribute has no effect in .NET 6.0+.", DiagnosticId = "SYSLIB0015", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
     public sealed class DisablePrivateReflectionAttribute : Attribute
     {
         public DisablePrivateReflectionAttribute() { }
@@ -365,6 +366,7 @@ namespace System.Runtime.CompilerServices
     }
 
     [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Module)]
+    [Obsolete("SuppressIldasmAttribute has no effect in .NET 6.0+.", DiagnosticId = "SYSLIB0025", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
     public sealed class SuppressIldasmAttribute : Attribute
     {
         public SuppressIldasmAttribute() { }

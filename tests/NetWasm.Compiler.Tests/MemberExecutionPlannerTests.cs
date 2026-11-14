@@ -213,13 +213,14 @@ public sealed class MemberExecutionPlannerTests
     public void PlanRejectsNullDependenciesAndInputs()
     {
         var f = new ExecutionPlannerFixture();
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(null!, f, f, f, f, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, null!, f, f, f, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, null!, f, f, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, null!, f, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, null!, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, null!, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, f, null!));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(null!, f, f, f, f, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, null!, f, f, f, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, null!, f, f, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, null!, f, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, null!, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, null!, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, f, null!, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, f, f, null!));
         var planner = f.MemberPlanner();
         Assert.Throws<ArgumentNullException>(() => planner.Plan(null!, [], []));
         Assert.Throws<ArgumentNullException>(() => planner.Plan([], null!, []));
@@ -319,11 +320,10 @@ public sealed class MemberExecutionPlannerTests
         Assert.Same(method, Assert.Single(plan.Methods).Value.Descriptor);
     }
 
+    // Structs are values unless by-reference-like (see the stage 3 tests below).
     [Theory]
-    [InlineData(CliValueKind.Void)]
     [InlineData(CliValueKind.ManagedAddress)]
     [InlineData(CliValueKind.NativeInt)]
-    [InlineData(CliValueKind.ValueType)]
     [InlineData(CliValueKind.Unknown)]
     public void PlanExcludesUnsupportedResults(CliValueKind kind)
     {
@@ -348,30 +348,107 @@ public sealed class MemberExecutionPlannerTests
         var f = new ExecutionPlannerFixture();
         var execute = f.Demand(1, RuntimeIntrinsic.MemberExecuteMethod);
         var read = f.Demand(2, RuntimeIntrinsic.MemberReadField);
-        var valueOwner = Type("Struct", valueType: true);
         var delegateOwner = Type("Callback");
         f.Delegates.Add(delegateOwner);
+        var refStruct = Type("RefStruct", valueType: true);
+        f.Definitions[refStruct] = f.RegisterType("Fixture.RefStruct") with { IsByRefLike = true };
+        var nullable = CliTypeIdentity.GenericInstantiation(Type("Nullable`1", true), [Scalar]);
+        f.NullableTypes.Add(nullable, Scalar);
         var abstractNonVirtual = f.Method(4, "Abstract", isAbstract: true);
-        var valueMethod = f.Method(5, "Get", valueOwner);
+        var refStructMethod = f.Method(5, "Get", refStruct);
         var delegateInvoke = f.Method(6, "Invoke", delegateOwner);
         var unsupportedParameter = f.Method(
             7,
             "Get",
-            parameters: [CliTypeIdentity.FromStackKind(CliValueKind.ValueType)]);
+            parameters: [CliTypeIdentity.FromStackKind(CliValueKind.ManagedAddress)]);
         var intrinsic = f.Method(8, "Intrinsic");
         f.Intrinsics.Add(intrinsic.Definition.Key, RuntimeIntrinsic.StringLength);
-        var staticField = Field(1, Scalar, isStatic: true);
-        var valueField = Field(2, Scalar, valueOwner);
+        var refStructParameter = f.Method(9, "Take", parameters: [refStruct]);
+        var nullableMethod = f.Method(10, "get_Value", nullable);
+        var typeInitializer = f.Method(11, ".cctor", isStatic: true);
+        var constant = Field(1, Scalar, isStatic: true);
+        var literalField = constant with { Definition = constant.Definition with { IsLiteral = true } };
+        var refStructField = Field(2, Scalar, refStruct);
+        var nullableField = Field(3, Scalar, nullable);
+        // An open owner, and constructors of an open type, of string and of an array, which the interpreter cannot run.
+        var open = CliTypeIdentity.GenericInstantiation(Type("Box`1"), [CliTypeIdentity.GenericParameter(false, 0)]);
+        var openMethod = f.Method(12, "Get", open);
+        var voidResult = CliTypeIdentity.FromStackKind(CliValueKind.Void);
+        var openConstructor = f.Method(13, ".ctor", open, voidResult);
+        var stringConstructor = f.Method(14, ".ctor",
+            CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false), voidResult,
+            parameters: [Scalar]);
+        var arrayConstructor = f.Method(15, ".ctor", CliTypeIdentity.Array(Scalar, 2), voidResult,
+            parameters: [Scalar, Scalar]);
         var target = f.UnsupportedSupport(member: true);
 
         var plan = f.MemberPlanner().Plan([execute, read],
-            [abstractNonVirtual, valueMethod, delegateInvoke, unsupportedParameter, intrinsic],
-            [staticField, valueField]);
+            [abstractNonVirtual, refStructMethod, delegateInvoke, unsupportedParameter, intrinsic, refStructParameter,
+                nullableMethod, typeInitializer, openMethod, openConstructor, stringConstructor, arrayConstructor],
+            [literalField, refStructField, nullableField]);
 
         Assert.Empty(plan.Methods);
         Assert.Empty(plan.Fields);
         Assert.Same(target, plan.UnsupportedTarget);
         Assert.Contains(delegateOwner, f.Recognitions);
+    }
+
+    // Stage 3 of the interpreter: struct receivers (no dispatch, the call runs on the box's contents), static
+    // fields, fields of structs, void results, struct arguments and results, and constructors of concrete classes
+    // and of structs.
+    [Fact]
+    public void PlanIncludesStructMembersStaticsVoidResultsAndConstructors()
+    {
+        var f = new ExecutionPlannerFixture();
+        var execute = f.Demand(1, RuntimeIntrinsic.MemberExecuteMethod);
+        var read = f.Demand(2, RuntimeIntrinsic.MemberReadField);
+        var point = Type("Point", valueType: true);
+        f.Definitions[point] = f.RegisterType("Fixture.Point");
+        var concrete = Type("Concrete");
+        f.Definitions[concrete] = f.RegisterType("Fixture.Concrete");
+        var abstractClass = Type("AbstractBase");
+        f.Definitions[abstractClass] = f.RegisterType("Fixture.AbstractBase") with { IsAbstract = true };
+        var structMethod = f.Method(3, "ToString", point, Type("String"), isVirtual: true);
+        var voidMethod = f.Method(4, "Reset", result: CliTypeIdentity.FromStackKind(CliValueKind.Void));
+        var structValues = f.Method(5, "Offset", point, point, isStatic: true, parameters: [point, Scalar]);
+        var classConstructor = f.Method(6, ".ctor", concrete, CliTypeIdentity.FromStackKind(CliValueKind.Void),
+            parameters: [point]);
+        var structConstructor = f.Method(7, ".ctor", point, CliTypeIdentity.FromStackKind(CliValueKind.Void),
+            parameters: [Scalar, Scalar]);
+        var abstractConstructor = f.Method(8, ".ctor", abstractClass, CliTypeIdentity.FromStackKind(CliValueKind.Void));
+        var staticField = Field(1, Scalar, isStatic: true);
+        var structField = Field(2, Scalar, point);
+        var structValuedField = Field(3, point);
+        f.UnsupportedSupport(member: true);
+
+        var plan = f.MemberPlanner().Plan([execute, read],
+            [structMethod, voidMethod, structValues, classConstructor, structConstructor, abstractConstructor],
+            [staticField, structField, structValuedField]);
+
+        Assert.Equal(5, plan.Methods.Count);
+        Assert.False(plan.Methods[structMethod.CanonicalName].RequiresDispatch);
+        Assert.Contains(voidMethod.CanonicalName, plan.Methods.Keys);
+        Assert.Contains(structValues.CanonicalName, plan.Methods.Keys);
+        Assert.False(plan.Methods[classConstructor.CanonicalName].RequiresDispatch);
+        Assert.Contains(structConstructor.CanonicalName, plan.Methods.Keys);
+        Assert.DoesNotContain(abstractConstructor.CanonicalName, plan.Methods.Keys);
+        Assert.Equal(3, plan.Fields.Count);
+    }
+
+    // A dispatch target that is a runtime intrinsic (Enum.ToString on a boxed enum) has no body to call.
+    [Fact]
+    public void DispatchTargetsThatAreIntrinsicsDoNotRunAsBodies()
+    {
+        var f = new ExecutionPlannerFixture();
+        var body = f.Method(3, "ToString");
+        var intrinsic = f.Method(4, "ToString");
+        f.Intrinsics.Add(intrinsic.Definition.Key, RuntimeIntrinsic.EnumToString);
+        var classifier = new DispatchTargetBodyClassifier(f);
+
+        Assert.True(classifier.RunsAsBody(body));
+        Assert.False(classifier.RunsAsBody(intrinsic));
+        Assert.Throws<ArgumentNullException>(() => classifier.RunsAsBody(null!));
+        Assert.Throws<ArgumentNullException>(() => new DispatchTargetBodyClassifier(null!));
     }
 
     [Fact]

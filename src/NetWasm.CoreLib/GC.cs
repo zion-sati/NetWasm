@@ -1,5 +1,5 @@
 // Portions adapted from dotnet/runtime System.Private.CoreLib GC contracts at
-// commit 474ed963699fc29809015392738a15231aaae2de.
+// commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // The upstream implementation is licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
@@ -73,7 +73,7 @@ public static partial class GC
     /// <summary>Gets the highest generation supported by the collector.</summary>
     public static int MaxGeneration => 0;
 
-    /// <summary>Returns the number of collections for the supported generation.</summary>
+    /// <summary>Returns the number of collections; every collection covers every generation.</summary>
     public static int CollectionCount(int generation)
     {
         ValidateGeneration(generation);
@@ -179,8 +179,21 @@ public static partial class GC
             throw new ArgumentOutOfRangeException(nameof(kind));
         }
 
-        throw new PlatformNotSupportedException(
-            "Completed-collection memory snapshots are not available in the NetWasm collector.");
+        // As Mono's, upstream's WebAssembly runtime, reports it: the collector's current counters. Every NetWasm
+        // collection is a full blocking one, so the ephemeral and background kinds report none, as CoreCLR does for a
+        // kind that has not run. The live heap is what survived: HeapSizeBytes - FragmentedBytes.
+        if (kind is GCKind.Ephemeral or GCKind.Background)
+        {
+            return default;
+        }
+
+        long heapSize = GCMetricRuntime.Read(HeapSizeMetric);
+        long liveHeapSize = GCMetricRuntime.Read(LiveHeapSizeMetric);
+        return new GCMemoryInfo(
+            heapSize,
+            Math.Max(0, heapSize - liveHeapSize),
+            CollectionCount(0),
+            GCMetricRuntime.Read(PinnedReferenceCountMetric));
     }
 
     public static void AddMemoryPressure(long bytesAllocated)
@@ -297,9 +310,12 @@ public static partial class GC
         }
     }
 
-    public static long GetAllocatedBytesForCurrentThread() =>
-        throw new PlatformNotSupportedException(
-            "Per-thread allocation accounting is not available in the NetWasm collector.");
+    // MemoryFailPoint sizes its reservations by this; NetWasm's collectors have no segments, so it is the CoreCLR
+    // default that Mono's GC reports too.
+    internal static ulong GetSegmentSize() => 1024 * 1024 * 16;
+
+    // One thread allocates everything, so its count is the precise total.
+    public static long GetAllocatedBytesForCurrentThread() => GetTotalAllocatedBytes(precise: true);
 
     public static Collections.Generic.IReadOnlyDictionary<string, object> GetConfigurationVariables() =>
         throw new PlatformNotSupportedException(
@@ -309,57 +325,94 @@ public static partial class GC
         throw new PlatformNotSupportedException(
             "Refreshing the collector memory limit is not available in the NetWasm runtime.");
 
-    public static void RegisterForFullGCNotification(int maxGenerationThreshold, int largeObjectHeapThreshold) =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+    // Full-GC notifications and no-GC regions are Mono's (GC.Mono.cs at dotnet/runtime deae2e32): the arguments are
+    // checked, then NotImplementedException, as Mono's collector has neither (owner, 2026-11-13: throw like Mono).
+    private static bool _RegisterForFullGCNotification(int maxGenerationPercentage, int largeObjectHeapPercentage)
+    {
+        throw new NotImplementedException();
+    }
 
-    public static void CancelFullGCNotification() =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+    private static bool _CancelFullGCNotification()
+    {
+        throw new NotImplementedException();
+    }
 
-    public static GCNotificationStatus WaitForFullGCApproach() =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+    private static GCNotificationStatus _WaitForFullGCApproach(int millisecondsTimeout)
+    {
+        throw new NotImplementedException();
+    }
 
-    public static GCNotificationStatus WaitForFullGCApproach(int millisecondsTimeout) =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+    private static GCNotificationStatus _WaitForFullGCComplete(int millisecondsTimeout)
+    {
+        throw new NotImplementedException();
+    }
 
+    public static void RegisterForFullGCNotification(int maxGenerationThreshold, int largeObjectHeapThreshold)
+    {
+        if ((maxGenerationThreshold <= 0) || (maxGenerationThreshold >= 100))
+            throw new ArgumentOutOfRangeException(nameof(maxGenerationThreshold),
+                                                   SR.Format(SR.ArgumentOutOfRange_Bounds_Lower_Upper, 1, 99));
+        if ((largeObjectHeapThreshold <= 0) || (largeObjectHeapThreshold >= 100))
+            throw new ArgumentOutOfRangeException(nameof(largeObjectHeapThreshold),
+                                                   SR.Format(SR.ArgumentOutOfRange_Bounds_Lower_Upper, 1, 99));
+
+        if (!_RegisterForFullGCNotification(maxGenerationThreshold, largeObjectHeapThreshold))
+            throw new InvalidOperationException(SR.InvalidOperation_NotWithConcurrentGC);
+    }
+
+    public static void CancelFullGCNotification()
+    {
+        if (!_CancelFullGCNotification())
+            throw new InvalidOperationException(SR.InvalidOperation_NotWithConcurrentGC);
+    }
+
+    public static GCNotificationStatus WaitForFullGCApproach()
+    {
+        return (GCNotificationStatus)_WaitForFullGCApproach(-1);
+    }
+
+    public static GCNotificationStatus WaitForFullGCApproach(int millisecondsTimeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(millisecondsTimeout, -1);
+
+        return _WaitForFullGCApproach(millisecondsTimeout);
+    }
+
+    // The shared GC.cs's TimeSpan overloads.
     public static GCNotificationStatus WaitForFullGCApproach(TimeSpan timeout) =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+        WaitForFullGCApproach(Threading.WaitHandle.ToTimeoutMilliseconds(timeout));
 
-    public static GCNotificationStatus WaitForFullGCComplete() =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+    public static GCNotificationStatus WaitForFullGCComplete()
+    {
+        return _WaitForFullGCComplete(-1);
+    }
 
-    public static GCNotificationStatus WaitForFullGCComplete(int millisecondsTimeout) =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+    public static GCNotificationStatus WaitForFullGCComplete(int millisecondsTimeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(millisecondsTimeout, -1);
+        return _WaitForFullGCComplete(millisecondsTimeout);
+    }
 
     public static GCNotificationStatus WaitForFullGCComplete(TimeSpan timeout) =>
-        throw new PlatformNotSupportedException(
-            "Full-GC notifications are not available in the NetWasm collector.");
+        WaitForFullGCComplete(Threading.WaitHandle.ToTimeoutMilliseconds(timeout));
 
-    public static bool TryStartNoGCRegion(long totalSize) =>
-        throw new PlatformNotSupportedException(
-            "No-GC regions are not available in the NetWasm collector.");
+    private static bool StartNoGCRegion(long totalSize, bool hasLohSize, long lohSize, bool disallowFullBlockingGC)
+    {
+        throw new NotImplementedException();
+    }
 
-    public static bool TryStartNoGCRegion(long totalSize, long lohSize) =>
-        throw new PlatformNotSupportedException(
-            "No-GC regions are not available in the NetWasm collector.");
+    public static bool TryStartNoGCRegion(long totalSize) => StartNoGCRegion(totalSize, false, 0, false);
 
-    public static bool TryStartNoGCRegion(long totalSize, bool disallowFullBlockingGC) =>
-        throw new PlatformNotSupportedException(
-            "No-GC regions are not available in the NetWasm collector.");
+    public static bool TryStartNoGCRegion(long totalSize, long lohSize) => StartNoGCRegion(totalSize, true, lohSize, false);
 
-    public static bool TryStartNoGCRegion(long totalSize, long lohSize, bool disallowFullBlockingGC) =>
-        throw new PlatformNotSupportedException(
-            "No-GC regions are not available in the NetWasm collector.");
+    public static bool TryStartNoGCRegion(long totalSize, bool disallowFullBlockingGC) => StartNoGCRegion(totalSize, false, 0, disallowFullBlockingGC);
 
-    public static void EndNoGCRegion() =>
-        throw new PlatformNotSupportedException(
-            "No-GC regions are not available in the NetWasm collector.");
+    public static bool TryStartNoGCRegion(long totalSize, long lohSize, bool disallowFullBlockingGC) => StartNoGCRegion(totalSize, true, lohSize, disallowFullBlockingGC);
+
+    public static void EndNoGCRegion()
+    {
+        throw new NotImplementedException();
+    }
 
     public static void RegisterNoGCRegionCallback(long totalSize, Action callback) =>
         throw new PlatformNotSupportedException(

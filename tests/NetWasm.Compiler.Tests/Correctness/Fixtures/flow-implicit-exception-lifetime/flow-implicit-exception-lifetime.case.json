@@ -78,9 +78,6 @@
     { "input": 29, "returnValue": null, "exceptionType": "System.OverflowException" }
   ],
   "referencePaths": [],
-  "referenceAssemblyAliases": {
-    "System.Threading": "NetWasm.CoreLib"
-  },
   "oracleMode": "SameIl",
   "matrixProfile": "Extended",
   "executionBackend": "Linked",

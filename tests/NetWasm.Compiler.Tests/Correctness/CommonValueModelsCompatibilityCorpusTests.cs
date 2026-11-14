@@ -165,5 +165,7 @@ public sealed class CommonValueModelsCompatibilityCorpusTests(CorrectnessTestRun
             CaptureCompilerDiagnostics = true,
             ExecuteWasm64 = true,
             ExecuteOptimizedWasm = true,
+            // Date and time text reads the clock and the local offset, as upstream's does.
+            RequiresReactor = true,
         });
 }

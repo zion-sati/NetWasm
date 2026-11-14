@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>ECMA</StrongNameKeyId>
+    <AssemblyName>System.IO.Compression.ZipFile</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.IO.Compression/System.IO.Compression.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/IO/Archiving.Utils.Unix.cs" />
+    <Compile Include="Common/System/IO/Archiving.Utils.cs" />
+    <Compile Include="Common/System/IO/Compression/ZipArchiveEntryConstants.Unix.cs" />
+    <Compile Include="System/IO/Compression/ZipExtractionOptions.cs" />
+    <Compile Include="System/IO/Compression/ZipFile.Create.Async.cs" />
+    <Compile Include="System/IO/Compression/ZipFile.Create.Unix.cs" />
+    <Compile Include="System/IO/Compression/ZipFile.Create.cs" />
+    <Compile Include="System/IO/Compression/ZipFile.Extract.Async.cs" />
+    <Compile Include="System/IO/Compression/ZipFile.Extract.cs" />
+    <Compile Include="System/IO/Compression/ZipFileCreationOptions.cs" />
+    <Compile Include="System/IO/Compression/ZipFileExtensions.ZipArchive.Create.Async.cs" />
+    <Compile Include="System/IO/Compression/ZipFileExtensions.ZipArchive.Create.Unix.cs" />
+    <Compile Include="System/IO/Compression/ZipFileExtensions.ZipArchive.Create.cs" />
+    <Compile Include="System/IO/Compression/ZipFileExtensions.ZipArchive.Extract.Async.cs" />
+    <Compile Include="System/IO/Compression/ZipFileExtensions.ZipArchive.Extract.cs" />
+    <Compile Include="System/IO/Compression/ZipFileExtensions.ZipArchiveEntry.Extract.Async.cs" />
+    <Compile Include="System/IO/Compression/ZipFileExtensions.ZipArchiveEntry.Extract.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

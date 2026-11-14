@@ -23,6 +23,10 @@ public sealed class TypeRelationshipKeyResolverTests
     private static readonly CliTypeIdentity ReadOnlyCollection =
         Named("System.Collections.Generic", "IReadOnlyCollection`1");
     private static readonly CliTypeIdentity ReadOnlyList = Named("System.Collections.Generic", "IReadOnlyList`1");
+    private static readonly CliTypeIdentity Consumer = Named("Tests", "IConsumer`1");
+    private static readonly CliTypeIdentity Kennel = Named("Tests", "Kennel");
+    private static readonly CliTypeIdentity Shelter = Named("Tests", "Shelter");
+    private static readonly CliTypeIdentity Plain = Named("Tests", "Plain`1");
 
     [Fact]
     public void KeepsEveryPairTheClassifierFindsAssignmentCompatible()
@@ -34,6 +38,8 @@ public sealed class TypeRelationshipKeyResolverTests
             Of(Enumerable, String), Of(Enumerable, Object), Of(Enumerable, Animal), Of(Enumerable, Dog),
             Of(List, String), Of(List, Object), Of(Collection, Dog), Of(ReadOnlyList, Animal),
             Of(ReadOnlyCollection, Object), Of(Producer, String), Of(Producer, Object), Of(Producer, Value),
+            Of(Consumer, Dog), Of(Consumer, Animal), Of(Consumer, Object), Of(ReadOnlyList, Value),
+            Of(ReadOnlyList, Object), Of(Collection, Value), CliTypeIdentity.SzArray(Pet),
             CliTypeIdentity.SzArray(String), CliTypeIdentity.SzArray(Object), CliTypeIdentity.SzArray(Dog),
             CliTypeIdentity.SzArray(Animal), CliTypeIdentity.SzArray(Value), CliTypeIdentity.Array(String, 2),
             CliTypeIdentity.Array(Object, 1), CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference),
@@ -55,11 +61,58 @@ public sealed class TypeRelationshipKeyResolverTests
                     candidateKeys.Unbounded || targetKeys.Unbounded ||
                     candidateKeys.Reachable.Contains(targetKeys.Own),
                     $"{candidate} is assignable to {target}, whose key {targetKeys.Own} it does not reach.");
+                Assert.True(
+                    candidateKeys.Unbounded || targetKeys.Unbounded || targetKeys.ArgumentKey is not { } argument ||
+                    candidateKeys.Arguments?.GetValueOrDefault(targetKeys.Own) is not { } admitted ||
+                    admitted.Contains(argument),
+                    $"{candidate} is assignable to {target}, whose argument key it does not admit.");
             }
         }
         Assert.True(compatible > universe.Length * 2, "The universe should relate more than identical pairs.");
         Assert.DoesNotContain(keys.Resolve(Of(Enumerable, String)).Own, keys.Resolve(Animal).Reachable);
         Assert.False(keys.Resolve(Dog).Unbounded);
+    }
+
+    [Fact]
+    public void FirstTypeArgumentsNarrowAGenericDefinitionsInstantiations()
+    {
+        var (_, keys) = Create();
+        string Own(CliTypeIdentity type) => keys.Resolve(type).Own;
+        IReadOnlySet<string>? Admitted(CliTypeIdentity candidate, CliTypeIdentity definition) =>
+            keys.Resolve(candidate).Arguments![Own(Of(definition, Object))];
+
+        // A covariant reference argument admits its hierarchy: Dog's IEnumerable<Dog> reaches IEnumerable<Animal>.
+        Assert.Contains(Own(Animal), Admitted(Dog, Enumerable)!);
+        Assert.DoesNotContain(Own(String), Admitted(Dog, Enumerable)!);
+        // A reference array's element does the same for the array interfaces, even invariant IList<T>.
+        Assert.Contains(Own(Object), Admitted(CliTypeIdentity.SzArray(String), List)!);
+        Assert.DoesNotContain(Own(Dog), Admitted(CliTypeIdentity.SzArray(String), List)!);
+        // A value element converts to other same-sized element types, and a contravariant argument to its subtypes.
+        Assert.Null(Admitted(CliTypeIdentity.SzArray(Value), List));
+        Assert.Null(Admitted(Dog, Consumer));
+        // Array targets are filed by their element: string[] converts to object[], not to Dog[].
+        var arrays = keys.Resolve(CliTypeIdentity.SzArray(String)).Arguments![keys.Resolve(CliTypeIdentity.SzArray(Dog)).Own];
+        Assert.Contains(keys.Resolve(CliTypeIdentity.SzArray(Object)).ArgumentKey!, arrays!);
+        Assert.DoesNotContain(keys.Resolve(CliTypeIdentity.SzArray(Dog)).ArgumentKey!, arrays!);
+        // Targets are filed by their first argument's own key.
+        Assert.Equal(Own(Dog), keys.Resolve(Of(Enumerable, Dog)).ArgumentKey);
+        Assert.Null(keys.Resolve(Dog).ArgumentKey);
+    }
+
+    // Two instantiations of one definition admit what either admits; a definition without recorded variance is invariant.
+    [Fact]
+    public void InstantiationsOfOneDefinitionJoinAndUnrecordedVarianceIsInvariant()
+    {
+        var (_, keys) = Create();
+        string Own(CliTypeIdentity type) => keys.Resolve(type).Own;
+
+        var kennel = keys.Resolve(Kennel).Arguments![Own(Of(Enumerable, Object))]!;
+        Assert.Contains(Own(Dog), kennel);
+        Assert.Contains(Own(Animal), kennel);
+        Assert.Contains(Own(String), kennel);
+        Assert.Equal([Own(Dog)], keys.Resolve(Of(Plain, Dog)).Arguments![Own(Of(Plain, Object))]!);
+        // An argument the keys cannot bound admits anything, whichever instantiation came first.
+        Assert.Null(keys.Resolve(Shelter).Arguments![Own(Of(Enumerable, Object))]);
     }
 
     [Fact]
@@ -102,6 +155,11 @@ public sealed class TypeRelationshipKeyResolverTests
         Model(List, 11, isInterface: true, variance: CliGenericVariance.Invariant),
         Model(ReadOnlyCollection, 12, isInterface: true, variance: CliGenericVariance.Covariant),
         Model(ReadOnlyList, 13, isInterface: true, variance: CliGenericVariance.Covariant),
+        Model(Consumer, 14, isInterface: true, variance: CliGenericVariance.Contravariant),
+        Model(Kennel, 15),
+        Model(Shelter, 17),
+        // A generic definition whose metadata records no variance.
+        Model(Plain, 16),
     }.ToImmutableDictionary(model => model.FullName);
 
     private static TypeDefinitionModel Model(
@@ -146,8 +204,10 @@ public sealed class TypeRelationshipKeyResolverTests
     private sealed class Interfaces : IImplementedInterfaceResolver
     {
         public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type) =>
-            type == Dog ? [Pet, Of(Enumerable, Dog)] :
-            type == Animal ? [Of(ReadOnlyCollection, Animal)] : [];
+            type == Dog ? [Pet, Of(Enumerable, Dog), Of(Consumer, Animal)] :
+            type == Animal ? [Of(ReadOnlyCollection, Animal)] :
+            type == Kennel ? [Of(Enumerable, Dog), Of(Enumerable, String)] :
+            type == Shelter ? [Of(Enumerable, Named("Tests", "Missing")), Of(Enumerable, Dog)] : [];
     }
 
     private class Bases : IBaseTypeResolver

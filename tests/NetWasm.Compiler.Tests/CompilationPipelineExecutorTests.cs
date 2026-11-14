@@ -20,6 +20,24 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class CompilationPipelineExecutorTests
 {
+    // Reference views and original contracts cleared to default load as none.
+    [Fact]
+    public void DefaultReferenceViewsLoadAsNone()
+    {
+        var fixture = new Fixture(WasmTarget.Wasm32);
+        var options = fixture.Options(false, 0) with
+        {
+            MetadataReferencePaths = default,
+            OriginalContractReferencePaths = default,
+        };
+
+        fixture.Executor.Execute(options);
+
+        var load = fixture.Arguments("metadata-load");
+        Assert.Empty(Assert.IsType<ImmutableArray<string>>(load[3]));
+        Assert.Empty(Assert.IsType<ImmutableArray<string>>(load[4]));
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32, false, 0)]
     [InlineData(WasmTarget.Wasm32, false, 1)]
@@ -38,7 +56,11 @@ public sealed class CompilationPipelineExecutorTests
     {
         var fixture = new Fixture(width);
         var executor = Assert.IsAssignableFrom<ICompilationPipelineExecutor>(fixture.Executor);
-        var options = fixture.Options(metrics, aliases);
+        var options = fixture.Options(metrics, aliases) with
+        {
+            MetadataReferencePaths = ["contract-view.dll"],
+            OriginalContractReferencePaths = ["original-contract.dll"],
+        };
 
         var outcome = executor.Execute(options);
         var result = outcome.Full!;
@@ -59,6 +81,8 @@ public sealed class CompilationPipelineExecutorTests
         Assert.Equal(options.EntryAssemblyPath, load[0]);
         Assert.Equal(options.ReferencePaths, Assert.IsType<ImmutableArray<string>>(load[1]));
         Assert.Equal(aliases == 2 ? options.ReferenceAssemblyAliases : null, load[2]);
+        Assert.Equal(options.MetadataReferencePaths, Assert.IsType<ImmutableArray<string>>(load[3]));
+        Assert.Equal(options.OriginalContractReferencePaths, Assert.IsType<ImmutableArray<string>>(load[4]));
         Assert.Same(fixture.Metadata, fixture.Arguments("metadata-stage")[1]);
         Assert.Equal(width, fixture.Arguments("layouts")[2]);
         Assert.Same(options, fixture.Arguments("emission-artifact")[0]);
@@ -245,7 +269,7 @@ public sealed class CompilationPipelineExecutorTests
                     FinalWasmOptimization.Oz,
                     WasmInlineAnnotationSelection.SizeAware,
                     WasmInlineAnnotationSelection.SizeAware),
-                new PlatformWorldCapabilities(false, false, false));
+                PlatformWorldCapabilities.Of(false, false, false));
             var target = width == WasmTarget.Wasm32 ? WasmTargetLayout.Wasm32 : WasmTargetLayout.Wasm64;
             var types = new ManagedTypeLayouts([], [], [], [], new(), target, 0, 0, 0, 0);
             var data = new ManagedStaticData(96, [], [], [], [], [], [], [], [], []);
@@ -290,11 +314,13 @@ public sealed class CompilationPipelineExecutorTests
                     SymbolBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
                 Capability<ISymbolFormatterFactory>("symbols", ValidationTestData.Symbols()),
                 Capability<ICompilationMetricsRequestFactory>("metrics-create", metrics),
+                new CompilerDiagnosticOriginBinder(), new NetWasm.Compiler.Analysis.CompilerDiagnosticDependencyPathBinder(),
                 Capability<ICompilationInputDetector>("inputs-detect", invoke: (_, _) => inputs),
                 Capability<ICompilationInputRecorder>("inputs-record"),
                 new NoCompiledUnits(Calls),
                 cutoff is null ? new NoEarlyCutoff() : new FixedEarlyCutoff(cutoff),
-                cutoff is null ? new NoKeptCompiles() : new RecordingKeptCompiles(Calls));
+                cutoff is null ? new NoKeptCompiles() : new RecordingKeptCompiles(Calls),
+                new NativeImportBinderFactory());
         }
 
         public CompilationPipelineExecutor Executor { get; }

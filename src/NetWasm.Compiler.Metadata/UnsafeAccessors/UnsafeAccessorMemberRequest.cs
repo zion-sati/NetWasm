@@ -29,4 +29,5 @@ internal enum UnsafeAccessorFailure
     MissingField,
     AmbiguousMatch,
     InvalidProgram,
+    TypeLoad,
 }

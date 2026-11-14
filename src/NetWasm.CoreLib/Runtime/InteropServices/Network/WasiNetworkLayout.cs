@@ -16,6 +16,7 @@ internal static class WasiNetworkLayout
     internal const int Blocked = -1;
     internal const uint Completed = 0;
     internal const uint Dropped = 1;
+    internal const uint Cancelled = 2;
     internal const int FamilyIPv4 = 0;
     internal const int FamilyIPv6 = 1;
     internal const nuint SocketAddressSize = 32;

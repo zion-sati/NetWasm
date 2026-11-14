@@ -125,7 +125,7 @@ export function validateCoverage(inventory) {
       throw new Error(`CIL opcode is both decoded and unsupported: ${item.opcode}`);
     }
   }
-  if (decodedOpcodeNames.size !== 212 || unsupportedOpcodeNames.length !== 14) {
+  if (decodedOpcodeNames.size !== 215 || unsupportedOpcodeNames.length !== 11) {
     throw new Error('CIL opcode universe count changed; update explicit policy');
   }
   read('tests/NetWasm.Compiler.Metadata.Tests/CilOpcodeUniverseTests.cs');

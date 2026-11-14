@@ -41,6 +41,7 @@ internal sealed record WasmModuleTarget(
         Request.CollectManagedMethodMemoryMetrics,
         Request.EnableAddressTakenAggregatePromotion)
     {
+        SharedObjectDispatch = Request.SharedObjectDispatch,
         NativeImports = Plan.NativeImports,
         NativeCallbacks = Plan.NativeCallbacks,
         ManagedByRefEffects = Lookups.Of(Request.ManagedByRefEffects.Methods),
@@ -99,6 +100,10 @@ internal sealed record InstructionModuleTarget(
     public bool InlineObjectAllocation { get; init; }
     public ObjectAllocationPolicy ObjectAllocation => new(RuntimeImportSelection, InlineObjectAllocation);
     public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
+    // The shared body each of object's virtual calls uses at its many-target sites, by declaration. A site's use
+    // of it follows from its own target count (SharedDispatchPolicy), which a unit's answers record.
+    public IReadOnlyDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
     public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
     public IEntryLookup<string, MethodRootMap> RootMaps { get; init; } = Lookups.NoEntries<string, MethodRootMap>();
     public IEntryLookup<string, ManagedByRefMethodEffects> ManagedByRefEffects { get; init; } =

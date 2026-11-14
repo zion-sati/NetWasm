@@ -1,5 +1,10 @@
 <Project>
   <PropertyGroup>
+    <!-- Stable producer-only contract inputs, independent of release version. -->
+    <NetWasmStandardContractPackageVersion>2.1.0</NetWasmStandardContractPackageVersion>
+    <!-- The .NET 11 SDK's Microsoft.NETCore.App.Ref targeting pack, whose assemblies NetWasm.App.Ref's framework facades
+         take their names and identities from. -->
+    <NetWasmFrameworkContractPackageVersion>11.0.0</NetWasmFrameworkContractPackageVersion>
     <NetWasmCompilerTasksPackageVersion Condition="'$(NetWasmCompilerTasksPackageVersion)' == ''">0.4.2</NetWasmCompilerTasksPackageVersion>
     <NetWasmHostToolsPackageVersion Condition="'$(NetWasmHostToolsPackageVersion)' == ''">0.4.2</NetWasmHostToolsPackageVersion>
   </PropertyGroup>

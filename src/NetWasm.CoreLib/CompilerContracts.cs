@@ -70,6 +70,7 @@ namespace System
                 inherit);
     }
 
+    [Flags]
     public enum AttributeTargets
     {
         Assembly = 0x0001,
@@ -128,8 +129,8 @@ namespace System
         }
     }
 
-    [AttributeUsage(AttributeTargets.Enum)]
-    public sealed class FlagsAttribute : Attribute
+    [AttributeUsage(AttributeTargets.Enum, Inherited = false)]
+    public class FlagsAttribute : Attribute
     {
         public FlagsAttribute()
         {
@@ -139,6 +140,7 @@ namespace System
 
 namespace System.Reflection
 {
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface)]
     public sealed class DefaultMemberAttribute : Attribute
     {
         public DefaultMemberAttribute(string memberName)
@@ -192,7 +194,7 @@ namespace System.Runtime.CompilerServices
     {
     }
 
-    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = false, Inherited = false)]
     public sealed class InterpolatedStringHandlerAttribute : Attribute
     {
         public InterpolatedStringHandlerAttribute()
@@ -272,7 +274,7 @@ namespace System.Runtime.CompilerServices
     }
 
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct |
-        AttributeTargets.Interface)]
+        AttributeTargets.Interface, Inherited = false)]
     public sealed class CollectionBuilderAttribute : Attribute
     {
         public CollectionBuilderAttribute(Type builderType, string methodName)
@@ -296,7 +298,7 @@ namespace System.Runtime.CompilerServices
     }
 
     // RuntimeHelpers compatibility members are adapted from dotnet/runtime
-    // System.Private.CoreLib at commit 474ed963699fc29809015392738a15231aaae2de.
+    // System.Private.CoreLib at commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
     // The upstream implementation is licensed under the MIT license.
     public static class RuntimeHelpers
     {
@@ -501,10 +503,9 @@ namespace System.Runtime.CompilerServices
         {
         }
 
-        // NetWasm: RunClassConstructor and GetUninitializedObject need compiler intrinsics this
-        // platform does not have (see RuntimeHelpersRuntime), so they stay internal instead
-        // of being public APIs that no program could compile. The handle is a semantic type ID.
-        internal static void RunClassConstructor(RuntimeTypeHandle type)
+        // The handle is a semantic type ID; the compiler runs that type's static-initializer
+        // guard, compiling the initializers of types whose handles the program names.
+        public static void RunClassConstructor(RuntimeTypeHandle type)
         {
             if (type.Value == IntPtr.Zero)
                 throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized);
@@ -522,7 +523,7 @@ namespace System.Runtime.CompilerServices
 
         // Native AOT's checks and order. The compiler allocates zeroed storage for the types the
         // program names or already allocates; IsCOMObject and IsFunctionPointer never hold here.
-        internal static object GetUninitializedObject(
+        public static object GetUninitializedObject(
             [Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
                 Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors |
                 Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors)]
@@ -648,7 +649,7 @@ namespace System.Runtime.CompilerServices
         }
     }
 
-    [AttributeUsage(AttributeTargets.Struct, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.All, Inherited = false)]
     public sealed class IsReadOnlyAttribute : Attribute
     {
         public IsReadOnlyAttribute()
@@ -656,7 +657,7 @@ namespace System.Runtime.CompilerServices
         }
     }
 
-    [AttributeUsage(AttributeTargets.All, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.All, AllowMultiple = true, Inherited = false)]
     public sealed class CompilerFeatureRequiredAttribute : Attribute
     {
         public const string RefStructs = "RefStructs";
@@ -682,7 +683,9 @@ namespace System.Runtime.CompilerServices
         public int Version { get; }
     }
 
-    [AttributeUsage(AttributeTargets.All)]
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property |
+        AttributeTargets.ReturnValue | AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Event)]
+    [CLSCompliant(false)]
     public sealed class TupleElementNamesAttribute : Attribute
     {
         private readonly string?[] _transformNames;

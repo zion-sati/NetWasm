@@ -51,6 +51,9 @@ internal enum UnitQueryKind
     // Root-map analysis: whether a callee may allocate.
     AllocatingMethod,
     AllocatingConstructedMethod,
+    // The runtime type data tables the descriptor source publishes with its descriptors.
+    StructMarshalling,
+    UninitializedObjectTypes,
 }
 
 /// <summary>

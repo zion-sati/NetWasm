@@ -193,7 +193,16 @@ namespace System.Runtime.InteropServices.WebAssembly
             }
 
             var ends = intrinsics.New();
-            _ = Copy(source, unchecked((int)(ends >> 32)), intrinsics);
+            var writable = unchecked((int)(ends >> 32));
+            if (PlatformServices.CurrentSynchronousLowering is { } synchronous)
+            {
+                synchronous.Defer(() => _ = Copy(source, writable, intrinsics));
+            }
+            else
+            {
+                _ = Copy(source, writable, intrinsics);
+            }
+
             return unchecked((int)ends);
         }
 
@@ -297,7 +306,16 @@ namespace System.Runtime.InteropServices.WebAssembly
             }
 
             var ends = intrinsics.New();
-            _ = Copy(source, unchecked((int)(ends >> 32)), intrinsics, size, alignment, lower, release);
+            var writable = unchecked((int)(ends >> 32));
+            if (PlatformServices.CurrentSynchronousLowering is { } synchronous)
+            {
+                synchronous.Defer(() => _ = Copy(source, writable, intrinsics, size, alignment, lower, release));
+            }
+            else
+            {
+                _ = Copy(source, writable, intrinsics, size, alignment, lower, release);
+            }
+
             return unchecked((int)ends);
         }
 
@@ -357,8 +375,10 @@ namespace System.Runtime.InteropServices.WebAssembly
             var buffer = CanonicalAbi.Allocate(size == 0 ? 1 : size, alignment);
             try
             {
+                // A future completes on the event loop even in a synchronous call, which reads futures it is handed
+                // eagerly and may never await them.
                 var status = intrinsics.Read(readable, buffer);
-                var result = unchecked((uint)await CanonicalAbi.AwaitCopy(readable, status).ConfigureAwait(false));
+                var result = unchecked((uint)await PlatformServices.AwaitCopyOnEventLoop(readable, status).ConfigureAwait(false));
                 if ((result & 0xF) != Completed)
                 {
                     throw new IOException("The future's writer dropped it without a value.");
@@ -407,8 +427,9 @@ namespace System.Runtime.InteropServices.WebAssembly
             {
                 lower(await value.ConfigureAwait(false), buffer);
                 lowered = true;
+                // As for a read: the reader may take the value only after a synchronous call has returned.
                 var status = intrinsics.Write(writable, buffer);
-                await CanonicalAbi.AwaitCopy(writable, status).ConfigureAwait(false);
+                await PlatformServices.AwaitCopyOnEventLoop(writable, status).ConfigureAwait(false);
             }
             finally
             {

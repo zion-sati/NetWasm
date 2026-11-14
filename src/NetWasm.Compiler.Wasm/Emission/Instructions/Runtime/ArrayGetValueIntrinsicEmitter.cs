@@ -32,6 +32,15 @@ internal sealed class ArrayGetValueIntrinsicEmitter(
         addresses.Emit(code, 0); Set(code, payloadOffset);
         foreach (var descriptor in descriptors.ConstructedTypeDescriptors)
         {
+            if (descriptor.Type.Shape is CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer)
+            {
+                Get(code, elementId); I32(code, descriptor.TypeId);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
+                    WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+                exceptions.Emit(code, ManagedExceptionKind.NotSupported, request.Instruction.Context.ManagedThrowFunction);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            }
             // T is boxed only for Nullable<T> array elements; a Nullable<T> that no array holds
             // has no boxed layout and cannot be an element here.
             var type = nullableTypes.Resolve(descriptor.Type);

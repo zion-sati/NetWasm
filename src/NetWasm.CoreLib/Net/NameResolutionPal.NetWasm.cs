@@ -1,4 +1,4 @@
-// NetWasm's counterpart of dotnet/runtime 474ed963699fc29809015392738a15231aaae2de's
+// NetWasm's counterpart of dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce's
 // NameResolutionPal.Unix.cs: a name resolves through the platform network
 // (PlatformServices.Network), asynchronously when awaited. The network resolves names to addresses
 // and does no reverse lookup, so an address's name is its text (getnameinfo's numeric host), and

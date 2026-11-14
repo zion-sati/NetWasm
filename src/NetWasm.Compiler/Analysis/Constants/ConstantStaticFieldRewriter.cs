@@ -26,7 +26,7 @@ internal sealed class ConstantStaticFieldRewriter(
     ITypeIdentityResolver typeIdentities,
     ITypeDefinitionResolver typeDefinitions,
     IMethodRepository methods,
-    IMethodBodyReader methodBodies) : IMethodRewriteRule
+    ICalleeMethodBodyReader methodBodies) : IMethodRewriteRule
 {
     private readonly ConcurrentDictionary<EntityKey, Initialization> _initializers = new();
 
@@ -82,7 +82,8 @@ internal sealed class ConstantStaticFieldRewriter(
     {
         var constructor = owner.Methods.Select(methods.GetMethod).SingleOrDefault(method => method.Name == ".cctor");
         if (constructor is null) return new([], Complete: true);
-        var body = methodBodies.ReadMethodBody(constructor);
+        // A constructor that cannot be decoded stores nothing this rewrite can know of.
+        if (!methodBodies.TryReadMethodBody(constructor, out var body)) return new([], Complete: false);
         var operations = body.Instructions.Where(instruction => instruction.Operation != CilOperation.Nop).ToArray();
         var stored = new Dictionary<EntityKey, Stored>();
         var pending = (Stored?)null;

@@ -269,7 +269,10 @@ public sealed class CompilerHostApplicationTests
         public IMetadataCompilationLease Load(
             string entryAssemblyPath,
             IEnumerable<string> referencePaths,
-            ImmutableDictionary<string, string>? aliases = null)
+            ImmutableDictionary<string, string>? aliases = null,
+            IEnumerable<string>? metadataReferencePaths = null,
+            IEnumerable<string>? originalContractReferencePaths = null,
+            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding = null)
         {
             Calls++;
             ReceivedAliases = aliases;

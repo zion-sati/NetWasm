@@ -1,14 +1,14 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de
-// src/libraries/System.Private.CoreLib/src/System/Globalization/CharUnicodeInfo.cs, without
-// GetGraphemeClusterBreakType: NetWasm has no grapheme segmentation that would read it.
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce
+// src/libraries/System.Private.CoreLib/src/System/Globalization/CharUnicodeInfo.cs.
 
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Unicode;
 
 namespace System.Globalization
 {
@@ -186,6 +186,19 @@ namespace System.Globalization
             nuint offset = GetNumericGraphemeTableOffsetNoBoundsChecks(codePoint);
             int rawValue = Unsafe.AddByteOffset(ref MemoryMarshal.GetReference(DigitValues), offset);
             return (rawValue & 0xF) - 1; // return the low nibble of the result, minus 1 so that "not a digit value" gets normalized to -1
+        }
+
+        /*
+         * GetGraphemeBreakClusterType
+         * ===========================
+         * Data derived from https://unicode.org/reports/tr29/#Default_Grapheme_Cluster_Table. Represents
+         * grapheme cluster boundary information for the given code point.
+         */
+
+        internal static GraphemeClusterBreakType GetGraphemeClusterBreakType(Rune rune)
+        {
+            nuint offset = GetNumericGraphemeTableOffsetNoBoundsChecks((uint)rune.Value);
+            return (GraphemeClusterBreakType)Unsafe.AddByteOffset(ref MemoryMarshal.GetReference(GraphemeSegmentationValues), offset);
         }
 
         /*

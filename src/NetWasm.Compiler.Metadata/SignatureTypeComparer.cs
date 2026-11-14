@@ -14,7 +14,8 @@ internal sealed class SignatureTypeComparer : ISignatureTypeComparer
 
         return (left.Shape, right.Shape) switch
         {
-            (CliTypeShape.Named, CliTypeShape.Named) => string.Equals(
+            // A named type always has its assembly.
+            (CliTypeShape.Named, CliTypeShape.Named) => left.Assembly.GetValueOrDefault() == right.Assembly.GetValueOrDefault() && string.Equals(
                 left.FullName,
                 right.FullName,
                 System.StringComparison.Ordinal),

@@ -22,9 +22,10 @@ public sealed class NativeManagedExecutionIntegrationTests
     private static readonly int[] ExpectedNamedCallbackInvocationValues = [-100, 35];
     private static readonly int[] ExpectedCallbackOnlyInvocationValues = [1, 137];
     private static readonly string[] ToolNames = ["node", "wasm-ld", "wasm-opt"];
+    // A desktop build's System.Runtime is CoreLib; its System.Runtime.InteropServices is NetWasm.App's, which forwards
+    // what CoreLib defines and defines the rest (the ComTypes structures among them).
     private static readonly ImmutableDictionary<string, string> DesktopAliases =
-        new[] { "System.Runtime", "System.Runtime.InteropServices" }
-            .ToImmutableDictionary(name => name, _ => "NetWasm.CoreLib");
+        ImmutableDictionary<string, string>.Empty.Add("System.Runtime", "NetWasm.CoreLib");
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -290,7 +291,8 @@ public sealed class NativeManagedExecutionIntegrationTests
             File.Copy(assembly, managedInput);
             File.Copy(sourcePath, Path.Combine(run, "managed-input.cs"));
             assembly = managedInput;
-            var compilation = NetWasmCompiler.Compile(new(assembly, [coreLib], "NativeMule.EntryPoint", "Run", [], wasmTarget,
+            var compilation = NetWasmCompiler.Compile(new(assembly,
+                [.. TestAssets.WithFrameworkReferences(assembly, [coreLib])], "NativeMule.EntryPoint", "Run", [], wasmTarget,
                 DiagnosticTracePath: Path.Combine(run, "compiler-trace.json"), DiagnosticLogPath: Path.Combine(run, "compiler.log"),
                 ReferenceAssemblyAliases: generated ? DesktopAliases : null));
             Assert.Equal(providerlessCallbacks ? 0 : unmanagedCalls ? 8 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :

@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptation: no event counters (CoreLib has no PollingCounter); the events remain.
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.

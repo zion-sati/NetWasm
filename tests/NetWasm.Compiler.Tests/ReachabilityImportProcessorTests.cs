@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Core.GenericConstraints;
 using System.Collections.Immutable;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Analysis;
@@ -85,7 +86,7 @@ public sealed class ReachabilityImportClassifierTests
             new UnusedTypeFinder(), new UnusedTypeDefinitionResolver(),
             new UnusedMethodRepository(), new UnusedDelegateTypeRecognizer(),
             new NoAsyncBindingResolver(), new UnusedConversionResolver(), new UnusedIntrinsicRegistry(),
-            new SimpleSymbolFormatter());
+            new SimpleSymbolFormatter(), new NoGenericConstraints());
 
         Assert.True(classifier.Classify(Request(method)).IsHandled);
         Assert.Equal(1, planner.Calls);
@@ -405,7 +406,7 @@ public sealed class ReachabilityImportClassifierTests
     {
         var method = Method(24, MethodSignatureModel.Create(CliValueKind.Void)) with
         {
-            UnsafeAccessor = new(1, "Target", true, malformed, false),
+            UnsafeAccessor = new(1, "Target", true, malformed),
         };
         var classifier = CreateClassifier(new ConfigurableTypeDefinitionResolver(),
             new ConfigurableMethodRepository(), new FixedTypeFinder(),
@@ -828,4 +829,10 @@ public sealed class ReachabilityImportClassifierTests
 
         public string Format(MethodDefinitionModel method) => method.Name;
     }
+    private sealed class NoGenericConstraints : IClosedGenericConstraintValidator
+    {
+        public void Validate(MethodInstanceModel method) { }
+        public void Validate(CliTypeIdentity type) { }
+    }
+
 }

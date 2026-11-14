@@ -51,6 +51,14 @@ public sealed partial class SdkToolchainContractTests
         Assert.True(compile.IsBefore(manifest));
         Assert.Equal("$(NetWasmNativeCallbackObjectPath)", (string?)manifest.Attribute("NativeCallbackObjectPath"));
         Assert.Equal("$(NetWasmArtifactManifestPath)", (string?)manifest.Attribute("ArtifactManifestPath"));
+        // The manifest records every input the next build's validation recomputes: the compile's references and
+        // its metadata facades (NetWasm.App.Ref's netstandard.dll), or the second build reports it stale.
+        var validate = Assert.Single(tasks.Descendants(targetNamespace + "NetWasmValidateArtifactTask"));
+        foreach (var input in new[] { "MetadataReferences", "Sources", "WitInputs", "CompilationIdentityPath" })
+        {
+            Assert.Equal((string?)validate.Attribute(input), (string?)manifest.Attribute(input));
+            Assert.Equal((string?)compile.Attribute(input) ?? (string?)validate.Attribute(input), (string?)manifest.Attribute(input));
+        }
         Assert.Equal(
             ["ResolvedArtifacts", "SemanticBuildId"],
             manifest.Elements(targetNamespace + "Output").Select(output => (string?)output.Attribute("TaskParameter")));
@@ -555,6 +563,88 @@ public sealed partial class SdkToolchainContractTests
             candidate => (string?)candidate.Attribute("Name") == targetName);
         Assert.Contains("'$(DesignTimeBuild)' != 'true'", (string?)target.Attribute("Condition"),
             StringComparison.Ordinal);
+    }
+
+    // The compiler gets the NetWasm.App implementations the program's assemblies reach, both when it compiles
+    // and when the build validates its artifacts, and a change to them recompiles the module.
+    [Fact]
+    public void CompilerGetsTheFrameworkAssembliesTheProgramReaches()
+    {
+        var targetNamespace = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
+        var compilerTargets = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(), "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+        XElement Target(string name) => Assert.Single(compilerTargets.Descendants(targetNamespace + "Target"),
+            target => (string?)target.Attribute("Name") == name);
+        var selection = Target("NetWasmSelectFrameworkAssemblies");
+        var task = Assert.Single(selection.Descendants(targetNamespace + "NetWasmSelectFrameworkAssembliesTask"));
+        var compilation = Target("NetWasmCompileCoreModule");
+        var validation = Target("NetWasmValidateCompilerArtifacts");
+
+        Assert.Equal("@(NetWasmFrameworkAssembly)", (string?)task.Attribute("FrameworkAssemblies"));
+        Assert.Equal("@(_NetWasmProgramAssembly)", (string?)task.Attribute("ProgramAssemblies"));
+        // A netstandard package reaches the owners netstandard.dll forwards to.
+        Assert.Equal("@(_NetWasmMetadataFacadeReference)", (string?)task.Attribute("Facades"));
+        Assert.Contains("NetWasmWriteCompilationIdentity", ((string?)selection.Attribute("DependsOnTargets"))!.Split(';'));
+        Assert.Contains(compilerTargets.Descendants(targetNamespace + "UsingTask"), usingTask =>
+            (string?)usingTask.Attribute("TaskName") == "NetWasm.Compiler.Tasks.MsBuild.NetWasmSelectFrameworkAssembliesTask");
+        foreach (var dependent in new[] { compilation, validation })
+        {
+            Assert.Contains("NetWasmSelectFrameworkAssemblies",
+                ((string?)dependent.Attribute("DependsOnTargets"))!.Split(';'));
+        }
+        Assert.Contains("@(_NetWasmFrameworkLinkReference)", (string?)compilation.Attribute("Inputs"), StringComparison.Ordinal);
+        Assert.Contains(compilation.Descendants(targetNamespace + "_NetWasmManagedLinkReference"), item =>
+            (string?)item.Attribute("Include") == "@(_NetWasmFrameworkLinkReference)");
+        Assert.Contains(validation.Descendants(targetNamespace + "_NetWasmValidationManagedLinkReference"), item =>
+            (string?)item.Attribute("Include") == "@(_NetWasmFrameworkLinkReference)");
+        // A package's copy of a framework assembly that the framework's version replaces leaves both link sets.
+        Assert.Contains(task.Elements(targetNamespace + "Output"), output =>
+            (string?)output.Attribute("TaskParameter") == "DisplacedAssemblies" &&
+            (string?)output.Attribute("ItemName") == "_NetWasmDisplacedProgramAssembly");
+        Assert.Contains(compilation.Descendants(targetNamespace + "_NetWasmManagedLinkReference"), item =>
+            (string?)item.Attribute("Remove") == "@(_NetWasmDisplacedProgramAssembly)");
+        Assert.Contains(validation.Descendants(targetNamespace + "_NetWasmValidationManagedLinkReference"), item =>
+            (string?)item.Attribute("Remove") == "@(_NetWasmDisplacedProgramAssembly)");
+    }
+
+    // The compiler's metadata facades are the framework reference views and NetWasm.App.Ref's facades: its assemblies
+    // with no NetWasm.App implementation (netstandard.dll, System.Runtime.dll), which forward each type to CoreLib or
+    // the NetWasm.App library that owns it.
+    [Fact]
+    public void CompilerTakesNetWasmAppRefsFacades()
+    {
+        var targetNamespace = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
+        var compilerTargets = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(), "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+        var views = Assert.Single(compilerTargets.Descendants(targetNamespace + "_NetWasmMetadataFacadeReference"),
+            item => (string?)item.Attribute("Include") == "@(ReferencePath)");
+        Assert.Equal("'%(ReferencePath.NetWasmMetadataReference)' == 'true'", (string?)views.Attribute("Condition"));
+        var appRef = Assert.Single(compilerTargets.Descendants(targetNamespace + "_NetWasmAppRefFacade"),
+            item => (string?)item.Attribute("Include") == "@(ReferencePath)");
+        Assert.Equal("'%(ReferencePath.NuGetPackageId)' == 'NetWasm.App.Ref'", (string?)appRef.Attribute("Condition"));
+        var implemented = Assert.Single(compilerTargets.Descendants(targetNamespace + "_NetWasmAppRefFacade"),
+            item => item.Attribute("Remove") is not null && (string?)item.Attribute("MatchOnMetadata") == "NetWasmAssemblyName");
+        Assert.Equal("@(_NetWasmImplementedAssembly)", (string?)implemented.Attribute("Remove"));
+        Assert.Contains(compilerTargets.Descendants(targetNamespace + "_NetWasmMetadataFacadeReference"),
+            item => (string?)item.Attribute("Include") == "@(_NetWasmAppRefFacade)");
+    }
+
+    // A package's satellite resource assemblies share an identity (ca/Hangfire.Core.resources.dll and its siblings)
+    // and NetWasm's invariant globalization never loads them, so no copy-local compiler input includes them.
+    [Fact]
+    public void CompilerInputsLeaveOutSatelliteResourceAssemblies()
+    {
+        var targetNamespace = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
+        var compilerTargets = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(), "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+        var inputs = compilerTargets.Descendants()
+            .Where(item => item.Name.Namespace == targetNamespace && (string?)item.Attribute("Include") == "@(ReferenceCopyLocalPaths)" &&
+                ((string?)item.Attribute("Condition") ?? "").Contains("'.dll'", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Equal(3, inputs.Length);
+        Assert.All(inputs, item => Assert.Contains("'%(ReferenceCopyLocalPaths.Culture)' == ''",
+            (string?)item.Attribute("Condition"), StringComparison.Ordinal));
     }
 
     [Fact]

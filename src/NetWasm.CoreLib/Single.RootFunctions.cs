@@ -2,13 +2,13 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Hypot and RootN from System.Private.CoreLib Single.cs at runtime commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Diagnostics;
 
 namespace System
 {
-    public partial struct Single
+    public readonly partial struct Single
     {
         /// <inheritdoc cref="IRootFunctions{TSelf}.Hypot(TSelf, TSelf)" />
         public static float Hypot(float x, float y)

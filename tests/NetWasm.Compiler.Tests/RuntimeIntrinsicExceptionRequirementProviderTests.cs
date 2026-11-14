@@ -125,15 +125,19 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.EnumEquals or
             RuntimeIntrinsic.EnumGetHashCode or
             RuntimeIntrinsic.EnumGetTypeCode => [ManagedExceptionKind.NullReference],
-            RuntimeIntrinsic.ArrayElementType => [ManagedExceptionKind.OutOfMemory],
+            RuntimeIntrinsic.ArrayElementType or RuntimeIntrinsic.ArrayCreateInstance or
+                RuntimeIntrinsic.ArrayCreateRectangularInstance or
+                RuntimeIntrinsic.AllocateUninitializedObject => [ManagedExceptionKind.OutOfMemory],
             // The frozen OutOfMemoryException it returns is built only when required.
             RuntimeIntrinsic.PreallocatedOutOfMemoryException => [ManagedExceptionKind.OutOfMemory],
             RuntimeIntrinsic.NullableGetUnderlyingType => [ManagedExceptionKind.ArgumentNull],
             RuntimeIntrinsic.ArrayGetLength or RuntimeIntrinsic.ArrayGetLowerBound or
             RuntimeIntrinsic.StringCharacterAt =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.IndexOutOfRange],
-            RuntimeIntrinsic.ObjectClone or RuntimeIntrinsic.ArrayGetValue =>
+            RuntimeIntrinsic.ObjectClone =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory],
+            RuntimeIntrinsic.ArrayGetValue =>
+                [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory, ManagedExceptionKind.NotSupported],
             RuntimeIntrinsic.MemberExecuteMethod =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory,
                     ManagedExceptionKind.InvalidCast,
@@ -141,7 +145,10 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.DelegateDynamicInvoke =>
                 [ManagedExceptionKind.OutOfMemory, ManagedExceptionKind.Argument],
             RuntimeIntrinsic.MemberReadField =>
-                [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory],
+                [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory,
+                    ManagedExceptionKind.InvalidCast],
+            RuntimeIntrinsic.MemberWriteField =>
+                [ManagedExceptionKind.NullReference, ManagedExceptionKind.InvalidCast],
             RuntimeIntrinsic.NativeMemoryAlloc or
             RuntimeIntrinsic.NativeMemoryRealloc or
             RuntimeIntrinsic.NativeMemoryAlignedAlloc or

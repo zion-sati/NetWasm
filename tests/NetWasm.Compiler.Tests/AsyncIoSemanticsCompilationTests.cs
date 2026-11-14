@@ -296,10 +296,11 @@ public sealed class AsyncIoSemanticsCompilationTests
                             AsyncReadCount: 2,
                             SyncReadCount: 0,
                         }, 14);
+                    // Upstream's BufferedStream writes the buffered bytes and the overflowing write together.
                     Check(_bufferedWrite is { IsCompletedSuccessfully: true } &&
                         _bufferedWriteStream is
                         {
-                            AsyncWriteCount: 2,
+                            AsyncWriteCount: 1,
                             AsyncFlushCount: 1,
                             SyncWriteCount: 0,
                             OutputCount: 6,

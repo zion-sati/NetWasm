@@ -1,0 +1,7 @@
+package netwasm:http@1.0.0;
+
+// The interfaces System.Net.Http's WASI transport binds: wasi:http's client send, with the
+// request and response types it uses.
+world client {
+  import wasi:http/client@0.3.2;
+}

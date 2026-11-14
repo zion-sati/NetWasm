@@ -28,9 +28,11 @@ internal sealed class CallEmissionKindResolver(
             (!isIntrinsic || RuntimeIntrinsicKinds.DependsOnReceiverType(intrinsic)) &&
             caller is not null &&
             instruction.Target.DispatchCallSites.TryGetValue(
-                $"{caller}@{instruction.Instruction.Offset:x8}", out _))
+                $"{caller}@{instruction.Instruction.Offset:x8}", out var dispatch))
         {
-            return CallEmissionKind.VirtualDispatch;
+            return CallsSharedBody(request, dispatch)
+                ? CallEmissionKind.SharedObjectDispatch
+                : CallEmissionKind.VirtualDispatch;
         }
 
         if (isIntrinsic)
@@ -48,4 +50,13 @@ internal sealed class CallEmissionKindResolver(
             ? CallEmissionKind.JavaScriptImport
             : CallEmissionKind.Direct;
     }
+
+    // A virtual call on object with many targets calls CoreLib's shared body for it, which carries the one copy of
+    // the dispatch. A call constrained to a reference type is an ordinary virtual call on the receiver it loads; one
+    // constrained to a value type dispatches on that type.
+    private static bool CallsSharedBody(CallEmissionRequest request, DispatchCallSiteModel dispatch) =>
+        dispatch.SharesObjectDispatch &&
+        request.Instruction.Instruction.Operation == CilOperation.CallVirtual &&
+        request.ConstrainedType is not { IsValueType: true } &&
+        request.Instruction.Target.SharedObjectDispatch.ContainsKey(dispatch.Declaration.CanonicalName);
 }

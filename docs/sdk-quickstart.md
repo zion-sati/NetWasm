@@ -247,9 +247,10 @@ unavailable, in which case `typeName` is null and the numeric type ID remains.
 
 An HTTP service is a component whose world is NetWasm's `service` world
 (`wasi:cli` imports plus `wasi:http/service`). `dotnet new netwasm-serverless`
-creates one, with a README showing how to serve it. By hand: reference
-`NetWasm.System.Net.Http` and implement one method that takes an
-`HttpRequestMessage` and returns an `HttpResponseMessage`:
+creates one, with a README showing how to serve it. By hand: select the
+`service` world and implement one method that takes an `HttpRequestMessage` and
+returns an `HttpResponseMessage`. `System.Net.Http` is part of NetWasm.App, so
+the project needs no package for it:
 
 ```xml
 <Project Sdk="NetWasm.Sdk/<version>">
@@ -258,9 +259,6 @@ creates one, with a README showing how to serve it. By hand: reference
     <TargetFramework>netwasm0.1</TargetFramework>
     <NetWasmWorld>service</NetWasmWorld>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="NetWasm.System.Net.Http" Version="<version>" />
-  </ItemGroup>
 </Project>
 ```
 
@@ -343,6 +341,26 @@ this maps the project's `data` directory to `/data`:
 forward-slash syntax and must be unique within the project. `readOnly` blocks
 filesystem mutation through that mount; use `readWrite` only when the
 application genuinely needs to modify the mapped directory.
+
+### Feature switches
+
+A project sets .NET's feature switches as it would for any .NET application:
+with properties such as `<UseSystemResourceKeys>`, `<InvariantGlobalization>` or
+`<HttpActivityPropagationSupport>`, or with a `RuntimeHostConfigurationOption`
+item. `AppContext` reads them as .NET reads `runtimeconfig.json`. A switch
+marked `Trim="true"`, as every one the SDK sets from a property is, is also
+folded when the program compiles: the code it turns off leaves the program, as
+trimming removes it, and so do the code paths that packages' embedded
+`ILLink.Substitutions.xml` files stub for it.
+
+NetWasm's defaults include no more than Blazor WebAssembly's:
+`UseSystemResourceKeys` is true (NetWasm deploys no manifest resources, so
+libraries report resource keys), `UseSizeOptimizedLinq` is true, `Http3Support`
+and `EnableUnsafeUTF7Encoding` are false, and `DebuggerSupport` is false outside
+Debug builds. Diagnostics are off, as in .NET's own WebAssembly runtime:
+`MetricsSupport`, `HttpActivityPropagationSupport` and `EventSourceSupport` are
+false, and a project that wants HttpClient's distributed tracing or metrics sets
+the first two to true.
 
 ### Run a browser project
 

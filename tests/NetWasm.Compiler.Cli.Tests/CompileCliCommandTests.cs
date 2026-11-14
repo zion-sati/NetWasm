@@ -87,6 +87,19 @@ public sealed class CompileCliCommandTests
         Assert.Empty(options.EntryMethodName);
     }
 
+    // -linkednativeonly+ binds P/Invokes only into the named native libraries the build links.
+    [Fact]
+    public void PassesTheLinkedNativeLibrariesOnlyWhenTheBuildLinksThemAll()
+    {
+        var linked = new Harness(entryPoint: null);
+        linked.Run("App.dll", "-out:app.wasm", "-target:library", "-nativelibrary:libfoo", "-linkednativeonly+");
+        var unlinked = new Harness(entryPoint: null);
+        unlinked.Run("App.dll", "-out:app.wasm", "-target:library", "-nativelibrary:libfoo");
+
+        Assert.Equal(["libfoo"], linked.Sessions.Options!.LinkedNativeLibraries!);
+        Assert.Null(unlinked.Sessions.Options!.LinkedNativeLibraries);
+    }
+
     [Fact]
     public void PassesEveryOptionToTheCompilerAndTheArtifactWriter()
     {
@@ -94,6 +107,8 @@ public sealed class CompileCliCommandTests
 
         harness.Run(
             "App.dll", "-out:app.wasm", "-target:function", "-entry:Example.Entry::Run", "-r:CoreLib.dll",
+            "-metadatareference:view.dll", "-originalcontract:contract.dll",
+            "-referenceorigin:view.dll;package=Framework.Backport;version=4.5.5;original=contract.dll",
             "-export:add=Example.Math::Add", "-platform:wasm64", "-optimize:O3", "-pathmap:/src=/_/",
             "-source:Entry.cs", "-interopmanifest:interop.json", "-runtimelayout:layout.json",
             "-compilermetadata:metadata.json", "-typesymbols:app.wasm.type-symbols", "-typenames+",
@@ -135,6 +150,12 @@ public sealed class CompileCliCommandTests
         Assert.Equal("node", harness.Sessions.WasmTools!.Executable);
         var options = harness.Sessions.Options!;
         Assert.Equal(["CoreLib.dll"], options.ReferencePaths);
+        Assert.Equal(["view.dll"], options.MetadataReferencePaths);
+        Assert.Equal(["contract.dll"], options.OriginalContractReferencePaths);
+        Assert.Equal(
+            new CompilationReferenceOrigin("view.dll", CompilationReferenceRole.Metadata, "Framework.Backport", "4.5.5",
+                OriginalReferencePath: "contract.dll"),
+            Assert.Single(options.ReferenceOrigins));
         Assert.Equal(new RequestedExport("add", "Example.Math", "Add"), Assert.Single(options.Exports));
         Assert.Equal(WasmTarget.Wasm64, options.Target);
         Assert.Equal(FinalWasmOptimization.O3, options.Optimization);

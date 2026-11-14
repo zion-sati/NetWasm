@@ -1,6 +1,7 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 474ed963699fc29809015392738a15231aaae2de.
-// The implementation intentionally retains only invariant ordinal codecs; culture, code pages,
-// providers, and normalization are outside the NetWasm profile.
+// Ported from dotnet/runtime System.Private.CoreLib; upstream commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// Built-in codecs retain the invariant profile. Custom providers supply additional codecs;
+// normalization queries do not add Unicode normalization algorithms. Encoding.UTF7 returns the
+// UTF7Encoding instance as upstream does; GetEncoding keeps upstream's UTF-7 lookup restriction.
 // Licensed to the .NET Foundation under the MIT license.
 namespace System.Text;
 
@@ -29,9 +30,10 @@ public abstract class Encoding : ICloneable
     public static Encoding Unicode { get => UnicodeEncoding.LittleEndianDefault; }
     public static Encoding BigEndianUnicode { get => UnicodeEncoding.BigEndianDefault; }
     public static Encoding UTF32 { get => UTF32Encoding.Default; }
-    public static Encoding Latin1 { get => throw new PlatformNotSupportedException(); }
+    public static Encoding Latin1 { get => Latin1Encoding.s_default; }
     public static Encoding Default { get => DefaultEncoding; }
-    public static Encoding UTF7 => throw new PlatformNotSupportedException("UTF-7 is not supported by the invariant profile.");
+    [Obsolete(Obsoletions.SystemTextEncodingUTF7Message, DiagnosticId = Obsoletions.SystemTextEncodingUTF7DiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+    public static Encoding UTF7 => UTF7Encoding.s_default;
     public EncoderFallback EncoderFallback { get => _encoderFallback; set { if (_isReadOnly) throw new InvalidOperationException(); ArgumentNullException.ThrowIfNull(value); _encoderFallback = value; } }
     public DecoderFallback DecoderFallback { get => _decoderFallback; set { if (_isReadOnly) throw new InvalidOperationException(); ArgumentNullException.ThrowIfNull(value); _decoderFallback = value; } }
     public bool IsReadOnly { get => _isReadOnly; }
@@ -144,23 +146,7 @@ public abstract class Encoding : ICloneable
     public virtual bool TryGetChars(ReadOnlySpan<byte> bytes, Span<char> chars, out int charsWritten) { if (GetCharCount(bytes) > chars.Length) { charsWritten = 0; return false; } charsWritten = GetChars(bytes, chars); return true; }
     public virtual object Clone()
     {
-        // The framework implementation uses MemberwiseClone. CoreLib intentionally
-        // keeps that runtime primitive out of the profile, so clone the supported
-        // invariant codecs from their public constructor state instead.
-        Encoding clone = CodePage switch
-        {
-            20127 => new ASCIIEncoding(),
-            65001 => new UTF8Encoding(Preamble.Length != 0),
-            1200 => new UnicodeEncoding(false, Preamble.Length != 0),
-            1201 => new UnicodeEncoding(true, Preamble.Length != 0),
-            12000 => new UTF32Encoding(false, Preamble.Length != 0),
-            12001 => new UTF32Encoding(true, Preamble.Length != 0),
-            _ => throw new PlatformNotSupportedException(
-                "Custom Encoding implementations must override Clone in the NetWasm profile.")
-        };
-
-        clone._encoderFallback = _encoderFallback;
-        clone._decoderFallback = _decoderFallback;
+        var clone = (Encoding)MemberwiseClone();
         clone._isReadOnly = false;
         return clone;
     }
@@ -171,13 +157,21 @@ public abstract class Encoding : ICloneable
         DecoderFallback.Equals(other.DecoderFallback);
     public override int GetHashCode() =>
         HashCode.Combine(CodePage, EncoderFallback, DecoderFallback);
+    public static void RegisterProvider(EncodingProvider provider) => EncodingProvider.AddProvider(provider);
+
+    private static Encoding? FilterDisallowedEncodings(Encoding? encoding) =>
+        encoding?.CodePage == 65000 ? null : encoding;
+
     public static Encoding GetEncoding(int codepage)
     {
+        var supplied = FilterDisallowedEncodings(EncodingProvider.GetEncodingFromProvider(codepage));
+        if (supplied is not null) return supplied;
         if (codepage < 0 || codepage > 65535) throw new ArgumentOutOfRangeException(nameof(codepage));
         return codepage switch
         {
             0 => Default,
             20127 => new ASCIIEncoding(),
+            Latin1Encoding.Latin1CodePage => new Latin1Encoding(),
             65001 => new UTF8Encoding(),
             1200 => new UnicodeEncoding(false, false),
             1201 => new UnicodeEncoding(true, false),
@@ -189,43 +183,46 @@ public abstract class Encoding : ICloneable
 
     public static Encoding GetEncoding(int codepage, EncoderFallback encoderFallback, DecoderFallback decoderFallback)
     {
-        ArgumentNullException.ThrowIfNull(encoderFallback);
-        ArgumentNullException.ThrowIfNull(decoderFallback);
+        var supplied = FilterDisallowedEncodings(EncodingProvider.GetEncodingFromProvider(codepage, encoderFallback, decoderFallback));
+        if (supplied is not null) return supplied;
         var result = (Encoding)GetEncoding(codepage).Clone();
         result.EncoderFallback = encoderFallback;
         result.DecoderFallback = decoderFallback;
         return result;
     }
 
-    public static Encoding GetEncoding(string name)
+    public static Encoding GetEncoding(string name) =>
+        FilterDisallowedEncodings(EncodingProvider.GetEncodingFromProvider(name)) ??
+        GetEncoding(GetCodePageFromName(name));
+
+    private static int GetCodePageFromName(string name)
     {
         ArgumentNullException.ThrowIfNull(name);
         if (string.Equals(name, "ascii", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "us-ascii", StringComparison.OrdinalIgnoreCase)) return GetEncoding(20127);
+            string.Equals(name, "us-ascii", StringComparison.OrdinalIgnoreCase)) return 20127;
+        if (name.Equals("iso-8859-1", StringComparison.OrdinalIgnoreCase) || name.Equals("latin1", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("iso8859-1", StringComparison.OrdinalIgnoreCase) || name.Equals("iso_8859-1", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("iso_8859-1:1987", StringComparison.OrdinalIgnoreCase) || name.Equals("l1", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("cp819", StringComparison.OrdinalIgnoreCase) || name.Equals("ibm819", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("csisolatin1", StringComparison.OrdinalIgnoreCase) || name.Equals("iso-ir-100", StringComparison.OrdinalIgnoreCase)) return Latin1Encoding.Latin1CodePage;
         if (string.Equals(name, "utf-8", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "utf8", StringComparison.OrdinalIgnoreCase)) return GetEncoding(65001);
+            string.Equals(name, "utf8", StringComparison.OrdinalIgnoreCase)) return 65001;
         if (string.Equals(name, "utf-16", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "unicode", StringComparison.OrdinalIgnoreCase)) return GetEncoding(1200);
+            string.Equals(name, "unicode", StringComparison.OrdinalIgnoreCase)) return 1200;
         if (string.Equals(name, "utf-16be", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(name, "utf16be", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "unicodeFFFE", StringComparison.OrdinalIgnoreCase)) return GetEncoding(1201);
+            string.Equals(name, "unicodeFFFE", StringComparison.OrdinalIgnoreCase)) return 1201;
         if (string.Equals(name, "utf-32", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "utf32", StringComparison.OrdinalIgnoreCase)) return GetEncoding(12000);
+            string.Equals(name, "utf32", StringComparison.OrdinalIgnoreCase)) return 12000;
         if (string.Equals(name, "utf-32be", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "utf32be", StringComparison.OrdinalIgnoreCase)) return GetEncoding(12001);
+            string.Equals(name, "utf32be", StringComparison.OrdinalIgnoreCase)) return 12001;
         throw new NotSupportedException();
     }
 
-    public static Encoding GetEncoding(string name, EncoderFallback encoderFallback, DecoderFallback decoderFallback)
-    {
-        ArgumentNullException.ThrowIfNull(name);
-        ArgumentNullException.ThrowIfNull(encoderFallback);
-        ArgumentNullException.ThrowIfNull(decoderFallback);
-        var result = GetEncoding(name).Clone() as Encoding ?? throw new InvalidOperationException();
-        result.EncoderFallback = encoderFallback;
-        result.DecoderFallback = decoderFallback;
-        return result;
-    }
+    public static Encoding GetEncoding(string name, EncoderFallback encoderFallback, DecoderFallback decoderFallback) =>
+        FilterDisallowedEncodings(EncodingProvider.GetEncodingFromProvider(name, encoderFallback, decoderFallback)) ??
+        GetEncoding(GetCodePageFromName(name), encoderFallback, decoderFallback);
+
     public static byte[] Convert(Encoding srcEncoding, Encoding dstEncoding, byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
@@ -241,9 +238,21 @@ public abstract class Encoding : ICloneable
         return dstEncoding.GetBytes(srcEncoding.GetChars(bytes, index, count));
     }
 
-    public bool IsAlwaysNormalized() => false;
+    public bool IsAlwaysNormalized() => IsAlwaysNormalized(NormalizationForm.FormC);
 
-    public static EncodingInfo[] GetEncodings() => new[] { new EncodingInfo(20127, "us-ascii"), new EncodingInfo(65001, "utf-8"), new EncodingInfo(1200, "utf-16"), new EncodingInfo(1201, "utf-16BE"), new EncodingInfo(12000, "utf-32"), new EncodingInfo(12001, "utf-32BE") };
+    public virtual bool IsAlwaysNormalized(NormalizationForm form) => false;
+
+    public static EncodingInfo[] GetEncodings()
+    {
+        var builtins = new[] { new EncodingInfo(20127, "us-ascii"), new EncodingInfo(65001, "utf-8"), new EncodingInfo(1200, "utf-16"), new EncodingInfo(1201, "utf-16BE"), new EncodingInfo(12000, "utf-32"), new EncodingInfo(12001, "utf-32BE") };
+        var supplied = EncodingProvider.GetEncodingListFromProviders();
+        if (supplied is null) return builtins;
+        foreach (var info in builtins) supplied.TryAdd(info.CodePage, info);
+        supplied.Remove(65000);
+        var result = new EncodingInfo[supplied.Count];
+        supplied.Values.CopyTo(result, 0);
+        return result;
+    }
     internal string EncoderReplacementString => EncoderFallback is EncoderReplacementFallback fallback
         ? fallback.DefaultString
         : throw new EncoderFallbackException();
@@ -298,35 +307,4 @@ public sealed class EncodingInfo
     public Encoding GetEncoding() => _provider?.GetEncoding(_codePage) ?? Encoding.GetEncoding(_codePage);
     public override bool Equals(object? value) => value is EncodingInfo other && _codePage == other._codePage;
     public override int GetHashCode() => _codePage;
-}
-
-public abstract class EncodingProvider
-{
-    protected EncodingProvider() { }
-    public abstract Encoding? GetEncoding(int codepage);
-    public virtual Encoding? GetEncoding(int codepage, EncoderFallback encoderFallback, DecoderFallback decoderFallback)
-    {
-        ArgumentNullException.ThrowIfNull(encoderFallback);
-        ArgumentNullException.ThrowIfNull(decoderFallback);
-        var encoding = GetEncoding(codepage);
-        if (encoding is null) return null;
-        var clone = (Encoding)encoding.Clone();
-        clone.EncoderFallback = encoderFallback;
-        clone.DecoderFallback = decoderFallback;
-        return clone;
-    }
-    public abstract Encoding? GetEncoding(string name);
-    public virtual Encoding? GetEncoding(string name, EncoderFallback encoderFallback, DecoderFallback decoderFallback)
-    {
-        ArgumentNullException.ThrowIfNull(name);
-        ArgumentNullException.ThrowIfNull(encoderFallback);
-        ArgumentNullException.ThrowIfNull(decoderFallback);
-        var encoding = GetEncoding(name);
-        if (encoding is null) return null;
-        var clone = (Encoding)encoding.Clone();
-        clone.EncoderFallback = encoderFallback;
-        clone.DecoderFallback = decoderFallback;
-        return clone;
-    }
-    public virtual Collections.Generic.IEnumerable<EncodingInfo> GetEncodings() => [];
 }

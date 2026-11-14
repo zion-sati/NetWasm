@@ -59,6 +59,7 @@ public sealed class RuntimeHelpersCompatibilityCompilationTests
                 RuntimeHelpers.PrepareContractedDelegate(RunCode);
                 RuntimeHelpers.ProbeForSufficientStack();
                 RuntimeHelpers.EnsureSufficientExecutionStack();
+                if (!RuntimeHelpers.TryEnsureSufficientExecutionStack()) return -4;
                 if (!RuntimeHelpers.Equals(RuntimeHelpers.GetObjectValue(input), input)) return -3;
                 try
                 {

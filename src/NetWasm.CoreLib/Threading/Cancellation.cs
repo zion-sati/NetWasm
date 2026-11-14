@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Portions adapted from dotnet/runtime System.Private.CoreLib at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
@@ -25,6 +25,9 @@ namespace System.Threading
             _source != null && _source.IsCancellationRequested;
 
         public bool CanBeCanceled => _source != null;
+
+        // As upstream: a token without a source waits on a source that is never canceled.
+        public WaitHandle WaitHandle => (_source ?? CancellationTokenSource.s_neverCanceledSource).WaitHandle;
 
         public CancellationTokenRegistration Register(Action callback) =>
             Register(callback, useSynchronizationContext: false);
@@ -165,7 +168,9 @@ namespace System.Threading
     public class CancellationTokenSource : IDisposable
     {
         internal static readonly CancellationTokenSource s_canceledSource = CreateCanceledSource();
+        internal static readonly CancellationTokenSource s_neverCanceledSource = new();
         private bool _cancelled;
+        private ManualResetEvent? _kernelEvent;
         private bool _disposed;
         private CallbackNode? _callbacks;
         private ITimer? _scheduledCancellation;
@@ -206,6 +211,16 @@ namespace System.Threading
 
         public bool IsCancellationRequested => _cancelled;
 
+        // As upstream: the event is created on first use, and cancellation sets it before the callbacks run.
+        internal WaitHandle WaitHandle
+        {
+            get
+            {
+                ThrowIfDisposed();
+                return _kernelEvent ??= new ManualResetEvent(_cancelled);
+            }
+        }
+
         public CancellationToken Token
         {
             get
@@ -238,6 +253,7 @@ namespace System.Threading
             _cancelled = true;
             _scheduledCancellation?.Dispose();
             _scheduledCancellation = null;
+            _kernelEvent?.Set();
             return true;
         }
 
@@ -375,6 +391,8 @@ namespace System.Threading
             _disposed = true;
             _scheduledCancellation?.Dispose();
             _scheduledCancellation = null;
+            _kernelEvent?.Dispose();
+            _kernelEvent = null;
 
             while (_callbacks is not null)
             {

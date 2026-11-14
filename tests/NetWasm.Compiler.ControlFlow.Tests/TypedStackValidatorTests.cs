@@ -1020,15 +1020,24 @@ public sealed class TypedStackValidatorTests
             I(1, CilOperation.ConvertNativeInt),
             I(2, CilOperation.Return)));
 
+        // An object reference converts to its address: compilers before C# 7.3 lower fixed (char* p = text) to a
+        // pinned string local and conv.u.
+        _ = Validate(Body(
+            CliValueKind.NativeInt,
+            1,
+            [],
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.ConvertNativeInt),
+            I(2, CilOperation.Return)));
         AssertDiagnostic(
             () => Validate(Body(
                 CliValueKind.NativeInt,
                 1,
-                [],
-                I(0, CilOperation.LoadNull),
+                [CliValueKind.ValueType],
+                I(0, CilOperation.LoadLocal, new CilOperand.Index(0)),
                 I(1, CilOperation.ConvertNativeInt),
                 I(2, CilOperation.Return))),
-            "operation requires a numeric or managed-address operand");
+            "operation requires a numeric, managed-address or object operand");
 
         _ = Validate(Body(
             CliValueKind.I8,

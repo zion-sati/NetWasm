@@ -52,7 +52,7 @@ public sealed class PlatformServiceBindingRewriterTests
         Assert.Same(body, new PlatformServiceBindingRewriter(
             new FixedMethodResolver(Factory("CreatePlatform")),
             new Symbols(),
-            new PlatformWorldCapabilities(true, true, true)).Rewrite(body));
+            PlatformWorldCapabilities.Of(true, true, true)).Rewrite(body));
         Assert.Throws<ArgumentNullException>(() => Rewriter(null).Rewrite(null!));
     }
 
@@ -61,7 +61,8 @@ public sealed class PlatformServiceBindingRewriterTests
     private static PlatformServiceBindingRewriter Rewriter(MethodInstanceModel? target) => new(
         new FixedMethodResolver(target),
         new Symbols(),
-        new PlatformWorldCapabilities(true, true, true)
+        PlatformWorldCapabilities.Of(true, true, true)
+        with
         {
             DeclaredPlatform = new DeclaredPlatform(Constructor, Description),
         });

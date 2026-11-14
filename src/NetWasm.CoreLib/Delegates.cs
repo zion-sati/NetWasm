@@ -341,7 +341,7 @@ namespace System
         where TSender : allows ref struct
         where TEventArgs : allows ref struct;
 
-    public abstract class Delegate : ICloneable
+    public abstract partial class Delegate : ICloneable
     {
         // These fields are part of the compiler/runtime delegate ABI. A leaf
         // stores its target and method ID. A multicast delegate stores a flat
@@ -746,10 +746,15 @@ namespace System
         internal static extern Delegate? Clone(Delegate value);
     }
 
-    public abstract class MulticastDelegate : Delegate
+    public abstract partial class MulticastDelegate : Delegate
     {
         public sealed override bool Equals(object? value) => base.Equals(value);
         public sealed override int GetHashCode() => base.GetHashCode();
+
+        // Delegate already composes flat invocation lists; MulticastDelegate seals those
+        // operations as upstream does without changing the delegate layout.
+        protected sealed override Delegate CombineImpl(Delegate? follow) => base.CombineImpl(follow);
+        protected sealed override Delegate? RemoveImpl(Delegate? value) => base.RemoveImpl(value);
         public static bool operator ==(MulticastDelegate? left, MulticastDelegate? right) =>
             (Delegate?)left == right;
         public static bool operator !=(MulticastDelegate? left, MulticastDelegate? right) =>

@@ -25,7 +25,7 @@ namespace System
 
 namespace System.Runtime.InteropServices.JavaScript
 {
-    public sealed class JSObject : IDisposable
+    public class JSObject : IDisposable
     {
         private int _handle;
 
@@ -70,7 +70,7 @@ namespace System.Runtime.InteropServices.JavaScript
         }
     }
 
-    [AttributeUsage(AttributeTargets.Method)]
+    [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
     public sealed class JSImportAttribute : Attribute
     {
         public JSImportAttribute(string functionName)
@@ -88,7 +88,7 @@ namespace System.Runtime.InteropServices.JavaScript
         public string? ModuleName { get; }
     }
 
-    [AttributeUsage(AttributeTargets.Method)]
+    [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
     public sealed class JSExportAttribute : Attribute
     {
         public JSExportAttribute()

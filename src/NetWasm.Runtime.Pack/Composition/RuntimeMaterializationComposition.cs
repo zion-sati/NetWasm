@@ -27,7 +27,8 @@ internal static class RuntimeMaterializationComposition
             new RuntimeInlineIntentWriter(),
             new CommandInvoker(),
             new Sha256ArtifactDigestCalculator(),
-            CreateNativeMaterializer());
+            CreateNativeMaterializer(),
+            new ResponseFileLinkerCommandFactory());
     }
 
     public static IRuntimeNativeModuleMaterializer CreateNativeMaterializer()
@@ -61,6 +62,7 @@ internal static class RuntimeMaterializationComposition
             new RuntimeNativeValidationProfileValidator(),
             new RuntimeNativeArchiveFeatureValidator(
                 new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker()),
-                new RuntimeArtifactReader()));
+                new RuntimeArtifactReader()),
+            new ResponseFileLinkerCommandFactory());
     }
 }

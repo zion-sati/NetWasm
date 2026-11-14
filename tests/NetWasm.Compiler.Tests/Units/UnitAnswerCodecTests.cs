@@ -173,7 +173,8 @@ public sealed class UnitPlanCodecTests
     {
         using var assets = TestAssets.Create();
         var (assembly, entry) = Program(assets, program);
-        var (kept, decoded, used) = Plans(assets, assembly, entry, target);
+        // The expression program reaches a WASI 0.3 platform import, which needs the platform world an SDK build has.
+        var (kept, decoded, used) = Plans(assets, assembly, entry, target, platformWorld: program == "expressions");
 
         Assert.NotNull(decoded);
         Assert.Equal(kept, UnitPlanCodec.Encode(decoded.Target, decoded.RuntimeObjects, decoded.Program));
@@ -303,11 +304,13 @@ public sealed class UnitPlanCodecTests
 
     // The plans a compile kept, read back, and the target it emitted against.
     private static (byte[] Kept, UnitPlans? Decoded, InstructionModuleTarget Used) Plans(TestAssets assets, string assembly,
-        string entry, WasmTarget target)
+        string entry, WasmTarget target, bool platformWorld = false)
     {
         const string Name = "plans";
         var memory = new UnitStoreMemory();
         var options = new CompilerOptions(assembly, [assets.CoreLib], entry, "Run", [], Target: target,
+            WitPath: platformWorld ? Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0") : null,
+            WitWorld: platformWorld ? "netwasm:platform/platform@1.0.0" : null,
             Optimization: FinalWasmOptimization.O0,
             ReferenceAssemblyAliases: ImmutableDictionary<string, string>.Empty.Add("System.Private.CoreLib", "NetWasm.CoreLib"))
         {

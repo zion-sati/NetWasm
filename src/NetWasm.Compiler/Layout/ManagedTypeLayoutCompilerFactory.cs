@@ -62,7 +62,8 @@ internal sealed class ManagedTypeLayoutCompilerFactory(
         var staticFieldValues = new StaticFieldValueLayoutResolver(
             fields,
             program,
-            resolver);
+            resolver,
+            identities, new FieldLayoutFailureBinder());
         var methodValues = new MethodValueLayoutResolver(program, resolver);
         var implicitObjects = new ImplicitObjectLayoutBuilder(
             typeFinder,

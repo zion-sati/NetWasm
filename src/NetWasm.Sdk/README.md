@@ -41,7 +41,9 @@ A project can declare prebuilt WebAssembly archives using ordinary items:
 ```
 
 All three fields are required. `NetWasmLibraryName` matches the logical import
-name exactly; it does not need an `.a` suffix. There is no dynamic-library
+name exactly; it does not need an `.a` suffix. A P/Invoke into a library that no
+item names compiles to a body that throws `DllNotFoundException` when called, and
+the build warns (NW1017) for each one the program reaches. There is no dynamic-library
 loading or library-name filesystem search. Only regular `.a` archives are
 accepted, with matching WebAssembly target and supported features.
 

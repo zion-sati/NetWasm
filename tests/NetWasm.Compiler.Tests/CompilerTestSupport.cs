@@ -118,7 +118,7 @@ internal static class CompilerTestSupport
         fields,
         new ExplicitValueLayoutResolver(),
         layouts.Target,
-        layouts.TypeLayouts.ValueLayoutState);
+        layouts.TypeLayouts.ValueLayoutState, new FieldLayoutFailureBinder());
 
     internal static ITypeLayoutProvider CreateTypeLayouts(
         ITypeDefinitionResolver types,
@@ -147,6 +147,69 @@ internal static class CompilerTestSupport
         entryMethod,
         exports);
 
+    // The pages a module's active data segments need. A raw module imports its memory, and data
+    // segments are written when it is instantiated, so a host that creates that memory sizes it to
+    // hold the static data however large CoreLib's reachable data grows.
+    internal static long DataSegmentPages(byte[] module)
+    {
+        var position = 8;
+        long end = 0;
+        while (position < module.Length)
+        {
+            var id = module[position++];
+            var size = (int)ReadUnsignedLeb(module, ref position);
+            var next = position + size;
+            if (id == 11)
+            {
+                var count = ReadUnsignedLeb(module, ref position);
+                for (var segment = 0L; segment < count; segment++)
+                {
+                    var flags = ReadUnsignedLeb(module, ref position);
+                    if (flags == 2) ReadUnsignedLeb(module, ref position);
+                    long offset = 0;
+                    if (flags != 1)
+                    {
+                        if (module[position++] is not (0x41 or 0x42))
+                            throw new InvalidDataException("a data segment's offset is not a constant");
+                        offset = ReadSignedLeb(module, ref position);
+                        if (module[position++] != 0x0B) throw new InvalidDataException("a data segment's offset does not end");
+                    }
+                    var length = ReadUnsignedLeb(module, ref position);
+                    position += (int)length;
+                    if (flags != 1) end = Math.Max(end, offset + length);
+                }
+            }
+            position = next;
+        }
+        return Math.Max(1, (end + 65535) / 65536);
+    }
+
+    private static long ReadUnsignedLeb(byte[] bytes, ref int position)
+    {
+        long value = 0;
+        for (var shift = 0; ; shift += 7)
+        {
+            var b = bytes[position++];
+            value |= (long)(b & 0x7F) << shift;
+            if ((b & 0x80) == 0) return value;
+        }
+    }
+
+    private static long ReadSignedLeb(byte[] bytes, ref int position)
+    {
+        long value = 0;
+        var shift = 0;
+        byte b;
+        do
+        {
+            b = bytes[position++];
+            value |= (long)(b & 0x7F) << shift;
+            shift += 7;
+        }
+        while ((b & 0x80) != 0);
+        return shift < 64 && (b & 0x40) != 0 ? value | (-1L << shift) : value;
+    }
+
     internal static int ExecuteWithNode(
         byte[] module,
         string directory,
@@ -168,9 +231,10 @@ internal static class CompilerTestSupport
         var expectedEnvironmentReadsText = expectedEnvironmentReadsBeforeRun?.ToString(
             System.Globalization.CultureInfo.InvariantCulture) ?? "null";
         var assertStaticRootsRegisterOnceText = assertStaticRootsRegisterOnce ? "true" : "false";
+        var pages = DataSegmentPages(module).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var memoryDescriptorText = target == WasmTarget.Wasm64
-            ? "{initial:1n,address:'i64'}"
-            : "{initial:1}";
+            ? $"{{initial:{pages}n,address:'i64'}}"
+            : $"{{initial:{pages}}}";
         var zeroAddressText = target == WasmTarget.Wasm64 ? "0n" : "0";
         var typeTablePath = System.Text.Json.JsonSerializer.Serialize(Path.Combine(
             AppContext.BaseDirectory, "Correctness", "runtime-type-table.cjs"));
@@ -574,6 +638,22 @@ internal static class CompilerTestSupport
         return long.Parse(descriptor.Value.GetString()!,
             System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    // The program's standard output as the standard WASI host captured it.
+    internal static string ExecuteWithStandardWasiNodeCapturingOutput(
+        byte[] module,
+        string directory,
+        int input,
+        WasmTarget target,
+        int staticDataEnd) =>
+        ExecuteWithStandardWasiNodeCore(
+            module,
+            directory,
+            input.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            target,
+            staticDataEnd,
+            ImmutableDictionary<string, string>.Empty,
+            null).GetProperty("stdout").GetString()!;
 
     private static System.Text.Json.JsonElement ExecuteWithStandardWasiNodeCore(
         byte[] module,

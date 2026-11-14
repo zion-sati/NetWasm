@@ -298,6 +298,7 @@ internal ref struct UnitFingerprintBuilder
         Add(site.Caller);
         Add(site.IlOffset);
         Add(site.Declaration.CanonicalName);
+        Add(site.SharesObjectDispatch);
         Add(site.Targets.Length);
         foreach (var target in site.Targets)
         {

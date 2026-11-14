@@ -500,14 +500,17 @@ internal sealed class ValueFrameLayoutPlanner(
                 : calledMethod.Signature;
             if (memberExecution?.MethodInvokers.Contains(calledMethod.Key) == true)
             {
+                // Other struct results go to a box the intrinsic allocates before the call.
                 var results = memberExecution.Methods.Values
                     .Select(method => method.Descriptor.Signature.ReturnSignatureType)
-                    .Where(type => type.StackKind == CliValueKind.ValueType)
+                    .Where(type => type.StackKind == CliValueKind.ValueType &&
+                        type.Shape == CliTypeShape.GenericInstantiation &&
+                        type.ElementType?.FullName == "System.Nullable`1")
                     .Distinct().Select(_values.GetValueLayout).ToArray();
                 if (results.Length != 0)
                 {
-                    // Only nullable scalars are admitted by member execution. Their return
-                    // scratch is reused across dispatcher cases and contains no GC roots.
+                    // Only nullable scalars use the scratch. It is reused across dispatcher
+                    // cases and contains no GC roots.
                     if (results.Any(layout => !layout.ReferenceOffsets.IsEmpty))
                     {
                         throw new CompilerException(new(DiagnosticCode.RuntimeContract,

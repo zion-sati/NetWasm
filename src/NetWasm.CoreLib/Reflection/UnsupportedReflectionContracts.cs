@@ -1,6 +1,7 @@
 namespace System.Reflection;
 
 [Serializable]
+[System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
 public sealed class AmbiguousMatchException : SystemException
 {
     public AmbiguousMatchException() { }
@@ -81,6 +82,9 @@ public abstract partial class MethodBase : MemberInfo
 
     public virtual ParameterInfo[] GetParameters() => throw UnsupportedMetadata();
 
+    // Whether the compiler planned the member for the expression interpreter's member execution.
+    internal virtual bool IsExpressionExecutable => false;
+
     // The compiler lowers every call, these included, to the handle's method; the bodies are
     // what a delegate or function pointer to them runs.
     public static MethodBase GetMethodFromHandle(RuntimeMethodHandle handle) => GetMethodFromHandle(handle);
@@ -139,8 +143,6 @@ public abstract partial class MethodInfo : MethodBase
     public override bool ContainsGenericParameters => false;
 
     internal virtual PropertyInfo? AssociatedProperty => null;
-
-    internal virtual bool IsExpressionExecutable => false;
 
     private static PlatformNotSupportedException UnsupportedMetadata() => new(
         "Runtime method metadata is unavailable because its compiler descriptor was not deployed.");
@@ -287,6 +289,9 @@ internal sealed class RuntimeConstructorInfo : ConstructorInfo
 
     public override ParameterInfo[] GetParameters() =>
         CreateParameters(ParameterTypeIds, ParameterCount);
+
+    internal override bool IsExpressionExecutable =>
+        (Flags & RuntimeMemberFlags.ExpressionExecutable) != 0;
 
     private static InvalidOperationException MissingName() => new(
         "The compiler-generated member descriptor is missing its demanded name.");

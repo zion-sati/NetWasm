@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Text.RegularExpressions</AssemblyName>
+    <DefineConstants>$(DefineConstants);SYSTEM_TEXT_REGULAREXPRESSIONS</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NetWasmRegexSourceGenerator>$(NETCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/System.Text.RegularExpressions.Generator.dll</NetWasmRegexSourceGenerator>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Collections/System.Collections.csproj" />
+    <ProjectReference Include="../System.Collections.NonGeneric/System.Collections.NonGeneric.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="System/Text/RegularExpressions/*.cs" />
+    <Compile Include="System/Text/RegularExpressions/Symbolic/*.cs" />
+    <!-- As upstream's project: Regex's own helpers and the Common files it links. -->
+    <Compile Include="System/Collections/HashtableExtensions.cs" />
+    <Compile Include="System/Text/StructListBuilder.cs" />
+    <Compile Include="System/Threading/StackHelper.cs" />
+    <Compile Include="Common/System/HexConverter.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="Common/System/Text/ValueStringBuilder.cs" />
+    <Compile Include="Common/System/Collections/Generic/ValueListBuilder.cs" />
+    <Compile Include="Common/System/Collections/Generic/ValueListBuilder.Pop.cs" />
+    <None Include="$(NetWasmRegexSourceGenerator)"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs/System.Text.RegularExpressions.Generator.dll" />
+  </ItemGroup>
+</Project>

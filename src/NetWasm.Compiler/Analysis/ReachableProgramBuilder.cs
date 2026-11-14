@@ -30,7 +30,10 @@ internal sealed class ReachableProgramBuilder(
                     pair.Value.Declaration,
                     state.DispatchTargets.TryGetValue(pair.Key, out var targets)
                         ? targets
-                        : []))
+                        : [])
+                {
+                    SharesObjectDispatch = SharesObjectDispatch(pair.Value, targets, state),
+                })
                 .ToImmutableDictionary(site => site.Key, StringComparer.Ordinal);
         var methods = state.Methods;
         var constructedMethods = state.ConstructedMethods;
@@ -86,10 +89,22 @@ internal sealed class ReachableProgramBuilder(
             exports,
             allocatingMethods,
             rootMaps,
-            state.Finalizers,
+            // A finalizer can be discovered first through another path (a dispatch slot or a base call) as an equal but
+            // separately built model. The program's finalizer is the instance it compiles.
+            state.Finalizers.ToImmutableDictionary(
+                pair => pair.Key,
+                pair => state.MethodInstances.TryGetValue(pair.Value.CanonicalName, out var instance)
+                    ? instance
+                    : pair.Value),
             state.ImplicitExceptions)
         {
+            TypeDependencyPaths = state.TypeDependencyPaths,
             EnumMetadataRequirements = state.EnumMetadataRequirements,
+            UninitializedObjectTypes = [.. state.UninitializedObjectTypes
+                .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
+            StructMarshallingTypes = [.. state.StructMarshallingTypes
+                .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
+            StructMarshallingFieldNames = state.StructMarshallingFieldNames,
             MethodContributions = state.Contributions,
             ModuleInitializers = [
                 .. state.ModuleInitializers
@@ -122,6 +137,7 @@ internal sealed class ReachableProgramBuilder(
                     .Order(StringComparer.Ordinal)
             ],
             DispatchCallSites = dispatchCallSites,
+            SharedObjectDispatch = state.SharedObjectDispatch,
             TypeTestSites = typeTestSites,
             CallableMethods = state.CallableMethods,
             NativeCallbacks = state.NativeCallbacks,
@@ -150,4 +166,16 @@ internal sealed class ReachableProgramBuilder(
         method,
         ImmutableDictionary<RootSource, int>.Empty,
         ImmutableDictionary<int, SafepointRootMap>.Empty);
+
+    // An unbounded virtual call on object with many targets uses the shared body the analysis reached for it; the
+    // shared body's own call dispatches.
+    private static bool SharesObjectDispatch(
+        DispatchDeclaration declaration,
+        ImmutableArray<DispatchTargetModel> targets,
+        ReachabilityLedgerSnapshot state) =>
+        declaration.Operation == CilOperation.CallVirtual &&
+        declaration.ReceiverBound is null &&
+        !targets.IsDefault && targets.Length >= SharedDispatchPolicy.MinimumTargets &&
+        state.SharedObjectDispatch.TryGetValue(declaration.Declaration.CanonicalName, out var shared) &&
+        declaration.Caller != shared.CanonicalName;
 }

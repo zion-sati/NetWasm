@@ -9,8 +9,8 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
 
     <!-- global.json pins the ordinary SDK generator. The pinned
-         dotnet/runtime-corelib baseline is 474ed963699fc29809015392738a15231aaae2de
-         (.NET 11-era); source intentionally uses their common STJ contract. -->
+         dotnet/runtime-corelib baseline is deae2e32bf0e018e09d64597b7c59b62b73bb3ce
+         (.NET 11.0.0); source intentionally uses their common STJ contract. -->
 
     <!-- The acceptance test checks these files to prove that the ordinary SDK
          System.Text.Json generator ran during the host build. -->

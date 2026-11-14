@@ -1,9 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de (Marshal.Mono.cs).
-// NetWasm counterpart of upstream's runtime-specific Marshal part. NetWasm keeps no per-call
-// last-error state, prelinks nothing at run time and generates no delegate trampolines, so those
-// services throw PlatformNotSupportedException; the object-based reads and writes and
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce (Marshal.Mono.cs).
+// NetWasm counterpart of upstream's runtime-specific Marshal part. The last P/Invoke error is native AOT's.
+// NetWasm prelinks nothing at run time and generates no delegate trampolines, so those services throw
+// PlatformNotSupportedException; the object-based reads and writes and
 // GetExceptionCode follow Mono's PlatformNotSupported region verbatim.
 
 using System.ComponentModel;
@@ -19,11 +19,17 @@ namespace System.Runtime.InteropServices
         internal static bool IsPinnable(object? obj) =>
             obj is null || !RuntimeHelpers.ObjectContainsReferences(obj);
 
-        public static int GetLastPInvokeError() =>
-            throw new PlatformNotSupportedException(SR.PlatformNotSupported_LastPInvokeError);
+        // Native AOT's (PInvokeMarshal.t_lastError): the value LibraryImport's generated code stores after a call with
+        // SetLastError. A thread-static there; NetWasm has one thread.
+        private static int s_lastPInvokeError;
 
-        public static void SetLastPInvokeError(int error) =>
-            throw new PlatformNotSupportedException(SR.PlatformNotSupported_LastPInvokeError);
+        public static int GetLastPInvokeError() => s_lastPInvokeError;
+
+        public static void SetLastPInvokeError(int error) => s_lastPInvokeError = error;
+
+        // Upstream's Unix GetPInvokeErrorMessage, internal here (it is newer than netstandard 2.1): the C library's
+        // message for the error, from NetWasm's table of the WASI C library's messages.
+        internal static string GetPInvokeErrorMessage(int error) => Interop.Sys.StrError(error);
 
         private static void PrelinkCore(MethodInfo m) =>
             throw new PlatformNotSupportedException(SR.PlatformNotSupported_Prelink);

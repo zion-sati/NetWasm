@@ -1,0 +1,177 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// The strings these sources use, from System.Private.DataContractSerialization's Strings.resx at dotnet/runtime
+// 811225a4, plus the NetWasm_ messages of NetWasm's adaptations.
+
+namespace System
+{
+    internal static class SR
+    {
+        internal const string CombinedPrefixNSLength = "The combined length of the prefix and namespace must not be greater than {0}.";
+        internal const string ErrorDeserializing = "There was an error deserializing the object {0}. {1}";
+        internal const string ErrorSerializing = "There was an error serializing the object {0}. {1}";
+        internal const string ErrorTypeInfo = "of type {0}";
+        internal const string GenericCallbackException = "A user callback threw an exception.  Check the exception stack and inner exception to determine the callback that failed.";
+        internal const string InvalidCharacterEncountered = "Encountered invalid character '{0}'.";
+        internal const string InvalidInclusivePrefixListCollection = "The inclusive namespace prefix collection cannot contain null as one of the items.";
+        internal const string InvalidLocalNameEmpty = "The empty string is not a valid local name.";
+        internal const string JsonAttributeAlreadyWritten = "Cannot write attribute with local name '{0}' multiple times.";
+        internal const string JsonAttributeMustHaveElement = "WriteStartElement must be called at least once before WriteStartAttribute may be called.";
+        internal const string JsonCannotWriteStandaloneTextAfterQuotedText = "Cannot write a CLR value that maps to number, array, object, true, false or null in JSON after a string value has been written.";
+        internal const string JsonCannotWriteTextAfterNonTextAttribute = "Attempted to write text after writing attribute type='{0}'. Text may be written only after the attributes type='number', type='boolean', or type='string'.";
+        internal const string JsonEncodingNotSupported = "Encoding not supported in JSON. UTF-8, Unicode, and BigEndianUnicode are the only supported encodings.";
+        internal const string JsonEncounteredUnexpectedCharacter = "Encountered unexpected character '{0}'.";
+        internal const string JsonEndElementNoOpenNodes = "No corresponding start element is open.";
+        internal const string JsonExpectedEncoding = "The expected encoding '{0}' does not match the actual encoding '{1}'.";
+        internal const string JsonInvalidBytes = "Invalid byte encoding.";
+        internal const string JsonInvalidDataTypeSpecifiedForServerType = "Attempted to write an attribute '{0}'='{1}' after writing the attribute with local name '{2}'. The attribute with local name '{2}' is only valid with an attribute '{0}'='{3}'.";
+        internal const string JsonInvalidFFFE = "Characters with hexadecimal values 0xFFFE and 0xFFFF are not valid.";
+        internal const string JsonInvalidItemNameForArrayElement = "Encountered unexpected element local name '{0}' for item in collection. '{1}' is the only valid local name for elements in a collection.";
+        internal const string JsonInvalidLocalNameEmpty = "The empty string is not a valid local name in JSON.";
+        internal const string JsonInvalidMethodBetweenStartEndAttribute = "Cannot write content while an attribute is being written.";
+        internal const string JsonInvalidRootElementName = "Encountered invalid root element name '{0}'. '{1}' is the only allowed root element name.";
+        internal const string JsonInvalidStartElementCall = "WriteStartElement can be called at only the start of a document or immediately after calling WriteEndElement.";
+        internal const string JsonInvalidWriteState = "'{0}' cannot be called while WriteState is '{1}'.";
+        internal const string JsonMethodNotSupported = "This XmlDictionaryWriter implementation does not support the '{0}' method.";
+        internal const string JsonMultipleRootElementsNotAllowedOnWriter = "This XmlDictionaryWriter implementation does not support the writing of multiple root elements.";
+        internal const string JsonMustSpecifyDataType = "You must write an attribute '{0}'='{1}' after writing the attribute with local name '{2}'.";
+        internal const string JsonMustUseWriteStringForWritingAttributeValues = "To write attribute values with this XmlDictionaryWriter implementation, you must write either string or char[] values.";
+        internal const string JsonNamespaceMustBeEmpty = "Encountered unexpected namespace '{0}'. The namespace must be empty.";
+        internal const string JsonNestedArraysNotSupported = "Nested arrays are not supported.";
+        internal const string JsonNoMatchingStartAttribute = "There is no open attribute.";
+        internal const string JsonNodeTypeArrayOrObjectNotSpecified = "WriteStartElement cannot be called immediately after WriteStartElement without writing the 'type'='array' or 'type='object' attribute.";
+        internal const string JsonOffsetExceedsBufferSize = "The specified offset exceeds the buffer size ({0} bytes).";
+        internal const string JsonOnlyWhitespace = "Unexpected character '{0}'. '{1}' can write only whitespace characters.";
+        internal const string JsonOpenAttributeMustBeClosedFirst = "Cannot call {0} while an attribute is being written.";
+        internal const string JsonPrefixMustBeNullOrEmpty = "Encountered unexpected prefix '{0}'. The prefix must be null or empty.";
+        internal const string JsonServerTypeSpecifiedForInvalidDataType = "Attempted to write an attribute with local name '{0}' after writing the attribute '{1}'='{2}'. An attribute with local name '{0}' may be written only after writing the attribute '{1}'='{3}'.";
+        internal const string JsonSizeExceedsRemainingBufferSpace = "The specified size exceeds the remaining buffer space ('{0}' bytes).";
+        internal const string JsonUnexpectedAttributeLocalName = "Encountered unexpected attribute local name '{0}'. 'type' and '__type' are the only allowed local names for attributes. 'type' can be used to influence how data is written; its valid values are 'object', 'string', 'number', 'null', 'boolean', and 'array'. '__type' can be used to provide type hint information to the writer.";
+        internal const string JsonUnexpectedAttributeValue = "The attribute 'type' must have one of the following strings as its values: 'string', 'number', 'array', 'object', 'null', or 'boolean'.  Encountered unexpected value '{0}'";
+        internal const string JsonUnexpectedEndOfFile = "Unexpected end of file.";
+        internal const string JsonWriteArrayNotSupported = "To write JSON arrays, use XML writer methods to write the attribute type='array' followed by methods like WriteStartElement (with the local name 'item'), WriteAttributeString, and WriteEndElement to write the JSON array items.";
+        internal const string JsonWriterClosed = "The writer is closed.";
+        internal const string JsonXmlInvalidDeclaration = "XML declaration can only be written at the beginning of the document.";
+        internal const string JsonXmlProcessingInstructionNotSupported = "Processing instructions (other than the XML declaration) are not supported.";
+        internal const string OffsetExceedsBufferSize = "The specified offset exceeds the buffer size ({0} bytes).";
+        internal const string PlatformNotSupported_MtomEncoding = "The Message Transmission Optimization Mechanism (MTOM) message encoding is not supported on this platform.";
+        internal const string QuotaCopyReadOnly = "Cannot copy XmlDictionaryReaderQuotas. Target is readonly.";
+        internal const string QuotaIsReadOnly = "The '{0}' quota is readonly.";
+        internal const string SizeExceedsRemainingBufferSpace = "The specified size exceeds the remaining buffer space ({0} bytes).";
+        internal const string UnexpectedEndOfFile = "Unexpected end of file.";
+        internal const string ValueMustBeInRange = "The value of this argument must fall within the range {0} to {1}.";
+        internal const string XmlArrayTooSmall = "Array too small.";
+        internal const string XmlArrayTooSmallInput = "Array too small.  Length of available data must be at least {0}.";
+        internal const string XmlArrayTooSmallOutput = "Array too small.  Must be able to hold at least {0}.";
+        internal const string XmlAsyncIsRunningException = "An asynchronous operation is already in progress.";
+        internal const string XmlBadBOM = "Unrecognized Byte Order Mark.";
+        internal const string XmlBase64DataExpected = "Base64 encoded data expected. Found {0}.";
+        internal const string XmlCDATAInvalidAtTopLevel = "CData elements not valid at top level of an XML document.";
+        internal const string XmlCanonicalizationNotStarted = "Canonicalization not started.";
+        internal const string XmlCanonicalizationStarted = "Canonicalization already started.";
+        internal const string XmlCloseCData = "']]>' not valid in text node content.";
+        internal const string XmlConversionOverflow = "The value '{0}' cannot be represented with the type '{1}'.";
+        internal const string XmlDeclMissing = "An XML declaration is required for all non UTF-8 documents.";
+        internal const string XmlDeclMissingVersion = "Version not found in XML declaration.";
+        internal const string XmlDeclNotFirst = "No characters can appear before the XML declaration.";
+        internal const string XmlDeclarationRequired = "An XML declaration with an encoding is required for all non UTF-8 documents.";
+        internal const string XmlDictionaryStringIDRange = "XmlDictionaryString IDs must be in the range from {0} to {1}.";
+        internal const string XmlDictionaryStringIDUndefinedSession = "XmlDictionaryString ID {0} not defined in the XmlBinaryReaderSession.";
+        internal const string XmlDictionaryStringIDUndefinedStatic = "XmlDictionaryString ID {0} not defined in the static dictionary.";
+        internal const string XmlDuplicateAttribute = "Duplicate attribute found. Both '{0}' and '{1}' are from the namespace '{2}'.";
+        internal const string XmlElementAttributes = "Only Element nodes have attributes.";
+        internal const string XmlEmptyNamespaceRequiresNullPrefix = "The empty namespace requires a null or empty prefix.";
+        internal const string XmlEncodingMismatch = "The encoding in the declaration '{0}' does not match the encoding of the document '{1}'.";
+        internal const string XmlEncodingNotSupported = "XML encoding not supported.";
+        internal const string XmlEndElementExpected = "End element '{0}' from namespace '{1}' expected. Found {2}.";
+        internal const string XmlEndElementNoOpenNodes = "No corresponding start element is open.";
+        internal const string XmlExpectedEncoding = "The expected encoding '{0}' does not match the actual encoding '{1}'.";
+        internal const string XmlFoundCData = "cdata '{0}'";
+        internal const string XmlFoundComment = "comment '{0}'";
+        internal const string XmlFoundElement = "element '{0}' from namespace '{1}'";
+        internal const string XmlFoundEndElement = "end element '{0}' from namespace '{1}'";
+        internal const string XmlFoundEndOfFile = "end of file";
+        internal const string XmlFoundNodeType = "node {0}";
+        internal const string XmlFoundText = "text '{0}'";
+        internal const string XmlFullStartElementExpected = "Non-empty start element expected. Found {0}.";
+        internal const string XmlFullStartElementLocalNameNsExpected = "Non-empty start element '{0}' from namespace '{1}' expected. Found {2}.";
+        internal const string XmlFullStartElementNameExpected = "Non-empty start element '{0}' expected. Found {1}.";
+        internal const string XmlIDDefined = "ID already defined.";
+        internal const string XmlIllegalOutsideRoot = "Text cannot be written outside the root element.";
+        internal const string XmlInvalidBase64Length = "Base64 sequence length ({0}) not valid. Must be a multiple of 4.";
+        internal const string XmlInvalidBase64Sequence = "The characters '{0}' at offset {1} are not a valid Base64 sequence.";
+        internal const string XmlInvalidBinHexLength = "BinHex sequence length ({0}) not valid. Must be a multiple of 2.";
+        internal const string XmlInvalidBinHexSequence = "The characters '{0}' at offset {1} are not a valid BinHex sequence.";
+        internal const string XmlInvalidBytes = "Invalid byte encoding.";
+        internal const string XmlInvalidCharRef = "Character reference not valid.";
+        internal const string XmlInvalidCommentChars = "XML comments cannot contain '--' or end with '-'.";
+        internal const string XmlInvalidConversion = "The value '{0}' cannot be parsed as the type '{1}'.";
+        internal const string XmlInvalidConversionWithoutValue = "The value cannot be parsed as the type '{0}'.";
+        internal const string XmlInvalidDeclaration = "XML declaration can only be written at the beginning of the document.";
+        internal const string XmlInvalidDepth = "Cannot call '{0}' while Depth is '{1}'.";
+        internal const string XmlInvalidEncoding_UTF8 = "XML encoding must be 'UTF-8'.";
+        internal const string XmlInvalidFFFE = "Characters with hexadecimal values 0xFFFE and 0xFFFF are not valid.";
+        internal const string XmlInvalidFormat = "The input source is not correctly formatted.";
+        internal const string XmlInvalidHighSurrogate = "High surrogate char '0x{0}' not valid. High surrogate chars range from 0xD800 to 0xDBFF.";
+        internal const string XmlInvalidID = "ID must be >";
+        internal const string XmlInvalidLowSurrogate = "Low surrogate char '0x{0}' not valid. Low surrogate chars range from 0xDC00 to 0xDFFF.";
+        internal const string XmlInvalidOperation = "The reader cannot be advanced.";
+        internal const string XmlInvalidPrefixState = "A prefix cannot be defined while WriteState is '{0}'.";
+        internal const string XmlInvalidQualifiedName = "Expected XML qualified name. Found '{0}'.";
+        internal const string XmlInvalidRootData = "The data at the root level is invalid.";
+        internal const string XmlInvalidStandalone = "'standalone' value in declaration must be 'yes' or 'no'.";
+        internal const string XmlInvalidStream = "Stream returned by IStreamProvider cannot be null.";
+        internal const string XmlInvalidSurrogate = "Surrogate char '0x{0}' not valid. Surrogate chars range from 0x10000 to 0x10FFFF.";
+        internal const string XmlInvalidUTF8Bytes = "'{0}' contains invalid UTF-8 bytes.";
+        internal const string XmlInvalidUniqueId = "UniqueId cannot be zero length.";
+        internal const string XmlInvalidVersion = "XML version must be '1.0'.";
+        internal const string XmlInvalidWriteState = "'{0}' cannot be called while WriteState is '{1}'.";
+        internal const string XmlInvalidXmlByte = "The byte 0x{0} is not valid at this location.";
+        internal const string XmlInvalidXmlSpace = "'{0}' is not a valid xml:space value. Valid values are 'default' and 'preserve'.";
+        internal const string XmlKeyAlreadyExists = "The specified key already exists in the dictionary.";
+        internal const string XmlLineInfo = "Line {0}, position {1}.";
+        internal const string XmlMalformedDecl = "Malformed XML declaration.";
+        internal const string XmlMaxArrayLengthExceeded = "The maximum array length quota ({0}) has been exceeded while reading XML data. This quota may be increased by changing the MaxArrayLength property on the XmlDictionaryReaderQuotas object used when creating the XML reader.";
+        internal const string XmlMaxArrayLengthOrMaxItemsQuotaExceeded = "The maximum array length quota ({0}) or the maximum items in object graph quota has been exceeded while reading XML data. These quotas may be increased by changing the MaxArrayLength property on XmlDictionaryReaderQuotas or the MaxItemsInObjectGraph setting.";
+        internal const string XmlMaxBytesPerReadExceeded = "The 'maximum bytes per Read operation' quota ({0}) has been exceeded while reading XML data. Long element start tags (consisting of the element name, attribute names and attribute values) may trigger this quota. This quota may be increased by changing the MaxBytesPerRead property on the XmlDictionaryReaderQuotas object used when creating the XML reader.";
+        internal const string XmlMaxDepthExceeded = "The maximum read depth ({0}) has been exceeded because XML data being read has more levels of nesting than is allowed by the quota. This quota may be increased by changing the MaxDepth property on the XmlDictionaryReaderQuotas object used when creating the XML reader.";
+        internal const string XmlMaxNameTableCharCountExceeded = "The maximum nametable character count quota ({0}) has been exceeded while reading XML data. The nametable is a data structure used to store strings encountered during XML processing - long XML documents with non-repeating element names, attribute names and attribute values may trigger this quota. This quota may be increased by changing the MaxNameTableCharCount property on the XmlDictionaryReaderQuotas object used when creating the XML reader.";
+        internal const string XmlMaxStringContentLengthExceeded = "The maximum string content length quota ({0}) has been exceeded while reading XML data. This quota may be increased by changing the MaxStringContentLength property on the XmlDictionaryReaderQuotas object used when creating the XML reader.";
+        internal const string XmlMethodNotSupported = "This XmlWriter implementation does not support the '{0}' method.";
+        internal const string XmlMissingLowSurrogate = "The surrogate pair is invalid. Missing a low surrogate character.";
+        internal const string XmlMultipleRootElements = "There are multiple root elements.";
+        internal const string XmlNamespaceNotFound = "The namespace '{0}' is not defined.";
+        internal const string XmlNestedArraysNotSupported = "Nested arrays are not supported.";
+        internal const string XmlNoRootElement = "The document does not have a root element.";
+        internal const string XmlOnlyOneRoot = "Only one root element is permitted per document.";
+        internal const string XmlOnlySingleValue = "Only a single typed value may be written inside an attribute or content.";
+        internal const string XmlOnlyWhitespace = "Only whitespace characters can be written with this method.";
+        internal const string XmlPrefixBoundToNamespace = "The prefix '{0}' is bound to the namespace '{1}' and cannot be changed to '{2}'.";
+        internal const string XmlProcessingInstructionNotSupported = "Processing instructions (other than the XML declaration) and DTDs are not supported.";
+        internal const string XmlReservedPrefix = "Prefixes beginning with 'xml' (regardless of casing) are reserved for use by XML.";
+        internal const string XmlSpaceBetweenAttributes = "Whitespace must appear between attributes.";
+        internal const string XmlSpecificBindingNamespace = "The namespace '{1}' can only be bound to the prefix '{0}'.";
+        internal const string XmlSpecificBindingPrefix = "The prefix '{0}' can only be bound to the namespace '{1}'.";
+        internal const string XmlStartElementExpected = "Start element expected. Found {0}.";
+        internal const string XmlStartElementLocalNameNsExpected = "Start element '{0}' from namespace '{1}' expected. Found {2}.";
+        internal const string XmlStartElementNameExpected = "Start element '{0}' expected. Found {1}.";
+        internal const string XmlTagMismatch = "Start element '{0}' does not match end element '{1}'.";
+        internal const string XmlTokenExpected = "The token '{0}' was expected but found '{1}'.";
+        internal const string XmlUndefinedPrefix = "The prefix '{0}' is not defined.";
+        internal const string XmlUnexpectedEndElement = "No matching start tag for end element.";
+        internal const string XmlUnexpectedEndOfFile = "Unexpected end of file. Following elements are not closed: {0}.";
+        internal const string XmlWriterClosed = "The XmlWriter is closed.";
+        internal const string NetWasm_DataContractExportUnsupported = "Exporting data contracts needs reflection over CLR types, which is not available on NetWasm.";
+        internal const string NetWasm_DataContractJsonKnownTypeUnsupported = "DataContractJsonSerializer expands the known type '{0}' through reflection, which is not available on NetWasm.";
+        internal const string NetWasm_DataContractSerializerUnsupported = "Reading and writing with DataContractSerializer or DataContractJsonSerializer needs reflection-based data contracts, which are not available on NetWasm; XmlObjectSerializer subclasses and the XML and JSON dictionary readers and writers are available.";
+
+        internal static string Format(string resourceFormat, object? p1) => string.Format(resourceFormat, p1);
+
+        internal static string Format(string resourceFormat, object? p1, object? p2) => string.Format(resourceFormat, p1, p2);
+
+        internal static string Format(string resourceFormat, object? p1, object? p2, object? p3) => string.Format(resourceFormat, p1, p2, p3);
+
+        internal static string Format(string resourceFormat, params object?[]? args) =>
+            args is null ? resourceFormat : string.Format(resourceFormat, args);
+    }
+}

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata.RuntimeProvidedMembers;
 
@@ -39,6 +40,12 @@ public sealed class MetadataMethodImplementationResolverFactory(
             _methods.Create(snapshot),
             new ArrayMethodResolver(signatureComparer),
             stackTypes,
+            new FrameworkMethodContractValidator(new MetadataAssemblyResolver(
+                materialized.MetadataAssemblies, ImmutableDictionary<string, string>.Empty, availability)),
+            new RuntimeTypeDefinitions(materialized.MetadataAssemblies),
+            materialized.OriginalContractTypes,
+            new MetadataCrossAssemblyPrivateAccessValidator(new MetadataAssemblyResolver(
+                materialized.MetadataAssemblies, ImmutableDictionary<string, string>.Empty, availability)),
             new MetadataBaseTypeIdentityResolver(definitions,
                 new MetadataAssemblyResolver(materialized.MetadataAssemblies,
                     materialized.ReferenceAssemblyAliases, availability), signatures));

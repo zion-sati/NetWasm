@@ -15,14 +15,18 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 public sealed class ArrayGetValueIntrinsicEmitterTests
 {
     [Theory]
-    [InlineData(WasmTarget.Wasm32, false)]
-    [InlineData(WasmTarget.Wasm64, false)]
-    [InlineData(WasmTarget.Wasm32, true)]
-    [InlineData(WasmTarget.Wasm64, true)]
-    public void TranslatesTheRuntimeAllocationFailureSentinel(WasmTarget target, bool nullable)
+    [InlineData(WasmTarget.Wasm32, false, 0)]
+    [InlineData(WasmTarget.Wasm64, false, 0)]
+    [InlineData(WasmTarget.Wasm32, true, 0)]
+    [InlineData(WasmTarget.Wasm64, true, 0)]
+    [InlineData(WasmTarget.Wasm32, false, 1)]
+    [InlineData(WasmTarget.Wasm64, false, 1)]
+    [InlineData(WasmTarget.Wasm32, false, 2)]
+    [InlineData(WasmTarget.Wasm64, false, 2)]
+    public void TranslatesTheRuntimeAllocationFailureSentinel(WasmTarget target, bool nullable, int elementShape)
     {
         var layout = new RecordingLayoutProvider(WasmTargetLayout.For(target));
-        var descriptors = new Descriptors(nullable);
+        var descriptors = new Descriptors(nullable, elementShape);
         var receiver = new RecordingReceiver();
         var addresses = new RecordingAddresses();
         var exceptions = new RecordingExceptions();
@@ -50,11 +54,11 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         Assert.Equal((uint)imports.Resolve(RuntimeImportSymbol.ArrayGetValue, request.Instruction.Target.RuntimeImportSelection), tail[4].Operand.UnsignedValue);
         Assert.Equal((uint)request.Local(0, CliValueKind.ManagedReference), tail[5].Operand.UnsignedValue);
         Assert.Equal<int>(nullable ? [0, 4, 1] : [0, 1], addresses.Constants);
-        Assert.Equal(nullable ? 2 : 1, code.Count(i => i.Opcode == WasmOpcodes.If));
+        Assert.Equal(nullable || elementShape != 0 ? 2 : 1, code.Count(i => i.Opcode == WasmOpcodes.If));
         Assert.Equal(nullable ? Descriptors.Underlying : null, layout.ObjectIdentityRequest);
         Assert.Equal((uint)layout.ArrayElementTypeIdOffset, code[1].Operand.Offset);
         Assert.Equal([AddressOperation.Equal], addresses.Operations);
-        Assert.Equal([ManagedExceptionKind.OutOfMemory], exceptions.Kinds);
+        Assert.Equal<ManagedExceptionKind>(elementShape == 0 ? [ManagedExceptionKind.OutOfMemory] : [ManagedExceptionKind.NotSupported, ManagedExceptionKind.OutOfMemory], exceptions.Kinds);
     }
 
     [Fact]
@@ -65,7 +69,7 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         var layout = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
         var addresses = new RecordingAddresses();
         var emitter = new ArrayGetValueIntrinsicEmitter(new RecordingReceiver(), WasmRuntimeImports.CreateCatalog(),
-            addresses, new RecordingExceptions(), new Descriptors(true),
+            addresses, new RecordingExceptions(), new Descriptors(true, 0),
             new NullableTypeResolver(), new UnboxedLayouts(layout), layout, layout);
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayGetValue,
             [CliValueKind.ManagedReference, CliValueKind.I4]);
@@ -90,7 +94,7 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         public int TypeTypeId => layouts.TypeTypeId;
     }
 
-    private sealed class Descriptors(bool nullable) : ITypeDescriptorSource
+    private sealed class Descriptors(bool nullable, int elementShape) : ITypeDescriptorSource
     {
         internal static readonly CliTypeIdentity Underlying = CliTypeIdentity.FromStackKind(CliValueKind.I4);
         private static readonly CliTypeIdentity Nullable = CliTypeIdentity.GenericInstantiation(
@@ -99,7 +103,9 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
         public ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors => nullable
             ? [new(Underlying, 12, 0, 16, [], null), new(Nullable, 27, 0, 16, [], null)]
-            : [];
+            : elementShape == 0 ? [] : [new(elementShape == 1 ? CliTypeIdentity.UnmanagedPointer(Underlying) :
+                CliTypeIdentity.FunctionPointer(new(0, 0, 0, MethodSignatureModel.Create(CliValueKind.I4))),
+                37, 0, 16, [], null)];
     }
 
     private sealed class RecordingReceiver : IArrayReceiverValidator

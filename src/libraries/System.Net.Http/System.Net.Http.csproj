@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Net.Http</AssemblyName>
+    <!-- The generated wasi:http bindings are internal, under version namespaces (_1._0._0) the CLS check flags. -->
+    <NoWarn>$(NoWarn);CS3008</NoWarn>
+    <DefineConstants>$(DefineConstants);TARGET_WASI</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Net.Security/System.Net.Security.csproj" />
+    <!-- DecompressionHandler's codecs, as upstream references them. -->
+    <ProjectReference Include="../System.IO.Compression/System.IO.Compression.csproj" />
+    <ProjectReference Include="../System.IO.Compression.Brotli/System.IO.Compression.Brotli.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Net/HttpStatusCode.cs" />
+    <!-- System.Net.Http at dotnet/runtime 811225a4 (its WASI compile list), copied verbatim and adapted where marked
+         "NetWasm:"; members newer than netstandard 2.1 are left out or internal, and WasiHttpHandler sends through
+         IHttpTransport, whose default sends through wasi:http 0.3. -->
+    <Compile Include="Common/System/**/*.cs" />
+    <Compile Include="System/Net/Http/**/*.cs" />
+  </ItemGroup>
+</Project>

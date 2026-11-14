@@ -1,7 +1,7 @@
 namespace System.Collections.Generic
 {
     // Portions derived from dotnet/runtime System.Private.CoreLib's
-    // KeyValuePair helpers at commit 474ed963699fc29809015392738a15231aaae2de.
+    // KeyValuePair helpers at commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
     public static class KeyValuePair
     {
         public static KeyValuePair<TKey, TValue> Create<TKey, TValue>(TKey key, TValue value) =>
@@ -13,6 +13,7 @@ namespace System.Collections.Generic
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public readonly struct KeyValuePair<TKey, TValue>
     {
         public KeyValuePair(TKey key, TValue value)

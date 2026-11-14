@@ -23,7 +23,19 @@ public sealed record ReachableProgram(
     ImmutableDictionary<CliTypeIdentity, MethodInstanceModel> Finalizers,
     ImmutableHashSet<ManagedExceptionKind> ImplicitExceptions)
 {
+    internal ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>> TypeDependencyPaths { get; init; } =
+        ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>>.Empty;
+
     public ImmutableHashSet<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
+
+    // Types RuntimeHelpers.GetUninitializedObject creates; empty unless it is reachable.
+    public ImmutableArray<CliTypeIdentity> UninitializedObjectTypes { get; init; } = [];
+
+    // Types that receive structure-marshalling descriptors, and whether those descriptors carry
+    // field names for Marshal.OffsetOf; empty unless Marshal's structure members are reachable.
+    public ImmutableArray<CliTypeIdentity> StructMarshallingTypes { get; init; } = [];
+
+    public bool StructMarshallingFieldNames { get; init; }
 
     public ImmutableArray<EntityKey> ModuleInitializers { get; init; } = [];
 
@@ -100,6 +112,11 @@ public sealed record ReachableProgram(
 
     public ImmutableDictionary<string, DispatchCallSiteModel> DispatchCallSites { get; init; } =
         [];
+
+    // The shared body each of object's virtual calls uses at its many-target sites, by declaration
+    // (SharedDispatchPolicy).
+    public ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
 
     public ImmutableDictionary<string, TypeTestSiteModel> TypeTestSites { get; init; } =
         [];

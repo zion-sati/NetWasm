@@ -104,6 +104,13 @@ internal static class CompilationOptionsFingerprint
         Add("optimization", options.Optimization);
         Add("overrides", options.OptimizationOverrides);
         foreach (var module in options.ImportModules) Add("import-module", module);
+        Add("binds-linked-native", options.LinkedNativeLibraries is not null);
+        foreach (var (name, value) in options.FeatureSwitches.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            Add("feature-switch", $"{name}={value}");
+        foreach (var (name, value) in options.RuntimeProperties)
+            Add("runtime-property", $"{name}={value}");
+        foreach (var library in (options.LinkedNativeLibraries ?? []).Order(StringComparer.Ordinal))
+            Add("native-library", library);
         return Convert.ToHexString(XxHash128.Hash(Encoding.UTF8.GetBytes(text.ToString())));
     }
 }

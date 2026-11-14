@@ -1,0 +1,38 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- The SDK's HTTP service support, for a netwasm0.1 build with NetWasm.App (System.Net.Http).
+       An OutputType Component whose world is NetWasm's service world is a wasi:http service. The
+       world's bindings (internal, in <namespace>.WasiHttp) and the bridge that implements their
+       handler export over the application's ServiceExports.Handle(HttpRequestMessage) compile with
+       it. The application implements that partial method in NetWasmHttpServiceNamespace, which is
+       the project's root namespace unless set. -->
+  <PropertyGroup>
+    <_NetWasmHttpService Condition="'$(_NetWasmComponentLibrary)' == 'true' AND ('$(NetWasmWorld)' == 'service' OR '$(NetWasmWorld)' == 'netwasm:command/service@1.0.0' OR '$(NetWasmWorld)' == 'netwasm:command@1.0.0/service')">true</_NetWasmHttpService>
+    <NetWasmHttpServiceNamespace Condition="'$(NetWasmHttpServiceNamespace)' == '' AND '$(RootNamespace)' != ''">$(RootNamespace)</NetWasmHttpServiceNamespace>
+    <NetWasmHttpServiceNamespace Condition="'$(NetWasmHttpServiceNamespace)' == ''">$(AssemblyName)</NetWasmHttpServiceNamespace>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_NetWasmHttpService)' == 'true' AND '$(NetWasmWitPath)' != ''">
+    <NetWasmWit Include="$(NetWasmWitPath)"
+                World="$(NetWasmWorld)"
+                Namespace="$(NetWasmHttpServiceNamespace).WasiHttp"
+                Accessibility="Internal" />
+  </ItemGroup>
+
+  <Target Name="NetWasmHttpServiceBridge"
+          BeforeTargets="CoreCompile;NetWasmWriteCompilationIdentity"
+          Condition="'$(_NetWasmHttpService)' == 'true'">
+    <PropertyGroup>
+      <_NetWasmHttpServiceBridgePath>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'http-service', 'HttpServiceExports.g.cs'))))</_NetWasmHttpServiceBridgePath>
+      <_NetWasmHttpServiceBridge>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)HttpServiceExports.cs.template').Replace('__NAMESPACE__', '$(NetWasmHttpServiceNamespace)'))</_NetWasmHttpServiceBridge>
+    </PropertyGroup>
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(_NetWasmHttpServiceBridgePath)'))" />
+    <WriteLinesToFile File="$(_NetWasmHttpServiceBridgePath)"
+                      Lines="$([MSBuild]::Escape('$(_NetWasmHttpServiceBridge)'))"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(_NetWasmHttpServiceBridgePath)" />
+      <FileWrites Include="$(_NetWasmHttpServiceBridgePath)" />
+    </ItemGroup>
+  </Target>
+</Project>

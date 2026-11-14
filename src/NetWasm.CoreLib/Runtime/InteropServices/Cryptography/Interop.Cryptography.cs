@@ -1,5 +1,7 @@
 namespace System
 {
+    using Runtime.InteropServices.Cryptography;
+
     internal static unsafe partial class Interop
     {
         internal static void GetCryptographicallySecureRandomBytes(

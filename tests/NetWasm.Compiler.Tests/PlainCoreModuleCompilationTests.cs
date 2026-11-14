@@ -223,7 +223,12 @@ public sealed class PlainCoreModuleCompilationTests
     public void ValidatorRejectsMissingInputs()
     {
         var validator = new NetWasm.Compiler.Pipeline.PlainCoreModuleValidator();
-        var world = new NetWasm.Compiler.Analysis.PlatformWorldCapabilities(false, false, false) { Wasi = false };
+        var world = new NetWasm.Compiler.Analysis.PlatformWorldCapabilities(false, false, false)
+        {
+            NativeIntegerSize = 4,
+            JavaScriptHost = false,
+            Wasi = false,
+        };
         Assert.Throws<ArgumentNullException>(() => { validator.Validate(null!, [], world, null!, null!); });
     }
 

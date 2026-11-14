@@ -7,7 +7,7 @@ namespace System
     // portable CoreLib profile. The singleton and IConvertible behavior remain
     // useful for managed database-null checks without that legacy dependency.
     [Serializable]
-    public sealed class DBNull : IConvertible
+    public sealed partial class DBNull : IConvertible
     {
         private DBNull()
         {

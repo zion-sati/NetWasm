@@ -37,9 +37,6 @@ internal static class KnownNonBugSkipReasons
 
     public const string DerivedMethodHandleContext =
         "CoreCLR accepts a derived declaring-type handle for an inherited method; NetWasm's bounded handle profile requires the exact compiler-emitted declaring type and throws ArgumentException.";
-
-    public const string InvariantDateTimeGeneralGrammar =
-        "NetWasm general DateOnly/TimeOnly parsing intentionally supports a deterministic invariant grammar; desktop partial-date defaults, permissive punctuation, eras, international suffixes, token adjacency, and fallback reinterpretation are outside this profile.";
 }
 
 internal sealed record KnownNonBugCorpusPartition(

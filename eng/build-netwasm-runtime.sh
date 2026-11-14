@@ -313,6 +313,7 @@ runtime_sources=(
   "$repo_root/src/NetWasm.Runtime/runtime_posix_io.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_stdio.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_posix_exit.c" \
+  "$repo_root/src/NetWasm.Runtime/runtime_posix_unavailable.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_abort.c" \
   "$repo_root/src/NetWasm.Runtime/object_data_address_resolver.c" \
   "$repo_root/src/NetWasm.Runtime/gc_metric_reader.c" \

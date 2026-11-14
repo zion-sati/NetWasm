@@ -23,6 +23,11 @@
              Architecture="CurrentArchitecture"
              TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmSelectFrameworkAssembliesTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmReadPreviousCompileOutputsTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
@@ -217,7 +222,25 @@
   <Target Name="NetWasmWriteCompilationIdentity"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
     <ItemGroup>
+      <!-- Reference facades supply type-forwarding metadata to the CIL compiler: the framework reference
+           views and NetWasm.App.Ref's facades, its assemblies with no NetWasm.App implementation (netstandard.dll,
+           System.Runtime.dll, System.Buffers.dll and the rest). They are compiler inputs, not executable
+           copy-local dependencies. -->
+      <_NetWasmAppRefFacade Remove="@(_NetWasmAppRefFacade)" />
+      <_NetWasmAppRefFacade Include="@(ReferencePath)" Condition="'%(ReferencePath.NuGetPackageId)' == 'NetWasm.App.Ref'">
+        <NetWasmAssemblyName>%(Filename)</NetWasmAssemblyName>
+      </_NetWasmAppRefFacade>
+      <_NetWasmImplementedAssembly Remove="@(_NetWasmImplementedAssembly)" />
+      <_NetWasmImplementedAssembly Include="@(NetWasmFrameworkAssembly)">
+        <NetWasmAssemblyName>%(Filename)</NetWasmAssemblyName>
+      </_NetWasmImplementedAssembly>
+      <_NetWasmAppRefFacade Remove="@(_NetWasmImplementedAssembly)" MatchOnMetadata="NetWasmAssemblyName" />
+      <_NetWasmMetadataFacadeReference Remove="@(_NetWasmMetadataFacadeReference)" />
+      <_NetWasmMetadataFacadeReference Include="@(ReferencePath)"
+                                      Condition="'%(ReferencePath.NetWasmMetadataReference)' == 'true'" />
+      <_NetWasmMetadataFacadeReference Include="@(_NetWasmAppRefFacade)" />
       <_NetWasmCompilationIdentityLine Remove="@(_NetWasmCompilationIdentityLine)" />
+      <_NetWasmCompilationIdentityLine Include="@(_NetWasmMetadataFacadeReference->'metadataFacade=%(FullPath)')" />
       <_NetWasmCompilationIdentityLine Include="library=$(_NetWasmCompileAsLibrary)" />
       <_NetWasmCompilationIdentityLine Include="worker=$(_NetWasmWorkerKind)" />
       <_NetWasmCompilationIdentityLine Include="javascriptExportBoundary=$(NetWasmRawWasm)" />
@@ -227,6 +250,10 @@
       <_NetWasmCompilationIdentityLine Include="world=$(NetWasmCompilerWitWorld)" />
       <_NetWasmCompilationIdentityLine Include="stackTrace=$(NetWasmManagedStackTrace)" />
       <_NetWasmCompilationIdentityLine Include="typeNames=$(NetWasmTypeNames)" />
+      <!-- The linked native libraries decide which P/Invokes bind and which throw DllNotFoundException. -->
+      <_NetWasmCompilationIdentityLine Include="@(NativeLibrary->'nativeLibrary=%(NetWasmLibraryName)/%(WasmTarget)')" />
+      <!-- Folded feature switches change compiled bodies. -->
+      <_NetWasmCompilationIdentityLine Include="@(RuntimeHostConfigurationOption->'runtimeOption=%(Identity)=%(Value)/%(Trim)')" />
       <_NetWasmCompilationIdentityLine Include="structuredDiagnostics=$(NetWasmStructuredDiagnostics)" />
       <_NetWasmCompilationIdentityLine Include="compiledUnits=$(NetWasmCompiledUnits)" />
       <_NetWasmCompilationIdentityLine Include="verifyCompiledUnits=$(NetWasmVerifyCompiledUnits)" />
@@ -310,15 +337,42 @@
 
   <!-- A design-time build (an IDE's, or dotnet watch's, which reads the compiler's command
        line) compiles no module: it resolves no build environment. -->
+  <!-- NetWasm.App's implementations (NetWasmFrameworkAssembly, from NetWasm.App.Runtime) that the program's
+       assemblies reach, transitively: the compiler gets those, as an application's framework references. -->
+  <Target Name="NetWasmSelectFrameworkAssemblies"
+          DependsOnTargets="NetWasmWriteCompilationIdentity"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
+    <ItemGroup>
+      <_NetWasmProgramAssembly Remove="@(_NetWasmProgramAssembly)" />
+      <_NetWasmProgramAssembly Include="@(IntermediateAssembly->'%(FullPath)')" />
+      <!-- A package's satellite resource assemblies (ca/Hangfire.Core.resources.dll and its siblings, which share an
+           identity) are not program assemblies: NetWasm's globalization is invariant, so no culture loads them. -->
+      <_NetWasmProgramAssembly Include="@(ReferenceCopyLocalPaths)"
+                               Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib' and '%(ReferenceCopyLocalPaths.Culture)' == ''" />
+      <_NetWasmFrameworkLinkReference Remove="@(_NetWasmFrameworkLinkReference)" />
+      <_NetWasmDisplacedProgramAssembly Remove="@(_NetWasmDisplacedProgramAssembly)" />
+    </ItemGroup>
+    <NetWasmSelectFrameworkAssembliesTask ProgramAssemblies="@(_NetWasmProgramAssembly)"
+                                          FrameworkAssemblies="@(NetWasmFrameworkAssembly)"
+                                          Facades="@(_NetWasmMetadataFacadeReference)"
+                                          Condition="'@(NetWasmFrameworkAssembly)' != ''">
+      <Output TaskParameter="SelectedAssemblies" ItemName="_NetWasmFrameworkLinkReference" />
+      <Output TaskParameter="DisplacedAssemblies" ItemName="_NetWasmDisplacedProgramAssembly" />
+    </NetWasmSelectFrameworkAssembliesTask>
+  </Target>
+
   <Target Name="NetWasmCompileCoreModule"
-          DependsOnTargets="NetWasmWriteCompilationIdentity;NetWasmReadPreviousCompileOutputs"
+          DependsOnTargets="NetWasmWriteCompilationIdentity;NetWasmReadPreviousCompileOutputs;NetWasmSelectFrameworkAssemblies"
           AfterTargets="CoreCompile"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(DesignTimeBuild)' != 'true'"
-          Inputs="@(IntermediateAssembly);@(ReferenceCopyLocalPaths);$(NetWasmRuntimeCoreLibPath);@(Compile);@(_NetWasmCompilerWitInput);@(_NetWasmPortablePdbInput);$(NetWasmCompilationIdentityPath)"
+          Inputs="@(IntermediateAssembly);@(ReferenceCopyLocalPaths);@(_NetWasmFrameworkLinkReference);@(_NetWasmMetadataFacadeReference);$(NetWasmRuntimeCoreLibPath);@(Compile);@(_NetWasmCompilerWitInput);@(_NetWasmPortablePdbInput);$(NetWasmCompilationIdentityPath)"
           Outputs="$(NetWasmCoreModuleOutputPath);$(NetWasmRuntimeLayoutPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerMetadataPath);$(NetWasmTypeSymbolsPath);$(NetWasmArtifactManifestPath);@(_NetWasmConditionalCompileOutput)">
     <ItemGroup>
       <_NetWasmManagedLinkReference Include="@(ReferenceCopyLocalPaths)"
-                                    Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib'" />
+                                    Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib' and '%(ReferenceCopyLocalPaths.Culture)' == ''" />
+      <!-- A package's copy of a framework assembly the framework's version replaces. -->
+      <_NetWasmManagedLinkReference Remove="@(_NetWasmDisplacedProgramAssembly)" />
+      <_NetWasmManagedLinkReference Include="@(_NetWasmFrameworkLinkReference)" />
       <_NetWasmManagedLinkReference Include="$(NetWasmRuntimeCoreLibPath)" />
     </ItemGroup>
     <Error Code="NWSDK002"
@@ -333,6 +387,7 @@
     <NetWasmCompileTask CompilerPath="$(NetWasmCompilerPath)"
                         InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
                         References="@(_NetWasmManagedLinkReference)"
+                        MetadataReferences="@(_NetWasmMetadataFacadeReference)"
                         Sources="@(Compile)"
                         CompileAsLibrary="$(_NetWasmCompileAsLibrary)"
                         PlainCoreModule="$(_NetWasmPlainCoreModule)"
@@ -351,6 +406,9 @@
                         WitPath="$(_NetWasmCompilerWitPath)"
                         WitWorld="$(NetWasmCompilerWitWorld)"
                         ImportModules="@(_NetWasmCompilerImportModuleDistinct)"
+                        NativeLibraries="@(NativeLibrary)"
+                        RuntimeHostConfigurationOptions="@(RuntimeHostConfigurationOption)"
+                        LinkedNativeOnly="true"
                         WasmToolsNodePath="$(NetWasmNodePath)"
                         WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                         WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
@@ -402,6 +460,7 @@
                         MethodSymbolsPath="$(NetWasmMethodSymbolsPath)" />
     <NetWasmWriteCompileArtifactManifestTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
                                              References="@(_NetWasmManagedLinkReference)"
+                                             MetadataReferences="@(_NetWasmMetadataFacadeReference)"
                                              Sources="@(Compile)"
                                              CompilationIdentityPath="$(NetWasmCompilationIdentityPath)"
                                              WitInputs="@(_NetWasmCompilerWitInput)"
@@ -598,15 +657,18 @@
   </Target>
 
   <Target Name="NetWasmValidateCompilerArtifacts"
-          DependsOnTargets="NetWasmWriteCompilationIdentity"
+          DependsOnTargets="NetWasmWriteCompilationIdentity;NetWasmSelectFrameworkAssemblies"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(NetWasmSemanticBuildId)' == ''">
     <ItemGroup>
       <_NetWasmValidationManagedLinkReference Include="@(ReferenceCopyLocalPaths)"
-                                              Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib'" />
+                                              Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib' and '%(ReferenceCopyLocalPaths.Culture)' == ''" />
+      <_NetWasmValidationManagedLinkReference Remove="@(_NetWasmDisplacedProgramAssembly)" />
+      <_NetWasmValidationManagedLinkReference Include="@(_NetWasmFrameworkLinkReference)" />
       <_NetWasmValidationManagedLinkReference Include="$(NetWasmRuntimeCoreLibPath)" />
     </ItemGroup>
     <NetWasmValidateArtifactTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
                                  References="@(_NetWasmValidationManagedLinkReference)"
+                                 MetadataReferences="@(_NetWasmMetadataFacadeReference)"
                                  Sources="@(Compile)"
                                  CompilationIdentityPath="$(NetWasmCompilationIdentityPath)"
                                  WitInputs="@(_NetWasmCompilerWitInput)"

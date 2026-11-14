@@ -978,8 +978,12 @@ public sealed class RuntimeTypeCompilationTests
             "latest",
             optimize: false);
 
+        // At O0 the expression program reaches a WASI 0.3 platform import, which needs the world an SDK build has.
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly, [assets.CoreLib], "TypeHandlesFixture.EntryPoint", "Run", [], Target: target,
+            assembly, [assets.CoreLib], "TypeHandlesFixture.EntryPoint", "Run",
+            [new("run", "TypeHandlesFixture.EntryPoint", "Run")], Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
             Optimization: optimization));
 
         Assert.Equal(0, ExecuteWithStandardWasiNode(
@@ -1463,7 +1467,7 @@ public sealed class RuntimeTypeCompilationTests
             "Run",
             []));
 
-        Assert.Equal(65535, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
+        Assert.Equal(65535, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 41, WasmTarget.Wasm32, result.StaticDataEnd));
         Assert.False(result.Program.RequiresTypeFacts);
         Assert.Contains(
             result.Program.Methods.Values

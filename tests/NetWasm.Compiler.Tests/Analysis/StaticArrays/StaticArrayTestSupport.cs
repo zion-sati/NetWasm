@@ -54,9 +54,19 @@ internal static class StaticArrayTestSupport
 
     internal static CilInstruction I(int offset, CilOperation operation, CilOperand? operand = null) => new(offset, offset + 1, operation, operand ?? new CilOperand.None());
 
-    internal sealed class Facts : IMethodBodyReader, IFieldRepository, ITypeDefinitionResolver, IMethodRepository,
+    internal sealed class Facts : IMethodBodyReader, ICalleeMethodBodyReader, IFieldRepository, ITypeDefinitionResolver, IMethodRepository,
         ICalledMethodResolver, ITypeOperandResolver, IClosedTypeIdentityComparer, IRuntimeIntrinsicRegistry
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         internal Dictionary<EntityKey, FieldDefinitionModel> Fields { get; } = new() { [Table.Key] = Table, [Value.Key] = Value };
         internal bool HasInitializer { get; set; }
         internal bool BeforeFieldInit { get; set; }

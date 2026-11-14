@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Generated from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de resources;
+// Generated from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce resources;
 // only the strings this namespace references are included.
 
 namespace System.Globalization
@@ -11,6 +11,10 @@ namespace System.Globalization
             "Specified argument was out of the range of valid values.";
         internal const string Arg_ArrayZeroError =
             "Array must not be of length zero.";
+        internal const string Arg_BinaryStyleNotSupported =
+            "The number style AllowBinarySpecifier is not supported on floating point data types.";
+        internal const string Arg_InvalidHexFloatStyle =
+            "With the AllowHexSpecifier bit set in the enum bit field, the only other valid bits that can be combined into the enum value must be a subset of HexFloat (AllowLeadingWhite, AllowTrailingWhite, AllowLeadingSign, AllowDecimalPoint, and AllowExponent). AllowExponent is required when AllowHexSpecifier is specified.";
         internal const string ArgumentNull_ArrayValue =
             "Found a null value within an array.";
         internal const string ArgumentOutOfRange_Count =
@@ -19,6 +23,10 @@ namespace System.Globalization
             "Index was out of range. Must be non-negative and less than the size of the collection.";
         internal const string Argument_CompareOptionOrdinal =
             "CompareOption.Ordinal cannot be used with other options.";
+        internal const string Argument_ConflictingDateTimeRoundtripStyles =
+            "The DateTimeStyles value RoundtripKind cannot be used with the values AssumeLocal, AssumeUniversal or AdjustToUniversal.";
+        internal const string Argument_ConflictingDateTimeStyles =
+            "The DateTimeStyles values AssumeLocal and AssumeUniversal cannot be used together.";
         internal const string Argument_CultureIetfNotSupported =
             "Culture IETF Name {0} is not a recognized IETF name.";
         internal const string Argument_CultureIsNeutral =
@@ -35,6 +43,8 @@ namespace System.Globalization
             "Not a valid calendar for the given culture.";
         internal const string Argument_InvalidCultureName =
             "Culture name '{0}' is not supported.";
+        internal const string Argument_InvalidDateTimeStyles =
+            "An undefined DateTimeStyles value is being used.";
         internal const string Argument_InvalidDigitSubstitution =
             "The DigitSubstitution property must be of a valid member of the DigitShapes enumeration. Valid entries include Context, NativeNational or None.";
         internal const string Argument_InvalidFlag =
@@ -47,6 +57,8 @@ namespace System.Globalization
             "The NativeDigits array must contain exactly ten members.";
         internal const string Argument_InvalidNativeDigitValue =
             "Each member of the NativeDigits array must be a single text element (one or more UTF-16 code points) with a Unicode Nd (Number, Decimal Digit) property indicating it is a digit.";
+        internal const string Argument_InvalidNumberStyles =
+            "An undefined NumberStyles value is being used.";
         internal const string Argument_InvalidNeutralRegionName =
             "The region name {0} should not correspond to neutral culture; a specific culture name is required.";
         internal const string Argument_InvalidResourceCultureName =
@@ -57,6 +69,14 @@ namespace System.Globalization
             "Culture name {0} or {1} is not supported.";
         internal const string Format_BadFormatSpecifier =
             "Format specifier '{0}' was invalid.";
+        internal const string Format_BadQuote =
+            "Cannot find a matching quote character for the character '{0}'.";
+        internal const string Format_BadTimeSpan =
+            "String '{0}' was not recognized as a valid TimeSpan.";
+        internal const string Format_InvalidString =
+            "Input string was not in a correct format.";
+        internal const string Format_NoFormatSpecifier =
+            "No format specifiers were provided.";
         internal const string InvalidOperation_EnumOpCantHappen =
             "Enumeration has either not started or has already finished.";
         internal const string ArgumentOutOfRange_AddValue =
@@ -113,10 +133,10 @@ namespace System.Globalization
             "Internal Error in DateTime and Calendar operations.";
         internal const string InvalidOperation_ReadOnly =
             "Instance is read-only.";
+        internal const string Overflow_TimeSpanElementTooLarge =
+            "The TimeSpan string '{0}' could not be parsed because at least one of the numeric components is out of range or contains too many digits.";
 
         // NetWasm strings for its globalization boundaries.
-        internal const string PlatformNotSupported_CultureCalendar =
-            "{0} needs culture data that NetWasm's invariant globalization profile does not provide.";
 
         internal static string Format(string format, object? arg0) =>
             string.Format(format, arg0);

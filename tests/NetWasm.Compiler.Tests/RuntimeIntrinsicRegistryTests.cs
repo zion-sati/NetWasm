@@ -9,6 +9,52 @@ namespace NetWasm.Compiler.Tests;
 public sealed class RuntimeIntrinsicRegistryTests
 {
     [Fact]
+    public void ArrayCreationRequiresTheExactInternalAllocationContract()
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var type = new EntityKey(assembly, 1);
+        var method = new MethodDefinitionModel(new(assembly, 2), type, "InternalCreateInstance", true,
+            MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4), 0);
+        var symbols = new DictionarySymbolFormatter((type, "System.Array"));
+        AssertIntrinsic(new RuntimeIntrinsicRegistry(symbols, [method]), method.Key, RuntimeIntrinsic.ArrayCreateInstance);
+        foreach (var invalid in new[]
+        {
+            method with { IsStatic = false },
+            method with { GenericArity = 1 },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.I4) },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.ManagedReference) },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I8, CliValueKind.I4) },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I8) },
+        })
+            Assert.False(((IRuntimeIntrinsicRegistry)new RuntimeIntrinsicRegistry(symbols, [invalid])).TryGetIntrinsic(invalid.Key, out _));
+    }
+
+    [Fact]
+    public void RectangularArrayCreationRequiresTheExactInternalAllocationContract()
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var type = new EntityKey(assembly, 1);
+        var method = new MethodDefinitionModel(new(assembly, 2), type, "InternalCreateRectangularInstance", true,
+            MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4,
+                CliValueKind.NativeInt, CliValueKind.I4), 0);
+        var symbols = new DictionarySymbolFormatter((type, "System.Array"));
+        AssertIntrinsic(new RuntimeIntrinsicRegistry(symbols, [method]), method.Key,
+            RuntimeIntrinsic.ArrayCreateRectangularInstance);
+        foreach (var invalid in new[]
+        {
+            method with { IsStatic = false },
+            method with { GenericArity = 1 },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.I4,
+                CliValueKind.NativeInt, CliValueKind.I4) },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I4,
+                CliValueKind.I4, CliValueKind.ManagedReference, CliValueKind.I4) },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I4,
+                CliValueKind.I4, CliValueKind.NativeInt) },
+        })
+            Assert.False(((IRuntimeIntrinsicRegistry)new RuntimeIntrinsicRegistry(symbols, [invalid])).TryGetIntrinsic(invalid.Key, out _));
+    }
+
+    [Fact]
     public void MemberwiseCloneRequiresTheInstanceParameterlessObjectContract()
     {
         var assembly = new AssemblyIdentity("in-memory");
@@ -274,6 +320,22 @@ public sealed class RuntimeIntrinsicRegistryTests
         "System.Runtime.CompilerServices.RuntimeHelpersRuntime",
         "AreEqual",
         RuntimeIntrinsic.RuntimeHelpersEquals)]
+    [InlineData(
+        "System.Runtime.CompilerServices.RuntimeHelpersRuntime",
+        "RunClassConstructor",
+        RuntimeIntrinsic.RunClassConstructor)]
+    [InlineData(
+        "System.Runtime.CompilerServices.RuntimeHelpersRuntime",
+        "AllocateUninitializedObject",
+        RuntimeIntrinsic.AllocateUninitializedObject)]
+    [InlineData(
+        "System.Runtime.InteropServices.StructureMarshallingRuntime",
+        "GetDescriptor",
+        RuntimeIntrinsic.StructMarshallingData)]
+    [InlineData(
+        "System.Runtime.InteropServices.StructureMarshallingRuntime",
+        "GetDescriptorWithFieldNames",
+        RuntimeIntrinsic.StructMarshallingFieldNames)]
     [InlineData("System.DelegateRuntime", "Clone", RuntimeIntrinsic.DelegateClone)]
     public void RegistryRecognizesRuntimeSupportContracts(
         string declaringTypeName,
@@ -392,6 +454,31 @@ public sealed class RuntimeIntrinsicRegistryTests
             [method]);
 
         Assert.False(registry.TryGetIntrinsic(method.Key, out _));
+    }
+
+    // String's indexer is the character intrinsic only as char this[int].
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    public void RegistryRecognizesOnlyTheStringIndexerContract(bool parametersMatch, bool returnMatches, bool recognized)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var declaringType = new EntityKey(assembly, 1);
+        var method = new MethodDefinitionModel(
+            new EntityKey(assembly, 2),
+            declaringType,
+            "get_Chars",
+            false,
+            MethodSignatureModel.Create(
+                returnMatches ? CliValueKind.I4 : CliValueKind.I8,
+                parametersMatch ? [CliValueKind.I4] : [CliValueKind.I8]),
+            0);
+        var registry = new RuntimeIntrinsicRegistry(
+            new DictionarySymbolFormatter((declaringType, "System.String")),
+            [method]);
+
+        Assert.Equal(recognized, registry.TryGetIntrinsic(method.Key, out _));
     }
 
     [Fact]

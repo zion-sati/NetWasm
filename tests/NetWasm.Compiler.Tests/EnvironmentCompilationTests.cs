@@ -130,25 +130,28 @@ public sealed class EnvironmentCompilationTests
                         return -2;
                     if (Environment.NewLine.Length != 1 || Environment.NewLine[0] != '\n')
                         return -3;
-                    if (Rejects(() => { _ = Environment.MachineName; })
-                        + Rejects(() => { _ = Environment.UserName; })
-                        + Rejects(() => { _ = Environment.UserDomainName; })
-                        + Rejects(() => { _ = Environment.ProcessId; })
-                        + Rejects(() => { _ = Environment.Is64BitOperatingSystem; }) != 5)
+                    if (Environment.MachineName != "localhost")
+                        return -6;
+                    if (Rejects(() => { _ = Environment.UserName; }, "UserName")
+                        + Rejects(() => { _ = Environment.UserDomainName; }, "UserDomainName")
+                        + Rejects(() => { _ = Environment.ProcessId; }, "ProcessId") != 3)
                         return -4;
+                    if (Environment.Is64BitOperatingSystem != Environment.Is64BitProcess)
+                        return -5;
                     return 42;
                 }
 
-                private static int Rejects(Action read)
+                // The exception names the member it rejects.
+                private static int Rejects(Action read, string member)
                 {
                     try
                     {
                         read();
                         return 0;
                     }
-                    catch (PlatformNotSupportedException)
+                    catch (PlatformNotSupportedException exception)
                     {
-                        return 1;
+                        return exception.Message.Contains(member) ? 1 : 0;
                     }
                 }
             }

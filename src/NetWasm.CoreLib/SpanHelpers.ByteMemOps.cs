@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/SpanHelpers.ByteMemOps.cs
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/System.Private.CoreLib/src/System/SpanHelpers.ByteMemOps.cs
 // Adaptations: the native memmove and memset that large blocks call are Wasm's memory.copy and memory.fill,
 // and on NetWasm (NETWASM) blocks over 16 bytes take them: Wasmtime runs either faster than the unrolled
 // copies and stores from 17 bytes, and the 17- to 64-byte and 64-byte-block paths are left out. The

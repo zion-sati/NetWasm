@@ -1,13 +1,13 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Adapted from dotnet/runtime commit 474ed963699fc29809015392738a15231aaae2de,
+// Adapted from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce,
 // System.Private.CoreLib Number.Formatting.cs (FormatFloat, GetFloatingPointMaxDigitsAndPrecision,
 // FormatDecimal and TryFormatDecimal); FormatFloatingPointAsHex and ExtractFractionAndBiasedExponent
 // are copied unchanged.
-// NetWasm adaptation: the digits come from NetWasm's exact rational generator (GetFloatingRational,
-// GenerateRoundedDigits and the shortest round-trip search in Number.cs) instead of Grisu3 and
-// Dragon4. The layout is upstream's NumberToString/NumberToStringFormat with the caller's
-// NumberFormatInfo, as on desktop .NET in invariant globalization mode.
+// The digits come from upstream's Grisu3, falling back to Dragon4, as upstream does (owner decision
+// 2026-11-13, replacing NetWasm's exact rational generator, which allocated 4 KB to 30 KB per call).
+// The layout is upstream's NumberToString/NumberToStringFormat with the caller's NumberFormatInfo, as on
+// desktop .NET in invariant globalization mode.
 
 using System.Buffers.Text;
 using System.Collections.Generic;
@@ -98,9 +98,9 @@ namespace System
                     : negative ? FloatClass.NegativeInfinity : FloatClass.PositiveInfinity;
             }
             number.IsNegative = negative;
-            if (magnitude != 0)
+            if (magnitude != 0 && !Grisu3.TryRun(value, -1, ref number))
             {
-                FloatToNumber<TNumber>(magnitude, negative, -1, isSignificantDigits: true, ref number);
+                Dragon4(value, -1, isSignificantDigits: true, ref number);
             }
             return FloatClass.Finite;
         }
@@ -165,10 +165,12 @@ namespace System
             // accept values like 0 and others may require additional fixups.
             int nMaxDigits = GetFloatingPointMaxDigitsAndPrecision(fmt, ref precision, info, out bool isSignificantDigits);
 
-            if (magnitude != 0)
+            if (magnitude != 0 && (!isSignificantDigits || !Grisu3.TryRun(value, precision, ref number)))
             {
-                FloatToNumber<TNumber>(magnitude, negative, precision, isSignificantDigits, ref number);
+                Dragon4(value, precision, isSignificantDigits, ref number);
             }
+
+            number.CheckConsistency();
 
             if (fmt != 0)
             {
@@ -187,108 +189,6 @@ namespace System
                 NumberToStringFormat(ref vlb, ref number, format, info);
             }
             return null;
-        }
-
-        // Writes the decimal digits of a finite, non-zero magnitude into the number buffer, as upstream's
-        // Dragon4 does: the shortest round-trip digits when precision is -1, otherwise digits correctly
-        // rounded at the requested significant digit or decimal place. Trailing zeros are not stored.
-        private static void FloatToNumber<TNumber>(ulong magnitude, bool negative, int precision, bool isSignificantDigits, ref NumberBuffer number)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            GetFloatingRational(
-                magnitude,
-                out var numerator,
-                out var denominator,
-                TNumber.ExponentBits,
-                TNumber.ExponentBias,
-                TNumber.NormalMantissaBits);
-            var binaryExponent = FloorBinaryExponent(numerator, denominator);
-            var decimalExponent = (int)(binaryExponent * 30_103L / 100_000L);
-            while (CompareToPower10(numerator, denominator, decimalExponent) < 0)
-            {
-                decimalExponent--;
-            }
-            while (CompareToPower10(numerator, denominator, decimalExponent + 1) >= 0)
-            {
-                decimalExponent++;
-            }
-
-            char[] digits;
-            int digitCount;
-            int resultExponent;
-            if (precision == -1)
-            {
-                digits = [];
-                digitCount = 0;
-                resultExponent = decimalExponent;
-                for (var candidatePrecision = 1; candidatePrecision <= TNumber.MaxRoundTripDigits; candidatePrecision++)
-                {
-                    var candidate = GenerateRoundedDigits(
-                        numerator,
-                        denominator,
-                        decimalExponent,
-                        candidatePrecision,
-                        out var candidateExponent,
-                        out var candidateLength);
-                    var candidateBits = ConvertDecimalToFloatingBits<TNumber>(
-                        candidate,
-                        candidateLength,
-                        candidateExponent - candidateLength + 1,
-                        negative);
-                    var originalBits = negative ? magnitude | (1UL << (TNumber.NormalMantissaBits - 1 + TNumber.ExponentBits)) : magnitude;
-                    if (candidateBits != originalBits) continue;
-                    digits = candidate;
-                    digitCount = candidateLength;
-                    resultExponent = candidateExponent;
-                    break;
-                }
-            }
-            else
-            {
-                var significantDigits = isSignificantDigits ? precision : decimalExponent + precision + 1;
-                if (significantDigits <= 0)
-                {
-                    // The requested decimal place is above the first digit: the result is zero, or one unit
-                    // in that place when the value is more than half of it.
-                    if (decimalExponent < -precision - 1 || !RoundsSmallestFixedUnitUp(numerator, denominator, precision))
-                    {
-                        number.DigitsCount = 0;
-                        number.Scale = 0;
-                        number.Digits[0] = 0;
-                        return;
-                    }
-
-                    digits = ['1'];
-                    digitCount = 1;
-                    resultExponent = -precision;
-                }
-                else
-                {
-                    significantDigits = Math.Min(significantDigits, number.Digits.Length - 1);
-                    digits = GenerateRoundedDigits(
-                        numerator,
-                        denominator,
-                        decimalExponent,
-                        significantDigits,
-                        out resultExponent,
-                        out digitCount);
-                }
-            }
-
-            while (digitCount > 0 && digits[digitCount - 1] == '0')
-            {
-                digitCount--;
-            }
-
-            for (var i = 0; i < digitCount; i++)
-            {
-                number.Digits[i] = (byte)digits[i];
-            }
-            number.Digits[digitCount] = 0;
-            number.DigitsCount = digitCount;
-            // The generator's exponent is that of the first digit (10^e); NumberBuffer.Scale is the position
-            // of the decimal point after the first Scale digits, so it is e + 1.
-            number.Scale = digitCount == 0 ? 0 : resultExponent + 1;
         }
 
         private static int GetFloatingPointMaxDigitsAndPrecision(char fmt, ref int precision, NumberFormatInfo info, out bool isSignificantDigits)
@@ -519,9 +419,8 @@ namespace System
                     vlb.AppendSpan(precision).Fill(TChar.CastFrom('0'));
                 }
 
-                // Exponent sign is always emitted ('+' or '-'), consistent with the 'E' format.
                 vlb.Append(TChar.CastFrom(fmt == 'X' ? 'P' : 'p'));
-                vlb.Append(TChar.CastFrom('+'));
+                vlb.Append(info.PositiveSignTChar<TChar>());
                 vlb.Append(TChar.CastFrom('0'));
 
                 return;
@@ -669,22 +568,18 @@ namespace System
                 }
             }
 
-            // Emit exponent: p+NNN or p-NNN
-            // The exponent sign is always ASCII '+'/'-' per IEEE 754 §5.12.3,
-            // independent of NumberFormatInfo (which only governs the leading value sign).
             vlb.Append(TChar.CastFrom(fmt == 'X' ? 'P' : 'p'));
 
             if (actualExponent >= 0)
             {
-                vlb.Append(TChar.CastFrom('+'));
+                vlb.Append(info.PositiveSignTChar<TChar>());
             }
             else
             {
-                vlb.Append(TChar.CastFrom('-'));
+                vlb.Append(info.NegativeSignTChar<TChar>());
                 actualExponent = -actualExponent;
             }
 
-            // Write exponent digits
             Debug.Assert(actualExponent >= 0);
             int digitCount = FormattingHelpers.CountDigits((uint)actualExponent);
             TChar* pExponent = stackalloc TChar[digitCount];

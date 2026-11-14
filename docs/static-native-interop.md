@@ -124,7 +124,7 @@ constructors must not re-enter managed code.
 | Aggregates | Unmanaged sequential or explicit structs and unions by value, including nested, packed, fixed-buffer, padded, and qualified empty-root layouts |
 | Arrays | Qualified counted input, output, and in-out arrays with explicit count/capacity and call-scoped caller-owned storage |
 | Strings | Source-generated UTF-8 input marshalling, including null, empty, non-ASCII, and embedded NUL |
-| Handles | `SafeHandle` inputs borrowed with call lifetime protection |
+| Handles | `SafeHandle` inputs borrowed with call lifetime protection; with `LibraryImport`, `SafeHandle` results, `out` and `ref` parameters, which .NET's `SafeHandleMarshaller` constructs from the handle type's public parameterless constructor |
 | Callbacks | Static scalar/pointer `UnmanagedCallersOnly` callbacks, named or address-taken, with explicit registration lifetime |
 | Function pointers | Calls through `delegate* unmanaged`, to a native function or an `UnmanagedCallersOnly` method, with the shapes above |
 | Calling conventions | Those .NET accepts on its 64-bit platforms, each the C ABI: the default, `Cdecl`, `Stdcall` and `Thiscall`, with `SuppressGCTransition` or `MemberFunction`, on imports, callbacks and function pointers |
@@ -210,7 +210,7 @@ varargs, broad runtime/reflection marshalling, arbitrary custom marshallers,
 `SetLastError`, the `Fastcall` and `Swift` calling conventions, native threads,
 direct C++ ABI, or C++ exceptions crossing managed frames.
 
-`SafeHandle` `ref`, `out`, and return construction are unsupported.
+A raw `DllImport` cannot construct a `SafeHandle` for a result, `out` or `ref`; declare it with `LibraryImport`.
 Callback aggregates, arrays, byrefs, handles, callback-valued parameters or
 results, function pointers with another calling convention, and
 delegate-to-native-pointer conversion are also outside the profile. These exclusions are compile-time failures rather

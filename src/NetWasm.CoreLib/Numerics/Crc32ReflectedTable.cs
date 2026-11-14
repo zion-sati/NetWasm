@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/Common/src/System/Numerics/Crc32ReflectedTable.cs
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/Common/src/System/Numerics/Crc32ReflectedTable.cs
 
 namespace System.Numerics
 {

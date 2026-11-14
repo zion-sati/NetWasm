@@ -82,7 +82,7 @@ internal sealed class PlatformServiceBindingResolver : IPlatformServiceBindingRe
             metadata, _typeDefinitions, _identities, _methodInstances, _types.FindType("System.Type").Key);
         var declarations = metadata.Assemblies
             .Where(assembly => assembly.Identity != coreLib)
-            .SelectMany(assembly => descriptors.Read(assembly.Identity)
+            .SelectMany(assembly => descriptors.Read(assembly.Identity, AttributeName)
                 .Where(descriptor => _typeDefinitions.ResolveTypeIdentity(descriptor.AttributeType).FullName == AttributeName)
                 .Select(descriptor => (Identity: assembly.Identity, Descriptor: descriptor)))
             .ToArray();

@@ -31,11 +31,14 @@ internal sealed class NormalLeaveTargetFinder : INormalLeaveTargetFinder
             .Where(item => item.Instruction.Operation == CilOperation.Leave)
             .Where(item =>
             {
-                if (handlerExcluded.Any(child =>
-                        item.Block.StartOffset >= child.TryOffset &&
-                        item.Block.StartOffset < child.Extent))
+                var target = ((CilOperand.BranchTarget)item.Instruction.Operand).Offset;
+                // A leave from a group inside a handler stays that group's own unless it
+                // leaves the handler too, as a continue through a finally in a loop's catch
+                // handler does: then this region continues there as well, so the nested
+                // group's continuation routes through this one.
+                if (Encloses(handlerExcluded, item.Block.StartOffset))
                 {
-                    return false;
+                    return !ranges.Any(range => target >= range.Start && target < range.End);
                 }
                 var insideChild = excluded.Any(child =>
                     EqualityComparer<(bool StartsAfter, bool EndsBefore)>.Default.Equals(
@@ -45,7 +48,6 @@ internal sealed class NormalLeaveTargetFinder : INormalLeaveTargetFinder
                 // A child's leave stays inside this region only when its target
                 // does; a backward leave to a loop header before the region
                 // leaves it too.
-                var target = ((CilOperand.BranchTarget)item.Instruction.Operand).Offset;
                 return !EqualityComparer<(bool InsideChild, bool InsideTry)>.Default.Equals(
                     (insideChild, target >= tryOffset && target < tryEnd),
                     (true, true));
@@ -56,4 +58,9 @@ internal sealed class NormalLeaveTargetFinder : INormalLeaveTargetFinder
             .ToArray();
         return [.. targets.Order()];
     }
+
+    // Whether one of the groups, from its try to the end of its last handler, holds the offset.
+    private static bool Encloses(IReadOnlyCollection<ExceptionGroupSource> groups, int offset) =>
+        groups.Any(group => EqualityComparer<(bool StartsAfter, bool EndsBefore)>.Default.Equals(
+            (offset >= group.TryOffset, offset < group.Extent), (true, true)));
 }

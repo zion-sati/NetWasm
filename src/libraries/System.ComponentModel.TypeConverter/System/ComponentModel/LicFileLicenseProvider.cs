@@ -1,0 +1,94 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+//
+// NetWasm deviation: a valid saved runtime key still yields a license. Without one, upstream reads
+// a .lic file next to the component's assembly; NetWasm has no assembly location or file fallback
+// and throws PlatformNotSupportedException instead of reporting a missing license.
+
+using System.ComponentModel.Design;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.IO;
+
+namespace System.ComponentModel
+{
+    /// <summary>
+    /// Provides an implementation of a <see cref='System.ComponentModel.LicenseProvider'/>. The provider works in
+    /// a similar fashion to Microsoft .NET Framework standard licensing module.
+    /// </summary>
+    public class LicFileLicenseProvider : LicenseProvider
+    {
+        /// <summary>
+        /// Determines if the key retrieved by the <see cref='System.ComponentModel.LicFileLicenseProvider.GetLicense'/> method is valid
+        /// for the specified type.
+        /// </summary>
+        protected virtual bool IsKeyValid(string? key, Type type)
+        {
+            if (key != null)
+            {
+                return key.StartsWith(GetKey(type));
+            }
+            return false;
+        }
+
+
+        /// <summary>
+        /// Creates a key for the specified type.
+        /// </summary>
+        protected virtual string GetKey(Type type)
+        {
+            // This string should not be localized.
+            return type.FullName + " is a licensed component.";
+        }
+
+        /// <summary>
+        /// Gets a license for the instance of the component and determines if it is valid.
+        /// </summary>
+        [UnconditionalSuppressMessage("SingleFile", "IL3002:RequiresAssemblyFiles",
+            Justification = "Only used for when Location is non-empty")]
+        [UnconditionalSuppressMessage("SingleFile", "IL3000:RequiresAssemblyFiles",
+            Justification = "Location is checked for empty")]
+        public override License? GetLicense(LicenseContext context, Type type, object? instance, bool allowExceptions)
+        {
+            LicFileLicense? lic = null;
+
+            Debug.Assert(context != null, "No context provided!");
+            if (context != null)
+            {
+                if (context.UsageMode == LicenseUsageMode.Runtime)
+                {
+                    string? key = context.GetSavedLicenseKey(type, null);
+                    if (key != null && IsKeyValid(key, type))
+                    {
+                        lic = new LicFileLicense(this, key);
+                    }
+                }
+
+                if (lic == null)
+                {
+                    throw new PlatformNotSupportedException(SR.LicFileProviderFileNotSupported);
+                }
+            }
+            return lic;
+        }
+
+        private sealed class LicFileLicense : License
+        {
+            private readonly LicFileLicenseProvider _owner;
+
+            public LicFileLicense(LicFileLicenseProvider owner, string key)
+            {
+                _owner = owner;
+                LicenseKey = key;
+            }
+            public override string LicenseKey { get; }
+
+            public override void Dispose()
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
+    }
+}

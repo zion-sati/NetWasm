@@ -167,7 +167,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
                 new TypedStackValidatorFactory(
                     new StackTypeCompatibilityValidator()),
                 new ControlFlowGraphBuilderFactory()),
-            new AttributeQueryMethodSpecializerFactory(),
+            new AttributeQueryMethodSpecializerFactory(new MetadataCompilationMaterializationFactory()),
             dispatchTargets,
             relationships,
             new TypeRelationshipKeyResolverFactory(),

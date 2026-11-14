@@ -39,7 +39,7 @@ internal static class UnitStoreFormat
     public const uint Magic = 0x5554574E; // "NWTU"
     // Raised whenever the queries units record change, so older units, validated against
     // other queries or numbering them otherwise, are not restored.
-    public const int Version = 15;
+    public const int Version = 16;
     public const uint SegmentKind = 1;
     public const uint ManifestKind = 2;
     public const int SegmentHeaderSize = 64;

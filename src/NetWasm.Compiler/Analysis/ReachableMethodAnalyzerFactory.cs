@@ -48,5 +48,5 @@ internal sealed class ReachableMethodAnalyzerFactory(
             stackValidators,
             graphBuilders.Create(),
             instructionAnalyzer),
-            logger);
+            logger, new CompilerDiagnosticProvenanceBinder());
 }

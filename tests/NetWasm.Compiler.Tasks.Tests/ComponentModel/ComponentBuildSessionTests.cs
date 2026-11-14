@@ -36,16 +36,17 @@ public sealed class ComponentBuildSessionTests
         Assert.Throws<ArgumentNullException>(() =>
             new ComponentBuildSessionFactory(null!));
         var factory = AsFactory(new ComponentBuildSessionFactory(
-            (_, _) => throw new InvalidOperationException()));
-        Assert.Throws<ArgumentNullException>(() => factory.Create(null!, Binaryen()));
-        Assert.Throws<ArgumentNullException>(() => factory.Create(Command(), null!));
+            (_, _, _) => throw new InvalidOperationException()));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(null!, Binaryen(), Progress));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(Command(), null!, Progress));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(Command(), Binaryen(), null!));
     }
 
     [Fact]
     public void FactoryCreatesConfiguredSingleCapabilitySession()
     {
         var factory = AsFactory(CompilerTaskComposition.CreateComponentBuildSessionFactory());
-        using var session = factory.Create(Command(), Binaryen());
+        using var session = factory.Create(Command(), Binaryen(), Progress);
 
         Assert.IsType<ComponentBuildSession>(session);
     }
@@ -99,4 +100,7 @@ public sealed class ComponentBuildSessionTests
 
         public void Dispose() => IsDisposed = true;
     }
+
+    private static readonly Microsoft.Extensions.Logging.ILoggerProvider Progress =
+        Microsoft.Extensions.Logging.Abstractions.NullLoggerProvider.Instance;
 }

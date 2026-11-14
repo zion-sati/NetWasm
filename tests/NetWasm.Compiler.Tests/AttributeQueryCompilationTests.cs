@@ -8,8 +8,10 @@ using static CompilerTestSupport;
 
 public sealed class AttributeQueryCompilationTests
 {
-    [Fact]
-    public void QueryMethodTokensInExpressionTreesFailAtTheOriginalCallSite()
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void QueryMethodTokensInExpressionTreesUseManagedFallbacks(WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource("AttributeMethodToken", """
@@ -24,16 +26,20 @@ public sealed class AttributeQueryCompilationTests
                 {
                     Expression<Func<MemberInfo, MarkerAttribute>> query =
                         member => member.GetCustomAttribute<MarkerAttribute>();
-                    return query == null ? 1 : input;
+                    try { query.Compile()(typeof(EntryPoint)); }
+                    catch (PlatformNotSupportedException error) { return error.Message.Length > 0 ? input : 2; }
+                    return 1;
                 }
             }
             """);
-        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(new CompilerOptions(
-            assembly, [assets.CoreLib], "AttributeMethodToken.EntryPoint", "Run", [])));
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
-        Assert.Contains("query method handles", error.Diagnostic.Message);
-        Assert.Contains("Run", error.Diagnostic.Method);
-        Assert.NotNull(error.Diagnostic.IlOffset);
+        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib],
+            "AttributeMethodToken.EntryPoint", "Run",
+            [new("run", "AttributeMethodToken.EntryPoint", "Run")], Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0"));
+        ValidateWithNode(result.ApplicationModule, assets.Directory);
+        Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 42, target, result.StaticDataEnd));
     }
 
     [Theory]
@@ -145,28 +151,15 @@ public sealed class AttributeQueryCompilationTests
     }
 
     [Theory]
-    [InlineData("(input == 42 ? typeof(Target) : typeof(Other)).GetCustomAttribute<MarkerAttribute>()")]
-    [InlineData("typeof(Target).GetCustomAttribute(input == 42 ? typeof(MarkerAttribute) : typeof(OtherAttribute))")]
-    [InlineData("typeof(Target).GetCustomAttribute<Attribute>()")]
-    [InlineData("typeof(Target).GetCustomAttribute<SerializableAttribute>()")]
-    [InlineData("typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.StructLayoutAttribute>()")]
-    [InlineData("typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.ComImportAttribute>()")]
-    [InlineData("typeof(Target).GetCustomAttributes(true)")]
-    [InlineData("CustomAttributeExtensions.GetCustomAttributes(typeof(Target))")]
-    [InlineData("CustomAttributeExtensions.GetCustomAttributes(typeof(Target), false)")]
-    [InlineData("((ICustomAttributeProvider)typeof(Target)).GetCustomAttributes(false)")]
-    [InlineData("new OtherMember().GetCustomAttribute<MarkerAttribute>()")]
-    [InlineData("new Target().GetType().GetCustomAttribute<MarkerAttribute>()")]
-    [InlineData("((Type)null).GetCustomAttribute<MarkerAttribute>()")]
-    [InlineData("typeof(Target).GetCustomAttribute((Type)null)")]
-    [InlineData("new Func<MemberInfo, MarkerAttribute>(CustomAttributeExtensions.GetCustomAttribute<MarkerAttribute>)(typeof(Target))")]
-    public void UnboundedQueriesFailAtTheirSourceCall(string expression)
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void UnboundedQueriesUseCatchableManagedFallbacks(WasmTarget target)
     {
         using var assets = TestAssets.Create();
-        var assembly = assets.CompileSource("RejectedAttributeQuery", $$"""
+        var assembly = assets.CompileSource("UnboundedAttributeQuery", """
             using System;
             using System.Reflection;
-            namespace RejectedAttributeQuery;
+            namespace UnboundedAttributeQuery;
             public sealed class MarkerAttribute : Attribute;
             public sealed class OtherAttribute : Attribute;
             public sealed class Target;
@@ -176,18 +169,30 @@ public sealed class AttributeQueryCompilationTests
             {
                 public static int Run(int input)
                 {
-                    _ = {{expression}};
-                    return input;
+                    var caught = 0;
+                    try { _ = (input == 42 ? typeof(Target) : typeof(Other)).GetCustomAttribute<MarkerAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = typeof(Target).GetCustomAttribute(input == 42 ? typeof(MarkerAttribute) : typeof(OtherAttribute)); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = typeof(Target).GetCustomAttribute<Attribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = typeof(Target).GetCustomAttribute<SerializableAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.StructLayoutAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.ComImportAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = new OtherMember().GetCustomAttribute<MarkerAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = new Target().GetType().GetCustomAttribute<MarkerAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = ((Type)null).GetCustomAttribute<MarkerAttribute>(); } catch (ArgumentNullException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = typeof(Target).GetCustomAttribute((Type)null); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = new Func<MemberInfo, MarkerAttribute>(CustomAttributeExtensions.GetCustomAttribute<MarkerAttribute>)(typeof(Target)); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    return caught == 11 ? input : 1;
                 }
             }
             """);
-
-        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
-            new CompilerOptions(assembly, [assets.CoreLib], "RejectedAttributeQuery.EntryPoint", "Run", [])));
-
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
-        Assert.Contains("Run", error.Diagnostic.Method);
-        Assert.NotNull(error.Diagnostic.IlOffset);
+        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib],
+            "UnboundedAttributeQuery.EntryPoint", "Run",
+            [new("run", "UnboundedAttributeQuery.EntryPoint", "Run")], Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0"));
+        ValidateWithNode(result.ApplicationModule, assets.Directory);
+        Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 42, target, result.StaticDataEnd));
     }
 
     [Theory]

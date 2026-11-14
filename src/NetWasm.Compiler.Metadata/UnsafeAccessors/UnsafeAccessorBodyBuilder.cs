@@ -13,24 +13,28 @@ internal sealed class UnsafeAccessorBodyBuilder : IUnsafeAccessorBodyBuilder
         ArgumentNullException.ThrowIfNull(binding);
         var instructions = ImmutableArray.CreateBuilder<CilInstruction>();
         var maxStack = 1;
+        // An UnsafeAccessorTypeAttribute position is declared object; the target takes the named type.
+        var translations = accessor.Definition.UnsafeAccessor?.TypeTranslations;
         switch (binding)
         {
             case UnsafeAccessorBinding.Constructor constructor:
-                LoadArguments(0, accessor.Signature.ParameterTypes.Length);
+                LoadArguments(0, accessor.Signature.ParameterTypes.Length,
+                    index => constructor.Target.Signature.ParameterSignatureTypes[index]);
                 Emit(CilOperation.NewObject, new CilOperand.MethodInstance(constructor.Target));
                 break;
             case UnsafeAccessorBinding.Method method:
                 // Static accessors carry an owner parameter for binding only. Instance
                 // accessors use callvirt even for nonvirtual targets, preserving null checks.
                 LoadArguments(method.Target.Definition.IsStatic ? 1 : 0,
-                    accessor.Signature.ParameterTypes.Length);
+                    accessor.Signature.ParameterTypes.Length,
+                    index => index == 0 ? method.Target.DeclaringType : method.Target.Signature.ParameterSignatureTypes[index - 1]);
                 Emit(method.Target.Definition.IsStatic ? CilOperation.Call : CilOperation.CallVirtual,
                     new CilOperand.MethodInstance(method.Target));
                 break;
             case UnsafeAccessorBinding.Field field:
                 if (!field.Target.Definition.IsStatic)
                 {
-                    LoadArguments(0, 1);
+                    LoadArguments(0, 1, _ => field.Target.DeclaringType);
                 }
 
                 Emit(field.Target.Definition.IsStatic
@@ -47,12 +51,16 @@ internal sealed class UnsafeAccessorBodyBuilder : IUnsafeAccessorBodyBuilder
         Emit(CilOperation.Return, new CilOperand.None());
         return Body();
 
-        void LoadArguments(int first, int end)
+        void LoadArguments(int first, int end, Func<int, CliTypeIdentity> targetType)
         {
             maxStack = Math.Max(maxStack, end - first);
             for (var index = first; index < end; index++)
             {
                 Emit(CilOperation.LoadArgument, new CilOperand.Index(index));
+                if (translations?.Parameter(index) is not null)
+                {
+                    Emit(CilOperation.CastClass, new CilOperand.TypeIdentity(targetType(index)));
+                }
             }
         }
 

@@ -15,8 +15,16 @@ using NetWasm.Compiler.Wasm.Encoding;
 namespace NetWasm.Compiler.Wasm.Tests;
 
 internal sealed class ExpressionIntrinsicEmissionFixture : INullableTypeResolver,
-    INullableBoxEmitter, IValueFrameAddressEmitter, IMethodInitializationTriggerClassifier
+    INullableBoxEmitter, IValueFrameAddressEmitter, IMethodInitializationTriggerClassifier,
+    IStaticFieldLayoutProvider
 {
+    // Static storage the member execution emitter reads a static field from.
+    public const int StaticFieldAddress = 0x2000;
+
+    public StaticFieldLayout GetStaticFieldLayout(EntityKey field) => new(StaticFieldAddress);
+
+    public StaticFieldLayout GetStaticFieldLayout(FieldInstanceModel field) => new(StaticFieldAddress);
+
     public ExpressionIntrinsicEmissionFixture(bool memory64)
     {
         Target = memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32;
@@ -64,9 +72,18 @@ internal sealed class ExpressionIntrinsicEmissionFixture : INullableTypeResolver
     public void Emit(IWasmInstructionWriter code, MethodEmissionContext context,
         FilterCapture capture) => throw new NotSupportedException();
 
-    public IRootPublicationEmitter Roots => new RecordingRootPublicationEmitter((request, code, _) =>
+    // Where in the code each constructor-call publication (an allocation's root) came.
+    public List<int> AllocationRootPublications { get; } = [];
+
+    public IRootPublicationEmitter Roots => new RecordingRootPublicationEmitter((request, code, constructorCall) =>
     {
         Assert.Same(Writer, code);
+        if (constructorCall)
+        {
+            Assert.Same(PublishedRequest, request);
+            AllocationRootPublications.Add(Code.Length);
+            return;
+        }
         Assert.Empty(Code);
         PublishedRequest = request;
         RootCount++;
@@ -81,7 +98,7 @@ internal sealed class ExpressionIntrinsicEmissionFixture : INullableTypeResolver
         var count = intrinsic switch
         {
             RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate => 1,
-            RuntimeIntrinsic.MemberExecuteMethod or
+            RuntimeIntrinsic.MemberExecuteMethod or RuntimeIntrinsic.MemberWriteField or
             RuntimeIntrinsic.DelegateDynamicInvoke => 3,
             _ => 2,
         };

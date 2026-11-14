@@ -1,22 +1,18 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Generated from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de resources;
+// Generated from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce resources;
 // only the strings this namespace references are included.
 
 namespace System.IO
 {
     internal static class SR
     {
+        internal const string ArgumentOutOfRange_MustBePositive = "'{0}' must be greater than zero.";
+        internal const string InvalidOperation_TimeoutsNotSupported = "Timeouts are not supported on this stream.";
+        internal const string NotSupported_CannotWriteToBufferedStreamIfReadBufferCannotBeFlushed = "Cannot write to a BufferedStream while the read buffer is not empty if the underlying stream is not seekable. Ensure that the stream underlying this BufferedStream can seek or avoid interleaving read and write operations on this BufferedStream.";
         internal const string ArgumentOutOfRange_StreamPosition = "Stream position must be non-negative and less than or equal to {0}.";
+        internal const string PersistedFiles_NoHomeDirectory = "The home directory of the current user could not be determined.";
         internal const string NotSupported_UnwritableStream = "Stream does not support writing.";
-        internal const string IO_DriveNotFound =
-            "Could not find the drive. The drive might not be ready or might not be mapped.";
-        internal const string IO_NotSupported_UnreadableStream =
-            "Stream does not support reading.";
-        internal const string IO_NotSupported_UnseekableStream =
-            "Stream does not support seeking.";
-        internal const string IO_NotSupported_UnwritableStream =
-            "Stream does not support writing.";
         internal const string UnauthorizedAccess_MemStreamBuffer =
             "MemoryStream's internal buffer cannot be accessed.";
         internal const string Arg_BadDecimal =
@@ -67,10 +63,6 @@ namespace System.IO
             "Cannot access a closed accessor.";
 
         // NetWasm strings for its file-system enumeration boundaries.
-        internal const string PlatformNotSupported_DirectoryEnumeration =
-            "Directory enumeration through FileSystemEnumerator is not available on this NetWasm platform.";
-        internal const string PlatformNotSupported_FileSystemEntryMetadata =
-            "FileSystemEntry metadata is not available on this NetWasm platform because no enumeration populates it.";
 
         internal static string Format(string format, object? arg0) =>
             string.Format(format, arg0);

@@ -11,35 +11,66 @@ namespace System
         }
     }
 
-    public static class Activator
+    public static partial class Activator
     {
-        // The compiler turns this call into construction for a value type or for a class with a
-        // public parameterless constructor, and into CreateInstanceWithNonPublicConstructor<T>
-        // for a class whose parameterless constructor is not public. Any other T reaches this
-        // body, which throws what .NET's Activator throws for it.
-        public static T CreateInstance<T>()
+        public static object? CreateInstance(
+            [Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors)] Type type,
+            params object?[]? args)
         {
-            if (typeof(T) != typeof(string) && !typeof(T).IsInterface && !typeof(T).IsAbstract &&
-                typeof(T).IsSubclassOf(typeof(Delegate)))
-            {
-                throw new ArgumentException(
-                    SR.Format(SR.Activator_CannotCreateInstance, typeof(T), SR.NotSupported_Type));
-            }
-            throw new MissingMethodException(SR.Format(
-                SR.Activator_CannotCreateInstance,
-                typeof(T),
-                typeof(T) == typeof(string) ? SR.Argument_NoUninitializedStrings :
-                typeof(T).IsInterface ? SR.Acc_CreateInterface :
-                typeof(T).IsAbstract ? SR.Acc_CreateAbst :
-                typeof(T).HasElementType ? SR.NotSupported_Type :
-                SR.Arg_NoDefCTorWithoutTypeName));
+            ArgumentNullException.ThrowIfNull(type);
+            throw new PlatformNotSupportedException("Activator.CreateInstance with a runtime Type and constructor arguments is not available on this NetWasm platform.");
         }
 
-        internal static T CreateInstanceWithNonPublicConstructor<T>() =>
-            throw new MissingMethodException(SR.Format(SR.Arg_NoDefCTor, typeof(T)));
+        // As upstream's ActivatorCache and CreateInstanceOfT: a value type, or a concrete class with
+        // a public parameterless constructor, is constructed, and the constructor's exception is
+        // wrapped in TargetInvocationException; a non-public parameterless constructor and every
+        // other T throw what .NET throws. The compiler answers the two questions for the closed T
+        // and replaces CreateDefaultInstance<T>() with the construction.
+        public static T CreateInstance<T>()
+        {
+            if (!HasDefaultConstructor<T>())
+            {
+                if (HasNonPublicDefaultConstructor<T>())
+                {
+                    throw new MissingMethodException(SR.Format(SR.Arg_NoDefCTor, typeof(T)));
+                }
+                if (typeof(T) != typeof(string) && !typeof(T).IsInterface && !typeof(T).IsAbstract &&
+                    typeof(T).IsSubclassOf(typeof(Delegate)))
+                {
+                    throw new ArgumentException(
+                        SR.Format(SR.Activator_CannotCreateInstance, typeof(T), SR.NotSupported_Type));
+                }
+                throw new MissingMethodException(SR.Format(
+                    SR.Activator_CannotCreateInstance,
+                    typeof(T),
+                    typeof(T) == typeof(string) ? SR.Argument_NoUninitializedStrings :
+                    typeof(T).IsInterface ? SR.Acc_CreateInterface :
+                    typeof(T).IsAbstract ? SR.Acc_CreateAbst :
+                    typeof(T).HasElementType ? SR.NotSupported_Type :
+                    SR.Arg_NoDefCTorWithoutTypeName));
+            }
+            try
+            {
+                return CreateDefaultInstance<T>();
+            }
+            catch (Exception exception)
+            {
+                throw new Reflection.TargetInvocationException(exception);
+            }
+        }
+
+        // The compiler specializes these for the closed T.
+        private static bool HasDefaultConstructor<T>() =>
+            throw new PlatformNotSupportedException("Constructor eligibility requires compiler specialization.");
+
+        private static bool HasNonPublicDefaultConstructor<T>() =>
+            throw new PlatformNotSupportedException("Constructor eligibility requires compiler specialization.");
+
+        private static T CreateDefaultInstance<T>() =>
+            throw new PlatformNotSupportedException("Construction requires compiler specialization.");
     }
 
-    public static class Console
+    public static partial class Console
     {
         private static IO.TextReader? s_in;
         private static IO.TextWriter? s_out;

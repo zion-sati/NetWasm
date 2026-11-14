@@ -42,9 +42,19 @@ internal static class ConstantRewriteTestSupport
         }
     }
 
-    internal sealed class MethodFacts : IMethodBodyReader, ICalledMethodResolver, ITypeDefinitionResolver, IMethodRepository, IRuntimeIntrinsicRegistry,
+    internal sealed class MethodFacts : IMethodBodyReader, ICalleeMethodBodyReader, ICalledMethodResolver, ITypeDefinitionResolver, IMethodRepository, IRuntimeIntrinsicRegistry,
         IFieldRepository, ITypeRepository
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         internal Dictionary<EntityKey, CilMethodBody> Bodies { get; } = [];
         internal Dictionary<EntityKey, FieldDefinitionModel> Fields { get; } = [];
         internal bool HasInitializer { get; set; }

@@ -3,7 +3,7 @@
 //
 // UIntPtr generic conversion contracts are retained from the pinned
 // dotnet/runtime System.Private.CoreLib sources (commit
-// 474ed963699fc29809015392738a15231aaae2de). One CoreLib serves wasm32 and
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce). One CoreLib serves wasm32 and
 // wasm64, so the bounds upstream takes from its compile-time nuint_t alias
 // are the runtime MinValue and MaxValue.
 
@@ -14,6 +14,8 @@ using System.Runtime.CompilerServices;
 namespace System;
 
 [Serializable]
+[CLSCompliant(false)]
+[System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
 public readonly partial struct UIntPtr
 {
     /// <inheritdoc cref="INumberBase{TSelf}.CreateChecked{TOther}(TOther)" />

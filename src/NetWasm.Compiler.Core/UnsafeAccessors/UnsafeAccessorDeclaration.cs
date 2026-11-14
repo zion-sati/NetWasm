@@ -7,7 +7,10 @@ public sealed record UnsafeAccessorDeclaration(
     string? Name,
     bool NameSpecified,
     bool IsMalformed,
-    bool HasTypeTranslation);
+    UnsafeAccessorTypeTranslations? TypeTranslations = null)
+{
+    public bool HasTypeTranslation => TypeTranslations is not null;
+}
 
 public enum UnsafeAccessorMemberKind
 {

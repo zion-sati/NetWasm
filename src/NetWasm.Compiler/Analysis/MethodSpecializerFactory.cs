@@ -45,6 +45,7 @@ internal sealed class MethodSpecializerFactory(
             methodImplementations);
         var stackEffects = new StackEffectResolver(calledMethods);
         var stackConsumers = new StackValueConsumerFinder(stackEffects);
+        var calleeBodies = new CalleeMethodBodyReader(methodBodies);
         return new MethodSpecializer(
         [
             // First, so every later rule sees an argument or store of the kind declared.
@@ -62,12 +63,14 @@ internal sealed class MethodSpecializerFactory(
                     _graphBuilders,
                     _graphAnalyzers,
                     new FieldProjectionResolver(
-                        methodBodies,
+                        calleeBodies,
                         calledMethods,
                         fields,
                         typeDefinitions),
                     optimizationSettings.LoopInvariantFieldHoisting)),
             new RectangularArrayCallRewriter(),
+            new DelegateMethodRewriter(_graphBuilders.Create(), calledMethods, symbols),
+            new ParameterlessNewExpressionRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols, types),
             new IntrinsicCallRewriter(calledMethods, symbols),
             new DelegateInvokeMethodTokenRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols),
             new DelegateDynamicInvokeCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
@@ -76,6 +79,8 @@ internal sealed class MethodSpecializerFactory(
             new ExecutingAssemblyCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
                 typeIdentities),
             new PlatformWorldCallRewriter(calledMethods, symbols, world),
+            new FeatureSwitchCallRewriter(calledMethods, world.FeatureSwitches),
+            new RuntimeConfigurationRewriter(symbols, world.RuntimeProperties),
             new PlatformServices.PlatformServiceBindingRewriter(calledMethods, symbols, world),
             new ClosedTypeIsValueTypeCallRewriter(calledMethods, symbols),
             new ClosedTypeContainsReferencesCallRewriter(calledMethods, symbols, typeDefinitions, fields),
@@ -129,18 +134,19 @@ internal sealed class MethodSpecializerFactory(
             new ClosedTypeComparisonRewriter(
                 _graphBuilders.Create(),
                 calledMethods,
-                new PureReferenceComparisonClassifier(methodBodies, calledMethods, typeDefinitions, methods, new SharedReturnEpilogueRewriter(), intrinsics),
+                new PureReferenceComparisonClassifier(calleeBodies, calledMethods, typeDefinitions, methods, new SharedReturnEpilogueRewriter(), intrinsics),
                 new ClosedTypeIdentityComparer(typeDefinitions)),
             new ExactObjectTypeRewriter(_graphBuilders.Create(), calledMethods, fields, typeDefinitions,
                 new NullableTypeResolver()),
             new ConstantTypeMaterializationRewriter(_graphBuilders.Create()),
             new BoxedNullComparisonRewriter(_graphBuilders.Create(), new NullableTypeResolver()),
             new BoxedTypeTestRewriter(_graphBuilders.Create(), new NullableTypeResolver(), relationships),
-            new NonReturningCallRewriter(calledMethods, methodBodies, intrinsics),
-            new KnownSizeRewriter(calledMethods),
+            new NonReturningCallRewriter(calledMethods, calleeBodies, intrinsics),
+            new KnownSizeRewriter(calledMethods, world.NativeIntegerSize),
+            new KnownPlatformCheckRewriter(calledMethods),
             new BitCastCallRewriter(calledMethods, types, methods, methodInstances, symbols),
             new VectorElementReadRewriter(calledMethods, types, methods, methodInstances, symbols),
-            new ConstantStaticFieldRewriter(fields, typeIdentities, typeDefinitions, methods, methodBodies),
+            new ConstantStaticFieldRewriter(fields, typeIdentities, typeDefinitions, methods, calleeBodies),
             ConstantBranchFoldingFactory.Create(_graphBuilders.Create()),
         ]);
     }

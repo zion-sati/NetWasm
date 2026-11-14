@@ -4,6 +4,9 @@
 
 namespace System
 {
+    using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
+
     [Serializable]
     public readonly struct TimeSpan : IComparable, IComparable<TimeSpan>, IEquatable<TimeSpan>,
         IFormattable, IParsable<TimeSpan>, ISpanFormattable, ISpanParsable<TimeSpan>,
@@ -186,161 +189,157 @@ namespace System
         public TimeSpan Divide(double divisor) => this / divisor;
         public double Divide(TimeSpan value) => this / value;
 
-        public override string ToString() => FormatInvariant();
-        public string ToString(string? format) => FormatInvariant(format);
-        public string ToString(string? format, IFormatProvider? formatProvider) => FormatInvariant(format);
-
-        public bool TryFormat(Span<char> destination, out int charsWritten,
-            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null)
+        // Text members ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+        private static void ValidateStyles(TimeSpanStyles style)
         {
-            var text = FormatInvariant(format.Length == 0 ? null : new string(format));
-            return TryCopy(text, destination, out charsWritten);
+            if (style is not TimeSpanStyles.None and not TimeSpanStyles.AssumeNegative)
+            {
+                ThrowHelper.ThrowArgumentException_InvalidTimeSpanStyles();
+            }
+        }
+        public static TimeSpan Parse(string s)
+        {
+            /* Constructs a TimeSpan from a string.  Leading and trailing white space characters are allowed. */
+            ArgumentNullException.ThrowIfNull(s, ExceptionArgument.input);
+            return TimeSpanParse.Parse(s, null);
+        }
+        public static TimeSpan Parse(string input, IFormatProvider? formatProvider)
+        {
+            if (input is null)
+            {
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.input);
+            }
+            return TimeSpanParse.Parse(input, formatProvider);
+        }
+        public static TimeSpan Parse(ReadOnlySpan<char> input, IFormatProvider? formatProvider = null) => TimeSpanParse.Parse(input, formatProvider);
+        public static TimeSpan ParseExact(string input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string format, IFormatProvider? formatProvider)
+        {
+            ArgumentNullException.ThrowIfNull(input, ExceptionArgument.input);
+            ArgumentNullException.ThrowIfNull(format, ExceptionArgument.format);
+            return TimeSpanParse.ParseExact(input, format, formatProvider, TimeSpanStyles.None);
+        }
+        public static TimeSpan ParseExact(string input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string[] formats, IFormatProvider? formatProvider)
+        {
+            if (input is null)
+            {
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.input);
+            }
+            return TimeSpanParse.ParseExactMultiple(input, formats, formatProvider, TimeSpanStyles.None);
+        }
+        public static TimeSpan ParseExact(string input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string format, IFormatProvider? formatProvider, TimeSpanStyles styles)
+        {
+            ValidateStyles(styles);
+            ArgumentNullException.ThrowIfNull(input, ExceptionArgument.input);
+            ArgumentNullException.ThrowIfNull(format, ExceptionArgument.format);
+            return TimeSpanParse.ParseExact(input, format, formatProvider, styles);
         }
 
-        public bool TryFormat(Span<byte> destination, out int bytesWritten,
-            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null)
+        public static TimeSpan ParseExact(ReadOnlySpan<char> input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] ReadOnlySpan<char> format, IFormatProvider? formatProvider, TimeSpanStyles styles = TimeSpanStyles.None)
         {
-            var text = FormatInvariant(format.Length == 0 ? null : new string(format));
-            if (destination.Length < text.Length)
+            ValidateStyles(styles);
+            return TimeSpanParse.ParseExact(input, format, formatProvider, styles);
+        }
+        public static TimeSpan ParseExact(string input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string[] formats, IFormatProvider? formatProvider, TimeSpanStyles styles)
+        {
+            ValidateStyles(styles);
+            ArgumentNullException.ThrowIfNull(input, ExceptionArgument.input);
+            return TimeSpanParse.ParseExactMultiple(input, formats, formatProvider, styles);
+        }
+        public static TimeSpan ParseExact(ReadOnlySpan<char> input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string[] formats, IFormatProvider? formatProvider, TimeSpanStyles styles = TimeSpanStyles.None)
+        {
+            ValidateStyles(styles);
+            return TimeSpanParse.ParseExactMultiple(input, formats, formatProvider, styles);
+        }
+        public static bool TryParse([NotNullWhen(true)] string? s, out TimeSpan result)
+        {
+            if (s is null)
             {
-                bytesWritten = 0;
+                result = default;
                 return false;
             }
-            for (var index = 0; index < text.Length; index++) destination[index] = (byte)text[index];
-            bytesWritten = text.Length;
-            return true;
+            return TimeSpanParse.TryParse(s, null, out result);
         }
+        public static bool TryParse(ReadOnlySpan<char> s, out TimeSpan result) => TimeSpanParse.TryParse(s, null, out result);
 
-        public static TimeSpan Parse(string value)
+        public static bool TryParse([NotNullWhen(true)] string? input, IFormatProvider? formatProvider, out TimeSpan result)
         {
-            if (value is null) throw new ArgumentNullException();
-            return TryParse(value, out var result) ? result : throw new FormatException();
-        }
-
-        public static TimeSpan Parse(string value, IFormatProvider? formatProvider) => Parse(value);
-        public static TimeSpan Parse(ReadOnlySpan<char> value, IFormatProvider? formatProvider = null) =>
-            Parse(new string(value));
-
-        public static TimeSpan ParseExact(string value, string format, IFormatProvider? formatProvider) =>
-            ParseExact(value, format, formatProvider, System.Globalization.TimeSpanStyles.None);
-
-        public static TimeSpan ParseExact(string value, string format, IFormatProvider? formatProvider,
-            System.Globalization.TimeSpanStyles styles)
-        {
-            ValidateStyles(styles);
-            if (value is null || format is null) throw new ArgumentNullException();
-            return TryParseExact(value, format, formatProvider, styles, out var result)
-                ? result
-                : throw new FormatException();
-        }
-
-        public static TimeSpan ParseExact(string value, string[] formats, IFormatProvider? formatProvider) =>
-            ParseExact(value, formats, formatProvider, System.Globalization.TimeSpanStyles.None);
-
-        public static TimeSpan ParseExact(string value, string[] formats, IFormatProvider? formatProvider,
-            System.Globalization.TimeSpanStyles styles)
-        {
-            ValidateStyles(styles);
-            if (value is null || formats is null) throw new ArgumentNullException();
-            return TryParseExact(value, formats, formatProvider, styles, out var result)
-                ? result
-                : throw new FormatException();
-        }
-
-        public static TimeSpan ParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
-            IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles = System.Globalization.TimeSpanStyles.None)
-        {
-            ValidateStyles(styles);
-            return ParseExact(new string(value), new string(format), formatProvider, styles);
-        }
-
-        public static TimeSpan ParseExact(ReadOnlySpan<char> value, string[] formats,
-            IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles = System.Globalization.TimeSpanStyles.None)
-        {
-            ValidateStyles(styles);
-            return ParseExact(new string(value), formats, formatProvider, styles);
-        }
-
-        public static bool TryParse(string? value, out TimeSpan result)
-        {
-            result = default;
-            if (value is null) return false;
-            var start = 0;
-            var end = value.Length;
-            while (start < end && IsWhiteSpace(value[start])) start++;
-            while (end > start && IsWhiteSpace(value[end - 1])) end--;
-            if (start != 0 || end != value.Length)
+            if (input is null)
             {
-                value = value.Substring(start, end - start);
+                result = default;
+                return false;
             }
-            return TryParseStandard(value, 'c', out result) ||
-                TryParseStandard(value, 'g', out result) ||
-                TryParseStandard(value, 'G', out result);
+            return TimeSpanParse.TryParse(input, formatProvider, out result);
         }
-
-        public static bool TryParse(string? value, IFormatProvider? formatProvider, out TimeSpan result) =>
-            TryParse(value, out result);
-        public static bool TryParse(ReadOnlySpan<char> value, out TimeSpan result) =>
-            TryParse(new string(value), out result);
-        public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? formatProvider, out TimeSpan result) =>
-            TryParse(value, out result);
-
-        public static bool TryParseExact(string? value, string? format, IFormatProvider? formatProvider,
-            out TimeSpan result) =>
-            TryParseExact(value, format, formatProvider, System.Globalization.TimeSpanStyles.None, out result);
-
-        public static bool TryParseExact(string? value, string? format, IFormatProvider? formatProvider,
-            System.Globalization.TimeSpanStyles styles, out TimeSpan result)
+        public static bool TryParse(ReadOnlySpan<char> input, IFormatProvider? formatProvider, out TimeSpan result) => TimeSpanParse.TryParse(input, formatProvider, out result);
+        public static bool TryParseExact([NotNullWhen(true)] string? input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string? format, IFormatProvider? formatProvider, out TimeSpan result)
         {
-            ValidateStyles(styles);
-            result = default;
-            if (value is null || format is null || format.Length != 1 ||
-                !TryParseStandard(value, format[0], out result)) return false;
-            if ((styles & System.Globalization.TimeSpanStyles.AssumeNegative) != 0 && result._ticks > 0)
+            if (input is null || format is null)
             {
-                result = -result;
+                result = default;
+                return false;
             }
-            return true;
+            return TimeSpanParse.TryParseExact(input, format, formatProvider, TimeSpanStyles.None, out result);
         }
 
-        public static bool TryParseExact(string? value, string?[]? formats, IFormatProvider? formatProvider,
-            out TimeSpan result) =>
-            TryParseExact(value, formats, formatProvider, System.Globalization.TimeSpanStyles.None, out result);
+        public static bool TryParseExact(ReadOnlySpan<char> input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] ReadOnlySpan<char> format, IFormatProvider? formatProvider, out TimeSpan result)
+            => TimeSpanParse.TryParseExact(input, format, formatProvider, TimeSpanStyles.None, out result);
 
-        public static bool TryParseExact(string? value, string?[]? formats, IFormatProvider? formatProvider,
-            System.Globalization.TimeSpanStyles styles, out TimeSpan result)
+        public static bool TryParseExact([NotNullWhen(true)] string? input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string?[]? formats, IFormatProvider? formatProvider, out TimeSpan result)
         {
-            ValidateStyles(styles);
-            result = default;
-            if (value is null || formats is null) return false;
-            for (var index = 0; index < formats.Length; index++)
+            if (input is null)
             {
-                if (TryParseExact(value, formats[index], formatProvider, styles, out result)) return true;
+                result = default;
+                return false;
             }
-            return false;
+            return TimeSpanParse.TryParseExactMultiple(input, formats, formatProvider, TimeSpanStyles.None, out result);
         }
+        public static bool TryParseExact(ReadOnlySpan<char> input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string?[]? formats, IFormatProvider? formatProvider, out TimeSpan result)
+            => TimeSpanParse.TryParseExactMultiple(input, formats, formatProvider, TimeSpanStyles.None, out result);
 
-        public static bool TryParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
-            IFormatProvider? formatProvider, out TimeSpan result) =>
-            TryParseExact(value, format, formatProvider, System.Globalization.TimeSpanStyles.None, out result);
-
-        public static bool TryParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
-            IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles, out TimeSpan result)
+        public static bool TryParseExact([NotNullWhen(true)] string? input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string? format, IFormatProvider? formatProvider, TimeSpanStyles styles, out TimeSpan result)
         {
             ValidateStyles(styles);
-            return TryParseExact(new string(value), new string(format), formatProvider, styles, out result);
+
+            if (input is null || format is null)
+            {
+                result = default;
+                return false;
+            }
+            return TimeSpanParse.TryParseExact(input, format, formatProvider, styles, out result);
         }
 
-        public static bool TryParseExact(ReadOnlySpan<char> value, string?[]? formats,
-            IFormatProvider? formatProvider, out TimeSpan result) =>
-            TryParseExact(value, formats, formatProvider, System.Globalization.TimeSpanStyles.None, out result);
-
-        public static bool TryParseExact(ReadOnlySpan<char> value, string?[]? formats,
-            IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles, out TimeSpan result)
+        public static bool TryParseExact(ReadOnlySpan<char> input, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] ReadOnlySpan<char> format, IFormatProvider? formatProvider, TimeSpanStyles styles, out TimeSpan result)
         {
             ValidateStyles(styles);
-            return TryParseExact(new string(value), formats, formatProvider, styles, out result);
+            return TimeSpanParse.TryParseExact(input, format, formatProvider, styles, out result);
         }
+        public static bool TryParseExact([NotNullWhen(true)] string? input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string?[]? formats, IFormatProvider? formatProvider, TimeSpanStyles styles, out TimeSpan result)
+        {
+            ValidateStyles(styles);
+
+            if (input is null)
+            {
+                result = default;
+                return false;
+            }
+            return TimeSpanParse.TryParseExactMultiple(input, formats, formatProvider, styles, out result);
+        }
+
+        public static bool TryParseExact(ReadOnlySpan<char> input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string?[]? formats, IFormatProvider? formatProvider, TimeSpanStyles styles, out TimeSpan result)
+        {
+            ValidateStyles(styles);
+            return TimeSpanParse.TryParseExactMultiple(input, formats, formatProvider, styles, out result);
+        }
+        public override string ToString() => TimeSpanFormat.FormatC(this);
+        public string ToString([StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string? format) => TimeSpanFormat.Format(this, format, null);
+        public string ToString([StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] string? format, IFormatProvider? formatProvider) => TimeSpanFormat.Format(this, format, formatProvider);
+
+        public bool TryFormat(Span<char> destination, out int charsWritten, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] ReadOnlySpan<char> format = default, IFormatProvider? formatProvider = null)
+            => TimeSpanFormat.TryFormat(this, destination, out charsWritten, format, formatProvider);
+
+        /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat" />
+        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, [StringSyntax(StringSyntaxAttribute.TimeSpanFormat)] ReadOnlySpan<char> format = default, IFormatProvider? formatProvider = null)
+            => TimeSpanFormat.TryFormat(this, utf8Destination, out bytesWritten, format, formatProvider);
 
         public static TimeSpan operator +(TimeSpan value) => value;
         public static TimeSpan operator +(TimeSpan left, TimeSpan right) => new(checked(left._ticks + right._ticks));
@@ -390,14 +389,6 @@ namespace System
             return ticks == MaxTicks ? MaxValue : new((long)ticks);
         }
 
-        private static void ValidateStyles(System.Globalization.TimeSpanStyles styles)
-        {
-            if ((styles & ~System.Globalization.TimeSpanStyles.AssumeNegative) != 0)
-            {
-                throw new ArgumentException();
-            }
-        }
-
         internal static long TimeToTicks(int hour, int minute, int second)
         {
             var totalSeconds = (long)hour * SecondsPerHour + (long)minute * SecondsPerMinute + second;
@@ -408,266 +399,6 @@ namespace System
             return totalSeconds * TicksPerSecond;
         }
 
-        private string FormatInvariant(string? format = null)
-        {
-            if (format is not null && format.Length != 0 && format != "c" && format != "g" && format != "G")
-            {
-                throw new FormatException();
-            }
-            var negative = _ticks < 0;
-            var magnitude = negative ? unchecked((ulong)(-_ticks)) : (ulong)_ticks;
-            var days = magnitude / (ulong)TicksPerDay;
-            var hours = magnitude / (ulong)TicksPerHour % 24;
-            var minutes = magnitude / (ulong)TicksPerMinute % 60;
-            var seconds = magnitude / (ulong)TicksPerSecond % 60;
-            var fraction = (long)(magnitude % (ulong)TicksPerSecond);
-            var specifier = format is null or { Length: 0 } ? 'c' : format[0];
-            var dayText = specifier switch
-            {
-                'c' => days == 0 ? string.Empty : days.ToString() + ".",
-                'g' => days == 0 ? string.Empty : days.ToString() + ":",
-                _ => days.ToString() + ":",
-            };
-            var hourText = specifier == 'g'
-                ? hours.ToString()
-                : InvariantDateTimeText.TwoDigits((int)hours);
-            var fractionText = specifier switch
-            {
-                'g' => InvariantDateTimeText.Fraction(fraction),
-                'G' => "." + fraction.ToString().PadLeft(7, '0'),
-                _ => InvariantDateTimeText.FixedFraction(fraction),
-            };
-            return (negative ? "-" : string.Empty)
-                + dayText
-                + hourText + ":"
-                + InvariantDateTimeText.TwoDigits((int)minutes) + ":"
-                + InvariantDateTimeText.TwoDigits((int)seconds)
-                + fractionText;
-        }
-
-        private static bool TryParseStandard(
-            string value,
-            char format,
-            out TimeSpan result)
-        {
-            result = default;
-            if (value.Length == 0 || format is not ('c' or 'g' or 'G'))
-            {
-                return false;
-            }
-
-            var offset = 0;
-            var negative = value[0] == '-';
-            if (negative && ++offset == value.Length)
-            {
-                return false;
-            }
-
-            return format == 'c'
-                ? TryParseConstant(value, offset, negative, out result)
-                : TryParseGeneral(value, offset, negative, format == 'G', out result);
-        }
-
-        private static bool TryParseConstant(
-            string value,
-            int offset,
-            bool negative,
-            out TimeSpan result)
-        {
-            result = default;
-            var firstColon = value.IndexOf(':', offset);
-            if (firstColon < 0)
-            {
-                return false;
-            }
-
-            var days = 0;
-            var hourOffset = offset;
-            var daySeparator = value.IndexOf('.', offset);
-            if (daySeparator >= 0 && daySeparator < firstColon)
-            {
-                if (!TryReadVariableDigits(value, offset, daySeparator, out days))
-                {
-                    return false;
-                }
-                hourOffset = daySeparator + 1;
-            }
-            return TryParseClockTail(
-                value,
-                hourOffset,
-                firstColon,
-                days,
-                negative,
-                flexibleHour: false,
-                fixedFraction: false,
-                out result);
-        }
-
-        private static bool TryParseGeneral(
-            string value,
-            int offset,
-            bool negative,
-            bool longFormat,
-            out TimeSpan result)
-        {
-            result = default;
-            var firstColon = value.IndexOf(':', offset);
-            if (firstColon < 0)
-            {
-                return false;
-            }
-            var days = 0;
-            var hourOffset = offset;
-            var secondColon = value.IndexOf(':', firstColon + 1);
-            var hasDay = longFormat ||
-                secondColon >= 0 && value.IndexOf(':', secondColon + 1) >= 0;
-            if (hasDay)
-            {
-                if (!TryReadVariableDigits(value, offset, firstColon, out days))
-                {
-                    return false;
-                }
-                hourOffset = firstColon + 1;
-                firstColon = value.IndexOf(':', hourOffset);
-                if (firstColon < 0)
-                {
-                    return false;
-                }
-            }
-            return TryParseClockTail(
-                value,
-                hourOffset,
-                firstColon,
-                days,
-                negative,
-                flexibleHour: !longFormat,
-                fixedFraction: longFormat,
-                out result);
-        }
-
-        private static bool TryParseClockTail(
-            string value,
-            int hourOffset,
-            int firstColon,
-            int days,
-            bool negative,
-            bool flexibleHour,
-            bool fixedFraction,
-            out TimeSpan result)
-        {
-            result = default;
-            var hourWidth = firstColon - hourOffset;
-            if ((flexibleHour ? hourWidth is < 1 or > 2 : hourWidth != 2) ||
-                !TryReadVariableDigits(value, hourOffset, firstColon, out var hours) ||
-                !InvariantDateTimeText.TryReadDigits(value, firstColon + 1, 2, out var minutes) ||
-                !InvariantDateTimeText.HasSeparator(value, firstColon + 3, ':') ||
-                !InvariantDateTimeText.TryReadDigits(value, firstColon + 4, 2, out var seconds) ||
-                hours >= 24 || minutes >= 60 || seconds >= 60)
-            {
-                return false;
-            }
-
-            var endOfSeconds = firstColon + 6;
-            var fraction = 0L;
-            if (fixedFraction)
-            {
-                if (value.Length != endOfSeconds + 8 || value[endOfSeconds] != '.' ||
-                    !InvariantDateTimeText.TryReadFraction(
-                        value,
-                        endOfSeconds + 1,
-                        value.Length,
-                        out fraction))
-                {
-                    return false;
-                }
-            }
-            else if (endOfSeconds < value.Length &&
-                (value[endOfSeconds] != '.' ||
-                 !InvariantDateTimeText.TryReadFraction(
-                     value,
-                     endOfSeconds + 1,
-                     value.Length,
-                     out fraction)))
-            {
-                return false;
-            }
-
-            return TryCreateParsedTimeSpan(
-                days,
-                hours,
-                minutes,
-                seconds,
-                fraction,
-                negative,
-                out result);
-        }
-
-        private static bool TryCreateParsedTimeSpan(
-            int days,
-            int hours,
-            int minutes,
-            int seconds,
-            long fraction,
-            bool negative,
-            out TimeSpan result)
-        {
-            result = default;
-            try
-            {
-                var magnitude = checked((ulong)days * (ulong)TicksPerDay
-                    + (ulong)hours * (ulong)TicksPerHour
-                    + (ulong)minutes * (ulong)TicksPerMinute
-                    + (ulong)seconds * (ulong)TicksPerSecond
-                    + (ulong)fraction);
-                var limit = negative ? 0x8000000000000000UL : 0x7fff_ffff_ffff_ffffUL;
-                if (magnitude > limit)
-                {
-                    return false;
-                }
-                var ticks = negative
-                    ? magnitude == 0x8000000000000000UL
-                        ? long.MinValue
-                        : -(long)magnitude
-                    : (long)magnitude;
-                result = new TimeSpan(ticks);
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        private static bool TryCopy(string text, Span<char> destination, out int charsWritten)
-        {
-            if (destination.Length < text.Length)
-            {
-                charsWritten = 0;
-                return false;
-            }
-            for (var index = 0; index < text.Length; index++) destination[index] = text[index];
-            charsWritten = text.Length;
-            return true;
-        }
-
-        private static bool TryReadVariableDigits(string value, int offset, int end, out int result)
-        {
-            result = 0;
-            if (offset == end) return false;
-            for (var index = offset; index < end; index++)
-            {
-                var digit = value[index] - '0';
-                if ((uint)digit > 9 || result > (int.MaxValue - digit) / 10)
-                {
-                    result = 0;
-                    return false;
-                }
-                result = result * 10 + digit;
-            }
-            return true;
-        }
-
-        private static bool IsWhiteSpace(char value) => value is ' ' or '\t' or '\r' or '\n' or '\f' or '\v';
 
     }
 }

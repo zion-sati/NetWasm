@@ -132,8 +132,10 @@ namespace System
             return ic.ToType(conversionType, provider);
         }
 
+        [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull(nameof(value))]
         public static object? ChangeType(object? value, TypeCode typeCode) => ChangeType(value, typeCode, null);
 
+        [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull(nameof(value))]
         public static object? ChangeType(object? value, TypeCode typeCode, IFormatProvider? provider)
         {
             if (value is null && typeCode is TypeCode.Empty or TypeCode.String or TypeCode.Object)

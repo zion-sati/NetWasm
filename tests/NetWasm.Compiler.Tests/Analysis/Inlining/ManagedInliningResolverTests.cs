@@ -780,13 +780,23 @@ public sealed class ManagedInliningResolverTests
     }
 
     private sealed class Fixture :
-        IMethodBodyReader,
+        IMethodBodyReader, ICalleeMethodBodyReader,
         IMethodSpecializer,
         ICalledMethodResolver,
         IManagedInliningBodyValidator,
         IMethodInitializationTriggerClassifier,
         IRuntimeIntrinsicRegistry
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         private static readonly AssemblyIdentity Assembly = new("InliningTests");
         private static readonly CliTypeIdentity Int32 =
             CliTypeIdentity.Primitive("i4", CliValueKind.I4);
@@ -1213,8 +1223,18 @@ public sealed class ManagedInliningResolverTests
             CilMethodBody body) => throw new InvalidOperationException();
     }
 
-    private sealed class UnusedMethodBodyReader : IMethodBodyReader
+    private sealed class UnusedMethodBodyReader : IMethodBodyReader, ICalleeMethodBodyReader
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         public CilMethodBody ReadMethodBody(MethodDefinitionModel method) =>
             throw new InvalidOperationException();
 

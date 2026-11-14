@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Threading</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/HResults.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Threading/Barrier.cs" />
+    <Compile Include="System/Threading/CDSsyncETWBCLProvider.cs" />
+    <Compile Include="System/Threading/CountdownEvent.cs" />
+    <Compile Include="System/Threading/HostExecutionContext.cs" />
+    <Compile Include="System/Threading/HostExecutionContextManager.cs" />
+    <Compile Include="System/Threading/LockCookie.cs" />
+    <Compile Include="System/Threading/ReaderWriterLock.cs" />
+  </ItemGroup>
+</Project>

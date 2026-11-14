@@ -1,12 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de:
-// src/libraries/System.Private.CoreLib/src/System/Collections/Comparer.cs.
-// NetWasm adaptation: CoreLib has no ISerializable yet, so Comparer does not implement it and its
-// serialization constructor and GetObjectData are left out.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
+using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
 
 namespace System.Collections
 {
@@ -15,7 +14,7 @@ namespace System.Collections
     /// </summary>
     [Serializable]
     [TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
-    public sealed class Comparer : IComparer
+    public sealed class Comparer : IComparer, ISerializable
     {
         private readonly CompareInfo _compareInfo;
 
@@ -27,6 +26,22 @@ namespace System.Collections
             ArgumentNullException.ThrowIfNull(culture);
 
             _compareInfo = culture.CompareInfo;
+        }
+
+        private Comparer(SerializationInfo info, StreamingContext context)
+        {
+            ArgumentNullException.ThrowIfNull(info);
+
+            _compareInfo = (CompareInfo)info.GetValue("CompareInfo", typeof(CompareInfo))!;
+        }
+
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            ArgumentNullException.ThrowIfNull(info);
+
+            info.AddValue("CompareInfo", _compareInfo);
         }
 
         // Compares two Objects by calling CompareTo.

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.IO.MemoryMappedFiles</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="PlatformNotSupported/System.IO.MemoryMappedFiles.System.IO.MemoryMappedFiles.cs" />
+  </ItemGroup>
+</Project>

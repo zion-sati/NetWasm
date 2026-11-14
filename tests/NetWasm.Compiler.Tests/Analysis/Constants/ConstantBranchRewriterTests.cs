@@ -22,6 +22,141 @@ public sealed class ConstantBranchRewriterTests
         Assert.Same(body, Rule(body).Rewrite(body));
     }
 
+    // The null an unwritten reference-typed static field folds to decides the branches on it.
+    [Theory]
+    [InlineData(CilOperation.BranchIfTrue, false)]
+    [InlineData(CilOperation.BranchIfFalse, true)]
+    public void FoldsBranchesOnANullReference(CilOperation branch, bool taken)
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, branch, new CilOperand.BranchTarget(3)),
+            Instruction(2, CilOperation.Return),
+            Instruction(3, CilOperation.Return));
+
+        var rewritten = Rule(body).Rewrite(body);
+
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
+        Assert.Equal(taken ? CilOperation.Branch : CilOperation.Nop, rewritten.Instructions[1].Operation);
+    }
+
+    // `field ?? fallback`: the dup the branch reads goes, and the null it copied stays for the fallthrough's pop.
+    [Fact]
+    public void FoldsTheNullCoalescingBranchOnADuplicatedNull()
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, CilOperation.Duplicate),
+            Instruction(2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(5)),
+            Instruction(3, CilOperation.Pop),
+            Instruction(4, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(5, CilOperation.Return));
+
+        var rewritten = Rule(body).Rewrite(body);
+
+        Assert.Equal(CilOperation.LoadNull, rewritten.Instructions[0].Operation);
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[1].Operation);
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[2].Operation);
+        Assert.Equal(CilOperation.Pop, rewritten.Instructions[3].Operation);
+    }
+
+    // `fixed (byte* p = array)` with a null array: the dup the local takes stays, so when the branch folds the
+    // null it copied away, the dup pushes the null itself.
+    [Fact]
+    public void ADupStillReadAfterItsFoldedSourcePushesTheNullItself()
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, CilOperation.Duplicate),
+            Instruction(2, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            Instruction(3, CilOperation.BranchIfFalse, new CilOperand.BranchTarget(5)),
+            Instruction(4, CilOperation.Return),
+            Instruction(5, CilOperation.Return));
+
+        var rewritten = Rule(body).Rewrite(body);
+
+        Assert.Equal(
+            [CilOperation.Nop, CilOperation.LoadNull, CilOperation.StoreLocal, CilOperation.Branch],
+            rewritten.Instructions.Take(4).Select(static instruction => instruction.Operation));
+    }
+
+    // A dup folded before the null it copied stays folded.
+    [Fact]
+    public void ADupFoldedBeforeItsSourceStaysFolded()
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, CilOperation.Duplicate),
+            Instruction(2, CilOperation.LoadNull),
+            Instruction(3, CilOperation.CompareEqual),
+            Instruction(4, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            Instruction(5, CilOperation.LoadNull),
+            Instruction(6, CilOperation.CompareEqual),
+            Instruction(7, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(9)),
+            Instruction(8, CilOperation.Return),
+            Instruction(9, CilOperation.Return));
+
+        var rewritten = Rule(body).Rewrite(body);
+
+        Assert.Equal(
+            [CilOperation.Nop, CilOperation.Nop, CilOperation.Nop, CilOperation.LoadInt32, CilOperation.StoreLocal,
+                CilOperation.Nop, CilOperation.Nop, CilOperation.Branch],
+            rewritten.Instructions.Take(8).Select(static instruction => instruction.Operation));
+    }
+
+    // `field != null` compiles to cgt.un against null.
+    [Fact]
+    public void FoldsAnUnsignedComparisonOfTwoNulls()
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, CilOperation.LoadNull),
+            Instruction(2, CilOperation.CompareGreaterThanUnsigned),
+            Instruction(3, CilOperation.BranchIfFalse, new CilOperand.BranchTarget(5)),
+            Instruction(4, CilOperation.Return),
+            Instruction(5, CilOperation.Return));
+
+        var rewritten = Rule(body).Rewrite(body);
+
+        Assert.Equal(CilOperation.Branch, rewritten.Instructions[3].Operation);
+        Assert.All(rewritten.Instructions.Take(3), instruction => Assert.Equal(CilOperation.Nop, instruction.Operation));
+    }
+
+    // A null stored to a local decides the branches on the local's loads, as an earlier pass leaves a static field read
+    // once and kept in a local; the store stays, and a load is never turned into an int32 constant.
+    [Fact]
+    public void FoldsBranchesOnANullStoredToALocal()
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            Instruction(2, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            Instruction(3, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(6)),
+            Instruction(4, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            Instruction(5, CilOperation.Return),
+            Instruction(6, CilOperation.Return));
+
+        var rewritten = Rule(body).Rewrite(body);
+
+        Assert.Equal(CilOperation.StoreLocal, rewritten.Instructions[1].Operation);
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[2].Operation);
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[3].Operation);
+        Assert.Equal(CilOperation.LoadLocal, rewritten.Instructions[4].Operation);
+    }
+
+    // A null never compares with an integer constant, which verifiable IL does not do.
+    [Fact]
+    public void DoesNotCompareANullWithAnInteger()
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            Instruction(2, CilOperation.CompareEqual),
+            Instruction(3, CilOperation.Return));
+
+        Assert.Same(body, Rule(body).Rewrite(body));
+    }
+
     [Fact]
     public void RejectsMissingGraphBuilderAndBody()
     {

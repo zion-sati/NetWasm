@@ -3,7 +3,7 @@
 //
 // Integer decimal-string methods and their dependencies copied from
 // dotnet/runtime Number.Formatting.cs at
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Runtime allocation is supplied by NetWasm's String.FastAllocateString.
 
 using System.Buffers.Text;
@@ -239,6 +239,14 @@ namespace System
             }
         }
 
+        // ToString(provider) with no format (0.10.3's pay-for-play rule): the default-format path on its own, so
+        // the format-string parser stays unreachable, and a null provider reads the current negative sign
+        // through NumberFormatInfo's mirror instead of constructing an instance.
+        public static string FormatInt32(int value, IFormatProvider? provider) =>
+            value >= 0 ?
+                UInt32ToDecStr((uint)value) :
+                NegativeInt32ToDecStr(value, digits: -1, provider is null ? NumberFormatInfo.CurrentNegativeSign : NumberFormatInfo.GetInstance(provider).NegativeSign);
+
         public static string FormatUInt32(uint value, string? format, IFormatProvider? provider)
         {
             // Fast path for default format
@@ -470,6 +478,11 @@ namespace System
                 }
             }
         }
+
+        public static string FormatInt64(long value, IFormatProvider? provider) =>
+            value >= 0 ?
+                UInt64ToDecStr((ulong)value) :
+                NegativeInt64ToDecStr(value, digits: -1, provider is null ? NumberFormatInfo.CurrentNegativeSign : NumberFormatInfo.GetInstance(provider).NegativeSign);
 
         public static string FormatUInt64(ulong value, string? format, IFormatProvider? provider)
         {

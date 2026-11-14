@@ -170,6 +170,7 @@ namespace System
 
             internal static unsafe Error Accept(SafeHandle socket, byte* socketAddress, int* socketAddressLen, IntPtr* acceptedFd)
             {
+                ThrowIfNonBlocking(socket, "Accepting a connection");
                 var error = Network.Accept(Socket(socket), out var accepted, out var remote);
                 if (error == SocketError.Success)
                 {
@@ -190,8 +191,11 @@ namespace System
                 }
             }
 
-            internal static unsafe Error Connect(SafeHandle socket, byte* socketAddress, int socketAddressLen) =>
-                Native(Network.Connect(Socket(socket), EndPoint(socketAddress, socketAddressLen)));
+            internal static unsafe Error Connect(SafeHandle socket, byte* socketAddress, int socketAddressLen)
+            {
+                ThrowIfNonBlocking(socket, "Connecting");
+                return Native(Network.Connect(Socket(socket), EndPoint(socketAddress, socketAddressLen)));
+            }
 
             internal static unsafe Error Connectx(SafeHandle socket, byte* socketAddress, int socketAddressLen, Span<byte> buffer,
                 int bufferLen, int enableTfo, int* sent)
@@ -202,14 +206,20 @@ namespace System
 
             internal static unsafe Error Send(SafeHandle socket, byte* buffer, int bufferLen, SocketFlags flags, int* sent)
             {
-                var error = Network.Send(Socket(socket), new ReadOnlySpan<byte>(buffer, bufferLen), out var count);
+                var data = new ReadOnlySpan<byte>(buffer, bufferLen);
+                var error = NonBlocking(socket)
+                    ? Network.TrySend(Socket(socket), data, out var count)
+                    : Network.Send(Socket(socket), data, out count);
                 *sent = count;
                 return Native(error);
             }
 
             internal static unsafe Error Receive(SafeHandle socket, byte* buffer, int bufferLen, SocketFlags flags, int* received)
             {
-                var error = Network.Receive(Socket(socket), new Span<byte>(buffer, bufferLen), out var count);
+                var data = new Span<byte>(buffer, bufferLen);
+                var error = NonBlocking(socket)
+                    ? Network.TryReceive(Socket(socket), data, out var count)
+                    : Network.Receive(Socket(socket), data, out count);
                 *received = count;
                 return Native(error);
             }
@@ -222,10 +232,13 @@ namespace System
                 SocketError error;
                 if (IsStream(socket))
                 {
-                    error = Network.Send(Socket(socket), data, out count);
+                    error = NonBlocking(socket)
+                        ? Network.TrySend(Socket(socket), data, out count)
+                        : Network.Send(Socket(socket), data, out count);
                 }
                 else
                 {
+                    ThrowIfNonBlocking(socket, "Sending a datagram");
                     var remote = messageHeader->SocketAddress == null || messageHeader->SocketAddressLen == 0
                         ? null
                         : EndPoint(messageHeader->SocketAddress, messageHeader->SocketAddressLen);
@@ -251,10 +264,13 @@ namespace System
                 System.Net.IPEndPoint? remote = null;
                 if (IsStream(socket))
                 {
-                    error = Network.Receive(Socket(socket), data, out count);
+                    error = NonBlocking(socket)
+                        ? Network.TryReceive(Socket(socket), data, out count)
+                        : Network.Receive(Socket(socket), data, out count);
                 }
                 else
                 {
+                    ThrowIfNonBlocking(socket, "Receiving a datagram");
                     error = Network.ReceiveFrom(Socket(socket), data, out count, out remote);
                 }
 
@@ -470,6 +486,20 @@ namespace System
                 internal static int GetFD(SafeHandle fd) => 1;
 
                 internal static int GetFD(IntPtr fd) => 1;
+            }
+
+            // A non-blocking socket (Socket.Blocking false) sends and receives only what the platform moves at once,
+            // and otherwise reports EAGAIN, as on Linux. Connecting, accepting and datagrams would need readiness,
+            // which the platform network does not report, so they throw on a non-blocking socket.
+            private static bool NonBlocking(SafeHandle socket) => socket is SafeSocketHandle { IsNonBlocking: true };
+
+            private static void ThrowIfNonBlocking(SafeHandle socket, string operation)
+            {
+                if (NonBlocking(socket))
+                {
+                    throw new PlatformNotSupportedException(
+                        operation + " on a non-blocking socket needs readiness reporting, which the platform network does not have. Use the asynchronous socket methods instead.");
+                }
             }
 
             private static bool IsStream(SafeHandle socket) =>

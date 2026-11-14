@@ -11,6 +11,7 @@ namespace System.Text
     // Unsupported serialization, reflection and runtime-intrinsic paths are
     // intentionally outside the NetWasm CoreLib profile.
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed partial class StringBuilder
     {
         internal char[] m_ChunkChars;
@@ -133,6 +134,7 @@ namespace System.Text
             }
         }
 
+        [System.Runtime.CompilerServices.IndexerName("Chars")]
         public char this[int index]
         {
             // As in .NET, reading outside the text throws IndexOutOfRangeException and
@@ -148,10 +150,24 @@ namespace System.Text
             }
             set
             {
+                if ((uint)index >= (uint)Length)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(index),
+                        "Index was out of range. Must be non-negative and less than the size of the collection.");
+                }
                 var chunk = FindChunkForIndex(index);
                 chunk.m_ChunkChars[index - chunk.m_ChunkOffset] = value;
             }
         }
+
+        // Earlier NetWasm libraries reference these accessor names directly in
+        // their IL. Keep those binary entry points while using the standard name
+        // for newly compiled indexer calls.
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        public char get_Item(int index) => this[index];
+
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        public void set_Item(int index, char value) => this[index] = value;
 
         public int EnsureCapacity(int capacity)
         {
@@ -772,10 +788,6 @@ namespace System.Text
 
         private StringBuilder FindChunkForIndex(int index)
         {
-            if ((uint)index >= (uint)Length)
-            {
-                throw new ArgumentOutOfRangeException(nameof(index));
-            }
             var chunk = this;
             while (chunk.m_ChunkOffset > index)
             {

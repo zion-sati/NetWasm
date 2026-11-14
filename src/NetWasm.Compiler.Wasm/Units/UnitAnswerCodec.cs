@@ -17,7 +17,7 @@ namespace NetWasm.Compiler.Wasm.Units;
 /// </summary>
 internal static class UnitAnswerCodec
 {
-    private const byte Format = 3;
+    private const byte Format = 4;
 
     // The answer's encoding, or null for a kind that keeps no value. A site's caller is the
     // key's own ("caller@offset"), so it is written only when it is not.
@@ -180,6 +180,8 @@ internal static class UnitAnswerCodec
                     Text(writer, site.Caller, caller);
                     writer.Int(site.IlOffset);
                     writer.Method(site.Declaration);
+                    // Whether the site calls the shared object dispatch body, which its emission follows.
+                    writer.Bool(site.SharesObjectDispatch);
                     tail = writer.Length;
                     writer.Int(site.Targets.Length);
                     foreach (var target in site.Targets)
@@ -241,6 +243,17 @@ internal static class UnitAnswerCodec
                     writer.Type(descriptor.Type);
                     writer.Int(descriptor.TypeId);
                 });
+                break;
+            case UnitQueryKind.StructMarshalling:
+                Array(writer, (ImmutableArray<StructMarshallingLayout>)value, static (writer, layout) =>
+                {
+                    writer.Type(layout.Type);
+                    writer.Int(layout.TypeId);
+                    writer.Int(layout.Address);
+                });
+                break;
+            case UnitQueryKind.UninitializedObjectTypes:
+                Array(writer, (ImmutableArray<CliTypeIdentity>)value, static (writer, type) => writer.Type(type));
                 break;
             case UnitQueryKind.EnumMetadata:
                 Array(writer, (ImmutableArray<EnumMetadataLayout>)value, static (writer, layout) =>
@@ -445,6 +458,7 @@ internal static class UnitAnswerCodec
                     var siteCaller = Text(reader, caller);
                     var offset = reader.Int();
                     var declaration = reader.Method();
+                    var shares = reader.Bool();
                     var count = reader.Int();
                     var targets = ImmutableArray.CreateBuilder<DispatchTargetModel>(count);
                     for (var index = 0; index < count; index++)
@@ -452,7 +466,10 @@ internal static class UnitAnswerCodec
                         var receiver = reader.Type()!;
                         targets.Add(new(receiver, reader.Method()));
                     }
-                    return new DispatchCallSiteModel(siteCaller, offset, declaration, targets.MoveToImmutable());
+                    return new DispatchCallSiteModel(siteCaller, offset, declaration, targets.MoveToImmutable())
+                    {
+                        SharesObjectDispatch = shares,
+                    };
                 });
                 break;
             case UnitQueryKind.TypeTestSite:
@@ -502,6 +519,12 @@ internal static class UnitAnswerCodec
                 break;
             case UnitQueryKind.MetadataTypeDescriptors:
                 value = Array(reader, static reader => new MetadataTypeDescriptorLayout(reader.Type()!, reader.Int()));
+                break;
+            case UnitQueryKind.StructMarshalling:
+                value = Array(reader, static reader => new StructMarshallingLayout(reader.Type()!, reader.Int(), reader.Int()));
+                break;
+            case UnitQueryKind.UninitializedObjectTypes:
+                value = Array(reader, static reader => reader.Type()!);
                 break;
             case UnitQueryKind.EnumMetadata:
                 value = Array(reader, static reader =>

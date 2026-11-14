@@ -8,6 +8,11 @@ internal static class NetWasmCompiler
 {
     public static CompilationResult Compile(CompilerOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        options = options with
+        {
+            ReferencePaths = [.. NetWasm.TestInfrastructure.TestAssets.WithFrameworkReferences(options.EntryAssemblyPath, options.ReferencePaths)],
+        };
         using var services = new ServiceCollection()
             .AddNetWasmCompiler()
             .BuildServiceProvider();

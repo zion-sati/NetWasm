@@ -93,6 +93,7 @@ namespace System.Runtime.Versioning
     }
 
     [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Constructor, Inherited = false)]
+    [System.Diagnostics.Conditional("RESOURCE_ANNOTATION_WORK")]
     public sealed class ResourceConsumptionAttribute : Attribute
     {
         public ResourceConsumptionAttribute(ResourceScope resourceScope)

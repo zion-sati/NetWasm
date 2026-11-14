@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <AssemblyName>System.Threading.Channels</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/Internal/Padding.cs" />
+    <Compile Include="Common/System/Collections/Concurrent/IProducerConsumerQueue.cs" />
+    <Compile Include="Common/System/Collections/Concurrent/MultiProducerMultiConsumerQueue.cs" />
+    <Compile Include="Common/System/Collections/Concurrent/SingleProducerSingleConsumerQueue.cs" />
+    <Compile Include="Common/System/Collections/Generic/Deque.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/Threading/Channels/AsyncOperation.cs" />
+    <Compile Include="System/Threading/Channels/AsyncOperation.netcoreapp.cs" />
+    <Compile Include="System/Threading/Channels/BoundedChannel.cs" />
+    <Compile Include="System/Threading/Channels/BoundedChannelFullMode.cs" />
+    <Compile Include="System/Threading/Channels/Channel.cs" />
+    <Compile Include="System/Threading/Channels/Channel.netcoreapp.cs" />
+    <Compile Include="System/Threading/Channels/ChannelClosedException.cs" />
+    <Compile Include="System/Threading/Channels/ChannelClosedException.netstandard21.cs" />
+    <Compile Include="System/Threading/Channels/ChannelOptions.cs" />
+    <Compile Include="System/Threading/Channels/ChannelOptions.netcoreapp.cs" />
+    <Compile Include="System/Threading/Channels/ChannelReader.cs" />
+    <Compile Include="System/Threading/Channels/ChannelUtilities.cs" />
+    <Compile Include="System/Threading/Channels/ChannelUtilities.netcoreapp.cs" />
+    <Compile Include="System/Threading/Channels/ChannelWriter.cs" />
+    <Compile Include="System/Threading/Channels/Channel_1.cs" />
+    <Compile Include="System/Threading/Channels/Channel_2.cs" />
+    <Compile Include="System/Threading/Channels/IDebugEnumerator.cs" />
+    <Compile Include="System/Threading/Channels/RendezvousChannel.cs" />
+    <Compile Include="System/Threading/Channels/SingleConsumerUnboundedChannel.cs" />
+    <Compile Include="System/Threading/Channels/UnboundedChannel.cs" />
+    <Compile Include="System/Threading/Channels/UnboundedPriorityChannel.cs" />
+    <Compile Include="System/VoidResult.cs" />
+    <ProjectReference Include="../System.Collections/System.Collections.csproj" />
+  </ItemGroup>
+</Project>

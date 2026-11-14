@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime System.Private.CoreLib; upstream commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under the MIT license.
 namespace System.Text;
 
@@ -101,6 +101,7 @@ public sealed class EncoderExceptionFallbackBuffer : EncoderFallbackBuffer
 }
 
 [Serializable]
+[System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
 public sealed class EncoderFallbackException : ArgumentException
 {
     private readonly char _unknown;

@@ -196,6 +196,12 @@ internal sealed class UnitQueryReplayer(
             case UnitQueryKind.EnumMetadata:
                 _ = ((IEnumMetadataSource)typeDescriptors).EnumMetadata;
                 return true;
+            case UnitQueryKind.StructMarshalling:
+                _ = ((IStructMarshallingSource)typeDescriptors).StructMarshalling;
+                return true;
+            case UnitQueryKind.UninitializedObjectTypes:
+                _ = ((IUninitializedObjectSource)typeDescriptors).UninitializedObjectTypes;
+                return true;
             case UnitQueryKind.ManagedCallSite:
                 {
                     var separator = key.LastIndexOf('@');

@@ -1,0 +1,206 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- NetWasm.App's implementation pack. It builds every assembly under src/libraries and collects them in
+       $(OutDir)framework, the layout the compiler test harness reads and the package's framework folder is
+       made from. -->
+  <PropertyGroup>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IsAotCompatible>false</IsAotCompatible>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PackageId>NetWasm.App.Runtime</PackageId>
+    <Version>0.4.2</Version>
+    <Description>Implementations of NetWasm.App, the framework libraries of the NetWasm netwasm0.1 profile, for the NetWasm compiler.</Description>
+    <PackageTags>netwasm;runtime;framework</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <!-- Packed by the NetWasm SDK's canonical pack task, through the contract boundary NetWasm.Ref uses. -->
+    <NetWasmSdkRefPackEnabled>true</NetWasmSdkRefPackEnabled>
+    <NetWasmSdkContractPackTarget>NetWasmAppRuntimePack</NetWasmSdkContractPackTarget>
+    <NuGetBuildTasksPackTargets>$(MSBuildProjectDirectory)/../NetWasm.Sdk/Sdk/NuGetBuildTasksPackTargets.targets</NuGetBuildTasksPackTargets>
+    <ImportNuGetBuildTasksPackTargetsFromSdk>true</ImportNuGetBuildTasksPackTargetsFromSdk>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmSdkPackTaskAssemblyFile>$(NetWasmPackTaskOutput)</NetWasmSdkPackTaskAssemblyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <NetWasmAppLibrary Include="$(MSBuildThisFileDirectory)../libraries/*/*.csproj" />
+    <ProjectReference Include="@(NetWasmAppLibrary)" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <Target Name="NetWasmAppResolveImplementations">
+    <MSBuild Projects="@(NetWasmAppLibrary)"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)"
+             BuildInParallel="$(BuildInParallel)">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmAppImplementation" />
+    </MSBuild>
+    <ItemGroup>
+      <_NetWasmAppImplementationSymbols Include="@(_NetWasmAppImplementation->'%(RootDir)%(Directory)%(Filename).pdb')"
+                                        Condition="Exists('%(RootDir)%(Directory)%(Filename).pdb')" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="NetWasmAppCollectFramework" AfterTargets="Build" DependsOnTargets="NetWasmAppResolveImplementations">
+    <Copy SourceFiles="@(_NetWasmAppImplementation)"
+          DestinationFolder="$(OutDir)framework"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- The zlib codecs' native archive (eng/build-compression-native.sh: dotnet/runtime's pal_zlib over zlib-ng, from
+       src/native), for each width. It builds when the pinned Emscripten SDK is present, as the runtime pack's archives
+       regenerate; packing requires it. Consumers restore the archive and need no Emscripten. -->
+  <PropertyGroup>
+    <NetWasmAppCompressionArchive>libSystem.IO.Compression.Native.a</NetWasmAppCompressionArchive>
+    <!-- Cryptography's native half (eng/build-crypto-native.sh: dotnet/runtime's System.Security.Cryptography.Native
+         shim over the OpenSSL release eng/toolchain.json pins). -->
+    <NetWasmAppCryptoArchive>libSystem.Security.Cryptography.Native.OpenSsl.a</NetWasmAppCryptoArchive>
+  </PropertyGroup>
+  <ItemGroup>
+    <_NetWasmAppCompressionInput Include="$(MSBuildProjectDirectory)/../native/**/*" />
+    <_NetWasmAppCompressionInput Include="$(MSBuildProjectDirectory)/../../eng/build-compression-native.sh" />
+    <_NetWasmAppNativeTarget Include="wasm32;wasm64" />
+    <_NetWasmAppCryptoInput Include="$(MSBuildProjectDirectory)/../native/libs/System.Security.Cryptography.Native/**/*" />
+    <_NetWasmAppCryptoInput Include="$(MSBuildProjectDirectory)/../native/libs/Common/**/*" />
+    <_NetWasmAppCryptoInput Include="$(MSBuildProjectDirectory)/../native/minipal/**/*" />
+    <_NetWasmAppCryptoInput Include="$(MSBuildProjectDirectory)/../../eng/build-crypto-native.sh" />
+    <_NetWasmAppCryptoInput Include="$(MSBuildProjectDirectory)/../../eng/toolchain.json" />
+  </ItemGroup>
+
+  <!-- OutDir is only known once the SDK's targets have evaluated. -->
+  <Target Name="NetWasmAppResolveNativeOutput">
+    <PropertyGroup>
+      <NetWasmAppNativeOutput>$(OutDir)native/</NetWasmAppNativeOutput>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="NetWasmAppBuildCompressionNative"
+          AfterTargets="Build"
+          DependsOnTargets="NetWasmAppResolveNativeOutput"
+          Condition="'$(NETWASM_EMSDK_ROOT)' != ''"
+          Inputs="@(_NetWasmAppCompressionInput)"
+          Outputs="@(_NetWasmAppNativeTarget->'$(NetWasmAppNativeOutput)%(Identity)/$(NetWasmAppCompressionArchive)')">
+    <Exec Command="bash &quot;$(MSBuildProjectDirectory)/../../eng/build-compression-native.sh&quot; --target %(_NetWasmAppNativeTarget.Identity) --output &quot;$(NetWasmAppNativeOutput)%(_NetWasmAppNativeTarget.Identity)/$(NetWasmAppCompressionArchive)&quot;" />
+  </Target>
+
+  <Target Name="NetWasmAppBuildCryptoNative"
+          AfterTargets="Build"
+          DependsOnTargets="NetWasmAppResolveNativeOutput"
+          Condition="'$(NETWASM_EMSDK_ROOT)' != ''"
+          Inputs="@(_NetWasmAppCryptoInput)"
+          Outputs="@(_NetWasmAppNativeTarget->'$(NetWasmAppNativeOutput)%(Identity)/$(NetWasmAppCryptoArchive)')">
+    <Exec Command="bash &quot;$(MSBuildProjectDirectory)/../../eng/build-crypto-native.sh&quot; --target %(_NetWasmAppNativeTarget.Identity) --output &quot;$(NetWasmAppNativeOutput)%(_NetWasmAppNativeTarget.Identity)/$(NetWasmAppCryptoArchive)&quot;" />
+  </Target>
+
+  <Target Name="NetWasmAppRuntimeResolvePackTaskOutput"
+          BeforeTargets="Pack">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Condition="'$(NoBuild)' != 'true'"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <!-- framework/ is outside NuGet's asset folders: C# compiles against NetWasm.App.Ref, and the
+       buildTransitive targets list these implementations for the NetWasm compiler. -->
+  <Target Name="NetWasmAppRuntimePack"
+          DependsOnTargets="NetWasmAppResolveImplementations;NetWasmAppResolveNativeOutput;NetWasmAppRuntimeResolvePackTaskOutput;_InitializeNuspecRepositoryInformationProperties"
+          Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'">
+    <PropertyGroup>
+      <NetWasmAppRuntimePackageFilePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmAppRuntimePackageFilePath>
+      <NetWasmAppRuntimeNuspecFilePath>$([System.IO.Path]::Combine('$(NuspecOutputPath)', '$(PackageId).nuspec'))</NetWasmAppRuntimeNuspecFilePath>
+      <NetWasmAppRuntimeManifestFilePath>$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.manifest.json'))</NetWasmAppRuntimeManifestFilePath>
+      <NetWasmAppRuntimeDiagnosticFilePath>$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.diagnostic.json'))</NetWasmAppRuntimeDiagnosticFilePath>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(NetWasmAppNativeOutput)wasm32/$(NetWasmAppCompressionArchive)') Or !Exists('$(NetWasmAppNativeOutput)wasm64/$(NetWasmAppCompressionArchive)')"
+           Code="NWRF012"
+           Text="NetWasm.App.Runtime packs the compression codecs' native archives; build it with NETWASM_EMSDK_ROOT set to the pinned Emscripten SDK." />
+    <Error Condition="!Exists('$(NetWasmAppNativeOutput)wasm32/$(NetWasmAppCryptoArchive)') Or !Exists('$(NetWasmAppNativeOutput)wasm64/$(NetWasmAppCryptoArchive)')"
+           Code="NWRF013"
+           Text="NetWasm.App.Runtime packs cryptography's native archives; build it with NETWASM_EMSDK_ROOT set to the pinned Emscripten SDK." />
+    <Error Condition="'@(_NetWasmAppImplementation->Count())' != '@(NetWasmAppLibrary->Count())'"
+           Code="NWRF011"
+           Text="Every NetWasm.App library must produce an implementation assembly." />
+    <ItemGroup>
+      <_NetWasmAppRuntimeTargetProfile Include="netwasm0.1">
+        <Alias>netwasm0.1</Alias>
+        <Identifier>NetWasm</Identifier>
+        <Version>v0.1</Version>
+        <AssetFolder>NetWasm,Version=v0.1</AssetFolder>
+        <DependencyGroup>NetWasm,Version=v0.1</DependencyGroup>
+      </_NetWasmAppRuntimeTargetProfile>
+      <_NetWasmAppRuntimePackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))">
+        <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))</SourcePath>
+        <PackagePath>README.md</PackagePath>
+        <PackKind>Content</PackKind>
+      </_NetWasmAppRuntimePackageFile>
+      <_NetWasmAppRuntimePackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/buildTransitive/NetWasm.App.Runtime.targets'))">
+        <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/buildTransitive/NetWasm.App.Runtime.targets'))</SourcePath>
+        <PackagePath>buildTransitive/NetWasm.App.Runtime.targets</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmAppRuntimePackageFile>
+      <_NetWasmAppRuntimeNativeFile Include="@(_NetWasmAppNativeTarget->'$(NetWasmAppNativeOutput)%(Identity)/$(NetWasmAppCompressionArchive)')"
+                                    WasmTarget="%(Identity)" />
+      <_NetWasmAppRuntimeNativeFile Include="@(_NetWasmAppNativeTarget->'$(NetWasmAppNativeOutput)%(Identity)/$(NetWasmAppCryptoArchive)')"
+                                    WasmTarget="%(Identity)" />
+      <_NetWasmAppRuntimePackageFile Include="@(_NetWasmAppRuntimeNativeFile->'%(FullPath)')">
+        <SourcePath>%(_NetWasmAppRuntimeNativeFile.FullPath)</SourcePath>
+        <PackagePath>native/%(_NetWasmAppRuntimeNativeFile.WasmTarget)/%(_NetWasmAppRuntimeNativeFile.Filename)%(_NetWasmAppRuntimeNativeFile.Extension)</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmAppRuntimePackageFile>
+      <_NetWasmAppRuntimePackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../native/external/openssl/LICENSE.txt'))">
+        <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../native/external/openssl/LICENSE.txt'))</SourcePath>
+        <PackagePath>native/openssl.LICENSE.txt</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmAppRuntimePackageFile>
+      <_NetWasmAppRuntimePackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../native/external/zlib-ng/LICENSE.md'))">
+        <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../native/external/zlib-ng/LICENSE.md'))</SourcePath>
+        <PackagePath>native/zlib-ng.LICENSE.md</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmAppRuntimePackageFile>
+      <_NetWasmAppRuntimeFrameworkFile Include="@(_NetWasmAppImplementation);@(_NetWasmAppImplementationSymbols)" />
+      <_NetWasmAppRuntimePackageFile Include="@(_NetWasmAppRuntimeFrameworkFile)">
+        <SourcePath>%(_NetWasmAppRuntimeFrameworkFile.FullPath)</SourcePath>
+        <PackagePath>framework/%(_NetWasmAppRuntimeFrameworkFile.Filename)%(_NetWasmAppRuntimeFrameworkFile.Extension)</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmAppRuntimePackageFile>
+    </ItemGroup>
+    <CanonicalPackMsBuildTask
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      Authors="$(Authors)"
+      Description="$(Description)"
+      PackageOutputPath="$(NetWasmAppRuntimePackageFilePath)"
+      CanonicalTargetFramework="NetWasm,Version=v0.1"
+      TargetProfiles="@(_NetWasmAppRuntimeTargetProfile)"
+      PackageFiles="@(_NetWasmAppRuntimePackageFile)"
+      IncludeBuildOutput="true"
+      IncludeContentInPack="true"
+      SuppressDependenciesWhenPacking="true"
+      PackageOwners="$(PackageOwners)"
+      PackageProjectUrl="$(PackageProjectUrl)"
+      PackageLicenseExpression="$(PackageLicenseExpression)"
+      PackageLicenseFile="$(PackageLicenseFile)"
+      PackageReadmeFile="$(PackageReadmeFile)"
+      PackageCopyright="$(Copyright)"
+      PackageTags="$(PackageTags)"
+      RepositoryUrl="$(RepositoryUrl)"
+      RepositoryType="$(RepositoryType)"
+      RepositoryBranch="$(RepositoryBranch)"
+      RepositoryCommit="$(RepositoryCommit)"
+      PublishRepositoryUrl="$(PublishRepositoryUrl)"
+      NuspecOutputPath="$(NetWasmAppRuntimeNuspecFilePath)"
+      ManifestOutputPath="$(NetWasmAppRuntimeManifestFilePath)"
+      DiagnosticOutputPath="$(NetWasmAppRuntimeDiagnosticFilePath)"
+      NoBuild="$(NoBuild)"
+      SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

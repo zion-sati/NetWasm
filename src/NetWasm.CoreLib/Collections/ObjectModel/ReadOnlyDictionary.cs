@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Adapted from dotnet/runtime at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace System.Collections.ObjectModel
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public class ReadOnlyDictionary<TKey, TValue> : IDictionary<TKey, TValue>, IDictionary,
         IReadOnlyDictionary<TKey, TValue> where TKey : notnull
     {

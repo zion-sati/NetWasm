@@ -40,9 +40,9 @@ internal sealed class ValueTypeDescriptorBuilder(
                      .Where(pair =>
                          pair.Key.IsValueType &&
                          pair.Key.HasRuntimeStorage &&
-                         pair.Key.Shape is not (
-                             CliTypeShape.ManagedByReference or
-                             CliTypeShape.UnmanagedPointer))
+                         pair.Key.Shape != CliTypeShape.ManagedByReference &&
+                         (pair.Key.Shape != CliTypeShape.UnmanagedPointer ||
+                          _types.ValueLayoutState.Values.ContainsKey(pair.Key)))
                      .OrderBy(pair => pair.Value.TypeId))
         {
             AddValueDescriptor(type, boxed);

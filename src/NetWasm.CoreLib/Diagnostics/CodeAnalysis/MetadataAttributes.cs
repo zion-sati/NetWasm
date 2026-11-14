@@ -284,6 +284,7 @@ namespace System.Diagnostics.CodeAnalysis
     }
 
     [AttributeUsage(AttributeTargets.All, Inherited = false, AllowMultiple = true)]
+    [System.Diagnostics.Conditional("CODE_ANALYSIS")]
     public sealed class SuppressMessageAttribute : Attribute
     {
         public SuppressMessageAttribute(string category, string checkId)

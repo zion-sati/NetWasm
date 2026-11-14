@@ -26,13 +26,13 @@ internal sealed class AttributeQueryLowerer(
         var queries = ImmutableDictionary.CreateBuilder<int, AttributeQueryCall>();
         foreach (var instruction in body.Instructions)
         {
-            // Method tokens are metadata references, so the ordinary call
-            // resolver deliberately ignores them. Inspect the decoder-bound
-            // method here as well: otherwise expression-tree metadata could
-            // bypass the direct-query boundary without an executable call.
-            var method = instruction.Operation == CilOperation.LoadMethodToken
-                ? ((CilOperand.MethodInstance)instruction.Operand).Value
-                : calls.Resolve(instruction);
+            // Indirect calls retain their managed implementations. Only direct
+            // calls can carry the caller's bounded target and filter proofs.
+            if (instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual))
+            {
+                continue;
+            }
+            var method = calls.Resolve(instruction);
             if (method is null)
             {
                 continue;
@@ -43,11 +43,6 @@ internal sealed class AttributeQueryLowerer(
                 if (query is null)
                 {
                     continue;
-                }
-                if (instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual))
-                {
-                    throw new CompilerException(new(DiagnosticCode.UnsupportedMetadata,
-                        "Custom attribute queries require a direct bounded call; query method handles are not supported."));
                 }
                 queries.Add(instruction.Offset, query);
             }
@@ -73,10 +68,13 @@ internal sealed class AttributeQueryLowerer(
             {
                 if (!proofs.TryGetValue(instruction.Offset, out var stack))
                 {
-                    throw new CompilerException(new(DiagnosticCode.UnsupportedMetadata,
-                        "Custom attribute query has no supported type provenance at this control-flow location."));
+                    continue;
                 }
                 var query = resolver.Resolve(call, stack);
+                if (query is null)
+                {
+                    continue;
+                }
                 var fragment = fragments.Build(new(call.Operation, planner.Plan(query), call.ArgumentCount,
                     call.InheritArgument, query.InheritConstant, CliTypeIdentity.SzArray(query.Filter),
                     ambiguityConstructor, nextLocal));
@@ -88,7 +86,7 @@ internal sealed class AttributeQueryLowerer(
                 throw AtQuery(exception, instruction);
             }
         }
-        return bodies.Rewrite(body, replacements.ToImmutable());
+        return replacements.Count == 0 ? body : bodies.Rewrite(body, replacements.ToImmutable());
 
         CompilerException AtQuery(CompilerException exception, CilInstruction instruction) => new(
             exception.Diagnostic with

@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Adapted from dotnet/runtime System.Private.CoreLib EqualityComparer.cs at
-// commit 474ed963699fc29809015392738a15231aaae2de.
+// commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 namespace System.Collections.Generic
 {
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public abstract class EqualityComparer<T> : IEqualityComparer<T>, System.Collections.IEqualityComparer
     {
         private static readonly EqualityComparer<T> s_default = CreateDefaultComparer();
@@ -138,6 +139,7 @@ namespace System.Collections.Generic
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class GenericEqualityComparer<T> : EqualityComparer<T> where T : IEquatable<T>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -213,6 +215,7 @@ namespace System.Collections.Generic
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class NullableEqualityComparer<T> : EqualityComparer<T?> where T : struct
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -289,6 +292,7 @@ namespace System.Collections.Generic
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class ObjectEqualityComparer<T> : EqualityComparer<T>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -364,6 +368,7 @@ namespace System.Collections.Generic
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class ByteEqualityComparer : EqualityComparer<byte>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -393,6 +398,7 @@ namespace System.Collections.Generic
     }
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed class EnumEqualityComparer<T> : EqualityComparer<T> where T : struct, Enum
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

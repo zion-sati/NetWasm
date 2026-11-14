@@ -4,14 +4,17 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis.Constants;
 
-// `sizeof(T)` and `Unsafe.SizeOf<T>()` of a type whose size every NetWasm
-// target shares become the constant, as the JIT folds them, so upstream's
-// `if (sizeof(T) == 2)` and `Vector<byte>.Count / sizeof(T)` branches fold with
-// the specialized T. The sizes are the primitives' and the vector types' own;
-// pointer-sized and laid-out types keep their instruction.
-internal sealed class KnownSizeRewriter(ICalledMethodResolver calledMethods) : IMethodRewriteRule
+// `sizeof(T)`, `Unsafe.SizeOf<T>()` and `IntPtr.Size` become the constant, as the JIT folds them,
+// so upstream's `if (sizeof(T) == 2)`, `Vector<byte>.Count / sizeof(T)` and `if (nint.Size == 8)`
+// branches fold before reachability and the untaken side's callees and data are not kept. The
+// sizes are the primitives' and the vector types' own, and the compiled target's native integer
+// size for native integers and pointers; laid-out types keep their instruction.
+internal sealed class KnownSizeRewriter(ICalledMethodResolver calledMethods, int nativeIntegerSize) : IMethodRewriteRule
 {
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
+    private readonly int _nativeIntegerSize = nativeIntegerSize is 4 or 8
+        ? nativeIntegerSize
+        : throw new ArgumentOutOfRangeException(nameof(nativeIntegerSize));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -20,24 +23,38 @@ internal sealed class KnownSizeRewriter(ICalledMethodResolver calledMethods) : I
         for (var index = 0; index < body.Instructions.Length; index++)
         {
             var instruction = body.Instructions[index];
-            var type = instruction switch
+            var known = instruction switch
             {
-                { Operation: CilOperation.SizeOf, Operand: CilOperand.TypeIdentity { Value: var sized } } => sized,
-                { Operation: CilOperation.Call } when _calledMethods.Resolve(instruction) is
+                { Operation: CilOperation.SizeOf, Operand: CilOperand.TypeIdentity { Value: var sized } } => TargetSize(sized),
+                { Operation: CilOperation.Call } => _calledMethods.Resolve(instruction) switch
                 {
-                    Definition: { Name: "SizeOf", IsStatic: true },
-                    DeclaringType.FullName: "System.Runtime.CompilerServices.Unsafe",
-                    MethodArguments: [var argument],
-                } => argument,
+                    {
+                        Definition: { Name: "SizeOf", IsStatic: true },
+                        DeclaringType.FullName: "System.Runtime.CompilerServices.Unsafe",
+                        MethodArguments: [var argument],
+                    } => TargetSize(argument),
+                    { Definition: { Name: "get_Size", IsStatic: true }, DeclaringType: var declaring }
+                        when IsNativeInteger(declaring) => _nativeIntegerSize,
+                    _ => null,
+                },
                 _ => null,
             };
-            if (type is null || Size(type) is not { } size) continue;
+            if (known is not { } size) continue;
             rewritten ??= body.Instructions.ToBuilder();
             rewritten[index] = instruction with { Operation = CilOperation.LoadInt32, Operand = new CilOperand.ConstantI4(size) };
         }
         return rewritten is null ? body : body with { Instructions = rewritten.ToImmutable() };
     }
 
+    private int? TargetSize(CliTypeIdentity type) =>
+        IsNativeInteger(type) || type.Shape is CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer
+            ? _nativeIntegerSize
+            : Size(type);
+
+    private static bool IsNativeInteger(CliTypeIdentity type) =>
+        type.CanonicalName is "primitive:nativeint" or "primitive:nativeuint";
+
+    // The sizes every target shares.
     internal static int? Size(CliTypeIdentity type) => type.CanonicalName switch
     {
         "primitive:bool" or "primitive:i1" or "primitive:u1" => 1,

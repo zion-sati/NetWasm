@@ -23,6 +23,6 @@ internal static class MetadataCompilationTestFactory
             new ValueTypeDefinitionStackKindResolver(),
             new NativeImportDeclarationReader(),
             new NativeCallbackDeclarationReader()),
-        new ReferenceClosureValidator(),
-        new MetadataCompilationFactory());
+        new MetadataCompilationFactory(),
+        new TypeForwarderReader(new ManagedAssemblyImageReader()));
 }

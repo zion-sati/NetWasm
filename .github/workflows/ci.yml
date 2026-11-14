@@ -220,7 +220,6 @@ jobs:
         env:
           NETWASM_CORPUS_PROFILE: Fast
           NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
-          NETWASM_COMPATIBILITY_REFERENCE_ROOT: ${{ runner.temp }}/compiler-qualification/compatibility-references
           NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
           NETWASM_NATIVE_INTEROP_HOST_TOOLS_ROOT: ${{ runner.temp }}/native-interop-tools/host-tools
           NETWASM_NATIVE_INTEROP_TOOLCHAIN_ROOT: ${{ runner.temp }}/native-interop-tools/toolchain

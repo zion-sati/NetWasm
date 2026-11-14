@@ -41,6 +41,7 @@ public sealed class NetWasmComponentizeTaskTests
         task.OptimizerConverge = converge;
         Assert.True(task.Execute());
         Assert.Equal(converge, sessions.Session.Request!.OptimizationOverrides?.Converge ?? false);
+        Assert.IsType<MsBuildProgressLoggerProvider>(sessions.Progress);
         Assert.Equal(hints == "Preserve" ? ManagedInliningHints.Preserve : ManagedInliningHints.Auto,
             sessions.Session.Request.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
     }
@@ -385,10 +386,14 @@ public sealed class NetWasmComponentizeTaskTests
         public BinaryenToolRunnerConfiguration? BinaryenConfiguration { get; private set; }
         public RecordingSession Session { get; private set; } = new();
 
+        public Microsoft.Extensions.Logging.ILoggerProvider? Progress { get; private set; }
+
         public IComponentBuildSession Create(
             ExternalToolCommand wasmToolsCommand,
-            BinaryenToolRunnerConfiguration binaryenConfiguration)
+            BinaryenToolRunnerConfiguration binaryenConfiguration,
+            Microsoft.Extensions.Logging.ILoggerProvider progress)
         {
+            Progress = progress;
             WasmToolsCommand = wasmToolsCommand;
             BinaryenConfiguration = binaryenConfiguration;
             Session = new() { Exception = Exception };

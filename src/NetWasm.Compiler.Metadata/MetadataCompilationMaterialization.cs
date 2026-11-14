@@ -12,6 +12,9 @@ public sealed record MetadataCompilationMaterialization(
     ImmutableDictionary<string, MetadataAssemblySnapshot> MetadataAssemblies,
     ImmutableDictionary<string, string> ReferenceAssemblyAliases)
 {
+    internal ImmutableDictionary<(AssemblyIdentity Assembly, string FullName), OriginalContractType> OriginalContractTypes { get; init; } =
+        ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty;
+
     public FrozenDictionary<EntityKey, PropertyDefinitionModel> Properties { get; init; } =
         FrozenDictionary<EntityKey, PropertyDefinitionModel>.Empty;
 

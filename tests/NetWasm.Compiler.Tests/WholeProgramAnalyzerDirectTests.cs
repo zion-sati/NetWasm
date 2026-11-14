@@ -10,6 +10,8 @@ using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Analysis.ManagedCallSites;
 using NetWasm.Compiler.Analysis.Delegates;
 
+using NetWasm.Compiler.Analysis.Reachability;
+
 namespace NetWasm.Compiler.Tests;
 
 public sealed class WholeProgramAnalyzerDirectTests
@@ -18,6 +20,22 @@ public sealed class WholeProgramAnalyzerDirectTests
         IReadOnlyDictionary<CliTypeIdentity, CliTypeIdentity> types) : INullableTypeResolver
     {
         public CliTypeIdentity? Resolve(CliTypeIdentity type) => types.GetValueOrDefault(type);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExplicitTypeRootsRemainIndependentOfLaterMethodDemands(bool explicitRoot)
+    {
+        var fixture = new ClosureFixture { OnlyStaticCall = true };
+        var roots = explicitRoot ? new ReachabilityRoots([fixture.TargetTypeKey], [], []) : ReachabilityRoots.Empty;
+
+        _ = fixture.CreateBuilder().Build(fixture.Entry, [], roots);
+
+        var path = fixture.ProgramBuilder.Snapshot!.TypeDependencyPaths[fixture.TargetType.CanonicalName];
+        Assert.Equal(explicitRoot, path.IsEmpty);
+        if (!explicitRoot)
+            Assert.Equal(fixture.Entry.Key, path.Peek().Source.Source);
     }
 
     [Theory]
@@ -102,6 +120,40 @@ public sealed class WholeProgramAnalyzerDirectTests
 
         Assert.Empty(fixture.ProgramBuilder.Snapshot!.StaticInitializers);
         Assert.Empty(fixture.ProgramBuilder.Snapshot.ConstructedStaticInitializers);
+    }
+
+    [Fact]
+    public void UninitializedObjectAndMarshallingRootsReachTheProgram()
+    {
+        var fixture = new ClosureFixture { EmptyInstructions = true };
+        fixture.IntrinsicRootPlan = RuntimeIntrinsicTypeRootPlan.Empty with
+        {
+            UninitializedObjectTypes = [fixture.LateIntrinsicRoot],
+            StructMarshallingTypes = [fixture.TargetType],
+            StructMarshallingFieldNames = true,
+        };
+
+        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
+
+        var snapshot = fixture.ProgramBuilder.Snapshot!;
+        Assert.Contains(fixture.LateIntrinsicRoot, snapshot.AllocatedTypes);
+        Assert.Contains(fixture.LateIntrinsicRootKey, snapshot.Types);
+        Assert.Equal([fixture.LateIntrinsicRoot], snapshot.UninitializedObjectTypes);
+        Assert.Equal([fixture.TargetType], snapshot.StructMarshallingTypes);
+        Assert.True(snapshot.StructMarshallingFieldNames);
+    }
+
+    [Fact]
+    public void ClassConstructorRootsCompileInitializersWithoutAStaticAccess()
+    {
+        var fixture = new ClosureFixture { OnlyStaticCall = true, NonTriggeringCall = 1 };
+        fixture.IntrinsicRootPlan = RuntimeIntrinsicTypeRootPlan.Empty with { InitializedTypes = [fixture.TargetType] };
+
+        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
+
+        var initializer = Assert.Single(fixture.ProgramBuilder.Snapshot!.MethodInstances.Values,
+            method => method.Definition.Name == ".cctor");
+        Assert.Contains(initializer.Definition.Key, fixture.ProgramBuilder.Snapshot.StaticInitializers);
     }
 
     [Theory]
@@ -341,6 +393,7 @@ public sealed class WholeProgramAnalyzerDirectTests
         Assert.Contains(array, snapshot.AllocatedTypes);
         Assert.Contains(fixture.TargetType, fixture.FixedIntrinsicRoots!.ObservedTypes);
         Assert.Contains(array, fixture.FixedIntrinsicRoots.ObservedTypes);
+        Assert.DoesNotContain(array, fixture.FixedIntrinsicRoots.ObservedSeeds);
     }
 
     [Fact]
@@ -429,6 +482,9 @@ public sealed class WholeProgramAnalyzerDirectTests
 
         Assert.Contains("could not be resolved", error.Diagnostic.Message,
             StringComparison.Ordinal);
+        Assert.Equal(fixture.Entry.Key, error.Diagnostic.Context!.Source);
+        Assert.IsType<CompilerException>(error.InnerException);
+        Assert.Empty(error.Diagnostic.DependencyChain);
     }
 
     [Fact]
@@ -471,6 +527,7 @@ public sealed class WholeProgramAnalyzerDirectTests
             StringComparison.Ordinal);
     }
 
+    // A reached method must be closed: its arity, declaring type, arguments, return and parameters.
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -488,46 +545,29 @@ public sealed class WholeProgramAnalyzerDirectTests
             fixture.CreateBuilder().Build(fixture.Entry, []));
 
         Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
+        Assert.Contains("requires a closed AOT specialization", error.Diagnostic.Message, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(6)]
-    [InlineData(7)]
-    [InlineData(8)]
-    [InlineData(9)]
-    [InlineData(10)]
-    [InlineData(11)]
-    [InlineData(12)]
-    [InlineData(13)]
-    [InlineData(14)]
-    [InlineData(15)]
-    [InlineData(16)]
-    [InlineData(17)]
-    [InlineData(18)]
-    [InlineData(19)]
-    [InlineData(20)]
-    [InlineData(21)]
-    [InlineData(22)]
-    [InlineData(24)]
-    [InlineData(25)]
-    [InlineData(26)]
-    [InlineData(27)]
-    [InlineData(28)]
-    [InlineData(29)]
-    [InlineData(30)]
-    public void ClosureBuilderValidatesEveryInjectedCapability(int missing)
+    // The closure builder and each of its collaborators reject every missing dependency by name.
+    [Fact]
+    public void ClosureBuilderValidatesEveryInjectedCapability()
     {
         var fixture = new ClosureFixture();
+        fixture.CreateBuilder();
 
-        var exception = Assert.Throws<ArgumentNullException>(() => fixture.CreateBuilder(missing));
-        if (missing == 28)
-            Assert.Equal("initializationTriggers", exception.ParamName);
+        Assert.Equal(10, fixture.Constructions.Count);
+        foreach (var (type, arguments) in fixture.Constructions)
+        {
+            var constructor = Assert.Single(type.GetConstructors());
+            for (var index = 0; index < arguments.Length; index++)
+            {
+                var missing = (object?[])arguments.Clone();
+                missing[index] = null;
+                var error = Assert.Throws<System.Reflection.TargetInvocationException>(() => constructor.Invoke(missing));
+                Assert.Equal(constructor.GetParameters()[index].Name,
+                    Assert.IsType<ArgumentNullException>(error.InnerException).ParamName);
+            }
+        }
     }
 
     private sealed class ClosureFixture
@@ -697,7 +737,16 @@ public sealed class WholeProgramAnalyzerDirectTests
                 [_finalizer.Key, _initializer.Key]);
         }
 
-        internal ReachabilityClosureBuilder CreateBuilder(int missing = -1)
+        // The closure's collaborators as CreateBuilder last made them, with their constructors' arguments.
+        internal List<(Type Type, object[] Arguments)> Constructions { get; } = [];
+
+        private T Make<T>(params object[] arguments)
+        {
+            Constructions.Add((typeof(T), arguments));
+            return (T)Assert.Single(typeof(T).GetConstructors()).Invoke(arguments);
+        }
+
+        internal ReachabilityClosureBuilder CreateBuilder()
         {
             var modifier = LateDescriptorModifier;
             var propertySetter = LateIntrinsicDescriptorType
@@ -914,52 +963,54 @@ public sealed class WholeProgramAnalyzerDirectTests
                             [_property],
                             methodInstances)
                     : new EmptyPropertyAccessorResolver();
-            return new ReachabilityClosureBuilder(
-                missing == 0 ? null! : typeRepository,
-                missing == 1 ? null! : fieldRepository,
-                missing == 2 ? null! : methods,
-                missing == 3 ? null! : typeFinder,
-                missing == 4 ? null! : typeDefinitions,
-                missing == 5 ? null! : typeIdentities,
-                missing == 6 ? null! : methodInstances,
-                missing == 7 ? null! : symbols,
-                missing == 8 ? null! : _dispatchTargets,
-                missing == 9 ? null! : delegateTypes,
-                missing == 10 ? null! : Imports,
-                missing == 17
-                    ? null!
-                    : new SynchronousReachableMethodAnalysisSessionFactory(
-                        missing == 11 ? null! : methodAnalyzer,
-                        new RecordingReachableMethodBatchObserver()),
-                missing == 12 ? null! : typeTests,
-                missing == 13 ? null! : ProgramBuilder,
-                missing == 14 ? null! : ledgers,
-                missing == 18 ? null! : new ManagedCallSiteLedgerWriter(),
-                missing == 21 ? null! : intrinsicRoots,
-                missing == 16 ? null! : new RecordingReachabilityClosureObserver(),
-                missing == 15
-                    ? null!
-                    : new DispatchCandidateIndexFactory(
-                        new TestTypeRelationshipClassifier(), UnboundedTypeRelationshipKeys.Instance),
-                missing == 19 ? null! : new ModuleInitializerResolver([], []),
-                missing == 20
-                    ? null!
-                    : new ModuleInitializerOrderer(
-                        new Dictionary<AssemblyIdentity, IReadOnlyList<AssemblyIdentity>>()),
-                missing == 22
-                    ? null!
-                    : new MemberDescriptorPlanner(propertyAccessors),
-                missing == 24
-                    ? null!
-                    : new EmptyObjectArrayDelegateAdapterPlanner(),
-                missing == 25 ? null! : new FixedMemberExecutionPlanner(MemberExecution),
-                missing == 26
-                    ? null!
-                    : new FinalizerResolver(typeDefinitions, methods, baseTypes),
-                missing == 27 ? null! : new TestNullableTypeResolver(NullableTypes),
-                missing == 28 ? null! : new MethodInitializationTriggerClassifier(typeRepository),
-                missing == 29 ? null! : new NoIntrinsicAddressBodyPlanner(),
-                missing == 30 ? null! : new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities));
+            Constructions.Clear();
+            var sessions = Make<ReachabilitySessionFactory>(
+                ledgers,
+                new GenericCycleSessionFactory(typeFinder, methods, methodInstances, symbols, new NoCalleeBodies()),
+                new SynchronousReachableMethodAnalysisSessionFactory(
+                    methodAnalyzer,
+                    new RecordingReachableMethodBatchObserver()),
+                new DispatchCandidateIndexFactory(
+                    new TestTypeRelationshipClassifier(), UnboundedTypeRelationshipKeys.Instance),
+                delegateTypes,
+                fieldRepository,
+                new FinalizerResolver(typeDefinitions, methods, baseTypes),
+                Imports,
+                new MethodInitializationTriggerClassifier(typeRepository),
+                new NoIntrinsicAddressBodyPlanner(),
+                methodInstances,
+                methods,
+                new ModuleInitializerResolver([], []),
+                new TestNullableTypeResolver(NullableTypes),
+                symbols,
+                typeDefinitions,
+                typeFinder,
+                typeIdentities,
+                typeRepository);
+            var queues = Make<ReachabilityQueueDrainer>(
+                Make<ReachableMethodApplier>(typeIdentities),
+                Make<ReachabilityImportApplier>(typeIdentities),
+                _dispatchTargets,
+                new ManagedCallSiteLedgerWriter(),
+                new CompilerDiagnosticProvenanceBinder(),
+                new RecordingReachabilityClosureObserver());
+            var derivedRoots = Make<ReachabilityDerivedRootExpander>(
+                Make<RuntimeReachabilityExpander>(new NoSharedObjectDispatch(), delegateTypes, intrinsicRoots,
+                    typeDefinitions, typeIdentities, new EmptyObjectArrayDelegateAdapterPlanner()),
+                Make<MemberReachabilityExpander>(new MemberDescriptorPlanner(propertyAccessors),
+                    new FixedMemberExecutionPlanner(MemberExecution), _dispatchTargets,
+                    new DispatchTargetBodyClassifier(new NoRuntimeIntrinsics())),
+                Make<TypeFactsReachabilityExpander>(
+                    new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities), typeIdentities));
+            return Make<ReachabilityClosureBuilder>(
+                sessions,
+                Make<ReachabilityRootSeeder>(methods, typeDefinitions, typeIdentities, typeFinder),
+                queues,
+                derivedRoots,
+                ProgramBuilder,
+                delegateTypes,
+                typeTests,
+                new ModuleInitializerOrderer(new Dictionary<AssemblyIdentity, IReadOnlyList<AssemblyIdentity>>()));
 
             MethodInstanceModel Descriptor(
                 int token,
@@ -1318,12 +1369,17 @@ public sealed class WholeProgramAnalyzerDirectTests
         IRuntimeIntrinsicTypeRootPlanner
     {
         internal HashSet<CliTypeIdentity> ObservedTypes { get; } = [];
+        internal HashSet<CliTypeIdentity> ObservedSeeds { get; } = [];
 
         public RuntimeIntrinsicTypeRootPlan Plan(
             IEnumerable<MethodInstanceModel> reachableMethods,
-            IEnumerable<CliTypeIdentity> reachableTypes)
+            IEnumerable<CliTypeIdentity> reachableTypes,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> arrayElementSeeds = default,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> typeHandleSeeds = default,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> programAllocatedTypes = default)
         {
             ObservedTypes.UnionWith(reachableTypes);
+            ObservedSeeds.UnionWith(arrayElementSeeds);
             return plan;
         }
     }
@@ -1335,6 +1391,20 @@ public sealed class WholeProgramAnalyzerDirectTests
             IEnumerable<MethodInstanceModel> reachableMethods) => [];
     }
 
+    private sealed class NoSharedObjectDispatch : ISharedObjectDispatchResolver
+    {
+        public MethodInstanceModel? Resolve(MethodInstanceModel declaration) => null;
+    }
+
+    private sealed class NoRuntimeIntrinsics : IRuntimeIntrinsicRegistry
+    {
+        public bool TryGetIntrinsic(EntityKey method, out RuntimeIntrinsic intrinsic)
+        {
+            intrinsic = default;
+            return false;
+        }
+    }
+
     private sealed class FixedMemberExecutionPlanner(MemberExecutionPlan plan) : IMemberExecutionPlanner
     {
         public MemberExecutionPlan Plan(
@@ -1342,6 +1412,7 @@ public sealed class WholeProgramAnalyzerDirectTests
             IEnumerable<MethodInstanceModel> methodDescriptors,
             IEnumerable<FieldInstanceModel> fieldDescriptors) =>
             plan;
+
     }
 
     private sealed class ConditionalRuntimeIntrinsicTypeRootPlanner(
@@ -1353,7 +1424,10 @@ public sealed class WholeProgramAnalyzerDirectTests
 
         public RuntimeIntrinsicTypeRootPlan Plan(
             IEnumerable<MethodInstanceModel> reachableMethods,
-            IEnumerable<CliTypeIdentity> reachableTypes)
+            IEnumerable<CliTypeIdentity> reachableTypes,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> arrayElementSeeds = default,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> typeHandleSeeds = default,
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> programAllocatedTypes = default)
         {
             Calls++;
             SawTrigger |= reachableTypes.Contains(trigger);
@@ -1430,3 +1504,20 @@ public sealed class WholeProgramAnalyzerDirectTests
         public ReachableMethodRequest? Plan(MethodInstanceModel method) => null;
     }
 }
+
+// The generic cycle cutoff reads no bodies here, so it counts every type parameter.
+file sealed class NoCalleeBodies : ICalleeMethodBodyReader
+{
+    public bool TryReadMethodBody(MethodDefinitionModel method, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body)
+    {
+        body = null;
+        return false;
+    }
+
+    public bool TryReadMethodBody(MethodInstanceModel method, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body)
+    {
+        body = null;
+        return false;
+    }
+}
+

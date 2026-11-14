@@ -384,8 +384,18 @@ public sealed class FieldProjectionResolverTests
         WrongReturnType,
     }
 
-    private sealed class FixedMethodBodyReader(CilMethodBody body) : IMethodBodyReader
+    private sealed class FixedMethodBodyReader(CilMethodBody body) : IMethodBodyReader, ICalleeMethodBodyReader
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         public CilMethodBody ReadMethodBody(MethodDefinitionModel method) => body;
 
         public CilMethodBody ReadMethodBody(MethodInstanceModel method) => body;

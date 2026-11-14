@@ -360,6 +360,46 @@ internal sealed class WasiNetwork : INetwork
         return SocketError.Success;
     }
 
+    // A copy that would wait is cancelled at once; whatever the host took before the cancel counts.
+    public SocketError TrySend(long socket, ReadOnlySpan<byte> data, out int bytesSent)
+    {
+        bytesSent = 0;
+        if (!Writable(socket, out var state, out var refusal))
+        {
+            return refusal;
+        }
+
+        if (data.IsEmpty)
+        {
+            return SocketError.Success;
+        }
+
+        using var buffer = Copy(data);
+        nuint written = 0;
+        var length = unchecked((nuint)data.Length);
+        while (written < length)
+        {
+            var status = Imports.WriteBytes(state.SendWritable, buffer.Address + written, length - written);
+            var progress = status == Layout.Blocked
+                ? unchecked((uint)Imports.CancelWriteBytes(state.SendWritable))
+                : unchecked((uint)status);
+            written += progress >> 4;
+            if ((progress & 0xF) == Layout.Cancelled)
+            {
+                break;
+            }
+
+            if ((progress & 0xF) != Layout.Completed)
+            {
+                bytesSent = unchecked((int)written);
+                return SendFailure(state);
+            }
+        }
+
+        bytesSent = unchecked((int)written);
+        return written == 0 ? SocketError.WouldBlock : SocketError.Success;
+    }
+
     public async ValueTask<NetworkTransferResult> SendAsync(long socket, ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
     {
         if (!Writable(socket, out var state, out var refusal))
@@ -420,6 +460,39 @@ internal sealed class WasiNetwork : INetwork
         {
             var status = Imports.ReadBytes(state.ReceiveReadable, copy.Address, length);
             progress = status == Layout.Blocked ? _copies.Await(state.ReceiveReadable) : unchecked((uint)status);
+        }
+        while (progress == Layout.Completed);
+
+        return Received(state, progress, copy.Address, buffer, out bytesReceived);
+    }
+
+    // A read that would wait is cancelled at once; bytes that arrived before the cancel are returned.
+    public SocketError TryReceive(long socket, Span<byte> buffer, out int bytesReceived)
+    {
+        bytesReceived = 0;
+        if (!Readable(socket, out var state, out var refusal))
+        {
+            return refusal;
+        }
+
+        if (state.ReceiveEnded || buffer.IsEmpty)
+        {
+            return SocketError.Success;
+        }
+
+        var length = unchecked((nuint)buffer.Length);
+        using var copy = _allocator.Allocate(length, 1);
+        uint progress;
+        do
+        {
+            var status = Imports.ReadBytes(state.ReceiveReadable, copy.Address, length);
+            progress = status == Layout.Blocked
+                ? unchecked((uint)Imports.CancelReadBytes(state.ReceiveReadable))
+                : unchecked((uint)status);
+            if (progress == Layout.Cancelled)
+            {
+                return SocketError.WouldBlock;
+            }
         }
         while (progress == Layout.Completed);
 

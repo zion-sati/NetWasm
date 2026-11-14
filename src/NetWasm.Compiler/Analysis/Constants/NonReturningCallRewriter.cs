@@ -16,7 +16,7 @@ namespace NetWasm.Compiler.Analysis.Constants;
 // fall-through reached.
 internal sealed class NonReturningCallRewriter(
     ICalledMethodResolver calledMethods,
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     IRuntimeIntrinsicRegistry intrinsics) : IMethodRewriteRule
 {
     private readonly ConcurrentDictionary<string, bool> _returns = [];
@@ -59,8 +59,9 @@ internal sealed class NonReturningCallRewriter(
         {
             return true;
         }
-        return _returns.GetOrAdd(target.CanonicalName, _ => methodBodies.ReadMethodBody(target).Instructions
-            .Any(static instruction => instruction.Operation == CilOperation.Return));
+        // A body that cannot be decoded may return, as far as this rewrite knows.
+        return _returns.GetOrAdd(target.CanonicalName, _ => !methodBodies.TryReadMethodBody(target, out var body) ||
+            body.Instructions.Any(static instruction => instruction.Operation == CilOperation.Return));
     }
 
     private static CilInstruction Synthetic(CilOperation operation) => new(0, 1, operation, new CilOperand.None());

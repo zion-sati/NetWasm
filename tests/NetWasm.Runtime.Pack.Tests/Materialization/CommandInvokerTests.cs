@@ -36,8 +36,9 @@ public sealed class CommandInvokerTests
         Assert.True(File.Exists(command.LogPath));
     }
 
+    // NWPACK001 shows only the message, so it names the tool and why it could not start (zion-sati/NetWasm#236).
     [Fact]
-    public void ReportsToolStartFailureWithoutRawProcessOutput()
+    public void ReportsToolStartFailureWithItsCause()
     {
         using var directory = new TemporaryDirectory();
         var command = new RuntimeCommand(
@@ -47,7 +48,9 @@ public sealed class CommandInvokerTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
 
-        Assert.Equal("A NetWasm runtime tool could not be executed.", exception.Message);
+        Assert.StartsWith($"A NetWasm runtime tool could not be executed ('{command.ExecutablePath}'): ", exception.Message,
+            StringComparison.Ordinal);
+        Assert.EndsWith(exception.InnerException!.Message, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

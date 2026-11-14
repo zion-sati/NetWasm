@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
 
 namespace NetWasm.TestInfrastructure;
@@ -25,6 +27,9 @@ public sealed class TestAssets : IDisposable
     public string Directory { get; }
     public string Root { get; }
     public string CoreLib { get; }
+
+    // CoreLib and NetWasm.App's assemblies: what a fixture compiled through the Roslyn API references.
+    public IReadOnlyList<string> Framework => [CoreLib, .. FrameworkAssemblies(Root)];
     public string Library { get; }
     public string Application { get; }
 
@@ -73,6 +78,17 @@ public sealed class TestAssets : IDisposable
 
     public string CompileSource(string assemblyName, string source, params string[] references)
         => CompileSourceCore(assemblyName, source, allowUnsafe: false, references);
+
+    // Embeds the given files as manifest resources under the given names, as an ILLink.Substitutions.xml is.
+    public string CompileSourceWithResources(
+        string assemblyName, string source, IReadOnlyList<(string Path, string Name)> resources)
+    {
+        var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
+        var output = Path.Combine(Directory, assemblyName + ".dll");
+        File.WriteAllText(sourcePath, source);
+        Compile(Root, CoreLib, output, [sourcePath], allowUnsafe: false, optimize: false, [], resources: resources);
+        return output;
+    }
 
     // Runs the given analyzers, such as source generators, as a consumer build does.
     public string CompileSourceWithAnalyzers(string assemblyName, string source, IReadOnlyList<string> analyzers)
@@ -298,7 +314,8 @@ public sealed class TestAssets : IDisposable
             .ToArray();
         // As the CoreLib project, so the upstream intrinsics sources keep
         // their public surface, with the symbols the SDK defines for it, which
-        // upstream sources test (#if NET).
+        // upstream sources test (#if NET), and its preview language version
+        // (upstream files port verbatim, Padding.cs's safe modifier among them).
         Compile(
             Root,
             null,
@@ -307,6 +324,7 @@ public sealed class TestAssets : IDisposable
             allowUnsafe: true,
             optimize: false,
             references: [],
+            languageVersion: "preview",
             defines: ["SYSTEM_PRIVATE_CORELIB", "NET", "NETCOREAPP"]);
         return output;
     }
@@ -416,7 +434,8 @@ public sealed class TestAssets : IDisposable
         bool emitPortablePdb = false,
         string? sourceLinkPath = null,
         IReadOnlyList<string>? defines = null,
-        IReadOnlyList<string>? analyzers = null)
+        IReadOnlyList<string>? analyzers = null,
+        IReadOnlyList<(string Path, string Name)>? resources = null)
     {
         var sdkVersion = sdkVersionOverride ?? ReadSdkVersion(root);
         var dotnet = DotNetHost.Executable;
@@ -439,11 +458,7 @@ public sealed class TestAssets : IDisposable
             "-noconfig",
             "-nostdlib",
             "-langversion:" + languageVersion,
-            "-define:" + string.Join(';', [
-                "NETWASM_REF_STRUCT_GENERICS",
-                "NETWASM_REGEX_STRING_CREATE",
-                "SYSTEM_TEXT_REGULAREXPRESSIONS",
-                .. defines ?? []]),
+            "-define:" + string.Join(';', ["NETWASM_REF_STRUCT_GENERICS", "NETWASM_REGEX_STRING_CREATE", "SYSTEM_TEXT_REGULAREXPRESSIONS", .. defines ?? []]),
             "-deterministic+",
             optimize ? "-optimize+" : "-optimize-",
             "-target:library",
@@ -453,6 +468,10 @@ public sealed class TestAssets : IDisposable
         foreach (var argument in arguments)
         {
             start.ArgumentList.Add(argument);
+        }
+        foreach (var (path, name) in resources ?? [])
+        {
+            start.ArgumentList.Add($"-resource:{path},{name}");
         }
         if (emitPortablePdb)
         {
@@ -470,6 +489,15 @@ public sealed class TestAssets : IDisposable
         if (coreLib is not null)
         {
             start.ArgumentList.Add("-reference:" + coreLib);
+        }
+        // NetWasm.App's assemblies with NetWasm's CoreLib; a library built for netstandard has netstandard.dll alone.
+        if (coreLib is not null && Path.GetFileName(coreLib) == "NetWasm.CoreLib.dll")
+        {
+            var explicitNames = references.Select(Path.GetFileNameWithoutExtension).ToHashSet(StringComparer.Ordinal);
+            foreach (var framework in FrameworkAssemblies(root).Where(path => !explicitNames.Contains(Path.GetFileNameWithoutExtension(path))))
+            {
+                start.ArgumentList.Add("-reference:" + framework);
+            }
         }
         if (allowUnsafe)
         {
@@ -501,6 +529,66 @@ public sealed class TestAssets : IDisposable
             throw new RoslynCompilationException(
                 $"exit code {process.ExitCode}{Environment.NewLine}{standardOutput}{standardError}");
         }
+    }
+
+    // NetWasm.App.Ref's netstandard.dll, which its build generates: each .NET Standard 2.1 type forwarded to
+    // CoreLib or the library that owns it.
+    public static string StandardFacade(string root) =>
+        Path.Combine(root, "src", "NetWasm.App.Ref", "bin", "Release", "net10.0", "standard-facade", "netstandard.dll");
+
+    // NetWasm.App's assemblies, as src/NetWasm.App.Runtime collects them: fixtures compile against them as an
+    // application compiles against the framework.
+    public static IReadOnlyList<string> FrameworkAssemblies(string root)
+    {
+        var directory = Path.Combine(root, "src", "NetWasm.App.Runtime", "bin", "Release", "net10.0", "framework");
+        return System.IO.Directory.Exists(directory)
+            ? [.. System.IO.Directory.GetFiles(directory, "*.dll").Order(StringComparer.Ordinal)]
+            : [];
+    }
+
+    // The references a compile needs: the given ones, plus each NetWasm.App assembly they reach, as the SDK
+    // passes the framework's assemblies with an application's own.
+    public static IReadOnlyList<string> WithFrameworkReferences(string entryAssembly, IEnumerable<string> references)
+    {
+        var result = references.ToList();
+        var framework = FrameworkAssemblies(FindRepositoryRoot())
+            .ToDictionary(path => Path.GetFileNameWithoutExtension(path)!, StringComparer.Ordinal);
+        var present = result.Select(path => Path.GetFileNameWithoutExtension(path)!).ToHashSet(StringComparer.Ordinal);
+        var pending = new Queue<string>([entryAssembly, .. result]);
+        while (pending.TryDequeue(out var path))
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+            using var stream = File.OpenRead(path);
+            using var pe = new PEReader(stream);
+            // A file that is not an assembly reaches nothing; compiling it reports it.
+            bool hasMetadata;
+            try
+            {
+                hasMetadata = pe.HasMetadata;
+            }
+            catch (BadImageFormatException)
+            {
+                continue;
+            }
+            if (!hasMetadata)
+            {
+                continue;
+            }
+            var metadata = pe.GetMetadataReader();
+            foreach (var handle in metadata.AssemblyReferences)
+            {
+                var name = metadata.GetString(metadata.GetAssemblyReference(handle).Name);
+                if (framework.TryGetValue(name, out var frameworkPath) && present.Add(name))
+                {
+                    result.Add(frameworkPath);
+                    pending.Enqueue(frameworkPath);
+                }
+            }
+        }
+        return result;
     }
 
     // The SDK version global.json pins for the repository build.

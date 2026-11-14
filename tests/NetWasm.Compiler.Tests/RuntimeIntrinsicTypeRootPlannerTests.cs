@@ -135,6 +135,139 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
     }
 
     [Fact]
+    public void ArrayCreationUsesExplicitSeedsOnlyAndIsDemandDriven()
+    {
+        var fixture = new Fixture();
+        var planner = fixture.CreatePlanner();
+        var integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var array = CliTypeIdentity.SzArray(integer);
+        var generated = CliTypeIdentity.SzArray(array);
+        var absent = planner.Plan([fixture.Method(null)], [integer, array, generated], [integer, array]);
+        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, absent);
+        var method = fixture.Method(RuntimeIntrinsic.ArrayCreateInstance);
+        var plan = planner.Plan([method], [integer, array, generated], [integer, array]);
+        AssertTypes([integer, array, generated], plan.RuntimeTypes);
+        AssertTypes([array, generated], plan.AllocatedTypes);
+        Assert.DoesNotContain(CliTypeIdentity.SzArray(generated), plan.RuntimeTypes);
+        var repeated = planner.Plan([method], plan.RuntimeTypes, [integer, array]);
+        Assert.Equal<CliTypeIdentity>(plan.RuntimeTypes, repeated.RuntimeTypes);
+        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, planner.Plan([method], [integer]));
+    }
+
+    [Fact]
+    public void RectangularCreationRootsRanksTwoAndThreeFromSeedsOnDemand()
+    {
+        var fixture = new Fixture();
+        var planner = fixture.CreatePlanner();
+        var integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var vector = CliTypeIdentity.SzArray(integer);
+        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty,
+            planner.Plan([fixture.Method(RuntimeIntrinsic.ArrayCreateInstance)], [integer], []));
+
+        var plan = planner.Plan([fixture.Method(RuntimeIntrinsic.ArrayCreateRectangularInstance)],
+            [integer], [integer]);
+
+        AssertTypes([integer, CliTypeIdentity.Array(integer, 2), CliTypeIdentity.Array(integer, 3)],
+            plan.RuntimeTypes);
+        AssertTypes([CliTypeIdentity.Array(integer, 2), CliTypeIdentity.Array(integer, 3)], plan.AllocatedTypes);
+        Assert.DoesNotContain(vector, plan.AllocatedTypes);
+        Assert.Empty(plan.InitializedTypes);
+    }
+
+    [Fact]
+    public void ClassConstructorDemandInitializesClosedNamedHandleSeedsOnly()
+    {
+        var fixture = new Fixture();
+        var planner = fixture.CreatePlanner();
+        var named = CliTypeIdentity.Named(Fixture.Assembly, "Fixtures", "Registrant", isValueType: false);
+        var definition = fixture.Enum("Generic`1", genericArity: 1);
+        var closed = fixture.Close(definition, CliTypeIdentity.FromStackKind(CliValueKind.I4));
+        var open = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.GenericParameter(false, 0)]);
+        var integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        ImmutableArray<CliTypeIdentity> seeds = [named, closed, open, integer,
+            CliTypeIdentity.SzArray(named), named];
+        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty,
+            planner.Plan([fixture.Method(null)], [named], typeHandleSeeds: seeds));
+
+        var plan = planner.Plan([fixture.Method(RuntimeIntrinsic.RunClassConstructor)], [named],
+            typeHandleSeeds: seeds);
+
+        AssertTypes([closed, named], plan.InitializedTypes);
+        Assert.Empty(plan.RuntimeTypes);
+        Assert.Empty(plan.AllocatedTypes);
+        Assert.Empty(fixture.DefinitionRequests);
+    }
+
+    [Fact]
+    public void UninitializedObjectDemandAdmitsCreatableNamedAndAllocatedTypes()
+    {
+        var fixture = new Fixture();
+        var plain = fixture.Type("Plain");
+        var abstractType = fixture.Type("Abstract", isAbstract: true);
+        var interfaceType = fixture.Type("Interface", isInterface: true);
+        var byRefLike = fixture.Type("RefStruct", isValue: true, byRefLike: true);
+        var value = fixture.Type("Value", isValue: true);
+        var generic = fixture.Type("Generic`1", genericArity: 1);
+        var closed = fixture.Close(generic, plain);
+        var integer = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var text = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
+        var nullable = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(new AssemblyIdentity("NetWasm.CoreLib"), "System", "Nullable`1", isValueType: true),
+            [integer]);
+        ImmutableArray<CliTypeIdentity> seeds = [plain, abstractType, interfaceType, byRefLike, generic, closed,
+            text, nullable, CliTypeIdentity.SzArray(plain), CliTypeIdentity.FromStackKind(CliValueKind.Void),
+            fixture.Close(generic, CliTypeIdentity.GenericParameter(method: false, 0))];
+        var planner = fixture.CreatePlanner();
+        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, planner.Plan([fixture.Method(null)], [], [], seeds, [value]));
+
+        var plan = planner.Plan([fixture.Method(RuntimeIntrinsic.AllocateUninitializedObject)], [], [], seeds, [value]);
+
+        AssertTypes([plain, closed, integer, value], plan.UninitializedObjectTypes);
+        Assert.Empty(plan.StructMarshallingTypes);
+        Assert.Empty(plan.RuntimeTypes);
+        Assert.Empty(plan.AllocatedTypes);
+    }
+
+    [Theory]
+    [InlineData(RuntimeIntrinsic.StructMarshallingData, false)]
+    [InlineData(RuntimeIntrinsic.StructMarshallingFieldNames, true)]
+    public void StructureMarshallingDemandAdmitsNonGenericNamedAndAllocatedValueTypes(
+        RuntimeIntrinsic intrinsic,
+        bool fieldNames)
+    {
+        var fixture = new Fixture();
+        var plain = fixture.Type("Plain");
+        var value = fixture.Type("Value", isValue: true);
+        var boxed = fixture.Type("Boxed", isValue: true);
+        var allocatedClass = fixture.Type("Allocated");
+        var generic = fixture.Type("Generic`1", isValue: true, genericArity: 1);
+        var closed = fixture.Close(generic, value);
+        var integer = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var text = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
+
+        var plan = fixture.CreatePlanner().Plan([fixture.Method(intrinsic)], [], [],
+            [plain, value, closed, integer, text, value], [boxed, allocatedClass]);
+
+        AssertTypes([boxed, plain, value, integer], plan.StructMarshallingTypes);
+        Assert.Equal(fieldNames, plan.StructMarshallingFieldNames);
+        Assert.Empty(plan.UninitializedObjectTypes);
+    }
+
+    [Fact]
+    public void ArrayReadsRetainBoxesForReachableRectangularValueElements()
+    {
+        var fixture = new Fixture();
+        var integerType = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var stringType = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
+
+        var plan = fixture.CreatePlanner().Plan([fixture.Method(RuntimeIntrinsic.ArrayGetValue)],
+            [CliTypeIdentity.Array(integerType, 2), CliTypeIdentity.Array(stringType, 3)]);
+
+        AssertTypes([integerType], plan.RuntimeTypes);
+        AssertTypes([integerType], plan.AllocatedTypes);
+    }
+
+    [Fact]
     public void GenericNamedEnumValuesAndNullableInspectionCombineIndependentDemands()
     {
         var fixture = new Fixture();
@@ -306,9 +439,10 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
     {
         var fixture = new Fixture();
         var nullableTypes = new NullableTypeResolver();
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(null!, nullableTypes, fixture));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, null!, fixture));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, null!));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(null!, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture)));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, null!, fixture, new ArrayCreationRootPlanner(fixture)));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, null!, new ArrayCreationRootPlanner(fixture)));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, null!));
         var planner = fixture.CreatePlanner();
         Assert.Throws<ArgumentNullException>(() => planner.Plan(null!, []));
         Assert.Throws<ArgumentNullException>(() => planner.Plan([], null!));
@@ -328,7 +462,7 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         internal List<CliTypeIdentity> DefinitionRequests { get; } = [];
 
         internal IRuntimeIntrinsicTypeRootPlanner CreatePlanner() =>
-            ThroughContract(new RuntimeIntrinsicTypeRootPlanner(this, new NullableTypeResolver(), this));
+            ThroughContract(new RuntimeIntrinsicTypeRootPlanner(this, new NullableTypeResolver(), this, new ArrayCreationRootPlanner(this)));
 
         internal CliTypeIdentity Enum(string name, int genericArity = 0)
         {
@@ -338,6 +472,22 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
                 IsEnum = true,
                 GenericArity = genericArity,
                 EnumUnderlyingType = CliTypeIdentity.Primitive("u2", CliValueKind.I4),
+            };
+            var identity = CliTypeIdentity.FromDefinition(definition);
+            Definitions.Add(identity, definition);
+            return identity;
+        }
+
+        internal CliTypeIdentity Type(string name, bool isValue = false, bool isAbstract = false,
+            bool isInterface = false, bool byRefLike = false, int genericArity = 0)
+        {
+            var definition = new TypeDefinitionModel(new(Assembly, 0x02000001 + Definitions.Count),
+                "Fixtures", name, isValue, [], [])
+            {
+                IsAbstract = isAbstract || isInterface,
+                IsInterface = isInterface,
+                IsByRefLike = byRefLike,
+                GenericArity = genericArity,
             };
             var identity = CliTypeIdentity.FromDefinition(definition);
             Definitions.Add(identity, definition);

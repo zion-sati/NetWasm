@@ -1278,6 +1278,15 @@ namespace System
         //
         //  Returns part of the URI based on the parameters:
         //
+        // FxCop: provide some way for derived classes to access GetObjectData even if the derived class
+        // explicitly re-inherits ISerializable.
+        //
+        // NetWasm: formatter serialization is unavailable (as for the serialization constructor in
+        // PlatformNotSupported/Members.System.Uri.cs), so upstream's body is replaced by the throw.
+        protected void GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) =>
+            throw new PlatformNotSupportedException("Uri.GetObjectData formatter serialization is not available on this NetWasm platform.");
+
+        //
         // Inputs:
         //  <argument>  part
         //      Which part of the URI to return

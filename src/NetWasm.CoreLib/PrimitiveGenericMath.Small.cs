@@ -3,7 +3,7 @@
 //
 // Small scalar generic-math contracts are adapted from the pinned
 // dotnet/runtime System.Private.CoreLib sources (commit
-// 474ed963699fc29809015392738a15231aaae2de).
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce).
 
 using System.Globalization;
 using System.Numerics;
@@ -59,435 +59,6 @@ internal static class PrimitiveGenericMathSmall
         return true;
     }
 
-    internal static void ValidateIntegerStyle(NumberStyles style)
-    {
-        const NumberStyles allowed = NumberStyles.AllowLeadingWhite |
-            NumberStyles.AllowTrailingWhite |
-            NumberStyles.AllowLeadingSign |
-            NumberStyles.AllowTrailingSign |
-            NumberStyles.AllowParentheses |
-            NumberStyles.AllowDecimalPoint |
-            NumberStyles.AllowThousands |
-            NumberStyles.AllowExponent |
-            NumberStyles.AllowCurrencySymbol |
-            NumberStyles.AllowHexSpecifier |
-            NumberStyles.AllowBinarySpecifier;
-
-        if ((style & ~allowed) != 0)
-        {
-            throw new ArgumentException(nameof(style));
-        }
-
-        var radixFlags = style & (NumberStyles.AllowHexSpecifier | NumberStyles.AllowBinarySpecifier);
-        if (radixFlags != 0 &&
-            (radixFlags == (NumberStyles.AllowHexSpecifier | NumberStyles.AllowBinarySpecifier) ||
-             (style & ~(NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite |
-                        NumberStyles.AllowHexSpecifier | NumberStyles.AllowBinarySpecifier)) != 0))
-        {
-            throw new ArgumentException(nameof(style));
-        }
-    }
-
-    internal static bool TryParseUnsigned(ReadOnlySpan<char> text, NumberStyles style, ulong maximum, out ulong value) =>
-        TryParseUnsigned(MemoryMarshal.Cast<char, Utf16Char>(text), style, maximum, out value);
-
-    internal static bool TryParseUnsigned(ReadOnlySpan<byte> text, NumberStyles style, ulong maximum, out ulong value) =>
-        TryParseUnsigned(MemoryMarshal.Cast<byte, Utf8Char>(text), style, maximum, out value);
-
-    private static bool TryParseUnsigned<TChar>(ReadOnlySpan<TChar> text, NumberStyles style, ulong maximum, out ulong value)
-        where TChar : unmanaged, IUtfChar<TChar>
-    {
-        ValidateIntegerStyle(style);
-        value = 0;
-
-        var start = 0;
-        var end = text.Length;
-        if (!Trim(text, style, ref start, ref end))
-        {
-            return false;
-        }
-
-        var radixFlags = style & (NumberStyles.AllowHexSpecifier | NumberStyles.AllowBinarySpecifier);
-        var radix = radixFlags == NumberStyles.AllowHexSpecifier ? 16 :
-            radixFlags == NumberStyles.AllowBinarySpecifier ? 2 : 10;
-        var allowSign = radixFlags == 0 && (style & NumberStyles.AllowLeadingSign) != 0;
-        var negative = false;
-
-        if ((style & NumberStyles.AllowCurrencySymbol) != 0 && start < end && TChar.CastToUInt32(text[start]) == '$')
-        {
-            start++;
-        }
-
-        if (allowSign && start < end && TChar.CastToUInt32(text[start]) is '+' or '-')
-        {
-            negative = TChar.CastToUInt32(text[start]) == '-';
-            start++;
-        }
-
-        if ((style & NumberStyles.AllowCurrencySymbol) != 0 && start < end && TChar.CastToUInt32(text[start]) == '$')
-        {
-            start++;
-        }
-
-        if ((style & NumberStyles.AllowParentheses) != 0 && start < end && TChar.CastToUInt32(text[start]) == '(')
-        {
-            if (end <= start + 1 || TChar.CastToUInt32(text[end - 1]) != ')')
-            {
-                return false;
-            }
-
-            if (negative)
-            {
-                return false;
-            }
-
-            negative = true;
-            start++;
-            end--;
-        }
-
-        if ((style & NumberStyles.AllowTrailingSign) != 0 && start < end && TChar.CastToUInt32(text[end - 1]) is '+' or '-')
-        {
-            if (TChar.CastToUInt32(text[end - 1]) == '-')
-            {
-                return false;
-            }
-
-            end--;
-        }
-
-        if ((style & NumberStyles.AllowCurrencySymbol) != 0 && end > start && TChar.CastToUInt32(text[end - 1]) == '$')
-        {
-            end--;
-        }
-
-        if (negative)
-        {
-            return false;
-        }
-
-        var sawDigit = false;
-        var decimalPoint = false;
-        var fractionalDigits = 0L;
-        var exponent = 0;
-        var exponentSign = 1;
-        var overflow = false;
-        var index = start;
-
-        for (; index < end; index++)
-        {
-            var current = TChar.CastToUInt32(text[index]);
-            if ((style & NumberStyles.AllowThousands) != 0 && current == ',')
-            {
-                if (radix != 10 || decimalPoint || index == start ||
-                    !IsDecimalDigit(TChar.CastToUInt32(text[index - 1])) ||
-                    index + 1 >= end ||
-                    !IsDecimalDigit(TChar.CastToUInt32(text[index + 1])))
-                {
-                    return false;
-                }
-
-                continue;
-            }
-
-            if (radix == 10 && (style & NumberStyles.AllowDecimalPoint) != 0 && current == '.' && !decimalPoint)
-            {
-                decimalPoint = true;
-                continue;
-            }
-
-            if (radix == 10 && (style & NumberStyles.AllowExponent) != 0 && (current == 'e' || current == 'E'))
-            {
-                index++;
-                if (index < end && TChar.CastToUInt32(text[index]) is '+' or '-')
-                {
-                    exponentSign = TChar.CastToUInt32(text[index]) == '-' ? -1 : 1;
-                    index++;
-                }
-
-                var exponentDigits = 0;
-                while (index < end && IsDecimalDigit(TChar.CastToUInt32(text[index])))
-                {
-                    exponent = exponent > 1_000_000
-                        ? 1_000_001
-                        : exponent * 10 + (int)(TChar.CastToUInt32(text[index]) - '0');
-                    exponentDigits++;
-                    index++;
-                }
-
-                if (exponentDigits == 0 || index != end)
-                {
-                    return false;
-                }
-
-                break;
-            }
-
-            var digit = Digit(current, radix);
-            if (digit < 0)
-            {
-                return false;
-            }
-
-            sawDigit = true;
-            if (decimalPoint)
-            {
-                fractionalDigits++;
-            }
-
-            if (!overflow)
-            {
-                if (value > (ulong.MaxValue - (ulong)digit) / (ulong)radix)
-                {
-                    overflow = true;
-                }
-                else
-                {
-                    value = value * (ulong)radix + (ulong)digit;
-                }
-            }
-        }
-
-        if (!sawDigit)
-        {
-            value = 0;
-            return false;
-        }
-
-        if (overflow)
-        {
-            value = 0;
-            return false;
-        }
-
-        var scale = exponentSign < 0 ? -(long)exponent : (long)exponent;
-        scale -= fractionalDigits;
-        if (value == 0)
-        {
-            return true;
-        }
-
-        if (scale < 0)
-        {
-            while (scale++ < 0)
-            {
-                if (value % 10 != 0)
-                {
-                    value = 0;
-                    return false;
-                }
-
-                value /= 10;
-            }
-        }
-        else if (value != 0)
-        {
-            while (scale-- > 0)
-            {
-                if (value > maximum / 10)
-                {
-                    value = 0;
-                    return false;
-                }
-
-                value *= 10;
-            }
-        }
-
-        if (value > maximum)
-        {
-            value = 0;
-            return false;
-        }
-
-        return true;
-    }
-
-    internal static bool TryParseSigned(ReadOnlySpan<char> text, NumberStyles style, int bits, out long value) =>
-        TryParseSigned(MemoryMarshal.Cast<char, Utf16Char>(text), style, bits, out value);
-
-    internal static bool TryParseSigned(ReadOnlySpan<byte> text, NumberStyles style, int bits, out long value) =>
-        TryParseSigned(MemoryMarshal.Cast<byte, Utf8Char>(text), style, bits, out value);
-
-    private static bool TryParseSigned<TChar>(ReadOnlySpan<TChar> text, NumberStyles style, int bits, out long value)
-        where TChar : unmanaged, IUtfChar<TChar>
-    {
-        ValidateIntegerStyle(style);
-        value = 0;
-
-        var start = 0;
-        var end = text.Length;
-        if (!Trim(text, style, ref start, ref end))
-        {
-            return false;
-        }
-
-        var radixFlags = style & (NumberStyles.AllowHexSpecifier | NumberStyles.AllowBinarySpecifier);
-        var radix = radixFlags == NumberStyles.AllowHexSpecifier ? 16 :
-            radixFlags == NumberStyles.AllowBinarySpecifier ? 2 : 10;
-
-        if (radixFlags != 0)
-        {
-            if (!TryParseUnsigned(text.Slice(start, end - start), style & ~(NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite), ulong.MaxValue, out var raw))
-            {
-                return false;
-            }
-
-            var mask = bits == 64 ? ulong.MaxValue : (1UL << bits) - 1;
-            if (raw > mask)
-            {
-                return false;
-            }
-
-            var signBit = 1UL << (bits - 1);
-            value = (raw & signBit) == 0 ? (long)raw : (long)(raw | ~mask);
-            return true;
-        }
-
-        var parenthesized = false;
-        if ((style & NumberStyles.AllowParentheses) != 0 && start < end && TChar.CastToUInt32(text[start]) == '(')
-        {
-            if (end <= start + 1 || TChar.CastToUInt32(text[end - 1]) != ')')
-            {
-                return false;
-            }
-
-            parenthesized = true;
-            start++;
-            end--;
-        }
-
-        if ((style & NumberStyles.AllowCurrencySymbol) != 0 && start < end && TChar.CastToUInt32(text[start]) == '$')
-        {
-            start++;
-        }
-
-        var negative = false;
-        if (start < end && TChar.CastToUInt32(text[start]) is '+' or '-')
-        {
-            if (parenthesized || (style & NumberStyles.AllowLeadingSign) == 0)
-            {
-                return false;
-            }
-
-            negative = TChar.CastToUInt32(text[start]) == '-';
-            start++;
-        }
-
-        if ((style & NumberStyles.AllowCurrencySymbol) != 0 && start < end && TChar.CastToUInt32(text[start]) == '$')
-        {
-            start++;
-        }
-
-        if ((style & NumberStyles.AllowTrailingSign) != 0 && start < end && TChar.CastToUInt32(text[end - 1]) is '+' or '-')
-        {
-            var trailingNegative = TChar.CastToUInt32(text[end - 1]) == '-';
-            if (parenthesized || negative)
-            {
-                return false;
-            }
-
-            negative = trailingNegative;
-            end--;
-        }
-
-        if ((style & NumberStyles.AllowCurrencySymbol) != 0 && end > start && TChar.CastToUInt32(text[end - 1]) == '$')
-        {
-            end--;
-        }
-
-        if (parenthesized)
-        {
-            negative = true;
-        }
-
-        var maximum = negative ? (1UL << (bits - 1)) : (1UL << (bits - 1)) - 1;
-        if (!TryParseUnsigned(text.Slice(start, end - start), style & ~(NumberStyles.AllowLeadingSign | NumberStyles.AllowTrailingSign | NumberStyles.AllowParentheses), maximum, out var magnitude))
-        {
-            return false;
-        }
-
-        if (negative)
-        {
-            value = magnitude == (1UL << (bits - 1)) ? -(1L << (bits - 1)) : -(long)magnitude;
-        }
-        else
-        {
-            value = (long)magnitude;
-        }
-
-        return true;
-    }
-
-    internal static bool TryParseUtf8(ReadOnlySpan<byte> text, NumberStyles style, out ulong value, ulong maximum)
-        => TryParseUnsigned(text, style, maximum, out value);
-
-    internal static byte ParseByte(ReadOnlySpan<char> text, NumberStyles style)
-    {
-        if (TryParseUnsigned(text, style, byte.MaxValue, out var value))
-        {
-            return (byte)value;
-        }
-
-        // Preserve the Parse/TryParse distinction made by the BCL: a syntactically
-        // valid value outside the target range is an overflow, not a format error.
-        if (TryParseUnsigned(text, style, ulong.MaxValue, out _) ||
-            TryParseSigned(text, style, 64, out _))
-        {
-            throw new OverflowException();
-        }
-
-        throw new FormatException();
-    }
-
-    internal static sbyte ParseSByte(ReadOnlySpan<char> text, NumberStyles style)
-    {
-        if (TryParseSigned(text, style, 8, out var value))
-        {
-            return (sbyte)value;
-        }
-
-        if (TryParseUnsigned(text, style, ulong.MaxValue, out _) ||
-            TryParseSigned(text, style, 64, out _))
-        {
-            throw new OverflowException();
-        }
-
-        throw new FormatException();
-    }
-
-    internal static byte ParseByteUtf8(ReadOnlySpan<byte> text, NumberStyles style)
-    {
-        if (TryParseUnsigned(text, style, byte.MaxValue, out var value))
-        {
-            return (byte)value;
-        }
-
-        if (TryParseUnsigned(text, style, ulong.MaxValue, out _) ||
-            TryParseSigned(text, style, 64, out _))
-        {
-            throw new OverflowException();
-        }
-
-        throw new FormatException();
-    }
-
-    internal static sbyte ParseSByteUtf8(ReadOnlySpan<byte> text, NumberStyles style)
-    {
-        if (TryParseSigned(text, style, 8, out var value))
-        {
-            return (sbyte)value;
-        }
-
-        if (TryParseUnsigned(text, style, ulong.MaxValue, out _) ||
-            TryParseSigned(text, style, 64, out _))
-        {
-            throw new OverflowException();
-        }
-
-        throw new FormatException();
-    }
-
     private static bool Trim<TChar>(ReadOnlySpan<TChar> text, NumberStyles style, ref int start, ref int end)
         where TChar : unmanaged, IUtfChar<TChar>
     {
@@ -526,8 +97,6 @@ internal static class PrimitiveGenericMathSmall
         return digit < radix ? digit : -1;
     }
 
-    private static bool IsDecimalDigit(uint value) => value is >= '0' and <= '9';
-
     private static bool IsWhiteSpace(uint value) => value is
         '\u0009' or '\u000A' or '\u000B' or '\u000C' or '\u000D' or
         '\u0020' or '\u0085' or '\u00A0' or '\u1680' or '\u2000' or
@@ -536,7 +105,7 @@ internal static class PrimitiveGenericMathSmall
         '\u2028' or '\u2029' or '\u202F' or '\u205F' or '\u3000';
 }
 
-public partial struct Byte
+public readonly partial struct Byte
 {
     public string ToString(IFormatProvider? provider) => Number.UInt32ToDecStr(this);
 
@@ -547,40 +116,6 @@ public partial struct Byte
 
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatUInt32(this, format, provider, destination, out bytesWritten);
-
-    public static byte Parse(string value, NumberStyles style, IFormatProvider? provider) =>
-        (byte)Number.ParseUnsignedInteger(value, 8, style);
-
-    public static byte Parse(string value, IFormatProvider? provider) => Parse(value, NumberStyles.Integer, provider);
-
-    public static bool TryParse(string? value, NumberStyles style, IFormatProvider? provider, out byte result)
-    {
-        var valid = Number.TryParseUnsignedInteger(value, 8, style, out var parsed);
-        result = (byte)parsed;
-        return valid;
-    }
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out byte result) => TryParse(value, NumberStyles.Integer, provider, out result);
-
-    public static byte Parse(ReadOnlySpan<char> value, IFormatProvider? provider) =>
-        (byte)Number.ParseUnsignedInteger(value, 8, NumberStyles.Integer);
-
-    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out byte result)
-    {
-        var valid = Number.TryParseUnsignedInteger(value, 8, NumberStyles.Integer, out var parsed);
-        result = (byte)parsed;
-        return valid;
-    }
-
-    public static byte Parse(ReadOnlySpan<byte> value, IFormatProvider? provider) =>
-        (byte)Number.ParseUnsignedInteger(value, 8, NumberStyles.Integer);
-
-    public static bool TryParse(ReadOnlySpan<byte> value, IFormatProvider? provider, out byte result)
-    {
-        var valid = Number.TryParseUnsignedInteger(value, 8, NumberStyles.Integer, out var parsed);
-        result = (byte)parsed;
-        return valid;
-    }
 
     static byte IAdditionOperators<byte, byte, byte>.operator +(byte left, byte right) => (byte)(left + right);
     static byte IAdditionOperators<byte, byte, byte>.operator checked +(byte left, byte right) => checked((byte)(left + right));
@@ -612,7 +147,7 @@ public partial struct Byte
     static byte IUnaryPlusOperators<byte, byte>.operator +(byte value) => (byte)(+value);
 }
 
-public partial struct SByte
+public readonly partial struct SByte
 {
     // Number's format-free entry point: what the default format writes, without the format string parser.
     public string ToString(IFormatProvider? provider) => Number.FormatInt32WithoutFormat(this, provider);
@@ -624,40 +159,6 @@ public partial struct SByte
 
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatInt32(this, 0x000000FF, format, provider, destination, out bytesWritten);
-
-    public static sbyte Parse(string value, NumberStyles style, IFormatProvider? provider) =>
-        (sbyte)Number.ParseSignedInteger(value, 8, style);
-
-    public static sbyte Parse(string value, IFormatProvider? provider) => Parse(value, NumberStyles.Integer, provider);
-
-    public static bool TryParse(string? value, NumberStyles style, IFormatProvider? provider, out sbyte result)
-    {
-        var valid = Number.TryParseSignedInteger(value, 8, style, out var parsed);
-        result = (sbyte)parsed;
-        return valid;
-    }
-
-    public static bool TryParse(string? value, IFormatProvider? provider, out sbyte result) => TryParse(value, NumberStyles.Integer, provider, out result);
-
-    public static sbyte Parse(ReadOnlySpan<char> value, IFormatProvider? provider) =>
-        (sbyte)Number.ParseSignedInteger(value, 8, NumberStyles.Integer);
-
-    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out sbyte result)
-    {
-        var valid = Number.TryParseSignedInteger(value, 8, NumberStyles.Integer, out var parsed);
-        result = (sbyte)parsed;
-        return valid;
-    }
-
-    public static sbyte Parse(ReadOnlySpan<byte> value, IFormatProvider? provider) =>
-        (sbyte)Number.ParseSignedInteger(value, 8, NumberStyles.Integer);
-
-    public static bool TryParse(ReadOnlySpan<byte> value, IFormatProvider? provider, out sbyte result)
-    {
-        var valid = Number.TryParseSignedInteger(value, 8, NumberStyles.Integer, out var parsed);
-        result = (sbyte)parsed;
-        return valid;
-    }
 
     static sbyte IAdditionOperators<sbyte, sbyte, sbyte>.operator +(sbyte left, sbyte right) => (sbyte)(left + right);
     static sbyte IAdditionOperators<sbyte, sbyte, sbyte>.operator checked +(sbyte left, sbyte right) => checked((sbyte)(left + right));
@@ -689,7 +190,7 @@ public partial struct SByte
     static sbyte IUnaryPlusOperators<sbyte, sbyte>.operator +(sbyte value) => (sbyte)(+value);
 }
 
-public partial struct Char
+public readonly partial struct Char
 {
     public string ToString(IFormatProvider? provider) => ToString();
 

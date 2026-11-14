@@ -870,6 +870,62 @@ public sealed class RootMapTests
         Assert.Equal(1, map.Slots[new RootSource(RootSourceKind.AllocationTemporary, 0)]);
     }
 
+    // A call that allocates and then runs managed code (bounded member execution's New and struct results) gets
+    // newobj's allocation root in its constructor-call roots; an unclassified call gets none.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ClassifiedAllocatingCallGetsTheAllocationTemporaryRoot(bool classified)
+    {
+        var program = new FakeProgram();
+        var method = Method(EntryKey, parameters: [CliValueKind.ManagedReference]);
+        var structured = StructuredWithLocals(
+            program,
+            method,
+            [CliValueKind.ManagedReference],
+            1,
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(2, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(3, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(4, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(5, CilOperation.BranchIfFalse, new CilOperand.BranchTarget(7)),
+            I(6, CilOperation.Return),
+            I(7, CilOperation.Return));
+        var analyzer = new RootMapAnalyzer(
+            EmptyValueLayouts.Instance,
+            new StackStorageTypeAnalyzer(program, program, program, EmptyValueLayouts.Instance,
+                new StackStorageContinuationAnalyzer()),
+            new StackStorageContinuationAnalyzer(),
+            new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
+            CreateRootDecisions(program),
+            CreateCalleeArguments(program),
+            new RootSlotAllocator(),
+            new CallAt(classified ? 3 : -1));
+
+        var map = analyzer.Analyze(new RootMapAnalysisRequest(
+            structured,
+            Lookups.Of(new HashSet<EntityKey> { AllocatorKey }),
+            Lookups.Of(new HashSet<string>())));
+
+        var call = map.Safepoints[3];
+        if (!classified)
+        {
+            Assert.Empty(call.ConstructorCallRoots);
+            return;
+        }
+        Assert.True(call.ConstructorCallRoots.AsSpan().SequenceEqual(
+            [.. call.Roots, new RootSource(RootSourceKind.AllocationTemporary, 0)]));
+        Assert.NotEqual(
+            map.Slots[new RootSource(RootSourceKind.Local, 0)],
+            map.Slots[new RootSource(RootSourceKind.AllocationTemporary, 0)]);
+    }
+
+    private sealed class CallAt(int offset) : IAllocationTemporaryCallClassifier
+    {
+        public bool Classify(CilInstruction instruction) => instruction.Offset == offset;
+    }
+
     // The argument a compiled callee takes is its own to root; a value the call
     // leaves beneath it on the stack stays rooted by the caller.
     [Fact]
@@ -2830,7 +2886,7 @@ public sealed class RootMapTests
                 [ExternalKey] = Method(ExternalKey, isStatic: enumIntrinsicStatic, name: enumIntrinsicName ?? "Method", rva: 0) with
                 {
                     DeclaringType = enumIntrinsicName is null ? TypeKey : EnumTypeKey,
-                    UnsafeAccessor = externalAccessor ? new(1, "Target", true, false, false) : null,
+                    UnsafeAccessor = externalAccessor ? new(1, "Target", true, false) : null,
                 },
                 [DelegateInvokeKey] = Method(DelegateInvokeKey, isStatic: delegateMethodStatic,
                     name: delegateMethodName, rva: 0) with

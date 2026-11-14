@@ -138,7 +138,10 @@ public sealed class CompilerDependencyInjectionTests
         IMetadataCompilationLease IMetadataCompilationLoader.Load(
             string entryAssemblyPath,
             IEnumerable<string> referencePaths,
-            System.Collections.Immutable.ImmutableDictionary<string, string>? aliases) =>
+            System.Collections.Immutable.ImmutableDictionary<string, string>? aliases,
+            IEnumerable<string>? metadataReferencePaths,
+            IEnumerable<string>? originalContractReferencePaths,
+            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding) =>
             throw new StageReplacementObservedException(entryAssemblyPath);
     }
 

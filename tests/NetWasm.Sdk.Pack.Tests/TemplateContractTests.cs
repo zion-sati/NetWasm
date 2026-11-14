@@ -113,28 +113,18 @@ public sealed class TemplateContractTests
         Assert.Equal($"NetWasm.Sdk/{declaredSdkVersion}", (string?)project.Root!.Attribute("Sdk"));
     }
 
-    // NetWasm.System.Net.Http ships from the libraries release after the SDK, at its own patch
-    // numbers, so the service floats within the SDK's minor (owner, 2026-11-09); the release
-    // projection moves the float with the version.
+    // The serverless template is an HTTP service; System.Net.Http and the wasi:http service bridge come with the SDK
+    // and NetWasm.App, so it references no package.
     [Fact]
-    public void ServerlessTemplateIsAnHttpServiceFloatingSystemNetHttpWithinTheSdkMinor()
+    public void ServerlessTemplateIsAnHttpServiceWithNoPackageReference()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var sdkVersion = XDocument
-            .Load(Path.Combine(repositoryRoot, "src", "NetWasm.Sdk", "NetWasm.Sdk.csproj"))
-            .Descendants("Version")
-            .Single()
-            .Value;
         var template = Path.Combine(repositoryRoot, "src", "NetWasm.Templates", "content", "NetWasm.Serverless");
         var project = XDocument.Load(Path.Combine(template, "NetWasmService.csproj"));
 
         Assert.Equal("Component", project.Descendants("OutputType").Single().Value);
         Assert.Equal("service", project.Descendants("NetWasmWorld").Single().Value);
-        var reference = Assert.Single(project.Descendants("PackageReference"));
-        Assert.Equal("NetWasm.System.Net.Http", (string?)reference.Attribute("Include"));
-        var minor = string.Join('.', sdkVersion.Split('-')[0].Split('.').Take(2));
-        var expected = sdkVersion.Contains('-', StringComparison.Ordinal) ? $"{minor}.*-*" : $"{minor}.*";
-        Assert.Equal(expected, (string?)reference.Attribute("Version"));
+        Assert.Empty(project.Descendants("PackageReference"));
         Assert.Contains(
             "public static async partial Task<HttpResponseMessage> Handle(HttpRequestMessage request)",
             File.ReadAllText(Path.Combine(template, "ServiceExports.cs")),

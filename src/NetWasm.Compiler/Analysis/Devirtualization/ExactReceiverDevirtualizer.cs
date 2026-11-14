@@ -23,7 +23,7 @@ namespace NetWasm.Compiler.Analysis.Devirtualization;
 internal sealed class ExactReceiverDevirtualizer(
     ICalledMethodResolver calledMethods,
     IDispatchTargetResolver dispatchTargets,
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     IFieldRepository fields,
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
@@ -32,7 +32,7 @@ internal sealed class ExactReceiverDevirtualizer(
 {
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly IDispatchTargetResolver _dispatchTargets = dispatchTargets ?? throw new ArgumentNullException(nameof(dispatchTargets));
-    private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
@@ -104,7 +104,9 @@ internal sealed class ExactReceiverDevirtualizer(
             }
             if (target?.Method is not { Definition.HasManagedBody: true } implementation ||
                 exact.Shape == CliTypeShape.SzArray &&
-                (!implementation.Definition.IsStatic || !ReadsTheArrayLengthFirst(_methodBodies.ReadMethodBody(implementation))))
+                (!implementation.Definition.IsStatic ||
+                    !_methodBodies.TryReadMethodBody(implementation, out var implementationBody) ||
+                    !ReadsTheArrayLengthFirst(implementationBody)))
             {
                 continue;
             }
@@ -165,7 +167,10 @@ internal sealed class ExactReceiverDevirtualizer(
         {
             return null;
         }
-        var body = _methodBodies.ReadMethodBody(method);
+        if (!_methodBodies.TryReadMethodBody(method, out var body))
+        {
+            return null;
+        }
         var instructions = body.Instructions;
         var entries = InstructionEntries.Of(body);
         CliTypeIdentity? returned = null;

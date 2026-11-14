@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Diagnostics.Process</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.ComponentModel.Primitives/System.ComponentModel.Primitives.csproj" />
+    <ProjectReference Include="../System.Collections.Specialized/System.Collections.Specialized.csproj" />
+    <ProjectReference Include="../System.Diagnostics.FileVersionInfo/System.Diagnostics.FileVersionInfo.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Collections/Generic/ArrayBuilder.cs" />
+    <Compile Include="Microsoft/Win32/SafeHandles/SafeProcessHandle.NetWasm.cs" />
+    <Compile Include="System/Collections/Specialized/DictionaryWrapper.cs" />
+    <Compile Include="System/Collections/Specialized/StringDictionaryWrapper.cs" />
+    <Compile Include="System/Diagnostics/AsyncStreamReader.cs" />
+    <Compile Include="System/Diagnostics/DataReceivedEventArgs.cs" />
+    <Compile Include="System/Diagnostics/MonitoringDescriptionAttribute.cs" />
+    <Compile Include="System/Diagnostics/Process.NetWasm.cs" />
+    <Compile Include="System/Diagnostics/Process.cs" />
+    <Compile Include="System/Diagnostics/ProcessInfo.cs" />
+    <Compile Include="System/Diagnostics/ProcessManager.NetWasm.cs" />
+    <Compile Include="System/Diagnostics/ProcessModule.cs" />
+    <Compile Include="System/Diagnostics/ProcessModuleCollection.cs" />
+    <Compile Include="System/Diagnostics/ProcessPriorityClass.cs" />
+    <Compile Include="System/Diagnostics/ProcessStartInfo.Unix.cs" />
+    <Compile Include="System/Diagnostics/ProcessStartInfo.cs" />
+    <Compile Include="System/Diagnostics/ProcessThread.NetWasm.cs" />
+    <Compile Include="System/Diagnostics/ProcessThread.cs" />
+    <Compile Include="System/Diagnostics/ProcessThreadCollection.cs" />
+    <Compile Include="System/Diagnostics/ProcessWindowStyle.cs" />
+    <Compile Include="System/Diagnostics/ThreadInfo.cs" />
+    <Compile Include="System/Diagnostics/ThreadPriorityLevel.cs" />
+    <Compile Include="System/Diagnostics/ThreadState.cs" />
+    <Compile Include="System/Diagnostics/ThreadWaitReason.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

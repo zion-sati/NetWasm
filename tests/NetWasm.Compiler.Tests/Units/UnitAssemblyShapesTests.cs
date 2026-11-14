@@ -69,6 +69,30 @@ public sealed class CompiledUnitStateFactoryTests
         Assert.Throws<ArgumentNullException>(() => new CompiledUnitStateFactory(new NoStore(), null!, null!, null!, null!, null!));
     }
 
+    [Fact]
+    public void TheFeatureSwitchPolicyNamesSwitchesInOrderAndPropertiesAsGiven()
+    {
+        var options = new CompilerOptions("app.dll", [], "Program", "Main", []) with
+        {
+            FeatureSwitches = ImmutableDictionary<string, bool>.Empty.Add("Zeta", false).Add("Alpha", true),
+            RuntimeProperties = [("Second", "2"), ("First", "1")],
+        };
+
+        Assert.Equal("switches:Alpha=True,Zeta=False;properties:Second=2,First=1",
+            CompiledUnitStateFactory.FeatureSwitchPolicy(options));
+    }
+
+    [Fact]
+    public void TheNativeBindingPolicyNamesEachLinkedLibraryOnceInOrderOrEveryLibrary()
+    {
+        var options = new CompilerOptions("app.dll", [], "Program", "Main", []);
+
+        Assert.Equal("native:all", CompiledUnitStateFactory.NativeBindingPolicy(options));
+        Assert.Equal("native:", CompiledUnitStateFactory.NativeBindingPolicy(options with { LinkedNativeLibraries = [] }));
+        Assert.Equal("native:liba,libz", CompiledUnitStateFactory.NativeBindingPolicy(
+            options with { LinkedNativeLibraries = ["libz", "liba", "libz"] }));
+    }
+
     private sealed class NoStore : Wasm.Units.IUnitStoreLoader
     {
         public Wasm.Units.UnitStore Load(string location) => throw new NotSupportedException();

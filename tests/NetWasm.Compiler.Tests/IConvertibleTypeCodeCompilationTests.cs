@@ -24,7 +24,14 @@ public sealed class IConvertibleTypeCodeCompilationTests
             optimize,
             target,
             41,
-            []));
+            [])
+        {
+            // IConvertible calls may reach string's, whose ToDateTime and ToType parse dates, and date parsing reads
+            // the local time zone: the program needs the platform world.
+            Exports = [new RequestedExport("run", "IConvertibleTypeCodeFixture.EntryPoint", "Run")],
+            WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform/platform@1.0.0",
+        });
 
         Assert.Equal(0, observed);
     }

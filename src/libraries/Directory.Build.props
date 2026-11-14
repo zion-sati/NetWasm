@@ -1,0 +1,48 @@
+<Project>
+  <Import Project="../Directory.Build.props" />
+  <!-- NetWasm.App's assemblies: upstream System.* libraries, built like CoreLib, against CoreLib, for the
+       NetWasm compiler to compile whole-program. Each keeps its upstream assembly name. -->
+  <PropertyGroup>
+    <!-- As upstream builds its libraries, so their sources port verbatim. -->
+    <LangVersion>preview</LangVersion>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStandardLibraries>true</NoStandardLibraries>
+    <NoStdLib>true</NoStdLib>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <!-- As CoreLib: compiled whole-program by NetWasm, never by ILLink or Native AOT. -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <!-- The generated assembly info carries only the assembly version (the identity below). -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <GenerateAssemblyVersionAttribute>true</GenerateAssemblyVersionAttribute>
+    <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
+    <GenerateAssemblyConfigurationAttribute>false</GenerateAssemblyConfigurationAttribute>
+    <GenerateAssemblyCopyrightAttribute>false</GenerateAssemblyCopyrightAttribute>
+    <GenerateAssemblyDescriptionAttribute>false</GenerateAssemblyDescriptionAttribute>
+    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
+    <GenerateAssemblyInformationalVersionAttribute>false</GenerateAssemblyInformationalVersionAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
+    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
+    <GenerateNeutralResourcesLanguageAttribute>false</GenerateNeutralResourcesLanguageAttribute>
+    <GenerateRepositoryUrlAttribute>false</GenerateRepositoryUrlAttribute>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <GenerateAssemblyMetadataAttributes>false</GenerateAssemblyMetadataAttributes>
+    <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
+    <ProduceReferenceAssemblyInOutDir>true</ProduceReferenceAssemblyInOutDir>
+    <RuntimeMetadataVersion>v4.0.30319</RuntimeMetadataVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Each library carries its upstream assembly identity: dotnet/runtime 11.0.0's version and public key, set
+         per project as upstream does (StrongNameKeyId Open or ECMA, an older AssemblyVersion), with Microsoft's
+         key and 11.0.0.0 as the default. A package built against Microsoft's assembly then binds to it. The
+         libraries are public-signed with the public key, as upstream builds outside Microsoft are. -->
+    <AssemblyVersion>11.0.0.0</AssemblyVersion>
+    <StrongNameKeyId>Microsoft</StrongNameKeyId>
+    <!-- Warnings upstream's repository always disables (dotnet/runtime's Directory.Build.props). -->
+    <NoWarn>$(NoWarn);CS8500;CS8969</NoWarn>
+    <IsPackable>false</IsPackable>
+    <!-- The symbols upstream's shared sources and the NetWasm SDK's netwasm0.1 builds define. -->
+    <DefineConstants>$(DefineConstants);NET;NETWASM;NETWASM0_1</DefineConstants>
+    <NetWasmLibrariesRoot>$(MSBuildThisFileDirectory)</NetWasmLibrariesRoot>
+    <NetWasmCoreLibProject>$(MSBuildThisFileDirectory)../NetWasm.CoreLib/NetWasm.CoreLib.csproj</NetWasmCoreLibProject>
+  </PropertyGroup>
+</Project>

@@ -22,6 +22,9 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
     private readonly ITypeObjectDataBuilder _typeObjects;
     private readonly IEnumMetadataCollector _enumMetadataCollector;
     private readonly IEnumMetadataBuilder _enumMetadata;
+    private readonly IStructMarshallingDataCollector _structMarshallingCollector;
+    private readonly IStructMarshallingDataBuilder _structMarshalling;
+    private readonly ImmutableArray<CliTypeIdentity> _uninitializedObjectTypes;
     private readonly WasmTargetLayout _target;
 
     internal ManagedStaticDataBuilder(
@@ -38,8 +41,14 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         IExceptionObjectBuilder exceptionObjects,
         ITypeObjectDataBuilder typeObjects,
         IEnumMetadataCollector enumMetadataCollector,
-        IEnumMetadataBuilder enumMetadata)
+        IEnumMetadataBuilder enumMetadata,
+        IStructMarshallingDataCollector? structMarshallingCollector = null,
+        IStructMarshallingDataBuilder? structMarshalling = null,
+        ImmutableArray<CliTypeIdentity> uninitializedObjectTypes = default)
     {
+        _structMarshallingCollector = structMarshallingCollector ?? EmptyStructMarshallingDataCollector.Instance;
+        _structMarshalling = structMarshalling ?? EmptyStructMarshallingDataBuilder.Instance;
+        _uninitializedObjectTypes = uninitializedObjectTypes.IsDefault ? [] : uninitializedObjectTypes;
         _types = types ?? throw new ArgumentNullException(nameof(types));
         _target = types.Target ?? throw new ArgumentNullException(nameof(types));
         _state = state ?? throw new ArgumentNullException(nameof(state));
@@ -72,10 +81,12 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         _valueTypeDescriptors.Build();
         _genericArguments.Build();
         _enumMetadataCollector.Collect();
+        _structMarshallingCollector.Collect();
         _strings.Build();
         _memberDescriptors.Build();
         _typeTable.Build();
         _enumMetadata.Build();
+        _structMarshalling.Build();
         _exceptionObjects.Build();
         _typeObjects.Build();
 
@@ -95,6 +106,8 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         {
             MetadataTypeDescriptors = _state.MetadataTypeDescriptors.ToImmutable(),
             EnumMetadata = _state.EnumMetadata.ToImmutable(),
+            StructMarshalling = _state.StructMarshalling.ToImmutable(),
+            UninitializedObjectTypes = _uninitializedObjectTypes,
             MethodDescriptors = _state.MethodDescriptors.ToImmutableDictionary(
                 StringComparer.Ordinal),
             FieldDescriptors = _state.FieldDescriptors.ToImmutableDictionary(

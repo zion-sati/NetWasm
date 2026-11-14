@@ -34,7 +34,7 @@ public sealed class ExpressionValueBoundaryCompilationTests
     }
 
     [Fact]
-    public void DesktopAcceptsNullableStructIdentityOutsideNetWasmProfile()
+    public void DesktopAcceptsNullableStructIdentity()
     {
         Expression<Func<Unsupported?, Unsupported?>> identity = value => value;
 
@@ -114,42 +114,29 @@ public sealed class ExpressionValueBoundaryCompilationTests
 
                 var rejected = 0;
 
+                // Any value type is a value: a struct, DateTime and their nullable forms run as parameters, results,
+                // locals and defaults.
                 var unsupported = Expression.Parameter(typeof(Unsupported?), "value");
-                try
-                {
-                    _ = Expression.Lambda<Func<Unsupported?, Unsupported?>>(
-                        unsupported,
-                        unsupported).Compile();
-                }
-                catch (NotSupportedException)
-                {
-                    rejected++;
-                }
+                var structIdentity = Expression.Lambda<Func<Unsupported?, Unsupported?>>(
+                    unsupported,
+                    unsupported).Compile();
+                if (structIdentity(new Unsupported(input)) is not { Value: var held } || held != input ||
+                    structIdentity(null) is not null)
+                    return 9;
 
                 var date = Expression.Parameter(typeof(DateTime?), "value");
-                try
-                {
-                    _ = Expression.Lambda<Func<DateTime?, DateTime?>>(
-                        date,
-                        date).Compile();
-                }
-                catch (NotSupportedException)
-                {
-                    rejected++;
-                }
+                var dateIdentity = Expression.Lambda<Func<DateTime?, DateTime?>>(
+                    date,
+                    date).Compile();
+                if (dateIdentity(new DateTime(input)) != new DateTime(input) || dateIdentity(null) is not null)
+                    return 10;
 
                 var integer = Expression.Parameter(typeof(int), "value");
                 var local = Expression.Variable(typeof(Unsupported?), "local");
-                try
-                {
-                    _ = Expression.Lambda<Func<int, int>>(
+                if (Expression.Lambda<Func<int, int>>(
                         Expression.Block([local], integer),
-                        integer).Compile();
-                }
-                catch (NotSupportedException)
-                {
-                    rejected++;
-                }
+                        integer).Compile()(input) != input)
+                    return 11;
 
                 var unselected = Expression.Condition(
                     Expression.Constant(true),
@@ -157,16 +144,10 @@ public sealed class ExpressionValueBoundaryCompilationTests
                     Expression.Block(
                         Expression.Default(typeof(Unsupported?)),
                         integer));
-                try
-                {
-                    _ = Expression.Lambda<Func<int, int>>(
+                if (Expression.Lambda<Func<int, int>>(
                         unselected,
-                        integer).Compile();
-                }
-                catch (NotSupportedException)
-                {
-                    rejected++;
-                }
+                        integer).Compile()(input) != input)
+                    return 12;
 
                 Expression<Func<Model, Unsupported?>> member = model => model.Value;
                 try
@@ -189,22 +170,25 @@ public sealed class ExpressionValueBoundaryCompilationTests
                     rejected++;
                 }
 
+                // Enum equality builds, as upstream; the interpreter rejects it.
+                var code = Expression.Parameter(typeof(Code), "code");
                 try
                 {
-                    _ = Expression.Equal(
-                        Expression.Parameter(typeof(Code), "left"),
-                        Expression.Parameter(typeof(Code), "right"));
+                    _ = Expression.Lambda<Func<Code, bool>>(
+                        Expression.Equal(code, code),
+                        code).Compile();
                 }
                 catch (NotSupportedException)
                 {
                     rejected++;
                 }
 
+                var nullableCode = Expression.Parameter(typeof(Code?), "code");
                 try
                 {
-                    _ = Expression.Equal(
-                        Expression.Parameter(typeof(Code?), "left"),
-                        Expression.Parameter(typeof(Code?), "right"));
+                    _ = Expression.Lambda<Func<Code?, bool>>(
+                        Expression.Equal(nullableCode, nullableCode),
+                        nullableCode).Compile();
                 }
                 catch (NotSupportedException)
                 {
@@ -231,7 +215,7 @@ public sealed class ExpressionValueBoundaryCompilationTests
                     rejected++;
                 }
 
-                if (rejected != 9)
+                if (rejected != 5)
                     return 1;
 
                 Expression<Func<Code, Code>> enumIdentity = value => value;

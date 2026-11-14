@@ -59,9 +59,6 @@
     }
   ],
   "referencePaths": [],
-  "referenceAssemblyAliases": {
-    "System.Runtime.InteropServices": "NetWasm.CoreLib"
-  },
   "oracleMode": "SameIl",
   "matrixProfile": "Extended",
   "executionBackend": "Linked",

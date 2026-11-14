@@ -2,7 +2,8 @@ namespace NetWasm.Compiler.Tests.Correctness;
 
 // Activator.CreateInstance<T>() and the APIs built on it (new T(), Lazy<T>, LazyInitializer,
 // ConditionalWeakTable.GetOrCreateValue) compile for every T and behave as on .NET: a type
-// without a public parameterless constructor fails when the call runs, not when it compiles.
+// without a public parameterless constructor fails when the call runs, not when it compiles, and
+// a constructor's exception arrives wrapped in TargetInvocationException.
 public sealed class ActivatorSemanticsTests(CorrectnessTestRunner runner) : CSharpSemanticTestBase(runner)
 {
     [Fact]
@@ -19,6 +20,8 @@ public sealed class ActivatorSemanticsTests(CorrectnessTestRunner runner) : CSha
         public class OnlyArguments { public OnlyArguments(int value) { } }
         public class Public { public int Value = 5; }
         public struct WithConstructor { public int Value; public WithConstructor() { Value = 7; } }
+        public class Throwing { public Throwing() => throw new InvalidOperationException("class constructor"); }
+        public struct ThrowingStruct { public int Value; public ThrowingStruct() => throw new InvalidOperationException("struct constructor"); }
         public static class EntryPoint
         {
             public static int RunDesktop(int input) => Run(input);
@@ -98,11 +101,13 @@ public sealed class ActivatorSemanticsTests(CorrectnessTestRunner runner) : CSha
                             try { table.GetOrCreateValue(new object()); return -5; }
                             catch (Exception failure) { return Failure(failure); }
                         }
-                        default: return new ConditionalWeakTable<object, Public>().GetOrCreateValue(new object()).Value + 100;
+                        case 20: return new ConditionalWeakTable<object, Public>().GetOrCreateValue(new object()).Value + 100;
+                        // A constructor's exception is wrapped in TargetInvocationException, for a class and a struct.
+                        default: return Create<Throwing>() ^ Create<ThrowingStruct>();
                     }
                 }
                 catch (Exception failure) { return -1000 - Failure(failure) % 1000; }
             }
         }
-        """, [.. Enumerable.Range(0, 21)]));
+        """, [.. Enumerable.Range(0, 22)]));
 }

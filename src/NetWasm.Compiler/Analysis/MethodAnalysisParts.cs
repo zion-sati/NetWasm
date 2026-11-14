@@ -169,7 +169,7 @@ internal sealed class MethodAnalysisParts
         parts.ConstantCallFolding = optimizationSettings.ConstantCallFolding == ConstantCallFoldingPolicy.Conservative
             ? new ConstantCallFoldingRule(parts.ConstantCalls(), new MethodSpecializer(
             [
-                new KnownSizeRewriter(calls),
+                new KnownSizeRewriter(calls, world.NativeIntegerSize),
                 ConstantBranchFoldingFactory.Create(factories.GraphBuilders.Create()),
             ]))
             : null;
@@ -204,7 +204,7 @@ internal sealed class MethodAnalysisParts
     }
 
     internal IMethodRewriteRule ConstantCalls() => new ConstantCallRewriter(_factories.GraphBuilders.Create(), Calls,
-        new ConstantCallEvaluator(_methodBodies, Calls, _typeDefinitions, _methodRepository, _intrinsics, _operands,
+        new ConstantCallEvaluator(new CalleeMethodBodyReader(_methodBodies), Calls, _typeDefinitions, _methodRepository, _intrinsics, _operands,
             new ConstantComparisonEvaluator(_typeDefinitions), Specializer),
         _operands);
 

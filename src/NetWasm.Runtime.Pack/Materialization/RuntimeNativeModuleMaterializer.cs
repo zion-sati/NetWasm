@@ -36,7 +36,8 @@ internal sealed class RuntimeNativeModuleMaterializer(
     IRuntimeLinkedImportValidator imports,
     IRuntimeNativeModuleValidator validation,
     IRuntimeNativeValidationProfileValidator profiles,
-    IRuntimeNativeArchiveFeatureValidator archiveFeatures) : IRuntimeNativeModuleMaterializer
+    IRuntimeNativeArchiveFeatureValidator archiveFeatures,
+    ILinkerCommandFactory linkerCommands) : IRuntimeNativeModuleMaterializer
 {
     public RuntimeMaterialization Materialize(RuntimeNativeMaterializationRequest request)
     {
@@ -205,7 +206,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
         {
             var provider = ownedArchives[index];
             var members = Path.Combine(workspace.DirectoryPath, $"archive-{index}.o");
-            commands.Invoke(new(consumer.WasmLdPath,
+            commands.Invoke(linkerCommands.Create(consumer.WasmLdPath,
                 archiveArguments.Build(new(consumer.Target, provider.SnapshotPath, members)),
                 Path.Combine(workspace.LogDirectoryPath, $"native-archive-validation-{index}.log")));
             archiveFeatures.Validate(new(provider.Provider.LibraryName, new(profile, consumer.Target, members,
@@ -224,7 +225,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
         };
         var generated = ImmutableArray.Create(output + ".lto.o");
         var probeLog = Path.Combine(workspace.LogDirectoryPath, "native-probe-link.log");
-        commands.Invoke(new(consumer.WasmLdPath, linkArguments.Build(link), probeLog));
+        commands.Invoke(linkerCommands.Create(consumer.WasmLdPath, linkArguments.Build(link), probeLog));
         var probe = modules.Read(artifacts.Read(output));
         imports.Validate(profile, probe, callbackSupport, importModules);
         bindingValidator.Validate(new RuntimeNativeBindingValidationRequest(ownedBindings, generated,
@@ -232,7 +233,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
         var finalLayout = linkedLayouts.Calculate(plan, probe.MemoryLayout);
         link = link with { Layout = link.Layout with { InitialMemorySizeBytes = finalLayout.InitialMemorySizeBytes } };
         var finalLog = Path.Combine(workspace.LogDirectoryPath, "native-final-link.log");
-        commands.Invoke(new(consumer.WasmLdPath, linkArguments.Build(link), finalLog));
+        commands.Invoke(linkerCommands.Create(consumer.WasmLdPath, linkArguments.Build(link), finalLog));
         var finalTrace = traces.Read(Encoding.UTF8.GetString(artifacts.Read(finalLog)));
         var linked = modules.Read(artifacts.Read(output));
         imports.Validate(profile, linked, callbackSupport, importModules);

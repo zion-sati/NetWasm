@@ -23,6 +23,7 @@ internal sealed class WasmModuleEmissionResultBuilder(
         // a [WasmImportLinkage] one, which stays an import of the final module.
         var nativeImports = request.NativeImports.Methods
             .Where(import => !import.Abi.Import.HasWasmImportLinkage)
+            .DistinctBy(import => (import.Abi.Import.LibraryName, import.Abi.Import.EntryPoint))
             .Select(import => new WasmNativeImport(
             import.Abi.Import.LibraryName,
             import.Abi.Import.EntryPoint,

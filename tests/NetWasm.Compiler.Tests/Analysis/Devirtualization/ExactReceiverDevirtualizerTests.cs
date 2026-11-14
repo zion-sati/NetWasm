@@ -379,11 +379,13 @@ public sealed class ExactReceiverDevirtualizerTests
 
     // A property over an array field returns that array, with nops before its
     // return; one whose returns read arrays of two types, or that returns
-    // nothing it pushes, fixes no array type.
+    // nothing it pushes, fixes no array type, and neither does one whose body
+    // cannot be decoded (its own analysis reports that).
     [Theory]
     [InlineData("padded", true)]
     [InlineData("two types", false)]
     [InlineData("bare", false)]
+    [InlineData("undecodable", false)]
     public void APropertyOverAnArrayFieldReturnsItsArray(string getter, bool devirtualized)
     {
         var longs = CliTypeIdentity.SzArray(CliTypeIdentity.FromStackKind(CliValueKind.I8));
@@ -401,6 +403,7 @@ public sealed class ExactReceiverDevirtualizerTests
         ])
         {
             Target = ArrayHelper,
+            UndecodableGetter = getter == "undecodable",
             GetterBody = getter switch
             {
                 "padded" => [Read(0, Integers), new(1, 2, CilOperation.Nop, new CilOperand.None()), Return(2)],
@@ -478,8 +481,18 @@ public sealed class ExactReceiverDevirtualizerTests
     private sealed record Step(int Offset, CilOperation Operation, CilOperand Operand, ImmutableArray<CliValueKind> Stack);
 
     private sealed class Fixture(ImmutableArray<Step> steps) :
-        ICalledMethodResolver, IDispatchTargetResolver, IMethodBodyReader, IFieldRepository, ITypedStackValidator
+        ICalledMethodResolver, IDispatchTargetResolver, IMethodBodyReader, ICalleeMethodBodyReader, IFieldRepository, ITypedStackValidator
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         private CilMethodBody? _body;
 
         public CilMethodBody Body => _body ??= new(Method(9, Base, "Run", isStatic: true).Definition, 4, [CliValueKind.ManagedReference],
@@ -493,6 +506,7 @@ public sealed class ExactReceiverDevirtualizerTests
         public bool HelperReadsLength { get; init; } = true;
         public ImmutableArray<CilInstruction>? HelperBody { get; init; }
         public ImmutableArray<CilInstruction> GetterBody { get; init; } = [];
+        public bool UndecodableGetter { get; init; }
         public bool Enabled { get; init; } = true;
         public bool KnownStacks { get; init; } = true;
         public int? MissingStackAt { get; init; }
@@ -514,7 +528,10 @@ public sealed class ExactReceiverDevirtualizerTests
             Target is null || !receiver.Equals(Derived) && receiver.Shape != CliTypeShape.SzArray ? null : new(receiver, Target);
 
         // The property's body, or the array helper: array.Length first, or a constant first.
-        public CilMethodBody ReadMethodBody(MethodInstanceModel method) => new(method.Definition, 2, [],
+        public CilMethodBody ReadMethodBody(MethodInstanceModel method) =>
+            UndecodableGetter && method.Definition.Key == Values.Definition.Key
+                ? throw new CompilerException(new(DiagnosticCode.MissingApi, "missing"))
+                : new(method.Definition, 2, [],
             method.Definition.Key == Values.Definition.Key
                 ? GetterBody
                 : HelperBody is { } helper

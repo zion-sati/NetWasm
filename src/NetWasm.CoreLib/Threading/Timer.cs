@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Adapted from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Adapted from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Keep standard validation and lifetime contracts; use the existing reactor timer
-// factory instead of native thread-pool queues. Native handle notification is unavailable.
+// factory instead of native thread-pool queues.
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -113,7 +113,7 @@ namespace System.Threading
         {
             ArgumentNullException.ThrowIfNull(notifyObject);
 
-            throw new PlatformNotSupportedException("Timer disposal notification through native wait handles is not supported on this NetWasm platform.");
+            return _timer.Dispose(notifyObject);
         }
 
         public void Dispose()
@@ -142,18 +142,47 @@ namespace System.Threading
         private sealed class TimerHolder
         {
             internal readonly ITimer Value;
+            private bool _disposed;
             internal TimerHolder(ITimer timer) => Value = timer;
             ~TimerHolder() => Value.Dispose();
             internal void Dispose()
             {
+                _disposed = true;
                 Value.Dispose();
                 GC.SuppressFinalize(this);
             }
             internal ValueTask DisposeAsync()
             {
+                _disposed = true;
                 var result = Value.DisposeAsync();
                 GC.SuppressFinalize(this);
                 return result;
+            }
+
+            // As upstream's TimerQueueTimer.Dispose(WaitHandle): false when the timer was already disposed; otherwise
+            // the handle is signaled once no callback is running, which DisposeAsync's completion reports.
+            internal bool Dispose(WaitHandle toSignal)
+            {
+                if (_disposed)
+                {
+                    return false;
+                }
+
+                var noCallbacksRunning = DisposeAsync();
+                if (noCallbacksRunning.IsCompleted)
+                {
+                    EventWaitHandle.Set(toSignal.SafeWaitHandle);
+                }
+                else
+                {
+                    noCallbacksRunning.AsTask().ContinueWith(
+                        static (_, handle) => EventWaitHandle.Set(((WaitHandle)handle!).SafeWaitHandle),
+                        toSignal,
+                        CancellationToken.None,
+                        TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default);
+                }
+                return true;
             }
         }
     }

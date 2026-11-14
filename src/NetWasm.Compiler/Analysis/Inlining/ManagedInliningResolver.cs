@@ -10,7 +10,7 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis.Inlining;
 
 internal sealed class ManagedInliningResolver(
-    IMethodBodyReader methodBodies,
+    ICalleeMethodBodyReader methodBodies,
     IMethodSpecializer specializer,
     ICalledMethodResolver calledMethods,
     IManagedInliningBodyValidator bodyValidator,
@@ -21,7 +21,7 @@ internal sealed class ManagedInliningResolver(
     int leafBodyInstructionLimit,
     int loopBodyInstructionLimit) : IManagedInliningResolver
 {
-    private readonly IMethodBodyReader _methodBodies = methodBodies ??
+    private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ??
         throw new ArgumentNullException(nameof(methodBodies));
     private readonly IMethodSpecializer _specializer = specializer ??
         throw new ArgumentNullException(nameof(specializer));
@@ -131,7 +131,12 @@ internal sealed class ManagedInliningResolver(
 
     private Candidate? Examine(MethodInstanceModel method)
     {
-        var body = _specializer.Rewrite(_methodBodies.ReadMethodBody(method)) with
+        if (!_methodBodies.TryReadMethodBody(method, out var read))
+        {
+            return null;
+        }
+
+        var body = _specializer.Rewrite(read) with
         {
             MethodInstance = method,
         };
@@ -195,7 +200,7 @@ internal sealed class ManagedInliningResolver(
             call.Operation == CilOperation.NewObject && target.DeclaringType.IsValueType) &&
         !_intrinsics.TryGetIntrinsic(definition.Key, out _) &&
         (definition.IsAggressiveInlining ||
-            _methodBodies.ReadMethodBody(target) is var body && CountsAsSmall(body) &&
+            _methodBodies.TryReadMethodBody(target, out var body) && CountsAsSmall(body) &&
             !Enumerable.Range(0, body.Instructions.Length).Any(index => Allocates(body, index)));
 
     // A wrapper of a large explicit priority callee is as large as that callee
@@ -207,7 +212,8 @@ internal sealed class ManagedInliningResolver(
         !body.Instructions.Any(instruction => instruction.Operation is CilOperation.Call or CilOperation.CallVirtual &&
             _calledMethods.Resolve(instruction) is { } target && IsExplicitPriorityCandidate(target) &&
             !_intrinsics.TryGetIntrinsic(target.Definition.Key, out _) &&
-            !(target.Definition.HasManagedBody && CountsAsSmall(_methodBodies.ReadMethodBody(target))));
+            !(target.Definition.HasManagedBody && _methodBodies.TryReadMethodBody(target, out var body) &&
+                CountsAsSmall(body)));
 
     private bool CountsAsSmall(CilMethodBody body) =>
         body.Instructions.Count(static instruction => instruction.Operation != CilOperation.Nop) <= _smallBodyInstructionLimit;
@@ -246,7 +252,8 @@ internal sealed class ManagedInliningResolver(
                 IsReceiver(operations, effect - 1 - target.Signature.ParameterTypes.Length) &&
                 (instruction.Operation == CilOperation.CallVirtual ||
                     depth < MaximumReceiverCallDepth && definition.HasBody &&
-                    DereferencesReceiverFirst(_methodBodies.ReadMethodBody(target), depth + 1)),
+                    _methodBodies.TryReadMethodBody(target, out var targetBody) &&
+                    DereferencesReceiverFirst(targetBody, depth + 1)),
             _ => false,
         };
     }

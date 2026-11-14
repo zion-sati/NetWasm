@@ -6,6 +6,10 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis.Constants;
 
+// A null reference is a constant too: the load an unwritten reference-typed static field folds to (see
+// UnwrittenStaticFieldProgramReducer), a dup of it, and a load of a local it was stored to decide brtrue and brfalse
+// and compare with another null. A null local's loads stay loads (an int32 local's become int32 constants), and a
+// null feeds no arithmetic.
 internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : IMethodRewriteRule
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
@@ -20,6 +24,23 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
         {
             var locals = new Dictionary<int, int>();
             var producers = new List<CilInstruction>();
+            // The producers that push a null reference: a ldnull, a dup of one, or a load of a null local.
+            var nulls = new HashSet<int>();
+            var nullLocals = new HashSet<int>();
+            // The dup that copied each null producer, and the producers already folded away: a dup still read after
+            // the producer it copied goes pushes the null itself.
+            var copies = new Dictionary<int, CilInstruction>();
+            var removed = new HashSet<int>();
+            void Remove(CilInstruction operand)
+            {
+                rewritten[operand.Offset] = operand with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
+                removed.Add(operand.Offset);
+                if (copies.TryGetValue(operand.Offset, out var copy) && !removed.Contains(copy.Offset))
+                {
+                    rewritten[copy.Offset] = copy with { Operation = CilOperation.LoadNull, Operand = new CilOperand.None() };
+                }
+            }
+
             foreach (var original in block.Instructions)
             {
                 var instruction = original;
@@ -38,27 +59,59 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
                     continue;
                 }
 
+                if (instruction is { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index nullLocal } &&
+                    nullLocals.Contains(nullLocal.Value))
+                {
+                    producers.Add(instruction);
+                    nulls.Add(instruction.Offset);
+                    continue;
+                }
+
+                if (instruction.Operation == CilOperation.LoadNull)
+                {
+                    producers.Add(instruction);
+                    nulls.Add(instruction.Offset);
+                    continue;
+                }
+
+                if (instruction.Operation == CilOperation.Duplicate && producers.Count > 0 && nulls.Contains(producers[^1].Offset))
+                {
+                    copies[producers[^1].Offset] = instruction;
+                    producers.Add(instruction);
+                    nulls.Add(instruction.Offset);
+                    continue;
+                }
+
                 if (instruction is { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index stored })
                 {
-                    if (producers.Count > 0)
+                    if (producers.Count > 0 && nulls.Contains(producers[^1].Offset))
+                    {
+                        producers.RemoveAt(producers.Count - 1);
+                        locals.Remove(stored.Value);
+                        nullLocals.Add(stored.Value);
+                    }
+                    else if (producers.Count > 0)
                     {
                         locals[stored.Value] = ((CilOperand.ConstantI4)producers[^1].Operand).Value;
                         producers.RemoveAt(producers.Count - 1);
+                        nullLocals.Remove(stored.Value);
                     }
                     else
                     {
                         locals.Remove(stored.Value);
+                        nullLocals.Remove(stored.Value);
                     }
                     continue;
                 }
 
-                if (instruction.Operation == CilOperation.CompareEqual && producers.Count >= 2)
+                if (instruction.Operation == CilOperation.CompareEqual && producers.Count >= 2 &&
+                    nulls.Contains(producers[^1].Offset) == nulls.Contains(producers[^2].Offset))
                 {
                     var right = producers[^1];
                     var left = producers[^2];
-                    rewritten[left.Offset] = left with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
-                    rewritten[right.Offset] = right with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
-                    var equal = ((CilOperand.ConstantI4)left.Operand).Value == ((CilOperand.ConstantI4)right.Operand).Value;
+                    Remove(left);
+                    Remove(right);
+                    var equal = Value(left, nulls) == Value(right, nulls);
                     instruction = instruction with { Operation = CilOperation.LoadInt32, Operand = new CilOperand.ConstantI4(equal ? 1 : 0) };
                     rewritten[instruction.Offset] = instruction;
                     producers.RemoveRange(producers.Count - 2, 2);
@@ -67,11 +120,12 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
                     continue;
                 }
 
-                if (producers.Count >= 1 && instruction.Operation is CilOperation.Negate or CilOperation.OnesComplement)
+                if (producers.Count >= 1 && !nulls.Contains(producers[^1].Offset) &&
+                    instruction.Operation is CilOperation.Negate or CilOperation.OnesComplement)
                 {
                     var operand = producers[^1];
                     var value = ((CilOperand.ConstantI4)operand.Operand).Value;
-                    rewritten[operand.Offset] = operand with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
+                    Remove(operand);
                     producers.RemoveAt(producers.Count - 1);
                     instruction = instruction with
                     {
@@ -84,13 +138,16 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
                     continue;
                 }
 
-                if (producers.Count >= 2 && Binary(instruction.Operation,
-                        ((CilOperand.ConstantI4)producers[^2].Operand).Value,
-                        ((CilOperand.ConstantI4)producers[^1].Operand).Value) is { } result)
+                if (producers.Count >= 2 &&
+                    (nulls.Contains(producers[^2].Offset), nulls.Contains(producers[^1].Offset)) is var (leftNull, rightNull) &&
+                    (leftNull == rightNull) &&
+                    (!leftNull || instruction.Operation is CilOperation.CompareGreaterThanUnsigned or
+                        CilOperation.BranchIfEqual or CilOperation.BranchIfNotEqual) &&
+                    Binary(instruction.Operation, Value(producers[^2], nulls), Value(producers[^1], nulls)) is { } result)
                 {
                     foreach (var operand in (ReadOnlySpan<CilInstruction>)[producers[^2], producers[^1]])
                     {
-                        rewritten[operand.Offset] = operand with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
+                        Remove(operand);
                     }
                     producers.RemoveRange(producers.Count - 2, 2);
                     if (instruction.Operand is CilOperand.BranchTarget)
@@ -115,9 +172,9 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
                 if (instruction.Operation is CilOperation.BranchIfTrue or CilOperation.BranchIfFalse && producers.Count > 0)
                 {
                     var condition = producers[^1];
-                    var value = ((CilOperand.ConstantI4)condition.Operand).Value != 0;
+                    var value = Value(condition, nulls) != 0;
                     var taken = value == (instruction.Operation == CilOperation.BranchIfTrue);
-                    rewritten[condition.Offset] = condition with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
+                    Remove(condition);
                     rewritten[instruction.Offset] = instruction with
                     {
                         Operation = taken ? CilOperation.Branch : CilOperation.Nop,
@@ -128,12 +185,18 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
 
                 // No inference through effects, aliases or unknown stack transformations.
                 producers.Clear();
+                nulls.Clear();
                 locals.Clear();
+                nullLocals.Clear();
             }
         }
 
         return changed ? body with { Instructions = [.. body.Instructions.Select(instruction => rewritten[instruction.Offset])] } : body;
     }
+
+    // A producer's value: its int32 constant, or 0 for a null reference.
+    private static int Value(CilInstruction producer, HashSet<int> nulls) =>
+        nulls.Contains(producer.Offset) ? 0 : ((CilOperand.ConstantI4)producer.Operand).Value;
 
     // The int32 result of a binary operation, comparison or two-operand branch
     // (1 when taken) on constants, wrapping as the instruction does; null when

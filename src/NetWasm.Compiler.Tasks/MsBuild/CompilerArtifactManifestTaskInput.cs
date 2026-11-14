@@ -20,7 +20,8 @@ internal sealed record CompilerArtifactManifestTaskInput(
     ImmutableArray<ITaskItem> Artifacts,
     string? GeneratedSourceRoot = null,
     string? CompilationIdentityPath = null,
-    ImmutableArray<ITaskItem> WitInputs = default);
+    ImmutableArray<ITaskItem> WitInputs = default,
+    ImmutableArray<ITaskItem> MetadataReferences = default);
 
 internal sealed record CompilerArtifactManifestTaskArtifact(
     string Path,

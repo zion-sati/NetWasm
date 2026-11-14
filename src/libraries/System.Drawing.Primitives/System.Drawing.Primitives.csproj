@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Drawing.Primitives</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.ComponentModel.Primitives/System.ComponentModel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Drawing/ColorConverterCommon.cs" />
+    <Compile Include="Common/System/Drawing/ColorTable.cs" />
+    <Compile Include="Common/System/Experimentals.cs" />
+    <Compile Include="System/Drawing/Color.cs" />
+    <Compile Include="System/Drawing/ColorTranslator.cs" />
+    <Compile Include="System/Drawing/KnownColor.cs" />
+    <Compile Include="System/Drawing/KnownColorNames.cs" />
+    <Compile Include="System/Drawing/KnownColorTable.cs" />
+    <Compile Include="System/Drawing/Point.cs" />
+    <Compile Include="System/Drawing/PointF.cs" />
+    <Compile Include="System/Drawing/Rectangle.cs" />
+    <Compile Include="System/Drawing/RectangleF.cs" />
+    <Compile Include="System/Drawing/SR.cs" />
+    <Compile Include="System/Drawing/Size.cs" />
+    <Compile Include="System/Drawing/SizeF.cs" />
+    <Compile Include="System/Drawing/SystemColors.cs" />
+  </ItemGroup>
+</Project>

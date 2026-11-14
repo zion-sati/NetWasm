@@ -30,6 +30,9 @@ internal sealed class StringDataBuilder(
         var values = _program.StringLiterals
             .Concat(_state.PendingEnumMetadata.Values
                 .SelectMany(GetEnumStrings))
+            .Concat(_program.StructMarshallingFieldNames
+                ? _state.PendingStructMarshalling.SelectMany(pending => pending.Fields.Select(field => field.Name))
+                : [])
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();

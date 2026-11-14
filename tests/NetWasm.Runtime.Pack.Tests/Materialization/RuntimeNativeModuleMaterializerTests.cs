@@ -503,7 +503,7 @@ public sealed class RuntimeNativeModuleMaterializerTests
         IRuntimeNativeArchiveSnapshotter,
         ICommandInvoker, IRuntimeNativeLinkWorkspaceFactory
         , IRuntimeLinkExportPlanBuilder, IRuntimeLinkedImportValidator, IRuntimeNativeModuleValidator, IRuntimeNativeValidationProfileValidator,
-        IRuntimeNativeArchiveFeatureValidator
+        IRuntimeNativeArchiveFeatureValidator, ILinkerCommandFactory
     {
         public RuntimeMemoryPlan Plan { get; } = new("wasm32", 4, 65_536, 16, 65_537, 65_552, 65_536, 2_147_483_648, 65_536);
         public RuntimeLinkedMemoryLayout Expected { get; } = new("wasm32", 65_552, 100_000, 100_000, 165_536, 165_536, 262_144, 2_147_483_648);
@@ -545,7 +545,8 @@ public sealed class RuntimeNativeModuleMaterializerTests
 
         public IRuntimeNativeModuleMaterializer Create() => Assert.IsAssignableFrom<IRuntimeNativeModuleMaterializer>(
             new RuntimeNativeModuleMaterializer(this, this, this, this,
-                this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this));
+                this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this,
+                this));
         public List<RuntimeNativeArchiveFeatureValidationRequest> ArchiveFeatureRequests { get; } = [];
         public bool ArchiveBeyondProfile { get; set; }
         public void Validate(RuntimeNativeArchiveFeatureValidationRequest request)
@@ -659,6 +660,9 @@ public sealed class RuntimeNativeModuleMaterializerTests
             if (ChangedArchive) throw new InvalidOperationException("changed archive snapshot");
             return [new(request.Providers[0], Path.Combine(request.DirectoryPath, "native-0.a"))];
         }
+        // The linker's arguments stay inline here; ResponseFileLinkerCommandFactoryTests covers the response file.
+        public RuntimeCommand Create(string linkerPath, ImmutableArray<string> arguments, string logPath) =>
+            new(linkerPath, arguments, logPath);
         public void Invoke(RuntimeCommand command)
         {
             Commands.Add(command);

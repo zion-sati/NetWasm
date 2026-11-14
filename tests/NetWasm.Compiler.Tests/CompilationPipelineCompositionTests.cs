@@ -298,11 +298,13 @@ public sealed class CompilationPipelineCompositionTests
         public RecordingMetadataLease Load(
             string entryAssemblyPath,
             IEnumerable<string> referencePaths,
-            ImmutableDictionary<string, string>? aliases)
+            ImmutableDictionary<string, string>? aliases,
+            IEnumerable<string>? metadataReferencePaths = null,
+            IEnumerable<string>? originalContractReferencePaths = null)
         {
             calls.Add("metadata-load");
             return new RecordingMetadataLease(
-                inner.Load(entryAssemblyPath, referencePaths, aliases),
+                inner.Load(entryAssemblyPath, referencePaths, aliases, metadataReferencePaths, originalContractReferencePaths),
                 calls,
                 () => _metadataDisposed = true);
         }
@@ -310,8 +312,11 @@ public sealed class CompilationPipelineCompositionTests
         IMetadataCompilationLease IMetadataCompilationLoader.Load(
             string entryAssemblyPath,
             IEnumerable<string> referencePaths,
-            ImmutableDictionary<string, string>? aliases) =>
-            Load(entryAssemblyPath, referencePaths, aliases);
+            ImmutableDictionary<string, string>? aliases,
+            IEnumerable<string>? metadataReferencePaths,
+            IEnumerable<string>? originalContractReferencePaths,
+            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding) =>
+            Load(entryAssemblyPath, referencePaths, aliases, metadataReferencePaths, originalContractReferencePaths);
     }
 
     private sealed class RecordingMetadataLease(

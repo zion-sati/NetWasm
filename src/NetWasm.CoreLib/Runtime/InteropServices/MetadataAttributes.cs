@@ -6,6 +6,7 @@
 namespace System.Runtime.InteropServices
 {
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+    [Obsolete("Code Access Security is not supported or honored by the runtime.", DiagnosticId = "SYSLIB0003", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
     public sealed class AllowReversePInvokeCallsAttribute : Attribute
     {
         public AllowReversePInvokeCallsAttribute() { }
@@ -100,23 +101,16 @@ namespace System.Runtime.InteropServices
     [AttributeUsage(AttributeTargets.Class, Inherited = true)]
     public sealed class ComSourceInterfacesAttribute : Attribute
     {
+        // Upstream's constructors: interface FullNames joined by NUL, and a null type throws.
         public ComSourceInterfacesAttribute(string sourceInterfaces) => Value = sourceInterfaces;
-        public ComSourceInterfacesAttribute(Type sourceInterface) => Value = sourceInterface?.ToString() ?? string.Empty;
-        public ComSourceInterfacesAttribute(Type sourceInterface1, Type sourceInterface2) => Value = Join(sourceInterface1, sourceInterface2);
-        public ComSourceInterfacesAttribute(Type sourceInterface1, Type sourceInterface2, Type sourceInterface3) => Value = Join(sourceInterface1, sourceInterface2, sourceInterface3);
-        public ComSourceInterfacesAttribute(Type sourceInterface1, Type sourceInterface2, Type sourceInterface3, Type sourceInterface4) => Value = Join(sourceInterface1, sourceInterface2, sourceInterface3, sourceInterface4);
+        public ComSourceInterfacesAttribute(Type sourceInterface) => Value = sourceInterface.FullName!;
+        public ComSourceInterfacesAttribute(Type sourceInterface1, Type sourceInterface2) =>
+            Value = sourceInterface1.FullName + "\0" + sourceInterface2.FullName;
+        public ComSourceInterfacesAttribute(Type sourceInterface1, Type sourceInterface2, Type sourceInterface3) =>
+            Value = sourceInterface1.FullName + "\0" + sourceInterface2.FullName + "\0" + sourceInterface3.FullName;
+        public ComSourceInterfacesAttribute(Type sourceInterface1, Type sourceInterface2, Type sourceInterface3, Type sourceInterface4) =>
+            Value = sourceInterface1.FullName + "\0" + sourceInterface2.FullName + "\0" + sourceInterface3.FullName + "\0" + sourceInterface4.FullName;
         public string Value { get; }
-
-        private static string Join(params Type[] sourceInterfaces)
-        {
-            var result = string.Empty;
-            for (var index = 0; index < sourceInterfaces.Length; index++)
-            {
-                if (index != 0) result += "\0";
-                result += sourceInterfaces[index]?.ToString() ?? string.Empty;
-            }
-            return result;
-        }
     }
 
     [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Interface | AttributeTargets.Class |

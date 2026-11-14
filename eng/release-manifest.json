@@ -6,6 +6,8 @@
   "releaseTag": "v0.4.2",
   "sourceCommit": "45c94f6a9655e733b7a00ebe2f9be1bcad4d9a33",
   "packages": [
+    "NetWasm.App.Ref",
+    "NetWasm.App.Runtime",
     "NetWasm.Compiler.Browser",
     "NetWasm.Compiler.Tasks",
     "NetWasm.Hosting",

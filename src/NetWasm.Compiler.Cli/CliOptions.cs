@@ -29,10 +29,38 @@ internal sealed record CompileCliOptions(
     ImmutableArray<RequestedExport> Exports,
     WasmTarget Platform)
 {
+    // The last value of each name, in name order; a value may hold '=' but not '\0'.
+    private static ImmutableArray<(string Name, string Value)> ParseRuntimeProperties(ImmutableArray<string> values)
+    {
+        var properties = new System.Collections.Generic.SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var value in values)
+        {
+            var separator = value.IndexOf('=');
+            if (separator <= 0 || value.Contains('\0'))
+                throw CliOptionException.Create($"-runtimeproperty '{value}' must be name=value");
+            properties[value[..separator]] = value[(separator + 1)..];
+        }
+        return [.. properties.Select(pair => (pair.Key, pair.Value))];
+    }
+
+    private static ImmutableDictionary<string, bool> ParseFeatureSwitches(ImmutableArray<string> values)
+    {
+        var switches = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.Ordinal);
+        foreach (var value in values)
+        {
+            var separator = value.LastIndexOf('=');
+            if (separator <= 0 || !bool.TryParse(value[(separator + 1)..], out var enabled))
+                throw CliOptionException.Create($"-featureswitch '{value}' must be name=true or name=false");
+            switches[value[..separator]] = enabled;
+        }
+        return switches.ToImmutable();
+    }
+
     public static readonly FrozenSet<string> Names = new[]
     {
-        "out", "reference", "r", "target", "entry", "export", "platform", "optimize", "pathmap", "source", "interopmanifest", "runtimelayout", "compilermetadata",
+        "out", "reference", "r", "metadatareference", "originalcontract", "referenceorigin", "target", "entry", "export", "platform", "optimize", "pathmap", "source", "interopmanifest", "runtimelayout", "compilermetadata",
         "typesymbols", "methodsymbols", "typenames", "callbackobject", "wit", "world", "importmodule",
+        "nativelibrary", "linkednativeonly", "featureswitch", "runtimeproperty",
         "diagnostictrace", "diagnosticlog", "jsexportboundary", "structureddiagnostics",
         "compiledunits", "verifycompiledunits",
         "projectdirectory", "intermediatedirectory", "wasmtools", "wasmtoolsnode", "wasmtoolscommand",
@@ -52,6 +80,12 @@ internal sealed record CompileCliOptions(
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
+    // Reference facades the compiler reads for metadata and never executes (-metadatareference, a list like -r).
+    public ImmutableArray<string> MetadataReferences { get; init; } = [];
+    // The original contract images metadata references were generated from (-originalcontract).
+    public ImmutableArray<string> OriginalContracts { get; init; } = [];
+    // Where a reference came from, for the diagnostics that name its package (-referenceorigin).
+    public ImmutableArray<CompilationReferenceOrigin> ReferenceOrigins { get; init; } = [];
     public string? PathMap { get; init; }
     public ImmutableArray<string> Sources { get; init; } = [];
     public string? InteropManifest { get; init; }
@@ -65,6 +99,14 @@ internal sealed record CompileCliOptions(
     public string? World { get; init; }
     // Modules the input's native archives import from; the host supplies them.
     public ImmutableArray<string> ImportModules { get; init; } = [];
+    // The native libraries the program links, by NetWasmLibraryName; with LinkedNativeOnly, a P/Invoke into any
+    // other library compiles to a body that throws DllNotFoundException.
+    public ImmutableArray<string> NativeLibraries { get; init; } = [];
+    public bool LinkedNativeOnly { get; init; }
+    // -featureswitch:name=true|false: a feature switch the compiler folds.
+    public ImmutableDictionary<string, bool> FeatureSwitches { get; init; } = ImmutableDictionary<string, bool>.Empty;
+    // -runtimeproperty:name=value: a host property AppContext reads, as from runtimeconfig.json.
+    public ImmutableArray<(string Name, string Value)> RuntimeProperties { get; init; } = [];
     public string? DiagnosticTrace { get; init; }
     public string? DiagnosticLog { get; init; }
     public bool UseJavaScriptExportBoundary { get; init; }
@@ -138,17 +180,22 @@ internal sealed record CompileCliOptions(
             : entry is null
                 ? (string.Empty, string.Empty)
                 : throw CliOptionException.Create("-entry is only valid with -target:function");
+        var references = options.List("reference", "r");
+        var metadataReferences = options.List("metadatareference");
         return new(
             input,
             options.Single("out") ?? throw CliOptionException.Create("no output file was specified (-out)"),
             target,
             entryType,
             entryMethod,
-            options.List("reference", "r"),
+            references,
             [.. options.Many("export").Select(ParseExport)],
             ParsePlatform(options.Single("platform")))
         {
             Optimization = ParseOptimization(options.Single("optimize")),
+            MetadataReferences = metadataReferences,
+            OriginalContracts = options.Many("originalcontract"),
+            ReferenceOrigins = [.. options.ManyLists("referenceorigin").Select(entries => ParseReferenceOrigin(entries, references, metadataReferences))],
             PathMap = options.Single("pathmap"),
             Sources = options.Many("source"),
             InteropManifest = options.Single("interopmanifest"),
@@ -161,6 +208,10 @@ internal sealed record CompileCliOptions(
             Wit = options.Single("wit"),
             World = options.Single("world"),
             ImportModules = options.Many("importmodule"),
+            NativeLibraries = options.Many("nativelibrary"),
+            LinkedNativeOnly = options.Toggle("linkednativeonly"),
+            FeatureSwitches = ParseFeatureSwitches(options.Many("featureswitch")),
+            RuntimeProperties = ParseRuntimeProperties(options.Many("runtimeproperty")),
             DiagnosticTrace = options.Single("diagnostictrace"),
             DiagnosticLog = options.Single("diagnosticlog"),
             UseJavaScriptExportBoundary = options.Toggle("jsexportboundary"),
@@ -225,6 +276,40 @@ internal sealed record CompileCliOptions(
             _ => throw CliOptionException.Create(
                 "-wasmtoolsnode, -wasmtoolscommand and -wasmtoolsmodule must be given together"),
         };
+
+    // -referenceorigin:<file>;package=<id>;version=<version>;asset=<path>;original=<file>: the file names a
+    // reference or metadata reference, which decides its role; the facts after it are optional.
+    private static CompilationReferenceOrigin ParseReferenceOrigin(
+        ImmutableArray<string> entries,
+        ImmutableArray<string> references,
+        ImmutableArray<string> metadataReferences)
+    {
+        if (entries.Length == 0)
+        {
+            throw CliOptionException.Create("-referenceorigin must start with a reference file");
+        }
+        var path = entries[0];
+        var role = metadataReferences.Contains(path) ? CompilationReferenceRole.Metadata
+            : references.Contains(path) ? CompilationReferenceRole.Implementation
+            : throw CliOptionException.Create($"-referenceorigin names '{path}', which is not a -reference or -metadatareference");
+        string? package = null, version = null, asset = null, original = null;
+        foreach (var fact in entries.Skip(1))
+        {
+            var separator = fact.IndexOf('=', StringComparison.Ordinal);
+            var value = separator < 0 ? null : fact[(separator + 1)..];
+            switch (separator < 0 ? fact : fact[..separator])
+            {
+                case "package": package = value; break;
+                case "version": version = value; break;
+                case "asset": asset = value; break;
+                case "original": original = value; break;
+                default:
+                    throw CliOptionException.Create(
+                        $"-referenceorigin facts are package=, version=, asset= and original=, not '{fact}'");
+            }
+        }
+        return new CompilationReferenceOrigin(path, role, package, version, asset, original);
+    }
 
     private static RequestedExport ParseExport(string value)
     {
@@ -355,6 +440,10 @@ internal sealed class NwcOptionValues(NwcArguments arguments)
     }
 
     public ImmutableArray<string> Many(string name) => [.. _options[name].Select(Value)];
+
+    // Each occurrence of an option as its own list, split as List splits one.
+    public ImmutableArray<ImmutableArray<string>> ManyLists(string name) =>
+        [.. _options[name].Select(option => NwcArgumentReader.SplitList(RequireValue(option)).ToImmutableArray())];
 
     // A reference list, as csc reads one: several per option, separated by ',' or
     // ';' outside quotes, in command-line order whichever of the names each

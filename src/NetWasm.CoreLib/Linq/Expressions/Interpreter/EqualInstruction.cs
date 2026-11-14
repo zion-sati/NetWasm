@@ -1,5 +1,5 @@
 // Portions derived from dotnet/runtime System.Linq.Expressions at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements. The .NET
 // Foundation licenses this file to you under the MIT license.
 
@@ -7,7 +7,9 @@ namespace System.Linq.Expressions.Interpreter
 {
     internal sealed class EqualInstruction(
         Type type,
-        bool liftedToNull) : Instruction
+        bool liftedToNull,
+        bool notEqual,
+        bool comparesStringValues) : Instruction
     {
         internal override int ConsumedStack => 2;
 
@@ -19,17 +21,19 @@ namespace System.Linq.Expressions.Interpreter
             var left = frame.Pop();
             if (left is null || right is null)
             {
-                frame.Push(liftedToNull ? null : left is null && right is null);
+                frame.Push(liftedToNull ? null : (left is null && right is null) != notEqual);
                 return 1;
             }
 
-            frame.Push(AreEqual(left, right));
+            frame.Push(AreEqual(left, right) != notEqual);
             return 1;
         }
 
         private bool AreEqual(object left, object right)
         {
-            if (!type.IsValueType && type != typeof(string))
+            // A method-less reference comparison is reference equality, as upstream, except string
+            // equality, which upstream builds with string's operator method.
+            if (!type.IsValueType && !comparesStringValues)
             {
                 return ReferenceEquals(left, right);
             }

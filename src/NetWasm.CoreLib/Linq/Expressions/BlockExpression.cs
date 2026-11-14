@@ -1,10 +1,14 @@
 // Portions derived from dotnet/runtime System.Linq.Expressions at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements. The .NET
 // Foundation licenses this file to you under the MIT license.
+// NetWasm adaptation: one BlockExpression class stands in for upstream's Scope/ScopeN/ScopeWithType
+// variants; a typed block whose type differs from its last expression's records that type. The typed
+// Block factories and Update are upstream's; they validate variables with the earlier NetWasm helper.
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Dynamic.Utils;
 
 namespace System.Linq.Expressions
 {
@@ -12,11 +16,14 @@ namespace System.Linq.Expressions
     {
         private readonly ReadOnlyCollection<ParameterExpression> _variables;
         private readonly ReadOnlyCollection<Expression> _expressions;
+        private readonly Type? _type;
 
         internal BlockExpression(
             ParameterExpression[] variables,
-            Expression[] expressions)
+            Expression[] expressions,
+            Type? type = null)
         {
+            _type = type;
             _variables = variables.Length == 0
                 ? ReadOnlyCollection<ParameterExpression>.Empty
                 : new ReadOnlyCollection<ParameterExpression>(variables);
@@ -28,9 +35,9 @@ namespace System.Linq.Expressions
         public sealed override ExpressionType NodeType => ExpressionType.Block;
 
         public override Type Type =>
-            _expressions.Count == 0
+            _type ?? (_expressions.Count == 0
                 ? typeof(void)
-                : _expressions[_expressions.Count - 1].Type;
+                : _expressions[_expressions.Count - 1].Type);
 
         public ReadOnlyCollection<ParameterExpression> Variables => _variables;
 
@@ -53,7 +60,7 @@ namespace System.Linq.Expressions
                     _expressions,
                     expressionArray)
                 ? this
-                : Block(variableArray, expressionArray);
+                : Block(Type, variableArray, expressionArray);
         }
 
         private bool SameVariables(IEnumerable<ParameterExpression>? variables)
@@ -80,6 +87,27 @@ namespace System.Linq.Expressions
 
     public abstract partial class Expression
     {
+        public static BlockExpression Block(Expression arg0, Expression arg1) =>
+            Block(new[] { arg0, arg1 });
+
+        public static BlockExpression Block(Expression arg0, Expression arg1, Expression arg2) =>
+            Block(new[] { arg0, arg1, arg2 });
+
+        public static BlockExpression Block(
+            Expression arg0,
+            Expression arg1,
+            Expression arg2,
+            Expression arg3) =>
+            Block(new[] { arg0, arg1, arg2, arg3 });
+
+        public static BlockExpression Block(
+            Expression arg0,
+            Expression arg1,
+            Expression arg2,
+            Expression arg3,
+            Expression arg4) =>
+            Block(new[] { arg0, arg1, arg2, arg3, arg4 });
+
         public static BlockExpression Block(params Expression[] expressions) =>
             Block(variables: null, (IEnumerable<Expression>)expressions);
 
@@ -108,6 +136,85 @@ namespace System.Linq.Expressions
                     nameof(expressions));
             }
             return new BlockExpression(variableArray, expressionArray);
+        }
+
+        public static BlockExpression Block(Type type, params Expression[] expressions)
+        {
+            ArgumentNullException.ThrowIfNull(expressions);
+            return Block(type, (IEnumerable<Expression>)expressions);
+        }
+
+        public static BlockExpression Block(Type type, IEnumerable<Expression> expressions)
+        {
+            return Block(type, ReadOnlyCollection<ParameterExpression>.Empty, expressions);
+        }
+
+        public static BlockExpression Block(Type type, IEnumerable<ParameterExpression>? variables, params Expression[] expressions)
+        {
+            return Block(type, variables, (IEnumerable<Expression>)expressions);
+        }
+
+        public static BlockExpression Block(Type type, IEnumerable<ParameterExpression>? variables, IEnumerable<Expression> expressions)
+        {
+            ArgumentNullException.ThrowIfNull(type);
+            ArgumentNullException.ThrowIfNull(expressions);
+
+            Expression[] expressionList = ExpressionValidation.CopyExpressions(expressions, nameof(expressions));
+            for (int i = 0; i < expressionList.Length; i++)
+            {
+                ExpressionUtils.RequiresCanRead(expressionList[i], nameof(expressions), i);
+            }
+
+            // NetWasm: the earlier block helper validates the variables (upstream's ValidateVariables).
+            ParameterExpression[] variableList = CopyBlockVariables(variables);
+
+            if (variableList.Length == 0 && expressionList.Length != 0)
+            {
+                int expressionCount = expressionList.Length;
+
+                if (expressionCount != 0)
+                {
+                    Expression lastExpression = expressionList[expressionCount - 1];
+
+                    if (lastExpression.Type == type)
+                    {
+                        return new BlockExpression(variableList, expressionList);
+                    }
+                }
+            }
+
+            return BlockCore(type, variableList, expressionList);
+        }
+
+        private static BlockExpression BlockCore(Type? type, ParameterExpression[] variables, Expression[] expressions)
+        {
+            if (type != null)
+            {
+                if (expressions.Length == 0)
+                {
+                    if (type != typeof(void))
+                    {
+                        throw Error.ArgumentTypesMustMatch();
+                    }
+
+                    return new BlockExpression(variables, expressions, type);
+                }
+                Expression last = expressions[^1];
+                if (type != typeof(void))
+                {
+                    if (!TypeUtils.AreReferenceAssignable(type, last.Type))
+                    {
+                        throw Error.ArgumentTypesMustMatch();
+                    }
+                }
+
+                if (!TypeUtils.AreEquivalent(type, last.Type))
+                {
+                    return new BlockExpression(variables, expressions, type);
+                }
+            }
+
+            return new BlockExpression(variables, expressions);
         }
 
         internal static ParameterExpression[] CopyBlockVariables(

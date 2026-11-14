@@ -145,9 +145,6 @@
     }
   ],
   "referencePaths": [],
-  "referenceAssemblyAliases": {
-    "System.Threading": "NetWasm.CoreLib"
-  },
   "oracleMode": "SameIl",
   "matrixProfile": "Extended",
   "allowUnsafe": true,

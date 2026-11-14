@@ -1,0 +1,32 @@
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net11.0;netwasm0.1</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <TUnitSourceGenerationMode>ClosedWorldCatalog</TUnitSourceGenerationMode>
+    <NoWarn>$(NoWarn);TUnit0034;TUnit0038</NoWarn>
+    <DisableImplicitFrameworkReferences Condition="'$(TargetFramework)' == 'net11.0'">false</DisableImplicitFrameworkReferences>
+    <NoStdLib Condition="'$(TargetFramework)' == 'net11.0'">false</NoStdLib>
+    <NoStandardLibraries Condition="'$(TargetFramework)' == 'net11.0'">false</NoStandardLibraries>
+    <NoCompilerStandardLib Condition="'$(TargetFramework)' == 'net11.0'">false</NoCompilerStandardLib>
+    <DisableStandardFrameworkResolution Condition="'$(TargetFramework)' == 'net11.0'">true</DisableStandardFrameworkResolution>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="Xunit" />
+    <!-- Date formatting reads the wall clock (as upstream's does). The SDK grants it by default, but NetWasm.TUnit
+         0.12's runner replaces the default with monotonic alone; its 0.14 runner keeps the default. -->
+    <NetWasmClockGrant Include="wall" Condition="'$(TargetFramework)' == 'netwasm0.1'" />
+    <PackageReference Include="NetWasm.TUnit" Version="[$(NetWasmTUnitPackageVersion)]" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(NetWasmJsonReducerProfile)' != ''">
+    <Compile Remove="JsonTests.cs" Condition="'$(NetWasmJsonIncludeBaseline)' == 'false'" />
+    <Compile Remove="JsonFailureReducerTests.cs;JsonConstructorArgumentArrayReducerTests.cs;JsonGeneratedShapeReducerTests.cs;GeneratedDeserializationStageReducerTests.cs" />
+    <Compile Include="$(NetWasmJsonReducerProfile).cs" Condition="'$(NetWasmJsonReducerProfile)' != 'Baseline'" />
+  </ItemGroup>
+</Project>

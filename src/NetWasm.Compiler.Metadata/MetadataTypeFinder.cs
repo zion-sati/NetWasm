@@ -15,8 +15,9 @@ internal sealed class MetadataTypeFinder : ITypeFinder
 
     public MetadataTypeFinder(
         ImmutableArray<TypeDefinitionModel> types,
-        IMetadataAvailabilityValidator availability)
-        : this(Index(types), availability)
+        IMetadataAvailabilityValidator availability,
+        IReadOnlyDictionary<string, MetadataAssemblySnapshot>? assemblies = null)
+        : this(Index(types, assemblies), availability)
     {
     }
 
@@ -28,9 +29,14 @@ internal sealed class MetadataTypeFinder : ITypeFinder
         _availability = availability;
     }
 
-    // Types by full name, in their given order.
+    // Types by full name, in their given order. With the assemblies, a type that an alias
+    // places in another assembly is found there only, not also under the alias.
     internal static FrozenDictionary<string, ImmutableArray<TypeDefinitionModel>> Index(
-        IEnumerable<TypeDefinitionModel> types) => types
+        IEnumerable<TypeDefinitionModel> types,
+        IReadOnlyDictionary<string, MetadataAssemblySnapshot>? assemblies = null) => types
+        .Where(type => assemblies is null ||
+            !assemblies.TryGetValue(type.Key.Assembly.Name, out var source) ||
+            source.AssemblyIdentityAliases.Canonicalize(type.Key.Assembly, type.FullName) == type.Key.Assembly)
         .GroupBy(type => type.FullName, StringComparer.Ordinal)
         .ToFrozenDictionary(
             group => group.Key,

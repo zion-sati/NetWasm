@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Node;
 
@@ -7,5 +8,6 @@ internal interface IComponentBuildSessionFactory
 {
     IComponentBuildSession Create(
         ExternalToolCommand wasmToolsCommand,
-        BinaryenToolRunnerConfiguration binaryenConfiguration);
+        BinaryenToolRunnerConfiguration binaryenConfiguration,
+        ILoggerProvider progress);
 }

@@ -155,6 +155,70 @@ public sealed class CachingWasmToolsTests : IDisposable
         Assert.Equal(1, again.Calls);
     }
 
+    // Past the capacity, the least recently used entries go until three quarters remain; a hit counts as a use.
+    [Fact]
+    public void EvictsTheLeastRecentlyUsedEntriesPastTheCapacity()
+    {
+        var wit = Input("package.wit.wasm", "wit");
+        var tools = new RecordingTools(new ToolResult(0, "out", ""));
+        var first = RunAndFindEntry(tools, wit, "a");
+        var second = RunAndFindEntry(tools, wit, "b");
+        var entry = new FileInfo(first).Length;
+        File.SetLastWriteTimeUtc(first, DateTime.UtcNow.AddHours(-2));
+        File.SetLastWriteTimeUtc(second, DateTime.UtcNow.AddHours(-1));
+        Create(tools).Run("component", "embed", wit, "--world", "a", "--dummy", "-t");
+
+        new CachingWasmTools(tools, _command, Path.Combine(_root, "cache"), capacity: 3 * entry - 1)
+            .Run("component", "embed", wit, "--world", "c", "--dummy", "-t");
+
+        Assert.Equal(3, tools.Calls);
+        Assert.True(File.Exists(first));
+        Assert.False(File.Exists(second));
+        Assert.Equal(2, Entries().Length);
+    }
+
+    [Fact]
+    public void KeepsEntriesWithinTheCapacity()
+    {
+        var wit = Input("package.wit.wasm", "wit");
+        var tools = new RecordingTools(new ToolResult(0, "out", ""));
+        var first = RunAndFindEntry(tools, wit, "a");
+
+        new CachingWasmTools(tools, _command, Path.Combine(_root, "cache"), capacity: 2 * new FileInfo(first).Length)
+            .Run("component", "embed", wit, "--world", "b", "--dummy", "-t");
+
+        Assert.Equal(2, Entries().Length);
+    }
+
+    // An entry this build may not delete stays, and trimming goes on past it.
+    [Fact]
+    public void TrimSkipsAnEntryItMayNotDelete()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var wit = Input("package.wit.wasm", "wit");
+        var tools = new RecordingTools(new ToolResult(0, "out", ""));
+        var kept = RunAndFindEntry(tools, wit, "a");
+        File.SetLastWriteTimeUtc(kept, DateTime.UtcNow.AddHours(-1));
+        var directory = Path.GetDirectoryName(kept)!;
+        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            // An entry for a world whose key lands in another directory is written, and the write trims.
+            var world = Enumerable.Range(0, 64).Select(index => $"w{index}")
+                .First(candidate => DirectoryOf(tools, wit, candidate) != Path.GetFileName(directory));
+            new CachingWasmTools(tools, _command, Path.Combine(_root, "cache"), capacity: 1)
+                .Run("component", "embed", wit, "--world", world, "--dummy", "-t");
+            Assert.True(File.Exists(kept));
+        }
+        finally
+        {
+            File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
     [Fact]
     public void ThereIsNoDefaultDirectoryWithoutLocalApplicationData()
     {
@@ -170,11 +234,31 @@ public sealed class CachingWasmToolsTests : IDisposable
         Assert.Throws<ArgumentNullException>(() => new CachingWasmTools(null!, _command, _root));
         Assert.Throws<ArgumentNullException>(() => new CachingWasmTools(tools, null!, _root));
         Assert.Throws<ArgumentException>(() => new CachingWasmTools(tools, _command, " "));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CachingWasmTools(tools, _command, _root, capacity: 0));
         Assert.Throws<ArgumentNullException>(() => Create(tools).Run(null!));
         Assert.EndsWith(Path.Combine("NetWasm", "wasm-tools-cache"), CachingWasmTools.DefaultDirectory());
     }
 
     private CachingWasmTools Create(IWasmTools tools) => new(tools, _command, Path.Combine(_root, "cache"));
+
+    private string[] Entries() => Directory.GetFiles(Path.Combine(_root, "cache"), "*", SearchOption.AllDirectories);
+
+    // The directory a cached embed for the world lands in, found in a separate cache.
+    private string DirectoryOf(RecordingTools tools, string wit, string world)
+    {
+        var probe = Path.Combine(_root, "probe-" + world);
+        new CachingWasmTools(tools, _command, probe).Run("component", "embed", wit, "--world", world, "--dummy", "-t");
+        return Path.GetFileName(Path.GetDirectoryName(
+            Assert.Single(Directory.GetFiles(probe, "*", SearchOption.AllDirectories)))!);
+    }
+
+    // Runs a cached embed for the world and returns the entry it added.
+    private string RunAndFindEntry(RecordingTools tools, string wit, string world)
+    {
+        var before = Directory.Exists(Path.Combine(_root, "cache")) ? Entries() : [];
+        Create(tools).Run("component", "embed", wit, "--world", world, "--dummy", "-t");
+        return Assert.Single(Entries().Except(before));
+    }
 
     private string Input(string name, string content)
     {

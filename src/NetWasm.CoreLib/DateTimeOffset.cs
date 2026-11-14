@@ -4,15 +4,21 @@
 
 namespace System
 {
+    using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
     using Runtime.InteropServices;
     using Runtime.InteropServices.TimeZones;
 
     [Serializable]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public readonly struct DateTimeOffset : IComparable, IComparable<DateTimeOffset>, IEquatable<DateTimeOffset>,
         IFormattable, IParsable<DateTimeOffset>, ISpanFormattable, ISpanParsable<DateTimeOffset>,
         IUtf8SpanFormattable
     {
         private const int MaxOffsetMinutes = 14 * 60;
+        internal const long MaxOffset = MaxOffsetMinutes * TimeSpan.TicksPerMinute;
+        internal const long MinOffset = -MaxOffset;
         private const long UnixEpochTicks = GregorianDateMath.UnixEpochTicks;
         private readonly long _utcTicks;
         private readonly short _offsetMinutes;
@@ -123,6 +129,19 @@ namespace System
         {
         }
 
+        // Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce. NetWasm's clock
+        // has no leap seconds, so upstream's leap-second branch never applies.
+        public DateTimeOffset(int year, int month, int day, int hour, int minute, int second, int millisecond, System.Globalization.Calendar calendar, TimeSpan offset)
+            : this(CalendarTicks(calendar, year, month, day, hour, minute, second, millisecond), offset)
+        {
+        }
+
+        private static long CalendarTicks(System.Globalization.Calendar calendar, int year, int month, int day, int hour, int minute, int second, int millisecond)
+        {
+            ArgumentNullException.ThrowIfNull(calendar);
+            return calendar.ToDateTime(year, month, day, hour, minute, second, millisecond).Ticks;
+        }
+
         public static DateTimeOffset UtcNow
         {
             get { return new DateTimeOffset(DateTime.UtcNow); }
@@ -224,263 +243,273 @@ namespace System
             (long)((ulong)_utcTicks / TimeSpan.TicksPerMillisecond)
                 - UnixEpochTicks / TimeSpan.TicksPerMillisecond;
 
+        // Text members ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+        // NetWasm: see InvariantDateTimeDefaults.
         public override string ToString() =>
-            DateTime.FormatGeneral(includeSeconds: true) + " " + FormatOffset();
-        public string ToString(string? format) => FormatInvariant(format);
-        public string ToString(IFormatProvider? formatProvider) => ToString();
-        public string ToString(string? format, IFormatProvider? formatProvider) => FormatInvariant(format);
+            DateTimeFormatInfo.s_currentInfo is null
+                ? InvariantDateTimeDefaults.General(ClockDateTime, Offset)
+                : DateTimeFormat.Format(ClockDateTime, null, null, Offset);
 
-        public bool TryFormat(Span<char> destination, out int charsWritten,
-            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null) =>
-            TryCopy(FormatInvariant(format.Length == 0 ? null : new string(format)), destination, out charsWritten);
+        public string ToString([StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string? format) =>
+            DateTimeFormat.Format(ClockDateTime, format, null, Offset);
 
-        public bool TryFormat(Span<byte> destination, out int bytesWritten,
-            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null)
+        public string ToString(IFormatProvider? formatProvider) =>
+            DateTimeFormat.Format(ClockDateTime, null, formatProvider, Offset);
+
+        public string ToString([StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string? format, IFormatProvider? formatProvider) =>
+            DateTimeFormat.Format(ClockDateTime, format, formatProvider, Offset);
+
+        public bool TryFormat(Span<char> destination, out int charsWritten, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] ReadOnlySpan<char> format = default, IFormatProvider? formatProvider = null) =>
+            DateTimeFormat.TryFormat(ClockDateTime, destination, out charsWritten, format, formatProvider, Offset);
+
+        /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat" />
+        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] ReadOnlySpan<char> format = default, IFormatProvider? formatProvider = null) =>
+            DateTimeFormat.TryFormat(ClockDateTime, utf8Destination, out bytesWritten, format, formatProvider, Offset);
+
+
+        // Constructs a DateTimeOffset from a string. The string must specify a
+        // date and optionally a time in a culture-specific or universal format.
+        // Leading and trailing whitespace characters are allowed.
+        //
+        public static DateTimeOffset Parse(string input)
         {
-            var text = FormatInvariant(format.Length == 0 ? null : new string(format));
-            if (destination.Length < text.Length)
-            {
-                bytesWritten = 0;
-                return false;
-            }
-            for (var index = 0; index < text.Length; index++) destination[index] = (byte)text[index];
-            bytesWritten = text.Length;
-            return true;
+            if (input == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.input);
+
+            DateTime dateResult = DateTimeParse.Parse(input,
+                                                      DateTimeFormatInfo.CurrentInfo,
+                                                      DateTimeStyles.None,
+                                                      out TimeSpan offset);
+            return CreateValidateOffset(dateResult, offset);
         }
 
-        public static DateTimeOffset Parse(string value)
+        // Constructs a DateTimeOffset from a string. The string must specify a
+        // date and optionally a time in a culture-specific or universal format.
+        // Leading and trailing whitespace characters are allowed.
+        //
+        public static DateTimeOffset Parse(string input, IFormatProvider? formatProvider)
+            => Parse(input, formatProvider, DateTimeStyles.None);
+
+        public static DateTimeOffset Parse(string input, IFormatProvider? formatProvider, DateTimeStyles styles)
         {
-            if (value is null) throw new ArgumentNullException();
-            return TryParse(value, out var result) ? result : throw new FormatException();
+            styles = ValidateStyles(styles);
+            if (input == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.input);
+
+            DateTime dateResult = DateTimeParse.Parse(input,
+                                                      DateTimeFormatInfo.GetInstance(formatProvider),
+                                                      styles,
+                                                      out TimeSpan offset);
+            return CreateValidateOffset(dateResult, offset);
         }
 
-        public static DateTimeOffset Parse(string value, IFormatProvider? formatProvider) => Parse(value);
-        public static DateTimeOffset Parse(string value, IFormatProvider? formatProvider,
-            System.Globalization.DateTimeStyles styles)
+        public static DateTimeOffset Parse(ReadOnlySpan<char> input, IFormatProvider? formatProvider = null, DateTimeStyles styles = DateTimeStyles.None)
         {
-            ValidateStyles(styles);
-            var result = Parse(value, formatProvider);
-            return (styles & System.Globalization.DateTimeStyles.AdjustToUniversal) != 0
-                ? result.ToUniversalTime()
-                : result;
+            styles = ValidateStyles(styles);
+            DateTime dateResult = DateTimeParse.Parse(input, DateTimeFormatInfo.GetInstance(formatProvider), styles, out TimeSpan offset);
+            return CreateValidateOffset(dateResult, offset);
         }
 
-        public static DateTimeOffset Parse(ReadOnlySpan<char> value, IFormatProvider? formatProvider) =>
-            Parse(new string(value));
-        public static DateTimeOffset Parse(ReadOnlySpan<char> value, IFormatProvider? formatProvider = null,
-            System.Globalization.DateTimeStyles styles = System.Globalization.DateTimeStyles.None)
+        // Constructs a DateTimeOffset from a string. The string must specify a
+        // date and optionally a time in a culture-specific or universal format.
+        // Leading and trailing whitespace characters are allowed.
+        //
+        public static DateTimeOffset ParseExact(string input, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string format, IFormatProvider? formatProvider)
+            => ParseExact(input, format, formatProvider, DateTimeStyles.None);
+
+        // Constructs a DateTimeOffset from a string. The string must specify a
+        // date and optionally a time in a culture-specific or universal format.
+        // Leading and trailing whitespace characters are allowed.
+        //
+        public static DateTimeOffset ParseExact(string input, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string format, IFormatProvider? formatProvider, DateTimeStyles styles)
         {
-            ValidateStyles(styles);
-            var result = Parse(value, formatProvider);
-            return (styles & System.Globalization.DateTimeStyles.AdjustToUniversal) != 0
-                ? result.ToUniversalTime()
-                : result;
+            styles = ValidateStyles(styles);
+            if (input == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.input);
+            if (format == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.format);
+
+            DateTime dateResult = DateTimeParse.ParseExact(input,
+                                                           format,
+                                                           DateTimeFormatInfo.GetInstance(formatProvider),
+                                                           styles,
+                                                           out TimeSpan offset);
+            return CreateValidateOffset(dateResult, offset);
         }
 
-        public static bool TryParse(string? value, out DateTimeOffset result)
+        public static DateTimeOffset ParseExact(ReadOnlySpan<char> input, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] ReadOnlySpan<char> format, IFormatProvider? formatProvider, DateTimeStyles styles = DateTimeStyles.None)
         {
-            result = default;
-            if (value is null) return false;
-            var start = 0;
-            var end = value.Length;
-            while (start < end && IsWhiteSpace(value[start])) start++;
-            while (end > start && IsWhiteSpace(value[end - 1])) end--;
-            if (start != 0 || end != value.Length)
-            {
-                value = value.Substring(start, end - start);
-            }
-            return TryParseInvariant(value, requireFixedFraction: false, out result);
+            styles = ValidateStyles(styles);
+            DateTime dateResult = DateTimeParse.ParseExact(input, format, DateTimeFormatInfo.GetInstance(formatProvider), styles, out TimeSpan offset);
+            return CreateValidateOffset(dateResult, offset);
         }
 
-        public static bool TryParse(string? value, IFormatProvider? formatProvider, out DateTimeOffset result) =>
-            TryParse(value, out result);
-        public static bool TryParse(string? value, IFormatProvider? formatProvider,
-            System.Globalization.DateTimeStyles styles, out DateTimeOffset result)
+        public static DateTimeOffset ParseExact(string input, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string[] formats, IFormatProvider? formatProvider, DateTimeStyles styles)
         {
-            ValidateStyles(styles);
-            if (!TryParse(value, out result)) return false;
-            if ((styles & System.Globalization.DateTimeStyles.AdjustToUniversal) != 0)
-            {
-                result = result.ToUniversalTime();
-            }
-            return true;
+            styles = ValidateStyles(styles);
+            if (input == null) ThrowHelper.ThrowArgumentNullException(ExceptionArgument.input);
+
+            DateTime dateResult = DateTimeParse.ParseExactMultiple(input,
+                                                                   formats,
+                                                                   DateTimeFormatInfo.GetInstance(formatProvider),
+                                                                   styles,
+                                                                   out TimeSpan offset);
+            return CreateValidateOffset(dateResult, offset);
         }
 
-        public static bool TryParse(ReadOnlySpan<char> value, out DateTimeOffset result) =>
-            TryParse(new string(value), out result);
-        public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? formatProvider, out DateTimeOffset result) =>
-            TryParse(value, out result);
-        public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? formatProvider,
-            System.Globalization.DateTimeStyles styles, out DateTimeOffset result)
+        public static DateTimeOffset ParseExact(ReadOnlySpan<char> input, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string[] formats, IFormatProvider? formatProvider, DateTimeStyles styles = DateTimeStyles.None)
         {
-            ValidateStyles(styles);
-            if (!TryParse(value, out result)) return false;
-            if ((styles & System.Globalization.DateTimeStyles.AdjustToUniversal) != 0)
-            {
-                result = result.ToUniversalTime();
-            }
-            return true;
+            styles = ValidateStyles(styles);
+            DateTime dateResult = DateTimeParse.ParseExactMultiple(input, formats, DateTimeFormatInfo.GetInstance(formatProvider), styles, out TimeSpan offset);
+            return CreateValidateOffset(dateResult, offset);
         }
 
-        public static DateTimeOffset ParseExact(string value, string format, IFormatProvider? formatProvider) =>
-            TryParseExact(value, format, formatProvider, out var result) ? result : throw new FormatException();
-
-        public static DateTimeOffset ParseExact(string value, string format, IFormatProvider? formatProvider,
-            System.Globalization.DateTimeStyles styles) =>
-            TryParseExact(value, format, formatProvider, styles, out var result) ? result : throw new FormatException();
-
-        public static DateTimeOffset ParseExact(string value, string[] formats, IFormatProvider? formatProvider,
-            System.Globalization.DateTimeStyles styles) =>
-            TryParseExact(value, formats, formatProvider, styles, out var result) ? result : throw new FormatException();
-
-        public static bool TryParseExact(string? value, string? format, IFormatProvider? formatProvider,
-            out DateTimeOffset result)
+        public static bool TryParse([NotNullWhen(true)] string? input, out DateTimeOffset result)
         {
-            return TryParseExact(value, format, formatProvider, System.Globalization.DateTimeStyles.None, out result);
-        }
-
-        public static bool TryParseExact(string? value, string? format, IFormatProvider? formatProvider,
-            System.Globalization.DateTimeStyles styles, out DateTimeOffset result)
-        {
-            ValidateStyles(styles);
-            styles &= ~(
-                System.Globalization.DateTimeStyles.RoundtripKind |
-                System.Globalization.DateTimeStyles.AssumeLocal);
-            result = default;
-            if (value is null || format is null)
-            {
-                return false;
-            }
-            value = TrimWhiteSpace(value, styles);
-            var parsed = format switch
-            {
-                "O" or "o" => TryParseInvariant(value, requireFixedFraction: true, out result),
-                "G" => TryParseLocalGeneral(
-                    value,
-                    includeSeconds: true,
-                    styles,
-                    out result),
-                "g" => TryParseLocalGeneral(
-                    value,
-                    includeSeconds: false,
-                    styles,
-                    out result),
-                _ when format == InvariantDateTimeText.Rfc3339Format =>
-                    TryParseInvariant(value, requireFixedFraction: false, out result),
-                _ => TryParseCustomExact(value, format, styles, out result),
-            };
-            if (parsed && (styles & System.Globalization.DateTimeStyles.AdjustToUniversal) != 0)
-            {
-                result = result.ToUniversalTime();
-            }
+            bool parsed = DateTimeParse.TryParse(input,
+                                                    DateTimeFormatInfo.CurrentInfo,
+                                                    DateTimeStyles.None,
+                                                    out DateTime dateResult,
+                                                    out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
             return parsed;
         }
 
-        private static bool TryParseCustomExact(
-            string value,
-            string format,
-            System.Globalization.DateTimeStyles styles,
-            out DateTimeOffset result)
+        public static bool TryParse(ReadOnlySpan<char> input, out DateTimeOffset result)
         {
-            result = default;
-            if (!InvariantDateTimePattern.TryParse(
-                value,
-                format,
-                out var clock,
-                out var hasOffset,
-                out var offset,
-                out var utcDesignator))
+            bool parsed = DateTimeParse.TryParse(input, DateTimeFormatInfo.CurrentInfo, DateTimeStyles.None, out DateTime dateResult, out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
+            return parsed;
+        }
+
+        public static bool TryParse([NotNullWhen(true)] string? input, IFormatProvider? formatProvider, DateTimeStyles styles, out DateTimeOffset result)
+        {
+            styles = ValidateStyles(styles);
+            if (input == null)
             {
+                result = default;
                 return false;
             }
-            try
+
+            bool parsed = DateTimeParse.TryParse(input,
+                                                    DateTimeFormatInfo.GetInstance(formatProvider),
+                                                    styles,
+                                                    out DateTime dateResult,
+                                                    out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
+            return parsed;
+        }
+
+        public static bool TryParse(ReadOnlySpan<char> input, IFormatProvider? formatProvider, DateTimeStyles styles, out DateTimeOffset result)
+        {
+            styles = ValidateStyles(styles);
+            bool parsed = DateTimeParse.TryParse(input, DateTimeFormatInfo.GetInstance(formatProvider), styles, out DateTime dateResult, out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
+            return parsed;
+        }
+
+        public static bool TryParseExact([NotNullWhen(true)] string? input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string? format, IFormatProvider? formatProvider, DateTimeStyles styles,
+                                            out DateTimeOffset result)
+        {
+            styles = ValidateStyles(styles);
+            if (input == null || format == null)
             {
-                result = hasOffset || utcDesignator
-                    ? new DateTimeOffset(clock, offset)
-                    : (styles & System.Globalization.DateTimeStyles.AssumeUniversal) != 0
-                        ? new DateTimeOffset(clock, TimeSpan.Zero)
-                    : new DateTimeOffset(clock);
-                return true;
-            }
-            catch (Exception)
-            {
+                result = default;
                 return false;
+            }
+
+            bool parsed = DateTimeParse.TryParseExact(input,
+                                                         format,
+                                                         DateTimeFormatInfo.GetInstance(formatProvider),
+                                                         styles,
+                                                         out DateTime dateResult,
+                                                         out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
+            return parsed;
+        }
+
+        public static bool TryParseExact(
+            ReadOnlySpan<char> input, [StringSyntax(StringSyntaxAttribute.DateTimeFormat)] ReadOnlySpan<char> format, IFormatProvider? formatProvider, DateTimeStyles styles, out DateTimeOffset result)
+        {
+            styles = ValidateStyles(styles);
+            bool parsed = DateTimeParse.TryParseExact(input, format, DateTimeFormatInfo.GetInstance(formatProvider), styles, out DateTime dateResult, out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
+            return parsed;
+        }
+
+        public static bool TryParseExact([NotNullWhen(true)] string? input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string?[]? formats, IFormatProvider? formatProvider, DateTimeStyles styles,
+                                            out DateTimeOffset result)
+        {
+            styles = ValidateStyles(styles);
+            if (input == null)
+            {
+                result = default;
+                return false;
+            }
+
+            bool parsed = DateTimeParse.TryParseExactMultiple(input,
+                                                                 formats,
+                                                                 DateTimeFormatInfo.GetInstance(formatProvider),
+                                                                 styles,
+                                                                 out DateTime dateResult,
+                                                                 out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
+            return parsed;
+        }
+
+        public static bool TryParseExact(
+            ReadOnlySpan<char> input, [NotNullWhen(true), StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string?[]? formats, IFormatProvider? formatProvider, DateTimeStyles styles, out DateTimeOffset result)
+        {
+            styles = ValidateStyles(styles);
+            bool parsed = DateTimeParse.TryParseExactMultiple(input, formats, DateTimeFormatInfo.GetInstance(formatProvider), styles, out DateTime dateResult, out TimeSpan offset);
+            result = CreateValidateOffset(dateResult, offset);
+            return parsed;
+        }
+
+        private static DateTimeStyles ValidateStyles(DateTimeStyles styles)
+        {
+            const DateTimeStyles localUniversal = DateTimeStyles.AssumeLocal | DateTimeStyles.AssumeUniversal;
+
+            if ((styles & (DateTimeFormatInfo.InvalidDateTimeStyles | DateTimeStyles.NoCurrentDateDefault)) != 0
+                || (styles & localUniversal) == localUniversal)
+            {
+                ThrowInvalid(styles);
+            }
+
+            // RoundtripKind does not make sense for DateTimeOffset; ignore this flag for backward compatibility with DateTime
+            // AssumeLocal is also ignored as that is what we do by default with DateTimeOffset.Parse
+            return styles & (~DateTimeStyles.RoundtripKind & ~DateTimeStyles.AssumeLocal);
+
+            static void ThrowInvalid(DateTimeStyles styles)
+            {
+                string message = (styles & DateTimeFormatInfo.InvalidDateTimeStyles) != 0 ? SR.Argument_InvalidDateTimeStyles
+                    : (styles & localUniversal) == localUniversal ? SR.Argument_ConflictingDateTimeStyles
+                    : SR.Argument_DateTimeOffsetInvalidDateTimeStyles;
+                throw new ArgumentException(message, nameof(styles));
             }
         }
 
-        private static bool TryParseLocalGeneral(
-            string value,
-            bool includeSeconds,
-            System.Globalization.DateTimeStyles styles,
-            out DateTimeOffset result)
-        {
-            result = default;
-            if (!InvariantDateTimeText.TryParseGeneral(
-                value,
-                includeSeconds,
-                out var dateTime))
-            {
-                return false;
-            }
-            try
-            {
-                result = (styles & System.Globalization.DateTimeStyles.AssumeUniversal) != 0
-                    ? new DateTimeOffset(dateTime, TimeSpan.Zero)
-                    : new DateTimeOffset(dateTime);
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
 
-        public static DateTimeOffset ParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
-            IFormatProvider? formatProvider = null) =>
-            ParseExact(new string(value), new string(format), formatProvider);
+        //
+        // IParsable
+        //
 
-        public static bool TryParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
-            IFormatProvider? formatProvider, out DateTimeOffset result) =>
-            TryParseExact(new string(value), new string(format), formatProvider, out result);
+        /// <inheritdoc cref="IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)" />
+        public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, out DateTimeOffset result) => TryParse(s, provider, DateTimeStyles.None, out result);
 
-        public static bool TryParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
-            IFormatProvider? formatProvider, System.Globalization.DateTimeStyles styles, out DateTimeOffset result) =>
-            TryParseExact(new string(value), new string(format), formatProvider, styles, out result);
+        //
+        // ISpanParsable
+        //
 
-        public static DateTimeOffset ParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
-            IFormatProvider? formatProvider, System.Globalization.DateTimeStyles styles = System.Globalization.DateTimeStyles.None) =>
-            TryParseExact(value, format, formatProvider, styles, out var result) ? result : throw new FormatException();
+        /// <inheritdoc cref="ISpanParsable{TSelf}.Parse(ReadOnlySpan{char}, IFormatProvider?)" />
+        public static DateTimeOffset Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Parse(s, provider, DateTimeStyles.None);
 
-        public static DateTimeOffset ParseExact(ReadOnlySpan<char> value, string[] formats,
-            IFormatProvider? formatProvider, System.Globalization.DateTimeStyles styles = System.Globalization.DateTimeStyles.None) =>
-            TryParseExact(value, formats, formatProvider, styles, out var result) ? result : throw new FormatException();
+        /// <inheritdoc cref="ISpanParsable{TSelf}.TryParse(ReadOnlySpan{char}, IFormatProvider?, out TSelf)" />
+        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out DateTimeOffset result) => TryParse(s, provider, DateTimeStyles.None, out result);
 
-        public static DateTimeOffset ParseExact(string value, string[] formats, IFormatProvider? formatProvider) =>
-            ParseExact(value, formats, formatProvider, System.Globalization.DateTimeStyles.None);
+        // NetWasm: upstream's clock time and offset validation over NetWasm's UTC ticks and offset; the
+        // constructor validates the offset and both the clock and UTC times as upstream's CreateValidateOffset does.
+        private DateTime ClockDateTime => new DateTime(Ticks);
 
-        public static bool TryParseExact(string? value, string?[]? formats, IFormatProvider? formatProvider,
-            System.Globalization.DateTimeStyles styles, out DateTimeOffset result)
-        {
-            ValidateStyles(styles);
-            result = default;
-            if (value is null || formats is null) return false;
-            for (var index = 0; index < formats.Length; index++)
-            {
-                if (TryParseExact(value, formats[index], formatProvider, styles, out result)) return true;
-            }
-            return false;
-        }
+        private static DateTimeOffset CreateValidateOffset(DateTime dateTime, TimeSpan offset) =>
+            new DateTimeOffset(dateTime.Ticks, offset);
 
-        public static bool TryParseExact(string? value, string?[]? formats, IFormatProvider? formatProvider,
-            out DateTimeOffset result) =>
-            TryParseExact(value, formats, formatProvider, System.Globalization.DateTimeStyles.None, out result);
-
-        public static bool TryParseExact(ReadOnlySpan<char> value, string?[]? formats,
-            IFormatProvider? formatProvider, System.Globalization.DateTimeStyles styles, out DateTimeOffset result)
-        {
-            ValidateStyles(styles);
-            return TryParseExact(new string(value), formats, formatProvider, styles, out result);
-        }
 
         public static implicit operator DateTimeOffset(DateTime value) => new(value);
         public static DateTimeOffset operator +(DateTimeOffset value, TimeSpan span) => value.Add(span);
@@ -514,6 +543,13 @@ namespace System
 
         private DateTimeOffset Add(DateTime value) => new(value.Ticks, Offset);
 
+        private static int GetDayOfYear(DateTime value)
+        {
+            var days = 0;
+            for (var month = 1; month < value.Month; month++) days += DateTime.DaysInMonth(value.Year, month);
+            return days + value.Day;
+        }
+
         private static int ValidateOffset(TimeSpan offset)
         {
             if (offset.Ticks % TimeSpan.TicksPerMinute != 0)
@@ -526,167 +562,6 @@ namespace System
                 throw new ArgumentOutOfRangeException(nameof(offset));
             }
             return (int)(offset.Ticks / TimeSpan.TicksPerMinute);
-        }
-
-        private string FormatInvariant(string? format)
-        {
-            if (format == InvariantDateTimeText.Rfc3339Format)
-            {
-                return InvariantDateTimeText.FormatRfc3339(DateTime, FormatOffset());
-            }
-            if (format is { Length: 1 } && format != "O" && format != "o"
-                && format != "G" && format != "g")
-            {
-                throw new FormatException();
-            }
-            if (format is { Length: > 1 })
-            {
-                return InvariantDateTimePattern.Format(
-                    DateTime,
-                    format,
-                    hasOffset: true,
-                    Offset,
-                    explicitOffset: true);
-            }
-            return format switch
-            {
-                "O" or "o" => DateTime.ToString("O") + FormatOffset(),
-                "G" => DateTime.FormatGeneral(includeSeconds: true),
-                "g" => DateTime.FormatGeneral(includeSeconds: false),
-                _ => ToString(),
-            };
-        }
-
-        private string FormatOffset()
-        {
-            var negative = _offsetMinutes < 0;
-            var minutes = negative ? -_offsetMinutes : _offsetMinutes;
-            return (negative ? "-" : "+")
-                + InvariantDateTimeText.TwoDigits(minutes / 60) + ":"
-                + InvariantDateTimeText.TwoDigits(minutes % 60);
-        }
-
-        private static int GetDayOfYear(DateTime value)
-        {
-            var days = 0;
-            for (var month = 1; month < value.Month; month++) days += DateTime.DaysInMonth(value.Year, month);
-            return days + value.Day;
-        }
-
-        private static bool TryParseInvariant(
-            string value,
-            bool requireFixedFraction,
-            out DateTimeOffset result)
-        {
-            result = default;
-            var dateEnd = value.Length;
-            var offsetMinutes = 0;
-            if (dateEnd > 0 && value[dateEnd - 1] == 'Z')
-            {
-                dateEnd--;
-            }
-            else
-            {
-                if (value.Length < 25)
-                {
-                    return false;
-                }
-                dateEnd -= 6;
-                var sign = value[dateEnd];
-                if ((sign != '+' && sign != '-')
-                    || !InvariantDateTimeText.TryReadDigits(value, dateEnd + 1, 2, out var hours)
-                    || !InvariantDateTimeText.HasSeparator(value, dateEnd + 3, ':')
-                    || !InvariantDateTimeText.TryReadDigits(value, dateEnd + 4, 2, out var minutes)
-                    || hours > 14 || minutes >= 60 || (hours == 14 && minutes != 0))
-                {
-                    return false;
-                }
-                offsetMinutes = hours * 60 + minutes;
-                if (sign == '-') offsetMinutes = -offsetMinutes;
-            }
-
-            if (dateEnd > 0 && value[dateEnd - 1] == ' ')
-            {
-                dateEnd--;
-            }
-
-            if (requireFixedFraction
-                && (dateEnd != 27
-                    || !InvariantDateTimeText.HasSeparator(value, 19, '.')
-                    || !InvariantDateTimeText.TryReadFraction(value, 20, 27, out _)))
-            {
-                return false;
-            }
-
-            var dateText = value.Substring(0, dateEnd);
-            if (!DateTime.TryParse(dateText, out var dateTime)
-                || dateTime.Kind != DateTimeKind.Unspecified)
-            {
-                return false;
-            }
-            try
-            {
-                result = new DateTimeOffset(dateTime.Ticks, TimeSpan.FromMinutes(offsetMinutes));
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        private static bool IsWhiteSpace(char value) => value is ' ' or '\t' or '\r' or '\n' or '\f' or '\v';
-
-        private static string TrimWhiteSpace(
-            string value,
-            System.Globalization.DateTimeStyles styles)
-        {
-            var start = 0;
-            var end = value.Length;
-            if ((styles & System.Globalization.DateTimeStyles.AllowLeadingWhite) != 0)
-            {
-                while (start < end && IsWhiteSpace(value[start])) start++;
-            }
-            if ((styles & System.Globalization.DateTimeStyles.AllowTrailingWhite) != 0)
-            {
-                while (end > start && IsWhiteSpace(value[end - 1])) end--;
-            }
-            return start == 0 && end == value.Length
-                ? value
-                : value.Substring(start, end - start);
-        }
-
-        private static void ValidateStyles(System.Globalization.DateTimeStyles styles)
-        {
-            const System.Globalization.DateTimeStyles supported =
-                System.Globalization.DateTimeStyles.AllowLeadingWhite |
-                System.Globalization.DateTimeStyles.AllowTrailingWhite |
-                System.Globalization.DateTimeStyles.AllowInnerWhite |
-                System.Globalization.DateTimeStyles.NoCurrentDateDefault |
-                System.Globalization.DateTimeStyles.AdjustToUniversal |
-                System.Globalization.DateTimeStyles.AssumeLocal |
-                System.Globalization.DateTimeStyles.AssumeUniversal |
-                System.Globalization.DateTimeStyles.RoundtripKind;
-            const System.Globalization.DateTimeStyles localUniversal =
-                System.Globalization.DateTimeStyles.AssumeLocal |
-                System.Globalization.DateTimeStyles.AssumeUniversal;
-            if ((styles & ~supported) != 0 || (styles & localUniversal) == localUniversal ||
-                (styles & System.Globalization.DateTimeStyles.NoCurrentDateDefault) != 0)
-            {
-                throw new ArgumentException();
-            }
-        }
-
-        private static bool TryCopy(string text, Span<char> destination, out int charsWritten)
-        {
-            if (destination.Length < text.Length)
-            {
-                charsWritten = 0;
-                return false;
-            }
-            for (var index = 0; index < text.Length; index++) destination[index] = text[index];
-            charsWritten = text.Length;
-            return true;
         }
     }
 }

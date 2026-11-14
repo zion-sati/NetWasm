@@ -1,5 +1,5 @@
 // Portions derived from dotnet/runtime System.Linq.Expressions at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Licensed to the .NET Foundation under one or more agreements. The .NET
 // Foundation licenses this file to you under the MIT license.
 
@@ -84,13 +84,9 @@ namespace System.Linq.Expressions
                     TypeCode.Int64 or TypeCode.UInt64;
             }
 
-            return Type.GetTypeCode(type) is
-                TypeCode.Boolean or TypeCode.Char or
-                TypeCode.SByte or TypeCode.Byte or
-                TypeCode.Int16 or TypeCode.UInt16 or
-                TypeCode.Int32 or TypeCode.UInt32 or
-                TypeCode.Int64 or TypeCode.UInt64 or
-                TypeCode.Single or TypeCode.Double;
+            // Any other closed value type is held boxed, as the interpreter holds every value; a by-ref-like type
+            // cannot be boxed.
+            return !type.IsByRefLike;
         }
 
         internal static void RequiresCanRead(

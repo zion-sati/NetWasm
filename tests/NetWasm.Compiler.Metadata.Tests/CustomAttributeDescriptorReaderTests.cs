@@ -33,6 +33,53 @@ public sealed class CustomAttributeDescriptorReaderTests
         Assert.Empty(fixture.SignatureRequests);
     }
 
+    // An assembly's attributes are filtered by the name metadata spells for a definition or reference, global types
+    // included; a generic attribute's specification has no such name and is kept for its resolved type to decide.
+    [Theory]
+    [InlineData("Example.Local", new[] { "Local", "Generic" })]
+    [InlineData("Global", new[] { "Global", "Generic" })]
+    [InlineData("Example.Imported", new[] { "Imported", "Generic" })]
+    [InlineData("Example.Absent", new[] { "Generic" })]
+    public void AssemblyAttributesAreFilteredByTheirMetadataName(string attribute, string[] kept)
+    {
+        var metadata = new MetadataBuilder();
+        metadata.AddModule(0, metadata.GetOrAddString("Descriptors"), default, default, default);
+        var assembly = metadata.AddAssembly(metadata.GetOrAddString("Descriptors"), new Version(1, 0), default, default, 0, 0);
+        var library = metadata.AddAssemblyReference(metadata.GetOrAddString("Library"), new Version(1, 0), default, default, 0, default);
+        var owners = new Dictionary<EntityHandle, string>
+        {
+            [metadata.AddTypeDefinition(TypeAttributes.Public, metadata.GetOrAddString("Example"), metadata.GetOrAddString("Local"),
+                default, MetadataTokens.FieldDefinitionHandle(1), MetadataTokens.MethodDefinitionHandle(1))] = "Local",
+            [metadata.AddTypeDefinition(TypeAttributes.Public, default, metadata.GetOrAddString("Global"),
+                default, MetadataTokens.FieldDefinitionHandle(1), MetadataTokens.MethodDefinitionHandle(1))] = "Global",
+            [metadata.AddTypeReference(library, metadata.GetOrAddString("Example"), metadata.GetOrAddString("Imported"))] = "Imported",
+            [metadata.AddTypeSpecification(default)] = "Generic",
+        };
+        foreach (var owner in owners.Keys)
+            metadata.AddCustomAttribute(assembly,
+                metadata.AddMemberReference(owner, metadata.GetOrAddString(".ctor"), default), default);
+        var image = new BlobBuilder();
+        new MetadataRootBuilder(metadata).Serialize(image, 0, 0);
+        using var provider = MetadataReaderProvider.FromMetadataImage(image.ToImmutableArray());
+        var identity = new AssemblyIdentity("Descriptors");
+        var source = new MetadataAssemblySnapshot(identity, provider.GetMetadataReader(),
+            new Dictionary<int, TypeDefinitionModel>(), new Dictionary<int, FieldDefinitionModel>(),
+            new Dictionary<int, MethodDefinitionModel>(), new Dictionary<int, EntityHandle>());
+        var reader = new AssemblyAttributeDescriptorReader(
+            ImmutableDictionary<AssemblyIdentity, MetadataAssemblySnapshot>.Empty.Add(identity, source), new OwnerNames(owners));
+
+        var read = reader.Read(identity, attribute);
+
+        Assert.Equal(kept, read.Select(descriptor => descriptor.AttributeType.FullName));
+        Assert.Throws<ArgumentException>(() => reader.Read(identity, ""));
+    }
+
+    private sealed class OwnerNames(Dictionary<EntityHandle, string> names) : IMetadataSignatureTypeResolver
+    {
+        public CliTypeIdentity Resolve(MetadataAssemblySnapshot source, EntityHandle handle,
+            CliGenericContext? genericContext = null) => CliTypeIdentity.Named(source.Identity, "", names[handle], false);
+    }
+
     private sealed class Fixture : IDisposable, ITypeDefinitionResolver, IMetadataSignatureTypeResolver
     {
         private readonly MetadataReaderProvider _owner;

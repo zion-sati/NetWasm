@@ -35,6 +35,11 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.Array", "InternalCopy")]
     [InlineData("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "CloneBoxedValue")]
     [InlineData("System.DelegateRuntime", "Clone")]
+    [InlineData("System.Object", "MemberwiseClone")]
+    [InlineData("System.Array", "InternalCreateInstance")]
+    [InlineData("System.Array", "InternalCreateRectangularInstance")]
+    [InlineData("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AllocateUninitializedObject")]
+    [InlineData("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "RunClassConstructor")]
     [InlineData("System.Nullable", "GetUnderlyingType")]
     [InlineData("System.Enum", "InternalGetValues")]
     [InlineData("System.Enum", "InternalGetValuesAsUnderlyingType")]
@@ -58,7 +63,7 @@ public sealed class RuntimeAllocationSafepointClassifierTests
         Assert.True(Classify(classifier, method));
         Assert.True(Classify(classifier,
             method.Definition,
-            new SingleTypeRepository(method.Definition.DeclaringType, method.DeclaringType)));
+            new SingleTypeRepository(method.Definition.DeclaringType, typeName)));
     }
 
     [Theory]
@@ -78,7 +83,7 @@ public sealed class RuntimeAllocationSafepointClassifierTests
         Assert.False(Classify(classifier, method));
         Assert.False(Classify(classifier,
             method.Definition,
-            new SingleTypeRepository(method.Definition.DeclaringType, method.DeclaringType)));
+            new SingleTypeRepository(method.Definition.DeclaringType, typeName)));
     }
 
     [Fact]
@@ -90,7 +95,7 @@ public sealed class RuntimeAllocationSafepointClassifierTests
             "Alloc");
         var types = new SingleTypeRepository(
             method.Definition.DeclaringType,
-            method.DeclaringType);
+            "System.Runtime.InteropServices.NativeMemory");
 
         Assert.Throws<ArgumentNullException>(() => Classify(classifier, null!));
         Assert.Throws<ArgumentNullException>(() => Classify(classifier, null!, types));
@@ -138,18 +143,19 @@ public sealed class RuntimeAllocationSafepointClassifierTests
         where TClassifier : IRuntimeAllocationSafepointClassifier =>
         classifier.Classify(method, types);
 
+    // String's and Object's identities are primitive and carry no full name, so the type's name is passed.
     private sealed class SingleTypeRepository(
         EntityKey key,
-        CliTypeIdentity identity) : ITypeRepository
+        string fullName) : ITypeRepository
     {
         public TypeDefinitionModel GetTypeDefinition(EntityKey requestedKey)
         {
             Assert.Equal(key, requestedKey);
-            var separator = identity.FullName!.LastIndexOf('.');
+            var separator = fullName.LastIndexOf('.');
             return new TypeDefinitionModel(
                 key,
-                identity.FullName[..separator],
-                identity.FullName[(separator + 1)..],
+                fullName[..separator],
+                fullName[(separator + 1)..],
                 false,
                 ImmutableArray<EntityKey>.Empty,
                 ImmutableArray<EntityKey>.Empty);

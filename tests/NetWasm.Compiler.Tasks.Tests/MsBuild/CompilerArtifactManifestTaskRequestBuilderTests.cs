@@ -7,6 +7,25 @@ namespace NetWasm.Compiler.Tasks.Tests.MsBuild;
 
 public sealed class CompilerArtifactManifestTaskRequestBuilderTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MetadataViewsRemainDistinctHashInputs(bool alsoInReferenceList)
+    {
+        var view = new TaskItem("contract-view.dll");
+        var input = new CompilerArtifactManifestTaskInput(
+            "manifest.json", ".", "netwasm0.1", "wasm32", "none",
+            "sdk", "compiler", "abi", "runtime", "app.dll",
+            alsoInReferenceList ? [new TaskItem("library.dll"), view] : [new TaskItem("library.dll")],
+            [], null, [], MetadataReferences: [view]);
+
+        var request = new CompilerArtifactManifestTaskRequestBuilder().Build(input);
+
+        Assert.Equal(["InputAssembly", "Reference", "MetadataReference"],
+            request.Inputs.Select(item => item.Kind));
+        Assert.Equal("contract-view.dll", request.Inputs[2].Path);
+    }
+
     [Fact]
     public void BuilderMapsInputsAndArtifactMetadata()
     {

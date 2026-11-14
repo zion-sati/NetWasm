@@ -102,9 +102,10 @@ public sealed class RuntimeLinkExportPlanBuilderTests
 
         var boxedValues = builder.Build(new(manifestExports, [])
         {
-            RuntimeFeatures = ["array-set-value"],
+            RuntimeFeatures = ["array-set-value", "object-clone"],
         });
         Assert.Contains("--export=array_set_value", boxedValues.Arguments);
+        Assert.Contains("--export=object_clone", boxedValues.Arguments);
         Assert.DoesNotContain(boxedValues.Arguments,
             argument => argument.Contains("finaliz", StringComparison.Ordinal));
 

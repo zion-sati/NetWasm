@@ -21,6 +21,10 @@ internal sealed partial record ManagedStaticData
 
     public ImmutableArray<EnumMetadataLayout> EnumMetadata { get; init; } = [];
 
+    public ImmutableArray<StructMarshallingLayout> StructMarshalling { get; init; } = [];
+
+    public ImmutableArray<CliTypeIdentity> UninitializedObjectTypes { get; init; } = [];
+
     public ImmutableDictionary<string, int> MethodDescriptors { get; init; } =
         ImmutableDictionary<string, int>.Empty;
 

@@ -1,0 +1,7 @@
+<Project>
+  <!-- NetWasm.App's suites are SDK consumers restored from a candidate feed, and pin their own package versions as
+       consumers do, so they stay outside the repository's Central Package Management. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

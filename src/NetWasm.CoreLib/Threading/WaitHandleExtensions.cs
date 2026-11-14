@@ -1,0 +1,35 @@
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using Microsoft.Win32.SafeHandles;
+
+namespace System.Threading
+{
+    public static class WaitHandleExtensions
+    {
+        /// <summary>
+        /// Gets the native operating system handle.
+        /// </summary>
+        /// <param name="waitHandle">The <see cref="WaitHandle"/> to operate on.</param>
+        /// <returns>A <see cref="Runtime.InteropServices.SafeHandle"/> representing the native operating system handle.</returns>
+        public static SafeWaitHandle GetSafeWaitHandle(this WaitHandle waitHandle)
+        {
+            ArgumentNullException.ThrowIfNull(waitHandle);
+
+            return waitHandle.SafeWaitHandle;
+        }
+
+        /// <summary>
+        /// Sets the native operating system handle
+        /// </summary>
+        /// <param name="waitHandle">The <see cref="WaitHandle"/> to operate on.</param>
+        /// <param name="value">A <see cref="Runtime.InteropServices.SafeHandle"/> representing the native operating system handle.</param>
+        public static void SetSafeWaitHandle(this WaitHandle waitHandle, SafeWaitHandle? value)
+        {
+            ArgumentNullException.ThrowIfNull(waitHandle);
+
+            waitHandle.SafeWaitHandle = value;
+        }
+    }
+}

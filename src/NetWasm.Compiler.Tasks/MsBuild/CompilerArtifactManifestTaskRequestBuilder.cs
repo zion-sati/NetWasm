@@ -10,7 +10,10 @@ internal sealed class CompilerArtifactManifestTaskRequestBuilder : ICompilerArti
         ArgumentNullException.ThrowIfNull(input);
         var inputs = ImmutableArray.CreateBuilder<CompilerArtifactInputRequest>();
         inputs.Add(new("InputAssembly", input.InputAssemblyPath));
-        AddInputs(inputs, "Reference", input.References);
+        var metadataReferences = input.MetadataReferences.IsDefault ? [] : input.MetadataReferences;
+        var metadataPaths = metadataReferences.Select(static item => item.ItemSpec).ToHashSet(StringComparer.Ordinal);
+        AddInputs(inputs, "Reference", input.References.Where(item => !metadataPaths.Contains(item.ItemSpec)));
+        AddInputs(inputs, "MetadataReference", metadataReferences);
         AddInputs(
             inputs,
             "Source",

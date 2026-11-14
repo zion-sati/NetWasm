@@ -9,6 +9,14 @@
   <ItemGroup>
     <_NetWasmRefGeneratorReferencePack Include="@(KnownFrameworkReference->WithMetadataValue('Identity', 'Microsoft.NETCore.App')->WithMetadataValue('TargetFramework', '$(TargetFramework)'))" />
   </ItemGroup>
+  <!-- The stock generators a package carries, by assembly name: NetWasm.Ref's LibraryImport generator by
+       default, NetWasm.App.Ref's System.Text.Json and Regex generators. -->
+  <ItemGroup Condition="'@(NetWasmRefGeneratorAssembly)' == ''">
+    <NetWasmRefGeneratorAssembly Include="Microsoft.Interop.LibraryImportGenerator;Microsoft.Interop.SourceGeneration" />
+  </ItemGroup>
+  <PropertyGroup>
+    <NetWasmRefGeneratorProvenanceName Condition="'$(NetWasmRefGeneratorProvenanceName)' == ''">import-generator</NetWasmRefGeneratorProvenanceName>
+  </PropertyGroup>
 
   <Target Name="NetWasmRefValidateGeneratorReferencePack"
           BeforeTargets="ProcessFrameworkReferences;CollectPackageDownloads">
@@ -20,18 +28,23 @@
   <Target Name="NetWasmRefResolveImportGeneratorAssets"
           DependsOnTargets="NetWasmRefValidateGeneratorReferencePack;ResolveReferences">
     <ItemGroup>
-      <_NetWasmRefResolvedImportAnalyzer Include="@(Analyzer)"
-        Condition="'%(Analyzer.Filename)' == 'Microsoft.Interop.LibraryImportGenerator' OR '%(Analyzer.Filename)' == 'Microsoft.Interop.SourceGeneration'" />
+      <_NetWasmRefAnalyzerByName Include="@(Analyzer->'%(Filename)')">
+        <Path>%(Analyzer.FullPath)</Path>
+      </_NetWasmRefAnalyzerByName>
+      <_NetWasmRefUnwantedAnalyzer Include="@(_NetWasmRefAnalyzerByName)" Exclude="@(NetWasmRefGeneratorAssembly)" />
+      <_NetWasmRefWantedAnalyzer Include="@(_NetWasmRefAnalyzerByName)" Exclude="@(_NetWasmRefUnwantedAnalyzer)" />
+      <_NetWasmRefResolvedImportAnalyzer Include="@(_NetWasmRefWantedAnalyzer->'%(Path)')" />
     </ItemGroup>
-    <Error Condition="'@(_NetWasmRefResolvedImportAnalyzer->Count())' != '2' OR '@(_NetWasmRefResolvedImportAnalyzer->'%(Filename)'->Distinct()->Count())' != '2' OR '@(_NetWasmRefResolvedImportAnalyzer->'%(RootDir)%(Directory)'->Distinct()->Count())' != '1'"
+    <Error Condition="'@(_NetWasmRefResolvedImportAnalyzer->Count())' != '@(NetWasmRefGeneratorAssembly->Count())' OR '@(_NetWasmRefResolvedImportAnalyzer->'%(Filename)'->Distinct()->Count())' != '@(NetWasmRefGeneratorAssembly->Count())' OR '@(_NetWasmRefResolvedImportAnalyzer->'%(RootDir)%(Directory)'->Distinct()->Count())' != '1'"
            Code="NWRF003"
-           Text="The Ref producer did not resolve the stock import generator and its support assembly from one targeting pack." />
+           Text="The Ref producer did not resolve the stock generators (@(NetWasmRefGeneratorAssembly)) from one targeting pack." />
     <PropertyGroup>
       <_NetWasmRefGeneratorPackVersion>@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackVersion)')</_NetWasmRefGeneratorPackVersion>
       <_NetWasmRefGeneratorArchive>$([MSBuild]::NormalizePath('$(NuGetPackageRoot)', 'microsoft.netcore.app.ref', '$(_NetWasmRefGeneratorPackVersion)', 'microsoft.netcore.app.ref.$(_NetWasmRefGeneratorPackVersion).nupkg'))</_NetWasmRefGeneratorArchive>
       <_NetWasmRefGeneratorArchiveRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'import-generator', '$(_NetWasmRefGeneratorPackVersion)'))</_NetWasmRefGeneratorArchiveRoot>
       <_NetWasmRefResolvedGeneratorRoot>@(_NetWasmRefResolvedImportAnalyzer->'%(RootDir)%(Directory)'->Distinct())</_NetWasmRefResolvedGeneratorRoot>
-      <_NetWasmRefGeneratorProvenancePath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'import-generator.provenance.json'))</_NetWasmRefGeneratorProvenancePath>
+      <_NetWasmRefGeneratorProvenancePath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', '$(NetWasmRefGeneratorProvenanceName).provenance.json'))</_NetWasmRefGeneratorProvenancePath>
+      <_NetWasmRefGeneratorFilePatterns>@(NetWasmRefGeneratorAssembly->'$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/%(Identity).dll;$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/**/%(Identity).resources.dll')</_NetWasmRefGeneratorFilePatterns>
     </PropertyGroup>
     <Error Condition="'$(NuGetPackageRoot)' == '' OR !Exists('$(_NetWasmRefGeneratorArchive)')"
            Code="NWRF004"
@@ -49,7 +62,7 @@
            DestinationFolder="$(_NetWasmRefGeneratorArchiveRoot)"
            SkipUnchangedFiles="false" />
     <ItemGroup>
-      <_NetWasmRefUpstreamGeneratorFile Include="$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/Microsoft.Interop.LibraryImportGenerator.dll;$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/Microsoft.Interop.SourceGeneration.dll;$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/**/Microsoft.Interop.LibraryImportGenerator.resources.dll;$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/**/Microsoft.Interop.SourceGeneration.resources.dll" />
+      <_NetWasmRefUpstreamGeneratorFile Include="$(_NetWasmRefGeneratorFilePatterns)" />
       <_NetWasmRefUpstreamGeneratorNotice Include="$(_NetWasmRefGeneratorArchiveRoot)LICENSE.TXT;$(_NetWasmRefGeneratorArchiveRoot)THIRD-PARTY-NOTICES.TXT" />
     </ItemGroup>
     <ItemGroup>
@@ -76,7 +89,7 @@
     <ItemGroup>
       <_NetWasmRefGeneratorPackageFile Include="$(_NetWasmRefGeneratorProvenancePath)">
         <SourcePath>$(_NetWasmRefGeneratorProvenancePath)</SourcePath>
-        <PackagePath>provenance/import-generator.json</PackagePath>
+        <PackagePath>provenance/$(NetWasmRefGeneratorProvenanceName).json</PackagePath>
         <PackKind>Other</PackKind>
       </_NetWasmRefGeneratorPackageFile>
       <FileWrites Include="$(_NetWasmRefGeneratorProvenancePath);$(_NetWasmRefGeneratorArchiveRoot)**/*" />

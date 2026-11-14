@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Generated from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de resources;
+// Generated from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce resources;
 // only the strings this namespace references are included.
 
 namespace System.Resources
@@ -13,8 +13,6 @@ namespace System.Resources
             "The ResourceReader class does not know how to read this version of .resources files. Expected version: {0}  This file: {1}";
         internal const string Arg_ResourceNameNotExist =
             "The specified resource name \"{0}\" does not exist in the resource file.";
-        internal const string ArgumentOutOfRange_StreamLength =
-            "Stream length must be non-negative and less than the maximum array length {0} - origin.";
         internal const string Argument_InvalidResourceCultureName =
             "The given culture name '{0}' cannot be used to locate a resource file. Resource filenames must consist of only letters, numbers, hyphens or underscores.";
         internal const string Argument_StreamNotReadable =
@@ -55,10 +53,6 @@ namespace System.Resources
             "Resource '{0}' was not a String - call GetObject instead.";
         internal const string InvalidOperation_ResourceNotString_Type =
             "Resource was of type '{0}' instead of String - call GetObject instead.";
-        internal const string InvalidOperation_ResourceWriterSaved =
-            "The resource writer has already been closed and cannot be edited.";
-        internal const string NotSupported_BinarySerializedResources =
-            "This platform does not support binary serialized resources.";
         internal const string NotSupported_ResourceObjectSerialization =
             "Cannot read resources that depend on serialization.";
         internal const string NotSupported_UnseekableStream =

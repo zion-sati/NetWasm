@@ -78,6 +78,8 @@ internal static class MethodContributionFingerprint
         Set(15);
         foreach (var type in analysis.CatchTypes) names.Add(type.ToString());
         Set(16);
+        foreach (var type in analysis.RequiredTypes) names.Add(type.CanonicalName);
+        Set(17);
         Int(hash, (facts.RequiresTypeFacts ? 1 : 0) |
             (facts.RequiresGenericArguments ? 4 : 0) | (facts.RequiresMemberNames ? 8 : 0) |
             (facts.RequiresDeclaringTypes ? 16 : 0) | (facts.RequiresGenericDefinitions ? 32 : 0) |

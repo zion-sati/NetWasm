@@ -2,7 +2,9 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission;
+using System.Reflection;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 using static NetWasm.Compiler.Wasm.Tests.ExpressionIntrinsicEmissionFixture;
@@ -166,28 +168,23 @@ public sealed class MemberExecutionIntrinsicEmitterTests
         }
     }
 
-    [Theory]
-    [InlineData("layouts")]
-    [InlineData("addresses")]
-    [InlineData("descriptors")]
-    [InlineData("fields")]
-    [InlineData("types")]
-    [InlineData("values")]
-    [InlineData("objects")]
-    [InlineData("typeValidator")]
-    [InlineData("initialization")]
-    [InlineData("runtimeImports")]
-    [InlineData("exceptions")]
-    [InlineData("roots")]
-    [InlineData("nullableTypes")]
-    [InlineData("nullableBoxes")]
-    [InlineData("valueFrames")]
-    [InlineData("initializationTriggers")]
-    public void ConstructorRejectsMissingDependency(string dependency)
+    // Every collaborator of member execution rejects each missing dependency by name.
+    [Fact]
+    public void EachCollaboratorRejectsAMissingDependency()
     {
-        var fixture = new ExpressionIntrinsicEmissionFixture(false);
-        var error = Assert.Throws<ArgumentNullException>(() => Create(fixture, dependency));
-        Assert.Equal(dependency, error.ParamName);
+        var parts = new Parts(new ExpressionIntrinsicEmissionFixture(false));
+        foreach (var (type, arguments) in parts.Constructions())
+        {
+            var constructor = Assert.Single(type.GetConstructors());
+            for (var index = 0; index < arguments.Length; index++)
+            {
+                var missing = (object?[])arguments.Clone();
+                missing[index] = null;
+                var error = Assert.Throws<TargetInvocationException>(() => constructor.Invoke(missing));
+                Assert.Equal(constructor.GetParameters()[index].Name,
+                    Assert.IsType<ArgumentNullException>(error.InnerException).ParamName);
+            }
+        }
     }
 
     [Fact]
@@ -641,10 +638,10 @@ public sealed class MemberExecutionIntrinsicEmitterTests
                 (uint)ManagedExceptionKind.InvalidCast);
     }
 
+    // Void results produce null and structs are boxed; other kinds have no box here.
     [Theory]
-    [InlineData(CliValueKind.Void)]
     [InlineData(CliValueKind.NativeInt)]
-    [InlineData(CliValueKind.ValueType)]
+    [InlineData(CliValueKind.ManagedAddress)]
     public void EmitRejectsUnpreservableResultWithRuntimeContract(CliValueKind kind)
     {
         var fixture = new ExpressionIntrinsicEmissionFixture(false);
@@ -762,16 +759,20 @@ public sealed class MemberExecutionIntrinsicEmitterTests
     [InlineData(2)]
     public void EmitRejectsContradictoryFieldPlansBeforePublishingRoots(int defect)
     {
+        // A contradictory key, a constant (which has no storage), and a field type with no box.
         var fixture = new ExpressionIntrinsicEmissionFixture(false);
-        var fieldType = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var fieldType = CliTypeIdentity.FromStackKind(defect == 2 ? CliValueKind.NativeInt : CliValueKind.I4);
         var field = new FieldInstanceModel(
             new FieldDefinitionModel(
                 new(EmitterTestSupport.Assembly, 0x04000021),
                 EmitterTestSupport.TypeKey,
                 "Value",
                 fieldType,
-                defect == 1),
-            Type("Owner", valueType: defect == 2),
+                defect == 1)
+            {
+                IsLiteral = defect == 1,
+            },
+            Type("Owner"),
             fieldType);
         var fields = ImmutableDictionary<string, FieldInstanceModel>.Empty.Add(
             defect == 0 ? "contradictory-key" : field.CanonicalName,
@@ -910,21 +911,286 @@ public sealed class MemberExecutionIntrinsicEmitterTests
         return new(definition, owner, [], signature);
     }
 
-    private static MemberExecutionIntrinsicEmitter Create(ExpressionIntrinsicEmissionFixture fixture, string? missing = null) => new(
-        missing == "layouts" ? null! : fixture.Layouts,
-        missing == "addresses" ? null! : new AddressInstructionEmitter(fixture.Layouts),
-        missing == "descriptors" ? null! : fixture.Layouts,
-        missing == "fields" ? null! : fixture.Scalars,
-        missing == "types" ? null! : fixture.Layouts,
-        missing == "values" ? null! : fixture.Scalars,
-        missing == "objects" ? null! : fixture.Layouts,
-        missing == "typeValidator" ? null! : fixture.TypeValidator,
-        missing == "initialization" ? null! : fixture.Initialization,
-        missing == "runtimeImports" ? null! : fixture.Imports,
-        missing == "exceptions" ? null! : fixture.Exceptions,
-        missing == "roots" ? null! : fixture.Roots,
-        missing == "nullableTypes" ? null! : fixture,
-        missing == "nullableBoxes" ? null! : fixture,
-        missing == "valueFrames" ? null! : fixture,
-        missing == "initializationTriggers" ? null! : fixture);
+    // Stage 3: New allocates the object, publishes it as the call's allocation root (as newobj does), and runs the
+    // constructor on it; the object is the result, so nothing is preserved after the call.
+    [Fact]
+    public void ConstructorAllocatesAndRootsTheObjectBeforeRunningTheConstructor()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var constructor = TypedMethod(".ctor", CliTypeIdentity.FromStackKind(CliValueKind.Void), Type("Created"),
+            isStatic: false, parameters: [CliTypeIdentity.FromStackKind(CliValueKind.I4)]);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod, members: Members(constructor));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var code = fixture.Code;
+        var allocation = AllocationCall(fixture, request, code);
+        var call = code.IndexOf(Local(WasmOpcodes.Call, 71));
+        var publication = Assert.Single(fixture.AllocationRootPublications);
+        Assert.InRange(publication, allocation + 1, call - 1);
+        Assert.Contains(constructor, fixture.Functions.Methods);
+        Assert.Equal(Local(WasmOpcodes.LocalSet, request.Local(0, CliValueKind.ManagedReference)),
+            code[publication + 1]);
+        // A constructor has no receiver to check; the one null check is the int argument's.
+        Assert.Single(fixture.Exceptions.Kinds, kind => kind == ManagedExceptionKind.NullReference);
+        // The call is followed by the case's end, not by a result's preservation.
+        Assert.Equal(WasmOpcodes.Else, code[call + 1].Opcode);
+    }
+
+    // A finalizable object is allocated through the finalizable allocator, which registers it for finalization.
+    [Fact]
+    public void AFinalizableObjectIsAllocatedForFinalization()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var created = Type("Finalized");
+        var constructor = TypedMethod(".ctor", CliTypeIdentity.FromStackKind(CliValueKind.Void), created, isStatic: false);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod, members: Members(constructor));
+        var target = request.Instruction.Target with
+        {
+            FinalizableTypeIds = Lookups.Of<int>(new HashSet<int> { fixture.Layouts.GetObjectLayout(created).TypeId }),
+        };
+        request = request with { Call = request.Call with { Instruction = request.Instruction with { Target = target } } };
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var finalizable = (uint)fixture.Imports.Resolve(RuntimeImportSymbol.AllocateFinalizable,
+            target.RuntimeImportSelection);
+        Assert.Contains(fixture.Code, instruction =>
+            instruction.Opcode == WasmOpcodes.Call && instruction.Operand?.UnsignedValue == finalizable);
+    }
+
+    // A constructor that triggers its type's initializer runs that initializer before allocating.
+    [Fact]
+    public void AConstructorRunsItsTypesInitializerFirst()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var constructor = TypedMethod(".ctor", CliTypeIdentity.FromStackKind(CliValueKind.Void), Type("Initialized"),
+            isStatic: false);
+        fixture.InitializationTriggers.Add(constructor.Definition);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod, members: Members(constructor));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var initialization = Assert.Single(fixture.Initialization.Requests);
+        Assert.True(initialization.IsMethodInvocation);
+        Assert.True(fixture.Initialization.InstructionCounts[0] < AllocationCall(fixture, request, fixture.Code));
+    }
+
+    // A constant or init-only field has no write case: writing it falls to the unsupported target.
+    [Fact]
+    public void ConstantAndInitOnlyFieldsHaveNoWriteCase()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var fieldType = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        FieldInstanceModel Field(int row, string name, bool literal, bool initOnly) => new(
+            new FieldDefinitionModel(new(EmitterTestSupport.Assembly, 0x04000030 + row), EmitterTestSupport.TypeKey, name,
+                fieldType, false)
+            { IsLiteral = literal, IsInitOnly = initOnly },
+            Type("Owner"), fieldType);
+        var constant = Field(0, "Constant", literal: true, initOnly: false);
+        var initOnly = Field(1, "Fixed", literal: false, initOnly: true);
+        var plan = Members() with
+        {
+            Fields = ImmutableDictionary<string, FieldInstanceModel>.Empty
+                .Add(constant.CanonicalName, constant).Add(initOnly.CanonicalName, initOnly),
+        };
+        var request = fixture.Request(RuntimeIntrinsic.MemberWriteField, members: plan);
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        Assert.Equal([plan.UnsupportedTarget!], fixture.Functions.Methods);
+        Assert.Empty(fixture.TypeValidator.Requests);
+    }
+
+    [Fact]
+    public void StructResultGoesToARootedBoxTheCalleeWrites()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var point = Type("Point", valueType: true);
+        var method = TypedMethod("Make", point, Type("Owner"), isStatic: true);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod, members: Members(method));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var code = fixture.Code;
+        var allocation = AllocationCall(fixture, request, code);
+        var call = code.IndexOf(Local(WasmOpcodes.Call, 71));
+        Assert.InRange(Assert.Single(fixture.AllocationRootPublications), allocation + 1, call - 1);
+        Assert.Equal(WasmOpcodes.Else, code[call + 1].Opcode);
+    }
+
+    [Fact]
+    public void VoidResultIsNull()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var method = TypedMethod("Reset", CliTypeIdentity.FromStackKind(CliValueKind.Void), Type("Owner"),
+            isStatic: true);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod, members: Members(method));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var code = fixture.Code;
+        var call = code.IndexOf(Local(WasmOpcodes.Call, 71));
+        Assert.Equal(WasmOpcodes.I32Constant, code[call + 1].Opcode);
+        Assert.Equal(0, code[call + 1].Operand?.SignedValue);
+        Assert.Equal(Local(WasmOpcodes.LocalSet, request.Local(0, CliValueKind.ManagedReference)), code[call + 2]);
+        Assert.Empty(fixture.AllocationRootPublications);
+    }
+
+    // A struct's method runs on its box's contents after the box's type is checked.
+    [Fact]
+    public void StructReceiverIsCheckedAndPassedAsTheBoxContents()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var point = Type("Point", valueType: true);
+        var method = TypedMethod("Length", CliTypeIdentity.FromStackKind(CliValueKind.I4), point, isStatic: false);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod, members: Members(method));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var receiver = request.Local(1, CliValueKind.ManagedReference);
+        Assert.Contains((receiver, point), fixture.TypeValidator.Requests);
+        var code = fixture.Code;
+        var call = code.IndexOf(Local(WasmOpcodes.Call, 71));
+        var load = code.LastIndexOf(Local(WasmOpcodes.LocalGet, receiver), call);
+        Assert.Equal(WasmOpcodes.I32Constant, code[load + 1].Opcode);
+        Assert.Equal(WasmOpcodes.I32Add, code[load + 2].Opcode);
+    }
+
+    [Fact]
+    public void StaticFieldReadsItsStorageAfterInitialization()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var fieldType = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var field = new FieldInstanceModel(new FieldDefinitionModel(EmitterTestSupport.InstanceFieldKey,
+            EmitterTestSupport.TypeKey, "Counter", fieldType, true), Type("Holder"), fieldType);
+        var request = fixture.Request(RuntimeIntrinsic.MemberReadField, members: Members(field: field));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        Assert.Single(fixture.Initialization.Requests);
+        Assert.Contains(fixture.Code, instruction => instruction.Opcode == WasmOpcodes.I32Constant &&
+            instruction.Operand?.SignedValue == ExpressionIntrinsicEmissionFixture.StaticFieldAddress);
+        Assert.DoesNotContain(fixture.Exceptions.Kinds, kind => kind == ManagedExceptionKind.NullReference);
+    }
+
+    // A struct-valued field is copied into a new box; nothing runs after the allocation, so it needs no root.
+    [Fact]
+    public void StructValuedFieldIsCopiedIntoANewBox()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var point = Type("Point", valueType: true);
+        var field = new FieldInstanceModel(new FieldDefinitionModel(EmitterTestSupport.InstanceFieldKey,
+            EmitterTestSupport.TypeKey, "Origin", point, false), Type("Shape"), point);
+        var request = fixture.Request(RuntimeIntrinsic.MemberReadField, members: Members(field: field));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var code = fixture.Code;
+        var allocation = AllocationCall(fixture, request, code);
+        Assert.Equal(Local(WasmOpcodes.LocalSet, request.Local(0, CliValueKind.ManagedReference)), code[allocation + 1]);
+        Assert.Empty(fixture.AllocationRootPublications);
+        Assert.Contains(fixture.Code[allocation..], instruction =>
+            instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.Prefixed);
+    }
+
+    private static int AllocationCall(
+        ExpressionIntrinsicEmissionFixture fixture,
+        RuntimeIntrinsicEmissionRequest request,
+        ImmutableArray<WasmInstruction> code)
+    {
+        var allocate = (uint)fixture.Imports.Resolve(RuntimeImportSymbol.Allocate,
+            request.Instruction.Target.ObjectAllocation.Selection);
+        return Assert.Single(Enumerable.Range(0, code.Length), index =>
+            code[index].Opcode == WasmOpcodes.Call && code[index].Operand?.UnsignedValue == allocate);
+    }
+
+    private static MemberExecutionIntrinsicEmitter Create(ExpressionIntrinsicEmissionFixture fixture) =>
+        new Parts(fixture).Emitter();
+
+    // Member execution's collaborators over the fixture, as the compiler's services compose them.
+    private sealed class Parts(ExpressionIntrinsicEmissionFixture fixture)
+    {
+        private readonly AddressInstructionEmitter _addresses = new(fixture.Layouts);
+
+        public IEnumerable<(Type Type, object[] Arguments)> Constructions()
+        {
+            var checks = new MemberReferenceCheckEmitter(_addresses, fixture.Exceptions, fixture.TypeValidator);
+            var payloads = new BoxPayloadAddressEmitter(fixture.Layouts, fixture.Scalars, _addresses);
+            var locations = new MemberFieldLocationEmitter(fixture.Layouts, fixture.Scalars, _addresses, fixture.Scalars,
+                fixture);
+            var allocator = new MemberObjectAllocator(fixture.Layouts, _addresses, fixture.Imports, fixture.Exceptions,
+                fixture.Roots);
+            var results = new MemberResultBoxEmitter(fixture.Layouts, fixture.Scalars, fixture.Layouts, _addresses,
+                fixture.Imports, fixture.Exceptions);
+            var nullable = new MemberNullableResultEmitter(fixture);
+            var cases = new MemberDescriptorCaseEmitter(_addresses);
+            var arguments = new MemberArgumentEmitter(fixture.Layouts, fixture.Layouts, _addresses, fixture.Scalars, checks,
+                payloads);
+            var counts = new MemberArgumentCountCheckEmitter(_addresses, fixture.Layouts, fixture.Exceptions);
+            yield return (typeof(MemberReferenceCheckEmitter), [_addresses, fixture.Exceptions, fixture.TypeValidator]);
+            yield return (typeof(BoxPayloadAddressEmitter), [fixture.Layouts, fixture.Scalars, _addresses]);
+            yield return (typeof(MemberFieldLocationEmitter),
+                [fixture.Layouts, fixture.Scalars, _addresses, fixture.Scalars, fixture]);
+            yield return (typeof(MemberObjectAllocator),
+                [fixture.Layouts, _addresses, fixture.Imports, fixture.Exceptions, fixture.Roots]);
+            yield return (typeof(MemberResultBoxEmitter),
+                [fixture.Layouts, fixture.Scalars, fixture.Layouts, _addresses, fixture.Imports, fixture.Exceptions]);
+            yield return (typeof(MemberNullableResultEmitter), [fixture]);
+            yield return (typeof(MemberDescriptorCaseEmitter), [_addresses]);
+            yield return (typeof(MemberArgumentEmitter),
+                [fixture.Layouts, fixture.Layouts, _addresses, fixture.Scalars, checks, payloads]);
+            yield return (typeof(MemberArgumentCountCheckEmitter), [_addresses, fixture.Layouts, fixture.Exceptions]);
+            yield return (typeof(MemberExecutionPlanValidator), [fixture]);
+            yield return (typeof(MemberMethodCaseEmitter),
+            [
+                fixture.Layouts, cases, counts, arguments, checks, allocator, payloads, results, nullable, fixture,
+                fixture.Initialization, fixture, fixture, fixture.Layouts, fixture.Exceptions, _addresses,
+            ]);
+            yield return (typeof(MemberFieldReadCaseEmitter),
+            [
+                fixture.Layouts, cases, fixture.Initialization, checks, fixture, locations, nullable, allocator, payloads,
+                results, fixture.Layouts, fixture.Scalars, _addresses,
+            ]);
+            yield return (typeof(MemberFieldWriteCaseEmitter),
+            [
+                fixture.Layouts, cases, fixture.Initialization, checks, fixture, locations, payloads, fixture.Layouts,
+                fixture.Scalars, fixture.Layouts, _addresses, fixture.Imports, fixture.Exceptions,
+            ]);
+        }
+
+        public MemberExecutionIntrinsicEmitter Emitter()
+        {
+            var built = Constructions().ToDictionary(item => item.Type,
+                item => Assert.Single(item.Type.GetConstructors()).Invoke(item.Arguments));
+            return new(
+                (IMemberExecutionPlanValidator)built[typeof(MemberExecutionPlanValidator)],
+                fixture.Roots,
+                (IMemberMethodCaseEmitter)built[typeof(MemberMethodCaseEmitter)],
+                (IMemberFieldReadCaseEmitter)built[typeof(MemberFieldReadCaseEmitter)],
+                (IMemberFieldWriteCaseEmitter)built[typeof(MemberFieldWriteCaseEmitter)]);
+        }
+    }
+
+    [Fact]
+    public void TheEmitterRejectsAMissingCollaborator()
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(false);
+        var built = new Parts(fixture).Constructions().ToDictionary(item => item.Type,
+            item => Assert.Single(item.Type.GetConstructors()).Invoke(item.Arguments));
+        object[] arguments =
+        [
+            built[typeof(MemberExecutionPlanValidator)], fixture.Roots, built[typeof(MemberMethodCaseEmitter)],
+            built[typeof(MemberFieldReadCaseEmitter)], built[typeof(MemberFieldWriteCaseEmitter)],
+        ];
+        var constructor = Assert.Single(typeof(MemberExecutionIntrinsicEmitter).GetConstructors());
+        for (var index = 0; index < arguments.Length; index++)
+        {
+            var missing = (object?[])arguments.Clone();
+            missing[index] = null;
+            var error = Assert.Throws<TargetInvocationException>(() => constructor.Invoke(missing));
+            Assert.Equal(constructor.GetParameters()[index].Name,
+                Assert.IsType<ArgumentNullException>(error.InnerException).ParamName);
+        }
+    }
 }

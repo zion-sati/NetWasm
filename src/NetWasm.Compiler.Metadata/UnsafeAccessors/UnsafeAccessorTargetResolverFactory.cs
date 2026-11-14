@@ -39,6 +39,8 @@ internal sealed class UnsafeAccessorTargetResolverFactory(
             .Add(UnsafeAccessorMemberKind.StaticMethod, methodResolver)
             .Add(UnsafeAccessorMemberKind.Field, fieldResolver)
             .Add(UnsafeAccessorMemberKind.StaticField, fieldResolver);
-        return new UnsafeAccessorTargetResolver(signatures, definitions, members, finder, methods, stackTypes);
+        var typeNames = new UnsafeAccessorTypeNameResolver(metadata.Types.Values,
+            finder.FindType("System.Object").Key.Assembly);
+        return new UnsafeAccessorTargetResolver(signatures, definitions, members, finder, methods, stackTypes, typeNames);
     }
 }

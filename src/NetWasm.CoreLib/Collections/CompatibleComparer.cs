@@ -1,9 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime System.Private.CoreLib CompatibleComparer.cs at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // This comparer is retained because it is part of Hashtable's ordinary legacy
 // comparer constructor surface; formatter serialization is not part of this port.
+
+#pragma warning disable CS0618 // Type or member is obsolete
 
 namespace System.Collections
 {

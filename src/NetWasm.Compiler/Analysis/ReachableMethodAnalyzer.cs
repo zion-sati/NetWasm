@@ -33,6 +33,7 @@ internal sealed class ReachableMethodAnalyzer(
         var validated = stackValidators.Create(types, fields, methods).Validate(graph);
         var managed = new ManagedMethodBody(request.Method, validated);
         var optimized = request.RewrittenBody is null ? optimizer.Optimize(managed) : integerChecks.Rewrite(body);
+        var original = body;
         if (!ReferenceEquals(optimized, body))
         {
             body = optimized;
@@ -49,13 +50,38 @@ internal sealed class ReachableMethodAnalyzer(
             .Where(region => region.CatchType is not null)
             .Select(region => region.CatchType!.Value)
             .ToImmutableArray();
+        var instructions = instructionAnalyzer.Analyze(new(request.Method, body));
         var analysis = new ReachableMethodAnalysis(
             request.Method,
             managed,
             catchTypes,
             exceptions.ToImmutable(),
-            instructionAnalyzer.Analyze(new(request.Method, body)));
+            instructions)
+        {
+            RequiredTypes = RemovedConstructions(request.Method, original, body, instructions),
+        };
         // Fingerprinted here, on the worker, rather than as the closure applies it.
         return analysis with { Contribution = MethodContributionFingerprint.Of(analysis) };
+    }
+
+    // Managed optimization may remove an allocation (an unused newobj); the types the original body constructed and
+    // the optimized one does not stay required. The original body is analysed again only when a newobj went.
+    private ImmutableArray<CliTypeIdentity> RemovedConstructions(
+        MethodInstanceModel method,
+        CilMethodBody original,
+        CilMethodBody optimized,
+        ReachabilityInstructionAnalysis optimizedFacts)
+    {
+        if (ReferenceEquals(original, optimized) || Count(optimized) >= Count(original))
+        {
+            return [];
+        }
+
+        var before = instructionAnalyzer.Analyze(new(method, original));
+        var after = optimizedFacts.ConstructedTypes.Concat(optimizedFacts.AllocatedTypes).ToHashSet();
+        return [.. before.ConstructedTypes.Concat(before.AllocatedTypes).Where(type => !after.Contains(type)).Distinct()];
+
+        static int Count(CilMethodBody body) =>
+            body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewObject);
     }
 }

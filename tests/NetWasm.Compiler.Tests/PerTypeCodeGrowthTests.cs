@@ -17,6 +17,8 @@ public sealed class PerTypeCodeGrowthTests
 
     public static TheoryData<string> Constructs => [.. Programs.Keys];
 
+    private static readonly HashSet<string> WorldConstructs = ["EnumConvert"];
+
     [Theory]
     [MemberData(nameof(Constructs))]
     public void TheLargestFunctionGrowsLinearlyWithTheTypesReachingOneSite(string construct)
@@ -55,8 +57,15 @@ public sealed class PerTypeCodeGrowthTests
                 }
             }
             """);
-        var module = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O0)).ApplicationModule;
+        // Convert.ChangeType's DateTime case reaches string's date parsing, which reads the local time zone through
+        // WASI: that program compiles against the platform world. A quadratic site still outgrows its fixed code.
+        var module = (WorldConstructs.Contains(construct)
+            ? NetWasmCompiler.Compile(new CompilerOptions(
+                assembly, [assets.CoreLib], "EntryPoint", "Run", [new("run", "EntryPoint", "Run")],
+                WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+                WitWorld: "netwasm:platform/platform@1.0.0", Optimization: FinalWasmOptimization.O0))
+            : NetWasmCompiler.Compile(new CompilerOptions(
+                assembly, [assets.CoreLib], "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O0))).ApplicationModule;
         return WasmCodePatcher.Bodies(module)!.Max(function => function.Length);
     }
 

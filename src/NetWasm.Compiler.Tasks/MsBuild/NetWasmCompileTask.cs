@@ -1,5 +1,7 @@
+using System.Collections.Immutable;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
+using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Tasks.MsBuild;
 
@@ -50,6 +52,14 @@ public sealed class NetWasmCompileTask : ToolTask
     public string NativeWasmToolsPath { get; set; } = string.Empty;
 
     public ITaskItem[] References { get; set; } = [];
+
+    // Reference facades the compiler reads for type-forwarding metadata and never executes. One that also
+    // appears in References is compiled as metadata only.
+    public ITaskItem[] MetadataReferences { get; set; } = [];
+
+    private readonly CompilerReferenceOriginReader _referenceOrigins = new();
+
+    private readonly CompilerOriginalContractReferenceReader _originalContracts = new();
     public ITaskItem[] Sources { get; set; } = [];
     public string Target { get; set; } = "wasm32";
     public string? TypeSymbolsPath { get; set; }
@@ -60,6 +70,14 @@ public sealed class NetWasmCompileTask : ToolTask
     public string? WitWorld { get; set; }
     // Modules the project's native archives import from (<NetWasmImportModule>).
     public ITaskItem[] ImportModules { get; set; } = [];
+    // The program's <NativeLibrary> items. With LinkedNativeOnly, a P/Invoke into a library none of them names for
+    // the target (NetWasmLibraryName) compiles to a body that throws DllNotFoundException, as Mono's WebAssembly
+    // build fails calls into modules it does not link.
+    public ITaskItem[] NativeLibraries { get; set; } = [];
+    public bool LinkedNativeOnly { get; set; }
+    // The project's RuntimeHostConfigurationOption items; those marked Trim="true" with a Boolean value are folded,
+    // as ILLink folds them.
+    public ITaskItem[] RuntimeHostConfigurationOptions { get; set; } = [];
     public string? ProjectDirectory { get; set; }
     public string? PathMap { get; set; }
     public bool EmitStackTrace { get; set; }
@@ -164,6 +182,29 @@ public sealed class NetWasmCompileTask : ToolTask
 
     internal string ResponseFileCommands => GenerateResponseFileCommands();
 
+    // Trim="true" options with a Boolean value, the last of each name as MSBuild items resolve, in name order.
+    private IEnumerable<(string Name, bool Value)> FoldedFeatureSwitches() => RuntimeHostConfigurationOptions
+        .Where(item => string.Equals(item.GetMetadata("Trim"), "true", StringComparison.OrdinalIgnoreCase) &&
+            bool.TryParse(item.GetMetadata("Value"), out _))
+        .GroupBy(item => item.ItemSpec, StringComparer.Ordinal)
+        .Select(group => (group.Key, bool.Parse(group.Last().GetMetadata("Value"))))
+        .OrderBy(pair => pair.Key, StringComparer.Ordinal);
+
+    // Every option, as runtimeconfig.json carries it: the last value of each name, in name order.
+    private IEnumerable<(string Name, string Value)> RuntimeProperties() => RuntimeHostConfigurationOptions
+        .GroupBy(item => item.ItemSpec, StringComparer.Ordinal)
+        .Select(group => (group.Key, group.Last().GetMetadata("Value")))
+        .OrderBy(pair => pair.Key, StringComparer.Ordinal);
+
+    // The libraries a <NativeLibrary> item provides for this target, each once.
+    private IEnumerable<string> LinkedLibraryNames() => NativeLibraries
+        .Where(item => item.GetMetadata("WasmTarget") is var target &&
+            (string.IsNullOrEmpty(target) || string.Equals(target, Target, StringComparison.OrdinalIgnoreCase)))
+        .Select(item => item.GetMetadata("NetWasmLibraryName"))
+        .Where(name => !string.IsNullOrWhiteSpace(name))
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal);
+
     protected override string GenerateFullPathToTool() => RunsOnTheDotNetHost ? "dotnet" : CompilerPath;
 
     protected override string GenerateCommandLineCommands()
@@ -190,9 +231,36 @@ public sealed class NetWasmCompileTask : ToolTask
         builder.AppendSwitchIfNotNull("-platform:", Target);
         builder.AppendSwitchIfNotNull("-optimize:", Optimization);
         builder.AppendSwitchIfNotNull("-out:", CoreModulePath);
-        foreach (var reference in References)
+        var metadataPaths = MetadataReferences.Select(static item => item.ItemSpec).ToImmutableHashSet(StringComparer.Ordinal);
+        var implementationReferences = References.Where(item => !metadataPaths.Contains(item.ItemSpec)).ToArray();
+        foreach (var reference in implementationReferences)
         {
             builder.AppendSwitchIfNotNull("-r:", reference.ItemSpec);
+        }
+        foreach (var reference in MetadataReferences)
+        {
+            builder.AppendSwitchIfNotNull("-metadatareference:", reference.ItemSpec);
+        }
+        foreach (var contract in _originalContracts.Read(implementationReferences.Concat(MetadataReferences)))
+        {
+            builder.AppendSwitchIfNotNull("-originalcontract:", contract);
+        }
+        // Package provenance, for the diagnostics that name a reference's package: the path, then only the
+        // facts the item carries.
+        foreach (var origin in _referenceOrigins.Read(implementationReferences, CompilationReferenceRole.Implementation)
+            .AddRange(_referenceOrigins.Read(MetadataReferences, CompilationReferenceRole.Metadata)))
+        {
+            string?[] facts =
+            [
+                origin.PackageId is null ? null : "package=" + origin.PackageId,
+                origin.PackageVersion is null ? null : "version=" + origin.PackageVersion,
+                origin.AssetPath is null ? null : "asset=" + origin.AssetPath,
+                origin.OriginalReferencePath is null ? null : "original=" + origin.OriginalReferencePath,
+            ];
+            if (facts.Any(fact => fact is not null))
+            {
+                builder.AppendSwitchIfNotNull("-referenceorigin:", [origin.Path, .. facts.Where(fact => fact is not null)!], ";");
+            }
         }
         foreach (var source in Sources)
         {
@@ -216,6 +284,22 @@ public sealed class NetWasmCompileTask : ToolTask
         foreach (var module in ImportModules)
         {
             builder.AppendSwitchIfNotNull("-importmodule:", module.ItemSpec);
+        }
+        foreach (var (name, value) in FoldedFeatureSwitches())
+        {
+            builder.AppendSwitchIfNotNull("-featureswitch:", $"{name}={(value ? "true" : "false")}");
+        }
+        foreach (var (name, value) in RuntimeProperties())
+        {
+            builder.AppendSwitchIfNotNull("-runtimeproperty:", $"{name}={value}");
+        }
+        if (LinkedNativeOnly)
+        {
+            builder.AppendSwitch("-linkednativeonly+");
+            foreach (var library in LinkedLibraryNames())
+            {
+                builder.AppendSwitchIfNotNull("-nativelibrary:", library);
+            }
         }
         AppendIfNotEmpty(builder, "-diagnostictrace:", DiagnosticTracePath);
         AppendIfNotEmpty(builder, "-diagnosticlog:", DiagnosticLogPath);

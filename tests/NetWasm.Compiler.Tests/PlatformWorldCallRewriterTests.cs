@@ -10,6 +10,7 @@ public sealed class PlatformWorldCallRewriterTests
     private static readonly EntityKey CallerType = Key(0x02000001);
     private static readonly EntityKey PlatformWorldType = Key(0x02000002);
     private static readonly EntityKey OtherType = Key(0x02000003);
+    private static readonly EntityKey NetWasmHostType = Key(0x02000004);
     private static readonly MethodDefinitionModel Caller = new(
         Key(0x06000001),
         CallerType,
@@ -33,7 +34,7 @@ public sealed class PlatformWorldCallRewriterTests
         var rewritten = new PlatformWorldCallRewriter(
             new FixedMethodResolver(Switch(name)),
             new Symbols(),
-            new PlatformWorldCapabilities(eventLoop, clock, synchronousExports)).Rewrite(body);
+            PlatformWorldCapabilities.Of(eventLoop, clock, synchronousExports)).Rewrite(body);
 
         Assert.Equal(CilOperation.LoadInt32, rewritten.Instructions[0].Operation);
         Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
@@ -47,7 +48,7 @@ public sealed class PlatformWorldCallRewriterTests
         var rewritten = new PlatformWorldCallRewriter(
             new FixedMethodResolver(Switch("HasHostEventLoop")),
             new Symbols(),
-            new PlatformWorldCapabilities(true, true, true) { HostEventLoop = host }).Rewrite(Body(CilOperation.Call));
+            PlatformWorldCapabilities.Of(true, true, true) with { HostEventLoop = host }).Rewrite(Body(CilOperation.Call));
 
         Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
     }
@@ -60,10 +61,45 @@ public sealed class PlatformWorldCallRewriterTests
         var rewritten = new PlatformWorldCallRewriter(
             new FixedMethodResolver(Switch("ProvidesWasi")),
             new Symbols(),
-            new PlatformWorldCapabilities(true, true, true) { Wasi = wasi }).Rewrite(Body(CilOperation.Call));
+            PlatformWorldCapabilities.Of(true, true, true) with { Wasi = wasi }).Rewrite(Body(CilOperation.Call));
 
         Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
-        Assert.True(new PlatformWorldCapabilities(false, false, false).Wasi);
+        Assert.True(PlatformWorldCapabilities.Of(false, false, false).Wasi);
+    }
+
+    // NetWasmHost.IsJavaScriptHost, behind OperatingSystem.IsBrowser and IsWasi, is whether a
+    // JavaScript host runs the program.
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 0)]
+    public void ReplacesTheJavaScriptHostSwitchWithTheCompiledHost(bool host, int expected)
+    {
+        var target = Switch("get_IsJavaScriptHost") with
+        {
+            Definition = Switch("get_IsJavaScriptHost").Definition with { DeclaringType = NetWasmHostType },
+        };
+        var rewritten = new PlatformWorldCallRewriter(
+            new FixedMethodResolver(target),
+            new Symbols(),
+            PlatformWorldCapabilities.Of(true, true, true) with { JavaScriptHost = host }).Rewrite(Body(CilOperation.Call));
+
+        Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
+        var other = target with { Definition = target.Definition with { Name = "get_Other" } };
+        var body = Body(CilOperation.Call);
+        Assert.Same(body, new PlatformWorldCallRewriter(new FixedMethodResolver(other), new Symbols(),
+            PlatformWorldCapabilities.Of(true, true, true)).Rewrite(body));
+    }
+
+    // The compiled target and host come from the compile, not the contract.
+    [Fact]
+    public void FromCarriesTheTargetAndHost()
+    {
+        var world = PlatformWorldCapabilities.From(Contract(), 8, javaScriptHost: true);
+
+        Assert.Equal(8, world.NativeIntegerSize);
+        Assert.True(world.JavaScriptHost);
+        Assert.Equal(4, PlatformWorldCapabilities.From(Contract(), 4, javaScriptHost: false).NativeIntegerSize);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PlatformWorldCapabilities.From(Contract(), 2, javaScriptHost: false));
     }
 
     [Theory]
@@ -74,10 +110,10 @@ public sealed class PlatformWorldCallRewriterTests
         var rewritten = new PlatformWorldCallRewriter(
             new FixedMethodResolver(Switch("ImportsProcessExit")),
             new Symbols(),
-            new PlatformWorldCapabilities(true, true, true) { ProcessExit = processExit }).Rewrite(Body(CilOperation.Call));
+            PlatformWorldCapabilities.Of(true, true, true) with { ProcessExit = processExit }).Rewrite(Body(CilOperation.Call));
 
         Assert.Equal(expected, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[0].Operand).Value);
-        Assert.False(new PlatformWorldCapabilities(true, true, true).ProcessExit);
+        Assert.False(PlatformWorldCapabilities.Of(true, true, true).ProcessExit);
     }
 
     [Fact]
@@ -129,19 +165,19 @@ public sealed class PlatformWorldCallRewriterTests
     public void EveryComponentHasAnEventLoopAndDelaysNeedTheClock()
     {
         var now = Import("now", "wasi:clocks/monotonic-clock@0.3.2");
-        Assert.Equal(new PlatformWorldCapabilities(false, false, false), PlatformWorldCapabilities.None);
-        Assert.Equal(new PlatformWorldCapabilities(false, false, false),
-            PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty));
-        Assert.Equal(new PlatformWorldCapabilities(false, false, false),
-            PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty with { Imports = [now] }));
-        Assert.Equal(new PlatformWorldCapabilities(true, false, false), PlatformWorldCapabilities.From(Contract()));
-        Assert.Equal(new PlatformWorldCapabilities(true, true, false),
-            PlatformWorldCapabilities.From(Contract(now with { HasManagedBinding = false })));
-        Assert.Equal(new PlatformWorldCapabilities(true, false, false), PlatformWorldCapabilities.From(
-            Contract(Import("now", "wasi:clocks/monotonic-clock@0.2.11"))));
-        Assert.Equal(new PlatformWorldCapabilities(true, false, false), PlatformWorldCapabilities.From(
-            Contract(Import("wait-for", "wasi:clocks/monotonic-clock@0.3.2"))));
-        Assert.Throws<ArgumentNullException>(() => PlatformWorldCapabilities.From(null!));
+        Assert.Equal(PlatformWorldCapabilities.Of(false, false, false), PlatformWorldCapabilities.None);
+        Assert.Equal(PlatformWorldCapabilities.Of(false, false, false),
+            PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty, 4, false));
+        Assert.Equal(PlatformWorldCapabilities.Of(false, false, false),
+            PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty with { Imports = [now] }, 4, false));
+        Assert.Equal(PlatformWorldCapabilities.Of(true, false, false), PlatformWorldCapabilities.From(Contract(), 4, false));
+        Assert.Equal(PlatformWorldCapabilities.Of(true, true, false),
+            PlatformWorldCapabilities.From(Contract(now with { HasManagedBinding = false }), 4, false));
+        Assert.Equal(PlatformWorldCapabilities.Of(true, false, false), PlatformWorldCapabilities.From(
+            Contract(Import("now", "wasi:clocks/monotonic-clock@0.2.11")), 4, false));
+        Assert.Equal(PlatformWorldCapabilities.Of(true, false, false), PlatformWorldCapabilities.From(
+            Contract(Import("wait-for", "wasi:clocks/monotonic-clock@0.3.2")), 4, false));
+        Assert.Throws<ArgumentNullException>(() => PlatformWorldCapabilities.From(null!, 4, false));
     }
 
     // A component ends its process with a non-zero code through wasi:cli/exit's exit-with-code
@@ -150,15 +186,15 @@ public sealed class PlatformWorldCallRewriterTests
     public void AProcessExitsWithItsCodeWhenTheWorldImportsExit()
     {
         var exitWithCode = Import("exit-with-code", "wasi:cli/exit@0.3.2");
-        Assert.False(PlatformWorldCapabilities.From(Contract()).ProcessExit);
+        Assert.False(PlatformWorldCapabilities.From(Contract(), 4, false).ProcessExit);
         Assert.False(PlatformWorldCapabilities.From(
-            ComponentBoundaryContract.Empty with { Imports = [exitWithCode] }).ProcessExit);
+            ComponentBoundaryContract.Empty with { Imports = [exitWithCode] }, 4, false).ProcessExit);
         Assert.True(PlatformWorldCapabilities.From(
-            Contract(exitWithCode with { HasManagedBinding = false })).ProcessExit);
+            Contract(exitWithCode with { HasManagedBinding = false }), 4, false).ProcessExit);
         Assert.False(PlatformWorldCapabilities.From(
-            Contract(Import("exit", "wasi:cli/exit@0.3.2"))).ProcessExit);
+            Contract(Import("exit", "wasi:cli/exit@0.3.2")), 4, false).ProcessExit);
         Assert.False(PlatformWorldCapabilities.From(
-            Contract(Import("exit-with-code", "wasi:cli/exit@0.2.11"))).ProcessExit);
+            Contract(Import("exit-with-code", "wasi:cli/exit@0.2.11")), 4, false).ProcessExit);
     }
 
     // A synchronous export or an exported resource's destructor is where a blocking wait must
@@ -171,9 +207,9 @@ public sealed class PlatformWorldCallRewriterTests
             PlatformWorldCapabilities.From(Contract() with
             {
                 Exports = [Import("run", "example:test/api@1.0.0") with { Kind = kind }],
-            });
+            }, 4, false);
 
-        Assert.False(PlatformWorldCapabilities.From(Contract()).SynchronousExports);
+        Assert.False(PlatformWorldCapabilities.From(Contract(), 4, false).SynchronousExports);
         Assert.True(With(CanonicalAbiFunctionKind.Function).SynchronousExports);
         Assert.True(With(CanonicalAbiFunctionKind.ExportedResourceDestructor).SynchronousExports);
         Assert.False(With(CanonicalAbiFunctionKind.ExportedResourceRep).SynchronousExports);
@@ -183,7 +219,7 @@ public sealed class PlatformWorldCallRewriterTests
         MethodInstanceModel? target, bool eventLoop) => new(
         new FixedMethodResolver(target),
         new Symbols(),
-        new PlatformWorldCapabilities(eventLoop, eventLoop, eventLoop));
+        PlatformWorldCapabilities.Of(eventLoop, eventLoop, eventLoop));
 
     private static CilMethodBody Body(CilOperation callOperation) => new(
         Caller,
@@ -232,9 +268,11 @@ public sealed class PlatformWorldCallRewriterTests
     {
         public string Format(EntityKey key) => key == PlatformWorldType
             ? "System.Runtime.InteropServices.PlatformWorld"
-            : key == OtherType
-                ? "Fixtures.Other"
-                : "Fixtures.Caller";
+            : key == NetWasmHostType
+                ? "System.Runtime.InteropServices.NetWasmHost"
+                : key == OtherType
+                    ? "Fixtures.Other"
+                    : "Fixtures.Caller";
 
         public string Format(MethodDefinitionModel method) =>
             $"{Format(method.DeclaringType)}::{method.Name}";

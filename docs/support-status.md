@@ -133,7 +133,7 @@ component), which an application can replace with its own.
 | Area | Available | Not available |
 | --- | --- | --- |
 | Files and directories | `System.IO.File`, `FileStream`, `Directory`, `DirectoryInfo`, `FileInfo`, `Path` and their readers and writers over WASI 0.3's filesystem, within the directories the host grants (`dotnet run` grants the working directory and a private temporary directory; a published command takes `--dir` in the Node.js launcher or Wasmtime). A browser page or worker mounts files with NetWasm's mount API. | Permissions, ownership, locking, watching, and paths outside the granted directories. |
-| Networking | `System.Net.Sockets` (`Socket`, `TcpClient`, `TcpListener`, `UdpClient`, `NetworkStream`) and `Dns` over WASI 0.3's sockets, blocking and asynchronous; `ws://` WebSockets (`ClientWebSocket`, `WebSocket.CreateFromStream`); `HttpClient` (`NetWasm.System.Net.Http`) over `wasi:http`, and HTTP services that answer it. | Non-blocking sockets and socket timeouts, `Poll`/`Select`, Unix domain sockets, multicast and broadcast, binding a dual-mode socket to the IPv6 wildcard, reverse DNS, `wss://` (no TLS yet), and WebSocket compression. |
+| Networking | `System.Net.Sockets` (`Socket`, `TcpClient`, `TcpListener`, `UdpClient`, `NetworkStream`) and `Dns` over WASI 0.3's sockets, blocking and asynchronous, wherever the host supplies them (NetWasm's Node.js launcher, as `dotnet run` uses, and Wasmtime do; a browser has none); `ws://` WebSockets (`ClientWebSocket`, `WebSocket.CreateFromStream`); `HttpClient` over `wasi:http`, blocking (`HttpClient.Send`, `HttpWebRequest.GetResponse`, `WebClient`'s synchronous methods) and asynchronous, and HTTP services that answer it. | Non-blocking connect, accept and datagrams (a non-blocking stream socket sends and receives what is ready, as on Linux), socket timeouts, `Poll`/`Select`, Unix domain sockets, multicast and broadcast, binding a dual-mode socket to the IPv6 wildcard, reverse DNS, `wss://` (no TLS yet), and WebSocket compression. |
 | CLI and processes | Command-line arguments, environment variables, standard input, output and error, the exit code (`Environment.ExitCode` or `Main`'s result), `Environment.Exit` and `Environment.FailFast`. | `System.Diagnostics.Process`, child-process creation, shell execution, process enumeration and ambient machine/user/process discovery. |
 | Concurrency | Single-reactor `Task`, `ValueTask`, cancellation, timers and readiness-driven continuations; synchronous I/O APIs over WASI's asynchronous operations inside a command or an async export. | Managed threads, workers sharing the managed heap, a managed thread pool, `Task.Run` parallelism, blocking waits on a task, and shared-memory/atomic threading semantics. Source-compatibility shims do not provide concurrency. |
 | Host and browser services | Explicit application WIT imports and explicit JavaScript imports in the applicable output mode. | Implicit DOM, fetch, storage, registry, proxy, certificate-store or other ambient OS/browser services. |
@@ -159,8 +159,15 @@ builds leave both out unless `NetWasmManagedStackTrace=true`. `nwc` enables the
 same behavior with `-methodsymbols:<path>`. The program reads that file at
 startup (see [program sidecars](diagnostics.md#program-sidecars)), and
 `Exception.StackTrace` then names each captured frame. A frame without a name
-reads `method#<id>`. This is diagnostic stack-trace support, not source-level
-debugging or DWARF; see
+reads `method#<id>`. `System.Diagnostics.StackTrace` and `StackFrame` read the same
+frames: `new StackTrace(exception)` reports the frames `Exception.StackTrace`
+reports, `new StackTrace()` and `new StackFrame()` capture the current thread's
+frames from the constructor's caller, and each frame carries the method's display
+name and, when requested and available, its document and line. IL and native
+offsets are unknown, and `StackFrame.GetMethod()` is unavailable because it needs
+reflection. Without the instrumentation, those constructors throw
+`PlatformNotSupportedException`. This is diagnostic stack-trace support, not
+source-level debugging or DWARF; see
 [deferred debug information](#deferred-debug-information-dwarf).
 
 ### Type names
@@ -290,13 +297,16 @@ pinned `jco` browser translation, and clean. The generic VSTest bridge and
 TUnit package also pass `dotnet test -f netwasm0.1` integration.
 
 The SDK, runtime packs and templates are released for the current `netwasm0.1`
-profile. The separate library and test packages below are also published.
+profile. Every `netwasm0.1` project references NetWasm.App, the framework's
+in-box assemblies, as a .NET project references Microsoft.NETCore.App; the
+library and test packages below that are not part of it are published
+separately.
 
 | Package profile | Supported boundary |
 | --- | --- |
 | Reflection-free dependency injection | `NetWasm.Microsoft.Extensions.DependencyInjection` and its Abstractions package provide generated activation, keyed/sequence services, scopes and package-owned open-generic closure. Runtime reflection, dynamic activation and runtime generic construction remain outside the profile. |
-| `System.Xml` | `NetWasm.System.Xml` provides the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, interpreted transforms and primitive serialization. Its `System.Xml.Schema` types are a minimal object model that checks only the document element's name against the schema's top-level elements; they do not perform XSD validation. A port of the .NET schema compiler and validator is in progress. Nonprimitive runtime serializer discovery and ambient network/filesystem resolution remain excluded. |
-| WASI-only HTTP (`System.Net.Http`) | `NetWasm.System.Net.Http` provides upstream's `HttpClient` over a `wasi:http` 0.3 client transport for wasm32 components and NetWasm's Node.js and browser hosts, with no framework `[JSImport]`, and binds an `<OutputType>Component</OutputType>` HTTP service's `Handle(HttpRequestMessage)` to `wasi:http/handler`. wasm64 Component packaging remains externally blocked. |
+| `System.Xml` | NetWasm.App's `System.Xml` provides the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, interpreted transforms and primitive serialization. Its `System.Xml.Schema` types are a minimal object model that checks only the document element's name against the schema's top-level elements; they do not perform XSD validation. A port of the .NET schema compiler and validator is in progress. Nonprimitive runtime serializer discovery and ambient network/filesystem resolution remain excluded. |
+| WASI-only HTTP (`System.Net.Http`) | NetWasm.App's `System.Net.Http` provides upstream's `HttpClient` over a `wasi:http` 0.3 client transport for wasm32 components and NetWasm's Node.js and browser hosts, with no framework `[JSImport]`, and binds an `<OutputType>Component</OutputType>` HTTP service's `Handle(HttpRequestMessage)` to `wasi:http/handler`. wasm64 Component packaging remains externally blocked. |
 | TUnit | The `NetWasm.TUnit.*` packages provide the generated catalog, sequential runner and `dotnet test` integration. A later upstream contribution is a separate decision. |
 
 ### Compiler and SDK capability acceptance
@@ -304,7 +314,9 @@ profile. The separate library and test packages below are also published.
 | Area | Supported boundary |
 | --- | --- |
 | Bounded custom attribute queries | Type-targeted queries, `DescriptionAttribute`, and user-defined attributes, including closed generics, are available on raw wasm32/wasm64 and component wasm32. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [query profile](custom-attributes.md). |
-| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs, static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction, the `Fastcall` and `Swift` calling conventions, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
+| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs (and, with `LibraryImport`, results, `out` and `ref` parameters), static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction by a raw `DllImport`, the `Fastcall` and `Swift` calling conventions, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
+| Compression (`System.IO.Compression`) | `DeflateStream`, `ZLibStream`, `GZipStream` and `BrotliStream`, the Deflate, ZLib, GZip and Brotli encoders and decoders, `ZLibCompressionOptions`, and ZIP's Deflate and Deflate64 entries run .NET's own code over zlib-ng 2.2.5 and Brotli 1.1.0, the releases .NET 11 uses, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 byte for byte at every level. A program links the native codec code only when it uses a codec, and only the codec it uses. Zstandard throws `PlatformNotSupportedException`, as in .NET's WebAssembly builds. |
+| Cryptography (`System.Security.Cryptography`) | Ciphers (AES, TripleDES, DES, RC2, AES-GCM, AES-CCM, ChaCha20-Poly1305), RSA, DSA, ECDsa, ECDiffieHellman and X.509 (certificates, PKCS#12 and PKCS#7, chain building with custom trust) run .NET's Linux implementation over OpenSSL 3.5, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 on Linux. Hashing (MD5 included), HMAC, PBKDF2 and random numbers are .NET's managed WebAssembly implementation, so a program that uses only those links no OpenSSL. `CryptoConfig.CreateFromName` creates those managed algorithms by name, matching names as desktop does, and returns null for the others. OpenSSL's random generator draws from the platform's random source and its clock from the program's clock grants. Certificate files and the system trust store are read through the host's file system; the store defaults to `/etc/ssl/certs` and `/etc/ssl/cert.pem`, which the host must make visible, and `SSL_CERT_DIR` and `SSL_CERT_FILE` choose another place. OID friendly names come from .NET's own table. AIA, CRL and OCSP downloads are not made, so revocation checking works offline. `SslStream` waits for wasi-tls. |
 
 ## In progress
 
@@ -397,6 +409,12 @@ The following are outside the closed-world, single-reactor platform profile:
   runtime code generation, `dynamic`, runtime assembly loading, and
   runtime-created generic types; expression nodes outside the bounded
   [managed-interpreter profile](expression-trees.md) remain unsupported;
+- generic instantiations that grow without bound through their own code, which
+  a closed world cannot follow to the end. The compiler stops such growth after
+  four levels, and after sixteen grown instances of one method; a program that
+  reaches a stopped instance throws `NotSupportedException`.
+  PLINQ's sorts and joins are the main case: a sort with four `ThenBy` keys and
+  joins of joins work;
 - managed threads, workers sharing a managed heap, a managed thread pool,
   `Task.Run`-style parallel work, blocking waits, and cross-thread memory-order
   guarantees;

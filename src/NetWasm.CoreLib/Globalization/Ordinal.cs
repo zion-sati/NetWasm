@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Globalization/Ordinal.cs.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/System.Private.CoreLib/src/System/Globalization/Ordinal.cs.
 // NetWasm always runs upstream's invariant globalization mode, so this copy leaves out the NLS and ICU
 // casing paths invariant mode never takes: each method ends at its invariant-mode branch, and the
 // NLS-only helpers are gone.

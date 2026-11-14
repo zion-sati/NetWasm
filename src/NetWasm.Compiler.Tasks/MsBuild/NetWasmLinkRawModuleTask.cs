@@ -105,7 +105,8 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
                     WasmToolsNodePath,
                     BinaryenWasmOptPath,
                     BinaryenWasmMergePath,
-                    NullIfEmpty(NativeBinaryenWasmOptPath)));
+                    NullIfEmpty(NativeBinaryenWasmOptPath)),
+                new MsBuildProgressLoggerProvider(Log));
             session.Link(new(
                 CoreModulePath,
                 RuntimeModulePath,

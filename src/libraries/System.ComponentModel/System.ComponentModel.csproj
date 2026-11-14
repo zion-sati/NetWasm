@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.ComponentModel</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="System/ComponentModel/CancelEventArgs.cs" />
+    <Compile Include="System/ComponentModel/IChangeTracking.cs" />
+    <Compile Include="System/ComponentModel/IEditableObject.cs" />
+    <Compile Include="System/ComponentModel/IRevertibleChangeTracking.cs" />
+    <Compile Include="System/IServiceProvider.cs" />
+  </ItemGroup>
+</Project>

@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // NetWasm's counterpart of upstream's NativeMemory.Unix.cs at dotnet/runtime
-// 474ed963699fc29809015392738a15231aaae2de: the allocator members, which the NetWasm runtime implements.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce: the allocator members, which the NetWasm runtime implements.
 
 using System.Runtime.CompilerServices;
 

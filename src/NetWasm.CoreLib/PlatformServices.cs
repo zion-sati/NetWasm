@@ -360,12 +360,91 @@ namespace System.Runtime.InteropServices
             static () => _commandScheduler?.AwaitPending() ?? 0,
             new Concurrency.ComponentBackpressure());
 
+        // A synchronous binding call (CanonicalAbi.RunSynchronously): the stream copies its arguments start are
+        // deferred until its subtask has started, since the callee reads them only then. Futures stay on the event loop.
+        internal sealed class SynchronousLowering
+        {
+            private readonly System.Collections.Generic.List<Action> _deferred = [];
+
+            internal void Defer(Action copy) => _deferred.Add(copy);
+
+            internal void RunDeferred()
+            {
+                for (var index = 0; index < _deferred.Count; index++)
+                {
+                    _deferred[index]();
+                }
+
+                _deferred.Clear();
+            }
+        }
+
+        private static SynchronousLowering? s_synchronousLowering;
+        private static Concurrency.ISubtaskReturnAwaiter? s_synchronousSubtasks;
+
+        internal static SynchronousLowering? CurrentSynchronousLowering => s_synchronousLowering;
+
+        internal static T RunSynchronously<T>(Func<Task<T>> call)
+        {
+            ArgumentNullException.ThrowIfNull(call);
+            var previous = s_synchronousLowering;
+            var scope = new SynchronousLowering();
+            s_synchronousLowering = scope;
+            Task<T> task;
+            try
+            {
+                task = call();
+                scope.RunDeferred();
+            }
+            finally
+            {
+                s_synchronousLowering = previous;
+            }
+
+            if (!task.IsCompleted)
+            {
+                throw new PlatformNotSupportedException(
+                    "A synchronous call awaited work other than the platform's I/O, which only the event loop completes; use the asynchronous API.");
+            }
+
+            return task.GetAwaiter().GetResult();
+        }
+
+        // Thread.Sleep: wasi:clocks/monotonic-clock's wait-for, waited for in place as synchronous I/O waits, so
+        // nothing spins and the event loop does not run meanwhile. A world without the clock throws.
+        internal static void BlockFor(ulong nanoseconds)
+        {
+            Concurrency.IWasiMonotonicWaitInvoker clock = PlatformWorld.ImportsMonotonicClock()
+                ? new Concurrency.WasiMonotonicWaitInvoker()
+                : new Concurrency.AbsentMonotonicWaitInvoker();
+            var status = clock.WaitFor(nanoseconds);
+            if ((status & 0xF) == 2)
+            {
+                return;
+            }
+
+            (s_synchronousSubtasks ??= new Concurrency.SubtaskReturnAwaiter(
+                WasiPlatformServicesComposition.CreateWaitableEventAwaiter(),
+                new Concurrency.WasiSubtaskDropInvoker())).AwaitReturn(status);
+        }
+
         // An async-lowered import's status: RETURNED is complete; otherwise its subtask joins the
         // event loop's waitable set and the task completes when it returns, in a later callback.
+        // In a synchronous call the deferred copies run and the subtask is waited for in place.
         internal static Task AwaitSubtask(int status)
         {
             if ((status & 0xF) == 2)
             {
+                s_synchronousLowering?.RunDeferred();
+                return Task.CompletedTask;
+            }
+
+            if (s_synchronousLowering is { } synchronous)
+            {
+                synchronous.RunDeferred();
+                (s_synchronousSubtasks ??= new Concurrency.SubtaskReturnAwaiter(
+                    WasiPlatformServicesComposition.CreateWaitableEventAwaiter(),
+                    new Concurrency.WasiSubtaskDropInvoker())).AwaitReturn(status);
                 return Task.CompletedTask;
             }
 
@@ -383,6 +462,23 @@ namespace System.Runtime.InteropServices
         // A stream or future copy's status: BLOCKED (-1) completes with the result its event
         // carries; any other status is already the copy's result.
         internal static Task<int> AwaitCopy(int waitable, int status)
+        {
+            if (status != -1)
+            {
+                return Task.FromResult(status);
+            }
+
+            if (s_synchronousLowering is not null)
+            {
+                return Task.FromResult(unchecked((int)WasiPlatformServicesComposition.CreateWaitableEventAwaiter().Await(waitable)));
+            }
+
+            return AwaitCopyOnEventLoop(waitable, status);
+        }
+
+        // A copy the event loop completes even in a synchronous call: a future's, whose other end may wait for the
+        // call to return.
+        internal static Task<int> AwaitCopyOnEventLoop(int waitable, int status)
         {
             if (status != -1)
             {

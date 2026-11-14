@@ -307,6 +307,13 @@ internal sealed class WasmModuleEmitter(
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)];
         }
+        if (plan.RuntimeImportSelection.IncludeObjectClone)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.ObjectClone)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
         if (request.StructuredDiagnostics)
         {
             runtimeFeatures = [.. runtimeFeatures

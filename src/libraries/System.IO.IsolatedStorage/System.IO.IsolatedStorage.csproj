@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.IO.IsolatedStorage</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Linq/System.Linq.csproj" />
+    <ProjectReference Include="../System.Security.Cryptography/System.Security.Cryptography.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="Common/System/Security/IdentityHelper.cs" />
+    <Compile Include="System/IO/IsolatedStorage/Helper.NonMobile.cs" />
+    <Compile Include="System/IO/IsolatedStorage/Helper.Unix.cs" />
+    <Compile Include="System/IO/IsolatedStorage/Helper.cs" />
+    <Compile Include="System/IO/IsolatedStorage/INormalizeForIsolatedStorage.cs" />
+    <Compile Include="System/IO/IsolatedStorage/IsolatedStorage.cs" />
+    <Compile Include="System/IO/IsolatedStorage/IsolatedStorageException.cs" />
+    <Compile Include="System/IO/IsolatedStorage/IsolatedStorageFile.NonMobile.cs" />
+    <Compile Include="System/IO/IsolatedStorage/IsolatedStorageFile.cs" />
+    <Compile Include="System/IO/IsolatedStorage/IsolatedStorageFileStream.cs" />
+    <Compile Include="System/IO/IsolatedStorage/IsolatedStorageScope.cs" />
+    <Compile Include="System/IO/IsolatedStorage/SR.cs" />
+  </ItemGroup>
+</Project>

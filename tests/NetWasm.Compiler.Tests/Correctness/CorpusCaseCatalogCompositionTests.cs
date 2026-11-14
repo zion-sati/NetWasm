@@ -204,7 +204,8 @@ public sealed class CorpusCaseCatalogCompositionTests
         Assert.Equal(5712, fixture.ExpectedReturnValues.Count);
         Assert.All(fixture.ExpectedReturnValues, pair => Assert.Equal(42, pair.Value));
         Assert.Equal(OracleMode.SameIl, fixture.OracleMode);
-        Assert.Equal("NetWasm.CoreLib", fixture.ReferenceAssemblyAliases["System.Runtime.Numerics"]);
+        // NetWasm.App's System.Runtime.Numerics resolves the reference, forwarding the types CoreLib owns.
+        Assert.False(fixture.ReferenceAssemblyAliases.ContainsKey("System.Runtime.Numerics"));
     }
 
     [Fact]
@@ -222,7 +223,8 @@ public sealed class CorpusCaseCatalogCompositionTests
         Assert.All(fixture.ExpectedReturnValues, pair => Assert.Equal(42, pair.Value));
         Assert.All(fixture.ExpectedExceptionTypes, pair => Assert.Equal("System.OverflowException", pair.Value));
         Assert.Equal(OracleMode.SameIl, fixture.OracleMode);
-        Assert.Equal("NetWasm.CoreLib", fixture.ReferenceAssemblyAliases["System.Runtime.Numerics"]);
+        // NetWasm.App's System.Runtime.Numerics resolves the reference, forwarding the types CoreLib owns.
+        Assert.False(fixture.ReferenceAssemblyAliases.ContainsKey("System.Runtime.Numerics"));
     }
 
     [Fact]
@@ -243,7 +245,8 @@ public sealed class CorpusCaseCatalogCompositionTests
     {
         var declaration = CorpusCaseTestData.Get(CorpusCaseTestData.FloatingKeys);
         var fixture = Factory().Create(declaration, "Release-Wasm32-Direct");
-        Assert.Equal("NetWasm.CoreLib", fixture.ReferenceAssemblyAliases["System.Collections"]);
+        // NetWasm.App's System.Collections resolves the reference, forwarding the types CoreLib owns.
+        Assert.False(fixture.ReferenceAssemblyAliases.ContainsKey("System.Collections"));
         Assert.Equal(OracleMode.SameIl, fixture.OracleMode);
         Assert.Equal(128, fixture.Inputs.Length);
         Assert.All(fixture.Inputs, input => Assert.Equal(42, fixture.ExpectedReturnValues[input]));
@@ -351,7 +354,8 @@ public sealed class CorpusCaseCatalogCompositionTests
         Assert.True(fixture.SupportsBatchedOracle);
         Assert.True(fixture.ReportAllMismatches);
         Assert.Equal(OracleMode.SameIl, fixture.OracleMode);
-        Assert.Equal("NetWasm.CoreLib", fixture.ReferenceAssemblyAliases["System.Collections"]);
+        // NetWasm.App's System.Collections resolves the reference, forwarding the types CoreLib owns.
+        Assert.False(fixture.ReferenceAssemblyAliases.ContainsKey("System.Collections"));
     }
 
     [Fact]
@@ -367,7 +371,8 @@ public sealed class CorpusCaseCatalogCompositionTests
         Assert.True(fixture.SupportsBatchedOracle);
         Assert.True(fixture.ReportAllMismatches);
         Assert.Equal(OracleMode.SameIl, fixture.OracleMode);
-        Assert.Equal("NetWasm.CoreLib", fixture.ReferenceAssemblyAliases["System.Threading"]);
+        // NetWasm.App's System.Threading resolves the reference, forwarding the types CoreLib owns.
+        Assert.False(fixture.ReferenceAssemblyAliases.ContainsKey("System.Threading"));
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 namespace System.Collections
 {
     // Contract definitions adapted from dotnet/runtime System.Private.CoreLib
-    // at commit 474ed963699fc29809015392738a15231aaae2de.
+    // at commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
     // Licensed under the MIT license; see the upstream repository for the
     // complete copyright notice.
 
@@ -14,6 +14,7 @@ namespace System.Collections
         void Reset();
     }
 
+    [System.Runtime.InteropServices.Guid("496B0ABE-CDEE-11d3-88E8-00902754C43A")]
     public interface IEnumerable
     {
         IEnumerator GetEnumerator();
@@ -79,6 +80,8 @@ namespace System.Collections
     // Portions derived from dotnet/runtime System.Private.CoreLib collection contracts.
     // Licensed to the .NET Foundation under one or more agreements.
     // The .NET Foundation licenses this file to you under the MIT license.
+    [Obsolete("IHashCodeProvider has been deprecated. Use IEqualityComparer instead.")]
+    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public interface IHashCodeProvider
     {
         int GetHashCode(object obj);

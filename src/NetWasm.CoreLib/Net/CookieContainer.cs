@@ -1,6 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// NetWasm adaptation: the domain table is a Dictionary<string, PathList> and a PathList keeps its collections in a
+// List ordered by PathListComparer, in place of upstream's Hashtable and synchronized SortedList. Lookups, ordering
+// and locking are upstream's; the non-generic collections' object comparisons and enumerators made every program that
+// reaches cookies retain IComparable, IEqualityComparer and IEnumerable implementations it never uses. The domain
+// table's enumeration order is unspecified on desktop too (Hashtable orders by randomized string hashes).
 
 using System.Collections;
 using System.Collections.Generic;
@@ -76,7 +81,7 @@ namespace System.Net
             new HeaderVariantInfo(HttpKnownHeaderNames.SetCookie2, CookieVariant.Rfc2965)
         };
 
-        private readonly Hashtable m_domainTable = new Hashtable(); // Do not rename (binary serialization)
+        private readonly Dictionary<string, PathList> m_domainTable = new Dictionary<string, PathList>(); // Do not rename (binary serialization)
         private int m_maxCookieSize = DefaultCookieLengthLimit; // Do not rename (binary serialization)
         private int m_maxCookies = DefaultCookieLimit; // Do not rename (binary serialization)
         private int m_maxCookiesPerDomain = DefaultPerDomainCookieLimit; // Do not rename (binary serialization)
@@ -240,9 +245,9 @@ namespace System.Net
 
             try
             {
-                lock (m_domainTable.SyncRoot)
+                lock (m_domainTable)
                 {
-                    pathList = (PathList?)m_domainTable[cookie.DomainKey];
+                    pathList = m_domainTable.GetValueOrDefault(cookie.DomainKey);
                     if (pathList == null)
                     {
                         m_domainTable[cookie.DomainKey] = (pathList = new PathList());
@@ -253,7 +258,7 @@ namespace System.Net
                 CookieCollection? cookies;
                 lock (pathList.SyncRoot)
                 {
-                    cookies = (CookieCollection?)pathList[cookie.Path]!;
+                    cookies = pathList[cookie.Path];
 
                     if (cookies == null)
                     {
@@ -344,20 +349,19 @@ namespace System.Net
                 // Each domain will be cut accordingly.
                 remainingFraction = (float)m_maxCookies / (float)m_count;
             }
-            lock (m_domainTable.SyncRoot)
+            lock (m_domainTable)
             {
-                foreach (object item in m_domainTable)
+                foreach (KeyValuePair<string, PathList> entry in m_domainTable)
                 {
-                    DictionaryEntry entry = (DictionaryEntry)item;
                     if (domain == null)
                     {
-                        tempDomain = (string)entry.Key;
-                        pathList = (PathList)entry.Value!; // Aliasing to trick foreach
+                        tempDomain = entry.Key;
+                        pathList = entry.Value; // Aliasing to trick foreach
                     }
                     else
                     {
                         tempDomain = domain;
-                        pathList = (PathList)m_domainTable[domain]!;
+                        pathList = m_domainTable.GetValueOrDefault(domain)!;
                     }
 
                     domain_count = 0; // Cookies in the domain
@@ -467,27 +471,24 @@ namespace System.Net
 
         private void DomainTableCleanup()
         {
-            var removePathList = new List<object>();
+            var removePathList = new List<string>();
             var removeDomainList = new List<string>();
 
             string currentDomain;
             PathList pathList;
 
-            lock (m_domainTable.SyncRoot)
+            lock (m_domainTable)
             {
-                // Manual use of IDictionaryEnumerator instead of foreach to avoid DictionaryEntry box allocations.
-                IDictionaryEnumerator enumerator = m_domainTable.GetEnumerator();
-                while (enumerator.MoveNext())
+                foreach (KeyValuePair<string, PathList> domainEntry in m_domainTable)
                 {
-                    currentDomain = (string)enumerator.Key;
-                    pathList = (PathList)enumerator.Value!;
+                    currentDomain = domainEntry.Key;
+                    pathList = domainEntry.Value;
 
                     lock (pathList.SyncRoot)
                     {
-                        IDictionaryEnumerator e = pathList.GetEnumerator();
-                        while (e.MoveNext())
+                        foreach (KeyValuePair<string, CookieCollection> e in pathList.List)
                         {
-                            CookieCollection cc = (CookieCollection)e.Value!;
+                            CookieCollection cc = e.Value;
                             if (cc.Count == 0)
                             {
                                 removePathList.Add(e.Key);
@@ -650,18 +651,15 @@ namespace System.Net
         {
             var result = new CookieCollection();
 
-            lock (m_domainTable.SyncRoot)
+            lock (m_domainTable)
             {
-                IDictionaryEnumerator lists = m_domainTable.GetEnumerator();
-                while (lists.MoveNext())
+                foreach (PathList list in m_domainTable.Values)
                 {
-                    PathList list = (PathList)lists.Value!;
                     lock (list.SyncRoot)
                     {
-                        IDictionaryEnumerator collections = list.List.GetEnumerator();
-                        while (collections.MoveNext())
+                        foreach (KeyValuePair<string, CookieCollection> collection in list.List)
                         {
-                            result.Add((CookieCollection)collections.Value!);
+                            result.Add(collection.Value);
                         }
                     }
                 }
@@ -704,10 +702,10 @@ namespace System.Net
         {
             for (int i = 0; i < matchingDomainKeys.Count; i++)
             {
-                PathList pathList;
-                lock (m_domainTable.SyncRoot)
+                PathList? pathList;
+                lock (m_domainTable)
                 {
-                    pathList = (PathList)m_domainTable[matchingDomainKeys[i]]!;
+                    pathList = m_domainTable.GetValueOrDefault(matchingDomainKeys[i]);
                     if (pathList == null)
                     {
                         continue;
@@ -716,14 +714,14 @@ namespace System.Net
 
                 lock (pathList.SyncRoot)
                 {
-                    SortedList list = pathList.List;
+                    List<KeyValuePair<string, CookieCollection>> list = pathList.List;
                     int listCount = list.Count;
                     for (int e = 0; e < listCount; e++)
                     {
-                        string path = (string)list.GetKey(e);
+                        string path = list[e].Key;
                         if (PathMatch(uri.AbsolutePath, path))
                         {
-                            CookieCollection cc = (CookieCollection)list.GetByIndex(e)!;
+                            CookieCollection cc = list[e].Value;
                             cc.TimeStamp(CookieCollection.Stamp.Set);
                             MergeUpdateCollections(ref cookies, uri.Host, cc, port, isSecure);
                         }
@@ -733,7 +731,7 @@ namespace System.Net
                 // Remove unused domain.
                 if (pathList.Count == 0)
                 {
-                    lock (m_domainTable.SyncRoot)
+                    lock (m_domainTable)
                     {
                         m_domainTable.Remove(matchingDomainKeys[i]);
                     }
@@ -876,7 +874,8 @@ namespace System.Net
     {
         // Usage of PathList depends on it being shallowly immutable;
         // adding any mutable fields to it would result in breaks.
-        private readonly SortedList m_list = SortedList.Synchronized(new SortedList(PathListComparer.StaticInstance)); // Do not rename (binary serialization)
+        // NetWasm: the collections ordered by PathListComparer, as upstream's SortedList holds them.
+        private readonly List<KeyValuePair<string, CookieCollection>> m_list = new List<KeyValuePair<string, CookieCollection>>(); // Do not rename (binary serialization)
 
         internal int Count => m_list.Count;
 
@@ -885,31 +884,34 @@ namespace System.Net
             int count = 0;
             lock (SyncRoot)
             {
-                IList list = m_list.GetValueList();
-                int listCount = list.Count;
+                int listCount = m_list.Count;
                 for (int i = 0; i < listCount; i++)
                 {
-                    count += ((CookieCollection)list[i]!).Count;
+                    count += m_list[i].Value.Count;
                 }
             }
             return count;
         }
 
-        internal ICollection Values
+        internal IEnumerable<CookieCollection> Values
         {
             get
             {
-                return m_list.Values;
+                foreach (KeyValuePair<string, CookieCollection> entry in m_list)
+                {
+                    yield return entry.Value;
+                }
             }
         }
 
-        internal object? this[string s]
+        internal CookieCollection? this[string s]
         {
             get
             {
                 lock (SyncRoot)
                 {
-                    return m_list[s];
+                    int index = IndexOfKey(s);
+                    return index >= 0 ? m_list[index].Value : null;
                 }
             }
             set
@@ -917,41 +919,70 @@ namespace System.Net
                 lock (SyncRoot)
                 {
                     Debug.Assert(value != null);
-                    m_list[s] = value;
+                    int index = IndexOfKey(s);
+                    if (index >= 0)
+                    {
+                        m_list[index] = new KeyValuePair<string, CookieCollection>(s, value);
+                    }
+                    else
+                    {
+                        m_list.Insert(~index, new KeyValuePair<string, CookieCollection>(s, value));
+                    }
                 }
             }
         }
 
-        internal IDictionaryEnumerator GetEnumerator()
+        internal void Remove(string key)
         {
             lock (SyncRoot)
             {
-                return m_list.GetEnumerator();
+                int index = IndexOfKey(key);
+                if (index >= 0)
+                {
+                    m_list.RemoveAt(index);
+                }
             }
         }
 
-        internal void Remove(object key)
+        internal List<KeyValuePair<string, CookieCollection>> List => m_list;
+
+        internal object SyncRoot => m_list;
+
+        // The key's index, or the complement of the index it would be inserted at, as SortedList's binary search.
+        private int IndexOfKey(string key)
         {
-            lock (SyncRoot)
+            int low = 0;
+            int high = m_list.Count - 1;
+            while (low <= high)
             {
-                m_list.Remove(key);
+                int middle = low + ((high - low) >> 1);
+                int order = PathListComparer.StaticInstance.Compare(m_list[middle].Key, key);
+                if (order == 0)
+                {
+                    return middle;
+                }
+                if (order < 0)
+                {
+                    low = middle + 1;
+                }
+                else
+                {
+                    high = middle - 1;
+                }
             }
+            return ~low;
         }
-
-        internal SortedList List => m_list;
-
-        internal object SyncRoot => m_list.SyncRoot;
 
         [Serializable]
         [System.Runtime.CompilerServices.TypeForwardedFrom("System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
-        private sealed class PathListComparer : IComparer
+        private sealed class PathListComparer : IComparer<string>
         {
             internal static readonly PathListComparer StaticInstance = new PathListComparer();
 
-            int IComparer.Compare(object? ol, object? or)
+            public int Compare(string? ol, string? or)
             {
-                string pathLeft = CookieParser.CheckQuoted((string)ol!);
-                string pathRight = CookieParser.CheckQuoted((string)or!);
+                string pathLeft = CookieParser.CheckQuoted(ol!);
+                string pathRight = CookieParser.CheckQuoted(or!);
                 int ll = pathLeft.Length;
                 int lr = pathRight.Length;
                 int length = Math.Min(ll, lr);

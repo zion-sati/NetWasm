@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de:
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce:
 // src/libraries/System.Private.CoreLib/src/System/String.Searching.cs.
 // NetWasm adaptation: NetWasm's string declares no fields; the compiler reaches its characters and
 // length through GetRawStringData() and Length, which replace upstream's _firstChar and _stringLength.

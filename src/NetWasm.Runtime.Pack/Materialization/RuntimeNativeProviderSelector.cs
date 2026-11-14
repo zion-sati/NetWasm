@@ -47,7 +47,9 @@ internal sealed class RuntimeNativeProviderSelector : IRuntimeNativeProviderSele
             .ThenBy(import => import.LibraryName, StringComparer.Ordinal))
         {
             if (!providers.TryGetValue(import.LibraryName, out var provider))
-                throw new InvalidOperationException("A reached native library has no provider for the selected target.");
+                throw new InvalidOperationException(
+                    $"The reached native import '{import.EntryPoint}' of library '{import.LibraryName}' has no provider " +
+                    $"for {request.Target}; reference the package or NativeLibrary item that provides it.");
             var binding = new RuntimeNativeBinding(import, provider);
             if (bindings.TryGetValue(import.EntryPoint, out var previous))
             {

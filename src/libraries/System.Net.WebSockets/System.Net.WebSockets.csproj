@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Net.WebSockets</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Collections.Specialized/System.Collections.Specialized.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.Associate.cs" />
+    <Compile Include="Common/System/Net/Logging/NetEventSource.Common.cs" />
+    <Compile Include="Common/System/Net/WebSockets/WebSocketDefaults.cs" />
+    <Compile Include="Common/System/Net/WebSockets/WebSocketValidate.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Net/WebSockets/AsyncMutex.cs" />
+    <Compile Include="System/Net/WebSockets/Compression/WebSocketDeflater.cs" />
+    <Compile Include="System/Net/WebSockets/Compression/WebSocketInflater.cs" />
+    <Compile Include="System/Net/WebSockets/ManagedWebSocket.KeepAlive.cs" />
+    <Compile Include="System/Net/WebSockets/ManagedWebSocket.cs" />
+    <Compile Include="System/Net/WebSockets/ManagedWebSocketStates.cs" />
+    <Compile Include="System/Net/WebSockets/NetEventSource.WebSockets.cs" />
+    <Compile Include="System/Net/WebSockets/SR.cs" />
+    <Compile Include="System/Net/WebSockets/ValueWebSocketReceiveResult.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocket.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketCloseStatus.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketContext.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketCreationOptions.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketDeflateOptions.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketError.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketException.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketMessageFlags.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketMessageType.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketReceiveResult.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketState.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketStateHelper.cs" />
+    <Compile Include="System/Net/WebSockets/WebSocketStream.cs" />
+  </ItemGroup>
+</Project>

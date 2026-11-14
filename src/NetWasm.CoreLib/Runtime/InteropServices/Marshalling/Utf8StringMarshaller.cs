@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime commit 474ed963699fc29809015392738a15231aaae2de.
+// Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -9,6 +9,7 @@ namespace System.Runtime.InteropServices.Marshalling
 {
     [CustomMarshaller(typeof(string), MarshalMode.Default, typeof(Utf8StringMarshaller))]
     [CustomMarshaller(typeof(string), MarshalMode.ManagedToUnmanagedIn, typeof(ManagedToUnmanagedIn))]
+    [CLSCompliant(false)]
     public static unsafe class Utf8StringMarshaller
     {
         public static byte* ConvertToUnmanaged(string? managed)

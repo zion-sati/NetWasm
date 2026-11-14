@@ -56,7 +56,7 @@ public sealed class CilDecoderTests
             new MetadataMethodBodyBlockReader(new FixedSymbols()), new FixedSymbols(),
             new FixedMethodReferences(method), entities,
             new FixedFieldReferences(MetadataActorTestData.Field, false), signatures,
-            new FixedCallSiteSignatures(), new IdentityMetadataStackTypeResolver(), new IdentitySwitchLowerer(), new CilTryReentryLowerer()));
+            new FixedCallSiteSignatures(), new IdentityMetadataStackTypeResolver(), new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new NoTypedReferences()));
 
         var body = decoder.Decode(assembly, new MethodInstanceModel(method,
             context.TypeArguments.IsEmpty ? ownerIdentity
@@ -736,7 +736,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer(), new CilTryReentryLowerer());
+                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new NoTypedReferences());
 
             var body = ((ICilDecoder)decoder).Decode(
                 assembly,
@@ -751,6 +751,58 @@ public sealed class CilDecoderTests
             Assert.Equal(item.Operation, instruction.Operation);
             Assert.IsType(item.OperandType, instruction.Operand);
         }
+    }
+
+    // A capability NetWasm lacks reads as false: its call loads 0, the branch on it goes to the false arm, and
+    // what only the true arm reaches, its try included, is gone; each instruction's next offset is the next kept one.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AFalseCapabilityGuardKeepsOnlyTheFalseArm(bool optimize)
+    {
+        using var assets = TestAssets.Create();
+        var source = """
+            using System.Runtime.CompilerServices;
+
+            public static class Guarded
+            {
+                public static int Run(int input)
+                {
+                    if (RuntimeFeature.IsDynamicCodeSupported)
+                    {
+                        try { input++; } finally { input--; }
+                        return input;
+                    }
+                    try { input += 2; } finally { input -= 1; }
+                    return input;
+                }
+            }
+            """;
+        var path = optimize
+            ? assets.CompileOptimizedSource("GuardedCapabilityOptimized", source)
+            : assets.CompileSource("GuardedCapability", source);
+        using var assembly = ManagedAssemblyTestFactory.Load(path);
+        var method = assembly.Methods.Values.Single(candidate => candidate.Name == "Run");
+        var decoder = new CilDecoder(
+            new MetadataMethodBodyBlockReader(new FixedSymbols()),
+            new FixedSymbols(),
+            new FixedMethodReferences(method),
+            new FixedTypeEntities(),
+            new FixedFieldReferences(new FieldDefinitionModel(new EntityKey(assembly.Identity, 0x04000001),
+                method.DeclaringType, "Value", CliTypeIdentity.FromStackKind(CliValueKind.I4), true), false),
+            new FixedTypeSignatures(),
+            new FixedCallSiteSignatures(),
+            new IdentityMetadataStackTypeResolver(),
+            new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(),
+            new NoTypedReferences());
+
+        var body = ((ICilDecoder)decoder).Decode(assembly, new MethodInstanceModel(method,
+            CliTypeIdentity.Named(assembly.Identity, "", "Guarded", false), [], method.Signature));
+
+        Assert.DoesNotContain(body.Instructions, instruction => instruction.Operation == CilOperation.Call);
+        Assert.Equal(CilOperation.LoadInt32, body.Instructions.First(instruction => instruction.Operation != CilOperation.Nop).Operation);
+        Assert.Single(body.ExceptionRegions);
+        Assert.All(body.Instructions.Zip(body.Instructions.Skip(1)), pair => Assert.Equal(pair.Second.Offset, pair.First.NextOffset));
     }
 
     [Fact]
@@ -805,7 +857,8 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer(), new CilTryReentryLowerer());
+                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(),
+                new FixedTypedReferences(new FixedMethodReferences(method), assembly.Metadata));
             try
             {
                 _ = ((ICilDecoder)decoder).Decode(
@@ -903,7 +956,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer(), new CilTryReentryLowerer());
+                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new NoTypedReferences());
             try
             {
                 var body = ((ICilDecoder)decoder).Decode(
@@ -1197,4 +1250,19 @@ public sealed class CilDecoderTests
 
     }
 
+}
+
+// The decoder tests decode no typed-reference instruction.
+internal sealed class NoTypedReferences : ITypedReferenceCallResolver
+{
+    public MethodInstanceModel Resolve(TypedReferenceInstruction instruction, ImmutableArray<CliTypeIdentity> methodArguments) =>
+        throw new InvalidOperationException();
+}
+
+// The typed-reference instructions decode to calls; the opcode-shape test only needs some method instance.
+internal sealed class FixedTypedReferences(IMetadataMethodReferenceResolver methods, MetadataAssemblySnapshot source)
+    : ITypedReferenceCallResolver
+{
+    public MethodInstanceModel Resolve(TypedReferenceInstruction instruction, ImmutableArray<CliTypeIdentity> methodArguments) =>
+        methods.Resolve(source, 0, "", 0);
 }

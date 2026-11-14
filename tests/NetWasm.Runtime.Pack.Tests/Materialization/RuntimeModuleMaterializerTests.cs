@@ -570,7 +570,15 @@ public sealed class RuntimeModuleMaterializerTests
             new PassthroughInlineIntentWriter(),
             commands,
             artifactDigests,
-            nativeModules ?? new RejectingNativeMaterializer());
+            nativeModules ?? new RejectingNativeMaterializer(),
+            new InlineLinkerCommands());
+
+    // The link's arguments stay inline here; ResponseFileLinkerCommandFactoryTests covers the response file.
+    private sealed class InlineLinkerCommands : ILinkerCommandFactory
+    {
+        public RuntimeCommand Create(string linkerPath, ImmutableArray<string> arguments, string logPath) =>
+            new(linkerPath, arguments, logPath);
+    }
 
     private sealed class PassthroughInlineIntentWriter : IRuntimeInlineIntentWriter
     {

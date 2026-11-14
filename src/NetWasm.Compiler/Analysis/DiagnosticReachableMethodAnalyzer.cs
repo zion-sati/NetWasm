@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Core;
 using Microsoft.Extensions.Logging;
 using System;
 
@@ -5,12 +6,15 @@ namespace NetWasm.Compiler.Analysis;
 
 internal sealed class DiagnosticReachableMethodAnalyzer(
     IReachableMethodAnalyzer inner,
-    ILogger<DiagnosticReachableMethodAnalyzer> logger) : IReachableMethodAnalyzer
+    ILogger<DiagnosticReachableMethodAnalyzer> logger,
+    ICompilerDiagnosticProvenanceBinder provenance) : IReachableMethodAnalyzer
 {
     private readonly IReachableMethodAnalyzer _inner = inner ??
         throw new ArgumentNullException(nameof(inner));
     private readonly ILogger<DiagnosticReachableMethodAnalyzer> _logger = logger ??
         throw new ArgumentNullException(nameof(logger));
+
+    private readonly ICompilerDiagnosticProvenanceBinder _provenance = provenance ?? throw new ArgumentNullException(nameof(provenance));
 
     private static readonly Action<ILogger, string, Exception?> LogFailure =
         LoggerMessage.Define<string>(
@@ -29,6 +33,12 @@ internal sealed class DiagnosticReachableMethodAnalyzer(
         catch (Exception exception)
         {
             LogFailure(_logger, request.Method.ToString(), exception);
+            if (exception is CompilerException failure)
+            {
+                var enriched = _provenance.Bind(failure,
+                    new(request.Method.Definition.Key, request.Method.CanonicalName), request.DependencyPath);
+                if (!ReferenceEquals(enriched, failure)) throw enriched;
+            }
             throw;
         }
     }

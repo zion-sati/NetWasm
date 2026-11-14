@@ -26,7 +26,9 @@ internal sealed class CilDecoder(
     IMetadataCallSiteSignatureResolver callSiteSignatures,
     IMetadataStackTypeResolver stackTypes,
     ICilSwitchLowerer switches,
-    ICilTryReentryLowerer tries) : ICilDecoder
+    IPlatformGuardPlanner guards,
+    ICilTryReentryLowerer tries,
+    ITypedReferenceCallResolver typedReferences) : ICilDecoder
 {
     private static readonly Dictionary<byte, OpCode> OneByteOpCodes;
     private static readonly Dictionary<byte, OpCode> TwoByteOpCodes;
@@ -80,11 +82,31 @@ internal sealed class CilDecoder(
                 : [],
             methodInstance.MethodArguments);
         var bytes = body.GetILBytes()!;
+        var guardPlan = guards.Plan(assembly.Metadata, bytes, body.ExceptionRegions);
         var instructions = ImmutableArray.CreateBuilder<CilInstruction>();
         var position = 0;
         while (position < bytes.Length)
         {
             var offset = position;
+            if (guardPlan is not null)
+            {
+                var next = guardPlan.NextOffsets[offset];
+                if (!guardPlan.LiveOffsets.Contains(offset)) { position = next; continue; }
+                if (guardPlan.FalseCalls.Contains(offset))
+                {
+                    instructions.Add(new(offset, next, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)));
+                    position = next;
+                    continue;
+                }
+                if (guardPlan.BranchTargets.TryGetValue(offset, out var selected))
+                {
+                    instructions.Add(new(offset, offset + 1, CilOperation.Pop, new CilOperand.None()));
+                    instructions.Add(new(offset + 1, next, CilOperation.Branch, new CilOperand.BranchTarget(selected))
+                    { OriginalOffset = offset });
+                    position = next;
+                    continue;
+                }
+            }
             var opCode = ReadOpCode(bytes, ref position, displayName, offset);
             instructions.Add(ReadInstruction(
                 assembly,
@@ -96,6 +118,16 @@ internal sealed class CilDecoder(
                 opCode));
         }
 
+        if (guardPlan is not null)
+        {
+            // NextOffset is the next retained instruction boundary, including
+            // after terminators whose original successor was discarded.
+            for (var index = 0; index < instructions.Count; index++)
+                instructions[index] = instructions[index] with
+                {
+                    NextOffset = index + 1 < instructions.Count ? instructions[index + 1].Offset : bytes.Length,
+                };
+        }
         var decodedLocalSignatureTypes = body.LocalSignature.IsNil
             ? []
             : assembly.Reader.GetStandaloneSignature(body.LocalSignature)
@@ -117,7 +149,8 @@ internal sealed class CilDecoder(
         var locals = localSignatureTypes
             .Select(type => type.StackKind)
             .ToImmutableArray();
-        var exceptionRegions = body.ExceptionRegions.Select(region =>
+        var exceptionRegions = body.ExceptionRegions.Where(region => guardPlan is null ||
+            guardPlan.LiveOffsets.Any(offset => offset >= region.TryOffset && offset < region.TryOffset + region.TryLength)).Select(region =>
             DecodeExceptionRegion(assembly, region, genericContext)).ToImmutableArray();
         var lowered = switches.Lower(
             instructions.ToImmutable(),
@@ -380,6 +413,21 @@ internal sealed class CilDecoder(
             case "stelem.r4": operation = CilOperation.StoreArrayElement; operand = PrimitiveArrayElement("f4", CliValueKind.F4); break;
             case "stelem.r8": operation = CilOperation.StoreArrayElement; operand = PrimitiveArrayElement("f8", CliValueKind.F8); break;
             case "castclass": operation = CilOperation.CastClass; operand = ReadType(assembly, genericContext, displayName, bytes, ref position, offset); break;
+            // The typed-reference instructions (__makeref, __refvalue, __reftype) are calls to TypedReference's helpers.
+            case "mkrefany":
+                operation = CilOperation.Call;
+                operand = new CilOperand.MethodInstance(typedReferences.Resolve(TypedReferenceInstruction.MakeReference,
+                    [ReadSignatureType(assembly, genericContext, displayName, bytes, ref position, offset).Value]));
+                break;
+            case "refanyval":
+                operation = CilOperation.Call;
+                operand = new CilOperand.MethodInstance(typedReferences.Resolve(TypedReferenceInstruction.ReferenceValue,
+                    [ReadSignatureType(assembly, genericContext, displayName, bytes, ref position, offset).Value]));
+                break;
+            case "refanytype":
+                operation = CilOperation.Call;
+                operand = new CilOperand.MethodInstance(typedReferences.Resolve(TypedReferenceInstruction.ReferenceType, []));
+                break;
             case "isinst": operation = CilOperation.IsInstance; operand = ReadType(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "throw": operation = CilOperation.Throw; operand = new CilOperand.None(); break;
             case "rethrow": operation = CilOperation.Rethrow; operand = new CilOperand.None(); break;

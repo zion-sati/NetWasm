@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Runtime.Numerics</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Buffers/Text/FormattingHelpers.CountDigits.cs" />
+    <Compile Include="Common/System/Collections/Generic/ValueListBuilder.cs" />
+    <Compile Include="Common/System/Number.Formatting.Common.cs" />
+    <Compile Include="Common/System/Number.NumberBuffer.cs" />
+    <Compile Include="Common/System/Number.Parsing.Common.cs" />
+    <Compile Include="Common/System/Numerics/BigIntegerCalculator.Shared.cs" />
+    <Compile Include="Common/System/Text/ValueStringBuilder_1.cs" />
+    <Compile Include="System/Number.BigInteger.cs" />
+    <Compile Include="System/Number.Polyfill.cs" />
+    <Compile Include="System/Numerics/BigInteger.RentedBuffer.cs" />
+    <Compile Include="System/Numerics/BigInteger.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.Bitwise.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.DivRem.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.FastReducer.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.GcdInv.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.PowMod.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.ShiftRot.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.SquMul.cs" />
+    <Compile Include="System/Numerics/BigIntegerCalculator.Utils.cs" />
+    <Compile Include="System/Numerics/Complex.Generic.cs" />
+    <Compile Include="System/Numerics/Complex.cs" />
+    <Compile Include="System/Numerics/NumericsHelpers.cs" />
+    <Compile Include="System/SR.cs" />
+    <Compile Include="System/ThrowHelper.cs" />
+  </ItemGroup>
+</Project>

@@ -279,8 +279,18 @@ public sealed class UnusedAllocationEliminatorTests
     }
 
     private sealed class Fixture(ImmutableArray<(MethodInstanceModel Constructor, CilMethodBody Body)> constructors) :
-        IMethodBodyReader, ICalledMethodResolver, IFinalizerResolver, IMethodInitializationTriggerClassifier
+        IMethodBodyReader, ICalleeMethodBodyReader, ICalledMethodResolver, IFinalizerResolver, IMethodInitializationTriggerClassifier
     {
+        public bool TryReadMethodBody(
+            MethodDefinitionModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
+        public bool TryReadMethodBody(
+            MethodInstanceModel method,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CilMethodBody? body) =>
+            new CalleeMethodBodyReader(this).TryReadMethodBody(method, out body);
+
         public bool Finalizable { get; init; }
 
         // Constructors of types with an explicit static constructor.

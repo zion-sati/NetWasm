@@ -11,6 +11,10 @@ namespace NetWasm.Compiler.Metadata.Tests;
 
 public sealed class MetadataMethodReferenceResolverTests
 {
+    // A reader without runtime assemblies: no reference resolves through a forwarded type.
+    private static readonly IRuntimeTypeDefinitions NoRuntimeTypes =
+        new RuntimeTypeDefinitions(new Dictionary<string, MetadataAssemblySnapshot>());
+
     // A resolution is kept by its key: the same token of another assembly, or with other
     // type or method arguments, is another resolution.
     [Fact]
@@ -87,19 +91,163 @@ public sealed class MetadataMethodReferenceResolverTests
             new FixedSignatureTypeResolver(CliTypeIdentity.FromDefinition(derived)),
             new SignatureTypeComparer(), new TypeRepository(baseType),
             new InheritedTypeDefinitions(derived, baseType), new MethodRepository(method, alternate),
-            new UnusedRuntimeProvidedMethodResolver(), new IdentityStackTypeResolver(),
+            new UnusedRuntimeProvidedMethodResolver(), new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(),
             new FixedBaseTypes(derivedIdentity, scenario == "cycle" ? derivedIdentity : baseIdentity));
         if (scenario is "constructor" or "missing" or "cycle" or "ambiguous")
         {
             var failure = Assert.Throws<CompilerException>(() => resolver.Resolve(source,
                 MetadataTokens.GetToken(reference), "Caller.Run", 0));
-            Assert.Equal(DiagnosticCode.AssemblyResolution, failure.Diagnostic.Code);
+            Assert.Equal(scenario == "ambiguous" ? DiagnosticCode.AssemblyResolution : DiagnosticCode.MissingApi, failure.Diagnostic.Code);
             return;
         }
         var result = resolver.Resolve(source, MetadataTokens.GetToken(reference), "Caller.Run", 0);
         Assert.Same(scenario == "nearest" ? alternate : method, result.Definition);
         Assert.Equal(scenario == "nearest" ? derivedIdentity : baseIdentity, result.DeclaringType);
         Assert.Equal(CliValueKind.I4, result.Signature.ReturnType);
+    }
+
+    // A reference through the assembly's own type has no original contract to check.
+    [Fact]
+    public void AReferenceThroughTheAssemblysOwnTypeChecksNoOriginalContract()
+    {
+        var (provider, token) = OwnTypeReference("Run", [0x00, 0x00, 0x08]);
+        using var _ = provider;
+        var method = MetadataActorTestData.Method with { Signature = MethodSignatureModel.Create(CliValueKind.I4) };
+        var resolver = new MetadataMethodReferenceResolver(new MetadataEntityHandleReader(),
+            new FixedSignatureTypeResolver(CliTypeIdentity.FromDefinition(MetadataActorTestData.Type)),
+            new SignatureTypeComparer(), new TypeRepository(MetadataActorTestData.Type),
+            new FixedTypeDefinitionResolver(MetadataActorTestData.Type), new MethodRepository(method),
+            new UnusedRuntimeProvidedMethodResolver(), new IdentityStackTypeResolver(), new UnusedContractValidator(),
+            NoRuntimeTypes, UnrelatedContract, new UncheckedPrivateAccess(), new NoBaseTypes());
+
+        Assert.Same(method, resolver.Resolve(OwnSource(provider), token, "Caller.Run", 0).Definition);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ResolveArrayAccessUsesTheCallersGenericContext(bool methodParameter)
+    {
+        var metadata = new MetadataBuilder();
+        metadata.AddModule(0, metadata.GetOrAddString("Arrays.dll"),
+            metadata.GetOrAddGuid(Guid.NewGuid()), default, default);
+        var parent = metadata.AddTypeReference(default,
+            metadata.GetOrAddString("Tests"), metadata.GetOrAddString("Array"));
+        var signature = new BlobBuilder();
+        new BlobEncoder(signature).MethodSignature(isInstanceMethod: true).Parameters(2,
+            result =>
+            {
+                if (methodParameter)
+                    result.Type().GenericMethodTypeParameter(0);
+                else
+                    result.Type().GenericTypeParameter(0);
+            },
+            parameters =>
+            {
+                parameters.AddParameter().Type().Int32();
+                parameters.AddParameter().Type().Int32();
+            });
+        var reference = metadata.AddMemberReference(parent,
+            metadata.GetOrAddString("Get"), metadata.GetOrAddBlob(signature));
+        var image = new BlobBuilder();
+        new MetadataRootBuilder(metadata).Serialize(image, 0, 0);
+        using var provider = MetadataReaderProvider.FromMetadataImage(image.ToImmutableArray());
+        var source = new MetadataAssemblySnapshot(MetadataActorTestData.Assembly,
+            provider.GetMetadataReader(), new Dictionary<int, TypeDefinitionModel>(),
+            new Dictionary<int, FieldDefinitionModel>(), new Dictionary<int, MethodDefinitionModel>(),
+            new Dictionary<int, EntityHandle>());
+        var element = CliTypeIdentity.Primitive("f8", CliValueKind.F8);
+        var array = CliTypeIdentity.Array(element, 2);
+        var resolver = new MetadataMethodReferenceResolver(
+            new MetadataEntityHandleReader(), new FixedSignatureTypeResolver(array),
+            new SignatureTypeComparer(), new UnusedTypeRepository(),
+            new UnusedTypeDefinitionResolver(), new UnusedMethodRepository(),
+            new ArrayMethodResolver(new SignatureTypeComparer()),
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
+        var context = methodParameter ? new CliGenericContext([], [element])
+            : new CliGenericContext([element], []);
+
+        var result = resolver.Resolve(source, MetadataTokens.GetToken(reference), "Caller.Run", 0, context);
+
+        Assert.Equal(array, result.DeclaringType);
+        Assert.Equal(element, result.Signature.ReturnSignatureType);
+        Assert.Equal(2, result.Signature.ParameterSignatureTypes.Length);
+    }
+
+    [Theory]
+    [InlineData("match")]
+    [InlineData("name")]
+    [InlineData("signature")]
+    [InlineData("static")]
+    [InlineData("arity")]
+    [InlineData("missing")]
+    [InlineData("ambiguous")]
+    public void DefinitionTokensBindOnlyMatchingPlatformMethods(string scenario)
+    {
+        var originalType = MetadataActorTestData.Type with { GenericArity = 1 };
+        var original = MetadataActorTestData.Method with
+        {
+            Key = new(originalType.Key.Assembly, 0x06000001),
+            GenericArity = 1,
+            Signature = new(CliTypeIdentity.GenericParameter(true, 0),
+                [CliTypeIdentity.GenericParameter(false, 0)])
+        };
+        var platform = new AssemblyIdentity("Platform");
+        var targetKey = new EntityKey(platform, 0x02000001);
+        var target = original with { Key = new(platform, 0x06000001), DeclaringType = targetKey };
+        target = scenario switch
+        {
+            "name" => target with { Name = "Other" },
+            "signature" => target with { Signature = MethodSignatureModel.Create(CliValueKind.Void) },
+            "static" => target with { IsStatic = !original.IsStatic },
+            "arity" => target with { GenericArity = 2 },
+            _ => target
+        };
+        var alternate = target with { Key = new(platform, 0x06000002) };
+        var targetType = originalType with
+        {
+            Key = targetKey,
+            Methods = scenario == "missing" ? [] : scenario == "ambiguous" ? [target.Key, alternate.Key] : [target.Key]
+        };
+        var source = new MetadataAssemblySnapshot(originalType.Key.Assembly, null!,
+            new Dictionary<int, TypeDefinitionModel>(), new Dictionary<int, FieldDefinitionModel>(),
+            new Dictionary<int, MethodDefinitionModel> { [original.Key.MetadataToken] = original },
+            new Dictionary<int, EntityHandle>())
+        {
+            AssemblyIdentityAliases = new AssemblyIdentityAliases(ImmutableDictionary<string, string>.Empty,
+                ImmutableDictionary<(AssemblyIdentity, string), AssemblyIdentity>.Empty
+                    .Add((originalType.Key.Assembly, originalType.FullName), platform))
+        };
+        var contracts = new RecordingContractValidator();
+        var resolver = new MetadataMethodReferenceResolver(new DefinitionHandleReader(),
+            new UnusedSignatureTypeResolver(), new SignatureTypeComparer(), new TypeRepository(originalType),
+            new FixedTypeDefinitionResolver(targetType), new MethodRepository(target, alternate),
+            new UnusedRuntimeProvidedMethodResolver(), new IdentityStackTypeResolver(), contracts, NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
+        var context = new CliGenericContext([CliTypeIdentity.Primitive("i4", CliValueKind.I4)],
+            [CliTypeIdentity.Primitive("i8", CliValueKind.I8)]);
+        if (scenario != "match")
+        {
+            var error = Assert.Throws<CompilerException>(() => resolver.Resolve(source,
+                original.Key.MetadataToken, "Caller.Run", 7, context));
+            Assert.Equal(scenario == "ambiguous" ? DiagnosticCode.AssemblyResolution : DiagnosticCode.MissingApi, error.Diagnostic.Code);
+            Assert.Contains(original.Name, error.Message);
+            Assert.Contains("Platform", error.Message);
+            Assert.Null(contracts.Binding);
+            return;
+        }
+        var result = resolver.Resolve(source, original.Key.MetadataToken, "Caller.Run", 7, context);
+        Assert.Same(target, result.Definition);
+        Assert.NotNull(contracts.Binding);
+        Assert.Same(original, contracts.Binding.Original);
+        Assert.Same(target, contracts.Binding.Target);
+        Assert.Equal(platform, result.DeclaringType.ElementType!.Assembly);
+        Assert.Equal("primitive:i4", Assert.Single(result.DeclaringType.TypeArguments).CanonicalName);
+        Assert.Equal("primitive:i8", Assert.Single(result.MethodArguments).CanonicalName);
+        Assert.Equal("primitive:i8", result.Signature.ReturnSignatureType.CanonicalName);
+        Assert.Equal("primitive:i4", Assert.Single(result.Signature.ParameterSignatureTypes).CanonicalName);
     }
 
     [Theory]
@@ -164,7 +312,8 @@ public sealed class MetadataMethodReferenceResolverTests
                 new FixedTypeDefinitionResolver(type with { Methods = [.. candidates] }),
                 methods,
                 new UnusedRuntimeProvidedMethodResolver(),
-                new IdentityStackTypeResolver(), new NoBaseTypes());
+                new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
         var control = CreateResolver(method.Key);
         var withUnrelated = CreateResolver(unrelated.Key, method.Key);
         var token = MetadataTokens.GetToken(reference);
@@ -213,7 +362,8 @@ public sealed class MetadataMethodReferenceResolverTests
             new UnusedTypeDefinitionResolver(),
             new UnusedMethodRepository(),
             new UnusedRuntimeProvidedMethodResolver(),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
 
         var resolved = ((IMetadataMethodReferenceResolver)resolver).Resolve(
             source,
@@ -256,7 +406,8 @@ public sealed class MetadataMethodReferenceResolverTests
             new UnusedTypeDefinitionResolver(),
             new UnusedMethodRepository(),
             new UnusedRuntimeProvidedMethodResolver(),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
 
         var exception = Assert.Throws<CompilerException>(() =>
             ((IMetadataMethodReferenceResolver)resolver).Resolve(
@@ -306,7 +457,8 @@ public sealed class MetadataMethodReferenceResolverTests
             new UnusedTypeDefinitionResolver(),
             new MethodRepository(method),
             new UnusedRuntimeProvidedMethodResolver(),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
 
         var resolved = resolver.Resolve(
             source,
@@ -386,7 +538,8 @@ public sealed class MetadataMethodReferenceResolverTests
                 declaringTypeWithOverloads),
             new MethodRepository(wrongArityMethod, methodForReference),
             new UnusedRuntimeProvidedMethodResolver(),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
 
         var resolved = resolver.Resolve(
             source,
@@ -412,7 +565,8 @@ public sealed class MetadataMethodReferenceResolverTests
                 declaringTypeWithOverloads),
             new MethodRepository(wrongArityMethod, methodForReference),
             new UnusedRuntimeProvidedMethodResolver(),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
         var genericResolved = genericResolver.Resolve(
             source,
             MetadataTokens.GetToken(specificationHandle),
@@ -434,7 +588,8 @@ public sealed class MetadataMethodReferenceResolverTests
                 ambiguousDeclaringType),
             new MethodRepository(sameArityMethod, methodForReference),
             new UnusedRuntimeProvidedMethodResolver(),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
 
         Assert.Throws<CompilerException>(() => ambiguousResolver.Resolve(
             source,
@@ -475,7 +630,8 @@ public sealed class MetadataMethodReferenceResolverTests
             new FixedTypeDefinitionResolver(emptyType),
             new UnusedMethodRepository(),
             new UnusedRuntimeProvidedMethodResolver(),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
 
         Assert.Throws<CompilerException>(() => resolver.Resolve(
             source,
@@ -494,7 +650,8 @@ public sealed class MetadataMethodReferenceResolverTests
             new FixedTypeDefinitionResolver(emptyType),
             new UnusedMethodRepository(),
             new FixedRuntimeProvidedMethodResolver(runtimeProvided),
-            new IdentityStackTypeResolver(), new NoBaseTypes());
+            new IdentityStackTypeResolver(), new UnusedContractValidator(), NoRuntimeTypes,
+            ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty, new UncheckedPrivateAccess(), new NoBaseTypes());
         var runtimeResolved = ((IMetadataMethodReferenceResolver)runtimeResolver).Resolve(
             source,
             MetadataTokens.GetToken(handle),
@@ -502,6 +659,18 @@ public sealed class MetadataMethodReferenceResolverTests
             0);
 
         Assert.Equal(runtimeProvided, runtimeResolved);
+    }
+
+    private sealed class UnusedContractValidator : IFrameworkMethodContractValidator
+    {
+        public void Validate(FrameworkMethodBinding binding) =>
+            throw new InvalidOperationException("Unmapped calls must not inspect redirected contracts.");
+    }
+
+    private sealed class RecordingContractValidator : IFrameworkMethodContractValidator
+    {
+        public FrameworkMethodBinding? Binding { get; private set; }
+        public void Validate(FrameworkMethodBinding binding) => Binding = binding;
     }
 
     private sealed class NoBaseTypes : IBaseTypeIdentityResolver
@@ -623,4 +792,36 @@ public sealed class MetadataMethodReferenceResolverTests
     {
         public MethodInstanceModel? Resolve(RuntimeProvidedMethodRequest request) => result;
     }
+    private sealed class UncheckedPrivateAccess : IMetadataCrossAssemblyPrivateAccessValidator
+    {
+        public void Validate(MetadataMemberAccessRequest request) { }
+    }
+
+
+
+
+    // A member reference may name its own assembly's type definition as its parent (ECMA-335 II.22.25).
+    private static (MetadataReaderProvider Provider, int Token) OwnTypeReference(string name, byte[] signature)
+    {
+        var metadata = new MetadataBuilder();
+        metadata.AddModule(0, metadata.GetOrAddString("Own.dll"), metadata.GetOrAddGuid(Guid.NewGuid()), default, default);
+        var type = metadata.AddTypeDefinition(System.Reflection.TypeAttributes.Public,
+            metadata.GetOrAddString(MetadataActorTestData.Type.Namespace), metadata.GetOrAddString(MetadataActorTestData.Type.Name),
+            default, MetadataTokens.FieldDefinitionHandle(1), MetadataTokens.MethodDefinitionHandle(1));
+        var reference = metadata.AddMemberReference(type, metadata.GetOrAddString(name), metadata.GetOrAddBlob(signature));
+        var image = new BlobBuilder();
+        new MetadataRootBuilder(metadata).Serialize(image, 0, 0);
+        return (MetadataReaderProvider.FromMetadataImage(image.ToImmutableArray()), MetadataTokens.GetToken(reference));
+    }
+
+    // Original contracts are present, but none declares the assembly's own type.
+    private static readonly ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType> UnrelatedContract =
+        ImmutableDictionary<(AssemblyIdentity, string), OriginalContractType>.Empty
+            .Add((new("Contract"), "Other.Type"), new(null!, MetadataActorTestData.Type));
+
+    private static MetadataAssemblySnapshot OwnSource(MetadataReaderProvider provider) =>
+        new(MetadataActorTestData.Assembly, provider.GetMetadataReader(),
+            new Dictionary<int, TypeDefinitionModel>(), new Dictionary<int, FieldDefinitionModel>(),
+            new Dictionary<int, MethodDefinitionModel>(), new Dictionary<int, EntityHandle>());
+
 }

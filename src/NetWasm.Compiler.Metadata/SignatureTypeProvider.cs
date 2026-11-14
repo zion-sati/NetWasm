@@ -20,7 +20,7 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
     {
         _preserveCustomModifiers = preserveCustomModifiers;
         _assemblyIdentityAliases = assemblyIdentityAliases ?? AssemblyIdentityAliases.Empty;
-        _sourceAssembly = _assemblyIdentityAliases.Canonicalize(sourceAssembly);
+        _sourceAssembly = sourceAssembly;
         _owningReader = owningReader;
     }
     public CliTypeIdentity GetArrayType(CliTypeIdentity elementType, ArrayShape shape) =>
@@ -105,7 +105,7 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
             typeName = GetDefinitionFullName(reader, declaringType) + "+" + typeName;
         }
         var identity = CliTypeIdentity.Named(
-            _sourceAssembly,
+            _assemblyIdentityAliases.Canonicalize(_sourceAssembly, Qualify(typeNamespace, typeName)),
             typeNamespace,
             typeName,
             IsValueType(rawTypeKind));
@@ -129,7 +129,7 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
     {
         (var assembly, var fullName) = GetReferenceIdentity(reader, handle);
         return CliTypeIdentity.Named(
-            assembly,
+            _assemblyIdentityAliases.Canonicalize(assembly, fullName),
             "",
             fullName,
             IsValueType(rawTypeKind));
@@ -163,8 +163,7 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
             var assemblyReference = reader.GetAssemblyReference(
                 (AssemblyReferenceHandle)scope);
             return (
-                _assemblyIdentityAliases.Canonicalize(new AssemblyIdentity(
-                    reader.GetString(assemblyReference.Name))),
+                new AssemblyIdentity(reader.GetString(assemblyReference.Name)),
                 Qualify(typeNamespace, typeName));
         }
 

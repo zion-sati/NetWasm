@@ -642,6 +642,12 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             newObjects,
             strengthReduction,
             rangeBranches,
-            unwrittenStaticFields);
+            unwrittenStaticFields,
+            // A shared body for object's virtual calls costs a call where the speed presets would dispatch
+            // inline (about 15% on a loop of nothing but such calls), and saves a dispatch over every allocated
+            // type at each call: a fifth of an HttpClient program at Oz.
+            preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+                ? ObjectDispatchPolicy.Inline
+                : ObjectDispatchPolicy.Shared);
     }
 }

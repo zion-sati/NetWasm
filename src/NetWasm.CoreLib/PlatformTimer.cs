@@ -40,6 +40,9 @@ namespace System.Runtime.InteropServices
         private IPlatformSchedule? _schedule;
         private bool _disposed;
         private bool _hasFired;
+        private uint _changeVersion;
+        private bool _callbackRunning;
+        private TaskCompletionSource<bool>? _disposeCompletion;
 
         internal bool HasFired => _hasFired;
 
@@ -69,6 +72,7 @@ namespace System.Runtime.InteropServices
                 return false;
             }
 
+            _changeVersion = unchecked(_changeVersion + 1);
             _schedule?.Dispose();
             _schedule = null;
             _period = period;
@@ -91,7 +95,11 @@ namespace System.Runtime.InteropServices
         public ValueTask DisposeAsync()
         {
             Dispose();
-            return default;
+            if (!_callbackRunning)
+                return default;
+
+            _disposeCompletion ??= new TaskCompletionSource<bool>();
+            return new ValueTask(_disposeCompletion.Task);
         }
 
         private void Schedule(TimeSpan dueTime)
@@ -115,23 +123,35 @@ namespace System.Runtime.InteropServices
                 return;
             }
 
-            if (_executionContext is null)
+            var changeVersion = _changeVersion;
+            _callbackRunning = true;
+            try
             {
-                _callback(_state);
+                if (_executionContext is null)
+                {
+                    _callback(_state);
+                }
+                else
+                {
+                    Threading.ExecutionContext.Run(
+                        _executionContext,
+                        static value =>
+                        {
+                            var invocation = ((TimerCallback, object?))value!;
+                            invocation.Item1(invocation.Item2);
+                        },
+                        (_callback, _state));
+                }
             }
-            else
+            finally
             {
-                Threading.ExecutionContext.Run(
-                    _executionContext,
-                    static value =>
-                    {
-                        var invocation = ((TimerCallback, object?))value!;
-                        invocation.Item1(invocation.Item2);
-                    },
-                    (_callback, _state));
+                _callbackRunning = false;
+                _disposeCompletion?.TrySetResult(true);
             }
 
-            if (!_disposed && _period.Ticks > 0)
+            // A callback may Change the timer, including disabling it. That
+            // operation owns the next schedule; do not overwrite or duplicate it.
+            if (!_disposed && changeVersion == _changeVersion && _period.Ticks > 0)
             {
                 Schedule(_period);
             }

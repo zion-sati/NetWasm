@@ -109,10 +109,24 @@ internal sealed class ExactObjectTypeRewriter(
         return type is null || Closed(type, body) is not { } closed || !IsSealedClass(closed) ? null : closed;
     }
 
+    // A sealed delegate instantiation is exact only when variance cannot apply: a Func<IServiceProvider, object>
+    // can hold a Func<IServiceProvider, MemoryStream>, but variance never relates value-type arguments.
     private bool IsSealedClass(CliTypeIdentity type) =>
         type.Equals(StringType) ||
         type is { IsValueType: false, Shape: CliTypeShape.Named or CliTypeShape.GenericInstantiation } &&
-        _typeDefinitions.ResolveTypeIdentity(type) is { IsSealed: true, IsInterface: false, IsValueType: false };
+        _typeDefinitions.ResolveTypeIdentity(type) is { IsSealed: true, IsInterface: false, IsValueType: false } definition &&
+        !HasVariantReferenceArgument(type, definition);
+
+    private static bool HasVariantReferenceArgument(CliTypeIdentity type, TypeDefinitionModel definition)
+    {
+        if (type.Shape != CliTypeShape.GenericInstantiation) return false;
+        for (var index = 0; index < definition.GenericParameterVariances.Length && index < type.TypeArguments.Length; index++)
+        {
+            if (definition.GenericParameterVariances[index] != CliGenericVariance.Invariant && !type.TypeArguments[index].IsValueType)
+                return true;
+        }
+        return false;
+    }
 
     private static CliTypeIdentity? Closed(CliTypeIdentity type, CilMethodBody body)
     {

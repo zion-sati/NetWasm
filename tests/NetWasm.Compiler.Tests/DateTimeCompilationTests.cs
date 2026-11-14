@@ -79,27 +79,32 @@ public sealed class DateTimeCompilationTests
                         return 18;
                     }
 
+                    // Desktop's general grammar: partial dates default the day, and eras, CJK suffixes, adjacent
+                    // tokens and stray commas parse; a year or month alone and stray separators do not.
+                    static bool Parses(string text, int year, int month, int day) =>
+                        global::System.DateOnly.TryParse(text, null, out var value) &&
+                        value == new global::System.DateOnly(year, month, day);
                     if (
                         global::System.DateOnly.TryParse("2024", null, out _) ||
                         global::System.DateOnly.TryParse("February", null, out _) ||
-                        global::System.DateOnly.TryParse("February 2024", null, out _) ||
-                        global::System.DateOnly.TryParse("2024/02", null, out _) ||
-                        global::System.DateOnly.TryParse("02/2024", null, out _) ||
-                        global::System.DateOnly.TryParse("29 2024 Feb", null, out _) ||
-                        global::System.DateOnly.TryParse("February 2024 29", null, out _) ||
-                        global::System.DateOnly.TryParse("Feb 2024 29", null, out _) ||
-                        global::System.DateOnly.TryParse("Feb29 2024", null, out _) ||
-                        global::System.DateOnly.TryParse("29Feb2024", null, out _) ||
-                        global::System.DateOnly.TryParse("2024-02-29 AD", null, out _) ||
-                        global::System.DateOnly.TryParse("AD 2024-02-29", null, out _) ||
-                        global::System.DateOnly.TryParse("2024年2月29日", null, out _) ||
-                        global::System.DateOnly.TryParse("February 99 1", null, out _) ||
-                        global::System.DateOnly.TryParse("99 February 1", null, out _) ||
-                        global::System.DateOnly.TryParse(",2024-2-29", null, out _) ||
-                        global::System.DateOnly.TryParse("2024-2-29,", null, out _) ||
                         global::System.DateOnly.TryParse("2024-02-29/", null, out _) ||
                         global::System.DateOnly.TryParse("2024--02--29", null, out _) ||
-                        global::System.DateOnly.TryParse("02/29/2024\0x", null, out _))
+                        global::System.DateOnly.TryParse("02/29/2024\0x", null, out _) ||
+                        !Parses("February 2024", 2024, 2, 1) ||
+                        !Parses("2024/02", 2024, 2, 1) ||
+                        !Parses("02/2024", 2024, 2, 1) ||
+                        !Parses("29 2024 Feb", 2024, 2, 29) ||
+                        !Parses("February 2024 29", 2024, 2, 29) ||
+                        !Parses("Feb 2024 29", 2024, 2, 29) ||
+                        !Parses("Feb29 2024", 2024, 2, 29) ||
+                        !Parses("29Feb2024", 2024, 2, 29) ||
+                        !Parses("2024-02-29 AD", 2024, 2, 29) ||
+                        !Parses("AD 2024-02-29", 2024, 2, 29) ||
+                        !Parses("2024年2月29日", 2024, 2, 29) ||
+                        !Parses("February 99 1", 1999, 2, 1) ||
+                        !Parses("99 February 1", 1999, 2, 1) ||
+                        !Parses(",2024-2-29", 2024, 2, 29) ||
+                        !Parses("2024-2-29,", 2024, 2, 29))
                     {
                         return 19;
                     }
@@ -146,9 +151,13 @@ public sealed class DateTimeCompilationTests
                         global::System.TimeOnly.TryParse("24:00 AM", null, out _) ||
                         global::System.TimeOnly.TryParse("24:00 PM", null, out _) ||
                         global::System.TimeOnly.TryParse("1 P", null, out _) ||
-                        global::System.TimeOnly.TryParse("13:04.", null, out _) ||
-                        global::System.TimeOnly.TryParse("1 AM,", null, out _) ||
-                        global::System.TimeOnly.TryParse("1:02:03.4,PM", null, out _) ||
+                        // Desktop's grammar takes a trailing period or comma, and a comma before the designator.
+                        !global::System.TimeOnly.TryParse("13:04.", null, out flexibleTime) ||
+                        flexibleTime != new global::System.TimeOnly(13, 4) ||
+                        !global::System.TimeOnly.TryParse("1 AM,", null, out flexibleTime) ||
+                        flexibleTime != new global::System.TimeOnly(1, 0) ||
+                        !global::System.TimeOnly.TryParse("1:02:03.4,PM", null, out flexibleTime) ||
+                        flexibleTime != new global::System.TimeOnly(13, 2, 3, 400) ||
                         !global::System.TimeOnly.TryParse(
                             "13:04\0", null, out flexibleTime) ||
                         flexibleTime != new global::System.TimeOnly(13, 4) ||
@@ -232,14 +241,19 @@ public sealed class DateTimeCompilationTests
                     {
                     }
 
-                    if (global::System.DateOnly.TryParseExact(
+                    // As on desktop, an unknown standard specifier among the formats throws rather than fails.
+                    try
+                    {
+                        _ = global::System.DateOnly.TryParseExact(
                             "2024-02-29".AsSpan(),
                             new[] { "q", "O" },
                             null,
                             global::System.Globalization.DateTimeStyles.None,
-                            out _))
-                    {
+                            out _);
                         return 7;
+                    }
+                    catch (global::System.FormatException)
+                    {
                     }
 
                     if (!global::System.DateOnly.TryParseExact(
@@ -386,39 +400,6 @@ public sealed class DateTimeCompilationTests
         }
     }
 
-    [Theory(Skip = KnownNonBugSkipReasons.InvariantDateTimeGeneralGrammar)]
-    [InlineData("February 2024")]
-    [InlineData("2024/02")]
-    [InlineData("02/2024")]
-    [InlineData("29 2024 Feb")]
-    [InlineData("February 2024 29")]
-    [InlineData("Feb29 2024")]
-    [InlineData("29Feb2024")]
-    [InlineData("2024-02-29 AD")]
-    [InlineData("AD 2024-02-29")]
-    [InlineData("2024年2月29日")]
-    [InlineData("February 99 1")]
-    [InlineData("99 February 1")]
-    [InlineData(",2024-2-29")]
-    [InlineData("2024-2-29,")]
-    public void DesktopDateOnlyGeneralGrammarOutsideTheInvariantProfile(string value) =>
-        Assert.True(global::System.DateOnly.TryParse(
-            value,
-            global::System.Globalization.CultureInfo.InvariantCulture,
-            global::System.Globalization.DateTimeStyles.None,
-            out _));
-
-    [Theory(Skip = KnownNonBugSkipReasons.InvariantDateTimeGeneralGrammar)]
-    [InlineData("13:04.")]
-    [InlineData("1 AM,")]
-    [InlineData("1:02:03.4,PM")]
-    public void DesktopTimeOnlyGeneralGrammarOutsideTheInvariantProfile(string value) =>
-        Assert.True(global::System.TimeOnly.TryParse(
-            value,
-            global::System.Globalization.CultureInfo.InvariantCulture,
-            global::System.Globalization.DateTimeStyles.None,
-            out _));
-
     [Fact]
     public void CompilerFormatsInvariantDateOnlyAndTimeOnlyContracts()
     {
@@ -506,9 +487,10 @@ public sealed class DateTimeCompilationTests
                         return 7;
                     }
 
-                    bytes.Fill((byte)'!');
+                    // As on desktop, a destination too small for the text reports nothing written, though it may
+                    // hold part of the text.
                     if (time.TryFormat(bytes[..3], out bytesWritten, "'λ'HH") ||
-                        bytesWritten != 0 || bytes[0] != (byte)'!')
+                        bytesWritten != 0)
                     {
                         return 8;
                     }
@@ -1373,22 +1355,25 @@ public sealed class DateTimeCompilationTests
                 }
             }
             """;
-        var assemblies = new[]
+        foreach (var optimize in new[] { false, true })
         {
-            assets.CompileSource("DateTimeOptimizationDebugFixture", source),
-            assets.CompileOptimizedSource("DateTimeOptimizationReleaseFixture", source),
-        };
-
-        foreach (var assembly in assemblies)
-        {
-            var result = NetWasmCompiler.Compile(new CompilerOptions(
-                assembly,
-                [assets.CoreLib],
-                "DateTimeOptimizationFixture.EntryPoint",
-                "Run",
-                []));
-            Assert.Equal(42, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
+            Assert.Equal(42, ExecuteWithPlatform(
+                assets, "DateTimeOptimizationFixture", source, "DateTimeOptimizationFixture.EntryPoint", optimize));
         }
+    }
+
+    // Date and time text reads today's date for partial dates and the local offset for local times and the z and K
+    // specifiers, as upstream's DateTimeParse and DateTimeFormat do, so a program that formats or parses dates selects
+    // the platform world.
+    private static int ExecuteWithPlatform(TestAssets assets, string name, string source, string entryType, bool optimize = false)
+    {
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        return executor.Execute(new CompilationScenario(name, source, entryType, optimize, WasmTarget.Wasm32, 41, [])
+        {
+            Exports = [new RequestedExport("run", entryType, "Run")],
+            WitPath = PlatformWitPath(assets),
+            WitWorld = "netwasm:platform/platform@1.0.0",
+        });
     }
 
     private static byte[] BuildTimeZoneAsset(
@@ -1479,8 +1464,7 @@ public sealed class DateTimeCompilationTests
     public void CompilerExecutesDateTimeTryParseAndManagedFailures()
     {
         using var assets = TestAssets.Create();
-        var assembly = assets.CompileSource(
-            "DateTimeFailureFixture",
+        const string source =
             """
             namespace DateTimeFailureFixture;
 
@@ -1488,10 +1472,11 @@ public sealed class DateTimeCompilationTests
             {
                 public static int Run(int input)
                 {
-                    var invalid = !System.TimeSpan.TryParse("24:00:00", out _)
+                    // "24:00:00" is 24 days on desktop, so the invalid TimeSpan is 60 minutes.
+                    var invalid = !System.TimeSpan.TryParse("1:60:00", out _)
                         && !System.DateOnly.TryParse("2023-02-29", out _)
                         && !System.TimeOnly.TryParse("12:60:00", out _)
-                        && !System.DateTime.TryParse("2024-01-01 00:00:00", out _)
+                        && !System.DateTime.TryParse("2024-01-01X00:00:00", out _)
                         && !System.DateTimeOffset.TryParse(
                             "2024-01-01T00:00:00+14:01", out _);
                     var format = 0;
@@ -1506,16 +1491,9 @@ public sealed class DateTimeCompilationTests
                     return invalid && format == 4 ? input + 1 : -1;
                 }
             }
-            """);
+            """;
 
-        var result = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly,
-            [assets.CoreLib],
-            "DateTimeFailureFixture.EntryPoint",
-            "Run",
-            []));
-
-        Assert.Equal(42, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
+        Assert.Equal(42, ExecuteWithPlatform(assets, "DateTimeFailureFixture", source, "DateTimeFailureFixture.EntryPoint"));
     }
 
     [Fact]
@@ -1612,8 +1590,7 @@ public sealed class DateTimeCompilationTests
     public void CompilerExecutesDateOnlyAndTimeOnlyCalendarBoundaries()
     {
         using var assets = TestAssets.Create();
-        var assembly = assets.CompileSource(
-            "DateAndTimeOnlyFixture",
+        const string source =
             """
             namespace DateAndTimeOnlyFixture;
 
@@ -1647,16 +1624,9 @@ public sealed class DateTimeCompilationTests
                         : -1;
                 }
             }
-            """);
+            """;
 
-        var result = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly,
-            [assets.CoreLib],
-            "DateAndTimeOnlyFixture.EntryPoint",
-            "Run",
-            []));
-
-        Assert.Equal(42, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
+        Assert.Equal(42, ExecuteWithPlatform(assets, "DateAndTimeOnlyFixture", source, "DateAndTimeOnlyFixture.EntryPoint"));
     }
 
     [Fact]

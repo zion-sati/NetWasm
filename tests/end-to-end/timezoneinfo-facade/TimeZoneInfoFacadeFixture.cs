@@ -439,11 +439,12 @@ public static class EntryPoint
             return -2104;
         }
         if (DateTime.MinValue.ToString("HH:mm:ss.FFFFFFF") != "00:00:00" ||
+            // A time without a date takes today's date unless NoCurrentDateDefault, as on .NET 11.
             !DateTime.TryParseExact(
                 "00:00:00",
                 "HH:mm:ss.FFFFFFF",
                 null,
-                DateTimeStyles.None,
+                DateTimeStyles.NoCurrentDateDefault,
                 out parsed) || parsed != DateTime.MinValue)
         {
             return -2105;

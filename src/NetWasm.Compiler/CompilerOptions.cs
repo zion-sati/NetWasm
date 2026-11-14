@@ -42,8 +42,13 @@ public sealed record CompilerOptions(
     string? PathMap = null,
     bool StructuredDiagnostics = false,
     FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
-    WasmOptimizationOverrides? OptimizationOverrides = null)
+    WasmOptimizationOverrides? OptimizationOverrides = null,
+    ImmutableArray<string> MetadataReferencePaths = default)
 {
+    /// <summary>Original declaration images used for contract validation, never executable references.</summary>
+    public ImmutableArray<string> OriginalContractReferencePaths { get; init; } = [];
+
+    public ImmutableArray<CompilationReferenceOrigin> ReferenceOrigins { get; init; } = [];
     // Keep and reuse compiled units under IntermediateOutputPath. nwc and the SDK turn them
     // on by default at O0; at an optimizing level they are reused only when asked for.
     public bool CompiledUnits { get; init; }
@@ -55,6 +60,18 @@ public sealed record CompilerOptions(
     // Modules the project's native archives import from; the host supplies
     // them beside the modules [WasmImportLinkage] imports name.
     public ImmutableArray<string> ImportModules { get; init; } = [];
+
+    // The native libraries the program links, by NetWasmLibraryName. When given, a P/Invoke into any other library
+    // compiles to a body that throws DllNotFoundException (NativeLibraryBinding); when null, every P/Invoke binds.
+    public ImmutableArray<string>? LinkedNativeLibraries { get; init; }
+
+    // The project's feature switches the compiler folds: Trim="true" RuntimeHostConfigurationOption items with a
+    // Boolean value. A call to a [FeatureSwitchDefinition] getter of one becomes its value.
+    public ImmutableDictionary<string, bool> FeatureSwitches { get; init; } = ImmutableDictionary<string, bool>.Empty;
+
+    // The project's RuntimeHostConfigurationOption items, in name order: AppContext reads them as .NET reads
+    // runtimeconfig.json's properties.
+    public ImmutableArray<(string Name, string Value)> RuntimeProperties { get; init; } = [];
 
     // A plain core module (a Library build of a WIT world): it imports only the world's
     // functions, with no WASI and no Component Model event loop, for engines without the

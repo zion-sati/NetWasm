@@ -26,10 +26,6 @@ internal sealed class AttributeQueryClassifier(
         }
         if (!Operations.TryGetValue(method.Definition.Name, out var operation))
         {
-            if (method.Definition.Name is "get_CustomAttributes" or "GetCustomAttributesData")
-            {
-                throw Unsupported("Custom attribute metadata enumeration is not supported; use a filtered type query.");
-            }
             return null;
         }
 
@@ -48,7 +44,9 @@ internal sealed class AttributeQueryClassifier(
             !generic && (parameters.Length <= targetParameters || !parameters[targetParameters].Equals(typeType)) ||
             hasInherit && parameters[^1].StackKind != CliValueKind.I4)
         {
-            throw Unsupported("This custom attribute overload is not supported; query one type with an explicit attribute filter.");
+            // Unlowered overloads retain their managed implementation, including
+            // catchable platform fallbacks. This classifier selects bounded queries.
+            return null;
         }
 
         return new(operation,
@@ -57,7 +55,4 @@ internal sealed class AttributeQueryClassifier(
             generic ? method.MethodArguments[0] : null,
             hasInherit ? parameters.Length - (api == AttributeQueryApiKind.Instance ? 0 : 1) : null);
     }
-
-    private static CompilerException Unsupported(string message) =>
-        new(new CompilerDiagnostic(DiagnosticCode.UnsupportedMetadata, message));
 }

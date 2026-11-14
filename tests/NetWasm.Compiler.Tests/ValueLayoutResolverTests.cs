@@ -6,6 +6,52 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class ValueLayoutResolverTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void FieldResolutionFailurePreservesMostSpecificContext(bool explicitLayout, bool existingContext)
+    {
+        var typeKey = new EntityKey(new("Library"), 1);
+        var fieldKey = new EntityKey(typeKey.Assembly, 2);
+        var definition = new TypeDefinitionModel(typeKey, "Tests", "Owner", true, [fieldKey], [])
+        {
+            LayoutKind = explicitLayout ? CliTypeLayoutKind.Explicit : CliTypeLayoutKind.Sequential,
+        };
+        var identity = CliTypeIdentity.FromDefinition(definition);
+        var missing = CliTypeIdentity.Named(new("Dependency"), "Tests", "Missing", true);
+        var field = new FieldDefinitionModel(fieldKey, typeKey, "Data", missing, false);
+        var context = existingContext ? new CompilerDiagnosticContext(new(new("Nested"), 3)) : null;
+        var failure = new CompilerException(new(DiagnosticCode.AssemblyResolution, "Missing field type")
+        {
+            Context = context,
+        });
+        var resolver = Assert.IsAssignableFrom<IValueLayoutResolver>(new ValueLayoutResolver(
+            new FailingDefinitions(failure), new Fields([field]), new ExplicitValueLayoutResolver(),
+            WasmTargetLayout.For(WasmTarget.Wasm32), new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
+
+        var actual = Assert.Throws<CompilerException>(() => resolver.Resolve(identity, definition));
+
+        if (existingContext)
+        {
+            Assert.Same(failure, actual.InnerException);
+            Assert.Same(context, actual.Diagnostic.Context);
+        }
+        else
+        {
+            Assert.Same(failure, actual.InnerException);
+            Assert.Equal(fieldKey, actual.Diagnostic.Context!.Source);
+            Assert.Equal(missing.CanonicalName, actual.Diagnostic.Context.InstanceIdentity);
+            Assert.Equal(identity, actual.Diagnostic.Context.DeclaringType);
+        }
+    }
+
+    private sealed class FailingDefinitions(CompilerException failure) : ITypeDefinitionResolver
+    {
+        public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity) => throw failure;
+    }
+
     public static TheoryData<string, int, WasmTarget, bool, bool> PrimitiveResolutionOrders
     {
         get
@@ -53,7 +99,7 @@ public sealed class ValueLayoutResolverTests
             new Fields(backingField
                 ? [new FieldDefinitionModel(fieldKey, typeKey, "_value", primitive, false)]
                 : []),
-            new ExplicitValueLayoutResolver(), WasmTargetLayout.For(target), state));
+            new ExplicitValueLayoutResolver(), WasmTargetLayout.For(target), state, new FieldLayoutFailureBinder()));
         var expectedSize = fixedSize == 0 ? WasmTargetLayout.For(target).AddressSize : fixedSize;
         if (primitiveFirst)
         {
@@ -180,7 +226,7 @@ public sealed class ValueLayoutResolverTests
             new Fields(fields.Values),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
 
         var primitives = new[]
         {
@@ -258,7 +304,7 @@ public sealed class ValueLayoutResolverTests
             fields,
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
 
         Assert.Throws<CompilerException>(() => resolver.Resolve(recursive));
         Assert.Equal(1, resolver.Resolve(
@@ -277,7 +323,7 @@ public sealed class ValueLayoutResolverTests
             new Fields([]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
         Assert.Equal(1, declaredOneResolver.Resolve(
             CliTypeIdentity.Named(assembly, "Coverage", "DeclaredOne", true)).Size);
         var declaredWithFieldKey = new EntityKey(assembly, 8);
@@ -301,7 +347,7 @@ public sealed class ValueLayoutResolverTests
                 false)]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
         Assert.Equal(4, declaredWithFieldResolver.Resolve(
             CliTypeIdentity.Named(assembly, "Coverage", "DeclaredWithField", true)).Size);
 
@@ -327,7 +373,7 @@ public sealed class ValueLayoutResolverTests
                 false)]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm64),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
 
         var fixedBufferLayout = fixedBufferResolver.Resolve(
             CliTypeIdentity.Named(assembly, "Coverage", "FixedBuffer", true));
@@ -359,7 +405,7 @@ public sealed class ValueLayoutResolverTests
             new Fields([]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
 
         var layout = resolver.Resolve(type);
 
@@ -431,7 +477,7 @@ public sealed class ValueLayoutResolverTests
             new FieldDefinitionModel(inlineFieldKeyRepublished2, inlineKey, "Element", reference, false)]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            state);
+            state, new FieldLayoutFailureBinder());
 
         var genericLayout = ((IValueLayoutResolver)resolver).Resolve(generic);
 
@@ -537,7 +583,7 @@ public sealed class ValueLayoutResolverTests
             ]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            state);
+            state, new FieldLayoutFailureBinder());
 
         var genericLayout = ((IValueLayoutResolver)resolver).Resolve(generic);
 
@@ -617,7 +663,7 @@ public sealed class ValueLayoutResolverTests
             ]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            state);
+            state, new FieldLayoutFailureBinder());
 
         var genericLayout = resolver.Resolve(generic);
         var inlineLayout = resolver.Resolve(inline);
@@ -647,7 +693,7 @@ public sealed class ValueLayoutResolverTests
             new Fields([]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
 
         Assert.Equal(1, resolver.Resolve(type).Size);
     }
@@ -684,7 +730,7 @@ public sealed class ValueLayoutResolverTests
             new Fields([laterField, earlierField]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(WasmTarget.Wasm32),
-            state);
+            state, new FieldLayoutFailureBinder());
 
         var layout = ((IValueLayoutResolver)resolver).Resolve(
             CliTypeIdentity.Named(assembly, "Coverage", "Ordered", isValueType: true),
@@ -754,7 +800,7 @@ public sealed class ValueLayoutResolverTests
             new Fields([field]),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(target),
-            state);
+            state, new FieldLayoutFailureBinder());
 
         var primitive = CliTypeIdentity.FromStackKind(valueKind);
         Assert.Throws<ArgumentNullException>(() => resolver.Resolve(primitive, null!));
@@ -782,7 +828,7 @@ public sealed class ValueLayoutResolverTests
         var assembly = new AssemblyIdentity("EmptyCoverage");
         var type = CliTypeIdentity.Named(assembly, "Coverage", "Empty", true);
         Assert.Throws<ArgumentNullException>(() =>
-            new ValueLayoutResolver(null!, new Fields([]), new ExplicitValueLayoutResolver(), WasmTargetLayout.For(WasmTarget.Wasm32), new ManagedValueLayoutState()));
+            new ValueLayoutResolver(null!, new Fields([]), new ExplicitValueLayoutResolver(), WasmTargetLayout.For(WasmTarget.Wasm32), new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new ValueLayoutResolver(new Definitions([new TypeDefinitionModel(
                 new EntityKey(assembly, 1),
@@ -790,7 +836,7 @@ public sealed class ValueLayoutResolverTests
                 "Empty",
                 true,
                 [],
-                [])]), null!, new ExplicitValueLayoutResolver(), WasmTargetLayout.For(WasmTarget.Wasm32), new ManagedValueLayoutState()));
+                [])]), null!, new ExplicitValueLayoutResolver(), WasmTargetLayout.For(WasmTarget.Wasm32), new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new ValueLayoutResolver(new Definitions([new TypeDefinitionModel(
                 new EntityKey(assembly, 1),
@@ -798,7 +844,7 @@ public sealed class ValueLayoutResolverTests
                 "Empty",
                 true,
                 [],
-                [])]), new Fields([]), null!, WasmTargetLayout.For(WasmTarget.Wasm32), new ManagedValueLayoutState()));
+                [])]), new Fields([]), null!, WasmTargetLayout.For(WasmTarget.Wasm32), new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new ValueLayoutResolver(new Definitions([new TypeDefinitionModel(
                 new EntityKey(assembly, 1),
@@ -806,7 +852,7 @@ public sealed class ValueLayoutResolverTests
                 "Empty",
                 true,
                 [],
-                [])]), new Fields([]), new ExplicitValueLayoutResolver(), null!, new ManagedValueLayoutState()));
+                [])]), new Fields([]), new ExplicitValueLayoutResolver(), null!, new ManagedValueLayoutState(), new FieldLayoutFailureBinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new ValueLayoutResolver(new Definitions([new TypeDefinitionModel(
                 new EntityKey(assembly, 1),
@@ -814,7 +860,7 @@ public sealed class ValueLayoutResolverTests
                 "Empty",
                 true,
                 [],
-                [])]), new Fields([]), new ExplicitValueLayoutResolver(), WasmTargetLayout.For(WasmTarget.Wasm32), null!));
+                [])]), new Fields([]), new ExplicitValueLayoutResolver(), WasmTargetLayout.For(WasmTarget.Wasm32), null!, new FieldLayoutFailureBinder()));
     }
 
     private static ValueLayoutResolver CreateResolver(WasmTarget target)
@@ -823,7 +869,7 @@ public sealed class ValueLayoutResolverTests
             new RejectingFields(),
             new ExplicitValueLayoutResolver(),
             WasmTargetLayout.For(target),
-            new ManagedValueLayoutState());
+            new ManagedValueLayoutState(), new FieldLayoutFailureBinder());
 
     private sealed class FixedDefinition(TypeDefinitionModel definition) : ITypeDefinitionResolver
     {

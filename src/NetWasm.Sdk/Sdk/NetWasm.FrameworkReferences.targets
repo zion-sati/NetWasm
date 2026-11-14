@@ -1,0 +1,38 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Only the netwasm0.1 build of a project that registers the custom profile has the pack
+       task assembly. MSBuild compares the target framework without case, so a similar alias
+       such as NETWASM0.1 must not match here; the profile flag is set for the exact name. -->
+  <UsingTask TaskName="NetWasm.Sdk.Pack.References.GenerateFrameworkReferenceViewsTask"
+             AssemblyFile="$(NetWasmSdkPackTaskAssemblyFile)"
+             Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true' AND '$(TargetFramework)' == 'netwasm0.1'" />
+
+  <!-- The views replace references as soon as they resolve, so CoreCompile and the
+       compilation identity, which both read ReferencePath after that, see them. -->
+  <Target Name="NetWasmSdkGenerateFrameworkReferenceViews"
+          AfterTargets="ResolveReferences"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="ResolveReferences"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true' AND '$(TargetFramework)' == 'netwasm0.1'">
+    <ItemGroup>
+      <_NetWasmFrameworkPlatformReference Include="@(ReferencePath)"
+        Condition="'%(ReferencePath.NuGetPackageId)' == 'NetWasm.Ref' AND '%(ReferencePath.Filename)' == 'NetWasm.CoreLib'" />
+    </ItemGroup>
+    <Error Code="NWSDK057"
+           Condition="'@(_NetWasmFrameworkPlatformReference->Count())' != '1'"
+           Text="Framework reference projection requires exactly one NetWasm.Ref CoreLib compile asset." />
+    <GenerateFrameworkReferenceViewsTask References="@(ReferencePath)"
+        PlatformPath="@(_NetWasmFrameworkPlatformReference)"
+        OutputDirectory="$(IntermediateOutputPath)netwasm/reference-views">
+      <Output TaskParameter="Views" ItemName="_NetWasmFrameworkReferenceView" />
+    </GenerateFrameworkReferenceViewsTask>
+    <ItemGroup>
+      <!-- Only Roslyn's compile inputs change. ReferenceCopyLocalPaths retains
+           the package implementation images for the CIL compiler and deployment. -->
+      <ReferencePath Remove="@(_NetWasmFrameworkReferenceView->'%(NetWasmOriginalReference)')" />
+      <ReferencePath Include="@(_NetWasmFrameworkReferenceView)" />
+      <ReferencePathWithRefAssemblies Remove="@(_NetWasmFrameworkReferenceView->'%(NetWasmOriginalReference)')" />
+      <ReferencePathWithRefAssemblies Include="@(_NetWasmFrameworkReferenceView)" />
+      <FileWrites Include="@(_NetWasmFrameworkReferenceView)" />
+    </ItemGroup>
+  </Target>
+</Project>

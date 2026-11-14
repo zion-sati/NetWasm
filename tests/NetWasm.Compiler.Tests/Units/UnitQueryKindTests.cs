@@ -16,6 +16,7 @@ public sealed class UnitQueryKindTests
         using System;
         using System.Collections.Generic;
         using System.Runtime.CompilerServices;
+        using System.Runtime.InteropServices;
 
         public enum Color { Red = 1, Green = 2, Blue = 4 }
 
@@ -74,7 +75,7 @@ public sealed class UnitQueryKindTests
             public static int Run(int input) =>
                 Dispatch(input) + Boxes(input) + Arrays(input) + Enums(input) + Types(input) + Statics() +
                 References() + Delegates(input) + Pointers(input) + Exceptions(input) + Filtered(input) +
-                Quietly(input) + Anchored(input) + Resources();
+                Quietly(input) + Anchored(input) + Resources() + RuntimeData(input);
 
             private static int Dispatch(int input)
             {
@@ -192,6 +193,12 @@ public sealed class UnitQueryKindTests
                 _ = new Resource();
                 return Resource.Finalized;
             }
+
+            // GetUninitializedObject and Marshal's structure members dispatch over the program's
+            // allocated and marshalled types.
+            private static int RuntimeData(int input) =>
+                (RuntimeHelpers.GetUninitializedObject(typeof(Square)) is Square ? 1 : 0) +
+                Marshal.SizeOf((object)new Pair(input, 1));
         }
         """;
 
@@ -258,19 +265,18 @@ public sealed class UnitQueryKindTests
 
         var missing = Enum.GetValues<UnitQueryKind>().Where(kind => !asked.Contains(kind) && !Unasked.Contains(kind)).ToArray();
         Assert.True(missing.Length == 0, "never asked: " + string.Join(", ", missing));
-        Assert.False(asked.Overlaps(Unasked), "asked a kind listed as unasked");
+        Assert.False(asked.Overlaps(Unasked), "asked a kind listed as unasked: " + string.Join(", ", asked.Intersect(Unasked)));
     }
 
-    // Kinds no body of these programs asks: the whole program's static data, root addresses,
-    // data segments and value and metadata descriptors, which module code reads; a method's
+    // Kinds no body of these programs asks: the whole program's static data, root addresses
+    // and data segments, which module code reads; a method's
     // root map, which only a filter funclet reads, of a method kept only when its filters
     // capture nothing; and a definition's object layout, which a construction asks only when
     // it names its constructor by definition. A unit still records them when a body asks.
     private static readonly HashSet<UnitQueryKind> Unasked =
     [
         UnitQueryKind.StaticDataEnd, UnitQueryKind.StaticRootAddresses, UnitQueryKind.DataSegments,
-        UnitQueryKind.ValueTypeDescriptors, UnitQueryKind.MetadataTypeDescriptors, UnitQueryKind.RootMap,
-        UnitQueryKind.ObjectLayoutOfDefinition,
+        UnitQueryKind.RootMap, UnitQueryKind.ObjectLayoutOfDefinition,
     ];
 
     // The answers no body asks here, as a compile gives them, read back as they were written.
@@ -304,15 +310,11 @@ public sealed class UnitQueryKindTests
         };
         Assert.NotEmpty(layouts.StaticRootAddresses);
         Assert.NotEmpty(layouts.DataSegments);
-        Assert.NotEmpty(layouts.ValueTypeDescriptors);
-        Assert.NotEmpty(layouts.MetadataTypeDescriptors);
         (UnitQueryKind Kind, object Value)[] answers =
         [
             (UnitQueryKind.StaticDataEnd, layouts.StaticDataEnd),
             (UnitQueryKind.StaticRootAddresses, layouts.StaticRootAddresses),
             (UnitQueryKind.DataSegments, layouts.DataSegments),
-            (UnitQueryKind.ValueTypeDescriptors, layouts.ValueTypeDescriptors),
-            (UnitQueryKind.MetadataTypeDescriptors, layouts.MetadataTypeDescriptors),
             (UnitQueryKind.RootMap, new UnitLookup<MethodRootMap>(true, rootMap)),
             (UnitQueryKind.RootMap, new UnitLookup<MethodRootMap>(false, null)),
             (UnitQueryKind.ObjectLayoutOfDefinition, layouts.ObjectLayouts.Values.First()),

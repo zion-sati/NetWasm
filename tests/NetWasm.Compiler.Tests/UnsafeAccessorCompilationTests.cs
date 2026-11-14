@@ -120,7 +120,11 @@ public sealed class UnsafeAccessorCompilationTests
             public sealed class Owner{{(generic ? "<T>" : "")}}
             {
                 private readonly Type selected = typeof({{(generic ? "T" : "Marked")}});
-                public int Read() => selected.GetCustomAttribute<MarkerAttribute>() is null ? 1 : 42;
+                public int Read()
+                {
+                    try { return selected.GetCustomAttribute<MarkerAttribute>() is null ? 1 : 42; }
+                    catch (PlatformNotSupportedException) { return 7; }
+                }
             }
             """);
         var ownerType = generic ? "Owner<Marked>" : "Owner";
@@ -142,10 +146,11 @@ public sealed class UnsafeAccessorCompilationTests
         Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
             42, WasmTarget.Wasm32, result.StaticDataEnd));
 
-        // The same path now names an entry assembly that exposes the field.
+        // A writable accessor voids the readonly type proof, so the query keeps its
+        // managed fallback, whose GetCustomAttribute throws PlatformNotSupportedException.
         CompileEntry(true);
-        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(options));
-        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
-        Assert.Contains("Read", error.Diagnostic.Method);
+        result = NetWasmCompiler.Compile(options);
+        Assert.Equal(7, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
+            42, WasmTarget.Wasm32, result.StaticDataEnd));
     }
 }

@@ -66,6 +66,8 @@ internal static class WasmModuleServiceCollectionExtensions
             throw new ArgumentException(
                 "The type descriptor source must also provide enum metadata.",
                 nameof(typeDescriptors)));
+        services.AddSingleton(typeDescriptors as IStructMarshallingSource ?? EmptyRuntimeTypeDataSource.Instance);
+        services.AddSingleton(typeDescriptors as IUninitializedObjectSource ?? EmptyRuntimeTypeDataSource.Instance);
         services.AddSingleton(
             logger ?? NullLogger<WasmModuleEmitterFactory>.Instance);
         services.AddSingleton(targetLayout.Target);

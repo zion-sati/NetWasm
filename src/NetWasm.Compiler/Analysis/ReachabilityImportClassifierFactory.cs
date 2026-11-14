@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Core.GenericConstraints;
 using System;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.NativeInterop;
@@ -23,8 +24,9 @@ internal sealed class ReachabilityImportClassifierFactory(
         IJavaScriptAsyncBindingResolver javaScriptAsyncBindings,
         IJavaScriptConversionResolver conversions,
         IRuntimeIntrinsicRegistry intrinsics,
-        ISymbolFormatter symbols) =>
-        new ReachabilityImportClassifier(
+        ISymbolFormatter symbols,
+        IClosedGenericConstraintValidator constraints) =>
+        new DiagnosticReachabilityImportClassifier(new GenericConstraintValidatingImportClassifier(new ReachabilityImportClassifier(
             types,
             typeDefinitions,
             methods,
@@ -34,5 +36,5 @@ internal sealed class ReachabilityImportClassifierFactory(
             symbols,
             _enumMetadataRequirements,
             _nativeDeclarations,
-            conversions);
+            conversions), constraints), new CompilerDiagnosticProvenanceBinder());
 }

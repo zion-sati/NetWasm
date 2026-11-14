@@ -1,14 +1,14 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Portions adapted from dotnet/runtime System.Private.CoreLib at commit
-// 474ed963699fc29809015392738a15231aaae2de.
+// deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
 using System.Runtime.ExceptionServices;
 
 namespace System.Threading
 {
     /// <summary>Captures ambient values for one managed reactor execution flow.</summary>
-    public sealed class ExecutionContext : IDisposable
+    public sealed class ExecutionContext : IDisposable, System.Runtime.Serialization.ISerializable
     {
         private static readonly ExecutionContext s_default =
             new(
@@ -39,6 +39,11 @@ namespace System.Threading
             _localChangeNotifications = localChangeNotifications;
             _flowSuppressed = flowSuppressed;
         }
+
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        public void GetObjectData(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
+            throw new PlatformNotSupportedException("ExecutionContext formatter serialization is not supported on this NetWasm platform.");
 
         /// <summary>Captures the current flow, or null while flow is suppressed.</summary>
         public static ExecutionContext? Capture() =>
@@ -85,6 +90,10 @@ namespace System.Threading
             token != 0 &&
             s_current._flowSuppressed &&
             s_currentFlowControlToken == token;
+
+        // As upstream's RunInternal: Run without argument validation, where a null context is the default context.
+        internal static void RunInternal(ExecutionContext? executionContext, ContextCallback callback, object? state) =>
+            Run(executionContext ?? s_default, callback, state);
 
         /// <summary>Runs a callback under a captured context and restores the caller's context.</summary>
         public static void Run(

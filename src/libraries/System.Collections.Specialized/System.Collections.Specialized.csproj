@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>System.Collections.Specialized</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sources: every .cs file under this folder, in path order. -->
+    <Compile Include="Common/System/Collections/CompatibleComparer.cs" />
+    <Compile Include="Common/System/Obsoletions.cs" />
+    <Compile Include="System/Collections/Specialized/BitVector32.cs" />
+    <Compile Include="System/Collections/Specialized/HybridDictionary.cs" />
+    <Compile Include="System/Collections/Specialized/IOrderedDictionary.cs" />
+    <Compile Include="System/Collections/Specialized/ListDictionary.cs" />
+    <Compile Include="System/Collections/Specialized/NameObjectCollectionBase.cs" />
+    <Compile Include="System/Collections/Specialized/NameValueCollection.cs" />
+    <Compile Include="System/Collections/Specialized/OrderedDictionary.cs" />
+    <Compile Include="System/Collections/Specialized/StringCollection.cs" />
+    <Compile Include="System/Collections/Specialized/StringDictionary.cs" />
+    <Compile Include="System/SR.cs" />
+  </ItemGroup>
+</Project>

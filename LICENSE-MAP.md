@@ -25,6 +25,11 @@ where they are more specific than a path default.
 | src/NetWasm.JSImportGenerator/** | MIT |
 | src/NetWasm.Templates/** | MIT |
 | src/NetWasm.CoreLib/** | MIT |
+| src/libraries/** | MIT |
+| src/native/external/zlib-ng/** | Zlib |
+| src/native/external/brotli/** | MIT |
+| src/native/external/openssl/** | Apache-2.0 |
+| src/native/** | MIT |
 | src/NetWasm.Runtime/collector/compact/** | Apache-2.0 |
 | src/NetWasm.Runtime/collector/netwasm/** | Apache-2.0 |
 | src/NetWasm.Runtime/** | MIT |
@@ -46,6 +51,12 @@ The `wit/wasi-0.2.11/LICENSE.md` and provenance files are copied unchanged.
 WASI dependency inputs below NetWasm WIT worlds follow those upstream terms as
 well. Source files that retain an upstream copyright, license, or provenance
 header remain governed by that notice in addition to this path map.
+
+`NetWasm.App.Runtime` redistributes native code built from third-party
+sources: zlib-ng and Brotli, vendored under `src/native/external/`, and
+OpenSSL, which the build downloads at the release `eng/toolchain.json` pins
+and checks against its SHA-256 (only its license text is in this tree). The
+package carries each license text under `native/`.
 
 The Linux `NetWasm.HostTools` NuGet packages also redistribute Ubuntu GCC
 `libatomic.so.1` under GPL-3.0 with the GCC Runtime Library Exception. Each

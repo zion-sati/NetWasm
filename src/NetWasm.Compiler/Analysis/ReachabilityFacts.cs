@@ -70,6 +70,11 @@ internal sealed record ReachableMethodAnalysis(
     // What the method adds to the whole program, fingerprinted by the worker that analysed it
     // (ReachableMethodAnalyzer, which makes every analysis).
     public NetWasm.Compiler.Metadata.Inputs.InputFingerprint Contribution { get; init; }
+
+    // Types the method constructs before managed optimization that its optimized body no longer does (an unused
+    // allocation removed, say). They are not reached, but their required dependencies are validated, so a build
+    // rejects at every optimization level what it rejects without optimization.
+    public ImmutableArray<CliTypeIdentity> RequiredTypes { get; init; } = [];
 }
 
 internal sealed record ReachabilityImportAnalysis(

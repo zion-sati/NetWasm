@@ -14,6 +14,7 @@ using NetWasm.Compiler.Analysis.Delegates;
 using NetWasm.Compiler.Analysis.Attributes;
 using NetWasm.Compiler.Analysis.Constants;
 using NetWasm.Compiler.Analysis.StaticArrays;
+using NetWasm.Compiler.Analysis.Reachability;
 using NetWasm.Compiler.ControlFlow;
 
 namespace NetWasm.Compiler.Analysis;
@@ -122,7 +123,7 @@ internal sealed class WholeProgramAnalyzerFactory(
                 new MethodSpecializer(
                 [
                     ConstantCalls(),
-                    new KnownSizeRewriter(calls),
+                    new KnownSizeRewriter(calls, world.NativeIntegerSize),
                     ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
                 ])));
         }
@@ -135,7 +136,7 @@ internal sealed class WholeProgramAnalyzerFactory(
             reducers.Add(new StaticArrayPopulationReducer(
                     new StaticFieldObservationCollector(),
                     new StaticArrayPopulationPlanner(fieldRepository, calls, types,
-                        new ValueConstructorPurityClassifier(methodBodies, fieldRepository, typeDefinitions, methodRepository, intrinsics),
+                        new ValueConstructorPurityClassifier(new CalleeMethodBodyReader(methodBodies), fieldRepository, typeDefinitions, methodRepository, intrinsics),
                         new ClosedTypeIdentityComparer(typeDefinitions), typeDefinitions)));
         }
         if (optimizationSettings.UnwrittenStaticFieldFolding == UnwrittenStaticFieldFoldingPolicy.WholeProgram)
@@ -149,7 +150,7 @@ internal sealed class WholeProgramAnalyzerFactory(
                 new MethodSpecializer(
                 [
                     ConstantCalls(),
-                    new KnownSizeRewriter(calls),
+                    new KnownSizeRewriter(calls, world.NativeIntegerSize),
                     ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
                 ])));
         }
@@ -171,6 +172,10 @@ internal sealed class WholeProgramAnalyzerFactory(
             reachableMethodBatchObserver);
         var asyncBindingResolver = new DelegateJavaScriptAsyncBindingResolver(
             javaScriptAsyncBindings);
+        var genericConstraints = new ClosedGenericConstraintValidator(
+            new MetadataGenericParameterConstraintReader(metadata, typeDefinitions),
+            new GenericArgumentSpecialConstraintValidator(typeDefinitions, methodRepository, nullableTypes),
+            relationships, typeDefinitions);
         var importClassifier = importClassifiers.Create(
             typeFinder,
             typeDefinitions,
@@ -179,8 +184,9 @@ internal sealed class WholeProgramAnalyzerFactory(
             asyncBindingResolver,
             new JavaScriptConversionResolver(typeFinder, methodRepository, methodInstances, symbols),
             intrinsics,
-            symbols);
-        var programBuilder = programBuilders.Create(
+            symbols,
+            genericConstraints);
+        var programBuilder = new RequiredTypeDependencyProgramBuilder(programBuilders.Create(
             allocationCapabilities.Create(
                 typeRepository,
                 fieldRepository,
@@ -188,68 +194,95 @@ internal sealed class WholeProgramAnalyzerFactory(
                 intrinsics,
                 typeClassifiers.Create(metadata)),
             byRefEffects.Create(methodRepository, intrinsics),
-            delegateBindingPlanners.Create(relationships));
-        var closure = new ReachabilityClosureBuilder(
-            typeRepository,
-            fieldRepository,
-            methodRepository,
+            delegateBindingPlanners.Create(relationships)),
+            new RequiredTypeDependencyValidator(typeDefinitions, baseTypeIdentities, implementedInterfaces, genericConstraints),
+            typeIdentities, new CompilerDiagnosticDependencyPathBinder());
+        var dispatchTargetResolver = dispatchTargets.Create(
             typeFinder,
             typeDefinitions,
-            typeIdentities,
+            methodRepository,
+            methodImplementations,
+            implementedInterfaces,
             methodInstances,
             symbols,
-            dispatchTargets.Create(
-                typeFinder,
-                typeDefinitions,
-                methodRepository,
-                methodImplementations,
-                implementedInterfaces,
+            relationships,
+            baseTypes);
+        var closure = new ReachabilityClosureBuilder(
+            new ReachabilitySessionFactory(
+                ledgers,
+                new GenericCycleSessionFactory(typeFinder, methodRepository, methodInstances, symbols,
+                    new CalleeMethodBodyReader(methodBodies)),
+                methodBatchAnalyzer,
+                new DispatchCandidateIndexFactory(relationships, relationshipKeys),
+                delegateTypeRecognizer,
+                fieldRepository,
+                new FinalizerResolver(
+                    typeDefinitions,
+                    methodRepository,
+                    baseTypes),
+                importClassifier,
+                new MethodInitializationTriggerClassifier(typeRepository),
+                new IntrinsicAddressBodyPlanner(intrinsics),
                 methodInstances,
+                methodRepository,
+                new ModuleInitializerResolver(
+                    metadata.Types,
+                    metadata.Methods),
+                nullableTypes,
                 symbols,
-                relationships,
-                baseTypes),
-            delegateTypeRecognizer,
-            importClassifier,
-            methodBatchAnalyzer,
-            typeTestPlanners.Create(types, relationships, relationshipKeys),
+                typeDefinitions,
+                typeFinder,
+                typeIdentities,
+                typeRepository),
+            new ReachabilityRootSeeder(methodRepository, typeDefinitions, typeIdentities, typeFinder),
+            new ReachabilityQueueDrainer(
+                new ReachableMethodApplier(typeIdentities),
+                new ReachabilityImportApplier(typeIdentities),
+                dispatchTargetResolver,
+                managedCallSites,
+                new CompilerDiagnosticProvenanceBinder(),
+                reachabilityClosureObserver),
+            new ReachabilityDerivedRootExpander(
+                new RuntimeReachabilityExpander(
+                    optimizationSettings.ObjectDispatch == ObjectDispatchPolicy.Shared
+                        ? new SharedObjectDispatchResolver(typeFinder, methodRepository, methodInstances, symbols)
+                        : new InlineObjectDispatchResolver(),
+                    delegateTypeRecognizer,
+                    new RuntimeIntrinsicTypeRootPlanner(intrinsics, nullableTypes, typeDefinitions,
+                        new ArrayCreationRootPlanner(typeDefinitions)),
+                    typeDefinitions,
+                    typeIdentities,
+                    new ObjectArrayDelegateAdapterPlanner(
+                        intrinsics,
+                        delegateTypeRecognizer,
+                        typeFinder,
+                        typeDefinitions,
+                        methodRepository,
+                        methodInstances,
+                        symbols)),
+                new MemberReachabilityExpander(
+                    new MemberDescriptorPlanner(new MetadataPropertyAccessorResolver(
+                        [.. metadata.Assemblies.SelectMany(assembly =>
+                            assembly.Properties.Values)],
+                        methodInstances)),
+                    new MemberExecutionPlanner(
+                        intrinsics,
+                        delegateTypeRecognizer,
+                        typeFinder,
+                        methodRepository,
+                        methodInstances,
+                        symbols,
+                        nullableTypes,
+                        typeDefinitions),
+                    dispatchTargetResolver,
+                    new DispatchTargetBodyClassifier(intrinsics)),
+                new TypeFactsReachabilityExpander(
+                    new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities),
+                    typeIdentities)),
             programBuilder,
-            ledgers,
-            managedCallSites,
-            new RuntimeIntrinsicTypeRootPlanner(intrinsics, nullableTypes, typeDefinitions),
-            reachabilityClosureObserver,
-            new DispatchCandidateIndexFactory(relationships, relationshipKeys),
-            new ModuleInitializerResolver(
-                metadata.Types,
-                metadata.Methods),
-            new ModuleInitializerOrderer(BuildModuleDependencies(metadata)),
-            new MemberDescriptorPlanner(new MetadataPropertyAccessorResolver(
-                [.. metadata.Assemblies.SelectMany(assembly =>
-                    assembly.Properties.Values)],
-                methodInstances)),
-            new ObjectArrayDelegateAdapterPlanner(
-                intrinsics,
-                delegateTypeRecognizer,
-                typeFinder,
-                typeDefinitions,
-                methodRepository,
-                methodInstances,
-                symbols),
-            new MemberExecutionPlanner(
-                intrinsics,
-                delegateTypeRecognizer,
-                typeFinder,
-                methodRepository,
-                methodInstances,
-                symbols,
-                nullableTypes),
-            new FinalizerResolver(
-                typeDefinitions,
-                methodRepository,
-                baseTypes),
-            nullableTypes,
-            new MethodInitializationTriggerClassifier(typeRepository),
-            new IntrinsicAddressBodyPlanner(intrinsics),
-            new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities));
+            delegateTypeRecognizer,
+            typeTestPlanners.Create(types, relationships, relationshipKeys),
+            new ModuleInitializerOrderer(BuildModuleDependencies(metadata)));
         return new WholeProgramAnalyzer(reducers.Count == 0
             ? closure
             : new ReducingReachabilityClosureBuilder(closure,

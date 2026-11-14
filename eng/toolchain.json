@@ -7,6 +7,11 @@
   "nodeMinimumMajor": 24,
   "playwright": "1.62.1",
   "emscripten": "6.0.7",
+  "openssl": {
+    "version": "3.5.9",
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+    "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
+  },
   "runtimePackLicenseSources": {
     "emscripten": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86",
     "musl": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b",

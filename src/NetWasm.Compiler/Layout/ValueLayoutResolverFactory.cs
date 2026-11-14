@@ -15,5 +15,5 @@ internal sealed class ValueLayoutResolverFactory(
         IFieldRepository fields,
         WasmTargetLayout target,
         ManagedValueLayoutState state) =>
-        new ValueLayoutResolver(types, fields, _explicitLayouts, target, state);
+        new ValueLayoutResolver(types, fields, _explicitLayouts, target, state, new FieldLayoutFailureBinder());
 }
