@@ -8,7 +8,7 @@ namespace NetWasm.Runtime.Pack.Tests.Materialization;
 public sealed class ResponseFileLinkerCommandFactoryTests
 {
     [Fact]
-    public void ArgumentsGoInAPosixQuotedResponseFileNextToTheLog()
+    public void ArgumentsGoInAQuotedResponseFileNextToTheLog()
     {
         using var directory = new TemporaryDirectory();
         var log = directory.PathTo("logs/link.log");
@@ -20,7 +20,7 @@ public sealed class ResponseFileLinkerCommandFactoryTests
         Assert.Equal("wasm-ld", command.ExecutablePath);
         Assert.Equal(log, command.LogPath);
         Assert.Equal(["--rsp-quoting=posix", "@" + responseFile], command.Arguments);
-        Assert.Equal(["'--undefined=run'", @"'C:\with space\it'\''s.o'", "''"], File.ReadAllLines(responseFile));
+        Assert.Equal(["'--undefined=run'", @"'C:\\with space\\it\'s.o'", "''"], File.ReadAllLines(responseFile));
     }
 
     [Fact]
@@ -31,8 +31,9 @@ public sealed class ResponseFileLinkerCommandFactoryTests
         Assert.Throws<ArgumentException>(() => factory.Create("wasm-ld", [], ""));
     }
 
-    // wasm-ld reads a path with a space, a single quote and many arguments back exactly: it names the missing input as
-    // given.
+    // wasm-ld reads a path with a space, a backslash, a single quote and many arguments back exactly: it names the
+    // missing input as given. A backslash inside quotes is an escape to wasm-ld's tokenizer, so before it was escaped
+    // every Windows link lost its path separators ("cannot open D:a_temp...").
     [Fact]
     public void WasmLdReadsTheResponseFileBackExactly()
     {
@@ -42,7 +43,7 @@ public sealed class ResponseFileLinkerCommandFactoryTests
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "emsdk");
         var linker = Path.Combine(emsdk, "upstream", "bin", "wasm-ld" + (OperatingSystem.IsWindows() ? ".exe" : ""));
         Assert.True(File.Exists(linker), linker);
-        var input = directory.PathTo("with space/it's missing.o");
+        var input = directory.PathTo(@"with space/back\slash it's missing.o");
         ImmutableArray<string> arguments =
         [
             .. Enumerable.Range(0, 2_000).Select(index => $"--undefined=native_library_entry_point_number_{index:D4}"),

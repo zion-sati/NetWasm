@@ -14,7 +14,7 @@ internal sealed class ReachableMethodAnalyzer(
     IMethodRepository methods,
     IMethodSpecializer specializer,
     IManagedMethodOptimizer optimizer,
-    IIntegerCheckEliminator integerChecks,
+    IMethodBodyProver proofs,
     IImplicitExceptionDiscovery exceptionDiscovery,
     ITypedStackValidatorFactory stackValidators,
     IControlFlowGraphBuilder graphBuilder,
@@ -32,7 +32,8 @@ internal sealed class ReachableMethodAnalyzer(
         var graph = graphBuilder.Build(body);
         var validated = stackValidators.Create(types, fields, methods).Validate(graph);
         var managed = new ManagedMethodBody(request.Method, validated);
-        var optimized = request.RewrittenBody is null ? optimizer.Optimize(managed) : integerChecks.Rewrite(body);
+        // A body a whole-program reduction rewrote plans its proofs again, for the instructions it now has.
+        var optimized = request.RewrittenBody is null ? optimizer.Optimize(managed) : proofs.Prove(body);
         var original = body;
         if (!ReferenceEquals(optimized, body))
         {

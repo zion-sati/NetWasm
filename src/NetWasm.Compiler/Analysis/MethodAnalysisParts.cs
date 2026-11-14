@@ -217,7 +217,7 @@ internal sealed class MethodAnalysisParts
         Specializer,
         Optimizer,
         Calls,
-        _settings.IntegerCheckElimination,
+        _settings,
         _factories.ExceptionDiscoveries.Create(_methodRepository, _symbols, _intrinsics),
         InstructionAnalyzer);
 }

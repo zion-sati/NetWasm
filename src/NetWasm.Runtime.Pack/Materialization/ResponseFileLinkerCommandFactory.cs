@@ -6,9 +6,10 @@ using System.Linq;
 namespace NetWasm.Runtime.Pack.Materialization;
 
 // wasm-ld reads its arguments from a response file next to its log, so a link with hundreds of native bindings (two
-// arguments each) stays under Windows' 32,767-character command line (zion-sati/NetWasm#236). The file is quoted the
-// POSIX way, which wasm-ld is told to expect on every host: inside single quotes every character is literal, Windows
-// path separators included, and a single quote closes the quoting, is escaped and reopens it.
+// arguments each) stays under Windows' 32,767-character command line (zion-sati/NetWasm#236). wasm-ld is told to read
+// the file with LLVM's GNU tokenizer on every host (--rsp-quoting=posix), which, unlike a POSIX shell, takes a backslash
+// inside quotes as an escape: each argument is single-quoted, and its backslashes (Windows path separators) and single
+// quotes are escaped with one.
 internal sealed class ResponseFileLinkerCommandFactory : ILinkerCommandFactory
 {
     public RuntimeCommand Create(string linkerPath, ImmutableArray<string> arguments, string logPath)
@@ -21,5 +22,6 @@ internal sealed class ResponseFileLinkerCommandFactory : ILinkerCommandFactory
         return new(linkerPath, ["--rsp-quoting=posix", "@" + responseFile], logPath);
     }
 
-    private static string Quote(string argument) => "'" + argument.Replace("'", @"'\''", StringComparison.Ordinal) + "'";
+    private static string Quote(string argument) =>
+        "'" + argument.Replace(@"\", @"\\", StringComparison.Ordinal).Replace("'", @"\'", StringComparison.Ordinal) + "'";
 }

@@ -62,10 +62,10 @@ public sealed class RepeatedArrayAccessPlannerTests
         Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
     }
 
-    // A method every call passes the same constant is specialized after its proofs are planned (constant arguments
-    // reach instance methods since 0.14). The proofs move with the constant, so the inner loop's Av[i] keeps its proven
-    // null check: before, the specialized body kept a proof of the old instructions, which emission ignored, and every
-    // inner iteration checked Av for null again (SpectralNorm 9% slower).
+    // A method every call passes the same constant is specialized after the optimizer planned its proofs (constant
+    // arguments reach instance methods since 0.14), and its rewritten body plans them again, so the inner loop's Av[i]
+    // keeps its proven null check: before, the body kept a proof of its old instructions, which emission ignored, and
+    // every inner iteration checked Av for null again (SpectralNorm 9% slower, FannkuchRedux 5%).
     [Fact]
     public void ConstantArgumentSpecializationKeepsTheArrayProofs()
     {
@@ -136,7 +136,8 @@ public sealed class RepeatedArrayAccessPlannerTests
             public static class EntryPoint
             {
                 public static int Run(int count) =>
-                    Probe(new int[count + 4, count + 4], new int[count + 1, count + 1], new int[3, 3, 3], count % 3, 1, 2);
+                    // Indexes no call fixes, so Probe keeps its parameters rather than being specialized for constants.
+                    Probe(new int[count + 4, count + 4], new int[count + 1, count + 1], new int[3, 3, 3], count % 3, count % 2, count % 2 + 1);
 
                 [MethodImpl(MethodImplOptions.NoInlining)]
                 private static int Probe(int[,] grid, int[,] other, int[,,] cube, int i, int j, int k)
