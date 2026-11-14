@@ -75,9 +75,25 @@ internal sealed class ConstantArgumentProgramReducer(
             }).ToImmutableArray();
             if (changed)
             {
-                result.Add(method.Method.CanonicalName, _rewrites.Rewrite(method.Body with { Instructions = instructions }));
+                result.Add(method.Method.CanonicalName, _rewrites.Rewrite(WithInstructions(method.Body, instructions)));
             }
         }
         return result.ToImmutable();
     }
+
+    // The constants replace argument loads one for one, and every call passes them, so the facts the body's array and
+    // integer proofs record still hold: they move to the new instructions. A specializer that then rewrites the body
+    // further leaves them describing these instructions, and emission ignores them.
+    private static CilMethodBody WithInstructions(CilMethodBody body, ImmutableArray<CilInstruction> instructions) =>
+        body with
+        {
+            Instructions = instructions,
+            ArrayBoundsProof = body.ArrayBoundsProof is { } bounds &&
+                bounds.Describes(body.Instructions, body.Locals, body.LocalSignatureTypes)
+                ? bounds with { Instructions = instructions }
+                : body.ArrayBoundsProof,
+            IntegerCheckProof = body.IntegerCheckProof is { } integers && integers.Instructions == body.Instructions
+                ? integers with { Instructions = instructions }
+                : body.IntegerCheckProof,
+        };
 }

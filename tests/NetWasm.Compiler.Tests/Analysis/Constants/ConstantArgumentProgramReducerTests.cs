@@ -142,6 +142,44 @@ public sealed class ConstantArgumentProgramReducerTests
 
     private static IReachableProgramReducer AsReducer(IReachableProgramReducer reducer) => reducer;
 
+    // The constants replace argument loads one for one, so the body's array and integer proofs, which every call's
+    // arguments keep true, move to the new instructions; a proof of other instructions stays as it was, and emission
+    // ignores it. Before, every specialized method lost its null, bounds and overflow proofs.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void MovesTheBodysProofsToTheSpecializedInstructions(bool describesBody)
+    {
+        var source = Managed();
+        var body = source.Body;
+        var described = describesBody ? body.Instructions : [.. body.Instructions];
+        var bounds = new ArrayBoundsProof(described, body.Locals, body.LocalSignatureTypes, [0]) { NonNullOffsets = [0] };
+        var integers = new IntegerCheckProof(described, [0], [1]);
+        body = body with { ArrayBoundsProof = bounds, IntegerCheckProof = integers };
+        var managed = new ManagedMethodBody(source.Method, new(new ControlFlowGraphBuilderFactory().Create().Build(body),
+            ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty,
+            ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty));
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(
+            new FixedArguments([new(source.Method, [new ScalarConstant.Int32(7)])]), new RecordingRewrites()));
+
+        var rewritten = Assert.Single(reducer.Reduce(Program(managed), ReachabilityRoots.Empty)).Value;
+
+        Assert.Equal(CilOperation.LoadInt32, rewritten.Instructions[0].Operation);
+        if (describesBody)
+        {
+            Assert.True(rewritten.ArrayBoundsProof!.Describes(rewritten.Instructions, rewritten.Locals, rewritten.LocalSignatureTypes));
+            Assert.Equal([0], rewritten.ArrayBoundsProof.AccessOffsets);
+            Assert.Equal([0], rewritten.ArrayBoundsProof.NonNullOffsets);
+            Assert.True(rewritten.IntegerCheckProof!.ProvesNoOverflow(rewritten.Instructions, rewritten.Instructions[1]));
+            Assert.True(rewritten.IntegerCheckProof.ProvesNonZeroDivisor(rewritten.Instructions, rewritten.Instructions[0]));
+        }
+        else
+        {
+            Assert.Same(bounds, rewritten.ArrayBoundsProof);
+            Assert.Same(integers, rewritten.IntegerCheckProof);
+        }
+    }
+
     internal static ManagedMethodBody Managed()
     {
         var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
