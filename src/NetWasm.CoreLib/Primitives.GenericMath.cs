@@ -1911,7 +1911,7 @@ public readonly partial struct Double
             ((ulong)exponent << BiasedExponentShift) + significand);
 
     public static double ExpM1(double value) => Math.Exp(value) - 1D;
-    public static double Exp2M1(double value) => Math.Pow(2D, value) - 1D;
+    public static double Exp2M1(double value) => Exp2(value) - 1D;
     public static double Exp10M1(double value) => Math.Pow(10D, value) - 1D;
 
     static int IBinaryFloatParseAndFormatInfo<double>.NumberBufferLength => Number.DoubleNumberBufferLength;

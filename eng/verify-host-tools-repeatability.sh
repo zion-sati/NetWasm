@@ -23,6 +23,18 @@ python3 eng/build-host-tools-package.py \
 second_package="$repeat_root/packages/NetWasm.HostTools.$rid.$version.nupkg"
 if ! cmp -s "$first_package" "$second_package"; then
   echo "Host-tools packaging is not byte-for-byte repeatable for $rid $version" >&2
+  # Name the entries that differ, so a failed run shows where the build is not deterministic.
+  python3 - "$first_package" "$second_package" <<'PY' >&2
+import hashlib, sys, zipfile
+first, second = (zipfile.ZipFile(path) for path in sys.argv[1:])
+def entries(archive):
+    return {info.filename: (info.file_size, hashlib.sha256(archive.read(info)).hexdigest(), info.date_time)
+            for info in archive.infolist()}
+a, b = entries(first), entries(second)
+for name in sorted(set(a) | set(b)):
+    if a.get(name) != b.get(name):
+        print(f"  differs: {name}: {a.get(name)} vs {b.get(name)}")
+PY
   exit 1
 fi
 python3 - "$rid" "$version" "$first_package" <<'PY'
