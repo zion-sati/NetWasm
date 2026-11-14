@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis.Constants;
@@ -10,7 +11,7 @@ internal sealed class ConstantCallEvaluator(
     ICalleeMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     ITypeDefinitionResolver typeDefinitions,
-    IMethodRepository methods,
+    IPreciseStaticConstructorClassifier constructors,
     IRuntimeIntrinsicRegistry intrinsics,
     IConstantOperandReader operands,
     IConstantComparisonEvaluator comparisons,
@@ -19,7 +20,8 @@ internal sealed class ConstantCallEvaluator(
     private readonly ICalleeMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ?? throw new ArgumentNullException(nameof(typeDefinitions));
-    private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
+    private readonly IPreciseStaticConstructorClassifier _constructors = constructors ??
+        throw new ArgumentNullException(nameof(constructors));
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ?? throw new ArgumentNullException(nameof(intrinsics));
     private readonly IConstantOperandReader _operands = operands ?? throw new ArgumentNullException(nameof(operands));
     private readonly IConstantComparisonEvaluator _comparisons = comparisons ?? throw new ArgumentNullException(nameof(comparisons));
@@ -161,7 +163,7 @@ internal sealed class ConstantCallEvaluator(
             return null;
         }
         var owner = _typeDefinitions.ResolveTypeIdentity(method.DeclaringType);
-        if (!owner.IsBeforeFieldInit && owner.Methods.Any(key => _methods.GetMethod(key).Name == ".cctor"))
+        if (_constructors.Classify(owner))
         {
             return null;
         }

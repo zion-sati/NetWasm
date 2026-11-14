@@ -1,3 +1,4 @@
+using System;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
@@ -10,16 +11,42 @@ namespace NetWasm.Compiler.Analysis;
 internal sealed class ReachableMethodAnalyzerFactory(
     ITypedStackValidatorFactory stackValidators,
     IControlFlowGraphBuilderFactory graphBuilders,
+    Arrays.IArrayBoundsCheckEliminatorFactory arrayBounds,
+    Arrays.IRepeatedArrayAccessEliminatorFactory repeatedAccesses,
+    NullChecks.IConstructedObjectNullCheckEliminatorFactory constructedObjects,
+    IIntegerCheckEliminatorFactory integerChecks,
     ILogger<DiagnosticReachableMethodAnalyzer> logger) : IReachableMethodAnalyzerFactory
 {
     internal ReachableMethodAnalyzerFactory(
         ITypedStackValidatorFactory stackValidators,
-        IControlFlowGraphBuilderFactory graphBuilders) : this(
+        IControlFlowGraphBuilderFactory graphBuilders,
+        Arrays.IArrayBoundsCheckEliminatorFactory arrayBounds,
+        Arrays.IRepeatedArrayAccessEliminatorFactory repeatedAccesses,
+        NullChecks.IConstructedObjectNullCheckEliminatorFactory constructedObjects,
+        IIntegerCheckEliminatorFactory integerChecks) : this(
             stackValidators,
             graphBuilders,
+            arrayBounds,
+            repeatedAccesses,
+            constructedObjects,
+            integerChecks,
             NullLogger<DiagnosticReachableMethodAnalyzer>.Instance)
     {
     }
+
+    private readonly ITypedStackValidatorFactory _stackValidators = stackValidators ??
+        throw new ArgumentNullException(nameof(stackValidators));
+    private readonly IControlFlowGraphBuilderFactory _graphBuilders = graphBuilders ??
+        throw new ArgumentNullException(nameof(graphBuilders));
+    private readonly Arrays.IArrayBoundsCheckEliminatorFactory _arrayBounds = arrayBounds ??
+        throw new ArgumentNullException(nameof(arrayBounds));
+    private readonly Arrays.IRepeatedArrayAccessEliminatorFactory _repeatedAccesses = repeatedAccesses ??
+        throw new ArgumentNullException(nameof(repeatedAccesses));
+    private readonly NullChecks.IConstructedObjectNullCheckEliminatorFactory _constructedObjects = constructedObjects ??
+        throw new ArgumentNullException(nameof(constructedObjects));
+    private readonly IIntegerCheckEliminatorFactory _integerChecks = integerChecks ??
+        throw new ArgumentNullException(nameof(integerChecks));
+    private readonly ILogger<DiagnosticReachableMethodAnalyzer> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     public IReachableMethodAnalyzer Create(
         IMethodBodyReader methodBodies,
@@ -43,12 +70,12 @@ internal sealed class ReachableMethodAnalyzerFactory(
             // A body a whole-program reduction rewrote finds its proofs again.
             CreateProofs(types, fields, methods, calledMethods, settings),
             exceptionDiscovery,
-            stackValidators,
-            graphBuilders.Create(),
+            _stackValidators,
+            _graphBuilders.Create(),
             instructionAnalyzer),
-            logger, new CompilerDiagnosticProvenanceBinder());
+            _logger, new CompilerDiagnosticProvenanceBinder());
 
-    // The managed optimizer's closing proof passes, under the same settings.
+    // The managed optimizer's closing proof passes, from the same factories under the same settings.
     private MethodBodyProofChain CreateProofs(
         ITypeRepository types,
         IFieldRepository fields,
@@ -56,22 +83,13 @@ internal sealed class ReachableMethodAnalyzerFactory(
         ICalledMethodResolver calledMethods,
         WasmOptimizationSettings settings)
     {
-        var graphBuilder = graphBuilders.Create();
-        var stackValidator = stackValidators.Create(types, fields, methods);
+        var graphBuilder = _graphBuilders.Create();
+        var stackValidator = _stackValidators.Create(types, fields, methods);
         var dominance = new ControlFlowDominanceAnalyzer();
-        var arrayChecks = settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative;
         return new(
-            new Arrays.ArrayBoundsCheckEliminator(graphBuilder, stackValidator,
-                new Arrays.ArrayBoundsCheckEliminationPlanner(
-                    new Arrays.ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance), dominance),
-                arrayChecks),
-            new Arrays.RepeatedArrayAccessEliminator(graphBuilder, stackValidator, new Arrays.RepeatedArrayAccessPlanner(dominance),
-                arrayChecks),
-            new NullChecks.ConstructedObjectNullCheckEliminator(graphBuilder, stackValidator,
-                new NullChecks.ConstructedReceiverPlanner(dominance, new StackEffectResolver(calledMethods), calledMethods),
-                settings.NewObjectNullCheckElimination != NewObjectNullCheckEliminationPolicy.Disabled),
-            new IntegerCheckEliminator(graphBuilder, stackValidator,
-                new IntegerRangeAnalysis(new StackEffectResolver(calledMethods)),
-                settings.IntegerCheckElimination == IntegerCheckEliminationPolicy.ProvenRanges));
+            _arrayBounds.Create(graphBuilder, stackValidator, dominance, settings),
+            _repeatedAccesses.Create(graphBuilder, stackValidator, dominance, settings),
+            _constructedObjects.Create(graphBuilder, stackValidator, dominance, calledMethods, settings),
+            _integerChecks.Create(graphBuilder, stackValidator, calledMethods, settings));
     }
 }

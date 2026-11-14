@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
@@ -7,7 +8,8 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Metadata.Tests;
 
-// An assembly's embedded ILLink.Substitutions.xml stubs its static, parameterless Boolean methods.
+// An assembly's embedded ILLink.Substitutions.xml stubs its Boolean and void methods (SubstitutionSignatureTypeNameProviderTests
+// covers instance, parameterised and void ones).
 public sealed class FeatureSwitchSubstitutionReaderTests
 {
     // Elements without a type name, a stub body or a readable feature value apply nowhere; the rest apply.
@@ -93,6 +95,66 @@ public sealed class FeatureSwitchSubstitutionReaderTests
         new ManagedPEBuilder(PEHeaderBuilder.CreateLibraryHeader(), new MetadataRootBuilder(metadata), new BlobBuilder(),
             managedResources: withData ? resources : null).Serialize(image);
         using var pe = new PEReader(image.ToImmutableArray());
-        return (FeatureSwitchSubstitutionReader.Read(pe, pe.GetMetadataReader()), MetadataTokens.GetToken(method));
+        return (Reader().Read(pe, pe.GetMetadataReader()), MetadataTokens.GetToken(method));
+    }
+
+    // The reader as the compiler composes it: one naming Strategy for types and signatures.
+    internal static FeatureSwitchSubstitutionReader Reader()
+    {
+        var names = new SubstitutionSignatureTypeNameProvider();
+        return new(new EmbeddedResourceReader(), new TypeDefinitionNameFormatter(names), new MethodSignatureNameFormatter(names));
+    }
+
+    [Fact]
+    public void TheReaderRejectsMissingCollaboratorsAndInputs()
+    {
+        var names = new SubstitutionSignatureTypeNameProvider();
+        Assert.Throws<ArgumentNullException>(() => new FeatureSwitchSubstitutionReader(null!, new TypeDefinitionNameFormatter(names),
+            new MethodSignatureNameFormatter(names)));
+        Assert.Throws<ArgumentNullException>(() => new FeatureSwitchSubstitutionReader(new EmbeddedResourceReader(), null!,
+            new MethodSignatureNameFormatter(names)));
+        Assert.Throws<ArgumentNullException>(() => new FeatureSwitchSubstitutionReader(new EmbeddedResourceReader(),
+            new TypeDefinitionNameFormatter(names), null!));
+        Assert.Throws<ArgumentNullException>(() => new TypeDefinitionNameFormatter(null!));
+        Assert.Throws<ArgumentNullException>(() => new MethodSignatureNameFormatter(null!));
+        Assert.Throws<ArgumentNullException>(() => new TypeDefinitionNameFormatter(names).Format(null!, default));
+        Assert.Throws<ArgumentNullException>(() => new MethodSignatureNameFormatter(names).Format(null!, default));
+        using var pe = new PEReader(Image());
+        Assert.Throws<ArgumentNullException>(() => Reader().Read(null!, pe.GetMetadataReader()));
+        Assert.Throws<ArgumentNullException>(() => Reader().Read(pe, null!));
+        Assert.Throws<ArgumentNullException>(() => new EmbeddedResourceReader().Read(null!, pe.GetMetadataReader(), "x"));
+        Assert.Throws<ArgumentNullException>(() => new EmbeddedResourceReader().Read(pe, null!, "x"));
+        Assert.Throws<ArgumentNullException>(() => new EmbeddedResourceReader().Read(pe, pe.GetMetadataReader(), null!));
+    }
+
+    // A resource another file holds is not embedded, so it has no bytes here; an embedded one reads back exactly.
+    [Fact]
+    public void OnlyEmbeddedResourcesHaveBytes()
+    {
+        using var pe = new PEReader(Image());
+        var reader = pe.GetMetadataReader();
+
+        Assert.Null(new EmbeddedResourceReader().Read(pe, reader, "Linked.txt"));
+        Assert.Null(new EmbeddedResourceReader().Read(pe, reader, "Missing.txt"));
+        Assert.Equal([1, 2, 3], new EmbeddedResourceReader().Read(pe, reader, "Embedded.txt"));
+    }
+
+    private static ImmutableArray<byte> Image()
+    {
+        var metadata = new MetadataBuilder();
+        metadata.AddModule(0, metadata.GetOrAddString("Resources.dll"), metadata.GetOrAddGuid(Guid.NewGuid()), default, default);
+        metadata.AddAssembly(metadata.GetOrAddString("Resources"), new Version(1, 0), default, default, 0, 0);
+        metadata.AddTypeDefinition(default, default, metadata.GetOrAddString("<Module>"), default,
+            MetadataTokens.FieldDefinitionHandle(1), MetadataTokens.MethodDefinitionHandle(1));
+        var file = metadata.AddAssemblyFile(metadata.GetOrAddString("Linked.txt"), default, containsMetadata: false);
+        metadata.AddManifestResource(ManifestResourceAttributes.Public, metadata.GetOrAddString("Linked.txt"), file, 0);
+        metadata.AddManifestResource(ManifestResourceAttributes.Public, metadata.GetOrAddString("Embedded.txt"), default, 0);
+        var resources = new BlobBuilder();
+        resources.WriteInt32(3);
+        resources.WriteBytes(new byte[] { 1, 2, 3 });
+        var image = new BlobBuilder();
+        new ManagedPEBuilder(PEHeaderBuilder.CreateLibraryHeader(), new MetadataRootBuilder(metadata), new BlobBuilder(),
+            managedResources: resources).Serialize(image);
+        return image.ToImmutableArray();
     }
 }

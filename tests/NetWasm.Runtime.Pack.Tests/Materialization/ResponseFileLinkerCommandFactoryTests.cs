@@ -4,7 +4,8 @@ using NetWasm.Runtime.Pack.Tests.TestSupport;
 
 namespace NetWasm.Runtime.Pack.Tests.Materialization;
 
-// wasm-ld takes its arguments from a response file, so the command line stays short on Windows (zion-sati/NetWasm#236).
+// The response file linker as the runtime pack composes it, end to end: wasm-ld takes its arguments from a response file,
+// so the command line stays short on Windows (zion-sati/NetWasm#236).
 public sealed class ResponseFileLinkerCommandFactoryTests
 {
     [Fact]
@@ -12,7 +13,7 @@ public sealed class ResponseFileLinkerCommandFactoryTests
     {
         using var directory = new TemporaryDirectory();
         var log = directory.PathTo("logs/link.log");
-        var factory = Assert.IsAssignableFrom<ILinkerCommandFactory>(new ResponseFileLinkerCommandFactory());
+        var factory = Assert.IsAssignableFrom<ILinkerCommandFactory>(new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())));
 
         var command = factory.Create("wasm-ld", ["--undefined=run", @"C:\with space\it's.o", ""], log);
 
@@ -26,7 +27,7 @@ public sealed class ResponseFileLinkerCommandFactoryTests
     [Fact]
     public void RejectsAMissingLinkerOrLog()
     {
-        var factory = new ResponseFileLinkerCommandFactory();
+        var factory = new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter()));
         Assert.Throws<ArgumentNullException>(() => factory.Create(null!, [], "link.log"));
         Assert.Throws<ArgumentException>(() => factory.Create("wasm-ld", [], ""));
     }
@@ -50,9 +51,9 @@ public sealed class ResponseFileLinkerCommandFactoryTests
             input,
             "-o", directory.PathTo("out.wasm"),
         ];
-        var command = new ResponseFileLinkerCommandFactory().Create(linker, arguments, directory.PathTo("logs/link.log"));
+        var command = new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())).Create(linker, arguments, directory.PathTo("logs/link.log"));
 
-        Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
+        Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
 
         Assert.Contains($"cannot open {input}", File.ReadAllText(command.LogPath), StringComparison.Ordinal);
     }

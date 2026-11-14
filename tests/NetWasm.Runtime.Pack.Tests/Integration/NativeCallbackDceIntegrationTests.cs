@@ -126,7 +126,7 @@ public sealed class NativeCallbackDceIntegrationTests
     {
         var root = Path.Combine(cell, name);
         Directory.CreateDirectory(root);
-        var commands = new CommandInvoker();
+        var commands = new CommandInvoker(new ToolOutputExcerptFormatter());
         var hello42 = Path.Combine(root, "Hello42.cs");
         File.Copy(Path.Combine(assets.Root, "eng", "size-canary", "Hello42.cs"), hello42);
         var sources = new List<string> { hello42 };

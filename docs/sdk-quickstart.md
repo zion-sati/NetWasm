@@ -350,8 +350,10 @@ with properties such as `<UseSystemResourceKeys>`, `<InvariantGlobalization>` or
 item. `AppContext` reads them as .NET reads `runtimeconfig.json`. A switch
 marked `Trim="true"`, as every one the SDK sets from a property is, is also
 folded when the program compiles: the code it turns off leaves the program, as
-trimming removes it, and so do the code paths that packages' embedded
-`ILLink.Substitutions.xml` files stub for it.
+trimming removes it, and so do the code paths that an assembly's embedded
+`ILLink.Substitutions.xml` stubs for it, the framework's included (while
+`EventSourceSupport` is false, `EventSource.IsEnabled()` is false and event
+logging leaves the program).
 
 NetWasm's defaults include no more than Blazor WebAssembly's:
 `UseSystemResourceKeys` is true (NetWasm deploys no manifest resources, so

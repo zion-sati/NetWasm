@@ -31,6 +31,11 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddSingleton<ITypeOperandResolverFactory,
             TypeOperandResolverFactory>();
         services.AddSingleton<IMethodSpecializerFactory, MethodSpecializerFactory>();
+        services.AddSingleton<Arrays.IArrayBoundsCheckEliminatorFactory, Arrays.ArrayBoundsCheckEliminatorFactory>();
+        services.AddSingleton<Arrays.IRepeatedArrayAccessEliminatorFactory, Arrays.RepeatedArrayAccessEliminatorFactory>();
+        services.AddSingleton<NullChecks.IConstructedObjectNullCheckEliminatorFactory,
+            NullChecks.ConstructedObjectNullCheckEliminatorFactory>();
+        services.AddSingleton<IIntegerCheckEliminatorFactory, IntegerCheckEliminatorFactory>();
         services.AddSingleton<IManagedMethodOptimizerFactory,
             ManagedMethodOptimizerFactory>();
         services.AddSingleton<NullChecks.IConstructorReceiverProverFactory,

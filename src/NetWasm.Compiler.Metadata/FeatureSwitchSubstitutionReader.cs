@@ -13,20 +13,31 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Metadata;
 
 // Reads an assembly's embedded ILLink.Substitutions.xml, the feature-switch substitutions .NET's trimmer applies
-// (Microsoft.Extensions packages stub System.SR.UsingResourceKeys() for System.Resources.UseSystemResourceKeys).
-// NetWasm applies the stubs of static, parameterless Boolean methods; it leaves other substitutions unapplied, so
-// those methods keep their own bodies.
-internal static class FeatureSwitchSubstitutionReader
+// (Microsoft.Extensions packages stub System.SR.UsingResourceKeys() for System.Resources.UseSystemResourceKeys; CoreLib
+// stubs EventSource.IsEnabled() for System.Diagnostics.Tracing.EventSource.IsSupported). NetWasm applies the method
+// stubs of Boolean methods, which return the stub's value, and of void methods, which do nothing, static or instance
+// and whatever their parameters, matched by signature as ILLink writes it; it leaves other substitutions (other return
+// types, fields, resources) unapplied, so those keep their own bodies. An Adapter from the substitution document to
+// stubs: the resource, and the names of types and signatures, come from its collaborators.
+internal sealed class FeatureSwitchSubstitutionReader(
+    IEmbeddedResourceReader resources,
+    ITypeDefinitionNameFormatter typeNames,
+    IMethodSignatureFormatter signatures) : IFeatureSwitchSubstitutionReader
 {
     private const string ResourceName = "ILLink.Substitutions.xml";
 
-    // The stubs by method token.
-    internal static Dictionary<int, ImmutableArray<FeatureSwitchStub>> Read(PEReader image, MetadataReader reader)
+    private readonly IEmbeddedResourceReader _resources = resources ?? throw new ArgumentNullException(nameof(resources));
+    private readonly ITypeDefinitionNameFormatter _typeNames = typeNames ?? throw new ArgumentNullException(nameof(typeNames));
+    private readonly IMethodSignatureFormatter _signatures = signatures ?? throw new ArgumentNullException(nameof(signatures));
+
+    public Dictionary<int, ImmutableArray<FeatureSwitchStub>> Read(PEReader image, MetadataReader reader)
     {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(reader);
         var stubs = new Dictionary<int, ImmutableArray<FeatureSwitchStub>>();
-        if (Resource(image, reader) is not { } document)
+        if (Document(_resources.Read(image, reader, ResourceName)) is not { } document)
             return stubs;
-        var types = reader.TypeDefinitions.ToDictionary(handle => FullName(reader, handle), StringComparer.Ordinal);
+        var types = reader.TypeDefinitions.ToDictionary(handle => _typeNames.Format(reader, handle), StringComparer.Ordinal);
         // A document that loaded has its root element.
         foreach (var assembly in document.Root!.Elements("assembly"))
         {
@@ -39,21 +50,15 @@ internal static class FeatureSwitchSubstitutionReader
                 foreach (var method in type.Elements("method"))
                 {
                     if (method.Attribute("body")?.Value != "stub" ||
-                        !bool.TryParse(method.Attribute("value")?.Value, out var result) ||
                         method.Attribute("signature")?.Value is not { } signature ||
-                        !signature.StartsWith("System.Boolean ", StringComparison.Ordinal) ||
-                        !signature.EndsWith("()", StringComparison.Ordinal))
+                        Result(signature, method.Attribute("value")?.Value) is not { } result)
                         continue;
-                    var name = signature["System.Boolean ".Length..^2];
                     var conditions = Conditions(method, typeConditions);
                     if (conditions.IsEmpty)
                         continue;
                     foreach (var methodHandle in reader.GetTypeDefinition(typeHandle).GetMethods())
                     {
-                        var definition = reader.GetMethodDefinition(methodHandle);
-                        if ((definition.Attributes & System.Reflection.MethodAttributes.Static) == 0 ||
-                            reader.GetString(definition.Name) != name ||
-                            definition.GetParameters().Count != 0)
+                        if (_signatures.Format(reader, reader.GetMethodDefinition(methodHandle)) != signature)
                             continue;
                         var token = MetadataTokens.GetToken(methodHandle);
                         stubs[token] = (stubs.TryGetValue(token, out var existing) ? existing : [])
@@ -65,6 +70,13 @@ internal static class FeatureSwitchSubstitutionReader
         return stubs;
     }
 
+    // A Boolean method's stub returns its value, and a void method's does nothing (its result is unused); a stub of
+    // another return type, or a Boolean one without a readable value, applies nowhere.
+    private static bool? Result(string signature, string? value) =>
+        signature.StartsWith("System.Void ", StringComparison.Ordinal) ? false
+        : signature.StartsWith("System.Boolean ", StringComparison.Ordinal) && bool.TryParse(value, out var result) ? result
+        : null;
+
     // An element's feature condition joins its parents'; an element whose condition cannot be read applies nowhere.
     private static ImmutableArray<(string Feature, bool Value)> Conditions(
         XElement element, ImmutableArray<(string Feature, bool Value)> parent)
@@ -74,41 +86,19 @@ internal static class FeatureSwitchSubstitutionReader
         return bool.TryParse(element.Attribute("featurevalue")?.Value, out var value) ? parent.Add((feature, value)) : [];
     }
 
-    private static XDocument? Resource(PEReader image, MetadataReader reader)
+    // A resource that is not well-formed XML applies nothing.
+    private static XDocument? Document(byte[]? resource)
     {
-        foreach (var handle in reader.ManifestResources)
+        if (resource is null)
+            return null;
+        try
         {
-            var resource = reader.GetManifestResource(handle);
-            if (!resource.Implementation.IsNil || reader.GetString(resource.Name) != ResourceName)
-                continue;
-            // An image with metadata has its CLI header.
-            var resources = image.PEHeaders.CorHeader!.ResourcesDirectory;
-            if (resources.Size <= 0)
-                return null;
-            var data = image.GetSectionData(resources.RelativeVirtualAddress).GetReader();
-            data.Offset = checked((int)resource.Offset);
-            var length = data.ReadInt32();
-            try
-            {
-                using var stream = new MemoryStream(data.ReadBytes(length));
-                return XDocument.Load(stream);
-            }
-            catch (XmlException)
-            {
-                return null;
-            }
+            using var stream = new MemoryStream(resource);
+            return XDocument.Load(stream);
         }
-        return null;
-    }
-
-    private static string FullName(MetadataReader reader, TypeDefinitionHandle handle)
-    {
-        var type = reader.GetTypeDefinition(handle);
-        var name = reader.GetString(type.Name);
-        var declaring = type.GetDeclaringType();
-        if (!declaring.IsNil)
-            return FullName(reader, declaring) + "/" + name;
-        var space = reader.GetString(type.Namespace);
-        return space.Length == 0 ? name : space + "." + name;
+        catch (XmlException)
+        {
+            return null;
+        }
     }
 }

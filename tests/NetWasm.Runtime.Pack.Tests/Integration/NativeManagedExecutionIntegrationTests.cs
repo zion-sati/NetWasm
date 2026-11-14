@@ -211,7 +211,7 @@ public sealed class NativeManagedExecutionIntegrationTests
         var producerTools = providerlessCallbacks
             ? null
             : Path.Combine(emsdk!, "upstream", "bin");
-        var commands = new CommandInvoker();
+        var commands = new CommandInvoker(new ToolOutputExcerptFormatter());
         var nativeSource = providerlessCallbacks
             ? null
             : Path.Combine(

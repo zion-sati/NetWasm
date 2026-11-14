@@ -3,6 +3,7 @@ using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Constants;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Tests.Analysis.Constants;
@@ -23,12 +24,14 @@ internal static class ConstantRewriteTestSupport
 
     internal static CilMethodBody Body(params CilInstruction[] instructions) => new(Method().Definition, 4, [CliValueKind.I4], [.. instructions]);
 
-    internal static ConstantOperandReader Operands(MethodFacts facts) => new(facts, facts, facts, facts);
+    internal static ConstantOperandReader Operands(MethodFacts facts) => new(facts, facts, facts, Constructors(facts));
+
+    internal static PreciseStaticConstructorClassifier Constructors(MethodFacts facts) => new(facts);
 
     internal static ConstantComparisonEvaluator Comparisons(MethodFacts facts) => new(facts);
 
     internal static ConstantCallEvaluator Evaluator(MethodFacts facts) =>
-        new(facts, facts, facts, facts, facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([]));
+        new(facts, facts, facts, Constructors(facts), facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([]));
 
     internal static IControlFlowGraphBuilder Graph(CilMethodBody body) => new FixedGraph(
         new ControlFlowGraphBuilderFactory().Create().Build(body));

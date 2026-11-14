@@ -703,6 +703,7 @@
     <Compile Include="ObjectIdentityRuntime.cs" />
     <Compile Include="GC.cs" />
     <Compile Include="GCMemoryInfo.cs" />
+    <Compile Include="Gen2GcCallback.cs" />
     <Compile Include="GCSettings.cs" />
     <Compile Include="WeakReferenceRuntime.cs" />
     <Compile Include="WeakReference.cs" />
@@ -1654,4 +1655,8 @@
       <FileWrites Include="$(_NetWasmProductVersionSource)" />
     </ItemGroup>
   </Target>
+  <ItemGroup>
+    <!-- Upstream's feature-switch substitutions, which the compiler reads from this resource as ILLink does. -->
+    <EmbeddedResource Include="ILLink/ILLink.Substitutions.Shared.xml" LogicalName="ILLink.Substitutions.xml" />
+  </ItemGroup>
 </Project>

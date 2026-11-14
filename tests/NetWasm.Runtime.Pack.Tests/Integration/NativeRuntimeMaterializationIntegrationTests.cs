@@ -53,7 +53,7 @@ public sealed class NativeRuntimeMaterializationIntegrationTests
         var suffix = OperatingSystem.IsWindows() ? ".exe" : "";
         var clang = Path.Combine(producerTools, "clang" + suffix);
         var archiver = Path.Combine(producerTools, "llvm-ar" + suffix);
-        var commands = new CommandInvoker();
+        var commands = new CommandInvoker(new ToolOutputExcerptFormatter());
         var source = Path.Combine(AppContext.BaseDirectory, "IntegrationAssets", "native-mule.c");
         var inputCopies = new[]
         {

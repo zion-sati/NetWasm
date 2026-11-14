@@ -51,7 +51,8 @@ public sealed class ManagedAssembly : IDisposable
             INativeImportDeclarationReader nativeImports,
             INativeCallbackDeclarationReader nativeCallbacks,
             IUnsafeAccessorDeclarationReader unsafeAccessors,
-            INativeImportBinder nativeBinding)
+            INativeImportBinder nativeBinding,
+            IFeatureSwitchSubstitutionReader substitutions)
     {
         Path = path;
         _image = image;
@@ -67,7 +68,7 @@ public sealed class ManagedAssembly : IDisposable
             nativeCallbacks,
             unsafeAccessors,
             nativeBinding);
-        foreach (var (token, stubs) in FeatureSwitchSubstitutionReader.Read(_peReader, Reader))
+        foreach (var (token, stubs) in substitutions.Read(_peReader, Reader))
         {
             if (_methods.TryGetValue(token, out var method))
                 _methods[token] = method with { FeatureSwitchStubs = stubs };
@@ -159,7 +160,8 @@ public sealed class ManagedAssembly : IDisposable
                 nativeImports,
                 nativeCallbacks,
                 new UnsafeAccessorDeclarationReader(new CustomAttributeTypeNameProvider()),
-                nativeBinding ?? NativeLibraryBinding.All);
+                nativeBinding ?? NativeLibraryBinding.All,
+                SubstitutionReader());
         }
         catch (BadImageFormatException exception)
         {
@@ -168,6 +170,13 @@ public sealed class ManagedAssembly : IDisposable
                     DiagnosticCode.UnsupportedMetadata,
                     $"'{path}' is not a valid managed assembly: {exception.Message}"));
         }
+    }
+
+    // The substitution reader, its type and signature names given by one naming Strategy.
+    private static FeatureSwitchSubstitutionReader SubstitutionReader()
+    {
+        var names = new SubstitutionSignatureTypeNameProvider();
+        return new(new EmbeddedResourceReader(), new TypeDefinitionNameFormatter(names), new MethodSignatureNameFormatter(names));
     }
 
     public void Dispose()

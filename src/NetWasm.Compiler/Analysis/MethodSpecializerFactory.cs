@@ -46,9 +46,14 @@ internal sealed class MethodSpecializerFactory(
         var stackEffects = new StackEffectResolver(calledMethods);
         var stackConsumers = new StackValueConsumerFinder(stackEffects);
         var calleeBodies = new CalleeMethodBodyReader(methodBodies);
+        var effectFreeLoads = new EffectFreeLoadFinder(fields, typeRepository, new PreciseStaticConstructorClassifier(methods));
+        var featureSwitches = new FeatureSwitchGetterValueSelector(world.FeatureSwitches,
+            new FeatureSwitchStubValueSelector(world.FeatureSwitches));
         return new MethodSpecializer(
         [
-            // First, so every later rule sees an argument or store of the kind declared.
+            // Before every other rule: a method ILLink.Substitutions.xml stubs has the stub's body instead of its own.
+            new FeatureSwitchBodyStubRewriter(featureSwitches),
+            // First of the rest, so every later rule sees an argument or store of the kind declared.
             new ImplicitCoercionRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
             // Second, so every later rule meets each leave on an empty stack, exiting a block.
             new LeaveRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
@@ -79,7 +84,7 @@ internal sealed class MethodSpecializerFactory(
             new ExecutingAssemblyCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
                 typeIdentities),
             new PlatformWorldCallRewriter(calledMethods, symbols, world),
-            new FeatureSwitchCallRewriter(calledMethods, world.FeatureSwitches),
+            new FeatureSwitchCallRewriter(_graphBuilders.Create(), calledMethods, effectFreeLoads, featureSwitches),
             new RuntimeConfigurationRewriter(symbols, world.RuntimeProperties),
             new PlatformServices.PlatformServiceBindingRewriter(calledMethods, symbols, world),
             new ClosedTypeIsValueTypeCallRewriter(calledMethods, symbols),
@@ -148,6 +153,8 @@ internal sealed class MethodSpecializerFactory(
             new VectorElementReadRewriter(calledMethods, types, methods, methodInstances, symbols),
             new ConstantStaticFieldRewriter(fields, typeIdentities, typeDefinitions, methods, calleeBodies),
             ConstantBranchFoldingFactory.Create(_graphBuilders.Create()),
+            // After the branches a folded check cut off are gone, with the last reads of the locals they used.
+            new UnreadLocalStoreRewriter(_graphBuilders.Create(), effectFreeLoads),
         ]);
     }
 }

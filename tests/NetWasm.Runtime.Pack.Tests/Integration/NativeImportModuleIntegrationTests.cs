@@ -29,7 +29,7 @@ public sealed class NativeImportModuleIntegrationTests
         var linker = Path.Combine(tools, "wasm-ld" + executableSuffix);
         var archiver = Path.Combine(tools, "llvm-ar" + executableSuffix);
         Assert.All(new[] { clang, linker, archiver }, path => Assert.True(File.Exists(path)));
-        var commands = new CommandInvoker();
+        var commands = new CommandInvoker(new ToolOutputExcerptFormatter());
         var source = Path.Combine(AppContext.BaseDirectory, "IntegrationAssets", "native-host-import.c");
         var objectPath = Path.Combine(temporary.Path, "host-ui.o");
         var archive = Path.Combine(temporary.Path, "libhost_ui.a");

@@ -156,7 +156,8 @@ internal sealed class MethodAnalysisParts
             _symbols = symbols,
             _intrinsics = intrinsics,
             _settings = optimizationSettings,
-            _operands = new ConstantOperandReader(calls, fieldRepository, typeRepository, methodRepository),
+            _operands = new ConstantOperandReader(calls, fieldRepository, typeRepository,
+                new PreciseStaticConstructorClassifier(methodRepository)),
             BaseTypes = baseTypes,
             Relationships = relationships,
             RelationshipKeys = relationshipKeys,
@@ -204,7 +205,8 @@ internal sealed class MethodAnalysisParts
     }
 
     internal IMethodRewriteRule ConstantCalls() => new ConstantCallRewriter(_factories.GraphBuilders.Create(), Calls,
-        new ConstantCallEvaluator(new CalleeMethodBodyReader(_methodBodies), Calls, _typeDefinitions, _methodRepository, _intrinsics, _operands,
+        new ConstantCallEvaluator(new CalleeMethodBodyReader(_methodBodies), Calls, _typeDefinitions,
+            new PreciseStaticConstructorClassifier(_methodRepository), _intrinsics, _operands,
             new ConstantComparisonEvaluator(_typeDefinitions), Specializer),
         _operands);
 

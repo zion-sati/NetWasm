@@ -4,8 +4,9 @@ using System.Linq;
 
 namespace NetWasm.Compiler.Core;
 
-// An ILLink.Substitutions.xml stub of a static, parameterless Boolean method: where every condition holds (a feature
-// switch with the given value, from the substitution's assembly, type and method elements), a call returns Result.
+// An ILLink.Substitutions.xml method stub: where every condition holds (a feature switch with the given value, from the
+// substitution's assembly, type and method elements), a Boolean method returns Result and a void method does nothing
+// (its Result is false and unused).
 public sealed record FeatureSwitchStub(ImmutableArray<(string Feature, bool Value)> Conditions, bool Result)
 {
     public bool Equals(FeatureSwitchStub? other) =>

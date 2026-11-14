@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 
 namespace NetWasm.Compiler.Analysis.Constants;
 
@@ -11,12 +12,13 @@ internal sealed class ConstantOperandReader(
     ICalledMethodResolver calledMethods,
     IFieldRepository fields,
     ITypeRepository types,
-    IMethodRepository methods) : IConstantOperandReader
+    IPreciseStaticConstructorClassifier constructors) : IConstantOperandReader
 {
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly ITypeRepository _types = types ?? throw new ArgumentNullException(nameof(types));
-    private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
+    private readonly IPreciseStaticConstructorClassifier _constructors = constructors ??
+        throw new ArgumentNullException(nameof(constructors));
 
     public int MaximumLength => 3;
 
@@ -55,7 +57,7 @@ internal sealed class ConstantOperandReader(
         }
         // Taking the field's address would run a precise static constructor.
         var owner = _types.GetTypeDefinition(definition.DeclaringType);
-        if (!owner.IsBeforeFieldInit && owner.Methods.Any(key => _methods.GetMethod(key).Name == ".cctor"))
+        if (_constructors.Classify(owner))
         {
             return null;
         }

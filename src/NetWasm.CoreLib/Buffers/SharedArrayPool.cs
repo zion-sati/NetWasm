@@ -4,7 +4,8 @@
 // NetWasm: SharedArrayPoolStatics takes upstream's defaults instead of reading the two
 // DOTNET_SYSTEM_BUFFERS_SHAREDARRAYPOOL_* environment variables, so a program that uses the pool reads no environment.
 // NetWasm: the one thread's local buckets are a field rather than a ConditionalWeakTable of every thread's.
-// NetWasm: no gen2 trim callback is registered, so the pool keeps what it caches (pay for play).
+// NetWasm: the trim callback, which reads the monotonic clock, is registered only in a world that imports
+// wasi:clocks/monotonic-clock; in one without it (a custom WIT world, a plain core module) the pool keeps what it caches.
 
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -40,6 +41,8 @@ namespace System.Buffers
         /// lots of overhead for unused array sizes.
         /// </summary>
         private readonly SharedArrayPoolPartitions?[] _buckets = new SharedArrayPoolPartitions[NumBuckets];
+        /// <summary>Whether the callback to trim arrays in response to memory pressure has been created.</summary>
+        private bool _trimCallbackCreated;
 
         /// <summary>Allocate a new <see cref="SharedArrayPoolPartitions"/> and try to store it into the <see cref="_buckets"/> array.</summary>
         private SharedArrayPoolPartitions CreatePerCorePartitions(int bucketIndex)
@@ -293,9 +296,11 @@ namespace System.Buffers
             t_tlsBuckets = tlsBuckets;
 
             _allTlsBuckets = tlsBuckets;
-            // NetWasm: no gen2 trim callback (pay for play). Registering one brings finalization, a weak handle, the
-            // clock and the trimming code into every program that returns a buffer, interpolated strings included; the
-            // pool keeps what it caches, within its per-size limits.
+            // NetWasm: only where the selected world imports the monotonic clock the trim reads (a compile-time fact).
+            if (PlatformWorld.ImportsMonotonicClock() && !Interlocked.Exchange(ref _trimCallbackCreated, true))
+            {
+                Gen2GcCallback.Register(s => ((SharedArrayPool<T>)s).Trim(), this);
+            }
 
             return tlsBuckets;
         }

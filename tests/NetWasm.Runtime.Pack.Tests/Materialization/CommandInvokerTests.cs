@@ -15,7 +15,7 @@ public sealed class CommandInvokerTests
             ImmutableArray.Create("--version"),
             directory.PathTo("logs/tool.log"));
 
-        var invoker = Assert.IsAssignableFrom<ICommandInvoker>(new CommandInvoker());
+        var invoker = Assert.IsAssignableFrom<ICommandInvoker>(new CommandInvoker(new ToolOutputExcerptFormatter()));
         invoker.Invoke(command);
 
         Assert.NotEmpty(File.ReadAllText(command.LogPath));
@@ -30,7 +30,7 @@ public sealed class CommandInvokerTests
             ImmutableArray.Create("--definitely-invalid-netwasm-option"),
             directory.PathTo("logs/tool.log"));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
+        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
 
         Assert.Contains(Path.GetFullPath(command.LogPath), exception.Message, StringComparison.Ordinal);
         Assert.True(File.Exists(command.LogPath));
@@ -49,7 +49,7 @@ public sealed class CommandInvokerTests
             ImmutableArray.Create("--definitely-invalid-netwasm-option"),
             directory.PathTo("logs/tool.log"));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
+        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
 
         var log = File.ReadAllText(command.LogPath).ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
         Assert.NotEmpty(log[^1]);
@@ -67,7 +67,7 @@ public sealed class CommandInvokerTests
             [],
             directory.PathTo("logs/tool.log"));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
+        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(command));
 
         Assert.StartsWith($"A NetWasm runtime tool could not be executed ('{command.ExecutablePath}'): ", exception.Message,
             StringComparison.Ordinal);
@@ -76,5 +76,5 @@ public sealed class CommandInvokerTests
 
     [Fact]
     public void RejectsNullCommand() =>
-        Assert.Throws<ArgumentNullException>(() => new CommandInvoker().Invoke(null!));
+        Assert.Throws<ArgumentNullException>(() => new CommandInvoker(new ToolOutputExcerptFormatter()).Invoke(null!));
 }
