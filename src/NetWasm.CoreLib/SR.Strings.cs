@@ -41,6 +41,7 @@ namespace System
         internal const string Arg_SynchronizationLockException = "Object synchronization method was called from an unsynchronized block of code.";
         internal const string Arg_WrongType = "The value \"{0}\" is not of type \"{1}\" and cannot be used in this generic collection.";
         internal const string ArgumentException_NotIsomorphic = "Object contains references.";
+        internal const string ArgumentException_BufferNotFromPool = "The buffer is not associated with this pool and may not be returned to it.";
         internal const string ArgumentException_OtherNotArrayOfCorrectLength = "The object is not an array with the same number of elements as the array to compare it to.";
         internal const string ArgumentNull_Array = "Array cannot be null.";
         internal const string ArgumentNull_ArrayElement = "At least one element in the specified array was null.";

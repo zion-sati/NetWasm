@@ -34,6 +34,27 @@ public sealed class CommandInvokerTests
 
         Assert.Contains(Path.GetFullPath(command.LogPath), exception.Message, StringComparison.Ordinal);
         Assert.True(File.Exists(command.LogPath));
+        Assert.Contains($"('{Path.GetFileName(command.ExecutablePath)}') failed with exit code ", exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    // A failed tool's last lines are in the message, which is often all a build log keeps: the build's NWPACK001
+    // error otherwise names only a log file a CI run does not keep.
+    [Fact]
+    public void ReportsToolFailureWithItsLastOutput()
+    {
+        using var directory = new TemporaryDirectory();
+        var command = new RuntimeCommand(
+            NetWasm.TestInfrastructure.DotNetHost.Executable,
+            ImmutableArray.Create("--definitely-invalid-netwasm-option"),
+            directory.PathTo("logs/tool.log"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => new CommandInvoker().Invoke(command));
+
+        var log = File.ReadAllText(command.LogPath).ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
+        Assert.NotEmpty(log[^1]);
+        Assert.Contains(" Its last output:\n", exception.Message, StringComparison.Ordinal);
+        Assert.EndsWith(log[^1], exception.Message, StringComparison.Ordinal);
     }
 
     // NWPACK001 shows only the message, so it names the tool and why it could not start (zion-sati/NetWasm#236).

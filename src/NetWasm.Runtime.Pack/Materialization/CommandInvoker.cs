@@ -31,11 +31,14 @@ internal sealed class CommandInvoker : ICommandInvoker
             var standardError = process.StandardError.ReadToEndAsync();
             process.WaitForExit();
             Task.WaitAll(standardOutput, standardError);
-            File.WriteAllText(command.LogPath, standardOutput.Result + standardError.Result);
+            var output = standardOutput.Result + standardError.Result;
+            File.WriteAllText(command.LogPath, output);
             if (process.ExitCode != 0)
             {
+                // The tool's last lines go in the message too, since NWPACK001 is often all a build log keeps.
                 throw new InvalidOperationException(
-                    $"A NetWasm runtime tool failed; see '{Path.GetFullPath(command.LogPath)}'.");
+                    $"A NetWasm runtime tool ('{Path.GetFileName(command.ExecutablePath)}') failed with exit code " +
+                    $"{process.ExitCode}; see '{Path.GetFullPath(command.LogPath)}'.{Tail(output)}");
             }
         }
         catch (InvalidOperationException)
@@ -48,5 +51,13 @@ internal sealed class CommandInvoker : ICommandInvoker
             throw new InvalidOperationException(
                 $"A NetWasm runtime tool could not be executed ('{command.ExecutablePath}'): {exception.Message}", exception);
         }
+    }
+
+    private const int TailLines = 20;
+
+    private static string Tail(string output)
+    {
+        var lines = output.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
+        return lines is [""] ? "" : " Its last output:\n" + string.Join('\n', lines[Math.Max(0, lines.Length - TailLines)..]);
     }
 }

@@ -197,7 +197,7 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
 
         var error = Assert.Throws<InvalidOperationException>(() => fixture.Materialize());
 
-        Assert.Contains("A NetWasm runtime tool failed", error.Message, StringComparison.Ordinal);
+        Assert.Contains(") failed with exit code ", error.Message, StringComparison.Ordinal);
         fixture.AssertUnpublished();
         var run = Assert.Single(Directory.GetDirectories(fixture.Request.LogDirectory, "native-run-*"));
         Assert.True(File.Exists(Path.Combine(run, "native-archive-validation-0.log")));

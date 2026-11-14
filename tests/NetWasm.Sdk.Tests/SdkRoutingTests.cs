@@ -1394,6 +1394,28 @@ public sealed class SdkRoutingTests
         }
     }
 
+    // LINQ's size-optimized mode follows the optimization preset: the speed presets take the speed-optimized
+    // iterators, the size presets, O0 and the unset Release default (Oz) the size-optimized ones, and a project's own
+    // setting wins.
+    [Theory]
+    [InlineData("", "true")]
+    [InlineData("<NetWasmOptimization>Oz</NetWasmOptimization>", "true")]
+    [InlineData("<NetWasmOptimization>Os</NetWasmOptimization>", "true")]
+    [InlineData("<NetWasmOptimization>O0</NetWasmOptimization>", "true")]
+    [InlineData("<NetWasmOptimization>O1</NetWasmOptimization>", "false")]
+    [InlineData("<NetWasmOptimization>O2</NetWasmOptimization>", "false")]
+    [InlineData("<NetWasmOptimization>O3</NetWasmOptimization>", "false")]
+    [InlineData("<NetWasmOptimization>O3</NetWasmOptimization><UseSizeOptimizedLinq>true</UseSizeOptimizedLinq>", "true")]
+    [InlineData("<UseSizeOptimizedLinq>false</UseSizeOptimizedLinq>", "false")]
+    public void SizeOptimizedLinqFollowsTheOptimizationPreset(string properties, string expected)
+    {
+        using var project = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>" + properties,
+            "netwasm0.1");
+
+        Assert.Equal(expected, project.Property("UseSizeOptimizedLinq"));
+    }
+
     // The wasi:http service bridge is the SDK's, for a netwasm0.1 build with NetWasm.App (it compiles against
     // System.Net.Http), after the toolchain targets that give the service world's WIT path; the serverless
     // template therefore needs no package.
@@ -1695,6 +1717,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmAppRefPackageVersion=$(NetWasmAppRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmAppRuntimePackageVersion=$(NetWasmAppRuntimePackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_PROP__RestoreEnablePackagePruning=$(RestoreEnablePackagePruning)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__UseSizeOptimizedLinq=$(UseSizeOptimizedLinq)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__PrunePackageReference=@(PrunePackageReference->'%(Identity)|%(Version)', '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_PROP__NoWarn=$(NoWarn)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />

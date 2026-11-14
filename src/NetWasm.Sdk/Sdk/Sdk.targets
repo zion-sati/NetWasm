@@ -87,6 +87,10 @@
          RuntimeHostConfigurationOption, which the compiler folds and AppContext reads. A project sets any of them
          as it would for Blazor. NetWasm deploys no manifest resources, so libraries answer with resource keys. -->
     <UseSystemResourceKeys Condition="'$(UseSystemResourceKeys)' == ''">true</UseSystemResourceKeys>
+    <!-- LINQ's size-optimized mode trades speed for code size, so it follows the optimization preset: the speed
+         presets (O1, O2 and O3) take the speed-optimized iterators, as desktop .NET does, and the size presets and
+         O0 the size-optimized ones, as Blazor does. -->
+    <UseSizeOptimizedLinq Condition="'$(UseSizeOptimizedLinq)' == '' AND ('$(NetWasmOptimization)' == 'O1' OR '$(NetWasmOptimization)' == 'O2' OR '$(NetWasmOptimization)' == 'O3')">false</UseSizeOptimizedLinq>
     <UseSizeOptimizedLinq Condition="'$(UseSizeOptimizedLinq)' == ''">true</UseSizeOptimizedLinq>
     <Http3Support Condition="'$(Http3Support)' == ''">false</Http3Support>
     <EnableUnsafeUTF7Encoding Condition="'$(EnableUnsafeUTF7Encoding)' == ''">false</EnableUnsafeUTF7Encoding>

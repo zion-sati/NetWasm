@@ -355,9 +355,11 @@ trimming removes it, and so do the code paths that packages' embedded
 
 NetWasm's defaults include no more than Blazor WebAssembly's:
 `UseSystemResourceKeys` is true (NetWasm deploys no manifest resources, so
-libraries report resource keys), `UseSizeOptimizedLinq` is true, `Http3Support`
-and `EnableUnsafeUTF7Encoding` are false, and `DebuggerSupport` is false outside
-Debug builds. Diagnostics are off, as in .NET's own WebAssembly runtime:
+libraries report resource keys), `Http3Support` and `EnableUnsafeUTF7Encoding`
+are false, and `DebuggerSupport` is false outside Debug builds.
+`UseSizeOptimizedLinq` follows the optimization preset: false at `O1`, `O2` and
+`O3`, which take LINQ's speed-optimized iterators, and true otherwise, including
+the Release default `Oz`. Diagnostics are off, as in .NET's own WebAssembly runtime:
 `MetricsSupport`, `HttpActivityPropagationSupport` and `EventSourceSupport` are
 false, and a project that wants HttpClient's distributed tracing or metrics sets
 the first two to true.

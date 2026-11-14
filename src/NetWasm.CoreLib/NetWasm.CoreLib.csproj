@@ -1146,7 +1146,11 @@
     <Compile Include="Buffers/MemoryHandle.cs" />
     <Compile Include="Buffers/IPinnable.cs" />
     <Compile Include="Buffers/IMemoryOwner.cs" />
-    <Compile Include="Buffers/ArrayPool.NetWasm.cs" />
+    <Compile Include="Buffers/ArrayPool.cs" />
+    <Compile Include="Buffers/ArrayPoolEventSource.cs" />
+    <Compile Include="Buffers/ConfigurableArrayPool.cs" />
+    <Compile Include="Buffers/SharedArrayPool.cs" />
+    <Compile Include="Buffers/Utilities.cs" />
     <Compile Include="MemoryExtensions.cs" />
     <Compile Include="String.Comparison.cs" />
     <Compile Include="String.Manipulation.cs" />
