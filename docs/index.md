@@ -60,9 +60,11 @@ repository.
   specification-permitted results.
 - [Known gaps and boundaries](gaps.md): a concise route to the canonical
   status inventory and its current external/tooling boundaries.
-- [Licensing guide](licensing.md): the NetWasm Community License 1.0 for
-  compiler/tooling, MIT CoreLib/runtime/framework code, Sponsors commercial
-  tiers, generated-output freedom, and upstream-notice exceptions.
+- [Licensing guide](licensing.md): the NetWasm Community License 1.0 for the
+  compiler and the tools that create your deployable package, MIT for
+  everything else including CoreLib, runtime, JavaScript host and framework
+  code, Sponsors commercial tiers, generated-output freedom, and
+  upstream-notice exceptions.
 - [Documentation maintenance](maintenance.md): same-change update rules and
   the parity/navigation verifier.
 
@@ -96,8 +98,9 @@ For the current answer to "is this supported?", start with the
 [support status and roadmap](support-status.md), then use the target and
 CoreLib references to verify the exact application boundary.
 
-The compiler, linker, optimizer, compiler/build tooling, debugger, and
-IDE/browser developer tooling are covered by the NetWasm Community License 1.0.
-`NetWasm.CoreLib`, `NetWasm.Runtime`, templates, generated support code, and
-adjacent framework ports are MIT, subject to preserved upstream notices. See
+The compiler, linker, optimizer, and the surrounding tools that create a
+user's deployable package are covered by the NetWasm Community License 1.0.
+`NetWasm.CoreLib`, `NetWasm.Runtime`, the JavaScript host, templates, generated
+support code, adjacent framework ports, and everything else are MIT, subject to
+preserved upstream notices. See
 the [licensing guide](licensing.md).

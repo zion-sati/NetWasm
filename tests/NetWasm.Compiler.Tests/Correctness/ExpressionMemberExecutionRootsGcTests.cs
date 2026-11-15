@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // The expression interpreter's member execution allocates before it runs managed code: the object New constructs,

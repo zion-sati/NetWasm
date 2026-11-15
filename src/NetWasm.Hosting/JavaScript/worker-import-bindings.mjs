@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Provider modules may opt into one-way worker notifications without changing their guest interface.
 export function bindWorkerImports(namespace, notify) {
   if (!Object.hasOwn(namespace, "createWorkerImports")) return namespace;

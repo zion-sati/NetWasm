@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { readManagedExceptionDetails } from "./managed-exception-details.mjs";
 import { normalizeInteropHandle } from "./interop-handle-table.mjs";
 

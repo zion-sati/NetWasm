@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createPlatformProviderRegistry } from "./platform-provider-registry.mjs";
 
 // Registers each provider of NetWasm's WASI 0.3 platform catalog. One execution request

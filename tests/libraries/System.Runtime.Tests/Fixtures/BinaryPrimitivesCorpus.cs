@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // From the compiler harness's BinaryPrimitivesCorpusTests.cs: the same program, compiled once with the suite.
 #nullable disable
 #pragma warning disable

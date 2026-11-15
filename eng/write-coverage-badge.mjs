@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Writes a shields.io endpoint badge from check-coverage.mjs's report: the
 // overall line and branch coverage of the compiler assemblies the baseline
 // tracks. Rates round down, so the badge never shows 100% for less.

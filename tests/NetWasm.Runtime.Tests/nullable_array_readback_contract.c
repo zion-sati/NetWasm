@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: MIT */
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
 #include <assert.h>
 #ifndef NULLABLE_READBACK_TEST_HOOKS
 #define NETWASM_RUNTIME_PACK

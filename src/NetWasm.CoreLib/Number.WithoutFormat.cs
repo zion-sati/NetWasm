@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Formatting without a format string, for the callers that never pass one: the primitive numbers'
 // ToString(IFormatProvider) and the interpolated string handlers' holes without a format.
 //

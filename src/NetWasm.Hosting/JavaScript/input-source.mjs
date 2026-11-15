@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const sourceKeys = ["read"];
 
 // A host's standard input for one execution, or null for none (an empty standard input). Its

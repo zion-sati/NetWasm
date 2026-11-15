@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 export function readCorpusTrace({ exports: wasmExports, exposesLegacyTrace, usesTypedTrace }) {
   if (typeof exposesLegacyTrace !== "boolean" || typeof usesTypedTrace !== "boolean")
     throw new TypeError("Trace declarations must be explicit booleans");

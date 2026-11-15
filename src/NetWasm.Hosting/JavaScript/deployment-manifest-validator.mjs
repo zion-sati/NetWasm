@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { isCanonicalWitFunctionName } from "./canonical-wit-function-name.mjs";
 const symbolSidecars = Object.freeze({
   "type-symbols": "application/vnd.netwasm.type-symbols;version=1",

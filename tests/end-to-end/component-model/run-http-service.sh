@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 # A wasi:http 0.3 service built from generated bindings answers Wasmtime's serve: the handler
 # is a callback-lifted async export whose response body is a stream and whose trailers are a
 # future, and the task lives until both are written.

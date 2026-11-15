@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 using System.Diagnostics;
 using System.Xml.Linq;
 using NetWasm.Testing.VSTest.Tests.Adapter;

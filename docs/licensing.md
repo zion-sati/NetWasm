@@ -18,9 +18,13 @@ sponsoring a matching GitHub Sponsors tier; the Unlimited tier covers any number
 of developers. Any organization that productizes the
 compiler itself, by bundling it into an SDK or IDE, redistributing it as a
 commercial feature, or exposing compilation as a service, needs a separate OEM
-or commercial agreement regardless of size. CoreLib, runtime components, WIT/WASI libraries, generated
-support code, and templates are MIT licensed unless a component or upstream
-notice says otherwise. NetWasmGC and CompactGC are Apache-2.0 licensed.
+or commercial agreement regardless of size. The Community License covers
+Tooling: the compiler and the surrounding tools required to create your
+deployable package. Everything else is MIT licensed unless a component or
+upstream notice says otherwise, including all code you need to deploy an
+application: CoreLib, runtime components, WIT/WASI libraries, the JavaScript
+host and the other JavaScript that ships with an application, generated
+support code, and templates. NetWasmGC and CompactGC are Apache-2.0 licensed.
 Generated applications may use any license their authors choose, subject to
 the notices and terms of included components.
 
@@ -28,8 +32,8 @@ the notices and terms of included components.
 
 | Area | License |
 | --- | --- |
-| Compiler, linker, optimizer, CLI, SDK/pack, build, debugger, IDE/browser, and developer tooling, including the benchmark and qualification harnesses | NetWasm Community License 1.0 |
-| CoreLib, runtime libraries, templates, generated support code, and adjacent framework ports | MIT, subject to preserved upstream notices |
+| Tooling: the compiler, linker, optimizer, CLI, MSBuild tasks, SDK and packs, toolchain, host tools, build-time bundling, the WIT bindings tool, and their tests and qualification harnesses | NetWasm Community License 1.0 |
+| Everything else: CoreLib, runtime libraries, the JavaScript host, templates, generated support code, adjacent framework ports, the test adapter, NetWasm's build and release scripts, and their tests | MIT, subject to preserved upstream notices |
 | NetWasmGC and CompactGC collector implementations | Apache-2.0 |
 | Vendored WASI inputs and other third-party material | Their preserved upstream license |
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { liftScalar, lowerScalar } from "./interop-scalar-codec.mjs";
 
 // A JSImport whose parameters and result are primitive scalars is a direct

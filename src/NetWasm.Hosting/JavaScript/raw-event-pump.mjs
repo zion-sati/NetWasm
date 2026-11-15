@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Runs a JavaScript module's event loop after each call into the module. The module's event
 // loop export runs the ready work and reports EXIT, or WAIT on a waitable set whose events the
 // instance's Component Model hands to the loop's callback until it exits. A call into the

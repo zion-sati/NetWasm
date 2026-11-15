@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 """Times dotnet/performance's micro-benchmarks, and NetWasm's own workloads, on
 desktop .NET 11, Mono AOT and NetWasm, and writes every case's times and the
 per-family table.

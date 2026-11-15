@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Attribute stand-ins for the BenchmarkDotNet surface the dotnet/performance
 // micro-benchmarks use. They carry no behaviour: a generated table calls the
 // benchmarks directly, so the same sources run without reflection.

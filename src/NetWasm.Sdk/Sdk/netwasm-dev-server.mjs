@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // dotnet run and dotnet watch on a browser project: a development server that serves the
 // project's site on the loopback interface for the whole session, as an npm dev server does.
 // The site is the map the build writes: every file publish would copy, at the path it is served

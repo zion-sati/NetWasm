@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 'use strict';
 // The runtime type table (RuntimeTypeTableEncoder in the compiler), for the test hosts that stand in
 // for the runtime: one bit stream, least significant bit first, every offset a bit offset from the

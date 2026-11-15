@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 """Maintainer native-profile validation, before toolchain or dependency work."""
 
 from __future__ import annotations

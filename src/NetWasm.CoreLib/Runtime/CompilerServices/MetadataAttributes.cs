@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Adapted from dotnet/runtime System.Private.CoreLib compiler-service contracts.
 // These types carry compiler metadata; they intentionally have no runtime machinery.
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Compatibility cases adapted from dotnet/runtime System.Runtime.Tests GuidTests.cs.
 // Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
 

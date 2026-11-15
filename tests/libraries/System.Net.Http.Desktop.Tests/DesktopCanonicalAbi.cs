@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 namespace System.Runtime.InteropServices.WebAssembly;
 
 // The desktop stand-in for NetWasm CoreLib's CanonicalAbi.RunSynchronously, which the package sources use for

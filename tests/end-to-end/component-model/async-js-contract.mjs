@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 import { createRuntimeContractImports } from "../../NetWasm.Runtime.Tests/runtime-contract-imports.mjs";
 import { createMonotonicClockImports } from "../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs";
 import { createOutputStreamImports } from "../../NetWasm.Runtime.Tests/output-stream-imports.mjs";

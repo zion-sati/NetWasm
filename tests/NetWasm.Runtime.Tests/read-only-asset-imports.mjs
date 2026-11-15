@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Test-only Adapter: expose one explicitly selected immutable file through WASI 0.3's
 // filesystem, as CoreLib's time zone reader calls it: open-at is async-lowered with its six
 // flat parameters in memory, and a file reads through a stream<u8> and a completion future.

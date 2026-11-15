@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // SinCos shares one argument reduction between both results, so each must stay

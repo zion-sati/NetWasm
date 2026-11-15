@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Times every generated benchmark case whose id contains the filter, or, for a
 // filter starting with '!', none of its '|'-separated parts: a warm-up
 // call, then a batch doubled until it lasts 20 ms, then the fastest of five

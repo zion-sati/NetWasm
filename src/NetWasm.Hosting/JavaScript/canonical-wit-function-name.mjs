@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const identifier = "[a-z0-9][a-z0-9-]*";
 const token = "[a-z0-9][a-z0-9.-]*";
 const member = `\\[(?:method|static)\\]${identifier}\\.${identifier}`;

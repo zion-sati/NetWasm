@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 """Report NetWasmGC allocator statistics for a workload's timed region.
 
 Needs a runtime regenerated with NETWASM_GC_STATISTICS defined, which reports

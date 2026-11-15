@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 
 # Component fixtures must run the packaged tool: its build output intentionally

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Per-instance session options that page and worker hosts share: an
 // environment merged over the build's, and guest output delivered as lines.
 

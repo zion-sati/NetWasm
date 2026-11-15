@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 namespace System.Runtime.InteropServices.Output;
 
 // Ends the stream for a JavaScript host that runs a raw module's event loop. That host cannot

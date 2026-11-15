@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import assert from "node:assert/strict";
 import { createWasiFilesystem } from "./wasi-filesystem.mjs";
 import { createHash } from "node:crypto";

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 namespace NetWasm.System.Security.Cryptography.Tests;
 
 // Test keys, generated once with desktop .NET 11 for this suite (PKCS#8, unencrypted). They protect nothing.

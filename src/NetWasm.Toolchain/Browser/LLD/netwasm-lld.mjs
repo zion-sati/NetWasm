@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Trusted tool host only. Its MEMFS and loader are not guest capabilities.
 const encoder = new TextEncoder();
 const root = '/netwasm-link';

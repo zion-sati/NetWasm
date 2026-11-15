@@ -9,7 +9,7 @@
     <Version>0.4.2</Version>
     <Description>Framework-neutral VSTest runtime-provider bridge for NetWasm test artifacts.</Description>
     <PackageTags>netwasm;vstest;testing;wasm</PackageTags>
-    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IsPackable>true</IsPackable>
     <IncludeBuildOutput>false</IncludeBuildOutput>
@@ -54,10 +54,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"
-          Pack="true"
-          PackagePath="LICENSE.txt"
-          Visible="false" />
     <None Include="README.md" Pack="true" PackagePath="README.md" />
     <None Include="THIRD-PARTY-NOTICES.txt"
           Pack="true"

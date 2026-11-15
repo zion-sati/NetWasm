@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createBrowserArtifactStrategyRegistry } from "./browser-artifact-strategy-registry.mjs";
 import { createBrowserExecutionComposition } from "./browser-execution-composition.mjs";
 import { createManagedExceptionOutput } from "./managed-exception-output.mjs";

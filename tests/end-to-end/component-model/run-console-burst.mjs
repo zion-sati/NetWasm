@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Runs a command that writes 2,000 lines and returns at once under NetWasm's JavaScript host,
 // whose reads of standard output lag behind the program and which releases the platform (dropping
 // any stream still open) once the run completes, as the browser worker does. Every line must have

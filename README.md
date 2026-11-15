@@ -341,10 +341,12 @@ run.
 
 ## License
 
-CoreLib, runtime libraries, templates and generated support code are MIT,
-subject to preserved upstream notices. The compiler and developer tooling use
-the [NetWasm Community License 1.0](LICENSES/LicenseRef-NetWasm-Community-1.0.txt).
-The Compact and NetWasmGC collectors are Apache-2.0.
+The compiler and the surrounding tools that create your deployable package,
+with their tests, use the [NetWasm Community License
+1.0](LICENSES/LicenseRef-NetWasm-Community-1.0.txt). Everything else is MIT,
+subject to preserved upstream notices, including all code you need to deploy
+an application: CoreLib, runtime libraries, the JavaScript host, templates and
+generated support code. The Compact and NetWasmGC collectors are Apache-2.0.
 
 The Community License is free for individuals, education, open-source projects,
 evaluation, and small and medium-sized businesses: any organization with fewer

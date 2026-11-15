@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const targets = Object.freeze({
   wasm32: Object.freeze({ prefix: "cm32p2", zero: 0 }),
   wasm64: Object.freeze({ prefix: "cm64p2", zero: 0n }),

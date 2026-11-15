@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 using System.Collections.Immutable;
 using NetWasm.Runtime.Pack.Materialization;
 using NetWasm.Runtime.Pack.Planning;

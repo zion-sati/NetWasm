@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createApplicationProviderLoader } from "./application-provider-loader.mjs";
 import { createCapabilityBindingValidator } from "./capability-binding-validator.mjs";
 import { createContractError } from "./contract-error.mjs";

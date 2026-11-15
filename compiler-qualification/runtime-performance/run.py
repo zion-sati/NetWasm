@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 """Compare the runtime performance of two NetWasm package sets.
 
 Each workload is published through the SDK for every selected optimization

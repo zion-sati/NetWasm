@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { isFailureDetail } from "./execution-result.mjs";
 import { consoleLine, createLineOutput, readEnvironmentOverride } from "./session-options.mjs";
 import { readManagedExceptionDetails } from "./managed-exception-details.mjs";

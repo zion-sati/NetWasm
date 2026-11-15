@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // The page side of a worker client's file mounts (#142): what the page mounts reaches every worker
 // the client created, and every worker it creates later, each of which keeps its own in-memory
 // copy. sync writes each live worker's changes back to what the user picked.

@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: MIT */
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
 /* Behaviour particular to Compact's core (compact_gc.c): the mark stack's
  * rescan fallback, free-list reuse, and resolution through chunk bitmaps. */
 #include "../../src/NetWasm.Runtime/collector/netwasm/netwasm_gc.h"

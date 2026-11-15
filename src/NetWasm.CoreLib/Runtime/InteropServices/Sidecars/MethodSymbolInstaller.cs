@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 namespace System.Runtime.InteropServices.Sidecars
 {
     // Gives the runtime each frame's text from the method-symbols file, for the stack traces it builds.

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 # An async export writes through wasi:cli/stdout's stream with generated bindings: the core
 # module imports only the stream's built-ins and no other WASI capability, the component is
 # deterministic, a host captures the bytes, and a host without WASI cannot instantiate it.

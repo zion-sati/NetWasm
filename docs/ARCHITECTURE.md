@@ -51,10 +51,11 @@ APIs. The raw-core and component paths have different contracts.
 
 ## Repository boundaries
 
-The compiler, linker, optimizer, and its build/developer, debugger, and
-IDE/browser tooling are covered by the NetWasm Community License 1.0. CoreLib,
-runtime, and adjacent framework ports are MIT, subject to their preserved
-upstream notices. See [the license map](../LICENSE-MAP.md) and [licensing
+The compiler, linker, optimizer, and the surrounding tools that create a
+user's deployable package are covered by the NetWasm Community License 1.0,
+with their tests. CoreLib, the runtime, the JavaScript host, adjacent framework
+ports, and everything else are MIT, subject to their preserved upstream
+notices. See [the license map](../LICENSE-MAP.md) and [licensing
 guide](licensing.md).
 
 This document describes the current implementation shape, not a long-term ABI

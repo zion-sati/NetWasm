@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Compatibility coverage for the dotnet/runtime GCHandle and GCHandleType contract.
 // The upstream implementation is licensed under the MIT license.
 

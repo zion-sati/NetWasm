@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { parseStackTraceSymbols } from "./stack-trace-symbol-reader.mjs";
 
 // The symbols sidecars are optional (issue 225): a program and its host keep working without them.

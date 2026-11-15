@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Trusted tool-private Preview 1 host, never a user-program WASI implementation.
 import { capDefinedWasm32Memory, validateWasm32MemoryCeiling } from './wasm32-memory-ceiling.mjs';
 import { toolLimits, snapshotRequest, loadToolAsset, diagnostics, copyOutputs } from './tool-inputs.mjs';

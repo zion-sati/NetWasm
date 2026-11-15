@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 # Builds libSystem.IO.Compression.Native.a, the native half of NetWasm.App's codecs: dotnet/runtime's pal_zlib shim over
 # the zlib-ng it vendors (DeflateStream, ZLibStream, GZipStream and ZIP's Deflate entries) and the Brotli it vendors
 # (BrotliStream, BrotliEncoder and BrotliDecoder call Brotli's own API), all taken from dotnet/runtime deae2e32 into

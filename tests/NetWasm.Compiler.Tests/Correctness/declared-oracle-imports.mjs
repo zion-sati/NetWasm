@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Test-runtime imports must be declared explicitly. This adapter does not turn
 // a simulation into a production-runtime capability; it prevents missing imports
 // from silently acquiring a function that returns zero.

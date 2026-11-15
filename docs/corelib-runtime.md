@@ -192,8 +192,9 @@ has no WASI requirement and is independent of the application's ABI.
 
 ## Source and license boundary
 
-The compiler, CLI, Component Model tooling, linker, optimizer, debugger, IDE,
-and build/developer tooling are covered by the NetWasm Community License 1.0.
-`NetWasm.CoreLib`, `NetWasm.Runtime`, and adjacent framework ports are MIT,
-with preserved upstream notices where applicable. See the [licensing
+The compiler, CLI, Component Model tooling, linker, optimizer, and the other
+tools that create a user's deployable package are covered by the NetWasm
+Community License 1.0. `NetWasm.CoreLib`, `NetWasm.Runtime`, the JavaScript
+host, and adjacent framework ports are MIT, with preserved upstream notices
+where applicable. See the [licensing
 guide](licensing.md).

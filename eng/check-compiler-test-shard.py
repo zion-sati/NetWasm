@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 """Fails a test shard that did not run everything its plan selected.
 
 create-compiler-test-shard-filter.py --plan-output records the shard's

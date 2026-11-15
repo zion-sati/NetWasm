@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Test-only: the WASI 0.3 system clock at a fixed instant, the one the corpus oracle host reports, so a program that
 // reads the time observes the same in every host: now writes seconds (u64) and nanoseconds (u32) to its result.
 export function createSystemClockImports(target, getMemory) {

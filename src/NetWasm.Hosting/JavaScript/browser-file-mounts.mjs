@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // A browser host's file system (#142), Emscripten-style: an in-memory tree that answers Node's
 // synchronous fs calls, so a guest's file call completes without a wait in any browser, with
 // or without JSPI. What the user picked is mounted into it:

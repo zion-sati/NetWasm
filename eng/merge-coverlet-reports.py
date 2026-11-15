@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 """Merge Coverlet JSON reports by summing line and branch hits.
 
 The compiler tests run in shards, each with its own Coverlet report, and the

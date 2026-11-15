@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Reads the zone names from a NetWasm time zone container (written by
 // NetWasm.TimeZones): magic, IANA version, zone count, then each zone's name,
 // initial offset, daylight flag and transitions, then a SHA-256 trailer.

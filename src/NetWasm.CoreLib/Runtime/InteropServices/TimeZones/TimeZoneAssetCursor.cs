@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 namespace System.Runtime.InteropServices.TimeZones
 {
     // Reads the little-endian asset encoding through a window, so a scan of the zone index

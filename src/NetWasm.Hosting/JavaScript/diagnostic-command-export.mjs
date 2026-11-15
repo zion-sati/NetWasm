@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { NetWasmManagedError } from "./managed-errors.mjs";
 
 // Adapter: execute the typed command contract without a post-trap guest call.

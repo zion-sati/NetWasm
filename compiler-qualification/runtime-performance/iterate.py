@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 """Iterate quickly on compiler output and engine behaviour.
 
 Each iteration rebuilds only the compiler tasks from a source tree, overlays

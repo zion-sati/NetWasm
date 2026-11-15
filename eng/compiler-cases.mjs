@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const profiles = new Map([['fast', 'Fast'], ['family', 'Family'], ['extended', 'Extended']]);
 // Unlike $, the final assertion cannot match before a trailing line terminator.
 const caseIdPattern = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*(?![\s\S])/;

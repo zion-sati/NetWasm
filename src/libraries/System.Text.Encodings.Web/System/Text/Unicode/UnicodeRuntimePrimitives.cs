@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // NetWasm adaptation: the upstream encoder consumes these tiny CoreLib-only
 // assertion and scalar predicates. They remain internal and carry no runtime
 // or platform dependency.

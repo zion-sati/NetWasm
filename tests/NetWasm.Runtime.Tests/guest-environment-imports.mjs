@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Test-only Adapter: lower explicitly selected environment pairs into guest memory.
 // Capabilities: getMemory(), allocate(byteLength, alignment). No ambient environment.
 export function createGuestEnvironmentImports(target, getMemory, allocate, environment) {

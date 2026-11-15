@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 # Builds NetWasm.App.Runtime's cryptography archive for one width: dotnet/runtime's System.Security.Cryptography.Native
 # shim (src/native/libs, from .NET 11 GA) linked directly to OpenSSL's libcrypto, as upstream's static build is, with
 # NetWasm's seed source over the platform's random source. OpenSSL is the release eng/toolchain.json pins, downloaded
