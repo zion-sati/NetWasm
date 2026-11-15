@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // The compiler's symbols sidecar format (issue 225), all little-endian: u32 magic "NWSY", u16 version 1, u16 kind
 // (1 type-symbols, 2 method-symbols), the build ID as 32 UTF-16 characters, u32 entry count, u32 strings per entry
 // (4 or 1), then per entry a u32 ID and per string a u32 character offset and an i32 length (-1 for none), then

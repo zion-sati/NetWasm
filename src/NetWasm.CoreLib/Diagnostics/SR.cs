@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // NetWasm adaptation of the pinned DiagnosticSource resource identifiers.
 // Values remain stable for the retained public behavior; excluded resource paths are omitted.
 

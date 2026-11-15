@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -411,7 +414,7 @@ test("the process host starts detached processes and reads processes", async () 
   }
   assert.equal(await processHost.run(process.execPath, ["-e", "process.stdout.write('5')"]), "5");
   await assert.rejects(processHost.run(path.join(tmpdir(), "netwasm-missing-command"), []), { code: "ENOENT" });
-  assert.match(await processHost.readText(fileURLToPath(import.meta.url)), /^import assert/u);
+  assert.match(await processHost.readText(fileURLToPath(import.meta.url)), /^import assert/mu);
   assert.equal(processHost.alive(process.pid), true);
   const ended = spawn(process.execPath, ["-e", "0"]);
   await new Promise(resolve => ended.once("exit", resolve));

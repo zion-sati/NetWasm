@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: MIT */
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
 #include "../../src/NetWasm.Runtime/collector/netwasm/netwasm_gc.c"
 #include "netwasm_gc_test_layouts.h"
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 namespace System.Runtime.InteropServices.WebAssembly
 {
     // The length of a synchronous WIT export. The Component Model lets a synchronous task block

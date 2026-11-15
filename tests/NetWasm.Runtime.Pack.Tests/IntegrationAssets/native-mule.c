@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 /* Native interop qualification fixture, compiled by the pinned maintainer toolchain. */
 typedef __UINTPTR_TYPE__ mule_uintptr;
 typedef __INTPTR_TYPE__ mule_intptr;

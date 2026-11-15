@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 const familyIds = Array.from({ length: 32 }, (_, index) => `S${String(index + 1).padStart(2, '0')}`);
 const backends = new Set([
   'unit-and-composition', 'simulated-or-linked', 'linked-runtime',

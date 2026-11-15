@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 # A library component exports a WIT async func. Its generated bindings lift it with a callback,
 # and Wasmtime invokes it: the export awaits a delay and an async import, then returns its
 # string through task.return.

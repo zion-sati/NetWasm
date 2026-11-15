@@ -82,6 +82,18 @@ change.
 - Do not treat the current implementation as a promise of desktop-.NET
   compatibility.
 
+New source files that NetWasm writes start with its notice, naming the license
+that [`LICENSE-MAP.md`](LICENSE-MAP.md) gives the file's path:
+
+```csharp
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+```
+
+C, JavaScript, Python and shell files use the same two lines in their own
+comment syntax, after any `#!` line. Files ported from upstream keep upstream's
+notice. `eng/tests/test_source_headers.py` checks both.
+
 Every NetWasm-specific user-visible change must update its owning page under
 `docs/` in the same change. This includes diagnostics, target/output and
 Component Model/WASI boundaries, CLI options/artifacts, CoreLib/runtime

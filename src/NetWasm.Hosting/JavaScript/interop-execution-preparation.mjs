@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const states = new WeakMap();
 const preparationKeys = ["bindInstance", "close", "createImports", "resolveMemory"];
 const bindingKeys = ["instance", "preparation"];

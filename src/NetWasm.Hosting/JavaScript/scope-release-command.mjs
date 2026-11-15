@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 export function createScopeReleaseCommand(releaseActions = []) {
   if (!Array.isArray(releaseActions)) {
     throw new TypeError("scope release actions must be an array");

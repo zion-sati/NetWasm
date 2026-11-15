@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 # Runs NetWasm.App's suites (tests/libraries) against a package feed that holds
 # NetWasm.Sdk, NetWasm.App.Ref and NetWasm.App.Runtime at <version>, such as
 # eng/build-packages.sh builds. Each TUnit project runs on

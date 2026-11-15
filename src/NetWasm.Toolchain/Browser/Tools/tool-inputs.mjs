@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // NetWasm Community License 1.0; see the repository source-path license map.
 /** @typedef {{args: string[], files: Record<string, Uint8Array>, outputs: string[]}} ToolRequest */
 /** @typedef {{exitCode: number, files: Record<string, Uint8Array>, stdout: string,

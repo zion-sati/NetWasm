@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 # Console output reaches the host as the program writes it and all of it before the program ends,
 # as on desktop .NET (issue 224). A command writes a line, then computes without ever waiting again:
 # a host that stops the run for running too long still shows the line (Wasmtime with a time limit,

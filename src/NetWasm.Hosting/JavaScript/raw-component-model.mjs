@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // The Component Model built-ins a raw core module imports, for an instance whose every
 // stream, future and subtask has the JavaScript host at its other end. One table holds the
 // instance's waitable sets, subtasks and stream and future ends. An async-lowered host call

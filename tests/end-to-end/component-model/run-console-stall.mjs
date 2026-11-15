@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Runs a command component under NetWasm's JavaScript host in a worker. The command writes a
 // line, then never waits again; the parent stops the worker once the line arrives, as a page
 // stops a run that takes too long, and fails if it never does (issue 224).

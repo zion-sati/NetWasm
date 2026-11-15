@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createExecutionScopeCloser } from "./execution-scope-closer.mjs";
 import { assertExecutionResult, failedExecutionResult } from "./execution-result.mjs";
 

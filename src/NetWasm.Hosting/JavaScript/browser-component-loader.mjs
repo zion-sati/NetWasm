@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { loadComponentArtifacts } from "./component-artifact-loader.mjs";
 import { createBrowserArtifactTransport } from "./browser-artifact-transport.mjs";
 import { createBrowserVerifiedModuleImporter } from "./browser-verified-module-importer.mjs";

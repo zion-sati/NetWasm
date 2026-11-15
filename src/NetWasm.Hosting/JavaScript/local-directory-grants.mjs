@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // A local launch's directories. The program starts in the shell's working directory, seen at
 // its own absolute path (a Windows drive's path as /c/...), so relative paths resolve as they do
 // on desktop .NET wherever that directory is granted. The request's working directory grant

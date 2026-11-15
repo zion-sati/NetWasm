@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Sequential adaptation of the dotnet/runtime System.Private.CoreLib
 // Interlocked contracts. Licensed under MIT by the .NET Foundation.
 //

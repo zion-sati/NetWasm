@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 """Attribute a workload's time to functions with Wasmtime's guest profiler.
 
 Publishes each workload as the timed product plus a twin that keeps names at

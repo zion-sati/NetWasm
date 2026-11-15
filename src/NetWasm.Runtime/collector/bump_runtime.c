@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 #include "collector_allocation.h"
 #include "collector_collection.h"
 #include "collector_ephemeron.h"

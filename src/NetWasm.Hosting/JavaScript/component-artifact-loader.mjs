@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createComponentArtifactPlan } from "./component-artifact-plan.mjs";
 import { readOptionalStackTraceSymbols, readOptionalSymbolSidecar } from "./optional-symbol-sidecars.mjs";
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Closed-world host boundary for assembly loading and notification contracts.
 using System.Reflection;
 namespace System;

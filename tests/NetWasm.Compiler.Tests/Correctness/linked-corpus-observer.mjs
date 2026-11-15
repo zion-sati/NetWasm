@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 export function createLinkedCorpusObserver({ instantiate, readTrace }) {
   if (typeof instantiate !== "function" || typeof readTrace !== "function")
     throw new TypeError("Linked observation capabilities are required");

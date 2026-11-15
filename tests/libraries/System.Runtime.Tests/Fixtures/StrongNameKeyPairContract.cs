@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // From the compiler harness's StrongNameKeyPairContractCompilationTests.cs: the same program, compiled once with the suite. On desktop .NET 11 it
 // builds with DESKTOP_ORACLE defined.
 #nullable disable

@@ -1,12 +1,15 @@
 # NetWasm license policy
 
-NetWasm uses a source-path license boundary. Compiler, linker, optimizer,
-build, debugger, IDE, and other developer tooling is covered by the [NetWasm
-Community License 1.0](LICENSES/LicenseRef-NetWasm-Community-1.0.txt). CoreLib,
-runtime libraries, WIT/WASI libraries, templates, generated support code, and
-other code intended to enter user applications are MIT licensed unless a
-separate component or upstream notice applies. NetWasmGC and CompactGC are
-licensed under Apache-2.0 and carry their own licence texts and notices.
+NetWasm uses a source-path license boundary. Tooling, meaning the compiler
+and the surrounding tools required to create a user's deployable package, is
+covered by the [NetWasm Community License
+1.0](LICENSES/LicenseRef-NetWasm-Community-1.0.txt), together with its tests
+and qualification harnesses. Everything else is MIT licensed unless a separate
+component or upstream notice applies, including all code a user needs to
+deploy an application: CoreLib, runtime libraries, WIT/WASI libraries, the
+JavaScript host and the other JavaScript that ships with an application,
+templates, and generated support code. NetWasmGC and CompactGC are licensed
+under Apache-2.0 and carry their own licence texts and notices.
 
 The published licensor is the pseudonym **Zion Sati**. Commercial licensing
 questions and agreements: <zion.sati@netwasm.com>. Project repository:
@@ -14,15 +17,16 @@ questions and agreements: <zion.sati@netwasm.com>. Project repository:
 
 | Area | License |
 | --- | --- |
-| Compiler projects, CLI, SDK/pack, build scripts, debugger, IDE/browser tooling, developer tools, benchmark and qualification harnesses, and tests/test infrastructure | NetWasm Community License 1.0 |
-| `NetWasm.CoreLib`, runtime libraries, templates, and generated support code | MIT |
+| Tooling: the compiler, CLI, MSBuild tasks, SDK and packs, toolchain, host tools, build-time bundling, the WIT bindings tool, and their tests, test infrastructure and qualification harnesses | NetWasm Community License 1.0 |
+| Everything else: `NetWasm.CoreLib`, runtime libraries, the JavaScript host (`NetWasm.Hosting`), templates, generated support code, the test adapter, NetWasm's build and release scripts, and their tests | MIT |
 | NetWasmGC and CompactGC collector implementations | Apache-2.0 |
 | Vendored WASI description files | Upstream WASI license |
 | Other third-party material | Its preserved source notice and applicable upstream license |
 
-`LICENSE-MAP.md` contains the mechanically checked path map. Source files with
-upstream copyright, license, or provenance headers retain those notices; this
-policy does not replace them.
+`LICENSE-MAP.md` contains the mechanically checked path map. NetWasm's own
+source files begin with a notice naming the copyright holder and the license
+the map gives their path. Source files with upstream copyright, license, or
+provenance headers retain those notices; this policy does not replace them.
 
 The Community License is free for individuals, education, open-source work,
 official contributions, evaluation, and small and medium-sized businesses:

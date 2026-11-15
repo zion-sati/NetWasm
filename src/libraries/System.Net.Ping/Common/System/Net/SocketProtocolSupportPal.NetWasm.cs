@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // NetWasm's counterpart of dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce's
 // SocketProtocolSupportPal.Unix.cs and the DisableIPv6 switch of LocalAppContextSwitches.Net.cs.
 // The platform network carries IPv4 and IPv6 sockets and no Unix domain sockets; asking it by

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // Siblings of issues 144, 146 and 160: every path that allocates inside the runtime or a method

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // The helpers a generated raw adapter's canonical-ABI bindings call. The
 // adapter writer appends this file, without its export keywords, to every
 // adapter so the adapter stays dependency-free; a Release build's bundler

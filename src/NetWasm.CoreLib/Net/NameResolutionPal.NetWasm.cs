@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // NetWasm's counterpart of dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce's
 // NameResolutionPal.Unix.cs: a name resolves through the platform network
 // (PlatformServices.Network), asynchronously when awaited. The network resolves names to addresses

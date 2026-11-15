@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Adapted from dotnet/runtime System.Runtime.InteropServices metadata
 // declarations. The upstream implementation is licensed under MIT.
 // These declarations describe metadata only. They do not provide COM or

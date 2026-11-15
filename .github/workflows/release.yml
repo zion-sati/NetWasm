@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     outputs:
       infrastructure_commit: ${{ steps.release.outputs.infrastructure_commit }}
       source_commit: ${{ steps.release.outputs.source_commit }}

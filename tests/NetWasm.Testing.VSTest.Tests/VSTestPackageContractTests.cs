@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection.Metadata;
@@ -13,7 +16,6 @@ public sealed class VSTestPackageContractTests
 {
     private static readonly string[] ExpectedEntries =
     [
-        "LICENSE.txt",
         "NetWasm.Testing.VSTest.nuspec",
         "README.md",
         "THIRD-PARTY-NOTICES.txt",

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // SHA-256 (FIPS 180-4) in JavaScript, for browsers without crypto.subtle.
 
 const roundConstants = Uint32Array.of(

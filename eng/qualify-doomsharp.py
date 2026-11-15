@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 """Builds DoomSharp's render benchmark at every optimization preset with each
 collector against candidate packages, runs it, and requires every batch to
 render the pixel checksum desktop .NET renders.

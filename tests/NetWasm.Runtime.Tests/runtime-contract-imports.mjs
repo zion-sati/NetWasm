@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Factory for native contracts that select no environment or external I/O.
 // With the guest's exports it also returns random bytes, in a list the guest
 // allocates as a host's would be. A contract never waits, so the Component

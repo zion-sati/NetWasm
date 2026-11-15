@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 /* The runtime's platform functions for a plain core module, which has no WASI: no environment,
  * standard output and error that discard what is written, an exit that traps, and a fixed hash
  * seed. Linked whole ahead of the runtime archive, these definitions replace the WASI ones

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { sha256 } from "./sha256.mjs";
 
 // The web actions every browser host takes. Each looks its browser API up when

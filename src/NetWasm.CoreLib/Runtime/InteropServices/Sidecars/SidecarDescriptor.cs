@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 namespace System.Runtime.InteropServices.Sidecars
 {
     // What the compiler tells a program about its sidecars (issue 225): which symbols files it loads, the build

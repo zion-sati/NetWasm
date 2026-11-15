@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // Vector2, Vector3, Vector4, Plane, Quaternion, Matrix3x2 and Matrix4x4 are upstream's sources,

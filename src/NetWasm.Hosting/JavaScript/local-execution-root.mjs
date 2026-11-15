@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createLocalArtifactStrategyRegistry } from "./local-artifact-strategy-registry.mjs";
 import { createLocalExecutionComposition } from "./local-execution-composition.mjs";
 import { createManagedExceptionOutput } from "./managed-exception-output.mjs";

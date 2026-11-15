@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // Each case holds objects in one way a program can hold them while a collection

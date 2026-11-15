@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { validateInputSource } from "./input-source.mjs";
 import { validateOutputSink } from "./output-sink-stream.mjs";
 

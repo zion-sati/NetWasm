@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Values a synchronous WASI provider hands its host. A raw host, which cannot suspend the guest,
 // reads them at once, so the guest never waits; a jco host treats them as the promise and async
 // iterable it expects. A sync future computes its value on first use, which is after the stream

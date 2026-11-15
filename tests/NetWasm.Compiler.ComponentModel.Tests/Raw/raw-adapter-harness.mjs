@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Instantiates a generated raw adapter's canonical bindings against real
 // linear memory, a recording bump reallocator and the host's resource store.
 import { pathToFileURL } from "node:url";

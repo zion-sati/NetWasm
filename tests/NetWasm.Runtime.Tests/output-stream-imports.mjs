@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Test-only Adapter: deliver WASI 0.3 standard output and error to explicitly injected sinks.
 // The guest makes a stream<u8>, hands its readable end to write-via-stream and writes to its
 // writable end; every copy completes at once, and each stream's future reports success.

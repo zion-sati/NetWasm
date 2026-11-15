@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // NetWasm adaptation: upstream's System.Native socket calls (Interop.Socket.cs and its siblings at
 // dotnet/runtime 811225a4) as a managed shim over the program's platform network
 // (PlatformServices.Network). A socket handle is the network's socket. The calls block until

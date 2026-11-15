@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const factoryKeys = ["isInternalImport", "resolvePlatformProvider", "selectProviderKind"];
 const requestKeys = ["manifest", "request"];
 const functionKeys = ["interface", "name", "parameters", "results"];

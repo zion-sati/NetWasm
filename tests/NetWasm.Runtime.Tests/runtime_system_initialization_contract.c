@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 #include <assert.h>
 #include "runtime_system_initializer.h"
 #include "runtime_environment_reader.h"

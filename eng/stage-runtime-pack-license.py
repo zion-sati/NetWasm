@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 """Stage the exact notices for Emscripten archives shipped in Runtime.Pack."""
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ SOURCES = (
 
 NETWASM_MIT = """MIT License
 
-Copyright (c) 2026 Zion Sati
+Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createBrowserArtifactTransport } from "./browser-artifact-transport.mjs";
 import { createBrowserDeploymentManifestLoader } from "./browser-deployment-manifest-loader.mjs";
 import { createBrowserRawLoader } from "./browser-raw-loader.mjs";

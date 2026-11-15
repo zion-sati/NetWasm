@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const artifactKeys = ["mediaType", "relativePath", "role", "schemaVersion", "sha256"];
 const tokenPattern = /^[a-z0-9][a-z0-9.-]*$/u;
 const digestPattern = /^[0-9a-f]{64}$/u;

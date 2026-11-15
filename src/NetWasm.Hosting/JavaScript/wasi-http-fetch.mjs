@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createGuestByteReader } from "./output-sink-stream.mjs";
 
 // wasi:http 0.3 for hosts that reach the network through fetch, such as browsers: the types

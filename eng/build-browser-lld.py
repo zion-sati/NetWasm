@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
+
 """Build the Wasm-only browser linker from the manifest's public LLVM commit.
 
 Requires the exact Emscripten SDK and Node already installed. Build directories

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { createInteropBuiltinServiceModule } from "./interop-builtin-service-module.mjs";
 import { createInteropStatusService } from "./interop-status-service.mjs";

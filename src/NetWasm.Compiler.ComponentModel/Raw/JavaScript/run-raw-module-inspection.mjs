@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { readBinaryenFunctionImports } from "./binaryen-function-import-reader.mjs";

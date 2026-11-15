@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 // Test-only: the WASI 0.3 monotonic clock and its async-lowered wait-for. A wait
 // starts a subtask that stays pending: only a callback-lifted export may wait, and
 // a synchronous observation delivers no events, so its delayed work never runs.

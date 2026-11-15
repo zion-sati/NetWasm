@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 const factoryKeys = ["hashBytes", "readManifest", "readManifestBytes"];
 const requestKeys = ["expectedSha256", "signal"];
 const digestPattern = /^[0-9a-f]{64}$/u;

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: MIT
+
 import { prepareComponentExecution } from "./component-execution-preparation.mjs";
 import { executeComponent } from "./component-executor.mjs";
 import { failedExecutionResult } from "./execution-result.mjs";
