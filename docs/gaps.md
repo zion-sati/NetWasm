@@ -12,10 +12,10 @@ core modules and raw-core integration work, but Component packaging reports
 unavailable. Components target WASI 0.3, which neither solves nor waits on
 that independent Memory64 limitation.
 
-The first preview also has no general managed file/directory, raw-socket,
-subprocess, or multi-threaded runtime surface. The exact supported exceptions
-and missing APIs are listed in the
-[WASI-backed .NET surface](support-status.md#first-preview-wasi-backed-net-surface).
+Files, directories, sockets and DNS work over WASI 0.3, within what the host
+grants; there is no subprocess or multi-threaded runtime surface. The
+[WASI-backed .NET surface](support-status.md#wasi-backed-net-surface) lists
+what is available and what is not.
 
 These are current boundaries, not release promises. See [targets and output
 formats](targets-and-outputs.md) and the [CLI/build/deployment guide](cli-build-deployment.md)

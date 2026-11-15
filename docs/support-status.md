@@ -317,36 +317,24 @@ separately.
 | Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs (and, with `LibraryImport`, results, `out` and `ref` parameters), static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction by a raw `DllImport`, the `Fastcall` and `Swift` calling conventions, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
 | Compression (`System.IO.Compression`) | `DeflateStream`, `ZLibStream`, `GZipStream` and `BrotliStream`, the Deflate, ZLib, GZip and Brotli encoders and decoders, `ZLibCompressionOptions`, and ZIP's Deflate and Deflate64 entries run .NET's own code over zlib-ng 2.2.5 and Brotli 1.1.0, the releases .NET 11 uses, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 byte for byte at every level. A program links the native codec code only when it uses a codec, and only the codec it uses. Zstandard throws `PlatformNotSupportedException`, as in .NET's WebAssembly builds. |
 | Cryptography (`System.Security.Cryptography`) | Ciphers (AES, TripleDES, DES, RC2, AES-GCM, AES-CCM, ChaCha20-Poly1305), RSA, DSA, ECDsa, ECDiffieHellman and X.509 (certificates, PKCS#12 and PKCS#7, chain building with custom trust) run .NET's Linux implementation over OpenSSL 3.5, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 on Linux. Hashing (MD5 included), HMAC, PBKDF2 and random numbers are .NET's managed WebAssembly implementation, so a program that uses only those links no OpenSSL. `CryptoConfig.CreateFromName` creates those managed algorithms by name, matching names as desktop does, and returns null for the others. OpenSSL's random generator draws from the platform's random source and its clock from the program's clock grants. Certificate files and the system trust store are read through the host's file system; the store defaults to `/etc/ssl/certs` and `/etc/ssl/cert.pem`, which the host must make visible, and `SSL_CERT_DIR` and `SSL_CERT_FILE` choose another place. OID friendly names come from .NET's own table. AIA, CRL and OCSP downloads are not made, so revocation checking works offline. `SslStream` waits for wasi-tls. |
-
-## In progress
-
-The entries in this section describe the current direction only. They are not
-available application dependencies or promises of a future API shape.
-
-| Area | Current boundary |
-| --- | --- |
-| Portable diagnostics | DP01–DP06 are implemented and locally qualified for in-process `DiagnosticSource`, `Activity`, propagation and Metrics under the single-reactor contract. `Debug` exposes the ten documented assertion, failure and `WriteLine` overloads: retained calls are conditional on `DEBUG`, failures throw catchable `InvalidOperationException`, and output uses standard error. Debugger attributes retain ordinary metadata and string-valued contracts, but resolving a `Type` to an assembly-qualified debugger name fails with `PlatformNotSupportedException`. Public package/reference-pack distribution remains incomplete. OS tracing, attached-debugger/provider behavior, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
-| `System.Uri` | U01/U02 are implemented and locally qualified for the selected portable parsing, resolution, escaping, builder and IDN/IRI profile. Public reference-pack distribution remains incomplete. |
+| Portable diagnostics | `DiagnosticSource`, `Activity`, context propagation and Metrics run in process under the single-reactor contract. `Debug` exposes the ten documented assertion, failure and `WriteLine` overloads: retained calls are conditional on `DEBUG`, failures throw catchable `InvalidOperationException`, and output uses standard error. Debugger attributes retain ordinary metadata and string-valued contracts, but resolving a `Type` to an assembly-qualified debugger name fails with `PlatformNotSupportedException`. OS tracing, attached-debugger/provider behavior, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
+| `System.Uri` | The portable parsing, resolution, escaping, `UriBuilder` and IDN/IRI profile. |
 | Credentials | `NetworkCredential` retains string-based username, password and domain values, with null values normalized to empty strings. `ICredentials` and `ICredentialsByHost` lookup return the same credential object without validating or contacting the endpoint. `SecureString` constructors, `SecurePassword` and secure-string marshaling are outside this profile. |
 
-## Deferred SIMD and Packed SIMD target-option design
+## SIMD
 
-Wasm SIMD is not enabled today. The existing portable `Vector<T>` path is
-scalar, and `Vector<T>.IsHardwareAccelerated` remains false for the current
-target model. There is no current `simd` compiler option, `wasm128` artifact,
-or supported `Vector128<T>` or
-`System.Runtime.Intrinsics.Wasm.PackedSimd` surface.
+Code runs on WebAssembly's 128-bit SIMD. `Vector128.IsHardwareAccelerated` and
+`Vector.IsHardwareAccelerated` are true; `Vector128<T>`, `Vector<T>` and
+`System.Runtime.Intrinsics.Wasm.PackedSimd` lower to Wasm SIMD instructions,
+with vector values in `v128` locals; and CoreLib's vectorized helpers (span
+searches and comparisons, `SearchValues`, `Ascii`, `Base64`, the
+`System.Numerics` vector types) take their vector paths. At `O2` and `O3` the
+compiler also vectorizes element-wise loops and folds sum, minimum, maximum and
+bitwise reductions (`NetWasmManagedLoopVectorization`).
 
-The deferred design uses a compile-time target capability (`none` or `wasm128`)
-that participates in artifact identity, manifests, caches, validation, and
-deployment selection. A `none` artifact must contain no SIMD instructions; a
-`wasm128` artifact may lower selected operations directly. Capability checks
-must be specialized before reachability so guarded SIMD code is removed from a
-baseline artifact. Automatic vectorization is a separate, later optimization
-and is never required for correctness.
-
-x86 and ARM intrinsics, `Vector64<T>`, `Vector256<T>`, and `Vector512<T>` are
-intentionally outside this planned SIMD profile.
+x86 and Arm intrinsics report `IsSupported` false, as they do on other hardware,
+so their guarded paths drop out of the program. `Vector64<T>`, `Vector256<T>`
+and `Vector512<T>` are not accelerated.
 
 ## Deferred debug information (DWARF)
 
@@ -375,9 +363,10 @@ also useful as a no-collection control when diagnosing collector-sensitive
 behavior, but diagnostics are not its only intended use.
 
 Select it with `NetWasmGarbageCollector=Bump`. Memory grows until the application
-ends or the Wasm memory limit is reached. The SDK rejects applications that use
-finalization, weak handles or ephemeron handles with Bump. Compact remains the
-default precise tracing collector, and NetWasmGC the throughput-oriented one.
+ends or the Wasm memory limit is reached. No object becomes unreachable to
+Bump, so finalizers never run and weak references never clear; programs that
+use them build and run as with any collector. Compact remains the default
+precise tracing collector, and NetWasmGC the throughput-oriented one.
 
 ## External toolchain blocker
 

@@ -1,11 +1,10 @@
 # NetWasm SDK quickstart
 
 Before porting an application, review the
-[first-preview WASI-backed .NET surface](support-status.md#first-preview-wasi-backed-net-surface).
-The first preview has no general managed file/directory API, raw socket API,
-subprocess API, or managed threading/thread-pool runtime. Its in-memory streams,
-selected WASI HTTP and CLI contracts, async reactor, and read-only timezone
-mount are deliberately narrower capabilities.
+[WASI-backed .NET surface](support-status.md#wasi-backed-net-surface). Files,
+directories, sockets, DNS and `HttpClient` work over WASI 0.3, within what the
+host grants; there is no subprocess API and no managed threading or thread-pool
+runtime.
 
 ## 1. Install .NET
 

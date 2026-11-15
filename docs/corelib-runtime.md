@@ -69,7 +69,7 @@ general DNS APIs. Selected CLI environment, arguments, output and exit plumbing
 does not expose `System.Diagnostics.Process`, subprocess creation, shell
 execution or process enumeration. The checked-in upstream WIT closure and host
 provider catalog are not a .NET API inventory; see the
-[first-preview WASI-backed .NET surface](support-status.md#first-preview-wasi-backed-net-surface).
+[WASI-backed .NET surface](support-status.md#wasi-backed-net-surface).
 
 `NetWasm.Runtime` owns native allocation, exact-GC integration, roots, managed
 exceptions, finalization, metadata, and target-specific memory support. Raw

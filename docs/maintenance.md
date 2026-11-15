@@ -31,7 +31,7 @@ must not be reclassified as a deviation.
 
 For a package-boundary change, also run `eng/build-packages.sh` from a clean
 checkout and inspect the resulting package graph before publication. The
-command builds the 13 core packages from the audited checked-in runtime pack;
+command builds the 15 core packages from the audited checked-in runtime pack;
 it never regenerates native assets, pushes, or publishes them.
 The five native `NetWasm.HostTools.<host RID>` packages are produced and
 qualified separately on matching CI hosts, then verified alongside the neutral
@@ -61,26 +61,28 @@ gate.
 
 ## Publish a release
 
-Merge the qualified PR to `main` with **Create a merge commit**, which preserves
-its signed head commit. Do not squash or rebase it: those methods replace the
-signed commit. Verify that the full signed PR-head SHA is an ancestor of
-`origin/main` and that its tree matches the source intended for release. Create
-and publish the GitHub Release targeting that signed SHA, for example:
+Merge the qualified PR to `main` with **Create a merge commit**, then wait for
+the `main` push run of CI on the merge commit to succeed: the release workflow
+requires a successful push run for its exact source commit and stops at once
+without one. Create and publish the GitHub Release targeting that merge commit,
+for example:
 
 ```sh
-gh release create vVERSION --repo zion-sati/NetWasm \
-  --target FULL_SIGNED_PR_HEAD_SHA --notes-file release-notes.md
+gh release create vVERSION-preview.N --repo zion-sati/NetWasm --prerelease \
+  --target FULL_MERGE_COMMIT_SHA --notes-file release-notes.md
 ```
 
-Add `--prerelease` for a preview. The CLI creates the tag and Release together;
-no local tag or version edit is needed. After GitHub creates a merge commit,
-the Release form's default `main` target names that merge commit, which the
-owner-signature verifier does not accept. Select the signed PR-head SHA with
-`--target` instead. The published Release tag supplies the package version.
+The CLI creates the tag and Release together; no local tag or version edit is
+needed, and the published Release tag supplies the package version.
 
-The release workflow verifies that the tag's commit is on `main`, builds the
-package set from that commit, checks its manifest and payloads, and
-publishes through trusted NuGet.org publishing. It waits until prerequisite
+A preview (`-preview.N`) builds the package set from that commit, runs the full
+compiler suite, the GC-stress, `O3` and compiled-unit corpus runs and the
+coverage gate, publishes the preview packages, and keeps the stable candidate it
+built. Once the preview resolves from NuGet.org, a stable Release (`vVERSION`)
+at the same commit promotes that retained candidate without rebuilding, so the
+stable packages are the bytes the preview qualified.
+
+Publishing goes through trusted NuGet.org publishing. It waits until prerequisite
 packages are available from the NuGet.org package feed before publishing
 `NetWasm.Sdk`, and waits for the SDK before publishing `NetWasm.Templates`.
 Each stage runs under the tagged source's pinned .NET SDK and requests a fresh

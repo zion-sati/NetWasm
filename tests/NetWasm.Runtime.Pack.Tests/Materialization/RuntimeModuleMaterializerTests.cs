@@ -28,10 +28,7 @@ public sealed class RuntimeModuleMaterializerTests
     {
         using var directory = new TemporaryDirectory();
         var manifest = RuntimePackTestData.Manifest();
-        var sourceLayout = new RuntimeLayout(2, target, 65_537)
-        {
-            RuntimeFeatures = collector == "Bump" ? [] : default,
-        };
+        var sourceLayout = new RuntimeLayout(2, target, 65_537);
         var calculatedLayout = RuntimePackTestData.Layout(target);
         var manifests = new RecordingManifestReader(manifest);
         var layouts = new RecordingLayoutReader(sourceLayout);
@@ -557,7 +554,6 @@ public sealed class RuntimeModuleMaterializerTests
             layouts,
             memoryLayouts,
             assetDigests,
-            new RuntimeCollectorCompatibilityValidator(),
             linkArguments,
             optimizationArguments,
             new RuntimeMaterializationCacheKeyBuilder(),

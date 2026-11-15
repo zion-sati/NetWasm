@@ -45,6 +45,32 @@ public sealed class RuntimeLinkPlannerTests
     }
 
     [Theory]
+    [InlineData("wasm32")]
+    [InlineData("wasm64")]
+    public void PlansBumpForProgramsThatFinalizeOrHoldWeakAndEphemeronHandles(string target)
+    {
+        // Bump never reclaims an object, so nothing it links ever becomes due: a program that registers
+        // finalizers or weak and ephemeron handles (ArrayPool's trim callback does) links as any other.
+        var manifest = RuntimePackTestData.Manifest() with
+        {
+            DefaultGarbageCollector = "Bump",
+            Exports = [.. RuntimePackTestData.Manifest().Exports, "allocate_finalizable", "ephemeron_handle_new"],
+        };
+        var request = new RuntimeLinkPlanRequest(JsonSerializer.Serialize(manifest), target, 948,
+            SystemLibraries: SystemLibraries(RuntimePackTestData.Target(target)))
+        {
+            RuntimeFeatures = ["ephemeron-handles", "finalization", "weak-handles"],
+        };
+
+        var plan = RuntimeLinkPlanner.Plan(request);
+
+        Assert.Equal("Bump", plan.GarbageCollector);
+        Assert.Equal($"/runtime/{target}/bump/libnetwasm-runtime.a", plan.Inputs[0].Path);
+        Assert.Contains("--export=allocate_finalizable", plan.Arguments);
+        Assert.Contains("--export=ephemeron_handle_new", plan.Arguments);
+    }
+
+    [Theory]
     [InlineData("wasm32", "Compact")]
     [InlineData("wasm32", "NetWasm")]
     [InlineData("wasm32", "Bump")]
@@ -99,10 +125,7 @@ public sealed class RuntimeLinkPlannerTests
     {
         var manifest = RuntimePackTestData.Manifest() with { DefaultGarbageCollector = collector };
         var request = new RuntimeLinkPlanRequest(JsonSerializer.Serialize(manifest), target, 948,
-            SystemLibraries: SystemLibraries(RuntimePackTestData.Target(target)))
-        {
-            RuntimeFeatures = collector == "Bump" ? [] : default,
-        };
+            SystemLibraries: SystemLibraries(RuntimePackTestData.Target(target)));
         var defaultPlan = RuntimeLinkPlanner.Plan(request);
         var explicitPlan = RuntimeLinkPlanner.Plan(request with { GarbageCollector = collector });
         var other = collector == "Compact" ? "NetWasm" : "Compact";

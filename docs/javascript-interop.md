@@ -20,7 +20,8 @@ template contains a managed export, a managed import, its JavaScript module that
 writes to the page, and a page script that opens the module, calls the export,
 and closes it. Use `--host worker` to run the same kind of module in a Web Worker
 behind a generated Promise-based client; see [C# Web Workers](web-workers.md)
-for the worker contract.
+for the worker contract. [DOM and Canvas from C#](dom-and-canvas.md) builds a
+complete page: DOM reads and writes, event handlers and a Canvas animation.
 
 ## Call C# from a page
 
