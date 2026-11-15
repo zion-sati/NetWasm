@@ -7,11 +7,11 @@ The [support inventory](support-status.md) is the source of truth for what is
 implemented today. Everything below is a release gate, not a current support
 claim, unless it is marked done.
 
-## In progress: .NET Standard 2.1 compatibility
+## ✅ Done in NetWasm 0.14: .NET Standard libraries
 
-This work targets ordinary NetWasm applications consuming compatible .NET
-Standard 2.1 library binaries and NuGet assets without source forks or patched
-third-party DLLs. Every .NET Standard API binds: one NetWasm cannot support
+Ordinary NetWasm applications consume compatible .NET Standard library binaries
+and NuGet assets without source forks or patched third-party DLLs; see
+[.NET Standard libraries](netstandard-libraries.md). Every .NET Standard API binds: one NetWasm cannot support
 throws `PlatformNotSupportedException` when it is called, as .NET does on a
 platform without the capability, so an unsupported member a library never
 calls does not stop it from working.
@@ -26,7 +26,7 @@ This is broader library compatibility within the smaller NetWasm profile, not a
 claim that every .NET Standard API or package works. General runtime reflection,
 `dynamic`, runtime assembly loading, runtime code generation, managed threading,
 unsupported native or host APIs and named-culture globalization remain outside
-the initial slice. Results attach to a package version, selected assets and
+the profile. Results attach to a package version, selected assets and
 the functionality an application actually uses.
 
 ## ✅ Done in NetWasm 0.12: WASI 0.3 and plain core modules

@@ -4,6 +4,7 @@ Every NetWasm release, newest first. Each version links to its release notes.
 
 | Version | Highlights |
 | --- | --- |
+| [0.14.2](releases/0.14.2.md) | Bump builds of programs that use `ArrayPool` |
 | [0.14.1](releases/0.14.1.md) | `O3` builds of methods inlining makes too large |
 | [0.14.0](releases/0.14.0.md) | .NET Standard libraries, the framework in the box |
 | [0.13.0](releases/0.13.0.md) | Programs carry no type names, calls through unmanaged function pointers, smaller programs |

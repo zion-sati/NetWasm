@@ -13,7 +13,6 @@ internal sealed class RuntimeModuleMaterializer(
     IRuntimeLayoutReader layouts,
     IRuntimeMemoryLayoutCalculator memoryLayouts,
     IRuntimeAssetDigestVerifier assetDigests,
-    IRuntimeCollectorCompatibilityValidator collectorCompatibility,
     IRuntimeLinkArgumentBuilder linkArguments,
     IRuntimeOptimizationArgumentBuilder optimizationArguments,
     IRuntimeMaterializationCacheKeyBuilder cacheKeys,
@@ -43,7 +42,6 @@ internal sealed class RuntimeModuleMaterializer(
         }
 
         var target = targets.Select(manifest, request.Target, request.GarbageCollector, request.Optimization);
-        collectorCompatibility.Validate(target, sourceLayout);
         var systemLibraryPaths = target.SystemLibraries.Assets
             .Select(asset => ResolveAsset(request.AssetRoot, asset.Path))
             .ToImmutableArray();

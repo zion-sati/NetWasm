@@ -72,20 +72,20 @@ faster than desktop .NET 11's JIT and NativeAOT on all three, although desktop
 
 | Workload | NetWasm, NetWasmGC | Mono AOT, .NET 11 | Desktop .NET 11 JIT | Desktop .NET 11 NativeAOT |
 | --- | ---: | ---: | ---: | ---: |
-| Full transaction | **26.7 ms** | 56.7 ms | 50.5 ms | 33.2 ms |
-| Retained object graph | **4.0 ms** | 14.2 ms | 10.1 ms | 7.9 ms |
-| UI churn | **5.4 ms** | 26.8 ms | 9.0 ms | 7.0 ms |
+| Full transaction | **27.3 ms** | 57.4 ms | 51.1 ms | 33.7 ms |
+| Retained object graph | **4.1 ms** | 14.5 ms | 10.1 ms | 7.9 ms |
+| UI churn | **5.5 ms** | 27.4 ms | 9.0 ms | 6.9 ms |
 
 These are medians of 15 runs on an Apple M1 Max, with every Wasm build under
 Wasmtime 50.0.1 and each run checked against desktop .NET's result. Mono AOT is
 Microsoft's `wasi-wasm` target on .NET 11 in Release, with Wasm SIMD.
-NetWasmGC takes 53% to 80% less time than Mono AOT, 40% to 60% less than the
-desktop JIT and 20% to 50% less than desktop NativeAOT.
+NetWasmGC takes 52% to 80% less time than Mono AOT, 39% to 60% less than the
+desktop JIT and 19% to 49% less than desktop NativeAOT.
 
-Without allocation in the timed region, NetWasm takes 41% less time than Mono AOT
-on the transaction's library work, 10% less on a quicksort and 2% less on n-body
-and CRC-32 kernels. Desktop .NET is faster on the library work and the
-quicksort without allocation.
+Without allocation in the timed region, NetWasm takes 42% less time than Mono AOT
+on the transaction's library work, 10% less on a quicksort and 2% less on an
+n-body kernel, and runs a CRC-32 kernel at the same speed. Desktop .NET is
+faster on the library work and the quicksort without allocation.
 
 [Versions, settings, desktop figures and reproduction](docs/performance.md)
 
@@ -101,7 +101,8 @@ Today NetWasm can:
 
 - build, run, publish and test projects through the ordinary `dotnet` CLI;
 - publish C# exports as typed [JavaScript modules](docs/javascript-interop.md)
-  that run in the page or in a [Web Worker](docs/web-workers.md);
+  that run in the page or in a [Web Worker](docs/web-workers.md), and work with
+  the [DOM and Canvas](docs/dom-and-canvas.md) from C#;
 - link compatible Wasm [`.a` archives](docs/static-native-interop.md) and
   generate bounded C ABI marshalling;
 - [generate C# bindings from WIT](docs/wit-bindings.md) and produce standalone
@@ -288,15 +289,16 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**In progress:** broader compatibility with existing .NET Standard
-2.1 library binaries and NuGet assets. The target is to consume libraries
-unchanged when their reachable code fits the NetWasm profile, without carrying
-unused unsupported paths into the application.
+**Done in NetWasm 0.14.0:** libraries built for .NET Standard restore from
+NuGet and run unchanged when their reachable code fits the NetWasm profile,
+without carrying unused unsupported paths into the application; see
+[.NET Standard libraries](docs/netstandard-libraries.md).
 
-This does not turn NetWasm into desktop .NET. Reachable general runtime
-reflection, `dynamic`, runtime assembly loading, managed threading, unsupported
-host APIs and named-culture globalization remain outside the initial
-compatibility slice and fail at compile time.
+This does not turn NetWasm into desktop .NET. General runtime reflection,
+`dynamic`, runtime assembly loading, managed threading, unsupported host APIs
+and named-culture globalization remain outside the profile; most such
+operations still compile, and throw `PlatformNotSupportedException` when they
+run.
 
 [Read the full 1.0 roadmap](docs/roadmap.md)
 
@@ -304,12 +306,12 @@ compatibility slice and fail at compile time.
 
 | Version | What's new |
 | --- | --- |
+| [0.14.2](docs/releases/0.14.2.md) | A program built with the Bump collector can use `ArrayPool<T>.Shared` again, along with finalizers, weak references and `ConditionalWeakTable`: finalizers never run and weak references never clear, since Bump never reclaims an object. |
 | [0.14.1](docs/releases/0.14.1.md) | A method builds at `O3` when inlining into it would make its WebAssembly function larger than browsers and Node accept, instead of failing with `NW1013`. |
 | [0.14.0](docs/releases/0.14.0.md) | A `netwasm0.1` project references the whole framework, so NuGet packages built for .NET Standard restore and compile against it. Date and time text, floating-point formatting and cookies are upstream .NET's, expression trees run nested lambdas and closures, and .NET's feature switches fold at compile time, so event logging costs nothing while it is off. |
 | [0.13.0](docs/releases/0.13.0.md) | Programs no longer carry type names, which read `type#<id>` unless a file beside the program supplies them. Calls through unmanaged function pointers, async programs about half the size, the program that prints 42 23% smaller, and console output that JavaScript hosts no longer lose. |
 | [0.12.2](docs/releases/0.12.2.md) | `dotnet run` and NetWasm's other Node.js hosts run programs that use sockets, and a call into a program costs the same however much it keeps alive: calls no longer collect garbage on their own, and finalizers, weak references, GC handles and pending asynchronous work are tracked in constant time. |
 | [0.12.1](docs/releases/0.12.1.md) | A program ends with the exit code desktop .NET gives it, and `Environment.Exit`, `Environment.ExitCode` and `Environment.FailFast` are supported. |
-| [0.12.0](docs/releases/0.12.0.md) | Components target WASI 0.3, so ordinary .NET file, socket and `HttpClient` code runs on the Component Model, and an HTTP service is one `Handle` method that Wasmtime, Spin and wasmCloud run unchanged. NetWasmGC allocates small objects inline, so a binary-trees benchmark takes 28% less time at `O3`. |
 
 [Full changelog](docs/changelog.md)
 

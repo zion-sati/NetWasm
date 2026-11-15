@@ -16,7 +16,6 @@ internal static class RuntimeMaterializationComposition
             new RuntimeLayoutReader(),
             new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()),
             new RuntimeAssetDigestVerifier(),
-            new RuntimeCollectorCompatibilityValidator(),
             new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()),
             new RuntimeOptimizationArgumentBuilder(new RuntimeOptimizationPolicyResolver()),
             new RuntimeMaterializationCacheKeyBuilder(),

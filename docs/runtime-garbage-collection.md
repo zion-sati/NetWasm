@@ -25,9 +25,11 @@ Bump is a production non-collecting allocator for workloads with bounded
 lifetimes and memory consumption, such as one-shot tools and plugins whose
 entire Wasm instance is discarded after a job. Allocation advances through
 lazily acquired chunks; managed objects are never reclaimed. `GC.Collect()`
-does not recover their memory. Projects requiring finalization, weak handles
-or ephemeron handles are rejected at build time. Internal runtime bookkeeping
-does not expand this supported public lifetime surface.
+does not recover their memory. Since no object ever becomes unreachable to
+Bump, finalizers never run, weak references never clear and a
+`ConditionalWeakTable` keeps every value. .NET runs a finalizer only after a
+collection finds its object unreachable, and none when a process exits, so
+programs and libraries that use them build and run unchanged.
 
 The tracing collectors support NetWasm's managed lifetime profile, including
 finalization, resurrection, weak references, dependent handles and pinning.

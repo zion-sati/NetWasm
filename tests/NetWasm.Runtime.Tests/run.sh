@@ -236,11 +236,11 @@ echo "Bump default capacity contract PASS"
 
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$workspace_dir/src/NetWasm.Runtime" \
-  "$script_dir/bump_weak_reference_contract.c" \
+  "$script_dir/bump_lifetime_contract.c" \
   "$workspace_dir/src/NetWasm.Runtime/collector/bump_runtime.c" \
-  -o "$output_dir/bump_weak_reference_contract"
-"$output_dir/bump_weak_reference_contract"
-echo "Bump weak-reference contract PASS"
+  -o "$output_dir/bump_lifetime_contract"
+"$output_dir/bump_lifetime_contract"
+echo "Bump lifetime contract PASS"
 
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$workspace_dir/src/NetWasm.Runtime" \

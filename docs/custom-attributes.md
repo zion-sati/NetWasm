@@ -90,13 +90,13 @@ Retention follows reachable queries:
 - Constant `inherit: false` excludes base-only results. A runtime inheritance
   argument can retain both bounded result paths.
 
-## Rejected queries
+## Queries outside these bounds
 
-Reachable calls to the declared query APIs outside these bounds fail compilation
-with `NW1003` at the query location. Discovery APIs absent from the reference
-surface can instead fail earlier during source or metadata binding. Unsupported
-queries do not silently return incomplete results or require a preserve-everything
-option.
+A reachable call to one of these APIs outside the bounds compiles, and throws
+`PlatformNotSupportedException` with a message naming the query when it runs, so
+code that catches it, or never reaches it, keeps working, as a library built for
+.NET Standard expects. Such a query never silently returns incomplete results,
+and nothing needs a preserve-everything option.
 
 - Runtime targets or filters, including `obj.GetType()` and arbitrary `Type`
   parameters, mutable fields or unknown values.
@@ -109,7 +109,6 @@ option.
 - `CustomAttributeData` discovery and synthesized metadata attributes such as
   `SerializableAttribute`, `ComImportAttribute` and `StructLayoutAttribute`.
 
-Unused library methods containing unsupported queries do not become errors
-unless the compiler reaches them. General runtime reflection and runtime type
-discovery remain outside this feature. See [CoreLib/runtime compatibility](corelib-runtime.md)
+A query the program never reaches costs nothing. General runtime reflection and
+runtime type discovery remain outside this feature. See [CoreLib/runtime compatibility](corelib-runtime.md)
 for the wider platform boundary.

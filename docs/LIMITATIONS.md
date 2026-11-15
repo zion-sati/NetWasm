@@ -7,8 +7,10 @@ evidence of support.
 
 ## Platform and language boundary
 
-- Applications compile against `NetWasm.CoreLib`, not desktop .NET reference
-  assemblies.
+- Applications compile against NetWasm's framework, NetWasm.App (CoreLib and
+  the framework assemblies, with reference facades such as `System.Runtime` and
+  `netstandard`), not desktop .NET's. Libraries built against .NET's reference
+  assemblies bind to it unchanged.
 - Compilation is closed-world. Generic specialization is monomorphized, so
   runtime-created generic types are unsupported.
 - Broad reflection, reflection-driven code generation, and `dynamic` are
@@ -18,8 +20,9 @@ evidence of support.
   [delegate and node matrix](expression-trees.md).
 - Managed threads, worker execution, and a managed thread pool are unsupported.
 - Browser-specific capabilities such as DOM, input, fetch and storage are
-  only available through explicit JavaScript imports in raw-core mode; they are
-  not implicit component or WASI services.
+  only available through explicit JavaScript imports, from a page module or a
+  raw-core browser application (see [DOM and Canvas from C#](dom-and-canvas.md));
+  they are not implicit component or WASI services.
 
 ## Runtime and component boundary
 

@@ -9,7 +9,8 @@ repository.
 
 ## Start here
 
-- [Size measurements and methodology](size-and-methodology.md) — reproduce the
+- [Changelog](changelog.md): every release, newest first, with its release notes.
+- [Size measurements and methodology](size-and-methodology.md): reproduce the
   28,383-byte C# component and read the Rust, Kotlin, TinyGo, Blazor and JSON
   comparison boundaries.
 - [Performance compared with Mono AOT and desktop .NET](performance.md):
@@ -17,59 +18,61 @@ repository.
   versions, settings and reproduction.
 - [Micro-benchmark results](micro-benchmarks.md): every dotnet/performance
   micro-benchmark case on NetWasm, Mono AOT and desktop .NET.
-- [NetWasm SDK quickstart](sdk-quickstart.md) — create an app or dual-target
+- [NetWasm SDK quickstart](sdk-quickstart.md): create an app or dual-target
   library, restore the pinned host tools through NuGet, then build, run and
   publish with ordinary `dotnet` commands.
 - [JavaScript interop](javascript-interop.md): use `[JSImport]` and
   `[JSExport]`, publish C# exports as a page-hosted JavaScript module, and pass
   callbacks, tasks, typed arrays and JavaScript objects within the supported ABI.
-- [Static native C interop](static-native-interop.md) — link Wasm `.a`
+- [DOM and Canvas from C#](dom-and-canvas.md): read and write the page, handle
+  events, and draw C#-computed pixels to a Canvas every animation frame.
+- [Static native C interop](static-native-interop.md): link Wasm `.a`
   archives with `[LibraryImport]` and expose managed callbacks with
   `[UnmanagedCallersOnly]`.
-- [WIT-to-C# bindings](wit-bindings.md) — run the standalone binding tool,
+- [WIT-to-C# bindings](wit-bindings.md): run the standalone binding tool,
   select a world, understand the generated model, and match it to the runtime
   boundary.
-- [Support status](support-status.md) — the canonical inventory of
+- [Support status](support-status.md): the canonical inventory of
   implemented, conditional, partially qualified, in-progress, deferred,
   externally blocked, and intentionally unsupported capabilities.
-- [Roadmap to NetWasm 1.0](roadmap.md) — the release gates for the stable
+- [Roadmap to NetWasm 1.0](roadmap.md): the release gates for the stable
   platform contract, with current support kept separate from future intent.
-- [Manual build and deployment](cli-build-deployment.md) — the low-level
+- [Manual build and deployment](cli-build-deployment.md): the low-level
   source-build/compiler reference, output artifacts, and host entry points.
-- [Targets and output formats](targets-and-outputs.md) — wasm32/wasm64 core
+- [Targets and output formats](targets-and-outputs.md): wasm32/wasm64 core
   modules, Component Model packaging, `cm32p2`/`cm64p2`, and WASI version
   boundaries.
 - [C# Web Workers](web-workers.md): publish WIT workers or JavaScript modules
   in a worker, call the generated JavaScript client, exchange notifications, and
   manage worker lifecycle.
-- [Compiler diagnostics](diagnostics.md) — every current
+- [Compiler diagnostics](diagnostics.md): every current
   `NetWasm.Compiler.Core.DiagnosticCode`, including cause, exact scope, and
   corrective action.
 - [.NET Standard libraries](netstandard-libraries.md): which packages restore, what
   throws when a library reaches something NetWasm does not provide, and how library
   authors avoid reflection, type-name probes and platform-specific paths.
-- [CoreLib and runtime compatibility](corelib-runtime.md) — the supported
+- [CoreLib and runtime compatibility](corelib-runtime.md): the supported
   platform boundary, intentionally unsupported surfaces, and license split.
-- [Choosing a garbage collector](runtime-garbage-collection.md) — Compact's
+- [Choosing a garbage collector](runtime-garbage-collection.md): Compact's
   size-first default, NetWasmGC and Bump, and build-time selection.
-- [Language, CLI, and .NET behavior differences](spec-deviations.md) — the
+- [Language, CLI, and .NET behavior differences](spec-deviations.md): the
   durable ledger for deliberate profile differences and
   specification-permitted results.
-- [Known gaps and boundaries](gaps.md) — a concise route to the canonical
+- [Known gaps and boundaries](gaps.md): a concise route to the canonical
   status inventory and its current external/tooling boundaries.
-- [Licensing guide](licensing.md) — the NetWasm Community License 1.0 for
+- [Licensing guide](licensing.md): the NetWasm Community License 1.0 for
   compiler/tooling, MIT CoreLib/runtime/framework code, Sponsors commercial
   tiers, generated-output freedom, and upstream-notice exceptions.
-- [Documentation maintenance](maintenance.md) — same-change update rules and
+- [Documentation maintenance](maintenance.md): same-change update rules and
   the parity/navigation verifier.
 
 ## Concepts and reference
 
 - [Bounded custom attribute queries](custom-attributes.md): candidate API shapes,
   static type provenance, user-defined attributes, retention and diagnostics.
-- [Manual source-build walkthrough](../QUICKSTART.md) — a complete low-level
+- [Manual source-build walkthrough](../QUICKSTART.md): a complete low-level
   raw-core and Component Model example, not the package-consumer quickstart.
-- [Compiler architecture](ARCHITECTURE.md) — compiler composition,
+- [Compiler architecture](ARCHITECTURE.md): compiler composition,
   reachability, layout, and Wasm emission.
 - [Expression-tree execution profile](expression-trees.md): the bounded,
   interpreter-only executable node and delegate matrix.

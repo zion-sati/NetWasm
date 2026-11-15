@@ -125,27 +125,28 @@ void collector_register_finalizer(
     NetWasmCollectorFinalizer *previous_finalizer,
     void **previous_context)
 {
+    /* Bump never reclaims an object, so no finalizer ever becomes due: .NET runs a finalizer only after a
+       collection finds its object unreachable, and none at exit. */
     (void)object;
     (void)finalizer;
     (void)context;
-    (void)previous_finalizer;
-    (void)previous_context;
-    abort();
+    if (previous_finalizer != NULL) *previous_finalizer = NULL;
+    if (previous_context != NULL) *previous_context = NULL;
 }
 
 bool collector_has_pending_finalizers(void) { return false; }
 int collector_invoke_finalizers(void) { return 0; }
 
+/* Bump never reclaims a key, so an ephemeron's value simply stays with it. */
 int collector_register_ephemeron(uintptr_t *key_slot, uintptr_t *value_slot)
 {
     (void)key_slot;
     (void)value_slot;
-    abort();
+    return 1;
 }
 
 void collector_unregister_ephemeron(uintptr_t *key_slot, uintptr_t *value_slot)
 {
     (void)key_slot;
     (void)value_slot;
-    abort();
 }

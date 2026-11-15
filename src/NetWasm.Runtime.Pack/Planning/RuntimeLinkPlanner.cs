@@ -26,12 +26,6 @@ public static class RuntimeLinkPlanner
         var policies = new RuntimeOptimizationPolicyResolver();
         var target = new RuntimePackTargetSelector(policies).Select(
             manifest, request.Target, request.GarbageCollector, request.Optimization);
-        new RuntimeCollectorCompatibilityValidator().Validate(
-            target,
-            new RuntimeLayout(3, request.Target, request.ApplicationStaticDataEnd)
-            {
-                RuntimeFeatures = request.RuntimeFeatures,
-            });
         var layout = new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(
             target, manifest.WasmPageSize, request.ApplicationStaticDataEnd,
             request.InitialHeapSizeBytes, request.MaximumMemorySizeBytes));
