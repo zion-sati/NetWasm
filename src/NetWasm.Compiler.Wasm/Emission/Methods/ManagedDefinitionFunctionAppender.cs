@@ -47,6 +47,7 @@ internal sealed class ManagedDefinitionFunctionAppender(
         {
             IsAggressiveInlining = method.IsAggressiveInlining,
             IsNoInlining = method.IsNoInlining,
+            Method = method.Key,
         });
         filterEnvironments[emission.MethodKey] = emission.FilterEnvironment;
         emissions.Add(new(method.Key.ToString(), emission.MethodKey, emission));

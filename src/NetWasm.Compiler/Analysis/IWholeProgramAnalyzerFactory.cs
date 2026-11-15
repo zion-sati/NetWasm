@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Metadata;
@@ -24,5 +25,7 @@ public interface IWholeProgramAnalyzerFactory
         Func<MethodDefinitionModel, JavaScriptAsyncMethodBinding?> javaScriptAsyncBindings,
         IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings optimizationSettings,
-        PlatformWorldCapabilities world);
+        PlatformWorldCapabilities world,
+        // Methods nothing is inlined into, since their functions came out over an engine limit.
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null);
 }

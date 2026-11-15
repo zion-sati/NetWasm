@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetWasm.Compiler.ControlFlow;
@@ -87,7 +88,10 @@ internal static class WasmModuleServiceCollectionExtensions
             .AddWasmJavaScriptInteropEmission()
             .AddWasmGeneratedFunctionEmission();
 
-        services.AddSingleton<IWasmModuleBuilder>(WasmModuleBuilderFactory.Create());
+        // The compiler's function limits when it passed its validator, else the engines'.
+        services.TryAddSingleton<IWasmFunctionLimitValidator>(static _ => new WasmFunctionLimitValidator(new()));
+        services.AddSingleton<IWasmModuleBuilder>(static provider =>
+            WasmModuleBuilderFactory.Create(provider.GetRequiredService<IWasmFunctionLimitValidator>()));
         services.AddCompiledUnits();
         services.AddSingleton<IWasmModuleEmitter, WasmModuleEmitter>();
         return services;

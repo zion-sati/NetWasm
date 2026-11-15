@@ -20,7 +20,7 @@ and .NET CIL directly to WebAssembly. It does not carry the desktop CLR, Mono,
 
 ## C# at less than half Rust's Wasm size
 
-**NetWasm + precise GC: 28,377 bytes**<br>
+**NetWasm + precise GC: 28,383 bytes**<br>
 **Rust 1.100.0 size-oriented profile: 63,528 bytes**
 
 For the same print-`42` workload, NetWasm's result includes the runtime and
@@ -28,13 +28,13 @@ precise Compact garbage collector. Both artifacts are standalone WASI 0.3
 components, built the way a developer gets them out of the box: each
 toolchain's standard library and ordinary build, with no hand-added tools.
 
-**55.3% smaller raw. 39.1% smaller with Brotli-11.**
+**55.3% smaller raw. 38.6% smaller with Brotli-11.**
 
-![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 28,377 raw and 11,880 compressed bytes; Rust is 63,528 and 19,519; Rust's WASI 0.2 build, shown for context, is 53,382 and 16,725; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI 0.3 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-wasi03.svg)
+![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 28,383 raw and 11,992 compressed bytes; Rust is 63,528 and 19,519; Rust's WASI 0.2 build, shown for context, is 53,382 and 16,725; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI 0.3 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-28383.svg)
 
 | Toolchain | Raw Wasm | Brotli 11 | Comparison role |
 | --- | ---: | ---: | --- |
-| **NetWasm, Compact GC** | **28,377 B** | **11,880 B** | WASI 0.3 component; precise GC included |
+| **NetWasm, Compact GC** | **28,383 B** | **11,992 B** | WASI 0.3 component; precise GC included |
 | Rust 1.100.0, size profile | 63,528 B | 19,519 B | Matched WASI 0.3 component reference |
 | *Rust 1.100.0, size profile* | *53,382 B* | *16,725 B* | *WASI 0.2 component, for context* |
 | Kotlin 2.4.0 `wasmWasi` | 79,293 B | 22,655 B | P1 context; GC supplied by the host engine |
@@ -201,9 +201,9 @@ compaction.
 
 | Strategy | Best fit | Raw component | Brotli 11 |
 | --- | --- | ---: | ---: |
-| **Compact (default)** | Small applications and low-churn UI | **28,377 B** | **11,880 B** |
-| NetWasmGC | Higher allocation throughput | 32,154 B | 13,465 B |
-| Bump | Bounded, one-shot jobs | 23,805 B | 9,880 B |
+| **Compact (default)** | Small applications and low-churn UI | **28,383 B** | **11,992 B** |
+| NetWasmGC | Higher allocation throughput | 32,159 B | 13,478 B |
+| Bump | Bounded, one-shot jobs | 23,810 B | 9,870 B |
 
 Select a strategy in the executable project's `.csproj`:
 
@@ -242,11 +242,11 @@ For an empty-UI Blazor WebAssembly application that prints `42`, with AOT,
 managed trimming, IL stripping, invariant globalization and size-focused native
 linking enabled:
 
-![AOT Wasm size comparison, lower is better: NetWasm with Compact GC 27.7 KiB, Blazor .NET 10 11.71 MiB, Blazor .NET 11 RC1 14.58 MiB. NetWasm is about 539 times smaller than the .NET 11 build by exact bytes.](docs/images/aot-console42-size-wasi03.svg)
+![AOT Wasm size comparison, lower is better: NetWasm with Compact GC 27.7 KiB, Blazor .NET 10 11.71 MiB, Blazor .NET 11 RC1 14.58 MiB. NetWasm is about 539 times smaller than the .NET 11 build by exact bytes.](docs/images/aot-console42-size-28383.svg)
 
 | AOT build | Uncompressed Wasm | Relative to NetWasm |
 | --- | ---: | ---: |
-| **NetWasm, Compact GC** | **28,377 B** | **1×** |
+| **NetWasm, Compact GC** | **28,383 B** | **1×** |
 | Blazor WebAssembly, .NET 10 | 12,276,684 B | 433× |
 | Blazor WebAssembly, .NET 11 RC1 | 15,289,241 B | 539× |
 
@@ -288,31 +288,6 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.13.0:** programs no longer carry type names, which read `type#<id>` unless a
-file beside the program supplies them; calls through unmanaged function pointers; async programs
-about half the size and the program that prints 42 23% smaller; and console output that
-JavaScript hosts no longer lose. [Release notes](docs/releases/0.13.0.md). NetWasm 0.12.2 lets
-`dotnet run` and NetWasm's other Node.js hosts run programs
-that use sockets, and a call into a program costs the same however much it keeps alive:
-calls no longer collect garbage on their own, and finalizers, weak references, GC handles
-and pending asynchronous work are tracked in constant time.
-[Release notes](docs/releases/0.12.2.md). NetWasm 0.12.1 ends a program with the exit code
-desktop .NET gives it, and adds `Environment.Exit`, `Environment.ExitCode` and
-`Environment.FailFast`. [Release notes](docs/releases/0.12.1.md). NetWasm 0.12.0 made components target WASI 0.3, so ordinary .NET file,
-socket and `HttpClient` code runs on the Component Model, and an HTTP service
-is one `Handle` method that Wasmtime, Spin and wasmCloud run unchanged.
-NetWasmGC allocates small objects inline, so a binary-trees benchmark takes
-28% less time at `O3`. [Release notes](docs/releases/0.12.0.md). NetWasm 0.11.3 let static native
-libraries use Wasm SIMD. [Release notes](docs/releases/0.11.3.md). NetWasm 0.11.2 brought faster delegate calls and span loops, and a
-compiler that needs half the memory: a delegate call takes 38% less time, a
-multicast invoke 44% less, and a fold over a span runs as Wasm SIMD vectors.
-Compiling DoomSharp's browser build at `O3` peaks at 1.5 GB where 0.11.1 took 3.4 GB.
-[Release notes](docs/releases/0.11.2.md). NetWasm 0.11.0
-made Debug builds keep each method's compiled code, so a rebuild compiles only
-what an edit changes: on DoomSharp's browser build, an edit to one method
-rebuilds in 1.6 s where 0.10.8 took 29.3 s, and `dotnet watch` runs on NetWasm
-projects. [Release notes](docs/releases/0.11.0.md)
-
 **In progress:** broader compatibility with existing .NET Standard
 2.1 library binaries and NuGet assets. The target is to consume libraries
 unchanged when their reachable code fits the NetWasm profile, without carrying
@@ -324,6 +299,19 @@ host APIs and named-culture globalization remain outside the initial
 compatibility slice and fail at compile time.
 
 [Read the full 1.0 roadmap](docs/roadmap.md)
+
+## Changelog
+
+| Version | What's new |
+| --- | --- |
+| [0.14.1](docs/releases/0.14.1.md) | A method builds at `O3` when inlining into it would make its WebAssembly function larger than browsers and Node accept, instead of failing with `NW1013`. |
+| [0.14.0](docs/releases/0.14.0.md) | A `netwasm0.1` project references the whole framework, so NuGet packages built for .NET Standard restore and compile against it. Date and time text, floating-point formatting and cookies are upstream .NET's, expression trees run nested lambdas and closures, and .NET's feature switches fold at compile time, so event logging costs nothing while it is off. |
+| [0.13.0](docs/releases/0.13.0.md) | Programs no longer carry type names, which read `type#<id>` unless a file beside the program supplies them. Calls through unmanaged function pointers, async programs about half the size, the program that prints 42 23% smaller, and console output that JavaScript hosts no longer lose. |
+| [0.12.2](docs/releases/0.12.2.md) | `dotnet run` and NetWasm's other Node.js hosts run programs that use sockets, and a call into a program costs the same however much it keeps alive: calls no longer collect garbage on their own, and finalizers, weak references, GC handles and pending asynchronous work are tracked in constant time. |
+| [0.12.1](docs/releases/0.12.1.md) | A program ends with the exit code desktop .NET gives it, and `Environment.Exit`, `Environment.ExitCode` and `Environment.FailFast` are supported. |
+| [0.12.0](docs/releases/0.12.0.md) | Components target WASI 0.3, so ordinary .NET file, socket and `HttpClient` code runs on the Component Model, and an HTTP service is one `Handle` method that Wasmtime, Spin and wasmCloud run unchanged. NetWasmGC allocates small objects inline, so a binary-trees benchmark takes 28% less time at `O3`. |
+
+[Full changelog](docs/changelog.md)
 
 ## Packages
 

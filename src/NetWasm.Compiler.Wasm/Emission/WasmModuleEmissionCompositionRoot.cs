@@ -37,9 +37,12 @@ internal static class WasmModuleEmissionCompositionRoot
         WasmEmissionRequest request,
         ILogger<WasmModuleEmitterFactory> logger,
         IManagedLayoutForkSource? layoutForks,
-        int workerCount)
+        int workerCount,
+        NetWasm.Compiler.Wasm.ModuleEncoding.IWasmFunctionLimitValidator? functionLimits = null)
     {
         var services = new ServiceCollection();
+        if (functionLimits is not null)
+            services.AddSingleton(functionLimits);
         services.AddWasmModuleEmission(
             types,
             typeDefinitions,

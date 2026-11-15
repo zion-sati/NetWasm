@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis.Attributes;
 using NetWasm.Compiler.Analysis.Constants;
 using NetWasm.Compiler.Analysis.Delegates;
@@ -94,7 +95,8 @@ internal sealed class MethodAnalysisParts
         ISymbolFormatter symbols,
         IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings optimizationSettings,
-        PlatformWorldCapabilities world)
+        PlatformWorldCapabilities world,
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null)
     {
         ArgumentNullException.ThrowIfNull(factories);
         var baseTypes = factories.BaseTypeResolvers.Create(
@@ -200,7 +202,8 @@ internal sealed class MethodAnalysisParts
             new Loops.ArrayLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
             new Loops.SpanLengthResolver(typeFinder, methodRepository, methodInstances, symbols),
             new Loops.VectorLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
-            optimizationSettings);
+            optimizationSettings,
+            inliningExcludedCallers);
         return parts;
     }
 
@@ -252,7 +255,9 @@ internal interface IStandaloneMethodAnalyzerFactory
         ISymbolFormatter symbols,
         IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings optimizationSettings,
-        PlatformWorldCapabilities world);
+        PlatformWorldCapabilities world,
+        // Methods nothing is inlined into, since their functions came out over an engine limit.
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null);
 }
 
 internal sealed class StandaloneMethodAnalyzerFactory(
@@ -290,7 +295,8 @@ internal sealed class StandaloneMethodAnalyzerFactory(
         ISymbolFormatter symbols,
         IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings optimizationSettings,
-        PlatformWorldCapabilities world)
+        PlatformWorldCapabilities world,
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null)
     {
         var parts = MethodAnalysisParts.Build(
             new(calledMethods, typeOperands, specializers, optimizers, attributeQueries, dispatchTargets,
@@ -298,7 +304,7 @@ internal sealed class StandaloneMethodAnalyzerFactory(
                 exceptionDiscoveries, baseTypeResolvers, delegateMethodClassifiers, dispatchSiteKeys, graphBuilders),
             metadata, typeRepository, fieldRepository, methodRepository, typeFinder, typeDefinitions, typeIdentities,
             baseTypeIdentities, implementedInterfaces, methodBodies, methodInstances, methodImplementations, symbols,
-            intrinsics, optimizationSettings, world);
+            intrinsics, optimizationSettings, world, inliningExcludedCallers);
         return new(parts.CreateAnalyzer(), new AnalysedSitePlanner(
             new DispatchCandidateIndexFactory(parts.Relationships, parts.RelationshipKeys), parts.DispatchTargets,
             typeTestPlanners.Create(parts.Types, parts.Relationships, parts.RelationshipKeys)));

@@ -123,7 +123,8 @@ internal sealed class CompilationAnalysisBuilder(
             asyncBindingResolver.Resolve,
             runtimeIntrinsics,
             preparation.OptimizationSettings,
-            world).Analyze(
+            world,
+            preparation.InliningExcludedMethods).Analyze(
             preparation.Entry.EntryPoint,
             preparation.Exports,
             preparation.ReachabilityRoots);

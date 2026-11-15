@@ -70,7 +70,8 @@ internal sealed class EditedMethodAnalyzer(
             formatter,
             intrinsics.Create(formatter, metadata.Methods),
             preparation.OptimizationSettings,
-            preparation.World);
+            preparation.World,
+            preparation.InliningExcludedMethods);
         var analyses = ImmutableArray.CreateBuilder<ReachableMethodAnalysis>(definitions.Count);
         var unanalysed = ImmutableArray.CreateBuilder<EntityKey>();
         foreach (var key in definitions)

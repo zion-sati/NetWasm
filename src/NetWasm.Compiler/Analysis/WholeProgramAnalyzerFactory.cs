@@ -66,7 +66,8 @@ internal sealed class WholeProgramAnalyzerFactory(
         Func<MethodDefinitionModel, JavaScriptAsyncMethodBinding?> javaScriptAsyncBindings,
         IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings optimizationSettings,
-        PlatformWorldCapabilities world)
+        PlatformWorldCapabilities world,
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(typeRepository);
@@ -106,7 +107,7 @@ internal sealed class WholeProgramAnalyzerFactory(
                 exceptionDiscoveries, baseTypeResolvers, delegateMethodClassifiers, dispatchSiteKeys, graphBuilders),
             metadata, typeRepository, fieldRepository, methodRepository, typeFinder, typeDefinitions, typeIdentities,
             baseTypeIdentities, implementedInterfaces, methodBodies, methodInstances, methodImplementations, symbols,
-            intrinsics, optimizationSettings, world);
+            intrinsics, optimizationSettings, world, inliningExcludedCallers);
         var baseTypes = parts.BaseTypes;
         var relationships = parts.Relationships;
         var relationshipKeys = parts.RelationshipKeys;

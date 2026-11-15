@@ -109,6 +109,7 @@ internal sealed class CompiledUnitRestorer(
         {
             IsAggressiveInlining = unit.IsAggressiveInlining,
             IsNoInlining = unit.IsNoInlining,
+            Method = method.Header.Method.Key,
         };
         var record = new ManagedMethodEmissionRecord(recordIdentity, environmentKey,
             new ManagedMethodBodyEmission(body, unit.InstructionCount, 0, null,

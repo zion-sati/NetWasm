@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -21,5 +22,7 @@ internal interface IManagedMethodOptimizerFactory
         Loops.IArrayLoopMethodResolver arrayLoopMethods,
         Loops.ISpanLengthResolver spanLengths,
         Loops.IVectorLoopMethodResolver vectorLoopMethods,
-        WasmOptimizationSettings settings);
+        WasmOptimizationSettings settings,
+        // Methods nothing is inlined into, since their functions came out over an engine limit.
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null);
 }

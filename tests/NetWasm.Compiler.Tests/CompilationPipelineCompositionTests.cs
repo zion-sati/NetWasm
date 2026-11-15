@@ -393,7 +393,8 @@ public sealed class CompilationPipelineCompositionTests
             Func<MethodDefinitionModel, JavaScriptAsyncMethodBinding?> javaScriptAsyncBindings,
             IRuntimeIntrinsicRegistry intrinsics,
             WasmOptimizationSettings optimizationSettings,
-            PlatformWorldCapabilities world)
+            PlatformWorldCapabilities world,
+            ImmutableHashSet<EntityKey>? inliningExcludedCallers = null)
         {
             calls.Add("analysis-create");
             return new RecordingAnalyzer(inner.Create(
@@ -413,7 +414,8 @@ public sealed class CompilationPipelineCompositionTests
                 javaScriptAsyncBindings,
                 intrinsics,
                 optimizationSettings,
-                world), calls);
+                world,
+                inliningExcludedCallers), calls);
         }
     }
 

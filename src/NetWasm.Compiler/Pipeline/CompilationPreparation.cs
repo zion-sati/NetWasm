@@ -37,4 +37,8 @@ internal sealed class CompilationPreparation(
 
     // What the selected world and host give CoreLib's world-dependent composition.
     public PlatformWorldCapabilities World { get; } = world ?? throw new ArgumentNullException(nameof(world));
+
+    // Methods nothing is inlined into, since their functions came out over an engine limit in an earlier
+    // compile of the program.
+    public ImmutableHashSet<EntityKey> InliningExcludedMethods { get; init; } = [];
 }

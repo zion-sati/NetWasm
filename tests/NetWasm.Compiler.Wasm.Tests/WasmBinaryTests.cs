@@ -215,9 +215,9 @@ public sealed class WasmBinaryTests
             false,
             WasmTarget.Wasm32);
 
-        Assert.NotEmpty(CreateModuleEncoder().Encode(Request(ModuleEncoder.MaximumFunctionBodySize)));
+        Assert.NotEmpty(CreateModuleEncoder().Encode(Request(new WasmFunctionLimits().MaximumBodySize)));
         var error = Assert.Throws<CompilerException>(() =>
-            CreateModuleEncoder().Encode(Request(ModuleEncoder.MaximumFunctionBodySize + 1)));
+            CreateModuleEncoder().Encode(Request(new WasmFunctionLimits().MaximumBodySize + 1)));
         Assert.Equal("NW1013", error.Diagnostic.Id);
         Assert.Equal("Grammar::Initialize", error.Diagnostic.Method);
         Assert.Contains("7,654,322-byte", error.Message, StringComparison.Ordinal);
@@ -259,9 +259,9 @@ public sealed class WasmBinaryTests
             [new("Grammar::Many", new([.. Enumerable.Repeat(CliValueKind.I8, parameters)], CliValueKind.I4), [0, 0x0b])],
             [], [], false, WasmTarget.Wasm32);
 
-        Assert.NotEmpty(CreateModuleEncoder().Encode(Request(ModuleEncoder.MaximumFunctionParameters)));
+        Assert.NotEmpty(CreateModuleEncoder().Encode(Request(new WasmFunctionLimits().MaximumParameters)));
         var error = Assert.Throws<CompilerException>(() =>
-            CreateModuleEncoder().Encode(Request(ModuleEncoder.MaximumFunctionParameters + 1)));
+            CreateModuleEncoder().Encode(Request(new WasmFunctionLimits().MaximumParameters + 1)));
         Assert.Equal("NW1013", error.Diagnostic.Id);
         Assert.Equal("Grammar::Many", error.Diagnostic.Method);
         Assert.Contains("1,001 parameters, over the 1,000", error.Message, StringComparison.Ordinal);
@@ -591,7 +591,8 @@ public sealed class WasmBinaryTests
                 new Utf8StringEncoder(unsigned),
                 new WasmSectionWriter(unsigned),
                 static buffer => new WasmBinaryWriter(buffer),
-                static buffer => new WasmBinarySnapshotReader(buffer)));
+                static buffer => new WasmBinarySnapshotReader(buffer)),
+            new WasmFunctionLimitValidator(new()));
     }
 
     private sealed class RecordingModuleEncoder : IModuleEncoder
