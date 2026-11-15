@@ -28,6 +28,9 @@ public sealed record WasmFunctionDefinition(
 {
     public bool IsAggressiveInlining { get; init; }
     public bool IsNoInlining { get; init; }
+
+    // The method definition the function compiles; null for a function the compiler generates.
+    public EntityKey? Method { get; init; }
 }
 
 public enum WasmExportKind : byte

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
@@ -49,7 +50,8 @@ internal sealed class ManagedMethodOptimizerFactory(
         IArrayLoopMethodResolver arrayLoopMethods,
         ISpanLengthResolver spanLengths,
         IVectorLoopMethodResolver vectorLoopMethods,
-        WasmOptimizationSettings settings)
+        WasmOptimizationSettings settings,
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null)
     {
         ArgumentNullException.ThrowIfNull(methodBodies);
         ArgumentNullException.ThrowIfNull(types);
@@ -89,7 +91,7 @@ internal sealed class ManagedMethodOptimizerFactory(
             staticDataViews,
             constantCallFolding,
             new ManagedMethodInliner(
-                new ManagedInliningResolver(
+                InliningResolver(new ManagedInliningResolver(
                     calleeBodies,
                     new AccessorCanonicalizingMethodSpecializer(specializer, accessors),
                     calledMethods,
@@ -101,7 +103,7 @@ internal sealed class ManagedMethodOptimizerFactory(
                     intrinsics,
                     ManagedInliningResolver.SmallBodyInstructionLimit,
                     ManagedInliningResolver.LeafBodyInstructionLimit,
-                    ManagedInliningResolver.LoopBodyInstructionLimit),
+                    ManagedInliningResolver.LoopBodyInstructionLimit), inliningExcludedCallers),
                 new TerminalContinuationInliningPlanner()),
             graphBuilder,
             stackValidator,
@@ -161,6 +163,12 @@ internal sealed class ManagedMethodOptimizerFactory(
     }
 
     // Matching (the body parser, the lane selector), then rewriting (the prefixes).
+    // Methods whose functions came out over an engine limit take no inlining; a compile without any keeps the
+    // resolver as it is.
+    private static IManagedInliningResolver InliningResolver(
+        IManagedInliningResolver resolver, ImmutableHashSet<EntityKey>? excludedCallers) =>
+        excludedCallers is null or { IsEmpty: true } ? resolver : new CallerExcludingInliningResolver(resolver, excludedCallers);
+
     private static ElementwiseLoopVectorizer CreateElementwiseLoopVectorizer(
         IVectorLoopMethodResolver vectorLoopMethods,
         ICalledMethodResolver calledMethods,

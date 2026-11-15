@@ -54,6 +54,10 @@ public sealed record CompilerDiagnostic(
     public CompilationReferenceOrigin? Origin { get; init; }
     public ImmutableArray<CompilerDependencyStep> DependencyChain { get; init; } = [];
 
+    // For a function over an engine limit (FunctionLimit), the methods whose functions are over it and could
+    // compile smaller with less inlining into them; empty when no recompile can help.
+    public ImmutableArray<EntityKey> LimitExceedingMethods { get; init; } = [];
+
     public string Id => Code == DiagnosticCode.GenericExpansion
         ? "NWA2001"
         : $"NW{(int)Code:0000}";

@@ -11,8 +11,10 @@ using NetWasm.Compiler.GarbageCollection;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Metadata.Inputs;
 using NetWasm.Compiler.Validation;
+using NetWasm.Compiler.Wasm;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.ModuleEncoding;
 using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Pipeline;
@@ -93,7 +95,8 @@ internal sealed class EarlyCutoffEmitter(
     IRuntimeIntrinsicRegistryFactory intrinsicRegistries,
     ITypeDefinitionResolverFactory typeDefinitionResolvers,
     IExceptionGroupEnumerator exceptionGroups,
-    StackTraces.IStackTraceSourceLocationReader sourceLocations) : IEarlyCutoffEmitter
+    StackTraces.IStackTraceSourceLocationReader sourceLocations,
+    IWasmFunctionLimitValidator functionLimits) : IEarlyCutoffEmitter
 {
     public EarlyCutoffEmission Emit(EarlyCutoffRequest request)
     {
@@ -210,6 +213,7 @@ internal sealed class EarlyCutoffEmitter(
         using var emitter = replayEmitters.Create(replay, types, typeDefinitions, fields, methods, symbols, typeClassifier,
             intrinsics, options.Target);
         var patched = new Dictionary<int, byte[]>();
+        var emitted = new List<WasmFunctionDefinition>(analysed.Methods.Length);
         foreach (var method in analysed.Methods)
         {
             var name = method.Method.CanonicalName;
@@ -218,7 +222,11 @@ internal sealed class EarlyCutoffEmitter(
             var function = emitter.Emit(new ManagedMethodIdentity(name), method.Method.Definition.Key,
                 lowering.Methods[method.Method.Definition.Key], rootMaps[name]);
             patched[index - functions.ImportedFunctions] = function.Body;
+            emitted.Add(function);
         }
+        // An edited method's function goes into the module without its encoder, so it meets the engines'
+        // limits here; a recompile with less inlining into it may then fit.
+        functionLimits.Validate(emitted);
         var module = WasmCodePatcher.ReplaceBodies(kept.Module, patched);
         return module is null
             ? Declined("the last compile's module cannot be patched")

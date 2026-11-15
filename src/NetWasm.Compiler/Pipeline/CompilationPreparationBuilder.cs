@@ -186,6 +186,9 @@ internal sealed class CompilationPreparationBuilder(
                 DeclaredPlatform = _platformServices
                     .Create(types, typeDefinitions, identities, methods, methodInstances, symbols, baseTypeResolver)
                     .Resolve(metadata, world.Wasi),
-            });
+            })
+        {
+            InliningExcludedMethods = options.InliningExcludedMethods,
+        };
     }
 }

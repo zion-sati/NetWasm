@@ -89,7 +89,8 @@ public interface IWasmModuleEmitterFactory
 public sealed class WasmModuleEmitterFactory(
     ILogger<WasmModuleEmitterFactory>? logger,
     IManagedLayoutForkSourceFactory? layoutForks,
-    CompilerParallelism? parallelism) : IWasmModuleEmitterFactory
+    CompilerParallelism? parallelism,
+    NetWasm.Compiler.Wasm.ModuleEncoding.IWasmFunctionLimitValidator? functionLimits = null) : IWasmModuleEmitterFactory
 {
     // Keep the constructor signature shipped in 0.2.3 for existing consumers.
     public WasmModuleEmitterFactory(
@@ -144,7 +145,8 @@ public sealed class WasmModuleEmitterFactory(
             request,
             logger ?? NullLogger<WasmModuleEmitterFactory>.Instance,
             forks,
-            workerCount);
+            workerCount,
+            functionLimits);
     }
 
     internal static int SelectWorkerCount(

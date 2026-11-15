@@ -71,8 +71,8 @@ the tradeoffs visible: Bump keeps growing because it never reclaims, and Compact
 trades throughput for the smallest tracing-collector artifact.
 
 The corresponding complete Console `42` components, published with the SDK at
-`Oz`, are 23,805 bytes for Bump (9,880 with Brotli quality 11), 28,377 for
-Compact (11,880) and 32,154 for NetWasmGC (13,465). See
+`Oz`, are 23,810 bytes for Bump (9,870 with Brotli quality 11), 28,383 for
+Compact (11,992) and 32,159 for NetWasmGC (13,478). See
 [Size and methodology](size-and-methodology.md#collector-selection-and-compression)
 for the exact size boundary. Timing and file size measure
 different things; neither table is a universal collector ranking.

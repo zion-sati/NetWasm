@@ -5,7 +5,8 @@ namespace NetWasm.Compiler.Wasm.ModuleEncoding;
 
 internal static class WasmModuleBuilderFactory
 {
-    public static WasmModuleBuilder Create()
+    // Validates functions against the engines' limits unless another validator is given.
+    public static WasmModuleBuilder Create(IWasmFunctionLimitValidator? functionLimits = null)
     {
         var unsigned = new UnsignedLeb128Encoder();
         var signed = new SignedLeb128Encoder();
@@ -40,6 +41,7 @@ internal static class WasmModuleBuilderFactory
                         new WasmSectionWriter(unsigned),
                         static buffer => new WasmBinaryWriter(buffer),
                         static buffer => new WasmBinarySnapshotReader(buffer)),
-                    new WasmIndexOperandScanner())));
+                    new WasmIndexOperandScanner()),
+                functionLimits ?? new WasmFunctionLimitValidator(new())));
     }
 }

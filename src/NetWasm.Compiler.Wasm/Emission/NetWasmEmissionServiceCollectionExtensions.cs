@@ -10,6 +10,12 @@ public static class NetWasmEmissionServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IWasmModuleEmitterFactory, WasmModuleEmitterFactory>();
+        // The engines' function limits, which every module and every patched function meets; a composition may
+        // register others first (tests do, to reach them cheaply).
+        services.TryAddSingleton(new NetWasm.Compiler.Wasm.ModuleEncoding.WasmFunctionLimits());
+        services.TryAddSingleton<NetWasm.Compiler.Wasm.ModuleEncoding.IWasmFunctionLimitValidator>(static provider =>
+            new NetWasm.Compiler.Wasm.ModuleEncoding.WasmFunctionLimitValidator(
+                provider.GetRequiredService<NetWasm.Compiler.Wasm.ModuleEncoding.WasmFunctionLimits>()));
         // Compiled-unit storage. Desktop: memory-mapped segments, which the OS is asked to
         // read ahead; hosts without files register their own first.
         services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.INativeExportResolver,

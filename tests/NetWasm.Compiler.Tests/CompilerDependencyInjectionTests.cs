@@ -43,8 +43,9 @@ public sealed class CompilerDependencyInjectionTests
             services.GetRequiredService<IManagedWasmEmitterFactory>());
         Assert.IsType<WasmModuleEmitterFactory>(
             services.GetRequiredService<IWasmModuleEmitterFactory>());
-        Assert.IsType<CompilationPipelineExecutor>(
+        Assert.IsType<FunctionLimitRecompilingExecutor>(
             services.GetRequiredService<ICompilationPipelineExecutor>());
+        Assert.IsType<CompilationPipelineExecutor>(services.GetRequiredService<CompilationPipelineExecutor>());
         Assert.IsType<CompilationMetadataStage>(
             services.GetRequiredService<ICompilationMetadataStage>());
         Assert.IsType<CompilationDiagnosticTraceStage>(
