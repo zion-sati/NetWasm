@@ -7,37 +7,37 @@
       "id": "netwasm.raw-inspection.command",
       "version": "1",
       "relativePath": "tools/netwasm/raw/run-raw-module-inspection.mjs",
-      "sha256": "32fb558bea736e92688084e65687b59068da779d6c3e28b1a77d1c52c10610eb"
+      "sha256": "58bab6305569d1456554b1e7e366b4adeede4ec45e9161aec37a6c3f7624e8b6"
     },
     {
       "id": "netwasm.raw-inspection.command-core",
       "version": "1",
       "relativePath": "tools/netwasm/raw/raw-module-inspection-command.mjs",
-      "sha256": "989ec9ad763d04a1badc9d4f3959793b89ce158f136c0644232111f9d9c4068d"
+      "sha256": "1051fbf914b3c908072ae70fe669736f6a2dfe1344fab7b7cd0f32e64ad3588d"
     },
     {
       "id": "netwasm.raw-inspection.error",
       "version": "1",
       "relativePath": "tools/netwasm/raw/raw-module-inspection-error.mjs",
-      "sha256": "a049e5f907e2bcb1b227f7013bcc17df08477859a82c8bf17021f069e74842a5"
+      "sha256": "3de4fcc42afba5f283ce2364beec7c9ef6c5daeb93024c8744f4ca63f45b0b6f"
     },
     {
       "id": "netwasm.raw-inspection.inspector",
       "version": "1",
       "relativePath": "tools/netwasm/raw/raw-module-import-inspector.mjs",
-      "sha256": "aa835377679d0491f0fec7b0a0f5d27673584edd307ad91c72d2145dec2c3b51"
+      "sha256": "9380b2edcb8eb1ceb3b117588aa0c4664a5baf703c54823669e838f21ea00bba"
     },
     {
       "id": "netwasm.raw-inspection.core-reader",
       "version": "1",
       "relativePath": "tools/netwasm/raw/core-module-import-reader.mjs",
-      "sha256": "9aca02982d588135a7a3bc19ce1d1f8409b62928694722828cb140d9353fc9dc"
+      "sha256": "2383b8d55a33a9dd357de9803193b87473f1691ce95067ab582a9b55af67a957"
     },
     {
       "id": "netwasm.raw-inspection.binaryen-reader",
       "version": "1",
       "relativePath": "tools/netwasm/raw/binaryen-function-import-reader.mjs",
-      "sha256": "6322dd97e46c0fb4660fdc5a920a562af8bcf94d222b527defe8fdff13db3f57"
+      "sha256": "b90e7f3dcda261d029922311f7e26259a06bf70cf43e155bf3e85036b44381b5"
     },
     {
       "id": "binaryen.license",
@@ -133,7 +133,7 @@
       "id": "wasm-tools.command",
       "version": "1",
       "relativePath": "tools/wasm-tools/run-wasm-tools.mjs",
-      "sha256": "bf31c7608ada8955a6d01ec940187824818268f1fce212e5b36615cddd78039f"
+      "sha256": "08c0265b70eb16bcc4d67ade4fd22389e4e7ade23877c53aaf6297b6ea5a00d5"
     },
     {
       "id": "wasm-tools.module",
@@ -361,7 +361,7 @@
       "id": "hosting-bundle.command",
       "version": "3",
       "relativePath": "tools/bundler/netwasm-bundle.mjs",
-      "sha256": "eb72caf7bacb1fcff182456e78fb279c0c7c9cb855f6ed1114a742e05c0ca6de"
+      "sha256": "42925c014b994809e50796a58642b6a50d167b5886deeb7377e1dac8f98112dd"
     },
     {
       "id": "rolldown.package",

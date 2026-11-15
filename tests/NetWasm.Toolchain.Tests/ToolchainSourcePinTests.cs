@@ -14,6 +14,13 @@ public sealed class ToolchainSourcePinTests
 {
     [Theory]
     [InlineData("hosting-bundle.command", "src/NetWasm.Toolchain/JavaScript/netwasm-bundle.mjs")]
+    [InlineData("wasm-tools.command", "src/NetWasm.Toolchain/JavaScript/run-wasm-tools.mjs")]
+    [InlineData("netwasm.raw-inspection.command", "src/NetWasm.Compiler.ComponentModel/Raw/JavaScript/run-raw-module-inspection.mjs")]
+    [InlineData("netwasm.raw-inspection.command-core", "src/NetWasm.Compiler.ComponentModel/Raw/JavaScript/raw-module-inspection-command.mjs")]
+    [InlineData("netwasm.raw-inspection.error", "src/NetWasm.Compiler.ComponentModel/Raw/JavaScript/raw-module-inspection-error.mjs")]
+    [InlineData("netwasm.raw-inspection.inspector", "src/NetWasm.Compiler.ComponentModel/Raw/JavaScript/raw-module-import-inspector.mjs")]
+    [InlineData("netwasm.raw-inspection.core-reader", "src/NetWasm.Compiler.ComponentModel/Raw/JavaScript/core-module-import-reader.mjs")]
+    [InlineData("netwasm.raw-inspection.binaryen-reader", "src/NetWasm.Compiler.ComponentModel/Raw/JavaScript/binaryen-function-import-reader.mjs")]
     [InlineData("hosting-bundle.closure-policy", "eng/hosting-bundle-closure.json")]
     [InlineData("jco.closure-policy", "eng/jco-transpile-closure.json")]
     public void PinnedAssetsMatchTheirSources(string assetId, string source)
