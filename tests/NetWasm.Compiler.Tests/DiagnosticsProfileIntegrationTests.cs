@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 using System.Collections.Immutable;
+using System.Runtime.Loader;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -307,6 +310,305 @@ public sealed class DiagnosticsProfileIntegrationTests
             target,
             result.StaticDataEnd));
     }
+
+    // Desktop .NET establishes each probe's result in DiagnosticsSemanticsProbes.
+    [Fact]
+    public void DesktopEstablishesTheDiagnosticsSemanticsResults()
+    {
+        var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+            .Split(Path.PathSeparator).Select(path => MetadataReference.CreateFromFile(path));
+        var compilation = CSharpCompilation.Create("DiagnosticsSemantics.Desktop",
+            [CSharpSyntaxTree.ParseText(DiagnosticsSemanticsSource, cancellationToken: TestContext.Current.CancellationToken)],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+        using var stream = new MemoryStream();
+        var emit = compilation.Emit(stream, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+        stream.Position = 0;
+        var context = new AssemblyLoadContext("DiagnosticsSemantics.Desktop", isCollectible: true);
+        try
+        {
+            var run = context.LoadFromStream(stream).GetType("NetWasm.Diagnostics.Fixtures.EntryPoint")!.GetMethod("Run")!;
+            foreach (var (probe, desktop, _) in DiagnosticsSemanticsProbes)
+            {
+                Assert.Equal((probe, desktop), (probe, (int)run.Invoke(null, [probe])!));
+            }
+        }
+        finally
+        {
+            context.Unload();
+        }
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void ListenersCurrentActivityAndMetricsRunAsDesktopDoes(bool optimize, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var result = CompileControlledHeaderRoot(
+            assets, "DiagnosticsSemantics", DiagnosticsSemanticsSource, optimize, target);
+
+        foreach (var (probe, _, netWasm) in DiagnosticsSemanticsProbes)
+        {
+            Assert.Equal((probe, netWasm), (probe, CompilerTestSupport.ExecuteWithStandardWasiNode(
+                result.ApplicationModule, assets.Directory, probe, target, result.StaticDataEnd)));
+        }
+    }
+
+    // Each probe's input with its desktop and NetWasm results, which match except where noted.
+    private static readonly (int Probe, int Desktop, int NetWasm)[] DiagnosticsSemanticsProbes =
+    [
+        (0, 1, 1),
+        (1, 1, 1),
+        (2, 1, 1),
+        (3, 0x1FF, 0x1FF),
+        (4, (13 << 8) | 13, (13 << 8) | 13),
+        // The portable profile rejects Activity.AddException before it records an event (bits:
+        // rejected, still current, no event), where desktop .NET records the exception event.
+        (5, 0b010, 0b111),
+    ];
+
+    private const string DiagnosticsSemanticsSource = """
+        using System;
+        using System.Collections.Generic;
+        using System.Diagnostics;
+        using System.Diagnostics.Metrics;
+        using System.Threading;
+        using System.Threading.Tasks;
+
+        namespace NetWasm.Diagnostics.Fixtures;
+
+        public static class EntryPoint
+        {
+            private static readonly AsyncLocal<string?> Marker = new();
+
+            public static int Run(int input) => input switch
+            {
+                0 => ActivitySourceCallbacks(),
+                1 => DiagnosticListenerFiltering(),
+                2 => CurrentAcrossAwait(),
+                3 => PublicationOrder(),
+                4 => MetricInstrumentShapes(),
+                5 => AddExceptionBoundary(),
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+
+            // An ActivityListener sees its source's activity start and stop, in that order.
+            private static int ActivitySourceCallbacks()
+            {
+                var callbacks = new List<string>();
+                var listener = new ActivityListener
+                {
+                    ShouldListenTo = source => source.Name == "activity-probe",
+                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                    ActivityStarted = activity => callbacks.Add("start:" + activity.OperationName),
+                    ActivityStopped = activity => callbacks.Add("stop:" + activity.OperationName),
+                };
+                ActivitySource.AddActivityListener(listener);
+                try
+                {
+                    using var source = new ActivitySource("activity-probe");
+                    using var activity = source.StartActivity("root");
+                }
+                finally
+                {
+                    listener.Dispose();
+                }
+
+                return callbacks.Count == 2 && callbacks[0] == "start:root" && callbacks[1] == "stop:root" ? 1 : 0;
+            }
+
+            // A DiagnosticListener subscription receives only the events its predicate enables.
+            private static int DiagnosticListenerFiltering()
+            {
+                var callbacks = new List<string>();
+                using var listener = new DiagnosticListener("diagnostic-probe");
+                using var subscription = listener.Subscribe(new RecordingObserver(callbacks), name => name == "probe.event");
+                if (listener.IsEnabled("probe.event"))
+                {
+                    listener.Write("probe.event", new object());
+                }
+                if (listener.IsEnabled("probe.ignored"))
+                {
+                    listener.Write("probe.ignored", new object());
+                }
+
+                return callbacks.Count == 1 && callbacks[0] == "probe.event" ? 1 : 0;
+            }
+
+            // Activity.Current and an AsyncLocal value flow through an async method and are restored
+            // after it, and its changes do not leak into its caller. The awaited task is complete
+            // because a synchronous entry cannot block on an incomplete one; Activity.Current is an
+            // AsyncLocal, whose flow across a suspension the asynchronous entry point tests cover.
+            private static int CurrentAcrossAwait()
+            {
+                var previous = Activity.Current;
+                var previousMarker = Marker.Value;
+                Marker.Value = "outer";
+                var flowed = CurrentAcrossAwaitAsync().GetAwaiter().GetResult();
+                var callerKept = Marker.Value == "outer";
+                Marker.Value = previousMarker;
+                return flowed && callerKept && ReferenceEquals(previous, Activity.Current) ? 1 : 0;
+            }
+
+            private static async Task<bool> CurrentAcrossAwaitAsync()
+            {
+                var previous = Activity.Current;
+                using var activity = new Activity("current-probe").Start();
+                Marker.Value = "nested";
+                await Task.CompletedTask;
+                var flowed = ReferenceEquals(activity, Activity.Current) && Marker.Value == "nested";
+                activity.Stop();
+                return flowed && ReferenceEquals(previous, Activity.Current);
+            }
+
+            // An activity's start, a diagnostic event written inside it and its stop publish in that
+            // order, and Activity.Current is restored afterwards. Each bit is one condition.
+            private static int PublicationOrder()
+            {
+                var activityCallbacks = new List<string>();
+                var order = new List<string>();
+                var activityListener = new ActivityListener
+                {
+                    ShouldListenTo = source => source.Name == "order-probe",
+                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                    ActivityStarted = activity =>
+                    {
+                        activityCallbacks.Add("start:" + activity.OperationName);
+                        order.Add("activity-start");
+                    },
+                    ActivityStopped = activity =>
+                    {
+                        activityCallbacks.Add("stop:" + activity.OperationName);
+                        order.Add("activity-stop");
+                    },
+                };
+                ActivitySource.AddActivityListener(activityListener);
+                var diagnosticCallbacks = new List<string>();
+                var diagnosticListener = new DiagnosticListener("order-events");
+                var subscription = diagnosticListener.Subscribe(
+                    new RecordingObserver(diagnosticCallbacks, order), name => name == "probe.event");
+                var previous = Activity.Current;
+                var currentPublished = false;
+                var enabled = false;
+                try
+                {
+                    using var source = new ActivitySource("order-probe");
+                    using var activity = source.StartActivity("root");
+                    currentPublished = activity is not null && ReferenceEquals(activity, Activity.Current);
+                    enabled = diagnosticListener.IsEnabled("probe.event");
+                    if (enabled)
+                    {
+                        diagnosticListener.Write("probe.event", new object());
+                    }
+                    if (diagnosticListener.IsEnabled("probe.ignored"))
+                    {
+                        diagnosticListener.Write("probe.ignored", new object());
+                    }
+                }
+                finally
+                {
+                    subscription.Dispose();
+                    diagnosticListener.Dispose();
+                    activityListener.Dispose();
+                }
+
+                var observation = 0;
+                observation |= currentPublished ? 1 << 0 : 0;
+                observation |= enabled ? 1 << 1 : 0;
+                observation |= diagnosticCallbacks.Count == 1 ? 1 << 2 : 0;
+                observation |= activityCallbacks.Count == 2 ? 1 << 3 : 0;
+                observation |= activityCallbacks.Count >= 1 && activityCallbacks[0] == "start:root" ? 1 << 4 : 0;
+                observation |= activityCallbacks.Count >= 2 && activityCallbacks[1] == "stop:root" ? 1 << 5 : 0;
+                observation |= diagnosticCallbacks.Count >= 1 && diagnosticCallbacks[0] == "probe.event" ? 1 << 6 : 0;
+                observation |= ReferenceEquals(previous, Activity.Current) ? 1 << 7 : 0;
+                observation |= order.Count == 3 && order[0] == "activity-start" &&
+                    order[1] == "diagnostic:probe.event" && order[2] == "activity-stop" ? 1 << 8 : 0;
+                return observation;
+            }
+
+            // Every synchronous and observable instrument publishes once and measures once:
+            // published count in the second byte, measurement count in the first. The listener
+            // takes only this meter's instruments, as a process can hold others (desktop's runtime
+            // meters, for one).
+            private static int MetricInstrumentShapes()
+            {
+                using var meter = new Meter("metrics-probe");
+                using var listener = new MeterListener();
+                var published = 0;
+                var measurements = 0;
+                listener.InstrumentPublished = (instrument, current) =>
+                {
+                    if (instrument.Meter != meter)
+                    {
+                        return;
+                    }
+                    published++;
+                    current.EnableMeasurementEvents(instrument);
+                };
+                listener.SetMeasurementEventCallback<int>((_, _, _, _) => measurements++);
+                listener.Start();
+
+                meter.CreateCounter<int>("counter").Add(1);
+                meter.CreateGauge<int>("gauge").Record(2);
+                meter.CreateUpDownCounter<int>("updown").Add(3);
+                meter.CreateHistogram<int>("histogram").Record(4);
+                meter.CreateObservableCounter<int>("counter-value", () => 5);
+                meter.CreateObservableCounter<int>("counter-measurement", () => new Measurement<int>(6));
+                meter.CreateObservableCounter<int>("counter-sequence", () => new[] { new Measurement<int>(7) });
+                meter.CreateObservableGauge<int>("gauge-value", () => 8);
+                meter.CreateObservableGauge<int>("gauge-measurement", () => new Measurement<int>(9));
+                meter.CreateObservableGauge<int>("gauge-sequence", () => new[] { new Measurement<int>(10) });
+                meter.CreateObservableUpDownCounter<int>("updown-value", () => 11);
+                meter.CreateObservableUpDownCounter<int>("updown-measurement", () => new Measurement<int>(12));
+                meter.CreateObservableUpDownCounter<int>("updown-sequence", () => new[] { new Measurement<int>(13) });
+                listener.RecordObservableInstruments();
+                return (published << 8) | measurements;
+            }
+
+            // Bits: AddException threw PlatformNotSupportedException, the activity stayed current,
+            // and no event was recorded.
+            private static int AddExceptionBoundary()
+            {
+                using var activity = new Activity("exception-boundary").Start();
+                var rejected = false;
+                try
+                {
+                    activity.AddException(new InvalidOperationException("boundary"));
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    rejected = true;
+                }
+
+                using var events = activity.Events.GetEnumerator();
+                return (rejected ? 1 << 0 : 0) |
+                    (ReferenceEquals(Activity.Current, activity) ? 1 << 1 : 0) |
+                    (!events.MoveNext() ? 1 << 2 : 0);
+            }
+
+            private sealed class RecordingObserver(List<string> callbacks, List<string>? order = null)
+                : IObserver<KeyValuePair<string, object?>>
+            {
+                public void OnCompleted()
+                {
+                }
+
+                public void OnError(Exception error)
+                {
+                }
+
+                public void OnNext(KeyValuePair<string, object?> value)
+                {
+                    callbacks.Add(value.Key);
+                    order?.Add("diagnostic:" + value.Key);
+                }
+            }
+        }
+        """;
 
     private static CompilationResult CompileRoot(TestAssets assets, string assemblyName, string source)
     {
