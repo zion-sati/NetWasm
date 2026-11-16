@@ -48,6 +48,9 @@ repository.
 - [Compiler diagnostics](diagnostics.md): every current
   `NetWasm.Compiler.Core.DiagnosticCode`, including cause, exact scope, and
   corrective action.
+- [Popular NuGet packages](package-compatibility.md): how the 100 most-downloaded
+  .NET Standard packages run on NetWasm, what stops the others, and replacements
+  that run.
 - [.NET Standard libraries](netstandard-libraries.md): which packages restore, what
   throws when a library reaches something NetWasm does not provide, and how library
   authors avoid reflection, type-name probes and platform-specific paths.

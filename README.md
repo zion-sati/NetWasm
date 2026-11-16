@@ -89,6 +89,18 @@ faster on the library work and the quicksort without allocation.
 
 [Versions, settings, desktop figures and reproduction](docs/performance.md)
 
+## Your NuGet packages
+
+A NetWasm project restores and compiles NuGet packages built for .NET Standard.
+Of the 100 most-downloaded nuget.org packages whose best build is .NET Standard
+2.x, **53 run their README quick start unchanged**, printing exactly what
+desktop .NET prints: Azure.Core, the AWS SDK's core, MSAL, CsvHelper,
+MongoDB.Driver, BouncyCastle, SSH.NET and HtmlAgilityPack among them. Most of
+the rest stop on run-time reflection, which NetWasm leaves out to keep programs
+small, and several have a source-generated replacement that runs.
+
+[Every package's result and the replacements](docs/package-compatibility.md)
+
 ## More than Hello World
 
 Hello World is just the smallest example. NetWasm builds real applications too.
@@ -108,8 +120,10 @@ Today NetWasm can:
 - [generate C# bindings from WIT](docs/wit-bindings.md) and produce standalone
   WASI 0.3 components;
 - construct and inspect expression trees without general runtime reflection;
-- use independently packaged LINQ, HTTP, JSON, XML, Regex, Hashing and
-  dependency-injection libraries;
+- use LINQ, HTTP, JSON, XML and regular expressions from the framework, and
+  hashing and dependency injection from separate NetWasm packages;
+- reference NuGet packages built for .NET Standard: 53 of the 100
+  most-downloaded [run unchanged](docs/package-compatibility.md);
 - dual-target libraries for `netwasm0.1` and desktop .NET.
 
 The profile is deliberately smaller than desktop .NET. It already supports
@@ -292,7 +306,8 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 **Done in NetWasm 0.14.0:** libraries built for .NET Standard restore from
 NuGet and run unchanged when their reachable code fits the NetWasm profile,
 without carrying unused unsupported paths into the application; see
-[.NET Standard libraries](docs/netstandard-libraries.md).
+[.NET Standard libraries](docs/netstandard-libraries.md) and how the
+[most popular packages](docs/package-compatibility.md) fare.
 
 This does not turn NetWasm into desktop .NET. General runtime reflection,
 `dynamic`, runtime assembly loading, managed threading, unsupported host APIs

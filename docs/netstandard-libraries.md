@@ -2,7 +2,8 @@
 
 A `netwasm0.1` project can reference NuGet packages built for .NET Standard. This page says which packages restore,
 what happens when a library reaches something NetWasm does not provide, and how a library author can avoid those
-paths. The [support status](support-status.md) page remains the inventory of what NetWasm implements.
+paths. The [support status](support-status.md) page remains the inventory of what NetWasm implements, and
+[Popular NuGet packages](package-compatibility.md) shows how the 100 most-downloaded .NET Standard packages run.
 
 ## Which packages restore
 
