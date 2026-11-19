@@ -24,6 +24,10 @@ internal interface IBeforeFieldInitEntryInitializer
 // checks, and keeps references in a root frame across that check, on every
 // iteration. A method with exception regions keeps its checks where they are,
 // so an initializer that fails still fails inside the region that handles it.
+// A static method or constructor of a precise type checks its own type at its
+// entry whatever its paths: invoking it triggers that type's initializer
+// (ECMA-335 II.10.5.3.1), so its accesses to the type's fields, and those of the
+// type's static methods inlined into it, need no checks of their own.
 internal sealed class BeforeFieldInitEntryInitializer(
     IControlFlowGraphBuilder graphs,
     IControlFlowDominanceAnalyzer dominance,
@@ -50,7 +54,7 @@ internal sealed class BeforeFieldInitEntryInitializer(
             .Where(StaticFieldInitializationClassifier.IsStaticFieldAccess)
             .Select(access => (Access: access, Owner: StaticFieldInitializationClassifier.Owner(access, _fields)))
             .Where(candidate => !initialized.Any(owner => owner.Initializes(candidate.Owner)) &&
-                InitializesOnAccess(candidate.Owner.Type))
+                (InitializesOnAccess(candidate.Owner.Type) || IsOwnTriggeredType(body, candidate.Owner)))
             .ToArray();
         if (candidates.Length == 0) return body;
 
@@ -69,8 +73,9 @@ internal sealed class BeforeFieldInitEntryInitializer(
         foreach (var candidate in candidates)
         {
             if (hoisted.Any(access => StaticFieldInitializationClassifier.Owner(access, _fields).Initializes(candidate.Owner)) ||
-                !blocks.TryGetValue(candidate.Access.Offset, out var block) ||
-                !returns.All(exit => dominators[exit].Contains(block)))
+                !IsOwnTriggeredType(body, candidate.Owner) &&
+                (!blocks.TryGetValue(candidate.Access.Offset, out var block) ||
+                 !returns.All(exit => dominators[exit].Contains(block))))
             {
                 continue;
             }
@@ -107,6 +112,13 @@ internal sealed class BeforeFieldInitEntryInitializer(
             })],
         };
     }
+
+    // The method's own precise type, which its invocation initializes.
+    private bool IsOwnTriggeredType(CilMethodBody body, StaticFieldOwner owner) =>
+        OwnTypeInitialization.TriggeredByInvocation(body.Method) &&
+        new StaticFieldOwner(body.Method.DeclaringType, body.MethodInstance?.DeclaringType).Initializes(owner) &&
+        _types.GetTypeDefinition(owner.Type) is { IsBeforeFieldInit: false } definition &&
+        definition.Methods.Any(method => _methods.GetMethod(method).Name == ".cctor");
 
     private bool InitializesOnAccess(EntityKey type) =>
         _types.GetTypeDefinition(type) is { IsBeforeFieldInit: true } definition &&

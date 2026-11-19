@@ -63,6 +63,7 @@ public sealed partial class PageEntryWriterTests
         Assert.Contains("createImports: createWasiPlatform(Object.freeze({ initialDirectory: null, network: null })),",
             source, StringComparison.Ordinal);
         Assert.Contains("createFilesystemScope: null,", source, StringComparison.Ordinal);
+        Assert.Contains("createSidecarMaterializer: null,", source, StringComparison.Ordinal);
         Assert.Contains("platformProviderCatalog: deepFreeze(", source, StringComparison.Ordinal);
         Assert.Contains("\"module\":\"wasi:cli/environment@0.3.2\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("wasi:http/client", source, StringComparison.Ordinal);
@@ -231,6 +232,66 @@ public sealed partial class PageEntryWriterTests
             StringComparison.Ordinal);
     }
 
+    // A browser page's module imports the bundle when it loads, so the bundle, the runtime modules and the startup
+    // files download together, and open() hands the runtime the responses.
+    [Fact]
+    public void WritesAPageModuleThatStartsItsStartupDownloadsTogether()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "App.mjs");
+        var declaration = Path.Combine(directory.Path, "App.d.mts");
+
+        new PageEntryWriter().WriteModule(new(
+            "netwasm.page.mjs", new string('1', 64), new string('2', 64), output, declaration, Exports)
+        {
+            StartupLoad = new(["./netwasm.runtime.page.abc.mjs", "../runtime/netwasm.runtime.x_Y-1.mjs"],
+                ["App.wasm", "App.raw-adapter.mjs", "symbols/App.wasm.type-symbols"]),
+        });
+
+        var source = File.ReadAllText(output);
+        Assert.DoesNotContain("import {", source, StringComparison.Ordinal);
+        Assert.Contains("const page = import(\"./netwasm.page.mjs\");\npage.catch(() => {});\n", source,
+            StringComparison.Ordinal);
+        Assert.Contains("for (const path of [\"./netwasm.page.mjs\",\"./netwasm.runtime.page.abc.mjs\","
+            + "\"../runtime/netwasm.runtime.x_Y-1.mjs\"]) {", source, StringComparison.Ordinal);
+        Assert.Contains("    link.rel = \"modulepreload\";", source, StringComparison.Ordinal);
+        Assert.Contains("for (const path of [\"deployment.json\",\"App.wasm\",\"App.raw-adapter.mjs\","
+            + "\"symbols/App.wasm.type-symbols\"]) {", source, StringComparison.Ordinal);
+        Assert.Contains("  prefetched.set(url, response);", source, StringComparison.Ordinal);
+        Assert.Contains("return page.then(({ openPage }) => openPage(Object.freeze({ exports, options, prefetched, startup })));",
+            source, StringComparison.Ordinal);
+        Assert.DoesNotContain("mount", source, StringComparison.Ordinal);
+        Assert.Contains("export declare function open(options?: NetWasmPageOpenOptions): Promise<NetWasmPageModule>;",
+            File.ReadAllText(declaration), StringComparison.Ordinal);
+    }
+
+    // A page that loads its bundle when the module loads reaches its file mounts through the loaded bundle; before it
+    // has loaded, nothing can be mounted.
+    [Fact]
+    public void ForwardsFileMountsToThePageBundleOnceItLoads()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "Files.mjs");
+
+        new PageEntryWriter().WriteModule(new(
+            "netwasm.page.mjs", new string('1', 64), new string('2', 64), output,
+            Path.Combine(directory.Path, "Files.d.mts"), [new("Run", [], "i32", null)])
+        {
+            FileMounts = true,
+            StartupLoad = new([], []),
+        });
+
+        var source = File.ReadAllText(output);
+        Assert.DoesNotContain("export { mount, sync, unmount }", source, StringComparison.Ordinal);
+        Assert.Contains("for (const path of [\"deployment.json\"]) {", source, StringComparison.Ordinal);
+        Assert.Contains("export async function mount(guestPath, source) {\n  return (await page).mount(guestPath, source);\n}",
+            source, StringComparison.Ordinal);
+        Assert.Contains("export async function sync(guestPath) {\n  return (await page).sync(guestPath);\n}", source,
+            StringComparison.Ordinal);
+        Assert.Contains("  if (loaded === null) throw new TypeError(`'${guestPath}' is not mounted`);\n"
+            + "  return loaded.unmount(guestPath);", source, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void PageAndWorkerDeclarationsPublishTheSameExports()
     {
@@ -286,6 +347,15 @@ public sealed partial class PageEntryWriterTests
                      valid with { Exports = [new("Add", [], "i32", "promise")] },
                      valid with { Exports = [new("Add", default, "i32", null)] },
                      valid with { OutputPath = "App.mjs" },
+                     valid with { StartupLoad = new(default, []) },
+                     valid with { StartupLoad = new([], default) },
+                     valid with { StartupLoad = new(["https://example.test/netwasm.runtime.a.mjs"], []) },
+                     valid with { StartupLoad = new(["/netwasm.runtime.a.mjs"], []) },
+                     valid with { StartupLoad = new(["./a/../b.mjs"], []) },
+                     valid with { StartupLoad = new(["./a.mjs", "./a.mjs"], []) },
+                     valid with { StartupLoad = new([], ["App.wasm", "App.wasm"]) },
+                     valid with { StartupLoad = new([], ["deployment.json"]) },
+                     valid with { StartupLoad = new([], ["App wasm"]) },
                  })
         {
             Assert.Throws<ArgumentException>(() => writer.WriteModule(request));

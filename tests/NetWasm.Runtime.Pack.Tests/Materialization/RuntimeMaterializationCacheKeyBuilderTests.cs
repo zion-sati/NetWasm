@@ -72,6 +72,9 @@ public sealed class RuntimeMaterializationCacheKeyBuilderTests
             baseline with { Bindings = [binding with { Import = binding.Import with { ReturnType = null } }] },
             baseline with { BuildIdentity = baseline.BuildIdentity with { WasmLdVersion = "lld-2" } },
             baseline with { LinkArguments = baseline.LinkArguments.Add("--new-policy") },
+            baseline with { EnvImports = [new("glClear", "webgl")] },
+            baseline with { EnvImports = [new("glClear", "gl2")] },
+            baseline with { EnvImports = [new("glViewport", "webgl")] },
             baseline with { Target = baseline.Target with { NativeValidation = profile with { Version = 2 } } },
             baseline with { Target = baseline.Target with { NativeValidation = profile with { Features = profile.Features.Add("other") } } },
             baseline with { Target = baseline.Target with { NativeValidation = profile with { Imports = profile.Imports.Add(contract with { Name = "other" }) } } },
@@ -282,6 +285,38 @@ public sealed class RuntimeMaterializationCacheKeyBuilderTests
                 },
             },
             baseline with { Target = baseline.Target with { PlatformArchives = null } },
+            baseline with
+            {
+                Target = baseline.Target with
+                {
+                    EmscriptenArchives = baseline.Target.EmscriptenArchives! with
+                    {
+                        Support = baseline.Target.EmscriptenArchives.Support with { Sha256 = new string('e', 64) },
+                    },
+                },
+            },
+            baseline with
+            {
+                Target = baseline.Target with
+                {
+                    EmscriptenArchives = baseline.Target.EmscriptenArchives! with
+                    {
+                        StandIns = baseline.Target.EmscriptenArchives.StandIns with { Sha256 = new string('f', 64) },
+                    },
+                },
+            },
+            baseline with { Target = baseline.Target with { EmscriptenArchives = null } },
+            baseline with
+            {
+                Target = baseline.Target with
+                {
+                    ExceptionSystemLibraries = baseline.Target.ExceptionSystemLibraries! with
+                    {
+                        Assets = [baseline.Target.ExceptionSystemLibraries.Assets[0] with { Sha256 = new string('9', 64) },
+                            baseline.Target.ExceptionSystemLibraries.Assets[1]],
+                    },
+                },
+            },
             baseline with { Layout = baseline.Layout with { InitialMemorySizeBytes = 327_680 } },
             baseline with { Optimization = RuntimeWasmOptimization.O3 },
             baseline with

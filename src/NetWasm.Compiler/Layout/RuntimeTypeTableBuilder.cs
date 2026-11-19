@@ -27,7 +27,9 @@ internal sealed class RuntimeTypeTableBuilder(
     ITypeIdentityResolver identities,
     IRuntimeTypeAssemblyResolver assemblies,
     IImplementedInterfaceResolver interfaces,
-    IRuntimeTypeTableEncoder encoder) : IRuntimeTypeTableBuilder
+    IRuntimeTypeTableEncoder encoder,
+    IProgramAssemblyNames names,
+    IProgramManifestResources resources) : IRuntimeTypeTableBuilder
 {
     private const string GenericParameterPrefix = "generic-parameter:";
     private const int Public = 0x1;
@@ -46,6 +48,8 @@ internal sealed class RuntimeTypeTableBuilder(
     private readonly IRuntimeTypeAssemblyResolver _assemblies = assemblies ?? throw new ArgumentNullException(nameof(assemblies));
     private readonly IImplementedInterfaceResolver _interfaces = interfaces ?? throw new ArgumentNullException(nameof(interfaces));
     private readonly IRuntimeTypeTableEncoder _encoder = encoder ?? throw new ArgumentNullException(nameof(encoder));
+    private readonly IProgramAssemblyNames _names = names ?? throw new ArgumentNullException(nameof(names));
+    private readonly IProgramManifestResources _resources = resources ?? throw new ArgumentNullException(nameof(resources));
 
     public void Build()
     {
@@ -109,6 +113,7 @@ internal sealed class RuntimeTypeTableBuilder(
         var entryAssembly = _program.RequiresAssemblies && _program.EntryPoint is { } entryPoint
             ? AssemblyIndex(entryPoint.DeclaringType.Assembly)
             : 0;
+        var assemblyTable = ProgramAssemblyTable();
         var table = _encoder.Encode(new(entries, _target.ObjectReferenceSize,
             _program.RequiresGenericArguments, _program.RequiresDeclaringTypes || _program.RequiresElementTypes,
             _program.RequiresGenericDefinitions)
@@ -117,11 +122,40 @@ internal sealed class RuntimeTypeTableBuilder(
             EntryAssemblyIndex = entryAssembly,
             IncludeTypeAttributes = _program.RequiresTypeAttributes,
             IncludeInterfaces = _program.RequiresInterfaces,
+            HighestAssemblyIndex = assemblyIndexes.Count,
+            AssemblyTable = assemblyTable,
         });
         _state.RuntimeAssemblies = [.. assemblyIndexes.OrderBy(pair => pair.Value).Select(pair => pair.Key)];
         _state.TypeTableAddress = _state.Cursor;
         _state.Segments.Add(new DataSegment(_state.Cursor, table));
         _state.Cursor += table.Length;
+
+        // The program's assemblies where it lists them, names them or reads their resources. An assembly the program
+        // lists, or one whose resources it keeps, has an index even where the table describes none of its types:
+        // those follow the types' assemblies, in name order.
+        ImmutableArray<byte> ProgramAssemblyTable()
+        {
+            if (!_program.RequiresManifestResources && !_program.RequiresAssemblyNames && !_program.RequiresAssemblyEnumeration)
+            {
+                return [];
+            }
+            var resources = _program.RequiresManifestResources
+                ? _resources.KeptResources()
+                : ImmutableDictionary<AssemblyIdentity, ImmutableArray<Metadata.ManifestResourceData>>.Empty;
+            IEnumerable<AssemblyIdentity> listed = _program.RequiresAssemblyEnumeration
+                ? _program.Methods.Keys.Select(key => key.Assembly).Concat(_program.Types.Select(key => key.Assembly))
+                : [];
+            foreach (var assembly in listed.Concat(resources.Keys).Distinct()
+                .OrderBy(assembly => assembly.Name, StringComparer.Ordinal))
+            {
+                AssemblyIndex(assembly);
+            }
+            return ProgramAssemblyTableEncoder.Encode([.. assemblyIndexes
+                .OrderBy(pair => pair.Value)
+                .Select(pair => new ProgramAssembly(
+                    _program.RequiresAssemblyNames ? _names.DisplayName(pair.Key) : null,
+                    resources.GetValueOrDefault(pair.Key, [])))]);
+        }
 
         // The declaring type DeclaringType returns, or the element GetElementType returns, as far as
         // the program can ask for either; an array, pointer or by-reference type has no declaring type.

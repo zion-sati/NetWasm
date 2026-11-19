@@ -22,8 +22,7 @@ internal sealed class ComponentFunctionAppender(
         WasmTarget target,
         RuntimeInitializationPlan initialization,
         int importCount,
-        IReadOnlyDictionary<string, int> requestedExportIndices,
-        IFunctionIndexResolver functionIndices)
+        IReadOnlyDictionary<string, int> requestedExportIndices)
     {
         ArgumentNullException.ThrowIfNull(functions);
         ArgumentNullException.ThrowIfNull(exports);
@@ -32,7 +31,6 @@ internal sealed class ComponentFunctionAppender(
         ArgumentNullException.ThrowIfNull(initialization);
         ArgumentOutOfRangeException.ThrowIfNegative(importCount);
         ArgumentNullException.ThrowIfNull(requestedExportIndices);
-        ArgumentNullException.ThrowIfNull(functionIndices);
 
         var component = components.Emit(
             request,
@@ -40,8 +38,7 @@ internal sealed class ComponentFunctionAppender(
             initialization,
             importCount,
             functions.Count,
-            requestedExportIndices,
-            functionIndices);
+            requestedExportIndices);
         foreach (var function in component.Functions)
         {
             functions.Add(function);

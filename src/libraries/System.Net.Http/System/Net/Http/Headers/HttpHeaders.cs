@@ -72,7 +72,7 @@ namespace System.Net.Http.Headers
         }
 
         /// <summary>Gets a view of the contents of this headers collection that does not parse nor validate the data upon access.</summary>
-        internal HttpHeadersNonValidated NonValidated => new HttpHeadersNonValidated(this);
+        public HttpHeadersNonValidated NonValidated => new HttpHeadersNonValidated(this);
 
         public void Add(string name, string? value) => Add(GetHeaderDescriptor(name), value);
 

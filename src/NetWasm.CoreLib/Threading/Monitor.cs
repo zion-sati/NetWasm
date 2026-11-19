@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // Adapted from System.Private.CoreLib Monitor for a single managed reactor.
 
+using System.Runtime.CompilerServices;
+
 namespace System.Threading;
 
 public static class Monitor
@@ -17,6 +19,7 @@ public static class Monitor
         Enter(obj, ref lockTaken);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Enter(object obj, ref bool lockTaken)
     {
         ValidateLockTaken(lockTaken);
@@ -32,6 +35,7 @@ public static class Monitor
         return lockTaken;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void TryEnter(object obj, ref bool lockTaken) =>
         TryEnter(obj, 0, ref lockTaken);
 
@@ -42,6 +46,7 @@ public static class Monitor
         return lockTaken;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void TryEnter(object obj, int millisecondsTimeout, ref bool lockTaken)
     {
         ValidateLockTaken(lockTaken);

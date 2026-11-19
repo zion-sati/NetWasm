@@ -9,14 +9,14 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.StackTraces;
 
-// Stack traces keep Exception._stackTrace and String, and CoreLib's method-symbols loader; type names keep its
-// type-symbols loader. The program runs each loader at startup (issue 225); a program without them pays nothing.
+// Stack traces keep Exception._stackTrace and String, and CoreLib's method-symbols loader, which the program runs at
+// startup (issue 225); a program without them pays nothing. Type names root nothing: CoreLib's name readers reach the
+// type-symbols loader, so only a program that reads a name carries it.
 internal sealed class StackTraceReachabilityRootProvider :
     IStackTraceReachabilityRootProvider
 {
     public ReachabilityRoots Provide(
         bool stackTraces,
-        bool typeNames,
         ITypeFinder types,
         IFieldRepository fields,
         IMethodRepository methods)
@@ -24,30 +24,17 @@ internal sealed class StackTraceReachabilityRootProvider :
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(fields);
         ArgumentNullException.ThrowIfNull(methods);
-        var roots = ReachabilityRoots.Empty;
-        if (stackTraces)
+        if (!stackTraces)
         {
-            var exception = types.FindType("System.Exception");
-            var stackTrace = exception.Fields
-                .Select(fields.GetField)
-                .Single(field => field.Name == "_stackTrace");
-            var @string = types.FindType("System.String");
-            roots = new([exception.Key, @string.Key], [stackTrace.Key], []);
+            return ReachabilityRoots.Empty;
         }
-        if (typeNames)
-        {
-            roots = roots with { Methods = roots.Methods.Add(Loader(types, methods, "LoadTypeSymbols")) };
-        }
-        if (stackTraces)
-        {
-            roots = roots with { Methods = roots.Methods.Add(Loader(types, methods, "LoadMethodSymbols")) };
-        }
-        return roots;
-    }
-
-    private static EntityKey Loader(ITypeFinder types, IMethodRepository methods, string name)
-    {
+        var exception = types.FindType("System.Exception");
+        var stackTrace = exception.Fields
+            .Select(fields.GetField)
+            .Single(field => field.Name == "_stackTrace");
+        var @string = types.FindType("System.String");
         var sidecars = types.FindType("System.Runtime.InteropServices.ProgramSidecars");
-        return sidecars.Methods.Single(method => methods.GetMethod(method).Name == name);
+        var loader = sidecars.Methods.Single(method => methods.GetMethod(method).Name == "LoadMethodSymbols");
+        return new([exception.Key, @string.Key], [stackTrace.Key], [loader]);
     }
 }

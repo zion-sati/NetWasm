@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { readExceptionClause } from "./exception-metadata.mjs";
 import { createRefreshableDataView } from "./refreshable-data-view.mjs";
 import { createDeclaredOracleImports } from "./declared-oracle-imports.mjs";
+import { addUnprovidedWasiImports } from "./unprovided-wasi-imports.mjs";
 import { readRuntimeTypeTable } from "./runtime-type-table.cjs";
 
 // Output the guest writes, captured into the observation (declared first: the run starts
@@ -482,12 +483,14 @@ var allocateString = (value, length, type) => {
   cloneStringTypes.add(type);
   if (length < 0 || length > 0x7ffffffb) return zeroAddress();
   var header = memory64 ? 12 : 8;
-  var pointer = allocate(header + length * 2, type);
+  // The characters and the NUL after them, as the runtime allocates a string.
+  var pointer = allocate(header + (length + 1) * 2, type);
   var view = createRefreshableDataView(memory);
   view.setInt32(asNumber(plus(pointer, memory64 ? 8 : 4)), length, true);
   for (var index = 0; index < length; index++) {
     view.setUint16(asNumber(plus(pointer, header + index * 2)), value, true);
   }
+  view.setUint16(asNumber(plus(pointer, header + length * 2)), 0, true);
   return pointer;
 };
 var allocateText = (text, type) => {
@@ -836,6 +839,9 @@ var runtimeValues = {
   // This compiler-only oracle retains its allocations. Collection is explicitly
   // simulated; it must not qualify reclamation, weak clearing, or finalization.
   collect: zero,
+  // The write barrier of a collector with generations: this host has no collector to tell.
+  record_reference_write() {},
+  record_reference_writes() {},
   component_realloc: componentReallocate,
   component_free: zero,
   native_alloc: nativeAlloc,
@@ -921,6 +927,8 @@ var runtimeValues = {
   },
   allocate_reference_array: allocateArray,
   allocate_value_array: allocateArray,
+  // The test host's arrays come zeroed; the contract leaves an uninitialized one's elements unspecified.
+  allocate_uninitialized_value_array: allocateArray,
   allocate_rectangular_array: allocateRectangularArray,
   allocate_bounded_rectangular_array: (...args) => allocateRectangularArray(...args, true),
   array_rank(array) {
@@ -1088,6 +1096,11 @@ var runtimeValues = {
   },
   reregister_for_finalize: zero,
   gc_get_metric() { return 0n; },
+  gc_object_generation() { return 0; },
+  gc_collect_young: zero,
+  // The oracle's collector is the host's: an event loop's idle and quiet collections never collect.
+  collect_when_idle() { return 0; },
+  collect_when_quiet() { return 0; },
   gc_metric_is_supported(metric) { return metric !== 4; },
   gc_wait_for_pending_finalizers: zero,
   object_identity_hash(value) { return Number(value) | 0; },
@@ -1220,7 +1233,8 @@ try {
     currentInput = input;
     try {
       var canonicalPrefix = memory64 ? "cm64p2" : "cm32p2";
-      application = await WebAssembly.instantiate(compiledModule, addUnprovidedWasiImports(compiledModule, {
+      application = await WebAssembly.instantiate(compiledModule, addUnprovidedWasiImports(
+        WebAssembly.Module.imports(compiledModule), {
         "netwasm.runtime.v1": runtime,
         "netwasm.host.v1": host,
         "$root": componentBuiltIns,
@@ -1237,7 +1251,7 @@ try {
         [`${canonicalPrefix}|wasi:random/random@0.3`]: wasiRandom,
         ...createStandardStreamOracleImports(),
         ...createSocketOracleImports(),
-        }));
+        }, "the oracle"));
       var initialize = application.exports[
         memory64 ? "cm64p2_initialize" : "cm32p2_initialize"];
       hostPhase = "initialization";
@@ -1285,10 +1299,8 @@ try {
 }
 
 // The oracle's network only creates and drops TCP sockets (as a client does before it observes a
-// cancelled connect), and its file system holds only the time zone asset. A program may link more
-// of wasi:sockets or wasi:filesystem than that (ClientWebSocket reaches name lookup, for example)
-// and still run without calling it, so each such function the module imports exists and fails if
-// it is called. Nothing else is filled in: an undeclared import still fails to link.
+// cancelled connect), and its file system holds only the time zone asset. What else of wasi:sockets,
+// wasi:tls or wasi:filesystem a program links, addUnprovidedWasiImports gives it.
 function createSocketOracleImports() {
   var prefix = memory64 ? "cm64p2" : "cm32p2";
   return {
@@ -1309,19 +1321,6 @@ function createSocketOracleImports() {
       },
     },
   };
-}
-
-function addUnprovidedWasiImports(module, imports) {
-  var completed = { ...imports };
-  for (const { module: moduleName, name, kind } of WebAssembly.Module.imports(module)) {
-    if (kind !== "function" || !/^(cm(32|64)p2\|)?wasi:(sockets|filesystem)\//.test(moduleName)) continue;
-    if (completed[moduleName]?.[name] !== undefined) continue;
-    completed[moduleName] = { ...completed[moduleName] };
-    completed[moduleName][name] = () => {
-      throw new Error(`the oracle does not provide ${moduleName} ${name}`);
-    };
-  }
-  return completed;
 }
 
 // wasi:cli's standard streams. stdout and stderr are captured into the observation, standard

@@ -200,13 +200,8 @@ internal sealed class ManagedBodyBatchEmitter(
         }
         else
         {
-            var tasks = new Task[Math.Min(workers.Length, count)];
-            for (var workerIndex = 0; workerIndex < tasks.Length; workerIndex++)
-            {
-                var worker = workers[workerIndex];
-                tasks[workerIndex] = Task.Run(() => Work(worker));
-            }
-            Task.WaitAll(tasks);
+            // Large-stack threads: emitting a method recurses as deep as its code nests.
+            LargeStackThreads.Run(Math.Min(workers.Length, count), workerIndex => Work(workers[workerIndex]));
         }
         var failedIndex = Array.FindIndex(failures,
             failure => failure is not null);

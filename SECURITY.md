@@ -13,5 +13,5 @@ If that feature is unavailable, no private reporting channel has been published
 yet; maintainers must establish one before making a production-support claim.
 
 There is currently no response-time commitment, supported-version policy,
-security-fix backport policy, or bounty programme. This file will be updated
+security-fix backport policy, or bounty program. This file will be updated
 when those commitments exist.

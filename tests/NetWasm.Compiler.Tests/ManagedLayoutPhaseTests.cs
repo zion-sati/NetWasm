@@ -1005,6 +1005,57 @@ public sealed class ManagedLayoutPhaseTests
         Assert.Empty(first.ReferenceOffsets);
     }
 
+    public static TheoryData<string, bool> ArrayElements() => new()
+    {
+        { "pointer", true },
+        { "function pointer", true },
+        { "reference", false },
+        { "number", false },
+    };
+
+    // An array stores a pointer or function pointer element as a value, so laying the array out gives the
+    // element type its value layout, whether or not anything else of the program holds a value of that type.
+    // The runtime takes an element without one for a reference.
+    [Theory]
+    [MemberData(nameof(ArrayElements))]
+    public void AnArrayOfPointersGivesItsElementAValueLayout(string kind, bool resolved)
+    {
+        var assembly = new AssemblyIdentity("PointerElementTests");
+        var arrayKey = new EntityKey(assembly, 1);
+        var arrayDefinition = Definition(arrayKey, "System.Array", false);
+        var number = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var element = kind switch
+        {
+            "pointer" => CliTypeIdentity.UnmanagedPointer(number),
+            "function pointer" => CliTypeIdentity.FunctionPointer(
+                new CliFunctionPointerSignature(0, 0, 1, new MethodSignatureModel(number, [number]))),
+            "reference" => CliTypeIdentity.Named(assembly, "Tests", "Element", isValueType: false),
+            _ => number,
+        };
+        foreach (var array in new[] { CliTypeIdentity.SzArray(element), CliTypeIdentity.Array(element, 2) })
+        {
+            var values = new RecordingValueLayoutResolver();
+            var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(
+                new TypeRepository([arrayDefinition]),
+                new FieldRepository([]),
+                new TypeFinder([arrayDefinition]),
+                new TypeDefinitions([arrayDefinition]),
+                new MappingIdentities(new Dictionary<EntityKey, CliTypeIdentity>
+                {
+                    [arrayKey] = CliTypeIdentity.Named(assembly, "System", "Array", isValueType: false),
+                }),
+                new BaseTypes(),
+                new BaseTypes(),
+                WasmTargetLayout.For(WasmTarget.Wasm32),
+                new ManagedTypeLayoutBuildState(new ManagedValueLayoutState()),
+                values, new ExplicitValueLayoutResolver(), new FieldLayoutFailureBinder()));
+
+            builder.Build(array);
+
+            Assert.Equal(resolved ? [element] : [], values.Types);
+        }
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]

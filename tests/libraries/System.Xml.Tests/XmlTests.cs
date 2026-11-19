@@ -259,7 +259,7 @@ public sealed class XmlTests
     }
 
     [Test]
-    public async Task PrimitiveXmlSerializerHonoursRootNameAndNamespace()
+    public async Task PrimitiveXmlSerializerHonorsRootNameAndNamespace()
     {
         var serializer = new XmlSerializer(typeof(int), new XmlRootAttribute("count") { Namespace = "urn:c" });
         using var output = new StringWriter(CultureInfo.InvariantCulture);

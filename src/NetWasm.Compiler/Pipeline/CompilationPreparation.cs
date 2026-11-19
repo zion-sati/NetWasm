@@ -44,4 +44,10 @@ internal sealed class CompilationPreparation(
     // Methods nothing is inlined into, since their functions came out over an engine limit in an earlier
     // compile of the program.
     public ImmutableHashSet<EntityKey> InliningExcludedMethods { get; init; } = [];
+
+    // Whether a reached method naming a member its declaring type lacks fails the compile (CompilerOptions).
+    public bool MissingApiAsError { get; init; }
+
+    // Whether the program's collector has generations, whose stores into old objects the program records.
+    public bool CollectorHasGenerations { get; init; }
 }

@@ -10,5 +10,6 @@ namespace NetWasm.Compiler.Analysis.Arrays;
 /// pipeline and for a reduced body's proof chain alike.</summary>
 internal interface IRepeatedArrayAccessEliminatorFactory
 {
-    IRepeatedArrayAccessEliminator Create(IControlFlowGraphBuilder graphs, ITypedStackValidator stacks, IControlFlowDominanceAnalyzer dominance, WasmOptimizationSettings settings);
+    IRepeatedArrayAccessEliminator Create(IControlFlowGraphBuilder graphs, ITypedStackValidator stacks,
+        IControlFlowDominanceAnalyzer dominance, ICalledMethodResolver calledMethods, WasmOptimizationSettings settings);
 }

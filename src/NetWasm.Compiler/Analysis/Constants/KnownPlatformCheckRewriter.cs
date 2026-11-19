@@ -16,9 +16,6 @@ namespace NetWasm.Compiler.Analysis.Constants;
 // property call or a string literal immediately before the check, which no branch enters between.
 internal sealed class KnownPlatformCheckRewriter(ICalledMethodResolver calledMethods) : IMethodRewriteRule
 {
-    private const string RuntimeInformation = "System.Runtime.InteropServices.RuntimeInformation";
-    private const string OSPlatform = "System.Runtime.InteropServices.OSPlatform";
-
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
 
     public CilMethodBody Rewrite(CilMethodBody body)
@@ -37,14 +34,14 @@ internal sealed class KnownPlatformCheckRewriter(ICalledMethodResolver calledMet
             var platform = body.Instructions[index - 1];
             var never = check.DeclaringType.FullName switch
             {
-                RuntimeInformation => platform.Operation == CilOperation.Call &&
+                NetWasmPlatformChecks.RuntimeInformation => platform.Operation == CilOperation.Call &&
                     _calledMethods.Resolve(platform) is
                     {
-                        Definition: { Name: "get_Windows" or "get_Linux" or "get_OSX" or "get_FreeBSD", IsStatic: true },
-                        DeclaringType.FullName: OSPlatform,
-                    },
-                "System.OperatingSystem" => platform is { Operation: CilOperation.LoadString, Operand: CilOperand.UserString { Value: var name } } &&
-                    !name.Equals("WASI", StringComparison.OrdinalIgnoreCase) && !name.Equals("BROWSER", StringComparison.OrdinalIgnoreCase),
+                        Definition: { Name: var getter, IsStatic: true },
+                        DeclaringType.FullName: NetWasmPlatformChecks.OSPlatform,
+                    } && NetWasmPlatformChecks.IsNeverMatchingOSPlatformGetter(getter),
+                NetWasmPlatformChecks.OperatingSystem => platform is { Operation: CilOperation.LoadString, Operand: CilOperand.UserString { Value: var name } } &&
+                    NetWasmPlatformChecks.IsNeverMatchingPlatformName(name),
                 _ => false,
             };
             if (!never || (targets ??= Targets(body)).Contains(instruction.Offset)) continue;
@@ -60,14 +57,9 @@ internal sealed class KnownPlatformCheckRewriter(ICalledMethodResolver calledMet
         var targets = new HashSet<int>();
         foreach (var instruction in body.Instructions)
         {
-            switch (instruction.Operand)
+            if (instruction.Operand is CilOperand.BranchTarget branch)
             {
-                case CilOperand.BranchTarget branch:
-                    targets.Add(branch.Offset);
-                    break;
-                case CilOperand.SwitchTargets cases:
-                    targets.UnionWith(cases.Offsets);
-                    break;
+                targets.Add(branch.Offset);
             }
         }
         foreach (var region in body.ExceptionRegions)

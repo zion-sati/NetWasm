@@ -11,5 +11,5 @@ namespace NetWasm.CoreLib.Tests;
 public sealed class NumberFormatInfoParsingTests
 {
     [Test]
-    public async Task NumericParsingHonoursTheProvidedNumberFormatInfo() => await Assert.That(NumberFormatInfoParsingFixture.EntryPoint.Run(41)).IsEqualTo(42);
+    public async Task NumericParsingHonorsTheProvidedNumberFormatInfo() => await Assert.That(NumberFormatInfoParsingFixture.EntryPoint.Run(41)).IsEqualTo(42);
 }

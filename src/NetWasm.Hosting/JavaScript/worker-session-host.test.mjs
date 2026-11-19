@@ -57,6 +57,7 @@ function fixture(overrides = {}) {
       };
     },
     post: message => messages.push(message),
+    scope: {},
     terminate: () => { terminations++; },
     ...overrides,
   };
@@ -209,6 +210,7 @@ test("settles the client queue when a result cannot be cloned", async () => {
       }
       queueMicrotask(() => worker.emit("message", { data: message }));
     },
+    scope: {},
     terminate: () => worker.emit("error", { message: "worker terminated" }),
   });
   worker.host = host;
@@ -227,6 +229,53 @@ test("settles the client queue when a result cannot be cloned", async () => {
   assert.equal(worker.terminations, 1);
 });
 
+test("gives the module's collector the worker's idle time and the quiet after each operation", async () => {
+  const idle = [];
+  const timers = [];
+  let idleCollections = 0;
+  let quietCollections = 0;
+  const state = fixture({
+    files: { mount: async () => {}, unmount() {}, sync: async () => {} },
+    async openSession() {
+      return {
+        close: async () => {},
+        collectWhenIdle() { idleCollections++; return false; },
+        collectWhenQuiet() { quietCollections++; return 256; },
+        exports: { add: (left, right) => left + right },
+        failure: new Promise(() => {}),
+      };
+    },
+    scope: {
+      performance: { now: () => 0 },
+      requestIdleCallback: run => idle.push(run),
+      setTimeout(run, milliseconds) { timers.push({ milliseconds, run }); return 1; },
+    },
+  });
+
+  // Opening ran the module: the next idle period is asked for and the quiet is timed.
+  await state.host.receive(initialize());
+  assert.equal(idle.length, 1);
+  assert.deepEqual(timers.map(timer => timer.milliseconds), [1000]);
+  idle.shift()();
+  assert.equal(idleCollections, 1);
+
+  // An operation runs the module again; a file operation does not.
+  await state.host.receive(invoke());
+  assert.equal(idle.length, 1);
+  idle.shift()();
+  await state.host.receive(invoke({ requestId: 2, operation: "netwasm:files:unmount", arguments: ["/data"] }));
+  assert.equal(idle.length, 0);
+  assert.equal(idleCollections, 2);
+  assert.deepEqual(state.messages.filter(message => message.kind === "result").map(message => message.requestId), [1, 2]);
+
+  // The module ran during the first period, so the timer runs out another before the quiet collection.
+  timers.shift().run();
+  assert.equal(quietCollections, 0);
+  timers.shift().run();
+  assert.equal(quietCollections, 1);
+  assert.equal(timers.length, 0);
+});
+
 test("rejects malformed composition, initialization and session products", async () => {
   const valid = fixture().options;
   for (const value of [null, [], {}, { ...valid, extra: true }, {
@@ -237,6 +286,9 @@ test("rejects malformed composition, initialization and session products", async
   }
   for (const files of [{}, { mount() {}, unmount() {} }, 1]) {
     assert.throws(() => createWorkerSessionHost({ ...valid, files }), /file mounts or null/);
+  }
+  for (const scope of [null, "worker"]) {
+    assert.throws(() => createWorkerSessionHost({ ...valid, scope }), /scope is invalid/);
   }
   for (const value of [
     null, [], {}, { ...initialize(), extra: true }, initialize({ protocolVersion: 1 }),
@@ -253,9 +305,11 @@ test("rejects malformed composition, initialization and session products", async
     const state = fixture();
     await assert.rejects(() => state.host.receive(value), TypeError);
   }
+  // An export that is not a function reaches the dispatcher as it is, which rejects it.
   for (const product of [null, [], {}, { exports: null, close() {}, failure: Promise.resolve() },
     { exports: {}, close: null, failure: Promise.resolve() },
-    { exports: {}, close() {}, failure: null }]) {
+    { exports: {}, close() {}, failure: null },
+    { exports: { version: 3 }, close() {}, failure: new Promise(() => {}) }]) {
     const state = fixture({ openSession: async () => product });
     await state.host.receive(initialize());
     assert.equal(state.messages[0].kind, "failure");
@@ -326,6 +380,7 @@ test("the page mounts, unmounts and syncs files in the worker", async () => {
       failure: new Promise(() => {}),
     }),
     post: message => queueMicrotask(() => worker.emit("message", { data: message })),
+    scope: {},
     terminate: () => {},
   });
   worker.host = host;

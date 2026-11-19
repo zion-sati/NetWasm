@@ -67,10 +67,13 @@
 
 /* 3FC2F112 DF3E5244 */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Log(double value)
     {
         const double ln2_hi = 6.93147180369123816490e-01;

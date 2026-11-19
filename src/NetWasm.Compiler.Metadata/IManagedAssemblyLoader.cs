@@ -13,5 +13,7 @@ public interface IManagedAssemblyLoader
         string path,
         ImmutableDictionary<string, string> referenceAssemblyAliases,
         ImmutableDictionary<(AssemblyIdentity Assembly, string FullName), AssemblyIdentity>? typeForwarders = null,
-        INativeImportBinder? nativeBinding = null);
+        INativeImportBinder? nativeBinding = null,
+        INativeVariadicCallPlanner? nativeVariadics = null,
+        GeneratedJavaScriptBinding? javaScriptBinding = null);
 }

@@ -66,6 +66,70 @@ public sealed class FrameworkAssemblyIdentityTests
         Assert.True(missing.Count == 0, string.Join(Environment.NewLine, missing));
     }
 
+    // A package built for .NET 5 or later names each type by the assembly .NET's reference pack declares it in, and one
+    // built against an older contract by the assembly that declared it then, which the pack's assembly of that name now
+    // forwards. Every such type NetWasm defines, in CoreLib or a NetWasm.App library, binds from that name: the library
+    // of that name defines or forwards it, or, where NetWasm.App ships no such library, NetWasm.App.Ref generates a
+    // forwarding facade. The generator makes one for a contract whose types NetWasm defines in full, or in part when
+    // NetWasm.App.Ref lists the contract as one whose missing types no consumer can need. A partial contract that also
+    // ships as a package keeps the package's implementation and gets no facade.
+    [Fact]
+    public void EveryUpstreamTypeNetWasmDefinesBindsFromItsUpstreamAssembly()
+    {
+        var root = TestAssets.FindRepositoryRoot();
+        var referencePack = UpstreamReferencePack.Directory();
+        var framework = TestAssets.FrameworkAssemblies(root)
+            .ToDictionary(path => Path.GetFileNameWithoutExtension(path), StringComparer.OrdinalIgnoreCase);
+        var owners = framework.Values
+            .Append(Path.Combine(root, "src", "NetWasm.CoreLib", "bin", "Release", "net10.0", "ref", "NetWasm.CoreLib.dll"))
+            .SelectMany(Defined)
+            .ToHashSet(StringComparer.Ordinal);
+        var partialFacades = PartialFacadeContracts(Path.Combine(root, "src", "NetWasm.App.Ref", "NetWasm.App.Ref.csproj"));
+        var unbound = new List<string>();
+
+        foreach (var contract in System.IO.Directory.GetFiles(referencePack, "*.dll").Order(StringComparer.Ordinal))
+        {
+            var name = Path.GetFileNameWithoutExtension(contract);
+            if (name == "netstandard")
+            {
+                continue;
+            }
+            var types = Defined(contract);
+            types.UnionWith(Forwarded(contract).Keys);
+            var owned = types.Where(owners.Contains).ToArray();
+            if (framework.TryGetValue(name, out var library))
+            {
+                var own = Defined(library);
+                var forwarded = Forwarded(library);
+                unbound.AddRange(owned
+                    .Where(type => !own.Contains(type) && !forwarded.ContainsKey(type))
+                    .Select(type => $"{name}: {type} (NetWasm defines it in another assembly)"));
+            }
+            else if (owned.Length != 0 && owned.Length < types.Count && !partialFacades.Contains(name) &&
+                !PackageContracts.Contains(name))
+            {
+                unbound.Add($"{name}: no facade for its {owned.Length} types NetWasm defines (it defines {owned.Length} of {types.Count})");
+            }
+        }
+
+        Assert.True(unbound.Count == 0, string.Join(Environment.NewLine, unbound));
+    }
+
+    // Partial contracts that also ship as NuGet packages, whose implementations a framework facade would replace.
+    private static readonly HashSet<string> PackageContracts = new(StringComparer.Ordinal)
+    {
+        "Microsoft.Extensions.Caching.Abstractions",
+        "System.Reflection.TypeExtensions",
+        "System.Security.Cryptography.Cng",
+    };
+
+    private static HashSet<string> PartialFacadeContracts(string project)
+    {
+        var document = System.Xml.Linq.XDocument.Load(project);
+        return [.. document.Descendants("NetWasmLegacyFacadeContract")
+            .SelectMany(item => ((string?)item.Attribute("Include") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))];
+    }
+
     private static HashSet<string> Defined(string path)
     {
         using var image = new PEReader(File.OpenRead(path));

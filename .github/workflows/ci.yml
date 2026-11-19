@@ -766,6 +766,39 @@ jobs:
           python3 -B eng/qualify-doomsharp.py doomsharp \
             "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}"
 
+  # Open-source packages as published, each pinned to the version it was tested
+  # with, built from the candidate packages: every program must print what
+  # desktop .NET prints, on wasm32 and wasm64, in Debug and Release.
+  open-source-suts:
+    needs: [impact, verify-packages]
+    if: needs.impact.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    name: Open-source systems / desktop parity
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+      - name: Download candidate packages
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: runtime-pack-candidate
+          path: ${{ runner.temp }}/packages
+      - name: Download matching native host package
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: host-tools-linux-x64
+          path: ${{ runner.temp }}/packages
+      - name: Build and run every open-source system
+        shell: bash
+        run: |
+          python3 -B eng/qualify-open-source-suts.py \
+            "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}" \
+            --work "$RUNNER_TEMP/open-source-suts"
+
   browser-hosts:
     needs: [impact, verify-packages]
     if: needs.impact.outputs.scope == 'full'
@@ -858,7 +891,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [impact, docs, ci-infrastructure, test, compiler, javascript-contracts, timings, package, host-tools, verify-packages, runtime-pack-hosts, browser-hosts, doomsharp]
+    needs: [impact, docs, ci-infrastructure, test, compiler, javascript-contracts, timings, package, host-tools, verify-packages, runtime-pack-hosts, browser-hosts, doomsharp, open-source-suts]
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -880,6 +913,7 @@ jobs:
           RUNTIME_PACK_HOSTS_RESULT: ${{ needs.runtime-pack-hosts.result }}
           BROWSER_HOSTS_RESULT: ${{ needs.browser-hosts.result }}
           DOOMSHARP_RESULT: ${{ needs.doomsharp.result }}
+          OPEN_SOURCE_SUTS_RESULT: ${{ needs.open-source-suts.result }}
         run: |
           python3 eng/verify-ci-results.py \
             --scope "$SCOPE" \
@@ -895,7 +929,8 @@ jobs:
             --verify-packages "$VERIFY_PACKAGES_RESULT" \
             --runtime-pack-hosts "$RUNTIME_PACK_HOSTS_RESULT" \
             --browser-hosts "$BROWSER_HOSTS_RESULT" \
-            --doomsharp "$DOOMSHARP_RESULT"
+            --doomsharp "$DOOMSHARP_RESULT" \
+            --open-source-suts "$OPEN_SOURCE_SUTS_RESULT"
       - name: Create exact-tree qualification receipt
         if: github.event_name == 'pull_request' && needs.impact.outputs.scope == 'full'
         shell: bash

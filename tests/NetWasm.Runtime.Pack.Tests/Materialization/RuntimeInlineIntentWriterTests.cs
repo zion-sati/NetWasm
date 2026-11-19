@@ -30,6 +30,27 @@ public sealed class RuntimeInlineIntentWriterTests
         Assert.Equal([0], Assert.Single(annotations[7]).Hint);
     }
 
+    // The link leaves out the optional runtime functions a program does not use, such as the write barrier
+    // outside NetWasmGen: their intents have nothing to annotate, and the others are written as ever.
+    [Fact]
+    public void AnIntentForAnExportTheLinkLeftOutIsSkipped()
+    {
+        var source = Module(ExportSection(("root_frame_enter", 0, 3)));
+        var writer = new RuntimeInlineIntentWriter();
+
+        var result = writer.Write(source,
+        [
+            new("record_reference_write", RuntimeFunctionInlinePreference.Aggressive),
+            new("root_frame_enter", RuntimeFunctionInlinePreference.Aggressive),
+        ]);
+        var untouched = writer.Write(source, [new("record_reference_write", RuntimeFunctionInlinePreference.Aggressive)]);
+
+        Assert.Equal([127], Assert.Single(Assert.Single(ReadAnnotations(result)).Value).Hint);
+        Assert.Equal(3u, Assert.Single(ReadAnnotations(result)).Key);
+        Assert.Equal(source, untouched);
+        Assert.NotSame(source, untouched);
+    }
+
     [Fact]
     public void MergesExistingAnnotationsAndGivesNeverPrecedence()
     {
@@ -80,8 +101,9 @@ public sealed class RuntimeInlineIntentWriterTests
             [new("function", (RuntimeFunctionInlinePreference)42)],
             [new("function", RuntimeFunctionInlinePreference.Aggressive),
                 new("function", RuntimeFunctionInlinePreference.Never)],
-            [new("missing", RuntimeFunctionInlinePreference.Aggressive)],
             [new("global", RuntimeFunctionInlinePreference.Aggressive)],
+            [new("missing", RuntimeFunctionInlinePreference.Aggressive),
+                new("global", RuntimeFunctionInlinePreference.Aggressive)],
         };
 
         foreach (var intents in invalid)

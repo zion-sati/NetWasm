@@ -18,7 +18,8 @@ public sealed class BrowserLinkOptimizationInspectorTests
     {
         var operation = Operation() with
         {
-            Arguments = ["input", profile, "--converge", "--enable-memory64", "--low-memory-unused", "--output", "output"],
+            Arguments = ["input", profile, "--converge", "--enable-memory64", "--low-memory-unused",
+                "--one-caller-inline-max-function-size", "1000", "--output", "output"],
         };
 
         var contract = Create().Inspect(operation);
@@ -51,6 +52,16 @@ public sealed class BrowserLinkOptimizationInspectorTests
             operation with { Arguments = ["input", "-O3", "-Oz", "--output", "output"] },
             operation with { Arguments = ["input", "-O3", "-O3", "--output", "output"] },
             operation with { Arguments = ["input", "-O3", "--unknown", "--output", "output"] },
+            // A counted option needs its count before --output: a positive decimal number as the compiler writes it.
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "--output", "output"] },
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "0", "--output", "output"] },
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "01", "--output", "output"] },
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "-1", "--output", "output"] },
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "1e3", "--output", "output"] },
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "", "--output", "output"] },
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "1000000000", "--output", "output"] },
+            operation with { Arguments = ["input", "-O3", "--one-caller-inline-max-function-size", "1000",
+                "--one-caller-inline-max-function-size", "1000", "--output", "output"] },
         }) Assert.Throws<ArgumentException>(() => Create().Inspect(invalid));
         Assert.Throws<ArgumentException>(() => Create().Inspect(new BrowserLinkTextOperation("output", "text")));
         Assert.Throws<ArgumentException>(() => Create().Inspect(null!));

@@ -14,21 +14,29 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 // separate emission contracts; a plan does not authorize changing either one.
 //
 // A method whose body is a leading if, and whose frames only one side of it needs, enters them
-// on that side. Either both arms flow into a straight-line tail that ends the method, which each
-// arm then carries, or one arm always returns or throws, so what follows the if belongs to the
-// other arm alone. The root frame moves with the value frame when no safepoint outside the framed
-// side holds a root. An argument the frame holds is copied in where the framed side begins, so
-// only that side may take its address; the other side reads the parameter.
+// on that side. Either one arm always returns or throws, so what follows the if belongs to the
+// other arm alone; or both arms flow into a straight-line tail that ends the method, which each
+// arm then carries where tails may be copied; or, when the method needs only a root frame and no
+// safepoint after the if holds a root, the framed arm leaves the frame where it ends and the code
+// after the if runs without one, which copies nothing (`if (full) Grow(); buffer[n++] = b;`). The
+// root frame moves with the value frame when no safepoint outside the framed side holds a root. An
+// argument the frame holds is copied in where the framed side begins, so only that side may take
+// its address; the other side reads the parameter.
 internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeResolver argumentTypes)
     : ITerminalBranchValueFramePlanner
 {
-    public TerminalBranchValueFramePlan? Plan(StructuredMethod method, ValueFrameLayout layout, MethodRootMap roots)
+    public TerminalBranchValueFramePlan? Plan(StructuredMethod method, ValueFrameLayout layout, MethodRootMap roots,
+        bool copyTails)
     {
         ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(roots);
 
-        if ((layout.Size == 0 && roots.SlotCount == 0) || !method.ExceptionGroups.IsEmpty ||
+        // Without tail copies (Os, Oz) only a root frame moves: a value frame placed in an arm leaves the
+        // roots it holds to the root frame, whose publication at every safepoint costs more code than
+        // the move saves.
+        if ((layout.Size == 0 && roots.SlotCount == 0) || (!copyTails && layout.Size != 0) ||
+            !method.ExceptionGroups.IsEmpty ||
             // A value-type argument's parameter becomes its frame copy's address at frame entry.
             layout.ArgumentOffsets.Keys.Any(index =>
                 argumentTypes.Resolve(method.Header, index).StackKind == CliValueKind.ValueType) ||
@@ -53,14 +61,16 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
         }
 
         // An arm that always leaves the method never reaches the tail, so the tail belongs to the
-        // other arm and is not copied; otherwise the tail must end the method in straight-line code.
+        // other arm and is not copied; otherwise each arm carries a copy of a tail that ends the
+        // method in straight-line code, or the framed arm leaves its frame before the tail.
         var firstLeaves = Leaves(method, branch.WhenTrue);
         var secondLeaves = Leaves(method, branch.WhenFalse);
         var early = firstLeaves != secondLeaves;
-        if (!early && (firstLeaves || !IsTerminalStraightLine(method, tail)))
+        if (!early && firstLeaves)
         {
             return null;
         }
+        var leavesBeforeTail = !early && !(copyTails && IsTerminalStraightLine(method, tail));
         if (early)
         {
             (secondLeaves ? first : second).UnionWith(tailBlocks);
@@ -142,6 +152,12 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
         var deferRoots = roots.SlotCount != 0 && !rootedBlocks.Overlaps(common) &&
             ((rootedBlocks.IsSubsetOf(first) && !rootedBlocks.Overlaps(second) && !required.Overlaps(second)) ||
              (rootedBlocks.IsSubsetOf(second) && !rootedBlocks.Overlaps(first) && !required.Overlaps(first)));
+        // A frame left before the tail can hold only roots: nothing copies a value frame's
+        // contents back into the locals the tail would read.
+        if (leavesBeforeTail && (!deferRoots || layout.Size != 0))
+        {
+            return null;
+        }
         if (deferRoots)
         {
             required.UnionWith(rootedBlocks);
@@ -167,6 +183,14 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
             return null;
         }
 
+        if (leavesBeforeTail)
+        {
+            return new(branch.Condition, branch.WhenTrue, branch.WhenFalse, frameFirst, scalars)
+            {
+                DefersRootFrame = true,
+                UnframedTail = new(tail),
+            };
+        }
         if (early)
         {
             return new(branch.Condition,

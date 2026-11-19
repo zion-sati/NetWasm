@@ -126,6 +126,14 @@ test("validateDeploymentManifest preserves type-only required import modules", (
   }), /duplicated/i);
 });
 
+test("validateDeploymentManifest accepts WIT interfaces with a prerelease or build version", () => {
+  const modules = ["wasi:cli/environment@0.2.11", "wasi:tls/client@0.3.0-draft", "example:service/api@1.2.0-rc.1+build.7"];
+  assert.deepEqual(validateDeploymentManifest(manifest({ requiredImportModules: modules })).requiredImportModules, modules);
+  for (const module of ["wasi:tls/client@0.3.0-", "wasi:tls/client@01.3.0"]) {
+    expectInvalid(manifest({ requiredImportModules: [module] }), /exact versioned identifier/i);
+  }
+});
+
 test("validateDeploymentManifest rejects invalid root objects and core identity", () => {
   const withSymbol = manifest();
   withSymbol[Symbol("hidden")] = true;

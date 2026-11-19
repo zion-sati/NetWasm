@@ -4,15 +4,24 @@
 // Buffer.cs calls.
 
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace System
 {
     public static partial class Buffer
     {
-        // NetWasm's collectors neither move objects nor use write barriers, so references copy as
-        // bytes.
-        private static void BulkMoveWithWriteBarrierInternal(ref byte destination, ref byte source, nuint byteCount) =>
+        // NetWasm's collectors do not move objects, so references copy as bytes. A collector with
+        // generations is then told where they went.
+        private static void BulkMoveWithWriteBarrierInternal(ref byte destination, ref byte source, nuint byteCount)
+        {
             SpanHelpers.Memmove(ref destination, ref source, byteCount);
+            RecordReferenceWrites(ref destination, byteCount);
+        }
+
+        // The write barrier for a range of memory that received references. The compiler emits it for a
+        // program whose collector has generations, and nothing for any other.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void RecordReferenceWrites(ref byte destination, nuint byteCount);
 
         // Upstream's runtime polls for a pending suspension between chunks. NetWasm runs one thread,
         // so nothing waits.
@@ -23,31 +32,12 @@ namespace System
             }
         }
 
-        // The Array members upstream's runtime provides. NetWasm reads no element type at run time,
-        // so these recognize the primitive arrays, the only ones Buffer accepts; every other array
-        // answers ELEMENT_TYPE_CLASS, which Buffer rejects.
+        // The Array members upstream's runtime provides.
         extension(Array array)
         {
             private nuint NativeLength => (nuint)(uint)array.Length;
 
-            private CorElementType GetCorElementTypeOfElementType() => array switch
-            {
-                bool[] => CorElementType.ELEMENT_TYPE_BOOLEAN,
-                char[] => CorElementType.ELEMENT_TYPE_CHAR,
-                sbyte[] => CorElementType.ELEMENT_TYPE_I1,
-                byte[] => CorElementType.ELEMENT_TYPE_U1,
-                short[] => CorElementType.ELEMENT_TYPE_I2,
-                ushort[] => CorElementType.ELEMENT_TYPE_U2,
-                int[] => CorElementType.ELEMENT_TYPE_I4,
-                uint[] => CorElementType.ELEMENT_TYPE_U4,
-                long[] => CorElementType.ELEMENT_TYPE_I8,
-                ulong[] => CorElementType.ELEMENT_TYPE_U8,
-                float[] => CorElementType.ELEMENT_TYPE_R4,
-                double[] => CorElementType.ELEMENT_TYPE_R8,
-                nint[] => CorElementType.ELEMENT_TYPE_I,
-                nuint[] => CorElementType.ELEMENT_TYPE_U,
-                _ => CorElementType.ELEMENT_TYPE_CLASS,
-            };
+            private CorElementType GetCorElementTypeOfElementType() => Array.GetPrimitiveElementType(array);
 
             private int GetElementSize() => array.GetCorElementTypeOfElementType() switch
             {

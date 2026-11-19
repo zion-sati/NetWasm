@@ -23,7 +23,7 @@ fastest of five batches as nanoseconds per call.
 
 usage: run.py --performance <dotnet/performance checkout> --feed <feed> <version>
               --mono-aot <dotnet root> <wasi-sdk root> --output <new directory>
-              [--libraries VERSION] [--rounds N] [--chunk N] [--filter TEXT] [--limit N]
+              [--rounds N] [--chunk N] [--filter TEXT] [--limit N]
 
 An empty --feed directory restores the released NetWasm packages from NuGet.org."""
 
@@ -50,10 +50,6 @@ SOURCES = [
     'benchmarks/micro/libraries/System.Numerics.Vectors',
     'benchmarks/micro/libraries/System.Memory',
 ]
-# The benchmarks guard newer APIs with the .NET version symbols, which the NetWasm
-# framework does not set, so every runtime compiles the same code.
-VERSION_SYMBOLS = ('NETCOREAPP;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;'
-                   'NET9_0_OR_GREATER;NET10_0_OR_GREATER')
 
 
 def run(command, cwd, env, log):
@@ -148,15 +144,11 @@ def build_mono(output, performance, generated, dotnet_root, wasi_sdk):
     return cell / 'bin' / 'Release' / framework / 'wasi-wasm' / 'AppBundle' / 'Micro.wasm'
 
 
-def build_netwasm(output, performance, generated, feed, version, libraries, sdk, env):
+def build_netwasm(output, performance, generated, feed, version, sdk, env):
     cell = output / 'netwasm'
-    write_project(cell, 'NetWasm.Sdk',
-                  '  <ItemGroup>\n'
-                  f'    <PackageReference Include="NetWasm.System.Text.RegularExpressions" Version="{libraries}" />\n'
-                  f'    <PackageReference Include="NetWasm.System.Linq" Version="{libraries}" />\n'
-                  '  </ItemGroup>\n',
-                  '    <TargetFramework>netwasm0.1</TargetFramework>\n'
-                  f'    <DefineConstants>$(DefineConstants);{VERSION_SYMBOLS}</DefineConstants>\n')
+    # net10.0-netwasm defines the .NET version symbols the benchmarks guard newer APIs with, and NetWasm.App carries
+    # LINQ and regular expressions.
+    write_project(cell, 'NetWasm.Sdk', '', '    <TargetFramework>net10.0-netwasm</TargetFramework>\n')
     (cell / 'global.json').write_text(json.dumps({
         'sdk': {'version': sdk, 'rollForward': 'latestFeature'}, 'msbuild-sdks': {'NetWasm.Sdk': version}}))
     (cell / 'NuGet.Config').write_text(
@@ -167,7 +159,7 @@ def build_netwasm(output, performance, generated, feed, version, libraries, sdk,
          '-p:NetWasmGarbageCollector=NetWasm', '-p:NetWasmOptimizerConverge=true',
          f'-p:DotnetPerformanceSource={performance}',
          f'-p:MicroBenchmarkGenerated={generated}', '--nologo'], cell, env, cell / 'build.log')
-    return cell / 'bin' / 'Release' / 'netwasm0.1' / 'Micro.wasm'
+    return cell / 'bin' / 'Release' / 'net10.0-netwasm' / 'Micro.wasm'
 
 
 def precompiled(wasmtime, wasm):
@@ -226,7 +218,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--performance', type=Path, required=True, help='a dotnet/performance checkout')
     parser.add_argument('--feed', nargs=2, metavar=('FEED', 'VERSION'), required=True)
-    parser.add_argument('--libraries', help='NetWasm.System.Linq and RegularExpressions version (default: VERSION)')
     parser.add_argument('--mono-aot', nargs=2, type=Path, metavar=('DOTNET_ROOT', 'WASI_SDK'), required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--rounds', type=int, default=2)
@@ -256,8 +247,7 @@ def main():
     generated = generate(performance, output, env)
     desktop = build_desktop(output, performance, generated, toolchain['sdk11Version'], env)
     mono = build_mono(output, performance, generated, *(path.resolve() for path in arguments.mono_aot))
-    netwasm = build_netwasm(output, performance, generated, feed, version, arguments.libraries or version,
-                            toolchain['sdk10BuildVersion'], env)
+    netwasm = build_netwasm(output, performance, generated, feed, version, toolchain['sdk10BuildVersion'], env)
     sides = {
         'desktop': (desktop, dict(env, DOTNET_TieredCompilation='0')),
         'mono': (precompiled(wasmtime, mono), None),
@@ -273,7 +263,7 @@ def main():
     removed = table.read_cases(ROOT / 'mono-removed.txt')
     print(table.write(results, output / 'table.md', removed))
     (output / 'summary.json').write_text(json.dumps({
-        'netwasm': version, 'libraries': arguments.libraries or version, 'performance': PERFORMANCE_COMMIT,
+        'netwasm': version, 'performance': PERFORMANCE_COMMIT,
         'mono': subprocess.run([arguments.mono_aot[0] / 'dotnet', '--version'], capture_output=True,
                                text=True).stdout.strip(),
         'desktop': toolchain['sdk11Version'],

@@ -102,7 +102,7 @@ public sealed class AttributeMatchSelectorTests
         new(Assembly, token, token + 100, type, CliGenericContext.Empty);
 
     private sealed class Fixture : ICustomAttributeDescriptorReader, IAttributeUsageReader,
-        ITypeRelationshipClassifier, IBaseTypeResolver
+        ITypeRelationshipClassifier, IBaseTypeResolver, IAttributeTypeFilter
     {
         internal Dictionary<CliTypeIdentity, ImmutableArray<CustomAttributeDescriptor>> Attributes { get; } = [];
         internal Dictionary<CliTypeIdentity, AttributeUsage> Usage { get; } = [];
@@ -126,6 +126,9 @@ public sealed class AttributeMatchSelectorTests
             UsageReads.Add(type);
             return Usage.GetValueOrDefault(type, new(true, false));
         }
+
+        public bool Matches(CliTypeIdentity attributeType, CliTypeIdentity filter) =>
+            Classify(attributeType, filter).IsAssignmentCompatible;
 
         public TypeRelationship Classify(CliTypeIdentity candidate, CliTypeIdentity target)
         {

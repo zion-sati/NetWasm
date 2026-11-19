@@ -52,7 +52,15 @@ case "${OUTPUT_DIR}" in
     ;;
 esac
 
-for command in dotnet git node python3; do
+# Everything the build reaches, checked before it starts: the runtime and NetWasm.App.Runtime's compression and
+# crypto archives are built with the pinned Emscripten minutes in.
+emsdk="${NETWASM_EMSDK_ROOT:-${EMSDK:-}}"
+if [[ -z "${emsdk}" || ! -x "${emsdk}/upstream/emscripten/emcc" ]]; then
+  echo "Missing Emscripten: set NETWASM_EMSDK_ROOT to the pinned emsdk installation and source its emsdk_env.sh." >&2
+  exit 2
+fi
+export NETWASM_EMSDK_ROOT="${emsdk}"
+for command in dotnet git node python3 emcc cmake ninja make perl curl; do
   command -v "${command}" >/dev/null 2>&1 || {
     echo "Missing required command: ${command}" >&2
     exit 2

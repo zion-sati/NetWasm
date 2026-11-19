@@ -38,8 +38,9 @@ public sealed class AppDomainAssemblyContractCompilationTests
                 var bytes = new byte[] { 1, 2 }; var symbols = new byte[] { 3 };
                 try { domain.Load(bytes); } catch (PlatformNotSupportedException) { rejected++; }
                 try { domain.Load(bytes, symbols); } catch (PlatformNotSupportedException) { rejected++; }
-                try { domain.Load("Missing"); } catch (PlatformNotSupportedException) { rejected++; }
-                try { domain.GetAssemblies(); } catch (PlatformNotSupportedException) { rejected++; }
+                // Loading by name resolves the program's own assemblies, and the domain lists them.
+                try { domain.Load("Missing"); } catch (System.IO.FileNotFoundException) { rejected++; }
+                if (Array.IndexOf(domain.GetAssemblies(), typeof(EntryPoint).Assembly) < 0) return 22;
                 try { domain.ReflectionOnlyGetAssemblies(); } catch (PlatformNotSupportedException) { rejected++; }
                 AssemblyLoadEventHandler loaded = (sender,e) => calls++;
                 ResolveEventHandler resolve = (sender,e) => { calls++; return null; };
@@ -55,13 +56,13 @@ public sealed class AppDomainAssemblyContractCompilationTests
                 try { domain.TypeResolve -= resolve; } catch (PlatformNotSupportedException) { rejected++; }
                 try { Assembly.Load(bytes); } catch (PlatformNotSupportedException) { rejected++; }
                 try { Assembly.Load(bytes, symbols); } catch (PlatformNotSupportedException) { rejected++; }
-                try { Assembly.Load("Missing"); } catch (PlatformNotSupportedException) { rejected++; }
+                try { Assembly.Load("Missing"); } catch (System.IO.FileNotFoundException) { rejected++; }
                 Assembly assembly = new FakeAssembly();
                 try { assembly.GetCustomAttributes(false); } catch (PlatformNotSupportedException) { rejected++; }
                 try { assembly.GetCustomAttributes(typeof(ObsoleteAttribute), false); } catch (PlatformNotSupportedException) { rejected++; }
                 try { assembly.IsDefined(typeof(ObsoleteAttribute), false); } catch (PlatformNotSupportedException) { rejected++; }
                 try { ((ISerializable)assembly).GetObjectData(null!, default); } catch (PlatformNotSupportedException) { rejected++; }
-                if (rejected != 22 || calls != 0 || bytes[0] != 1 || bytes[1] != 2 || symbols[0] != 3) return 21;
+                if (rejected != 21 || calls != 0 || bytes[0] != 1 || bytes[1] != 2 || symbols[0] != 3) return 21;
                 return input + 1;
             }
             public static int Portable(int input)

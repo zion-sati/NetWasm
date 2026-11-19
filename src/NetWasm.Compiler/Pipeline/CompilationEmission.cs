@@ -11,7 +11,8 @@ namespace NetWasm.Compiler.Pipeline;
 internal sealed class CompilationEmission(
     WasmModuleEmissionResult result,
     WasmMethodLoweringResult lowering,
-    RuntimeTypeSymbolTable typeSymbols)
+    RuntimeTypeSymbolTable typeSymbols,
+    bool readsTypeNames)
 {
     public WasmModuleEmissionResult Result { get; } = result ??
         throw new ArgumentNullException(nameof(result));
@@ -22,4 +23,8 @@ internal sealed class CompilationEmission(
     // Every runtime type's names, which the type-symbols sidecar takes.
     public RuntimeTypeSymbolTable TypeSymbols { get; } = typeSymbols ??
         throw new ArgumentNullException(nameof(typeSymbols));
+
+    // Built with type names and reaching CoreLib's type-symbols loader, which only name readers call: the sidecar
+    // then names every type and the program loads it.
+    public bool ReadsTypeNames { get; } = readsTypeNames;
 }

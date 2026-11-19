@@ -9,7 +9,11 @@ export const runtimeFeatureIds = Object.freeze([
   "finalization",
   "local-time",
   "object-clone",
+  "object-generation",
   "random-seed",
+  "reference-write-barrier",
   "structured-command-diagnostics",
+  "uninitialized-arrays",
   "weak-handles",
+  "young-collection",
 ]);

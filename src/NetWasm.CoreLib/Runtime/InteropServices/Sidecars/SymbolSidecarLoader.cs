@@ -5,10 +5,10 @@ namespace System.Runtime.InteropServices.Sidecars
 {
     using System.Runtime.InteropServices.WebAssembly;
 
-    // Loads one symbols file: <program>.wasm<suffix>. A program keeps working without it (issue 225, owner
-    // 2026-11-12): a file that is missing, unreadable, malformed or from another build is skipped with one line to
-    // standard error, and the program runs as if built without it (consequence).
-    internal sealed class SymbolSidecarLoader(
+    // Loads one symbols file: <program>.wasm<suffix>. A program keeps working without it: a file that is missing,
+    // unreadable, malformed or from another build is skipped with one line to standard error, and the program runs as
+    // if built without it.
+    internal sealed unsafe class SymbolSidecarLoader(
         ISidecarFileReader files,
         ISymbolSidecarParser parser,
         ISymbolSidecarInstaller installer,
@@ -37,9 +37,10 @@ namespace System.Runtime.InteropServices.Sidecars
             }
             catch (Exception exception)
             {
-                _errors.Write(Text.Encoding.UTF8.GetBytes(
+                using var line = CanonicalAbi.LowerString(
                     "NetWasm: skipped " + SidecarDescriptor.MountPath + "/" + fileName + " (" +
-                    exception.Message + "); " + _consequence + ".\n"));
+                    exception.Message + "); " + _consequence + ".\n");
+                _errors.Write(new ReadOnlySpan<byte>((void*)line.Address, checked((int)line.Length)));
             }
         }
     }

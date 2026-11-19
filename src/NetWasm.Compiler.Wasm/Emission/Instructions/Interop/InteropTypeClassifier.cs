@@ -15,8 +15,8 @@ internal static class InteropTypeClassifier
         JavaScriptValueArray.IsSupported(type);
 
     /// <summary>
-    /// A string, number array, JSObject or handle value: a value that crosses an
-    /// export as a host handle.
+    /// A string, number array, JSObject or handle value: a value that enters managed code by conversion. Each crosses
+    /// as a host handle, except a number array, which the host stages in linear memory (<see cref="TransportKinds"/>).
     /// </summary>
     public static bool IsJavaScriptReference(CliTypeIdentity type) =>
         IsString(type) || IsValueArray(type) || IsJSObject(type) || IsHandleValue(type);
@@ -47,23 +47,27 @@ internal static class InteropTypeClassifier
 
     /// <summary>
     /// The first Wasm local of each parameter's transport, counting from <paramref name="first"/>,
-    /// followed by the first local after them: a nullable takes two, its presence and its value.
+    /// followed by the first local after them: a nullable takes two, its presence and its value, and a number
+    /// array two, its staged elements' address and its length.
     /// </summary>
     public static int[] TransportLocals(IReadOnlyList<CliTypeIdentity> parameters, int first)
     {
         var locals = new int[parameters.Count + 1];
         locals[0] = first;
         for (var index = 0; index < parameters.Count; index++)
-            locals[index + 1] = locals[index] + (IsNullable(parameters[index]) ? 2 : 1);
+            locals[index + 1] = locals[index] + (IsNullable(parameters[index]) || IsValueArray(parameters[index]) ? 2 : 1);
         return locals;
     }
 
     /// <summary>
-    /// The Wasm values an export or callback parameter arrives as: a reference's host
-    /// handle, a date's milliseconds, a nullable's presence and value, or the scalar.
+    /// The Wasm values an export or callback parameter arrives as: a number array's elements, which the host copied
+    /// into a block of linear memory from the runtime's allocator, as the block's address and the array's length (-1
+    /// for null); another reference's host handle; a date's milliseconds; a nullable's presence and value; or the
+    /// scalar.
     /// </summary>
     public static CliValueKind[] TransportKinds(CliTypeIdentity type, CliValueKind scalar) =>
-        IsJavaScriptReference(type) ? [CliValueKind.I4]
+        IsValueArray(type) ? [CliValueKind.NativeInt, CliValueKind.I4]
+        : IsJavaScriptReference(type) ? [CliValueKind.I4]
         : IsDate(type) ? [CliValueKind.F8]
         : JavaScriptNullable.Underlying(type) is { } underlying
             ? [CliValueKind.I4, IsDate(underlying) ? CliValueKind.F8 : underlying.StackKind]

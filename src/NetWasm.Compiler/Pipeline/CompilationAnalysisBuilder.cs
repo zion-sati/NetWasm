@@ -3,6 +3,7 @@
 
 using System;
 using NetWasm.Compiler.Analysis;
+using NetWasm.Compiler.Analysis.Generations;
 using NetWasm.Compiler.Analysis.NullChecks;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
@@ -32,8 +33,11 @@ internal sealed class CompilationAnalysisBuilder(
     IMethodImplementationResolverFactory methodImplementations,
     ISymbolFormatterFactory symbols,
     IJavaScriptAsyncBindingResolverFactory asyncBindings,
-    IConstructorReceiverProverFactory constructorReceivers,
-    IUnlinkedNativeImportReporter unlinkedNativeImports) : ICompilationAnalysisBuilder
+    IReceiverProverFactory receivers,
+    IUnlinkedNativeImportReporter unlinkedNativeImports,
+    IMissingMemberReporter missingMembers,
+    IMissingMemberBodyReaderFactory missingMemberBodies,
+    IYoungConstructorProverFactory youngConstructors) : ICompilationAnalysisBuilder
 {
     private readonly IWholeProgramAnalyzerFactory _analyzers = analyzers ??
         throw new ArgumentNullException(nameof(analyzers));
@@ -73,10 +77,16 @@ internal sealed class CompilationAnalysisBuilder(
         throw new ArgumentNullException(nameof(symbols));
     private readonly IJavaScriptAsyncBindingResolverFactory _asyncBindings = asyncBindings ??
         throw new ArgumentNullException(nameof(asyncBindings));
-    private readonly IConstructorReceiverProverFactory _constructorReceivers = constructorReceivers ??
-        throw new ArgumentNullException(nameof(constructorReceivers));
+    private readonly IReceiverProverFactory _receivers = receivers ??
+        throw new ArgumentNullException(nameof(receivers));
+    private readonly IYoungConstructorProverFactory _youngConstructors = youngConstructors ??
+        throw new ArgumentNullException(nameof(youngConstructors));
     private readonly IUnlinkedNativeImportReporter _unlinkedNativeImports = unlinkedNativeImports ??
         throw new ArgumentNullException(nameof(unlinkedNativeImports));
+    private readonly IMissingMemberReporter _missingMembers = missingMembers ??
+        throw new ArgumentNullException(nameof(missingMembers));
+    private readonly IMissingMemberBodyReaderFactory _missingMemberBodies = missingMemberBodies ??
+        throw new ArgumentNullException(nameof(missingMemberBodies));
 
     public CompilationAnalysis Analyze(
         MetadataCompilationSnapshot metadata,
@@ -94,7 +104,7 @@ internal sealed class CompilationAnalysisBuilder(
         var identities = _identities.Create(metadata);
         var baseTypeIdentities = _baseTypeIdentities.Create(metadata);
         var implementedInterfaces = _implementedInterfaces.Create(metadata);
-        var bodies = _bodies.Create(metadata);
+        var bodies = _missingMemberBodies.Create(_bodies.Create(metadata), preparation.MissingApiAsError);
         var methodInstances = _methodInstances.Create(metadata);
         var methodImplementations = _methodImplementations.Create(metadata);
         var symbols = _symbols.Create(metadata);
@@ -145,11 +155,16 @@ internal sealed class CompilationAnalysisBuilder(
             methods,
             symbols);
         _unlinkedNativeImports.Report(program, symbols);
-        // Whether a constructor's this can be null depends on every call of it, so
-        // its proof waits for the whole program.
-        var proven = _constructorReceivers.Create(types, fields, methods, methodInstances, symbols,
+        _missingMembers.Report(program);
+        // Whether a method's this can be null depends on every call of it, so its
+        // proof waits for the whole program.
+        var proven = _receivers.Create(types, fields, methods, methodInstances, symbols,
             preparation.OptimizationSettings.NewObjectNullCheckElimination ==
             NewObjectNullCheckEliminationPolicy.ConstructedObjects).Prove(program);
+        // Whether a constructor's this is young depends on every way the program reaches it; only a collector with
+        // generations, which records stores into old objects, reads it.
+        if (preparation.CollectorHasGenerations)
+            proven = _youngConstructors.Create(types, fields, methods, methodInstances, symbols).Prove(proven);
         return new CompilationAnalysis(proven);
     }
 }

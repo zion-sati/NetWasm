@@ -56,7 +56,9 @@ internal static class FrameworkSurfaceAudit
                 rows.AddRange(members.Except(match.Members).Select(member => Row(library, "extra-member", member)));
                 rows.AddRange(match.Members.Except(members).Select(member => Row(library, "missing-member", member)));
             }
-            var forwarded = library.GetForwardedTypes().Select(Id).ToHashSet(StringComparer.Ordinal);
+            // A forwarded type's nested types go with it.
+            var forwarded = library.GetForwardedTypes().SelectMany(type => PublicTypes(type).Prepend(type)).Select(Id)
+                .ToHashSet(StringComparer.Ordinal);
             rows.AddRange(upstreamTypes
                 .Where(pair => pair.Value.Assembly == library.Name && !declared.Contains(pair.Key) && !forwarded.Contains(pair.Key))
                 .Select(pair => Row(library, "missing-type", pair.Key)));

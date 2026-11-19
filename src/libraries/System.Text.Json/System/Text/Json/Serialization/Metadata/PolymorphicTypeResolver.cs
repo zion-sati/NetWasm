@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
-#if !NETWASM
 namespace System.Text.Json.Serialization.Metadata
 {
     /// <summary>
@@ -15,6 +14,8 @@ namespace System.Text.Json.Serialization.Metadata
     /// </summary>
     internal sealed class PolymorphicTypeResolver
     {
+        // NetWasm: a Dictionary, as the port had it: a NetWasm program runs one thread, and ConcurrentDictionary's code
+        // would ship with every serializer whether or not it is polymorphic.
         private readonly Dictionary<Type, DerivedJsonTypeInfo?> _typeToDiscriminatorId = new();
         private readonly Dictionary<object, DerivedJsonTypeInfo>? _discriminatorIdtoType;
         private readonly JsonSerializerOptions _options;
@@ -364,49 +365,3 @@ namespace System.Text.Json.Serialization.Metadata
         }
     }
 }
-#else
-namespace System.Text.Json.Serialization.Metadata
-{
-    // The NetWasm profile is source-generated and closed-world. Runtime
-    // polymorphic discovery is intentionally unavailable, but the resolver
-    // shape remains so generated metadata and the common serializer paths
-    // can compile without reflection support.
-    internal sealed class PolymorphicTypeResolver
-    {
-        public PolymorphicTypeResolver(JsonSerializerOptions options, JsonPolymorphismOptions polymorphismOptions, Type baseType, bool converterCanHaveMetadata)
-        {
-            BaseType = baseType;
-        }
-
-        public Type BaseType { get; }
-        public JsonUnknownDerivedTypeHandling UnknownDerivedTypeHandling => JsonUnknownDerivedTypeHandling.FailSerialization;
-        public bool UsesTypeDiscriminators => false;
-        public bool IgnoreUnrecognizedTypeDiscriminators => true;
-        public byte[]? CustomTypeDiscriminatorPropertyNameUtf8 => null;
-        public JsonEncodedText? CustomTypeDiscriminatorPropertyNameJsonEncoded => null;
-
-        public bool TryResolveDerivedJsonTypeInfo(Type resolvedType, [NotNullWhen(true)] out JsonTypeInfo? jsonTypeInfo)
-        {
-            jsonTypeInfo = null;
-            return false;
-        }
-
-        public bool TryGetDerivedJsonTypeInfo(Type runtimeType, [NotNullWhen(true)] out JsonTypeInfo? jsonTypeInfo, out object? typeDiscriminator)
-        {
-            jsonTypeInfo = null;
-            typeDiscriminator = null;
-            return false;
-        }
-
-        public bool TryGetDerivedJsonTypeInfo(object typeDiscriminator, [NotNullWhen(true)] out JsonTypeInfo? jsonTypeInfo)
-        {
-            jsonTypeInfo = null;
-            return false;
-        }
-
-        public static bool IsSupportedPolymorphicBaseType(Type? type) => false;
-        public static bool IsSupportedDerivedType(Type baseType, Type? derivedType) => false;
-        internal static JsonTypeInfo? FindNearestPolymorphicBaseType(JsonTypeInfo typeInfo) => null;
-    }
-}
-#endif

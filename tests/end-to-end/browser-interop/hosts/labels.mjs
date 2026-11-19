@@ -6,7 +6,7 @@
 export function createWorkerImports(notify) {
   return Object.freeze({
     label(value) {
-      notify("labelled", [value]);
+      notify("labeled", [value]);
       return `#${value}`;
     },
   });

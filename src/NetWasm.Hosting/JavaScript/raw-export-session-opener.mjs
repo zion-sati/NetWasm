@@ -15,6 +15,10 @@ const dependencyKeys = [
 ];
 // The module the Component Model's own built-ins come from, such as waitable sets.
 const componentModelRootModule = "$root";
+// The runtime export an idle host calls (native_runtime.c).
+const idleCollectExport = "collect_when_idle";
+// The runtime export a host calls once it has stayed quiet after the module ran (native_runtime.c).
+const quietCollectExport = "collect_when_quiet";
 const requiredRequestKeys = Object.freeze([
   "abi",
   "adapter",
@@ -101,6 +105,29 @@ export function createRawExportSessionOpener(dependencies) {
         if (terminalFailure !== null) throw terminalFailure;
         if (state === "closing" || state === "closed") {
           throw new NetWasmHostError("NetWasm export session is closed");
+        }
+      };
+      // A host that knows when it is idle calls this between calls into the module: the runtime's collector
+      // collects when that is worth its while. Null for a runtime without the entry.
+      const createIdleCollector = collect => typeof collect !== "function" ? null : () => {
+        if (terminalFailure !== null || state !== "ready") return false;
+        try {
+          return collect() !== 0;
+        } catch (cause) {
+          markFailed(cause);
+          return false;
+        }
+      };
+      // A host with a timer calls this once the module has not run for a while: the collector collects whatever
+      // the heap has grown by and answers with one more than the share it freed, in 255ths, or zero when it
+      // did not collect. Null for a runtime without the entry.
+      const createQuietCollector = collect => typeof collect !== "function" ? null : () => {
+        if (terminalFailure !== null || state !== "ready") return 0;
+        try {
+          return collect();
+        } catch (cause) {
+          markFailed(cause);
+          return 0;
         }
       };
       let interop;
@@ -205,7 +232,13 @@ export function createRawExportSessionOpener(dependencies) {
         throwIfFailed();
         state = "ready";
         pump.turn();
-        return Object.freeze({ close, exports: runLoopAfter(boundary.exports, pump.turn), failure });
+        return Object.freeze({
+          close,
+          collectWhenIdle: createIdleCollector(readDataProperty(instance.exports, idleCollectExport)),
+          collectWhenQuiet: createQuietCollector(readDataProperty(instance.exports, quietCollectExport)),
+          exports: runLoopAfter(boundary.exports, pump.turn),
+          failure,
+        });
       } catch (cause) {
         return rollback(cause);
       }

@@ -76,7 +76,7 @@ public sealed class ComponentOperationRunnerTests
             "environment.wasm", "env",
             "--output", "merged.wasm",
             "--enable-multimemory", "--enable-exception-handling",
-            "--enable-reference-types",
+            "--enable-reference-types", "--enable-multivalue",
             "--enable-bulk-memory", "--enable-nontrapping-float-to-int",
             "--enable-simd",
         };
@@ -199,7 +199,7 @@ public sealed class ComponentOperationRunnerTests
                 ComponentTarget.Wasm32Wasi02)
             { Intermediates = Steps }));
 
-        Assert.Contains("unknown error", exception.Diagnostic.Message,
+        Assert.Contains("without an error message", exception.Diagnostic.Message,
             StringComparison.Ordinal);
     }
 
@@ -212,7 +212,7 @@ public sealed class ComponentOperationRunnerTests
         var exception = Assert.Throws<CompilerException>(() => InvokePackageOperation(
             AsPackageOperationRunner(runner), ["component", "new"], "create component"));
 
-        Assert.Contains("unknown error", exception.Diagnostic.Message,
+        Assert.Contains("without an error message", exception.Diagnostic.Message,
             StringComparison.Ordinal);
     }
 

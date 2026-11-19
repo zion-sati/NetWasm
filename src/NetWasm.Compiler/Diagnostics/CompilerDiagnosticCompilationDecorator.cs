@@ -42,7 +42,8 @@ internal sealed class CompilerDiagnosticCompilationDecorator(
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(logPaths);
         ArgumentNullException.ThrowIfNull(compile);
-        using var scope = logger.BeginScope(new CompilerDiagnosticScope(logPaths.Resolve(options)));
+        using var scope = logger.BeginScope(
+            new CompilerDiagnosticScope(logPaths.Resolve(options), options.DiagnosticLogLevel));
         LogStarted(logger, options.Target, null);
         try
         {

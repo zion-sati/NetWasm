@@ -256,6 +256,48 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         Assert.Empty(plan.UninitializedObjectTypes);
     }
 
+    // The types a structure's fields reach have descriptors too; PtrToStructure creates the embedded classes, and
+    // fills each structure array's elements through their boxed values, so the arrays and boxes are rooted.
+    [Fact]
+    public void TheTypesStructureFieldsReachAreMarshalledAndCreatable()
+    {
+        var fixture = new Fixture();
+        var holder = fixture.Type("Holder", isValue: true);
+        var embedded = fixture.Type("Embedded");
+        var element = fixture.Type("Element", isValue: true);
+
+        var shade = fixture.Type("Shade", isValue: true);
+        var plan = fixture.CreatePlanner(new([element, embedded], [embedded], [element]) { EnumArrayElements = [shade] })
+            .Plan([fixture.Method(RuntimeIntrinsic.StructMarshallingData)], [], [], [holder], []);
+
+        AssertTypes([element, embedded, holder], plan.StructMarshallingTypes);
+        AssertTypes([element, embedded], plan.UninitializedObjectTypes);
+        Assert.Contains(CliTypeIdentity.SzArray(element), plan.AllocatedTypes);
+        Assert.Contains(element, plan.AllocatedTypes);
+        Assert.Contains(CliTypeIdentity.SzArray(element), plan.RuntimeTypes);
+        Assert.Contains(CliTypeIdentity.SzArray(shade), plan.AllocatedTypes);
+        Assert.DoesNotContain(shade, plan.StructMarshallingTypes);
+    }
+
+    // PtrToStructure's constructors are rooted only where the program both marshals structures and creates them by
+    // their runtime type.
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void StructureConstructorsAreRootedWhereStructuresAreCreatedByType(bool marshal, bool construct, bool rooted)
+    {
+        var fixture = new Fixture();
+        var value = fixture.Type("Value", isValue: true);
+        var demands = new List<MethodInstanceModel>();
+        if (marshal) demands.Add(fixture.Method(RuntimeIntrinsic.StructMarshallingData));
+        if (construct) demands.Add(fixture.Method(RuntimeIntrinsic.StructMarshallingConstruct));
+
+        var plan = fixture.CreatePlanner().Plan(demands, [], [], [value], []);
+
+        Assert.Equal(rooted, plan.StructMarshallingConstructors);
+    }
+
     [Fact]
     public void ArrayReadsRetainBoxesForReachableRectangularValueElements()
     {
@@ -437,15 +479,22 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         Assert.Contains(method.CanonicalName, exception.Message, StringComparison.Ordinal);
     }
 
+    private sealed class Closure(StructureMarshallingReach reach) : IStructureMarshallingClosure
+    {
+        public StructureMarshallingReach Reach(IEnumerable<CliTypeIdentity> types) => reach;
+    }
+
     [Fact]
     public void PlannerValidatesItsActorContract()
     {
         var fixture = new Fixture();
         var nullableTypes = new NullableTypeResolver();
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(null!, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture)));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, null!, fixture, new ArrayCreationRootPlanner(fixture)));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, null!, new ArrayCreationRootPlanner(fixture)));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, null!));
+        var closure = new Closure(Fixture.NoReach);
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(null!, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture), closure));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, null!, fixture, new ArrayCreationRootPlanner(fixture), closure));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, null!, new ArrayCreationRootPlanner(fixture), closure));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, null!, closure));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture), null!));
         var planner = fixture.CreatePlanner();
         Assert.Throws<ArgumentNullException>(() => planner.Plan(null!, []));
         Assert.Throws<ArgumentNullException>(() => planner.Plan([], null!));
@@ -464,8 +513,11 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         internal Dictionary<CliTypeIdentity, TypeDefinitionModel> Definitions { get; } = [];
         internal List<CliTypeIdentity> DefinitionRequests { get; } = [];
 
-        internal IRuntimeIntrinsicTypeRootPlanner CreatePlanner() =>
-            ThroughContract(new RuntimeIntrinsicTypeRootPlanner(this, new NullableTypeResolver(), this, new ArrayCreationRootPlanner(this)));
+        internal static readonly StructureMarshallingReach NoReach = new([], [], []);
+
+        internal IRuntimeIntrinsicTypeRootPlanner CreatePlanner(StructureMarshallingReach? reach = null) =>
+            ThroughContract(new RuntimeIntrinsicTypeRootPlanner(this, new NullableTypeResolver(), this, new ArrayCreationRootPlanner(this),
+                new Closure(reach ?? NoReach)));
 
         internal CliTypeIdentity Enum(string name, int genericArity = 0)
         {

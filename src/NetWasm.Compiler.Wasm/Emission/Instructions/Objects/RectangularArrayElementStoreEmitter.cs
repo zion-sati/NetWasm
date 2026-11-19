@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -17,7 +18,9 @@ internal sealed class RectangularArrayElementStoreEmitter(
     IRuntimeObjectLayout objects,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
-    IRectangularArrayElementAddressEmitter addresses) : InstructionCommandProvider
+    IRectangularArrayElementAddressEmitter addresses,
+    IReferenceWriteBarrierEmitter writeBarrier,
+    IReferenceWriteAddressRememberer addressRememberer) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -54,6 +57,7 @@ internal sealed class RectangularArrayElementStoreEmitter(
         }
         // The array was checked above, before its element type was read.
         addresses.Emit(new(request, arraySlot, ArrayChecked: true), code);
+        addressRememberer.Remember(request, code, elementType);
         Get(code, valueLocal);
         if (elementType.StackKind == CliValueKind.ValueType)
         {
@@ -70,6 +74,7 @@ internal sealed class RectangularArrayElementStoreEmitter(
                 elementType,
                 GetElementSize(elementType), scratch: request.Context.VectorScratch);
         }
+        writeBarrier.Emit(request, code, elementType);
         request.Stack.RemoveRange(arraySlot, arrayType.ArrayRank + 2);
     }
 

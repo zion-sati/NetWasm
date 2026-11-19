@@ -12,7 +12,7 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Metadata.Tests;
 
 // An assembly's embedded ILLink.Substitutions.xml stubs its Boolean and void methods (SubstitutionSignatureTypeNameProviderTests
-// covers instance, parameterised and void ones).
+// covers instance, parameterized and void ones).
 public sealed class FeatureSwitchSubstitutionReaderTests
 {
     // Elements without a type name, a stub body or a readable feature value apply nowhere; the rest apply.

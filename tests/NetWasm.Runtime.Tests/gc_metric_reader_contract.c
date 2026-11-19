@@ -21,6 +21,7 @@ bool collector_try_read_total_pause_milliseconds(uint64_t *value)
     return true;
 }
 uint64_t collector_pinned_reference_count(void) { return 3; }
+uint64_t collector_oldest_generation_collection_count(void) { return 5; }
 
 int main(int argc, char **argv)
 {
@@ -37,10 +38,10 @@ int main(int argc, char **argv)
             return 0;
         }
         if (strcmp(argv[1], "invalid-support") == 0) {
-            (void)gc_metric_supports(6);
+            (void)gc_metric_supports(7);
             return 0;
         }
-        (void)gc_metric_read(6);
+        (void)gc_metric_read(7);
         return 0;
     }
 
@@ -55,5 +56,7 @@ int main(int argc, char **argv)
     assert(!gc_metric_supports(4));
     assert(gc_metric_read(5) == 3);
     assert(gc_metric_supports(5));
+    assert(gc_metric_read(6) == 5);
+    assert(gc_metric_supports(6));
     return 0;
 }

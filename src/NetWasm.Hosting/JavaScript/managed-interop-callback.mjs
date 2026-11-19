@@ -17,6 +17,7 @@ const requestKeys = [
   "handle",
   "handles",
   "parameterIndex",
+  "staging",
   "target",
   "targetLayout",
 ];
@@ -38,6 +39,11 @@ export function createManagedInteropCallback(request) {
       || typeof request.exceptionReporter.consumeTerminalEvent !== "function") {
     throw new TypeError("managed interop callback exception reporter is invalid");
   }
+  const staging = request.staging;
+  if (staging === null || typeof staging !== "object"
+      || typeof staging.stage !== "function" || typeof staging.discard !== "function") {
+    throw new TypeError("managed interop callback number-array staging is invalid");
+  }
   const callback = findCallback(
     request.callbacks, request.descriptor, request.parameterIndex);
   const handle = normalizeInteropHandle(request.handle);
@@ -52,11 +58,12 @@ export function createManagedInteropCallback(request) {
     }
     const transientHandles = [];
     const objectHandles = [];
+    const stagedBlocks = [];
     let invoked = false;
     let failure;
     try {
       const callbackArguments = lowerArguments(
-        callback.parameters, arguments_, request.handles, transientHandles, objectHandles);
+        callback.parameters, arguments_, request.handles, transientHandles, objectHandles, staging, stagedBlocks);
       invoked = true;
       const result = invoke(handle, ...callbackArguments);
       return callback.result === "void"
@@ -81,8 +88,12 @@ export function createManagedInteropCallback(request) {
       for (const transientHandle of transientHandles) {
         try { request.handles.release(transientHandle); } catch { }
       }
-      // A JSObject argument's handle belongs to its managed wrapper once the call starts.
-      if (!invoked) for (const objectHandle of objectHandles) request.handles.release(objectHandle);
+      // A JSObject argument's handle belongs to its managed wrapper once the call starts, and a staged number
+      // array's block to the managed code that copies and frees it.
+      if (!invoked) {
+        for (const objectHandle of objectHandles) request.handles.release(objectHandle);
+        for (const block of stagedBlocks) staging.discard(block);
+      }
     }
     throw failure;
   });

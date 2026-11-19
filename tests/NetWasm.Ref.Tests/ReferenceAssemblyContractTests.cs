@@ -168,8 +168,22 @@ public sealed class ReferenceAssemblyContractTests
         Assert.Contains(pack.Descendants("_NetWasmRefPackageFile"), file =>
             (string?)file.Attribute("Include") == "@(_NetWasmRefGeneratorPackageFile)");
         Assert.Empty(targets.Descendants("PackageReference"));
-        Assert.Empty(targets.Descendants("PackageDownload"));
         Assert.Empty(targets.Descendants("Exec"));
+
+        // The only download is the SDK-selected pack of another target framework a producer names for its
+        // generators, merged into the SDK's own item for the same package; NetWasm.Ref names none.
+        var download = targets.Descendants("Target").Single(target =>
+            (string?)target.Attribute("Name") == "NetWasmRefDownloadGeneratorReferencePack");
+        Assert.Equal("'$(NetWasmRefGeneratorTargetFramework)' != '$(TargetFramework)'", (string?)download.Attribute("Condition"));
+        Assert.Equal("CollectPackageDownloads", (string?)download.Attribute("BeforeTargets"));
+        Assert.All(targets.Descendants("PackageDownload"), item =>
+        {
+            Assert.Same(download, item.Ancestors("Target").Single());
+            Assert.Equal("Microsoft.NETCore.App.Ref", (string?)(item.Attribute("Include") ?? item.Attribute("Remove")));
+        });
+        Assert.Contains("@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackVersion)')",
+            download.Descendants("_NetWasmRefGeneratorPackDownloadVersions").Single().Value, StringComparison.Ordinal);
+        Assert.Empty(project.Descendants("NetWasmRefGeneratorTargetFramework"));
     }
 
     // The generator that implements [JSImport] static partial declarations ships

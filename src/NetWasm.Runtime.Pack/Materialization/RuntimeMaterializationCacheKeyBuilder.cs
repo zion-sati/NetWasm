@@ -102,6 +102,16 @@ internal sealed class RuntimeMaterializationCacheKeyBuilder :
             Append(hash, prefix + ".return", binding.Import.ReturnType?.ToString() ?? "void");
         }
         AppendCallbacks(hash, request.NativeCallbackSupport);
+        // Only a module with env imports hashes them, so other keys are unchanged.
+        if (!request.EnvImports.IsDefaultOrEmpty)
+        {
+            Append(hash, "envImports.count", request.EnvImports.Length);
+            for (var index = 0; index < request.EnvImports.Length; index++)
+            {
+                Append(hash, $"envImports.{index}.name", request.EnvImports[index].Name);
+                Append(hash, $"envImports.{index}.module", request.EnvImports[index].Module);
+            }
+        }
         Append(hash, "optimization", request.Optimization.ToString());
         AppendArguments(
             hash,
@@ -210,12 +220,26 @@ internal sealed class RuntimeMaterializationCacheKeyBuilder :
             AppendAsset(hash, "target.platformArchives.wasi", platform.Wasi);
             AppendAsset(hash, "target.platformArchives.noWasi", platform.NoWasi);
         }
+        if (target.EmscriptenArchives is { } emscripten)
+        {
+            AppendAsset(hash, "target.emscriptenArchives.support", emscripten.Support);
+            AppendAsset(hash, "target.emscriptenArchives.standIns", emscripten.StandIns);
+        }
         AppendAsset(hash, "target.allowedUndefined", target.AllowedUndefinedSymbols);
         Append(hash, "target.systemLibraries.count", target.SystemLibraries.Assets.Length);
         for (var index = 0; index < target.SystemLibraries.Assets.Length; index++)
         {
             Append(hash, $"target.systemLibraries.{index}.name", target.SystemLibraries.Names[index]);
             AppendAsset(hash, $"target.systemLibraries.{index}.asset", target.SystemLibraries.Assets[index]);
+        }
+        if (target.ExceptionSystemLibraries is { } exceptionLibraries)
+        {
+            Append(hash, "target.exceptionSystemLibraries.count", exceptionLibraries.Assets.Length);
+            for (var index = 0; index < exceptionLibraries.Assets.Length; index++)
+            {
+                Append(hash, $"target.exceptionSystemLibraries.{index}.name", exceptionLibraries.Names[index]);
+                AppendAsset(hash, $"target.exceptionSystemLibraries.{index}.asset", exceptionLibraries.Assets[index]);
+            }
         }
     }
 

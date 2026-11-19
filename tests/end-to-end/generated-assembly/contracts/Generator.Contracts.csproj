@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="[10.0.0]" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="[10.0.0]" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="[10.0.0]" />
     <Compile Include="$(LibrariesSnapshot)/src/NetWasm.Microsoft.Extensions.DependencyInjection/Generated/*.cs" />
     <Compile Include="$(LibrariesSnapshot)/src/NetWasm.Microsoft.Extensions.DependencyInjection/ServiceProviderOptions.cs" />
     <Compile Include="$(LibrariesSnapshot)/src/NetWasm.Microsoft.Extensions.DependencyInjection/ServiceProvider.cs" />
@@ -20,7 +21,6 @@
     <Compile Include="$(LibrariesSnapshot)/src/NetWasm.Microsoft.Extensions.DependencyInjection.Abstractions/Microsoft/Extensions/DependencyInjection/ActivatorUtilities.cs" />
     <Compile Include="$(LibrariesSnapshot)/src/NetWasm.Microsoft.Extensions.DependencyInjection.Abstractions/Microsoft/Extensions/DependencyInjection/ObjectFactory.cs" />
     <Compile Include="$(LibrariesSnapshot)/src/NetWasm.Microsoft.Extensions.Configuration.Binder/Microsoft/Extensions/Configuration/*.cs" />
-    <Compile Include="$(LibrariesSnapshot)/src/NetWasm.Microsoft.Extensions.Configuration.Abstractions/Microsoft/Extensions/Configuration/IConfigurationSectionValueAccessor.cs" />
     <Compile Include="Repository.cs" />
   </ItemGroup>
 </Project>

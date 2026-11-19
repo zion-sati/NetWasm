@@ -8,6 +8,8 @@ using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
+
 namespace NetWasm.Compiler.Wasm.Units;
 
 internal interface IWasmFunctionSymbolBuilder
@@ -58,6 +60,8 @@ internal sealed class WasmFunctionSymbolBuilder : IWasmFunctionSymbolBuilder
             Add((uint)index.Value, "delegate-invoke:" + delegateType);
         foreach (var (delegateType, index) in indices.DelegateMulticastHelpers)
             Add((uint)index.Value, "delegate-multicast:" + delegateType);
+        foreach (var (declaration, index) in indices.SharedVirtualDispatches)
+            Add((uint)index.Value, SharedVirtualDispatch.Symbol(declaration));
         foreach (var forwarder in plan.JSImportForwarders)
         {
             if (indices.JSImportForwarders.TryGetValue(forwarder.Definition.Key, out var index))

@@ -14,8 +14,15 @@ internal static class TestRuntimeInitialization
     // Entries call the module's runtime initializer at this index.
     public const int InitializerFunctionIndex = 90;
 
+    // A component's instantiation calls the state initializer at this index.
+    public const int StateInitializerFunctionIndex = 89;
+
     public static RuntimeInitializationPlan Create(int staticDataEnd) =>
-        new(staticDataEnd, StackTraceMethodPlan.Disabled) { InitializerFunctionIndex = InitializerFunctionIndex };
+        new(staticDataEnd, StackTraceMethodPlan.Disabled)
+        {
+            InitializerFunctionIndex = InitializerFunctionIndex,
+            StateInitializerFunctionIndex = StateInitializerFunctionIndex,
+        };
 
     public static RuntimeInitializationPlan Create(
         int staticDataEnd,
@@ -23,6 +30,7 @@ internal static class TestRuntimeInitialization
         new(staticDataEnd, StackTraceMethodPlan.Disabled, runtimeImports)
         {
             InitializerFunctionIndex = InitializerFunctionIndex,
+            StateInitializerFunctionIndex = StateInitializerFunctionIndex,
         };
 }
 

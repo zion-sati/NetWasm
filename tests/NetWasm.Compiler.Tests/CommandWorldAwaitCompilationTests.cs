@@ -98,6 +98,43 @@ public sealed class CommandWorldAwaitCompilationTests
             entryExportName: "run"));
     }
 
+    // An asynchronous Main's event loop gives its collector the time it waits, through runtime entries only such a
+    // program imports; a synchronous Main has no loop and asks for nothing. The loop's timers, a fifth of a second
+    // and a second, run out while Main waits longer than both, and are cancelled when Main completes.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OnlyAnAsynchronousMainsLoopGivesTheCollectorItsWaits(bool optimize)
+    {
+        using var assets = TestAssets.Create();
+        var asynchronous = CompileAsynchronousMain(
+            assets, $"AsyncMainIdle_{optimize}", IdleMainSource, optimize, WasmTarget.Wasm32);
+        var synchronous = NetWasmCompiler.Compile(new CompilerOptions(
+            Compile(assets, $"SyncMainIdle_{optimize}", MainSource, optimize),
+            [assets.CoreLib],
+            "SyncAwaitFixture.Program",
+            "Main",
+            [],
+            WasmTarget.Wasm32,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
+
+        var imports = WasmModuleInspection.ReadFunctionImportNames(asynchronous.ApplicationModule);
+        Assert.Contains("collect_when_idle", imports);
+        Assert.Contains("collect_when_quiet", imports);
+        Assert.DoesNotContain("collect_when_idle", WasmModuleInspection.ReadFunctionImportNames(synchronous.ApplicationModule));
+        Assert.DoesNotContain("collect_when_quiet", WasmModuleInspection.ReadFunctionImportNames(synchronous.ApplicationModule));
+        Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(
+            asynchronous.ApplicationModule,
+            assets.Directory,
+            0,
+            WasmTarget.Wasm32,
+            asynchronous.StaticDataEnd,
+            callbackEntry: true,
+            entryExportName: "run"));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -186,6 +223,26 @@ public sealed class CommandWorldAwaitCompilationTests
 
     // Returns 42 on desktop .NET too. Completion order among simultaneous delays is the oracle's
     // simulated time, so only the order the program fixes is checked.
+    private const string IdleMainSource = """
+        using System.Collections.Generic;
+        using System.Threading.Tasks;
+
+        namespace CommandWorldIdleFixture;
+
+        internal static class Program
+        {
+            public static async Task<int> Main()
+            {
+                var kept = new List<int[]>();
+                for (var index = 0; index < 64; index++) kept.Add(new int[256]);
+                await Task.Delay(1500);
+                for (var index = 0; index < 64; index++) _ = new int[256];
+                await Task.Delay(1500);
+                return kept.Count == 64 ? 42 : 1;
+            }
+        }
+        """;
+
     private const string AsyncMainSource = """
         using System;
         using System.Collections.Generic;
@@ -284,7 +341,7 @@ public sealed class CommandWorldAwaitCompilationTests
         """ + ChecksSource;
 
     // Expected values are desktop .NET's; the deferred-work block is NetWasm's and Mono WASI's
-    // single-threaded behaviour, where desktop runs the work on its thread pool instead.
+    // single-threaded behavior, where desktop runs the work on its thread pool instead.
     internal const string ChecksSource = """
 
         public static class Checks

@@ -39,6 +39,8 @@ public sealed class WitWorkerHostEntryWriterTests
         Assert.Contains("stdout: request.stdout,", source, StringComparison.Ordinal);
         Assert.Contains("openSession: open,", source,
             StringComparison.Ordinal);
+        // The worker's scope times its module's idle and quiet collections.
+        Assert.Contains("  scope: globalThis,", source, StringComparison.Ordinal);
         Assert.Contains("artifactPath: \"imports/events.mjs\"", source, StringComparison.Ordinal);
         Assert.Contains("module: \"example:app/events\"", source, StringComparison.Ordinal);
         Assert.Contains("clocks: Object.freeze([\"wall\"])", source, StringComparison.Ordinal);

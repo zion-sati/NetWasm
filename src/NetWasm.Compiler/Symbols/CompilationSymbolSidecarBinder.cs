@@ -15,11 +15,13 @@ public interface ICompilationSymbolSidecarBinder
         RuntimeTypeSymbolTable types,
         string buildId,
         ImmutableArray<WasmStackTraceSymbol> methodSymbols,
-        CompilerOptions options);
+        bool typeNames,
+        bool stackTraces);
 }
 
 // A compile's symbols sidecars: type-symbols always, naming the exception types a host's crash report names,
-// or every type with NetWasmTypeNames; method-symbols with NetWasmManagedStackTrace.
+// or every type when the program reads type names (NetWasmTypeNames and a name reader reached); method-symbols with
+// NetWasmManagedStackTrace.
 public sealed class CompilationSymbolSidecarBinder(ISymbolSidecarWriter writer) : ICompilationSymbolSidecarBinder
 {
     private readonly ISymbolSidecarWriter _writer = writer ?? throw new ArgumentNullException(nameof(writer));
@@ -29,12 +31,12 @@ public sealed class CompilationSymbolSidecarBinder(ISymbolSidecarWriter writer) 
         RuntimeTypeSymbolTable types,
         string buildId,
         ImmutableArray<WasmStackTraceSymbol> methodSymbols,
-        CompilerOptions options)
+        bool typeNames,
+        bool stackTraces)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(types);
-        ArgumentNullException.ThrowIfNull(options);
-        var named = options.EmitTypeNames
+        var named = typeNames
             ? types.Symbols
             : types.Symbols.Where(symbol => types.ExceptionTypeIds.Contains(symbol.TypeId)).ToImmutableArray();
         return result with
@@ -42,7 +44,7 @@ public sealed class CompilationSymbolSidecarBinder(ISymbolSidecarWriter writer) 
             TypeSymbols = _writer.Write(SymbolSidecarKind.Type, buildId, [.. named.Select(symbol =>
                 new SymbolSidecarEntry(symbol.TypeId,
                     [symbol.Name, symbol.Namespace, symbol.FullName, symbol.DisplayName]))]),
-            MethodSymbols = options.EmitStackTrace
+            MethodSymbols = stackTraces
                 ? _writer.Write(SymbolSidecarKind.Method, buildId, [.. (methodSymbols.IsDefault ? [] : methodSymbols)
                     .Select(symbol => new SymbolSidecarEntry(symbol.Id, [symbol.Name]))])
                 : null,

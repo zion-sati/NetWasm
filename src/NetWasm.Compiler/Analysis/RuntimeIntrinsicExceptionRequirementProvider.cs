@@ -51,6 +51,7 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.StringLength or
             RuntimeIntrinsic.ArrayLength or
             RuntimeIntrinsic.ArrayRank or
+            RuntimeIntrinsic.ArrayPrimitiveElementType or
             RuntimeIntrinsic.JSObjectDispose or
             RuntimeIntrinsic.JSSubscriptionDispose or
             RuntimeIntrinsic.GetArrayDataReference or
@@ -64,7 +65,8 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             // Throws nothing; it returns the OutOfMemoryException frozen in the image.
             RuntimeIntrinsic.PreallocatedOutOfMemoryException => [OutOfMemory],
 
-            RuntimeIntrinsic.StringAllocate => [Overflow, OutOfMemory],
+            RuntimeIntrinsic.StringAllocate or
+            RuntimeIntrinsic.AllocateUninitializedArray => [Overflow, OutOfMemory],
 
             RuntimeIntrinsic.NullableGetUnderlyingType => [ArgumentNull],
 

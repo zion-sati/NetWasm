@@ -42,7 +42,7 @@ public sealed class CompilationSymbolSidecarBinderTests
     [Fact]
     public void AStackTraceCompileWithoutSymbolsWritesAnEmptyMethodSidecar() =>
         Assert.Empty(SymbolSidecarContents.Read(new CompilationSymbolSidecarBinder(new SymbolSidecarWriter())
-            .Bind(Result(), Types, BuildId, default, Options(false, true)).MethodSymbols!.Bytes).Entries);
+            .Bind(Result(), Types, BuildId, default, typeNames: false, stackTraces: true).MethodSymbols!.Bytes).Entries);
 
     [Fact]
     public void RejectsMissingInputs()
@@ -50,17 +50,14 @@ public sealed class CompilationSymbolSidecarBinderTests
         var binder = new CompilationSymbolSidecarBinder(new SymbolSidecarWriter());
 
         Assert.Throws<ArgumentNullException>(() => new CompilationSymbolSidecarBinder(null!));
-        Assert.Throws<ArgumentNullException>(() => binder.Bind(null!, Types, BuildId, [], Options(false, false)));
-        Assert.Throws<ArgumentNullException>(() => binder.Bind(Result(), null!, BuildId, [], Options(false, false)));
-        Assert.Throws<ArgumentNullException>(() => binder.Bind(Result(), Types, BuildId, [], null!));
+        Assert.Throws<ArgumentNullException>(() => binder.Bind(null!, Types, BuildId, [], false, false));
+        Assert.Throws<ArgumentNullException>(() => binder.Bind(Result(), null!, BuildId, [], false, false));
     }
 
     private static CompilationResult Bind(bool typeNames, bool stackTraces) =>
         new CompilationSymbolSidecarBinder(new SymbolSidecarWriter()).Bind(
-            Result(), Types, BuildId, [new WasmStackTraceSymbol(5, "App.Program::Main")], Options(typeNames, stackTraces));
+            Result(), Types, BuildId, [new WasmStackTraceSymbol(5, "App.Program::Main")], typeNames, stackTraces);
 
     private static CompilationResult Result() => new([], null!, null!, null!, 0);
 
-    private static CompilerOptions Options(bool typeNames, bool stackTraces) =>
-        new("App.dll", [], "App.Program", "Main", [], EmitTypeNames: typeNames, EmitStackTrace: stackTraces);
 }

@@ -98,15 +98,70 @@ public sealed class RuntimePackManifestParserTests
         }
     }
 
+    [Theory]
+    [InlineData("wasm32", "Compact")]
+    [InlineData("wasm64", "NetWasm")]
+    public void ValidatesTheTargetsEmscriptenArchives(string target, string collector)
+    {
+        var source = RuntimePackTestData.Manifest();
+        var index = source.Targets.IndexOf(source.TargetLookup[(target, collector)]);
+        var original = source.Targets[index];
+        var parsed = Create().Parse(JsonSerializer.Serialize(source));
+        Assert.Equal(original.EmscriptenArchives, parsed.TargetLookup[(target, collector)].EmscriptenArchives);
+
+        var archives = original.EmscriptenArchives!;
+        var other = RuntimePackTestData.EmscriptenArchives(target == "wasm32" ? "wasm64" : "wasm32");
+        RuntimePackTarget[] invalid =
+        [
+            original with { EmscriptenArchives = null },
+            original with { EmscriptenArchives = archives with { Support = archives.StandIns } },
+            original with { EmscriptenArchives = archives with { StandIns = archives.Support } },
+            original with { EmscriptenArchives = other },
+            original with { EmscriptenArchives = archives with { StandIns = archives.StandIns with { Sha256 = "bad" } } },
+        ];
+        foreach (var malformed in invalid)
+        {
+            var manifest = source with { Targets = source.Targets.SetItem(index, malformed) };
+            Assert.Throws<InvalidOperationException>(() => Create().Parse(JsonSerializer.Serialize(manifest)));
+        }
+    }
+
+    [Fact]
+    public void ValidatesTheTargetsCxxExceptionLibraries()
+    {
+        var source = RuntimePackTestData.Manifest();
+        var index = source.Targets.IndexOf(source.TargetLookup[("wasm32", "Compact")]);
+        var original = source.Targets[index];
+        var parsed = Create().Parse(JsonSerializer.Serialize(source));
+        Assert.Equal(original.ExceptionSystemLibraries!.Names, parsed.TargetLookup[("wasm32", "Compact")].ExceptionSystemLibraries!.Names);
+
+        var libraries = original.ExceptionSystemLibraries;
+        RuntimePackTarget[] invalid =
+        [
+            original with { ExceptionSystemLibraries = null },
+            original with { ExceptionSystemLibraries = libraries with { Names = [] , Assets = [] } },
+            original with { ExceptionSystemLibraries = original.SystemLibraries },
+            original with { ExceptionSystemLibraries = libraries with { Names = ["../libc++-wasmexcept.a", "libunwind-wasmexcept.a"] } },
+            original with { ExceptionSystemLibraries = libraries with { Names = ["libc++-wasmexcept.a", "libc++-wasmexcept.a"] } },
+            original with { ExceptionSystemLibraries = libraries with { Assets = [libraries.Assets[0]] } },
+            original with { ExceptionSystemLibraries = libraries with { Assets = [libraries.Assets[1], libraries.Assets[0]] } },
+        ];
+        foreach (var malformed in invalid)
+        {
+            var manifest = source with { Targets = source.Targets.SetItem(index, malformed) };
+            Assert.Throws<InvalidOperationException>(() => Create().Parse(JsonSerializer.Serialize(manifest)));
+        }
+    }
+
     [Fact]
     public void ReadsGeneratedRuntimePackManifestShape()
     {
         var manifest = Create().Parse(
             JsonSerializer.Serialize(RuntimePackTestData.Manifest()));
 
-        Assert.Equal(6, manifest.SchemaVersion);
+        Assert.Equal(7, manifest.SchemaVersion);
         Assert.Equal("Compact", manifest.DefaultGarbageCollector);
-        Assert.Equal(6, manifest.TargetLookup.Count);
+        Assert.Equal(8, manifest.TargetLookup.Count);
         Assert.Equal("netwasm.runtime.v1", manifest.RuntimeAbi);
         Assert.Equal("6.0.7", manifest.EmscriptenVersion);
         Assert.Equal(65_536, manifest.WasmPageSize);
@@ -114,9 +169,14 @@ public sealed class RuntimePackManifestParserTests
         var inlineIntent = Assert.Single(manifest.InlineIntents);
         Assert.Equal("initialize", inlineIntent.Export);
         Assert.Equal(RuntimeFunctionInlinePreference.Aggressive, inlineIntent.Preference);
-        Assert.Equal(["wasm32", "wasm64", "wasm32", "wasm64", "wasm32", "wasm64"], manifest.Targets.Select(static target => target.Target));
-        Assert.Equal([4, 8, 4, 8, 4, 8], manifest.Targets.Select(static target => target.PointerSizeBytes));
-        Assert.Equal([91_968, 114_352, 91_968, 114_352, 91_968, 114_352], manifest.Targets.Select(static target => target.RuntimeFootprintBytes));
+        // Both targets for each of the four collectors.
+        Assert.Equal(["wasm32", "wasm64", "wasm32", "wasm64", "wasm32", "wasm64", "wasm32", "wasm64"],
+            manifest.Targets.Select(static target => target.Target));
+        Assert.Equal(["Compact", "Compact", "NetWasm", "NetWasm", "NetWasmGen", "NetWasmGen", "Bump", "Bump"],
+            manifest.Targets.Select(static target => target.GarbageCollector));
+        Assert.Equal([4, 8, 4, 8, 4, 8, 4, 8], manifest.Targets.Select(static target => target.PointerSizeBytes));
+        Assert.Equal([91_968, 114_352, 91_968, 114_352, 91_968, 114_352, 91_968, 114_352],
+            manifest.Targets.Select(static target => target.RuntimeFootprintBytes));
         foreach (var target in manifest.Targets)
         {
             var profile = Assert.IsType<RuntimeNativeValidationProfile>(target.NativeValidation);
@@ -175,6 +235,7 @@ public sealed class RuntimePackManifestParserTests
         RuntimePackTestData.Manifest() with { SchemaVersion = 1 },
         RuntimePackTestData.Manifest() with { SchemaVersion = 4 },
         RuntimePackTestData.Manifest() with { SchemaVersion = 5 },
+        RuntimePackTestData.Manifest() with { SchemaVersion = 6 },
         RuntimePackTestData.Manifest() with { WasmPageSize = 1 },
     ];
 
@@ -438,7 +499,8 @@ public sealed class RuntimePackManifestParserTests
 
     private static System.Collections.Immutable.ImmutableArray<RuntimePackTarget> ReplaceTarget(RuntimePackTarget target) =>
         [target, RuntimePackTestData.Target("wasm64"), RuntimePackTestData.Target("wasm32", "NetWasm"),
-            RuntimePackTestData.Target("wasm64", "NetWasm"), RuntimePackTestData.Target("wasm32", "Bump"),
+            RuntimePackTestData.Target("wasm64", "NetWasm"), RuntimePackTestData.Target("wasm32", "NetWasmGen"),
+            RuntimePackTestData.Target("wasm64", "NetWasmGen"), RuntimePackTestData.Target("wasm32", "Bump"),
             RuntimePackTestData.Target("wasm64", "Bump")];
 
     private static void Read(RuntimePackManifest manifest)

@@ -7,7 +7,8 @@ import { pathToFileURL } from "node:url";
 import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { parseStrictJson } from "./strict-json-reader.mjs";
 
-const factoryKeys = ["hashBytes", "importModule", "readFile", "realPath"];
+const factoryKeys = ["createTls", "hashBytes", "importModule", "readFile", "realPath"];
+const tlsModules = ["wasi:tls/client@0.3.0-draft", "wasi:tls/types@0.3.0-draft"];
 const fileRole = "node-network-provider-file";
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
@@ -53,8 +54,8 @@ const providers = Object.freeze([
 ]);
 
 // Loads the Node.js WASI implementations a deployment carries after verifying each of their files against the
-// deployment manifest, and returns them as the network modules NetWasm's WASI platform supplies. A deployment that
-// carries none gets no network.
+// deployment manifest, and returns them as the network modules NetWasm's WASI platform supplies, with NetWasm's own
+// wasi:tls (createTls) when the program imports it. A deployment that needs none gets no network.
 export function createLocalNodeNetworkLoader(options) {
   assertExactDataObject(options, factoryKeys, "local Node.js network loader options");
   for (const [name, value] of Object.entries(options)) {
@@ -79,7 +80,10 @@ export function createLocalNodeNetworkLoader(options) {
       }
       carried.push({ provider, entry: entries[0] });
     }
-    if (carried.length === 0) return null;
+    const tls = manifest.requiredImportModules.some(module => module.startsWith("wasi:tls/"))
+      ? readTlsModules(options.createTls())
+      : null;
+    if (carried.length === 0) return tls === null ? null : Object.freeze({ modules: tls });
 
     const root = dirname(manifestPath);
     const physicalRoot = await options.realPath(root);
@@ -98,8 +102,17 @@ export function createLocalNodeNetworkLoader(options) {
       }
       Object.assign(modules, supplied);
     }
+    if (tls !== null) Object.assign(modules, tls);
     return Object.freeze({ modules: Object.freeze(modules) });
   });
+}
+
+function readTlsModules(modules) {
+  if (modules === null || typeof modules !== "object" || !Object.isFrozen(modules)
+      || Object.keys(modules).sort().join() !== tlsModules.join()) {
+    throw new TypeError("Node.js wasi:tls must supply exactly its frozen client and types modules");
+  }
+  return modules;
 }
 
 // A file is used from where it lies, so it must lie inside the deployment and hash to the

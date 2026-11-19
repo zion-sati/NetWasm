@@ -165,8 +165,6 @@ public sealed class SynchronousJSExportEmitterTests
         OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing,
-        OptionalFunctionIndex.Missing,
-        OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing);
 
     private static byte[] Calls(byte[] body) => [.. body
@@ -176,7 +174,7 @@ public sealed class SynchronousJSExportEmitterTests
             item.index + 1 < body.Length)
         .Select(item => body[item.index + 1])];
 
-    private sealed class RecordingRuntimeInitializer : IRuntimeStateInitializer
+    private sealed class RecordingRuntimeInitializer : IEntryRuntimeInitializer
     {
         public bool Called { get; private set; }
 
@@ -201,7 +199,7 @@ public sealed class SynchronousJSExportEmitterTests
     }
 
     private sealed class RecordingByteArrayMarshaller :
-        IHostCallbackByteArrayArgumentMarshaller
+        IStagedValueArrayEmitter
     {
         public bool Called { get; private set; }
 
@@ -209,10 +207,9 @@ public sealed class SynchronousJSExportEmitterTests
             IWasmInstructionWriter code,
             CliTypeIdentity arrayType,
             int handleParameter,
+            int lengthLocal,
             int destination,
-            int temporaryI4,
             int objectTemporary,
-            InteropMarshallingTarget target,
             OptionalFunctionIndex throwFunction) => Called = true;
     }
 

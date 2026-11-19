@@ -6,7 +6,9 @@ using System;
 namespace NetWasm.Compiler.Core;
 
 /// <summary>Immutable host selection shared by compiler and Wasm composition.</summary>
-public sealed record CompilerParallelism(int WorkerCount)
+// ThreadsAvailable: whether the host can start threads. A browser host cannot, so a compile there runs on the
+// calling thread throughout.
+public sealed record CompilerParallelism(int WorkerCount, bool ThreadsAvailable = true)
 {
     // Root maps and body emission stop gaining past eight workers on fui-cs's page, while
     // each further worker still costs its own layout fork.
@@ -14,5 +16,5 @@ public sealed record CompilerParallelism(int WorkerCount)
 
     public static CompilerParallelism ForHost(
         bool isBrowser, int processorCount) =>
-        new(isBrowser ? 1 : Math.Min(MaximumWorkers, Math.Max(1, processorCount)));
+        new(isBrowser ? 1 : Math.Min(MaximumWorkers, Math.Max(1, processorCount)), ThreadsAvailable: !isBrowser);
 }

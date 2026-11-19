@@ -14,6 +14,7 @@
 [assembly: System.Runtime.CompilerServices.TypeForwardedTo(typeof(global::System.Net.ICredentialsByHost))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedTo(typeof(global::System.Net.IPAddress))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedTo(typeof(global::System.Net.IPEndPoint))]
+[assembly: System.Runtime.CompilerServices.TypeForwardedTo(typeof(global::System.Net.IPNetwork))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedTo(typeof(global::System.Net.IWebProxy))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedTo(typeof(global::System.Net.NetworkCredential))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedTo(typeof(global::System.Net.SocketAddress))]

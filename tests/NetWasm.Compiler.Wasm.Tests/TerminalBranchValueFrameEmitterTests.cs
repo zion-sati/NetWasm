@@ -102,6 +102,34 @@ public sealed class TerminalBranchValueFrameEmitterTests
         Assert.Single(fixture.Imports.Calls, RuntimeImportSymbol.RootFrameEnter);
     }
 
+    // A frame left before the tail: the framed arm leaves the root frame after its body, and the tail
+    // follows the if with the method's frameless context.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void LeavesTheRootFrameWhereTheArmEndsAndEmitsTheTailAfterTheIf(bool frameFirst)
+    {
+        var fixture = new Fixture(WasmTarget.Wasm32, frameFirst, defersRoots: true, valueFrame: false, unframedTail: true);
+        var bodies = new List<(StructuredSequence Sequence, MethodEmissionContext Context, int At)>();
+
+        fixture.Emit((sequence, context) => bodies.Add((sequence, context, fixture.Code.ToInstructions().Length)));
+
+        Assert.Equal(3, bodies.Count);
+        var framed = bodies[frameFirst ? 0 : 1];
+        var tail = bodies[2];
+        Assert.Same(fixture.Placement.Plan.UnframedTail, tail.Sequence);
+        Assert.Same(fixture.Context, tail.Context);
+        var instructions = fixture.Code.ToInstructions();
+        var leave = instructions.IndexOf(WasmInstruction.WithOperand(WasmOpcodes.Call,
+            WasmInstructionOperand.Unsigned((uint)RecordingImports.IndexOf(RuntimeImportSymbol.RootFrameLeave))));
+        Assert.Equal(framed.At + 1, leave);
+        Assert.Equal(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)framed.Context.RootFrame)), instructions[leave - 1]);
+        Assert.Equal(WasmInstruction.NoOperand(WasmOpcodes.End), instructions[tail.At - 1]);
+        Assert.Equal(frameFirst, leave < instructions.IndexOf(WasmInstruction.NoOperand(WasmOpcodes.Else)));
+        Assert.Single(fixture.Imports.Calls, RuntimeImportSymbol.RootFrameLeave);
+    }
+
     [Fact]
     public void AllocationEmissionFailureStopsBeforeTheBody()
     {
@@ -167,7 +195,8 @@ public sealed class TerminalBranchValueFrameEmitterTests
 
     private sealed class Fixture
     {
-        public Fixture(WasmTarget target, bool frameFirst, bool defersRoots = false, bool valueFrame = true)
+        public Fixture(WasmTarget target, bool frameFirst, bool defersRoots = false, bool valueFrame = true,
+            bool unframedTail = false)
         {
             var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
             Frames = new(Events);
@@ -191,6 +220,7 @@ public sealed class TerminalBranchValueFrameEmitterTests
                 new([new StructuredCode(new(new(2), StructuredBlockRole.Owner))]), frameFirst, [0])
             {
                 DefersRootFrame = defersRoots,
+                UnframedTail = unframedTail ? new([new StructuredCode(new(new(3), StructuredBlockRole.Owner))]) : null,
             },
                 valueFrame ? new(16, ImmutableDictionary<int, int>.Empty.Add(0, 0), [], [], [0]) : new(0, [], [], [], []))
             {

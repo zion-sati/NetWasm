@@ -122,7 +122,7 @@ public sealed class RangeBranchRewriterTests
         var rewritten = Rewriter().Rewrite(body);
 
         Assert.Equal(
-            ["ldarg 0", "brtrue 5", "ldc.i4 0", "stloc 0", "br 7", "ldc.i4 0", "stloc 0", "ldloc 0", "pop", "ldc.i4 7", "ret",
+            ["ldarg 0", "brtrue 5", "ldc.i4 0", "stloc 0", "br 7", "ldc.i4 0", "stloc 0", "ldc.i4 0", "pop", "ldc.i4 7", "ret",
              "nop", "ret"],
             Text(rewritten));
     }

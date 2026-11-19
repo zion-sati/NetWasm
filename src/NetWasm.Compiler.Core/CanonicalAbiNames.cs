@@ -112,8 +112,8 @@ public static class CanonicalAbiNames
     }
 
     // The core name of an interface from its world key: `namespace:package/name`
-    // with the version, if any, as its compatibility version (1 for 1.2.3, 0.2
-    // for 0.2.3), or the plain name of an interface the world declares inline.
+    // with the version, if any, as its compatibility version (1 for 1.2.3, 0.2 for 0.2.3, the version itself for
+    // 0.0.3 or a prerelease), or the plain name of an interface the world declares inline.
     private static string VersionedInterface(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
@@ -155,22 +155,31 @@ public static class CanonicalAbiNames
 
     private static string CompatibilityVersion(string version)
     {
-        var metadataSeparator = version.IndexOfAny(['-', '+']);
-        var core = metadataSeparator < 0 ? version : version[..metadataSeparator];
+        // Build metadata never takes part. A prerelease is compatible only with itself, as is 0.0.x; otherwise 1.2.3 is
+        // compatible within 1, and 0.2.3 within 0.2 (Wasmtime's alternate_lookup_key, as wasm-tools names core imports).
+        var buildSeparator = version.IndexOf('+');
+        var withoutBuild = buildSeparator < 0 ? version : version[..buildSeparator];
+        var prereleaseSeparator = withoutBuild.IndexOf('-');
+        var core = prereleaseSeparator < 0 ? withoutBuild : withoutBuild[..prereleaseSeparator];
         var parts = core.Split('.');
         if (!uint.TryParse(parts[0], out var major))
         {
             throw new ArgumentException("WIT interface package version is not semantic");
         }
-        if (major != 0)
-        {
-            return major.ToString(CultureInfo.InvariantCulture);
-        }
-        if (parts.Length < 2 || !uint.TryParse(parts[1], out var minor))
+        if (major == 0 && (parts.Length < 2 || !uint.TryParse(parts[1], out _)))
         {
             throw new ArgumentException(
                 "pre-1.0 WIT interface package version must include a minor version");
         }
-        return "0." + minor.ToString(CultureInfo.InvariantCulture);
+        if (prereleaseSeparator >= 0)
+        {
+            return withoutBuild;
+        }
+        if (major != 0)
+        {
+            return major.ToString(CultureInfo.InvariantCulture);
+        }
+        var minor = uint.Parse(parts[1], CultureInfo.InvariantCulture);
+        return minor != 0 ? "0." + minor.ToString(CultureInfo.InvariantCulture) : withoutBuild;
     }
 }

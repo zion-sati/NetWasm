@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
@@ -66,6 +67,7 @@ public sealed class SimdVectorIntrinsicEmitterTests
     [InlineData(RuntimeIntrinsic.SimdLoad)]
     [InlineData(RuntimeIntrinsic.SimdShuffle)]
     [InlineData(RuntimeIntrinsic.SimdConvert)]
+    [InlineData(RuntimeIntrinsic.SimdGetHalf)]
     public void AnUnsupportedElementTypeThrowsNotSupportedInEveryFamily(RuntimeIntrinsic intrinsic)
     {
         var vector = Vector("bool");
@@ -90,12 +92,65 @@ public sealed class SimdVectorIntrinsicEmitterTests
             RuntimeIntrinsic.SimdCreateBroadcast => new SimdVectorCreationIntrinsicEmitter(lanes),
             RuntimeIntrinsic.SimdLoad => new SimdVectorMemoryIntrinsicEmitter(lanes),
             RuntimeIntrinsic.SimdShuffle => new SimdVectorPermutationIntrinsicEmitter(lanes),
+            RuntimeIntrinsic.SimdGetHalf => new SimdVectorHalfIntrinsicEmitter(lanes),
             _ => new SimdVectorConversionIntrinsicEmitter(lanes),
         };
 
         emitter.Emit(request, GetCodeWriter(instruction));
 
         Assert.Equal([ManagedExceptionKind.NotSupported], exceptions.Kinds);
+    }
+
+    // A Vector64 is a v128 in its low 8 bytes, so a half is at most one shuffle: GetLower and ToVector128Unsafe are the
+    // value itself, GetUpper moves the upper bytes down, WithLower, WithUpper and Create join two values' halves, and
+    // ToVector128 joins the half to zeros.
+    [Theory]
+    [InlineData(RuntimeIntrinsic.SimdGetHalf, "GetLower", "")]
+    [InlineData(RuntimeIntrinsic.SimdGetHalf, "GetUpper", "get 0,get 0,shuffle 8 8,set 0")]
+    [InlineData(RuntimeIntrinsic.SimdWithHalf, "WithLower", "get 1,get 0,shuffle 0 24,set 0")]
+    [InlineData(RuntimeIntrinsic.SimdWithHalf, "WithUpper", "get 0,get 1,shuffle 0 16,set 0")]
+    [InlineData(RuntimeIntrinsic.SimdCreateFromHalves, "Create", "get 0,get 1,shuffle 0 16,set 0")]
+    [InlineData(RuntimeIntrinsic.SimdHalfToVector, "ToVector128", "get 0,zero,shuffle 0 16,set 0")]
+    [InlineData(RuntimeIntrinsic.SimdHalfToVector, "ToVector128Unsafe", "")]
+    public void AHalfIsAtMostOneShuffle(RuntimeIntrinsic intrinsic, string name, string expected)
+    {
+        var vector = Vector("i8");
+        var half = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(Assembly, "System.Runtime.Intrinsics", "Vector64`1", true),
+            [CliTypeIdentity.Primitive("i8", CliValueKind.I8)]);
+        Assert.Equal(CliValueKind.V128, half.StackKind);
+        CliTypeIdentity[] parameters = intrinsic switch
+        {
+            RuntimeIntrinsic.SimdGetHalf => [vector],
+            RuntimeIntrinsic.SimdWithHalf => [vector, half],
+            RuntimeIntrinsic.SimdCreateFromHalves => [half, half],
+            _ => [half],
+        };
+        var signature = MethodSignatureModel.Create(intrinsic == RuntimeIntrinsic.SimdGetHalf ? half : vector, parameters);
+        var instruction = CreateInstructionRequest(CilOperation.Call,
+            [.. parameters.Select(static type => type.StackKind)], maxStack: parameters.Length);
+        var definition = new MethodDefinitionModel(Key(0x06000203), TypeKey, name, true, signature, 1) { GenericArity = 1 };
+        var method = new MethodInstanceModel(definition,
+            CliTypeIdentity.Named(Assembly, "System.Runtime.Intrinsics", "Vector128", false), [], signature);
+        var request = new RuntimeIntrinsicEmissionRequest(
+            new CallEmissionRequest(instruction, method, 0, parameters.Length),
+            intrinsic, null, WasmTargetLayout.Wasm32, CreateFunctionIndexResolver());
+
+        new SimdVectorHalfIntrinsicEmitter(new SimdVectorLaneGuard(new NoExceptions())).Emit(request, GetCodeWriter(instruction));
+
+        var locals = new Dictionary<uint, int> { [(uint)request.Local(0, CliValueKind.V128)] = 0 };
+        if (parameters.Length > 1)
+        {
+            locals[(uint)request.Local(1, CliValueKind.V128)] = 1;
+        }
+        var described = ((RecordingInstructionWriter)GetCodeWriter(instruction)).ToInstructions().Select(item =>
+            item.Opcode == WasmOpcodes.LocalGet ? $"get {locals[item.Operand.UnsignedValue]}"
+            : item.Opcode == WasmOpcodes.LocalSet ? $"set {locals[item.Operand.UnsignedValue]}"
+            : item.Operand.Bytes is [(byte)WasmSimdOpcodes.V128Constant, .. var zeros] && zeros.All(static b => b == 0) ? "zero"
+            : item.Operand.Bytes is [(byte)WasmSimdOpcodes.I8x16Shuffle, .. var lanes]
+                ? $"shuffle {lanes[0]} {lanes[8]}"
+                : "other");
+        Assert.Equal(expected, string.Join(',', described));
     }
 
     // PackedSimd lowers only the overloads in its table.

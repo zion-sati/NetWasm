@@ -19,9 +19,11 @@ internal interface IStaticReferenceTypeAnalyzer
 }
 
 // Strategy: a forward analysis of the declared type of every stack value, from the local, argument,
-// field, method result, constructor or cast that produced it, closed over the body's generic
+// field, method result, constructor, new array or cast that produced it, closed over the body's generic
 // context. Where paths meet with different types the slot is unknown, so a sealed declared type is
-// the value's exact type when it is not null.
+// the value's exact type when it is not null. Every handler and filter of a reachable protected region
+// starts with nothing known, as the graph reaches it: a filter's handler, a finally that runs on leave
+// and the code that follows only them are analyzed like any other code.
 internal sealed class StaticReferenceTypeAnalyzer(
     ICalledMethodResolver calls,
     IFieldRepository fields) : IStaticReferenceTypeAnalyzer
@@ -35,14 +37,15 @@ internal sealed class StaticReferenceTypeAnalyzer(
         var pending = new Queue<int>();
         var results = ImmutableDictionary.CreateBuilder<int, ImmutableArray<CliTypeIdentity?>>();
         Merge(graph.Entry.Index, []);
+        foreach (var region in body.ExceptionRegions)
+        {
+            Enter(region.HandlerOffset);
+            if (region.FilterOffset is { } filter) Enter(filter);
+        }
         while (pending.TryDequeue(out var blockIndex))
         {
             var block = graph.GetBlock(blockIndex);
             var stack = entries[blockIndex].ToList();
-            foreach (var handler in graph.ExceptionalSuccessors[blockIndex])
-            {
-                Merge(handler, new CliTypeIdentity?[controlFlow.EntryStacks[handler].Length]);
-            }
             for (var index = 0; index < block.Instructions.Length; index++)
             {
                 var instruction = block.Instructions[index];
@@ -60,6 +63,15 @@ internal sealed class StaticReferenceTypeAnalyzer(
             }
         }
         return results.ToImmutable();
+
+        void Enter(int offset)
+        {
+            var handler = graph.GetBlockAtOffset(offset).Index;
+            if (graph.ReachableBlocks.Contains(handler))
+            {
+                Merge(handler, new CliTypeIdentity?[controlFlow.EntryStacks[handler].Length]);
+            }
+        }
 
         void Merge(int block, CliTypeIdentity?[] incoming)
         {
@@ -146,6 +158,8 @@ internal sealed class StaticReferenceTypeAnalyzer(
         { Operation: CilOperation.Call or CilOperation.CallVirtual } =>
             calls.Resolve(instruction)?.Signature.ReturnSignatureType,
         { Operation: CilOperation.NewObject } => calls.Resolve(instruction)?.DeclaringType,
+        { Operation: CilOperation.NewArray, Operand: CilOperand.TypeIdentity element } =>
+            CliTypeIdentity.SzArray(element.Value),
         { Operation: CilOperation.CastClass or CilOperation.IsInstance, Operand: CilOperand.TypeIdentity cast } =>
             cast.Value,
         _ => null,

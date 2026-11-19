@@ -40,7 +40,10 @@ internal sealed class RuntimeNativeModuleMaterializer(
     IRuntimeNativeModuleValidator validation,
     IRuntimeNativeValidationProfileValidator profiles,
     IRuntimeNativeArchiveFeatureValidator archiveFeatures,
-    ILinkerCommandFactory linkerCommands) : IRuntimeNativeModuleMaterializer
+    ILinkerCommandFactory linkerCommands,
+    IRuntimeExceptionHandlingTranslator exceptionHandling,
+    IRuntimeEnvImportRelocator envImportRelocator,
+    IRuntimeUndefinedSymbolReporter undefinedSymbols) : IRuntimeNativeModuleMaterializer
 {
     public RuntimeMaterialization Materialize(RuntimeNativeMaterializationRequest request)
     {
@@ -68,6 +71,22 @@ internal sealed class RuntimeNativeModuleMaterializer(
         }
         var started = Stopwatch.GetTimestamp();
         var consumer = request.Consumer;
+        var runtimeAllowedPath = Path.GetFullPath(Path.Combine(
+            consumer.AssetRoot,
+            request.Target.AllowedUndefinedSymbols.Path));
+        var envImports = consumer.EnvImports.IsDefaultOrEmpty
+            ? []
+            : RuntimeEnvImportRules.Validate(consumer.EnvImports, consumer.RawWasmOutput, importModules,
+                Encoding.UTF8.GetString(artifacts.Read(runtimeAllowedPath))
+                    .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                    .ToHashSet(StringComparer.Ordinal));
+        // NetWasm's stand-ins define Emscripten's GL functions weakly and would replace any the project's JavaScript
+        // supplies, so a raw output that declares one of them supplies them all; any other output links the stand-ins.
+        var scriptSuppliesEmscripten = consumer.RawWasmOutput && !envImports.IsEmpty &&
+            request.Target.EmscriptenArchives is { } emscripten &&
+            RuntimeArchiveSymbolTable.Parse(artifacts.Read(Path.GetFullPath(Path.Combine(
+                    consumer.AssetRoot, emscripten.StandIns.Path))))
+                .Overlaps(envImports.Select(import => import.Name));
         var callbackObject = ReadCallbackObject(
             callbackSupport,
             consumer.NativeCallbackObjectPath,
@@ -109,6 +128,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
             NativeCallbackAllowedUndefinedPath = identityCallbackAllowPath,
             NativeCallbackSupport = callbackSupport,
             PlainCoreModule = consumer.PlainCoreModule,
+            ScriptSuppliesEmscriptenFunctions = scriptSuppliesEmscripten,
         };
         var identityArguments = linkArguments.Build(identityLink);
         var identityOptimization = optimizationArguments.Build(new(
@@ -122,6 +142,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
             request.Target, plan, bindings, consumer.Optimization, identityArguments, identityOptimization,
             consumer.AssetRoot, consumer.OutputPath)
         {
+            EnvImports = envImports,
             NativeCallbackSupport = callbackSupport,
             NativeCallbackObjectPath = identityLink.NativeCallbackObjectPath,
             NativeCallbackAllowedUndefinedPath =
@@ -172,7 +193,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
         using var workspace = workspaces.Create(consumer.LogDirectory);
         var output = Path.Combine(workspace.DirectoryPath, "runtime.wasm");
         string? ownedCallbackPath = null;
-        string? ownedCallbackAllowPath = null;
+        string? ownedAllowPath = null;
         if (callbackSupport is not null)
         {
             ownedCallbackPath = Path.Combine(
@@ -181,18 +202,19 @@ internal sealed class RuntimeNativeModuleMaterializer(
             artifactWriter.Write(
                 ownedCallbackPath,
                 callbackObject!);
-            ownedCallbackAllowPath = Path.Combine(
+        }
+        // The runtime's own undefined functions, plus the callbacks' and the declared env functions.
+        if (callbackSupport is not null || !envImports.IsEmpty)
+        {
+            ownedAllowPath = Path.Combine(
                 workspace.DirectoryPath,
                 "combined.allow-undefined");
-            var runtimeAllowedPath = Path.GetFullPath(Path.Combine(
-                consumer.AssetRoot,
-                request.Target.AllowedUndefinedSymbols.Path));
             var allowed = CombineAllowedUndefinedSymbols(
                 artifacts.Read(runtimeAllowedPath),
-                callbackSupport.Callbacks.Select(
-                    callback => callback.RuntimeImportSymbol));
+                (callbackSupport?.Callbacks.Select(callback => callback.RuntimeImportSymbol) ?? [])
+                    .Concat(envImports.Select(import => import.Name)));
             artifactWriter.Write(
-                ownedCallbackAllowPath,
+                ownedAllowPath,
                 allowed);
         }
         var selectedArchives = bindings.Select(binding => binding.Provider)
@@ -205,6 +227,8 @@ internal sealed class RuntimeNativeModuleMaterializer(
         {
             Provider = binding.Provider with { Path = ownedByPath[binding.Provider.Path].SnapshotPath },
         }).ToImmutableArray();
+        var legacyExceptions = false;
+        var cxxExceptions = false;
         for (var index = 0; index < ownedArchives.Length; index++)
         {
             var provider = ownedArchives[index];
@@ -212,23 +236,43 @@ internal sealed class RuntimeNativeModuleMaterializer(
             commands.Invoke(linkerCommands.Create(consumer.WasmLdPath,
                 archiveArguments.Build(new(consumer.Target, provider.SnapshotPath, members)),
                 Path.Combine(workspace.LogDirectoryPath, $"native-archive-validation-{index}.log")));
-            archiveFeatures.Validate(new(provider.Provider.LibraryName, new(profile, consumer.Target, members,
+            var features = archiveFeatures.Validate(new(provider.Provider.LibraryName, new(profile, consumer.Target, members,
                 consumer.WasmToolsNodePath, consumer.WasmToolsCommandPath, consumer.WasmToolsModulePath,
                 Path.Combine(workspace.LogDirectoryPath, $"native-archive-features-{index}.log"))
             {
                 NativeWasmToolsPath = consumer.NativeWasmToolsPath,
             }));
+            legacyExceptions |= features.UsesLegacyExceptions;
+            cxxExceptions |= features.UsesCxxExceptions;
+        }
+        // A link that leaves functions undefined names them; the declared env functions move to the project's modules.
+        void Link(RuntimeLinkRequest linkRequest, string log)
+        {
+            try
+            {
+                commands.Invoke(linkerCommands.Create(consumer.WasmLdPath, linkArguments.Build(linkRequest), log));
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw undefinedSymbols.Explain(Encoding.UTF8.GetString(artifacts.Read(log)), consumer.RawWasmOutput,
+                    exception) ?? exception;
+            }
+            if (!envImports.IsEmpty)
+                artifactWriter.Write(output, envImportRelocator.Relocate(artifacts.Read(output), envImports));
         }
         var link = identityLink with
         {
+            SystemLibraryPaths = RuntimeExceptionSystemLibraries.Select(
+                request.SystemLibraryPaths, request.ExceptionSystemLibraryPaths, cxxExceptions),
             OutputPath = output,
             NativeBindings = ownedBindings,
             NativeCallbackObjectPath = ownedCallbackPath,
-            NativeCallbackAllowedUndefinedPath = ownedCallbackAllowPath,
+            NativeCallbackAllowedUndefinedPath = callbackSupport is null ? null : ownedAllowPath,
+            AllowedUndefinedPath = callbackSupport is null ? ownedAllowPath : null,
         };
         var generated = ImmutableArray.Create(output + ".lto.o");
         var probeLog = Path.Combine(workspace.LogDirectoryPath, "native-probe-link.log");
-        commands.Invoke(linkerCommands.Create(consumer.WasmLdPath, linkArguments.Build(link), probeLog));
+        Link(link, probeLog);
         var probe = modules.Read(artifacts.Read(output));
         imports.Validate(profile, probe, callbackSupport, importModules);
         bindingValidator.Validate(new RuntimeNativeBindingValidationRequest(ownedBindings, generated,
@@ -236,12 +280,15 @@ internal sealed class RuntimeNativeModuleMaterializer(
         var finalLayout = linkedLayouts.Calculate(plan, probe.MemoryLayout);
         link = link with { Layout = link.Layout with { InitialMemorySizeBytes = finalLayout.InitialMemorySizeBytes } };
         var finalLog = Path.Combine(workspace.LogDirectoryPath, "native-final-link.log");
-        commands.Invoke(linkerCommands.Create(consumer.WasmLdPath, linkArguments.Build(link), finalLog));
+        Link(link, finalLog);
         var finalTrace = traces.Read(Encoding.UTF8.GetString(artifacts.Read(finalLog)));
         var linked = modules.Read(artifacts.Read(output));
         imports.Validate(profile, linked, callbackSupport, importModules);
         layoutValidator.Validate(plan, linked.MemoryLayout, finalLayout);
         bindingValidator.Validate(new RuntimeNativeBindingValidationRequest(ownedBindings, generated, finalTrace, linked));
+        if (legacyExceptions)
+            exceptionHandling.Translate(new(consumer.WasmOptPath, output, profile.Features,
+                Path.Combine(workspace.LogDirectoryPath, "native-exnref.log")));
         if (consumer.Optimization != RuntimeWasmOptimization.None)
             commands.Invoke(new(consumer.WasmOptPath,
                 optimizationArguments.Build(new(request.Target, output, consumer.Optimization)

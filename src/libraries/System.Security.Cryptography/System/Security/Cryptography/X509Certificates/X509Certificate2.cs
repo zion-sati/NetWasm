@@ -1,11 +1,13 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime commit 811225a482702af7ecc35d817966bc70b88a3a23.
-// NetWasm adaptation: The ML-KEM, ML-DSA, SLH-DSA and Composite ML-DSA members,
-// CreateFromPem/CreateFromPemFile/CreateFromEncryptedPem/CreateFromEncryptedPemFile with their
-// key-extraction helpers (they load through X509CertificateLoader, which is not ported) and
-// MatchesHostname are not ported. CreateCustomExtensionIfAny maps only the extension types NetWasm
-// declares: Basic Constraints, Key Usage, Enhanced Key Usage and Subject Key Identifier.
+// NetWasm adaptation: The ML-KEM, ML-DSA, SLH-DSA and Composite ML-DSA members, and
+// MatchesHostname, are not ported. CreateFromPem/CreateFromPemFile/CreateFromEncryptedPem/
+// CreateFromEncryptedPemFile and their key-extraction helpers are upstream's (dotnet/runtime
+// deae2e32), loading the certificate through the constructor since X509CertificateLoader is not
+// ported, and without the post-quantum key types; a certificate with one fails as an unknown key
+// algorithm. CreateCustomExtensionIfAny maps only the extension types NetWasm declares: Basic
+// Constraints, Key Usage, Enhanced Key Usage and Subject Key Identifier.
 
 using System.ComponentModel;
 using System.Diagnostics;
@@ -24,6 +26,9 @@ namespace System.Security.Cryptography.X509Certificates
 {
     public class X509Certificate2 : X509Certificate
     {
+        private static readonly string[] s_RsaPublicKeyPrivateKeyLabels = [PemLabels.RsaPrivateKey, PemLabels.Pkcs8PrivateKey];
+        private static readonly string[] s_DsaPublicKeyPrivateKeyLabels = [PemLabels.Pkcs8PrivateKey];
+
         private Oid? _lazySignatureAlgorithm;
         private int _lazyVersion;
         private X500DistinguishedName? _lazySubjectName;
@@ -869,5 +874,672 @@ namespace System.Security.Cryptography.X509Certificates
             return true;
         }
 
+
+        /// <summary>
+        /// Creates a new X509 certificate from the file contents of an RFC 7468 PEM-encoded
+        /// certificate and private key.
+        /// </summary>
+        /// <param name="certPemFilePath">The path for the PEM-encoded X509 certificate.</param>
+        /// <param name="keyPemFilePath">
+        /// If specified, the path for the PEM-encoded private key.
+        /// If unspecified, the <paramref name="certPemFilePath" /> file will be used to load
+        /// the private key.
+        /// </param>
+        /// <returns>A new certificate with the private key.</returns>
+        /// <exception cref="CryptographicException">
+        /// <para>
+        ///   The contents of the file path in <paramref name="certPemFilePath" /> do not contain
+        ///   a PEM-encoded certificate, or it is malformed.
+        /// </para>
+        /// <para>-or-</para>
+        /// <para>
+        ///   The contents of the file path in <paramref name="keyPemFilePath" /> do not contain a
+        ///   PEM-encoded private key, or it is malformed.
+        /// </para>
+        /// <para>-or-</para>
+        /// <para>
+        ///   The contents of the file path in <paramref name="keyPemFilePath" /> contains
+        ///   a key that does not match the public key in the certificate.
+        /// </para>
+        /// <para>-or-</para>
+        /// <para>The certificate uses an unknown public key algorithm.</para>
+        /// </exception>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="certPemFilePath" /> is <see langword="null" />.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// See <see cref="System.IO.File.ReadAllText(string)" /> for additional documentation about
+        /// exceptions that can be thrown.
+        /// </para>
+        /// <para>
+        ///   The SubjectPublicKeyInfo from the certificate determines what PEM labels are accepted for the private key.
+        ///   For RSA certificates, accepted private key PEM labels are "RSA PRIVATE KEY" and "PRIVATE KEY".
+        ///   For ECDSA certificates, accepted private key PEM labels are "EC PRIVATE KEY" and "PRIVATE KEY".
+        ///   For DSA certificates, the accepted private key PEM label is "PRIVATE KEY".
+        /// </para>
+        /// <para>PEM-encoded items that have a different label are ignored.</para>
+        /// <para>
+        ///   Combined PEM-encoded certificates and keys do not require a specific order. For the certificate, the
+        ///   the first certificate with a CERTIFICATE label is loaded. For the private key, the first private
+        ///   key with an acceptable label is loaded. More advanced scenarios for loading certificates and
+        ///   private keys can leverage <see cref="System.Security.Cryptography.PemEncoding" /> to enumerate
+        ///   PEM-encoded values and apply any custom loading behavior.
+        /// </para>
+        /// <para>
+        /// For password protected PEM-encoded keys, use <see cref="CreateFromEncryptedPemFile" /> to specify a password.
+        /// </para>
+        /// </remarks>
+        [UnsupportedOSPlatform("browser")]
+        public static X509Certificate2 CreateFromPemFile(string certPemFilePath, string? keyPemFilePath = default)
+        {
+            ArgumentNullException.ThrowIfNull(certPemFilePath);
+
+            ReadOnlySpan<char> certContents = File.ReadAllText(certPemFilePath);
+            ReadOnlySpan<char> keyContents = keyPemFilePath is null ? certContents : File.ReadAllText(keyPemFilePath);
+
+            return CreateFromPem(certContents, keyContents);
+        }
+
+        /// <summary>
+        /// Creates a new X509 certificate from the file contents of an RFC 7468 PEM-encoded
+        /// certificate and password protected private key.
+        /// </summary>
+        /// <param name="certPemFilePath">The path for the PEM-encoded X509 certificate.</param>
+        /// <param name="keyPemFilePath">
+        /// If specified, the path for the password protected PEM-encoded private key.
+        /// If unspecified, the <paramref name="certPemFilePath" /> file will be used to load
+        /// the private key.
+        /// </param>
+        /// <param name="password">The password for the encrypted PEM.</param>
+        /// <returns>A new certificate with the private key.</returns>
+        /// <exception cref="CryptographicException">
+        /// <para>
+        ///   The contents of the file path in <paramref name="certPemFilePath" /> do not contain
+        ///   a PEM-encoded certificate, or it is malformed.
+        /// </para>
+        /// <para>-or-</para>
+        /// <para>
+        ///   The contents of the file path in <paramref name="keyPemFilePath" /> do not contain a
+        ///   password protected PEM-encoded private key, or it is malformed.
+        /// </para>
+        /// <para>-or-</para>
+        /// <para>
+        ///   The contents of the file path in <paramref name="keyPemFilePath" /> contains
+        ///   a key that does not match the public key in the certificate.
+        /// </para>
+        /// <para>-or-</para>
+        /// <para>The certificate uses an unknown public key algorithm.</para>
+        /// <para>-or-</para>
+        /// <para>The password specified for the private key is incorrect.</para>
+        /// </exception>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="certPemFilePath" /> is <see langword="null" />.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// See <see cref="System.IO.File.ReadAllText(string)" /> for additional documentation about
+        /// exceptions that can be thrown.
+        /// </para>
+        /// <para>
+        /// Password protected PEM-encoded keys are always expected to have the PEM label "ENCRYPTED PRIVATE KEY".
+        /// </para>
+        /// <para>PEM-encoded items that have a different label are ignored.</para>
+        /// <para>
+        ///   Combined PEM-encoded certificates and keys do not require a specific order. For the certificate, the
+        ///   the first certificate with a CERTIFICATE label is loaded. For the private key, the first private
+        ///   key with the label "ENCRYPTED PRIVATE KEY" is loaded. More advanced scenarios for loading certificates and
+        ///   private keys can leverage <see cref="System.Security.Cryptography.PemEncoding" /> to enumerate
+        ///   PEM-encoded values and apply any custom loading behavior.
+        /// </para>
+        /// <para>
+        /// For PEM-encoded keys without a password, use <see cref="CreateFromPemFile" />.
+        /// </para>
+        /// </remarks>
+        [UnsupportedOSPlatform("browser")]
+        public static X509Certificate2 CreateFromEncryptedPemFile(string certPemFilePath, ReadOnlySpan<char> password, string? keyPemFilePath = default)
+        {
+            ArgumentNullException.ThrowIfNull(certPemFilePath);
+
+            ReadOnlySpan<char> certContents = File.ReadAllText(certPemFilePath);
+            ReadOnlySpan<char> keyContents = keyPemFilePath is null ? certContents : File.ReadAllText(keyPemFilePath);
+
+            return CreateFromEncryptedPem(certContents, keyContents, password);
+        }
+
+        /// <summary>
+        /// Creates a new X509 certificate from the contents of an RFC 7468 PEM-encoded certificate and private key.
+        /// </summary>
+        /// <param name="certPem">The text of the PEM-encoded X509 certificate.</param>
+        /// <param name="keyPem">The text of the PEM-encoded private key.</param>
+        /// <returns>A new certificate with the private key.</returns>
+        /// <exception cref="CryptographicException">
+        /// <para>The contents of <paramref name="certPem" /> do not contain a PEM-encoded certificate, or it is malformed.</para>
+        /// <para>-or-</para>
+        /// <para>The contents of <paramref name="keyPem" /> do not contain a PEM-encoded private key, or it is malformed.</para>
+        /// <para>-or-</para>
+        /// <para>The contents of <paramref name="keyPem" /> contains a key that does not match the public key in the certificate.</para>
+        /// <para>-or-</para>
+        /// <para>The certificate uses an unknown public key algorithm.</para>
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        ///   The SubjectPublicKeyInfo from the certificate determines what PEM labels are accepted for the private key.
+        ///   For RSA certificates, accepted private key PEM labels are "RSA PRIVATE KEY" and "PRIVATE KEY".
+        ///   For ECDSA and ECDH certificates, accepted private key PEM labels are "EC PRIVATE KEY" and "PRIVATE KEY".
+        ///   For DSA certificates, the accepted private key PEM label is "PRIVATE KEY".
+        /// </para>
+        /// <para>PEM-encoded items that have a different label are ignored.</para>
+        /// <para>
+        ///   If the PEM-encoded certificate and private key are in the same text, use the same
+        ///   string for both <paramref name="certPem" /> and <paramref name="keyPem" />, such as:
+        ///   <code>
+        ///     CreateFromPem(combinedCertAndKey, combinedCertAndKey);
+        ///   </code>
+        ///   Combined PEM-encoded certificates and keys do not require a specific order. For the certificate, the
+        ///   the first certificate with a CERTIFICATE label is loaded. For the private key, the first private
+        ///   key with an acceptable label is loaded. More advanced scenarios for loading certificates and
+        ///   private keys can leverage <see cref="System.Security.Cryptography.PemEncoding" /> to enumerate
+        ///   PEM-encoded values and apply any custom loading behavior.
+        /// </para>
+        /// <para>
+        /// For password protected PEM-encoded keys, use <see cref="CreateFromEncryptedPem" /> to specify a password.
+        /// </para>
+        /// </remarks>
+        [UnsupportedOSPlatform("browser")]
+        public static X509Certificate2 CreateFromPem(ReadOnlySpan<char> certPem, ReadOnlySpan<char> keyPem)
+        {
+            using (X509Certificate2 certificate = CreateFromPem(certPem))
+            {
+                string keyAlgorithm = certificate.GetKeyAlgorithm();
+
+                return keyAlgorithm switch
+                {
+                    Oids.Rsa => ExtractKeyFromPem<RSA>(
+                        keyPem,
+                        s_RsaPublicKeyPrivateKeyLabels,
+                        static keyPem => CreateAndImport(keyPem, RSA.Create),
+                        certificate.CopyWithPrivateKey),
+                    Oids.Dsa when Helpers.IsDSASupported => ExtractKeyFromPem<DSA>(
+                        keyPem,
+                        s_DsaPublicKeyPrivateKeyLabels,
+                        static keyPem => CreateAndImport(keyPem, DSA.Create),
+                        certificate.CopyWithPrivateKey),
+                    Oids.EcPublicKey => ExtractKeyFromECPem(certificate, keyPem),
+                    _ => throw new CryptographicException(SR.Format(SR.Cryptography_UnknownKeyAlgorithm, keyAlgorithm)),
+                };
+            }
+        }
+
+        /// <summary>
+        /// Creates a new X509 certificate from the contents of an RFC 7468 PEM-encoded
+        /// certificate and password protected private key.
+        /// </summary>
+        /// <param name="certPem">The text of the PEM-encoded X509 certificate.</param>
+        /// <param name="keyPem">The text of the password protected PEM-encoded private key.</param>
+        /// <param name="password">The password for the encrypted PEM.</param>
+        /// <returns>A new certificate with the private key.</returns>
+        /// <exception cref="CryptographicException">
+        /// <para>The contents of <paramref name="certPem" /> do not contain a PEM-encoded certificate, or it is malformed.</para>
+        /// <para>-or-</para>
+        /// <para>
+        ///   The contents of <paramref name="keyPem" /> do not contain a password protected PEM-encoded private key,
+        ///   or it is malformed.
+        /// </para>
+        /// <para>-or-</para>
+        /// <para>The contents of <paramref name="keyPem" /> contains a key that does not match the public key in the certificate.</para>
+        /// <para>-or-</para>
+        /// <para>The certificate uses an unknown public key algorithm.</para>
+        /// <para>-or-</para>
+        /// <para>The password specified for the private key is incorrect.</para>
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// Password protected PEM-encoded keys are always expected to have the PEM label "ENCRYPTED PRIVATE KEY".
+        /// </para>
+        /// <para>PEM-encoded items that have a different label are ignored.</para>
+        /// <para>
+        ///   If the PEM-encoded certificate and private key are in the same text, use the same
+        ///   string for both <paramref name="certPem" /> and <paramref name="keyPem" />, such as:
+        ///   <code>
+        ///     CreateFromEncryptedPem(combinedCertAndKey, combinedCertAndKey, theKeyPassword);
+        ///   </code>
+        ///   Combined PEM-encoded certificates and keys do not require a specific order. For the certificate, the
+        ///   the first certificate with a CERTIFICATE label is loaded. For the private key, the first private
+        ///   key with the label "ENCRYPTED PRIVATE KEY" is loaded. More advanced scenarios for loading certificates and
+        ///   private keys can leverage <see cref="System.Security.Cryptography.PemEncoding" /> to enumerate
+        ///   PEM-encoded values and apply any custom loading behavior.
+        /// </para>
+        /// <para>
+        /// For PEM-encoded keys without a password, use <see cref="CreateFromPem(ReadOnlySpan{char}, ReadOnlySpan{char})" />.
+        /// </para>
+        /// </remarks>
+        [UnsupportedOSPlatform("browser")]
+        public static X509Certificate2 CreateFromEncryptedPem(ReadOnlySpan<char> certPem, ReadOnlySpan<char> keyPem, ReadOnlySpan<char> password)
+        {
+            using (X509Certificate2 certificate = CreateFromPem(certPem))
+            {
+                string keyAlgorithm = certificate.GetKeyAlgorithm();
+
+                return keyAlgorithm switch
+                {
+                    Oids.Rsa =>
+                        ExtractKeyFromEncryptedPem<RSA>(
+                            keyPem,
+                            password,
+                            static (keyPem, password) => CreateAndImportEncrypted(keyPem, password, RSA.Create),
+                            certificate.CopyWithPrivateKey),
+                    Oids.Dsa when Helpers.IsDSASupported =>
+                        ExtractKeyFromEncryptedPem<DSA>(
+                            keyPem,
+                            password,
+                            static (keyPem, password) => CreateAndImportEncrypted(keyPem, password, DSA.Create),
+                            certificate.CopyWithPrivateKey),
+                    Oids.EcPublicKey => ExtractKeyFromEncryptedECPem(certificate, keyPem, password),
+                    _ => throw new CryptographicException(SR.Format(SR.Cryptography_UnknownKeyAlgorithm, keyAlgorithm)),
+                };
+            }
+        }
+
+        private static bool IsECDsa(X509Certificate2 certificate)
+        {
+            using (ECDsa? ecdsa = certificate.GetECDsaPublicKey())
+            {
+                return ecdsa is not null;
+            }
+        }
+
+        private static bool IsECDiffieHellman(X509Certificate2 certificate)
+        {
+            using (ECDiffieHellman? ecdh = certificate.GetECDiffieHellmanPublicKey())
+            {
+                return ecdh is not null;
+            }
+        }
+
+        /// <summary>
+        /// Creates a new X509 certificate from the contents of an RFC 7468 PEM-encoded
+        /// certificate.
+        /// </summary>
+        /// <param name="certPem">The text of the PEM-encoded X509 certificate.</param>
+        /// <returns>A new X509 certificate.</returns>
+        /// <exception cref="CryptographicException">
+        /// The contents of <paramref name="certPem" /> do not contain a PEM-encoded certificate, or it is malformed.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// This loads the first well-formed PEM found with a CERTIFICATE label.
+        /// </para>
+        /// <para>
+        /// For PEM-encoded certificates with a private key, use
+        /// <see cref="CreateFromPem(ReadOnlySpan{char}, ReadOnlySpan{char})" />.
+        /// </para>
+        /// <para>
+        /// For PEM-encoded certificates in a file, use <see cref="X509Certificate2(string)" />.
+        /// </para>
+        /// </remarks>
+        [UnsupportedOSPlatform("browser")]
+        public static X509Certificate2 CreateFromPem(ReadOnlySpan<char> certPem)
+        {
+            foreach ((ReadOnlySpan<char> contents, PemFields fields) in PemEnumerator.Utf16(certPem))
+            {
+                ReadOnlySpan<char> label = contents[fields.Label];
+
+                if (label.SequenceEqual(PemLabels.X509Certificate))
+                {
+                    byte[] certBytes = CryptoPool.Rent(fields.DecodedDataLength);
+
+                    if (!Convert.TryFromBase64Chars(contents[fields.Base64Data], certBytes, out int bytesWritten)
+                        || bytesWritten != fields.DecodedDataLength)
+                    {
+                        Debug.Fail("The contents should have already been validated by the PEM reader.");
+                        throw new CryptographicException(SR.Cryptography_X509_NoPemCertificate);
+                    }
+
+                    ReadOnlyMemory<byte> certData = new ReadOnlyMemory<byte>(certBytes, 0, bytesWritten);
+
+                    try
+                    {
+                        // Check that the contents are actually an X509 DER encoded
+                        // certificate, not something else that the constructor will
+                        // will otherwise be able to figure out.
+                        CertificateAsn.Decode(certData, AsnEncodingRules.DER);
+                    }
+                    catch (CryptographicException)
+                    {
+                        throw new CryptographicException(SR.Cryptography_X509_NoPemCertificate);
+                    }
+
+                    // NetWasm: X509CertificateLoader is not ported; the constructor loads the one DER certificate.
+#pragma warning disable SYSLIB0057
+                    X509Certificate2 ret = new X509Certificate2(certData.Span);
+#pragma warning restore SYSLIB0057
+                    // Certs are public data, no need to clear.
+                    CryptoPool.Return(certBytes, clearSize: 0);
+                    return ret;
+                }
+            }
+
+            throw new CryptographicException(SR.Cryptography_X509_NoPemCertificate);
+        }
+
+        private static TAlg CreateAndImport<TAlg>(ReadOnlySpan<char> keyPem, Func<TAlg> factory) where TAlg : AsymmetricAlgorithm
+        {
+            TAlg alg = factory();
+            alg.ImportFromPem(keyPem);
+            return alg;
+        }
+
+        private static TAlg CreateAndImportEncrypted<TAlg>(
+            ReadOnlySpan<char> keyPem,
+            ReadOnlySpan<char> password,
+            Func<TAlg> factory) where TAlg : AsymmetricAlgorithm
+        {
+            TAlg alg = factory();
+            alg.ImportFromEncryptedPem(keyPem, password);
+            return alg;
+        }
+
+        private static X509Certificate2 ExtractKeyFromPem<TAlg>(
+            ReadOnlySpan<char> keyPem,
+            ReadOnlySpan<string> labels,
+            Func<ReadOnlySpan<char>, TAlg> factory,
+            Func<TAlg, X509Certificate2> import) where TAlg : IDisposable
+        {
+            foreach ((ReadOnlySpan<char> contents, PemFields fields) in PemEnumerator.Utf16(keyPem))
+            {
+                ReadOnlySpan<char> label = contents[fields.Label];
+
+                foreach (string eligibleLabel in labels)
+                {
+                    if (label.SequenceEqual(eligibleLabel))
+                    {
+                        return ExtractKeyFromPem(contents[fields.Location], factory, import);
+                    }
+                }
+            }
+
+            throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey);
+        }
+
+        private static X509Certificate2 ExtractKeyFromPem<TAlg>(
+            ReadOnlySpan<char> keyPem,
+            Func<ReadOnlySpan<char>, TAlg> factory,
+            Func<TAlg, X509Certificate2> import) where TAlg : IDisposable
+        {
+            using (TAlg key = factory(keyPem))
+            {
+                try
+                {
+                    return import(key);
+                }
+                catch (ArgumentException ae)
+                {
+                    throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey, ae);
+                }
+            }
+        }
+
+        private static X509Certificate2 ExtractKeyFromEncryptedPem<TAlg>(
+            ReadOnlySpan<char> keyPem,
+            ReadOnlySpan<char> password,
+            Func<ReadOnlySpan<char>, ReadOnlySpan<char>, TAlg> factory,
+            Func<TAlg, X509Certificate2> import) where TAlg : IDisposable
+        {
+            foreach ((ReadOnlySpan<char> contents, PemFields fields) in PemEnumerator.Utf16(keyPem))
+            {
+                ReadOnlySpan<char> label = contents[fields.Label];
+
+                if (label.SequenceEqual(PemLabels.EncryptedPkcs8PrivateKey))
+                {
+                    using (TAlg key = factory(contents[fields.Location], password))
+                    {
+                        try
+                        {
+                            return import(key);
+                        }
+                        catch (ArgumentException ae)
+                        {
+                            throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey, ae);
+                        }
+                    }
+                }
+            }
+
+            throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey);
+        }
+
+        [UnsupportedOSPlatform("browser")]
+        private static X509Certificate2 ExtractKeyFromEncryptedECPem(
+            X509Certificate2 certificate,
+            ReadOnlySpan<char> keyPem,
+            ReadOnlySpan<char> password)
+        {
+            Debug.Assert(certificate.GetKeyAlgorithm() == Oids.EcPublicKey);
+
+            foreach ((ReadOnlySpan<char> contents, PemFields fields) in PemEnumerator.Utf16(keyPem))
+            {
+                ReadOnlySpan<char> label = contents[fields.Label];
+
+                if (!label.SequenceEqual(PemLabels.EncryptedPkcs8PrivateKey))
+                {
+                    continue;
+                }
+
+                byte[] base64Buffer = CryptoPool.Rent(fields.DecodedDataLength);
+                int base64ClearSize = CryptoPool.ClearAll;
+                ArraySegment<byte>? decryptedPkcs8 = null;
+
+                try
+                {
+                    bool result = Convert.TryFromBase64Chars(contents[fields.Base64Data], base64Buffer, out int base64Written);
+
+                    if (!result || base64Written != fields.DecodedDataLength)
+                    {
+                        Debug.Fail("Preallocated buffer and validated data decoding failed.");
+                        break;
+                    }
+
+                    base64ClearSize = base64Written;
+                    Debug.Assert(!decryptedPkcs8.HasValue);
+                    decryptedPkcs8 = KeyFormatHelper.DecryptPkcs8(password, base64Buffer.AsSpan(0, base64Written), out int bytesRead);
+
+                    if (bytesRead != base64Written)
+                    {
+                        break;
+                    }
+
+                    X509Certificate2? loaded = ExtractKeyFromECPrivateKeyInfo(certificate, decryptedPkcs8.Value);
+
+                    if (loaded is null)
+                    {
+                        break;
+                    }
+
+                    return loaded;
+                }
+                catch (CryptographicException ce)
+                {
+                    throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey, ce);
+                }
+                finally
+                {
+                    CryptoPool.Return(base64Buffer, base64ClearSize);
+
+                    if (decryptedPkcs8.HasValue)
+                    {
+                        CryptoPool.Return(decryptedPkcs8.Value);
+                    }
+                }
+            }
+
+            throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey);
+        }
+
+        [UnsupportedOSPlatform("browser")]
+        private static X509Certificate2 ExtractKeyFromECPem(X509Certificate2 certificate, ReadOnlySpan<char> keyPem)
+        {
+            Debug.Assert(certificate.GetKeyAlgorithm() == Oids.EcPublicKey);
+
+            foreach ((ReadOnlySpan<char> contents, PemFields fields) in PemEnumerator.Utf16(keyPem))
+            {
+                ReadOnlySpan<char> label = contents[fields.Label];
+
+                if (label.SequenceEqual(PemLabels.EcPrivateKey))
+                {
+                    // EC PRIVATE KEYs do not have a key usage, so usage is determined by the certificate.
+
+                    // If we can load it is EC-DH, we should prefer that over EC-DSA. ECC keys that are "both" prefer
+                    // to be imported as EC-DH. Importing it as EC-DSA would restrict it to EC-DSA, even if the key
+                    // and certificate are valid for EC-DH. Other platforms don't have such restrictions.
+                    if (IsECDiffieHellman(certificate))
+                    {
+                        return ExtractKeyFromPem(
+                            keyPem,
+                            static keyPem => CreateAndImport(keyPem, ECDiffieHellman.Create),
+                            certificate.CopyWithPrivateKey);
+                    }
+
+                    if (IsECDsa(certificate))
+                    {
+                        return ExtractKeyFromPem(
+                            keyPem,
+                            static keyPem => CreateAndImport(keyPem, ECDsa.Create),
+                            certificate.CopyWithPrivateKey);
+                    }
+
+                    // If we got here, then the key is neither EC-DH or EC-DSA eligible, but we had a matching PEM
+                    // label. Break out and throw.
+                    break;
+                }
+
+                if (!label.SequenceEqual(PemLabels.Pkcs8PrivateKey))
+                {
+                    continue;
+                }
+
+                byte[] base64Buffer = CryptoPool.Rent(fields.DecodedDataLength);
+                int clearSize = CryptoPool.ClearAll;
+
+                try
+                {
+                    bool result = Convert.TryFromBase64Chars(contents[fields.Base64Data], base64Buffer, out int base64Written);
+
+                    if (!result || base64Written != fields.DecodedDataLength)
+                    {
+                        Debug.Fail("Preallocated buffer and validated data decoding failed.");
+                        break;
+                    }
+
+                    clearSize = base64Written;
+                    X509Certificate2? loaded = ExtractKeyFromECPrivateKeyInfo(certificate, base64Buffer.AsMemory(0, base64Written));
+
+                    if (loaded is null)
+                    {
+                        break;
+                    }
+
+                    return loaded;
+                }
+                catch (CryptographicException ce)
+                {
+                    throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey, ce);
+                }
+                finally
+                {
+                    CryptoPool.Return(base64Buffer, clearSize);
+                }
+            }
+
+            throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey);
+        }
+
+        [UnsupportedOSPlatform("browser")]
+        private static X509Certificate2? ExtractKeyFromECPrivateKeyInfo(
+            X509Certificate2 certificate,
+            ReadOnlyMemory<byte> privateKeyInfo)
+        {
+            // We are not going to perform any validation on the PrivateKeyInfo here. We just need a hint
+            // what algorithm to use. The actual algorithm will do whatever validation on the key as needed.
+            PrivateKeyInfoAsn privateKeyInfoAsn = PrivateKeyInfoAsn.Decode(privateKeyInfo, AsnEncodingRules.BER);
+
+            const X509KeyUsageFlags EcdsaKeyUsageFlags =
+                X509KeyUsageFlags.DigitalSignature |
+                X509KeyUsageFlags.KeyCertSign |
+                X509KeyUsageFlags.CrlSign;
+
+            X509KeyUsageFlags? usages = GetKeyUsageFlags(in privateKeyInfoAsn);
+
+            // If any of the following is true we should load it as EC-DH
+            // * There is no keyUsage extension. Loading it as EC-DH will allow loading it as EC-DSA, too.
+            // * It has any keyUsage that is not a "signing" usage. That at minimum means loading it as EC-DH.
+            //   it may still yet have a keyUsage that allows signing as well, in which case it will work for EC-DSA
+            //   too.
+            // The certificate must also have a key usage that permits EC-DH, either with "no" usage (in which case
+            // it will work for EC-DSA, too) or as EC-DH explicitly.
+            if ((usages is null || (usages & ~EcdsaKeyUsageFlags) != 0) && IsECDiffieHellman(certificate))
+            {
+                using (ECDiffieHellman ecdh = ECDiffieHellman.Create())
+                {
+                    ecdh.ImportPkcs8PrivateKey(privateKeyInfo.Span, out int pkcs8Read);
+
+                    if (pkcs8Read != privateKeyInfo.Length)
+                    {
+                        Debug.Fail("Unexpected trailing data in PKCS#8 buffer.");
+                        throw new CryptographicException();
+                    }
+
+                    return certificate.CopyWithPrivateKey(ecdh);
+                }
+            }
+
+            // If we are here, then either the key or certificate has a key usage that requires loading it as EC-DSA.
+            if (IsECDsa(certificate))
+            {
+                using (ECDsa ecdsa = ECDsa.Create())
+                {
+                    ecdsa.ImportPkcs8PrivateKey(privateKeyInfo.Span, out int pkcs8Read);
+
+                    if (pkcs8Read != privateKeyInfo.Length)
+                    {
+                        Debug.Fail("Unexpected trailing data in PKCS#8 buffer.");
+                        throw new CryptographicException();
+                    }
+
+                    return certificate.CopyWithPrivateKey(ecdsa);
+                }
+            }
+
+            // If we get here, the key and certificate do not agree on algorithm use (the key has digitalSignature but
+            // the certificate has keyAgreement, for example). It cannot be loaded.
+            return null;
+        }
+
+        private static X509KeyUsageFlags? GetKeyUsageFlags(ref readonly PrivateKeyInfoAsn keyInfo)
+        {
+            if (keyInfo.Attributes is null)
+            {
+                return null;
+            }
+
+            foreach (AttributeAsn attr in keyInfo.Attributes)
+            {
+                if (attr.AttrType != Oids.KeyUsage)
+                {
+                    continue;
+                }
+
+                if (attr.AttrValues is [ReadOnlyMemory<byte> attrValue])
+                {
+                    X509KeyUsageExtension.DecodeX509KeyUsageExtension(attrValue.Span, out X509KeyUsageFlags usages);
+                    return usages;
+                }
+
+                // If the attribute has no value or too many values, consider it malformed.
+                throw new CryptographicException(SR.Cryptography_X509_NoOrMismatchedPemKey);
+            }
+
+            return null;
+        }
     }
 }

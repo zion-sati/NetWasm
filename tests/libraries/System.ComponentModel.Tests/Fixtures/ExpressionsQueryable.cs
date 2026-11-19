@@ -131,7 +131,7 @@ public static class EntryPoint
         ReadOnlyCollection<int> frozen = builder.ToReadOnlyCollection();
         if (frozen.Count != 4 || builder.Count != 0 || frozen[3] != 1) return 26;
 
-        // ExpandoObject keeps upstream's dictionary and notification behaviour.
+        // ExpandoObject keeps upstream's dictionary and notification behavior.
         var expando = new ExpandoObject();
         IDictionary<string, object?> members = expando;
         string changed = "";

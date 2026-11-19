@@ -109,6 +109,12 @@ static void exact_graph_and_cycle(void)
     roots.count = 0;
     netwasm_gc_collect(gc);
     assert(netwasm_gc_object_count(gc) == 0);
+
+    /* Without generations the youngest generation is every object, so GC.Collect(0) collects them all. */
+    left = allocate_object(gc, 1, sizeof(uintptr_t), &reference);
+    uint64_t collections = netwasm_gc_collection_count(gc);
+    netwasm_gc_collect_young(gc);
+    assert(netwasm_gc_object_count(gc) == 0 && netwasm_gc_collection_count(gc) == collections + 1);
     netwasm_gc_destroy(gc);
 }
 

@@ -85,11 +85,13 @@ public sealed class PackageFailureContextCompilationTests
             namespace Dependency;
             public static class Api { public static int Other() => 43; }
             """);
+        // As an error, which the project asks for; by default the method compiles to a throw (MissingMemberCompilationTests).
         var options = new CompilerOptions(app, [assets.CoreLib, library, dependency],
             "Application.Entry", "Run", [], target, Optimization: optimization)
         {
             ReferenceOrigins = [new(library, CompilationReferenceRole.Implementation,
                 "Member.Library", "2.3.4", "lib/netstandard2.1/Member.Library.dll")],
+            MissingApiAsError = true,
         };
         var failure = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(options));
         Assert.Equal(DiagnosticCode.MissingApi, failure.Diagnostic.Code);

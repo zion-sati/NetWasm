@@ -583,7 +583,6 @@ public sealed class WasmModulePlanInvariantValidatorTests
                 ImmutableDictionary<string, WasmFunctionIndex>.Empty,
                 ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(definition.Key, new(0))),
             new([], OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
-                OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
                 OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing))
         {
             NativeImports = new([native]),

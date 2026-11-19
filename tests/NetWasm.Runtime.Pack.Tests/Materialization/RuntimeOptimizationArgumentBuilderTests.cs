@@ -119,6 +119,19 @@ public sealed class RuntimeOptimizationArgumentBuilderTests
         Assert.Equal(expected, arguments.SkipWhile(argument => argument != "--mvp-features"));
     }
 
+    // Both encodings need Binaryen's exception handling; the translation to exnref is its own pass.
+    [Theory]
+    [InlineData("exceptions")]
+    [InlineData("legacy-exceptions")]
+    public void EnablesExceptionHandlingForEitherEncoding(string feature)
+    {
+        var arguments = RuntimeOptimizationArgumentBuilder.FeatureArguments(["mvp", "simd", feature]);
+
+        Assert.Equal(["--mvp-features", "--enable-exception-handling", "--enable-simd"], arguments);
+        Assert.Equal(["--mvp-features", "--enable-exception-handling"],
+            RuntimeOptimizationArgumentBuilder.FeatureArguments(["mvp", "exceptions", "legacy-exceptions"]));
+    }
+
     public static TheoryData<string, string[]?> UnusableProfiles => new()
     {
         { "no profile", null },

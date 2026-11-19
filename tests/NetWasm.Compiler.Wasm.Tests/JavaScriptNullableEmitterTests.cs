@@ -52,7 +52,7 @@ public sealed class JavaScriptNullableEmitterTests
     }
 
     private static InteropImportPlan Interop() =>
-        new([], default, default, default, default, default, default)
+        new([], default, default, default, default)
         {
             Conversions = new Dictionary<string, int> { ["ToDateTime"] = 12 }.ToImmutableDictionary(),
         };

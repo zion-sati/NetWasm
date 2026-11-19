@@ -4,10 +4,9 @@
 // NetWasm adaptation: CreateFromName uses upstream's fixed BROWSER switch, extended with the
 // desktop RandomNumberGenerator names because RNG is supported here, with the RSA PKCS#1 and
 // DSA signature formatter/deformatter class names that upstream's non-browser build resolves
-// through its class-name fallback, so SignatureDescription can create them (owner decision
-// 2026-10-21), and with desktop's MD5 and HMACMD5 names now that MD5 is managed. It is bounded to
-// those managed algorithms (owner decision 2026-11-13: desktop's full table would link OpenSSL into
-// any lookup by name) and matches names ignoring case, as desktop's table does. Runtime type activation
+// through its class-name fallback, so SignatureDescription can create them, and with desktop's MD5
+// and HMACMD5 names now that MD5 is managed. It is bounded to those managed algorithms (desktop's
+// full table would link OpenSSL into any lookup by name) and matches names ignoring case, as desktop's table does. Runtime type activation
 // (AddAlgorithm, class-name lookup, constructor binding) is unavailable without reflection.
 // AddOID, EncodeOID and MapNameToOID use the non-browser managed bodies, with upstream's default OID table.
 

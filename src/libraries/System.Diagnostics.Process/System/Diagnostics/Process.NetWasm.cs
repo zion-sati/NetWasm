@@ -10,8 +10,12 @@
 // PlatformNotSupportedException instead, as API_POLICY.json classifies those members.
 
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 
 namespace System.Diagnostics
@@ -51,6 +55,52 @@ namespace System.Diagnostics
             // Upstream rejects the platform before the association check where processes cannot be started or killed.
             throw new PlatformNotSupportedException(SR.ProcessHostNotSupported);
         }
+
+        /// <summary>Terminates the associated process immediately, and optionally its descendants.</summary>
+        [UnsupportedOSPlatform("ios")]
+        [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
+        public void Kill(bool entireProcessTree)
+        {
+            throw new PlatformNotSupportedException(SR.ProcessHostNotSupported);
+        }
+
+        // Signal and the exit-status methods test ProcessUtils.PlatformSupportsProcessStartAndKill before anything
+        // else upstream, which is false where processes cannot be started or killed, as here.
+
+        /// <summary>Sends a signal to the associated process.</summary>
+        [UnsupportedOSPlatform("ios")]
+        [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
+        public bool Signal(PosixSignal signal)
+        {
+            throw new PlatformNotSupportedException(SR.ProcessHostNotSupported);
+        }
+
+        /// <summary>Waits for the associated process to exit and returns its exit status.</summary>
+        [UnsupportedOSPlatform("ios")]
+        [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
+        public ProcessExitStatus WaitForExitStatus()
+        {
+            throw new PlatformNotSupportedException(SR.ProcessHostNotSupported);
+        }
+
+        /// <summary>Waits up to the timeout for the associated process to exit and returns its exit status.</summary>
+        [UnsupportedOSPlatform("ios")]
+        [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
+        public bool TryWaitForExitStatus(TimeSpan timeout, [NotNullWhen(true)] out ProcessExitStatus? exitStatus)
+        {
+            throw new PlatformNotSupportedException(SR.ProcessHostNotSupported);
+        }
+
+        /// <summary>Waits for the associated process to exit and returns its exit status.</summary>
+        [UnsupportedOSPlatform("ios")]
+        [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
+        public Task<ProcessExitStatus> WaitForExitStatusAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException<ProcessExitStatus>(new PlatformNotSupportedException(SR.ProcessHostNotSupported));
 
         /// <summary>Gets the main module for the associated process.</summary>
         public ProcessModule? MainModule

@@ -13,6 +13,8 @@ namespace System.Runtime.CompilerServices
             "Type cannot be null.";
         internal const string Argument_InvalidValue =
             "Value was invalid.";
+        internal const string NotSupported_Type =
+            "Type is not supported.";
         internal const string Acc_CreateGeneric =
             "Cannot create a type for which Type.ContainsGenericParameters is true.";
         internal const string Acc_CreateAbst =

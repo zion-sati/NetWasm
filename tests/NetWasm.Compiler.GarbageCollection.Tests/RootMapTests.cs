@@ -904,6 +904,7 @@ public sealed class RootMapTests
             CreateRootDecisions(program),
             CreateCalleeArguments(program),
             new RootSlotAllocator(),
+            new YoungObjectStoreFinder(),
             new CallAt(classified ? 3 : -1));
 
         var map = analyzer.Analyze(new RootMapAnalysisRequest(
@@ -1204,25 +1205,28 @@ public sealed class RootMapTests
         var anchors = new StackStorageAnchorPlanner(continuations);
         var storage = new StackStorageTypeAnalyzer(program, program, program, EmptyValueLayouts.Instance, continuations);
         Assert.Throws<ArgumentNullException>(() =>
-            new RootMapAnalyzer(null!, storage, continuations, anchors, CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator()));
+            new RootMapAnalyzer(null!, storage, continuations, anchors, CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator(), new YoungObjectStoreFinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapAnalyzer(EmptyValueLayouts.Instance, null!, continuations,
-                anchors, CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator()));
+                anchors, CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator(), new YoungObjectStoreFinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapAnalyzer(EmptyValueLayouts.Instance, storage, null!,
-                anchors, CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator()));
+                anchors, CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator(), new YoungObjectStoreFinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapAnalyzer(EmptyValueLayouts.Instance, storage, continuations, null!,
-                CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator()));
+                CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator(), new YoungObjectStoreFinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapAnalyzer(EmptyValueLayouts.Instance, storage, continuations, anchors, null!,
-                CreateCalleeArguments(program), new RootSlotAllocator()));
+                CreateCalleeArguments(program), new RootSlotAllocator(), new YoungObjectStoreFinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapAnalyzer(EmptyValueLayouts.Instance, storage, continuations, anchors,
-                CreateRootDecisions(program), null!, new RootSlotAllocator()));
+                CreateRootDecisions(program), null!, new RootSlotAllocator(), new YoungObjectStoreFinder()));
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapAnalyzer(EmptyValueLayouts.Instance, storage, continuations,
-                anchors, CreateRootDecisions(program), CreateCalleeArguments(program), null!));
+                anchors, CreateRootDecisions(program), CreateCalleeArguments(program), null!, new YoungObjectStoreFinder()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new RootMapAnalyzer(EmptyValueLayouts.Instance, storage, continuations,
+                anchors, CreateRootDecisions(program), CreateCalleeArguments(program), new RootSlotAllocator(), null!));
         Assert.Throws<ArgumentNullException>(() => analyzer.Analyze(null!));
         Assert.Throws<ArgumentNullException>(() => analyzer.Analyze(
             new RootMapAnalysisRequest(
@@ -2067,7 +2071,7 @@ public sealed class RootMapTests
             new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
             CreateRootDecisions(program),
             CreateCalleeArguments(program),
-            new RootSlotAllocator());
+            new RootSlotAllocator(), new YoungObjectStoreFinder());
         var request = new RootMapAnalysisRequest(
             structured, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()));
 
@@ -2570,7 +2574,7 @@ public sealed class RootMapTests
             new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
             CreateRootDecisions(program),
             CreateCalleeArguments(program),
-            new RootSlotAllocator()).Analyze(new RootMapAnalysisRequest(
+            new RootSlotAllocator(), new YoungObjectStoreFinder()).Analyze(new RootMapAnalysisRequest(
                 body,
                 Lookups.Of(new HashSet<EntityKey>()),
                 Lookups.Of(new HashSet<string>())));
@@ -2771,7 +2775,7 @@ public sealed class RootMapTests
                 new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
                 CreateRootDecisions(program),
                 CreateCalleeArguments(program),
-                new RootSlotAllocator()),
+                new RootSlotAllocator(), new YoungObjectStoreFinder()),
         };
         return analyzers[0];
     }

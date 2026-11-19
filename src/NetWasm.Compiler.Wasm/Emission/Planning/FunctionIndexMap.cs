@@ -51,6 +51,10 @@ internal sealed record FunctionIndexMap(
     public ImmutableDictionary<string, WasmFunctionIndex> ConstructedDelegateInvokeMethods { get; init; } =
         ImmutableDictionary<string, WasmFunctionIndex>.Empty;
 
+    // Each shared virtual dispatch function, by the canonical name of the declaration it dispatches.
+    public ImmutableDictionary<string, WasmFunctionIndex> SharedVirtualDispatches { get; init; } =
+        ImmutableDictionary<string, WasmFunctionIndex>.Empty;
+
     public bool TryGetMethod(EntityKey method, out WasmFunctionIndex index) =>
         DirectMethods.TryGetValue(method, out index) ||
         JSImportForwarders.TryGetValue(method, out index) ||

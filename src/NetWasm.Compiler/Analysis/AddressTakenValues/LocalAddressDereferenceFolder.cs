@@ -14,7 +14,8 @@ internal interface ILocalAddressDereferenceFolder
 }
 
 // A primitive, enum or vector local or argument whose address is read or
-// written through in the same block, as an inlined receiver, out parameter or
+// written through in the same block, or past a branch around a throw such as an
+// inlined bounds check, as an inlined receiver, out parameter or
 // defensive copy leaves it, is accessed as the variable: ldloca or ldarga
 // followed by a load of the variable's own type, or of its primitive's value
 // field, becomes ldloc or ldarg, and a store or initobj through it becomes
@@ -29,10 +30,12 @@ internal interface ILocalAddressDereferenceFolder
 internal sealed class LocalAddressDereferenceFolder(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
+    IVectorLaneFields lanes,
     bool enabled) : ILocalAddressDereferenceFolder
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
+    private readonly IVectorLaneFields _lanes = lanes ?? throw new ArgumentNullException(nameof(lanes));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -61,10 +64,25 @@ internal sealed class LocalAddressDereferenceFolder(
                 CilOperation.StoreObject or CilOperation.StoreField => stack.Length - 2,
                 _ => -1,
             };
-            if (slot < 0 ||
-                producers.Find(index, slot, duplicates: true) is not { } found ||
-                (instructions[found].Operation == CilOperation.Duplicate ? producers.FindTop(found) : found) is not { } producer ||
+            if (slot < 0 || producers.Find(index, slot, duplicates: true, acrossThrowPaths: true) is not { } found)
+            {
+                continue;
+            }
+            // Unsafe.As over a vector variable's address views the same address as another vector type, which a
+            // whole access then reads or writes as any vector of the variable's width.
+            int? view = null;
+            if (IsAddressView(instructions[found]) &&
+                instruction.Operation is CilOperation.LoadObject or CilOperation.StoreObject or CilOperation.InitializeObject &&
+                producers.FindTop(found, acrossThrowPaths: true) is { } viewed)
+            {
+                view = found;
+                found = viewed;
+            }
+            if ((instructions[found].Operation == CilOperation.Duplicate && view is null
+                    ? producers.FindTop(found, acrossThrowPaths: true)
+                    : found) is not { } producer ||
                 Variable(body, instructions[producer]) is not { } variable ||
+                view is not null && !IsVector(variable.Type) ||
                 !Accesses(instruction, variable.Type))
             {
                 continue;
@@ -90,6 +108,10 @@ internal sealed class LocalAddressDereferenceFolder(
                 continue;
             }
 
+            if (view is { } viewCall)
+            {
+                rewritten[viewCall] = instructions[viewCall] with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
+            }
             if (instruction.Operation == CilOperation.InitializeObject)
             {
                 // initobj stores the zero of the variable's type.
@@ -118,7 +140,7 @@ internal sealed class LocalAddressDereferenceFolder(
         foreach (var (duplicate, uses) in duplicated)
         {
             if (uses.Count != 2) continue;
-            var address = producers.FindTop(duplicate)!.Value;
+            var address = producers.FindTop(duplicate, acrossThrowPaths: true)!.Value;
             var variable = Variable(body, instructions[address])!.Value;
             rewritten[address] = instructions[address] with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
             rewritten[duplicate] = instructions[duplicate] with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
@@ -178,19 +200,21 @@ internal sealed class LocalAddressDereferenceFolder(
     // access or initobj of a type as wide as the local's, or its primitive's
     // or enum's value field. A narrow value is only read or cleared: a store
     // through the address truncates it and a local store may not.
-    private static bool Accesses(CilInstruction instruction, CliTypeIdentity local)
+    private bool Accesses(CilInstruction instruction, CliTypeIdentity local)
     {
         if (IsVector(local))
         {
             // Only a view as wide as the local: a Vector2 written into a
-            // Vector4's low half keeps the upper half.
+            // Vector4's low half keeps the upper half. A System.Numerics
+            // vector's lane is named by its field's token as well (the last
+            // case: an indirect access names a type, a field access a field).
             return instruction.Operand switch
             {
                 CilOperand.TypeIdentity { Value: var vector } =>
                     IsVector(vector) && VectorWidth(vector) == VectorWidth(local),
                 CilOperand.FieldInstance { Value: var field } =>
                     instruction.Operation == CilOperation.LoadField && field.DeclaringType.Equals(local),
-                _ => false,
+                _ => instruction.Operation == CilOperation.LoadField && _lanes.Lane(instruction.Operand, local) is not null,
             };
         }
         return Width(local) is { } width &&
@@ -228,14 +252,24 @@ internal sealed class LocalAddressDereferenceFolder(
 
     private static bool Narrow(string width) => width is "u1" or "i1" or "u2" or "i2";
 
+    // Unsafe.As<TFrom, TTo>(ref TFrom), which returns the address it takes.
+    private static bool IsAddressView(CilInstruction instruction) =>
+        instruction is
+        {
+            Operation: CilOperation.Call,
+            Operand: CilOperand.MethodInstance
+            {
+                Value:
+                {
+                    Definition: { Name: "As", GenericArity: 2, Signature.ParameterSignatureTypes: [{ Shape: CliTypeShape.ManagedByReference }] },
+                    DeclaringType.FullName: "System.Runtime.CompilerServices.Unsafe",
+                },
+            },
+        };
+
     private static bool IsVector(CliTypeIdentity type) => type.StackKind == CliValueKind.V128;
 
-    private static int VectorWidth(CliTypeIdentity type) => type.FullName switch
-    {
-        "System.Numerics.Vector2" => 8,
-        "System.Numerics.Vector3" => 12,
-        _ => 16,
-    };
+    private static int VectorWidth(CliTypeIdentity type) => SimdVectorStorage.Width(type);
 
     private static (CilOperation Operation, CilOperand Operand)? Zero(CliTypeIdentity type) =>
         IsVector(type) ? (CilOperation.DefaultValue, new CilOperand.TypeIdentity(type)) : Width(type) switch

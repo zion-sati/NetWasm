@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata.RuntimeProvidedMembers;
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.NativeMarshalling;
 using NetWasm.Compiler.Metadata.UnsafeAccessors;
 
 namespace NetWasm.Compiler.Metadata;
@@ -105,6 +106,18 @@ public sealed class MetadataMethodBodyReaderFactory(
             new UnsafeAccessorBodyBuilder(),
             new DelegateAsynchronousCallBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods),
             new UnsafeIntrinsicBodyBuilder(),
-            new UnboundNativeImportBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods));
+            new UnboundNativeImportBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods),
+            new NativeMarshallingStubBodyBuilder(methods, () => new NativeMarshallingClassifier(
+                typeDefinitions,
+                new MetadataBaseTypeIdentityResolver(typeDefinitions,
+                    new MetadataAssemblyResolver(materialized.MetadataAssemblies,
+                        materialized.ReferenceAssemblyAliases, availability), signatureTypes),
+                methods,
+                fields,
+                new NativeMarshallingMembers(new MetadataTypeFinderFactory(_materializations), snapshot, methods, fields),
+                new NativeStructCopierFactory(new CompilationNativeStructSource(typeDefinitions, fields))),
+                new CilBodyLayout()),
+            new MissingMemberBodyBuilder(new MetadataTypeFinderFactory(_materializations), snapshot, methods),
+            new MissingTypeFinder(typeDefinitions));
     }
 }

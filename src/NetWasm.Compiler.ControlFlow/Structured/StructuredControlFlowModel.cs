@@ -25,6 +25,9 @@ public sealed record StructuredMethodHeader(
 
     public IntegerCheckProof? IntegerCheckProof { get; init; }
 
+    // Whether locals start zeroed and localloc returns zeroed memory: the body's localsinit flag.
+    public bool InitializesLocals { get; init; }
+
     // The header structuring gives a method body.
     public static StructuredMethodHeader Of(CilMethodBody source)
     {
@@ -39,6 +42,7 @@ public sealed record StructuredMethodHeader(
         {
             ArrayBoundsProof = source.ExceptionRegions.IsEmpty ? source.ArrayBoundsProof : null,
             IntegerCheckProof = source.IntegerCheckProof,
+            InitializesLocals = source.InitializesLocals,
         };
     }
 }

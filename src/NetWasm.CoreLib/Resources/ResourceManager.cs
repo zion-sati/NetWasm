@@ -1,14 +1,15 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
-// NetWasm adaptations (API policy resource-manager-virtual-sets): a subclass that supplies its
-// sets through InternalGetResourceSet keeps upstream's lookup, fallback and cache semantics.
-// Default acquisition reads an assembly's manifest or satellite assemblies, which needs
-// reflection, so the assembly and Type constructors, CreateFileBasedResourceManager,
-// GetSatelliteContractVersion and GetNeutralResourcesLanguage validate their arguments and then
-// throw PlatformNotSupportedException, and the default groveler (ResourceManager.NetWasm.cs)
-// throws the same when lookup reaches it. The file-based constructor, the manifest shortcut in
-// GetResourceSet and the mediator that only the assembly and file grovelers used are removed.
+// NetWasm adaptations: the assembly constructors read the assembly's manifest resources, which the
+// compiler embeds when a program reaches a resource API, through ManifestBasedResourceGroveler.
+// NetWasm compiles no satellite assemblies and runs invariant globalization with predefined
+// cultures only, so the neutral resources are the main assembly's, as upstream finds them in that
+// mode. ResourceManager(Type) names the resources after the type, and NetWasm's types have no names
+// at run time: the compiler rewrites new ResourceManager(typeof(T)) to an internal constructor given
+// T's name, and any other Type throws PlatformNotSupportedException, as CreateFileBasedResourceManager
+// and GetSatelliteContractVersion, which reads an attribute, do after validating their arguments. The file-based
+// constructor and its groveler are removed.
 
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -112,12 +113,10 @@ namespace System.Resources
 
         private Dictionary<string, ResourceSet>? _resourceSets;
 
-#pragma warning disable CS0649 // Only the assembly constructors, unavailable on NetWasm, set these.
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)]
         private readonly Type? _userResourceSet;      // Which ResourceSet instance to create
 
         private CultureInfo? _neutralResourcesCulture;  // For perf optimizations.
-#pragma warning restore CS0649
 
         private CultureNameResourceSetPair? _lastUsedResourceCache;
 
@@ -127,7 +126,13 @@ namespace System.Resources
         // satellite for the neutral resources.
         private UltimateResourceFallbackLocation _fallbackLoc;
 
-        private readonly IResourceGroveler _resourceGroveler;
+        private bool _useManifest;  // Use Assembly manifest, or grovel disk.
+
+        // Satellite assemblies aren't compiled into a NetWasm program, so nothing reads these but the mediator.
+        private Version? _satelliteContractVersion;
+        private bool _lookedForSatelliteContractVersion;
+
+        private IResourceGroveler _resourceGroveler;
 
         public static readonly int MagicNumber = unchecked((int)0xBEEFCACE);  // If only hex had a K...
 
@@ -155,7 +160,8 @@ namespace System.Resources
         protected ResourceManager()
         {
             _lastUsedResourceCache = new CultureNameResourceSetPair();
-            _resourceGroveler = new UnavailableResourceGroveler();
+            ResourceManagerMediator mediator = new ResourceManagerMediator(this);
+            _resourceGroveler = new ManifestBasedResourceGroveler(mediator);
             BaseNameField = string.Empty;
         }
 
@@ -164,7 +170,13 @@ namespace System.Resources
             ArgumentNullException.ThrowIfNull(baseName);
             ArgumentNullException.ThrowIfNull(assembly);
 
-            throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceManagerAssembly);
+            if (assembly is not RuntimeAssembly)
+                throw new ArgumentException(SR.Argument_MustBeRuntimeAssembly);
+
+            MainAssembly = assembly;
+            BaseNameField = baseName;
+
+            CommonAssemblyInit();
         }
 
         public ResourceManager(string baseName, Assembly assembly,
@@ -174,17 +186,46 @@ namespace System.Resources
             ArgumentNullException.ThrowIfNull(baseName);
             ArgumentNullException.ThrowIfNull(assembly);
 
+            if (assembly is not RuntimeAssembly)
+                throw new ArgumentException(SR.Argument_MustBeRuntimeAssembly);
+
+            MainAssembly = assembly;
+            BaseNameField = baseName;
+
             if (usingResourceSet != null && (usingResourceSet != typeof(ResourceSet)) && !usingResourceSet.IsSubclassOf(typeof(ResourceSet)))
                 throw new ArgumentException(SR.Arg_ResMgrNotResSet, nameof(usingResourceSet));
+            _userResourceSet = usingResourceSet;
 
-            throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceManagerAssembly);
+            CommonAssemblyInit();
         }
 
         public ResourceManager(Type resourceSource)
         {
             ArgumentNullException.ThrowIfNull(resourceSource);
 
-            throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceManagerAssembly);
+            throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceManagerType);
+        }
+
+        // new ResourceManager(typeof(T)) as the compiler rewrites it (ResourceManagerTypeSourceRewriter): T's handle and
+        // the base name upstream forms from T's namespace and name, which a NetWasm program has only at compile time.
+        internal ResourceManager(RuntimeTypeHandle resourceSource, string baseName)
+            : this(baseName, Type.GetTypeFromHandle(resourceSource)!.Assembly)
+        {
+        }
+
+        [MemberNotNull(nameof(_resourceGroveler))]
+        private void CommonAssemblyInit()
+        {
+            _useManifest = true;
+
+            _resourceSets = new Dictionary<string, ResourceSet>();
+            _lastUsedResourceCache = new CultureNameResourceSetPair();
+
+            ResourceManagerMediator mediator = new ResourceManagerMediator(this);
+            _resourceGroveler = new ManifestBasedResourceGroveler(mediator);
+
+            Debug.Assert(MainAssembly != null);
+            _neutralResourcesCulture = ManifestBasedResourceGroveler.GetNeutralResourcesLanguage(MainAssembly, out _fallbackLoc);
         }
 
         // Gets the base name for the ResourceManager.
@@ -341,6 +382,20 @@ namespace System.Resources
                 }
             }
 
+            if (_useManifest && HasInvariantCultureName(culture))
+            {
+                string fileName = GetResourceFileName(culture);
+                Debug.Assert(MainAssembly != null);
+                Stream? stream = MainAssembly.GetManifestResourceStream(fileName);
+                if (createIfNotExists && stream != null)
+                {
+                    rs = ((ManifestBasedResourceGroveler)_resourceGroveler).CreateResourceSet(stream, MainAssembly);
+                    Debug.Assert(localResourceSets != null);
+                    AddResourceSet(localResourceSets, culture.Name, ref rs);
+                    return rs;
+                }
+            }
+
             return InternalGetResourceSet(culture, createIfNotExists, tryParents);
         }
 
@@ -450,14 +505,14 @@ namespace System.Resources
         {
             ArgumentNullException.ThrowIfNull(a);
 
-            throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceManagerAssembly);
+            throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceAttributes);
         }
 
         protected static CultureInfo GetNeutralResourcesLanguage(Assembly a)
         {
             ArgumentNullException.ThrowIfNull(a);
 
-            throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceManagerAssembly);
+            return ManifestBasedResourceGroveler.GetNeutralResourcesLanguage(a, out _);
         }
 
         internal static bool IsDefaultType(string asmTypeName,
@@ -642,6 +697,54 @@ namespace System.Resources
             if (ums == null && obj != null)
                 throw new InvalidOperationException(SR.Format(SR.InvalidOperation_ResourceNotStream_Name, name));
             return ums;
+        }
+
+        internal sealed class ResourceManagerMediator
+        {
+            private readonly ResourceManager _rm;
+
+            internal ResourceManagerMediator(ResourceManager rm)
+            {
+                ArgumentNullException.ThrowIfNull(rm);
+
+                _rm = rm;
+            }
+
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)]
+            internal Type? UserResourceSet => _rm._userResourceSet;
+
+            internal string? BaseNameField => _rm.BaseNameField;
+
+            internal CultureInfo? NeutralResourcesCulture
+            {
+                get => _rm._neutralResourcesCulture;
+                set => _rm._neutralResourcesCulture = value;
+            }
+
+            internal string GetResourceFileName(CultureInfo culture) =>
+                _rm.GetResourceFileName(culture);
+
+            internal bool LookedForSatelliteContractVersion
+            {
+                get => _rm._lookedForSatelliteContractVersion;
+                set => _rm._lookedForSatelliteContractVersion = value;
+            }
+
+            internal Version? SatelliteContractVersion
+            {
+                get => _rm._satelliteContractVersion;
+                set => _rm._satelliteContractVersion = value;
+            }
+
+            internal UltimateResourceFallbackLocation FallbackLoc
+            {
+                get => _rm.FallbackLocation;
+                set => _rm._fallbackLoc = value;
+            }
+
+            internal Assembly? MainAssembly => _rm.MainAssembly;
+
+            internal string BaseName => _rm.BaseName;
         }
     }
 }

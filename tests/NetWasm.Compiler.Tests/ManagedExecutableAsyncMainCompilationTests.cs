@@ -140,6 +140,89 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         Assert.Equal(expectedStatus != 1, error.Contains("Unhandled exception #", StringComparison.Ordinal));
     }
 
+    // The event loop runs the finalizers a collection has queued between work items, as Mono's single-threaded runtime
+    // runs them from its event loop: an async program that keeps working without returning to its host finalizes, and
+    // frees, what it drops while it runs, not only once Main returns. Allocation alone paces the collections.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheEventLoopRunsQueuedFinalizersWhileTheProgramRuns(bool optimize)
+    {
+        using var assets = TestAssets.Create();
+        var component = await PackageCommand(assets, optimize, QueuedFinalizerSource(
+            "~Finalizable() => Finalized++;", "", ""), new(
+            ManagedExecutableParameterShape.None,
+            ManagedExecutableReturnShape.ExitCode,
+            ManagedExecutableCompletionShape.Asynchronous));
+
+        var (exitCode, output, error) = await RunWasmtimeWithOutput(assets.Root, component);
+
+        Assert.True(exitCode == 0, $"exit code {exitCode}: {output}{error}");
+        Assert.Equal("finalized while running\n", output);
+    }
+
+    // A finalizer's exception ends the program, as one on .NET's finalizer thread does: the event loop runs finalizers
+    // outside every work item, so the program's own catch around its awaits never sees it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnExceptionAFinalizerLetsEscapeEndsTheProgram(bool optimize)
+    {
+        using var assets = TestAssets.Create();
+        var component = await PackageCommand(assets, optimize, QueuedFinalizerSource(
+            "~Finalizable() => throw new InvalidOperationException();",
+            "try {",
+            "} catch (InvalidOperationException) { Console.WriteLine(\"caught\"); return 2; }"), new(
+            ManagedExecutableParameterShape.None,
+            ManagedExecutableReturnShape.ExitCode,
+            ManagedExecutableCompletionShape.Asynchronous));
+
+        var (exitCode, output, error) = await RunWasmtimeWithOutput(assets.Root, component);
+
+        Assert.True(exitCode == 1, $"exit code {exitCode}: {output}{error}");
+        Assert.Equal("", output);
+        Assert.Contains("Unhandled exception #", error, StringComparison.Ordinal);
+    }
+
+    // An async Main that drops a finalizable object with a payload and yields, until a finalizer has run or a million
+    // turns have passed.
+    private static string QueuedFinalizerSource(string finalizer, string beforeTurn, string afterTurn) => $$"""
+        using System;
+        using System.Runtime.CompilerServices;
+        using System.Threading.Tasks;
+        namespace QueuedFinalizerFixture;
+        internal sealed class Finalizable(byte[] payload)
+        {
+            internal static int Finalized;
+            private readonly byte[] _payload = payload;
+            {{finalizer}}
+        }
+        internal static class Program
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static void Drop() => _ = new Finalizable(new byte[256]);
+
+            public static async Task<int> Main()
+            {
+                for (var turn = 0; turn < 1_000_000; turn++)
+                {
+                    {{beforeTurn}}
+                    Drop();
+                    await Task.Yield();
+                    {{afterTurn}}
+                    if (Finalizable.Finalized != 0)
+                    {
+                        Console.WriteLine("finalized while running");
+                        return 0;
+                    }
+                }
+
+                Console.WriteLine("not finalized");
+                return 1;
+            }
+        }
+        """;
+
     // How a program ends, as desktop .NET ends it on Linux and macOS: an int Main's result and
     // Environment.ExitCode are the exit code, truncated to a process status's eight bits;
     // Environment.Exit ends the process at once, whatever the code; and FailFast reports on standard
@@ -1049,8 +1132,8 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
 
     // ClientWebSocket against a WebSocket.CreateFromStream server over TcpListener in one program:
     // the upgrade, text, binary and fragmented messages, the close handshake, a server that is not
-    // a WebSocket server and a refused connection, with desktop .NET's output on Linux; wss:// is
-    // not supported (no TLS).
+    // a WebSocket server and a refused connection, with desktop .NET's output on Linux. wss:// runs
+    // over SslStream, which needs a host with wasi:tls and a trusted certificate (see the wasi:tls test).
     [Fact]
     public async Task WebSocketsUpgradeAndExchangeMessagesInWasmtime()
     {
@@ -1115,12 +1198,6 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
                         await refused.ConnectAsync(new Uri($"ws://127.0.0.1:{port}/"), CancellationToken.None);
                     }
                     catch (WebSocketException e) { Console.WriteLine($"refused: {e.WebSocketErrorCode} {e.Message}"); }
-                    try
-                    {
-                        using var secure = new ClientWebSocket();
-                        await secure.ConnectAsync(new Uri($"wss://127.0.0.1:{port}/"), CancellationToken.None);
-                    }
-                    catch (PlatformNotSupportedException) { Console.WriteLine("wss: unsupported"); }
                     return 0;
                 }
 
@@ -1195,8 +1272,9 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
             }
             """);
 
+        // ClientWebSocket can reach wss://, so the program imports wasi:tls and Wasmtime needs -S tls even for ws://.
         var (exitCode, output, error) = await RunProgramInWasmtime(assets, assembly,
-            ManagedExecutableCompletionShape.Asynchronous, "-S", "inherit-network,allow-ip-name-lookup");
+            ManagedExecutableCompletionShape.Asynchronous, "-S", "inherit-network,allow-ip-name-lookup,tls");
 
         Assert.True(exitCode == 0, $"exit code {exitCode}: {error}\n{output}");
         Assert.Equal(
@@ -1207,8 +1285,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
             "closed: Closed NormalClosure bye\n" +
             "server: GET /echo?room=1 HTTP/1.1 protocols=other, chat fixture=yes close=NormalClosure:bye Closed\n" +
             "plain: NotAWebSocket The server returned status code '200' when status code '101' was expected.\n" +
-            "refused: Faulted Unable to connect to the remote server\n" +
-            "wss: unsupported\n",
+            "refused: Faulted Unable to connect to the remote server\n",
             output);
     }
 
@@ -1280,6 +1357,83 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
             output);
     }
 
+    // SslStream over a TcpClient through wasi:tls (Wasmtime -S tls): the handshake, an HTTP exchange and the server's
+    // close, with the validation callback seeing the host's verdict, and a name the certificate does not cover
+    // rejected. Wasmtime trusts only its bundled Mozilla roots, so this needs a public HTTPS host:
+    // NETWASM_WASI_TLS_HOST=example.com.
+    [Fact]
+    public async Task SslStreamAuthenticatesAndExchangesDataThroughWasiTlsInWasmtime()
+    {
+        var host = Environment.GetEnvironmentVariable("NETWASM_WASI_TLS_HOST");
+        Assert.SkipWhen(string.IsNullOrEmpty(host), "Set NETWASM_WASI_TLS_HOST to a public HTTPS host to run wasi:tls.");
+        using var assets = TestAssets.Create();
+        var assembly = CompileExecutable(assets, true, """
+            using System;
+            using System.IO;
+            using System.Net.Security;
+            using System.Net.Sockets;
+            using System.Security.Authentication;
+            using System.Text;
+            using System.Threading.Tasks;
+            namespace TlsFixture;
+            internal static class Program
+            {
+                public static async Task<int> Main()
+                {
+                    var host = Environment.GetEnvironmentVariable("TLS_HOST")!;
+                    using (var tcp = new TcpClient())
+                    {
+                        await tcp.ConnectAsync(host, 443);
+                        var verdict = "not called";
+                        using var tls = new SslStream(tcp.GetStream(), false, (sender, certificate, chain, errors) =>
+                        {
+                            verdict = $"{errors} {certificate == null} {chain == null}";
+                            return true;
+                        });
+                        await tls.AuthenticateAsClientAsync(host);
+                        Console.WriteLine($"authenticated: {tls.IsAuthenticated} {tls.IsEncrypted} {tls.IsServer} {tls.CanRead} {tls.CanWrite}");
+                        Console.WriteLine($"callback: {verdict}");
+                        await tls.WriteAsync(Encoding.ASCII.GetBytes($"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"));
+                        var reader = new StreamReader(tls, Encoding.ASCII);
+                        var status = await reader.ReadLineAsync();
+                        Console.WriteLine($"status: {status!.StartsWith("HTTP/1.1 ", StringComparison.Ordinal)}");
+                        var rest = await reader.ReadToEndAsync();
+                        Console.WriteLine($"rest: {rest.Contains("\r\n\r\n", StringComparison.Ordinal)}");
+                    }
+
+                    using (var tcp = new TcpClient())
+                    {
+                        await tcp.ConnectAsync(host, 443);
+                        using var tls = new SslStream(tcp.GetStream());
+                        try
+                        {
+                            await tls.AuthenticateAsClientAsync("wrong.invalid");
+                            Console.WriteLine("wrong name: authenticated");
+                        }
+                        catch (AuthenticationException e) when (e.InnerException is IOException)
+                        {
+                            Console.WriteLine($"wrong name: rejected {tls.IsAuthenticated}");
+                        }
+                    }
+                    return 0;
+                }
+            }
+            """);
+
+        var (exitCode, output, error) = await RunProgramInWasmtime(assets, assembly,
+            ManagedExecutableCompletionShape.Asynchronous, "-S", "inherit-network,allow-ip-name-lookup,tls",
+            "--env", $"TLS_HOST={host}");
+
+        Assert.True(exitCode == 0, $"exit code {exitCode}: {error}\n{output}");
+        Assert.Equal(
+            "authenticated: True True False True True\n" +
+            "callback: None True True\n" +
+            "status: True\n" +
+            "rest: True\n" +
+            "wrong name: rejected False\n",
+            output);
+    }
+
     // SmtpClient as on Linux: pickup-directory delivery over the file system, and SMTP to a server the test runs.
     // The server runs here rather than in the program because upstream's SendMailAsync ends the message with a
     // synchronous exchange (the writer's Close), which on one thread waits for a server outside the program.
@@ -1347,7 +1501,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
             var work = Path.Combine(assets.Directory, "work");
             Directory.CreateDirectory(work);
             var (exitCode, output, error) = await RunProgramInWasmtime(assets, assembly,
-                ManagedExecutableCompletionShape.Asynchronous, "-S", "inherit-network,allow-ip-name-lookup",
+                ManagedExecutableCompletionShape.Asynchronous, "-S", "inherit-network,allow-ip-name-lookup,tls",
                 "--env", $"SMTP_PORT={port}", "--dir", work + "::/work");
             await server.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
@@ -1433,7 +1587,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
             using var stop = new CancellationTokenSource();
             var server = ServeFtpAsync(listener, uploads, stop.Token);
             var (exitCode, output, error) = await RunProgramInWasmtime(assets, assembly,
-                ManagedExecutableCompletionShape.Asynchronous, "-S", "inherit-network,allow-ip-name-lookup,http",
+                ManagedExecutableCompletionShape.Asynchronous, "-S", "inherit-network,allow-ip-name-lookup,http,tls",
                 "--env", $"FTP_PORT={((System.Net.IPEndPoint)listener.LocalEndpoint).Port}");
             stop.Cancel();
 
@@ -2658,7 +2812,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         var work = Path.Combine(assets.Directory, "work");
         Directory.CreateDirectory(work);
         var (exitCode, output, error) = await RunProgramInWasmtime(assets, assembly,
-            ManagedExecutableCompletionShape.Synchronous, "-S", "inherit-network,allow-ip-name-lookup,http",
+            ManagedExecutableCompletionShape.Synchronous, "-S", "inherit-network,allow-ip-name-lookup,http,tls",
             "--env", $"HTTP_PORT={port}", "--dir", work + "::/work");
         stop.Cancel();
         listener.Stop();
@@ -2786,7 +2940,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         return (process.ExitCode, await output, await error);
     }
 
-    private static async Task<(int ExitCode, string Output, string Error)> RunWasmtimeWithOutput(
+    internal static async Task<(int ExitCode, string Output, string Error)> RunWasmtimeWithOutput(
         string workingDirectory,
         params string[] arguments)
     {
@@ -2849,7 +3003,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
 
     // A managed executable packaged as the SDK packages a command with structured diagnostics: its
     // application and NetWasm's runtime under the diagnostic command world.
-    private static async Task<string> PackageCommand(
+    internal static async Task<string> PackageCommand(
         TestAssets assets,
         bool optimize,
         string source,
@@ -2898,7 +3052,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         return component;
     }
 
-    private static void CopyWitDirectory(string source, string destination, bool recursive = true)
+    internal static void CopyWitDirectory(string source, string destination, bool recursive = true)
     {
         Directory.CreateDirectory(destination);
         foreach (var path in Directory.EnumerateFiles(source, "*.wit",
@@ -2910,7 +3064,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         }
     }
 
-    private static async Task<string> RunComponentTool(string executable, string workingDirectory, params string[] arguments)
+    internal static async Task<string> RunComponentTool(string executable, string workingDirectory, params string[] arguments)
     {
         var start = new ProcessStartInfo(executable)
         {
@@ -2929,7 +3083,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         return result;
     }
 
-    private static string CompileExecutable(
+    internal static string CompileExecutable(
         TestAssets assets,
         bool optimize,
         string source = Source,
@@ -2957,7 +3111,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         return path;
     }
 
-    private static EntryPoint ReadEntryPoint(string assemblyPath)
+    internal static EntryPoint ReadEntryPoint(string assemblyPath)
     {
         using var stream = File.OpenRead(assemblyPath);
         using var portableExecutable = new PEReader(stream);
@@ -2982,7 +3136,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
             MetadataTokens.GetToken(methodHandle));
     }
 
-    private sealed record EntryPoint(string TypeName, string MethodName, int Token);
+    internal sealed record EntryPoint(string TypeName, string MethodName, int Token);
 
     private const string Source = """
         using System.Threading.Tasks;

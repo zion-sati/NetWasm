@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow;
@@ -13,19 +14,27 @@ namespace NetWasm.Compiler.Analysis.Arrays;
 internal sealed class ArrayLoopUnrollingPlanner(
     IArrayLoopInductionAnalyzer induction,
     IRuntimeIntrinsicRegistry intrinsics,
+    IIntegerRangeAnalysis ranges,
     int expandedBodyBudget) : IArrayLoopUnrollingPlanner
 {
+    // A loop known to run fewer iterations than this stays as written: an unrolled copy of it would run once at
+    // most, and the copy's guard, the remainder's and an accumulator for each of its lanes cost more than the
+    // iterations they save. A sum of squared differences over rows it knows are under 8 wide ran a third slower
+    // unrolled.
+    internal const int MinimumTrips = 8;
+
     private readonly IArrayLoopInductionAnalyzer _induction = induction ??
         throw new ArgumentNullException(nameof(induction));
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
+    private readonly IIntegerRangeAnalysis _ranges = ranges ?? throw new ArgumentNullException(nameof(ranges));
 
     public ImmutableArray<ArrayLoopUnrollingPlan> Plan(ValidatedControlFlowGraph controlFlow)
     {
         ArgumentNullException.ThrowIfNull(controlFlow);
         ArgumentOutOfRangeException.ThrowIfNegative(expandedBodyBudget);
         var graph = controlFlow.Graph;
-        var plans = ImmutableArray.CreateBuilder<ArrayLoopUnrollingPlan>();
+        var plans = new List<(ArrayLoopUnrollingPlan Plan, CilInstruction Compare, int Initial)>();
         foreach (var loop in _induction.Analyze(controlFlow))
         {
             // Unrolled guards test index + factor - 1, which assumes a plain index guard.
@@ -47,17 +56,33 @@ internal sealed class ArrayLoopUnrollingPlanner(
             // Do not redirect fallthrough, conditional or dispatcher entries.
             // CFG predecessors already prove the target of an unconditional branch.
             if (entries.Length == 0 || entries.Any(instruction => instruction.Operation != CilOperation.Branch)) continue;
-            plans.Add(new(loop.IndexLocal, loop.ArrayLocal, guard.StartOffset,
+            plans.Add((new(loop.IndexLocal, loop.ArrayLocal, guard.StartOffset,
                 [.. entries.Select(instruction => instruction.Offset)], code, factor)
             {
                 LengthLocal = loop.LengthLocal,
-            });
+            }, guard.Instructions[^1], loop.Initial));
 
             long ExpandedCost(int count) => (long)payload.Length * count +
                 2L * indexReads * (count - 1) + 4;
         }
-        return plans.ToImmutable();
+        if (plans.Count == 0) return [];
+        // The guard compares the index with the bound, which is on top where it branches.
+        var stacks = _ranges.StacksAt(controlFlow, plans.Select(plan => plan.Compare.Offset).ToHashSet());
+        return
+        [
+            .. plans
+                .Where(plan => !(stacks.TryGetValue(plan.Compare.Offset, out var stack) && stack is [.., { } bound] &&
+                    RunsFewerThan(MinimumTrips, bound, plan.Compare.Operation, plan.Initial)))
+                .Select(plan => plan.Plan),
+        ];
     }
+
+    // Whether a loop from initial to a bound in this range runs fewer iterations than the count. An unsigned guard
+    // reads a negative bound as a large one.
+    private static bool RunsFewerThan(int count, IntegerRange bound, CilOperation guard, int initial) =>
+        bound.High - initial < count &&
+        (bound.Low >= 0 ||
+         guard is not (CilOperation.BranchIfLessThanUnsigned or CilOperation.BranchIfGreaterThanOrEqualUnsigned));
 
     private static readonly FrozenSet<CilOperation> NumericBodyOperations = new[]
     {

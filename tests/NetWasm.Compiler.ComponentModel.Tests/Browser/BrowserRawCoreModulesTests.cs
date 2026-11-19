@@ -54,7 +54,12 @@ public sealed class BrowserRawCoreModulesTests
         }
         else
         {
-            Assert.Equal(BinaryenToolIds.WasmOpt, plan.Operations.OfType<BrowserLinkToolOperation>().Skip(1).SingleOrDefault()!.ToolId);
+            var optimize = plan.Operations.OfType<BrowserLinkToolOperation>().Skip(1).SingleOrDefault()!;
+            Assert.Equal(BinaryenToolIds.WasmOpt, optimize.ToolId);
+            // A browser link inlines as nwc does: Oz caps the size of a function inlined into its one caller.
+            var cap = optimize.Arguments.IndexOf("--one-caller-inline-max-function-size");
+            Assert.True(cap > 0);
+            Assert.Equal("1000", optimize.Arguments[cap + 1]);
             Assert.Equal(new BrowserLinkInlineOperation("v/tmp/linked.wasm", "v/tmp/linked.wasm",
                 WasmInlineAnnotationSelection.Remove), plan.Operations.OfType<BrowserLinkInlineOperation>().Last());
             Assert.Equal("v/tmp/linked.wasm", plan.Operations.OfType<BrowserLinkValidationOperation>().Single().Path);

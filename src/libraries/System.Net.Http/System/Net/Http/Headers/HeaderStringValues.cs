@@ -7,7 +7,7 @@ using System.Collections.Generic;
 namespace System.Net.Http.Headers
 {
     /// <summary>Provides a collection of header string values.</summary>
-    internal readonly struct HeaderStringValues : IReadOnlyCollection<string>
+    public readonly struct HeaderStringValues : IReadOnlyCollection<string>
     {
         /// <summary>The associated header.  This is used only for producing a string from <see cref="_value"/> when it's an array.</summary>
         private readonly HeaderDescriptor _header;

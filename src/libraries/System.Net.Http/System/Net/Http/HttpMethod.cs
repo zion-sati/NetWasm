@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Net.Http.QPack;
 
 namespace System.Net.Http
 {
@@ -10,20 +11,22 @@ namespace System.Net.Http
         private readonly string _method;
         private int _hashcode;
 
-        public static HttpMethod Get { get; } = new("GET", validated: true);
-        public static HttpMethod Put { get; } = new("PUT", validated: true);
-        public static HttpMethod Post { get; } = new("POST", validated: true);
-        public static HttpMethod Delete { get; } = new("DELETE", validated: true);
-        public static HttpMethod Head { get; } = new("HEAD", validated: true);
-        public static HttpMethod Options { get; } = new("OPTIONS", validated: true);
-        public static HttpMethod Trace { get; } = new("TRACE", validated: true);
-        public static HttpMethod Patch { get; } = new("PATCH", validated: true);
+        public static HttpMethod Get { get; } = new("GET", H3StaticTable.MethodGet);
+        public static HttpMethod Put { get; } = new("PUT", H3StaticTable.MethodPut);
+        public static HttpMethod Post { get; } = new("POST", H3StaticTable.MethodPost);
+        public static HttpMethod Delete { get; } = new("DELETE", H3StaticTable.MethodDelete);
+        public static HttpMethod Head { get; } = new("HEAD", H3StaticTable.MethodHead);
+        public static HttpMethod Options { get; } = new("OPTIONS", H3StaticTable.MethodOptions);
+        public static HttpMethod Trace { get; } = new("TRACE", http3StaticTableIndex: -1);
+        public static HttpMethod Patch { get; } = new("PATCH", http3StaticTableIndex: -1);
 
-        // NetWasm: QUERY and CONNECT are newer than the netstandard contract; they stay internal for the known-method
-        // lookup that names methods in telemetry.
-        internal static HttpMethod Query { get; } = new("QUERY", validated: true);
+        /// <summary>Gets the HTTP QUERY protocol method.</summary>
+        /// <value>The HTTP QUERY method.</value>
+        public static HttpMethod Query { get; } = new("QUERY", http3StaticTableIndex: -1);
 
-        internal static HttpMethod Connect { get; } = new("CONNECT", validated: true);
+        /// <summary>Gets the HTTP CONNECT protocol method.</summary>
+        /// <value>The HTTP CONNECT method.</value>
+        public static HttpMethod Connect { get; } = new("CONNECT", H3StaticTable.MethodConnect);
 
         public string Method => _method;
 
@@ -36,14 +39,18 @@ namespace System.Net.Http
             }
 
             _method = method;
+            Initialize(method);
         }
 
-        // NetWasm: upstream passes each known method's HTTP/3 static-table index to SocketsHttpHandler-specific
-        // initialization, which WASI does not have.
-        private HttpMethod(string method, bool validated)
+        private HttpMethod(string method, int http3StaticTableIndex)
         {
             _method = method;
+            Initialize(http3StaticTableIndex);
         }
+
+        // SocketsHttpHandler-specific implementation has extra init logic.
+        partial void Initialize(int http3Index);
+        partial void Initialize(string method);
 
         public bool Equals([NotNullWhen(true)] HttpMethod? other) =>
             other is not null &&
@@ -72,6 +79,19 @@ namespace System.Net.Http
 
         public static bool operator !=(HttpMethod? left, HttpMethod? right) =>
             !(left == right);
+
+        /// <summary>Parses the provided <paramref name="method"/> into an <see cref="HttpMethod"/> instance.</summary>
+        /// <param name="method">The method to parse.</param>
+        /// <returns>An <see cref="HttpMethod"/> instance for the provided <paramref name="method"/>.</returns>
+        /// <remarks>
+        /// This method may return a singleton instance for known methods; for example, it may return <see cref="Get"/>
+        /// if "GET" is specified. The parsing is performed in a case-insensitive manner, so it may also return <see cref="Get"/>
+        /// if "get" is specified. For unknown methods, a new <see cref="HttpMethod"/> instance is returned, with the
+        /// same validation being performed as by the <see cref="HttpMethod(string)"/> constructor.
+        /// </remarks>
+        public static HttpMethod Parse(ReadOnlySpan<char> method) =>
+            GetKnownMethod(method) ??
+            new HttpMethod(method.ToString());
 
         internal static HttpMethod? GetKnownMethod(ReadOnlySpan<char> method)
         {

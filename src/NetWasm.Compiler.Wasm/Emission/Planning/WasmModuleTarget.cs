@@ -11,6 +11,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
+using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.Startup;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
@@ -52,7 +53,7 @@ internal sealed record WasmModuleTarget(
         StackTraceLookups = StackTraceMethodLookups.Of(Plan.StackTraceMethods),
         StaticInitializerGuards = Lookups.Of(ModuleData.StaticInitializerGuards),
         ExceptionMetadata = Lookups.Of(ModuleData.ExceptionMetadata),
-        EnableBranchValueFramePlacement = Request.EnableBranchValueFramePlacement,
+        BranchPrefixDuplication = Request.BranchPrefixDuplication,
         EnableAggregateReferenceLanes = Request.EnableAggregateReferenceLanes,
         EnableArrayMetadataCaching = Request.EnableArrayMetadataCaching,
         HoistArrayNullChecks = Request.HoistArrayNullChecks,
@@ -91,7 +92,7 @@ internal sealed record InstructionModuleTarget(
     bool CollectManagedMethodMemoryMetrics = false,
     bool EnableAddressTakenAggregatePromotion = false)
 {
-    public bool EnableBranchValueFramePlacement { get; init; }
+    public BranchPrefixDuplicationPolicy BranchPrefixDuplication { get; init; }
     public bool EnableAggregateReferenceLanes { get; init; }
     public bool EnableArrayMetadataCaching { get; init; }
     public bool HoistArrayNullChecks { get; init; }
@@ -150,7 +151,9 @@ IJSImportForwarderPlanner jsImportForwarders) : IWasmModuleTargetFactory
             request.Sidecars is { DescriptorSlotAddress: int slot } sidecars
                 ? new SidecarDescriptor(
                     slot,
-                    (sidecars.LoadTypeSymbols ? SidecarDescriptor.TypeSymbolsFlag : 0) |
+                    // Names a program reads lazily too, so the flag says whether it may wait to load them.
+                    (sidecars.LoadTypeSymbols && StartupPreflightPlacement.LoadsSymbols(request)
+                        ? SidecarDescriptor.TypeSymbolsFlag : 0) |
                     (plan.StackTraceMethods.Symbols.IsEmpty ? 0 : SidecarDescriptor.MethodSymbolsFlag),
                     buildId,
                     sidecars.ProgramFileName)

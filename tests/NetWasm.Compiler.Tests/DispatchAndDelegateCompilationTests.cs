@@ -134,6 +134,8 @@ public sealed class DispatchAndDelegateCompilationTests
                     return KeepAlive(marker, value + 1);
                 }
 
+                // A call, so the marker escapes and Read keeps its allocation.
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
                 private static int KeepAlive(Marker marker, int value) => value;
                 int IExplicitRead.Read(int value) => value + 2;
             }

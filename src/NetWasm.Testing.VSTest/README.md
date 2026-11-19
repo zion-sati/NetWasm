@@ -1,9 +1,17 @@
 # NetWasm.Testing.VSTest
 
 `NetWasm.Testing.VSTest` is the framework-neutral bridge between stock VSTest
-and a test project targeting `netwasm0.1`. Its standard VSTest runtime-provider
-extension recognizes only `NetWasm,Version=v0.1` and starts a pinned portable
-desktop testhost under the `dotnet` host supplied by the invoking test run.
+and a test project targeting `net10.0-netwasm` (or the deprecated
+`netwasm0.1`). Its standard VSTest runtime-provider extension starts a pinned
+portable desktop testhost under the `dotnet` host supplied by the invoking test
+run.
+
+VSTest reports a `net10.0-netwasm` project as `.NETCoreApp,Version=v10.0`, the
+same as a desktop project. The package's build therefore adds a
+`NetWasm.TargetFramework` test run parameter naming the project's target
+framework, and the runtime provider claims a `.NETCoreApp` run only when that
+parameter names a `netwasm` platform target framework. A `netwasm0.1` run is
+recognized by its own framework, `NetWasm,Version=v0.1`.
 
 The package appends its extension directory to `VSTestTestAdapterPath`. It does
 not define or replace the `VSTest` target, inject `Microsoft.NET.Test.Sdk`, add

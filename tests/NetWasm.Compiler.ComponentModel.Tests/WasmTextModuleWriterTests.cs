@@ -54,7 +54,7 @@ public sealed class WasmTextModuleWriterTests
         Assert.Throws<ArgumentException>(() => writer.Write("(module)", " "));
         var exception = Assert.Throws<CompilerException>(() => writer.Write(
             "(module)", output));
-        Assert.Contains("unknown error", exception.Diagnostic.Message,
+        Assert.Contains("without an error message", exception.Diagnostic.Message,
             StringComparison.Ordinal);
     }
 

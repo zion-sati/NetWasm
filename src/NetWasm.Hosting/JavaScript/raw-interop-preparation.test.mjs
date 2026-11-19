@@ -526,6 +526,37 @@ test("rejects invalid interop lifetime actions before composition", () => {
   assert.throws(() => prepareParsedNetWasmInterop({
     ...options, observeAsyncFailure: null,
   }), /lifetime actions/);
+  assert.throws(() => prepareParsedNetWasmInterop({
+    ...options, observeImportCall: null,
+  }), /lifetime actions/);
+});
+
+// A page's idle collection learns the program ran from each import it calls, a class's static member through a
+// dotted name included, and a call that throws counts too.
+test("tells the import observer of each import call", () => {
+  class Dom {
+    static addClass(value) { return value + 1; }
+  }
+  let calls = 0;
+  const raw = prepareRawNetWasmInterop({
+    manifest: manifest({
+      imports: [
+        { ...importDescriptor("consumer", "Dom.addClass", "u32", ["u32"]), call: "direct" },
+        { ...importDescriptor("consumer", "fail", "void", []), call: "direct" },
+      ],
+    }),
+    runtimeModules: {},
+    consumerModules: { consumer: { Dom, fail() { throw new Error("failed"); } } },
+    diagnosticArtifacts: null,
+    managedExceptionReporting: reporting(),
+    observeImportCall: () => { calls++; },
+    stackTraceSymbols: [],
+  });
+
+  assert.equal(raw.imports.consumer["Dom.addClass"](41), 42);
+  assert.equal(calls, 1);
+  assert.throws(() => raw.imports.consumer.fail(), /failed/);
+  assert.equal(calls, 2);
 });
 
 test("routes function diagnostic artifacts through configured reporting", async () => {

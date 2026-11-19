@@ -38,12 +38,14 @@ public sealed class NetWasmCompileTaskTests
         task.TypeSymbolsPath = "app.wasm.type-symbols";
         task.EmitStackTrace = true;
         task.EmitTypeNames = true;
+        task.GarbageCollector = "NetWasmGen";
         task.MethodSymbolsPath = "app.wasm.method-symbols";
         task.WitPath = "app.wit";
         task.WitWorld = "example:app/app";
         task.ImportModules = [new TaskItem("host_ui")];
         task.DiagnosticTracePath = "trace.json";
         task.DiagnosticLogPath = "compiler.jsonl";
+        task.DiagnosticLogLevel = "Information";
         task.UseJavaScriptExportBoundary = true;
         task.StructuredDiagnostics = true;
         task.CompiledUnits = "false";
@@ -78,10 +80,10 @@ public sealed class NetWasmCompileTaskTests
                 "-source:Program.cs", "-runtimelayout:layout.json",
                 "-interopmanifest:interop.json", "-compilermetadata:metadata.json", "-callbackobject:app.callbacks.o",
                 "-typesymbols:app.wasm.type-symbols", "-methodsymbols:app.wasm.method-symbols", "-typenames+",
-                "-wit:app.wit",
+                "-gc:NetWasmGen", "-wit:app.wit",
                 "-world:example:app/app", "-importmodule:host_ui", "-diagnostictrace:trace.json",
-                "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics+",
-                "-compiledunits-", "-verifycompiledunits+",
+                "-diagnosticlog:compiler.jsonl", "-diagnosticloglevel:Information", "-jsexportboundary+",
+                "-structureddiagnostics+", "-compiledunits-", "-verifycompiledunits+",
                 "-projectdirectory:/project", "-pathmap:/project=/_/", "-intermediatedirectory:obj/netwasm/",
                 "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
                 "-wasmtools:native/wasm-tools",
@@ -102,21 +104,62 @@ public sealed class NetWasmCompileTaskTests
             Lines(task.ResponseFileCommands));
     }
 
-    // nwc is given gen0 budgets that let a compile finish without collecting, unless the
-    // build gives its own.
+    // nwc reads every option the task writes, through the response file the task gives it: a switch the task writes
+    // and nwc does not know fails every build that sets it (as -nativearchive once did, for every native archive).
     [Fact]
-    public void GivesNwcTheGarbageCollectionBudgetsUnlessTheBuildSetsThem()
+    public void NwcReadsEveryOptionTheTaskWrites()
     {
         var task = CreateTask();
-        Assert.Contains("DOTNET_GCgen0size=10000000", task.ToolEnvironment());
-        Assert.Contains("DOTNET_GCLOHThreshold=8000000", task.ToolEnvironment());
+        task.NoLogo = true;
+        task.References = [new TaskItem("CoreLib.dll")];
+        task.MetadataReferences = [new TaskItem("contract-view.dll")];
+        task.MetadataReferences[0].SetMetadata("NetWasmOriginalReference", "original-contract.dll");
+        task.Sources = [new TaskItem("Program.cs")];
+        task.TypeSymbolsPath = "app.wasm.type-symbols";
+        task.EmitTypeNames = true;
+        task.MethodSymbolsPath = "app.wasm.method-symbols";
+        task.WitPath = "app.wit";
+        task.WitWorld = "example:app/app";
+        task.ImportModules = [new TaskItem("host_ui")];
+        task.DiagnosticTracePath = "trace.json";
+        task.DiagnosticLogPath = "compiler.jsonl";
+        task.DiagnosticLogLevel = "Information";
+        task.UseJavaScriptExportBoundary = true;
+        task.StructuredDiagnostics = true;
+        task.CompiledUnits = "true";
+        task.VerifyCompiledUnits = true;
+        task.ProjectDirectory = "/project";
+        task.PathMap = "/project=/_/";
+        task.NativeWasmToolsPath = "native/wasm-tools";
+        task.ManagedMethodInlining = "Disabled";
+        task.LinkedNativeOnly = true;
+        task.MissingApiAsError = true;
+        var archive = new TaskItem("native/libExample.a");
+        archive.SetMetadata("NetWasmLibraryName", "libExample");
+        task.NativeLibraries = [archive];
+        var feature = new TaskItem("System.Example.IsSupported");
+        feature.SetMetadata("Value", "false");
+        feature.SetMetadata("Trim", "true");
+        task.RuntimeHostConfigurationOptions = [feature];
+        var responseFile = Path.Combine(Path.GetTempPath(), $"nwc-{Guid.NewGuid():N}.rsp");
+        File.WriteAllText(responseFile, task.ResponseFileCommands);
 
-        task.EnvironmentVariables = ["DOTNET_GCgen0size=4000000", "OTHER=1"];
-        var given = task.ToolEnvironment();
-        Assert.Contains("DOTNET_GCgen0size=4000000", given);
-        Assert.DoesNotContain("DOTNET_GCgen0size=10000000", given);
-        Assert.Contains("OTHER=1", given);
-        Assert.Contains("DOTNET_GCLOHThreshold=8000000", given);
+        NetWasm.Compiler.Cli.NwcArguments arguments;
+        try
+        {
+            arguments = NetWasm.Compiler.Cli.NwcArgumentReader.Read(
+                ["@" + responseFile],
+                NetWasm.Compiler.Cli.CompileCliOptions.Names,
+                new NetWasm.Compiler.Cli.SystemTextFileReader());
+        }
+        finally
+        {
+            File.Delete(responseFile);
+        }
+
+        Assert.Contains("-nativearchive:libExample=native/libExample.a", Lines(task.ResponseFileCommands));
+        Assert.Contains("-missingapierror+", Lines(task.ResponseFileCommands));
+        Assert.Empty(arguments.Errors);
     }
 
     [Fact]

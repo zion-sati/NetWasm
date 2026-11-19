@@ -31,6 +31,10 @@ void collector_object_layout(const void *object, NetWasmCollectorLayout *layout)
  * collector_object_layout only when contains_references is true. */
 void *collector_allocate_object(size_t bytes, bool contains_references);
 
+/* Returns untraced storage whose bytes are unspecified (GC.AllocateUninitializedArray): a
+ * collector clears what it cheaply can, as a run it zeroes in bulk, and leaves the rest. */
+void *collector_allocate_uninitialized_object(size_t bytes);
+
 /* Allocation runs: the contract that lets the runtime allocate a small object
  * without calling the collector. An object of `bytes`, below
  * NETWASM_ALLOCATION_RUN_LIMIT, takes a slot of NETWASM_ALLOCATION_SLOT(bytes)

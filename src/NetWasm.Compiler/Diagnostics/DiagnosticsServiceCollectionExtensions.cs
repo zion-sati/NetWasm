@@ -99,8 +99,13 @@ internal static class DiagnosticsServiceCollectionExtensions
             CompilerSuccessDiagnosticArtifactWriter>();
         services.AddSingleton<ICompilerFailureDiagnosticArtifactWriter,
             CompilerFailureDiagnosticArtifactWriter>();
-        services.AddSingleton<ICompilerProgressReporter,
-            CompilerDiagnosticProgressReporter>();
+        services.AddSingleton<ICompilerMemoryReader>(static _ =>
+            new ProcessCompilerMemoryReader(hasProcess: !(OperatingSystem.IsBrowser() | OperatingSystem.IsWasi())));
+        services.AddSingleton<ICompilerProgressReporter>(static provider => new MemoryReportingProgressReporter(
+            ActivatorUtilities.CreateInstance<CompilerDiagnosticProgressReporter>(provider),
+            provider.GetRequiredService<ICompilerMemoryReader>(),
+            provider.GetRequiredService<ILogger<MemoryReportingProgressReporter>>(),
+            provider.GetRequiredService<TimeProvider>()));
         return services;
     }
 }

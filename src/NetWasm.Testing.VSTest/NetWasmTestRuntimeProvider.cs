@@ -77,7 +77,7 @@ public sealed class NetWasmTestRuntimeProvider : ITestRuntimeProvider2
             || configuration is null)
         {
             throw new ArgumentException(
-                "The NetWasm runtime provider requires the NetWasm,Version=v0.1 run configuration.",
+                "The NetWasm runtime provider requires a NetWasm run configuration: NetWasm,Version=v0.1, or a .NETCoreApp framework with the NetWasm.TargetFramework setting of a netwasm platform target framework.",
                 nameof(runsettingsXml));
         }
 

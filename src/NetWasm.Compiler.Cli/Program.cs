@@ -12,7 +12,8 @@ internal static class Program
 {
     internal static int Main(string[] args)
     {
-        var result = Run(args, new SystemConsole());
+        // The command runs on a large-stack thread: a pass recurses as deep as the program's code nests.
+        var result = LargeStackThreads.Call(() => Run(args, new SystemConsole()));
         // A plain account of the compile's garbage collection, for tuning.
         if (Environment.GetEnvironmentVariable("NETWASM_GC_STATS") == "1")
         {

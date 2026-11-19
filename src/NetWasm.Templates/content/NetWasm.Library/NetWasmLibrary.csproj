@@ -1,6 +1,6 @@
 <Project Sdk="NetWasm.Sdk/0.4.2">
   <PropertyGroup>
-    <TargetFrameworks>netwasm0.1;net10.0</TargetFrameworks>
+    <TargetFrameworks>net10.0-netwasm;net10.0</TargetFrameworks>
     <OutputType>Library</OutputType>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>

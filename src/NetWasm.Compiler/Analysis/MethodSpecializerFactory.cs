@@ -56,6 +56,8 @@ internal sealed class MethodSpecializerFactory(
         [
             // Before every other rule: a method ILLink.Substitutions.xml stubs has the stub's body instead of its own.
             new FeatureSwitchBodyStubRewriter(featureSwitches),
+            // Then a field instruction naming a static field takes its static form, which every later rule expects.
+            new StaticFieldInstanceAccessRewriter(fields),
             // First of the rest, so every later rule sees an argument or store of the kind declared.
             new ImplicitCoercionRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
             // Second, so every later rule meets each leave on an empty stack, exiting a block.
@@ -79,9 +81,13 @@ internal sealed class MethodSpecializerFactory(
             new RectangularArrayCallRewriter(),
             new DelegateMethodRewriter(_graphBuilders.Create(), calledMethods, symbols),
             new ParameterlessNewExpressionRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols, types),
+            new ResourceManagerTypeSourceRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols),
             new IntrinsicCallRewriter(calledMethods, symbols),
             new DelegateInvokeMethodTokenRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols),
             new DelegateDynamicInvokeCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
+                _graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods),
+                new StaticReferenceTypeAnalyzer(calledMethods, fields)),
+            new ArrayCopyCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
                 _graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods),
                 new StaticReferenceTypeAnalyzer(calledMethods, fields)),
             new ExecutingAssemblyCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
@@ -156,6 +162,16 @@ internal sealed class MethodSpecializerFactory(
             new VectorElementReadRewriter(calledMethods, types, methods, methodInstances, symbols),
             new ConstantStaticFieldRewriter(fields, typeIdentities, typeDefinitions, methods, calleeBodies),
             ConstantBranchFoldingFactory.Create(_graphBuilders.Create()),
+            // After folding, so a branch a constant decides is gone rather than turned into a select; a check that
+            // ends an arm moves out of it, and conditions chained with && and || merge first, so the arms they choose
+            // between can be selected.
+            .. optimizationSettings.ConditionalSelects == ConditionalSelectPolicy.Enabled
+                ? [
+                    new ThrowCheckHoister(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
+                    new ConditionChainRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
+                    new ConditionalSelectRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
+                ]
+                : Array.Empty<IMethodRewriteRule>(),
             // After the branches a folded check cut off are gone, with the last reads of the locals they used.
             new UnreadLocalStoreRewriter(_graphBuilders.Create(), effectFreeLoads),
         ]);

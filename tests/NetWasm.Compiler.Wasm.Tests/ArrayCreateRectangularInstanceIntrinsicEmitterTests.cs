@@ -9,6 +9,7 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -40,7 +41,7 @@ public sealed class ArrayCreateRectangularInstanceIntrinsicEmitterTests
             Target = WasmTargetLayout.For(target),
         };
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(new ArrayCreateRectangularInstanceIntrinsicEmitter(
-            descriptors, layout, layout, imports, roots, addresses, exceptions));
+            descriptors, layout, layout, imports, roots, addresses, exceptions, new KeyedDispatchEmitter()));
         var writer = new RecordingInstructionWriter();
 
         emitter.Emit(request, writer);
@@ -54,11 +55,12 @@ public sealed class ArrayCreateRectangularInstanceIntrinsicEmitterTests
         var bounded = (uint)imports.Resolve(RuntimeImportSymbol.AllocateBoundedRectangularArray, request.Instruction.Target.RuntimeImportSelection);
         var plain = (uint)imports.Resolve(RuntimeImportSymbol.AllocateRectangularArray, request.Instruction.Target.RuntimeImportSelection);
         Assert.Equal([bounded, plain, bounded, plain], calls);
-        Assert.Equal(2, code.Count(i => i.Opcode == WasmOpcodes.Else));
+        // The element's id and the rank make one 64-bit key per rectangular array type; the shift is the 32.
+        Assert.Equal([32L, 9L << 32 | 2, 9L << 32 | 3],
+            code.Where(i => i.Opcode == WasmOpcodes.I64Constant).Select(i => i.Operand.Signed64Value));
         Assert.Contains(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue == 77);
         Assert.Contains(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue == 88);
         Assert.DoesNotContain(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue is 76 or 66);
-        Assert.Contains(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue == 3);
         Assert.Equal(4, code.Count(i => i.Opcode == WasmOpcodes.LocalGet &&
             i.Operand.UnsignedValue == (uint)request.Local(2, CliValueKind.NativeInt)));
         Assert.Equal(2, code.Count(i => i.Opcode == WasmOpcodes.LocalGet &&

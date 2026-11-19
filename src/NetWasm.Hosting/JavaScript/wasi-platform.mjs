@@ -207,9 +207,9 @@ function readNetwork(value) {
   const modules = value.modules;
   if (modules === null || typeof modules !== "object" || Array.isArray(modules)
       || !Object.isFrozen(modules) || Object.keys(modules).length === 0
-      || Object.entries(modules).some(([name, source]) => !/^wasi:(http|sockets)\//u.test(name)
+      || Object.entries(modules).some(([name, source]) => !/^wasi:(http|sockets|tls)\//u.test(name)
         || source === null || typeof source !== "object")) {
-    throw new TypeError("WASI network services must supply frozen wasi:http or wasi:sockets modules");
+    throw new TypeError("WASI network services must supply frozen wasi:http, wasi:sockets or wasi:tls modules");
   }
   return modules;
 }

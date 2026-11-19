@@ -55,7 +55,7 @@ public sealed class CorpusExecutionVerifierTests
     }
 
     [Fact]
-    public void RejectsAnExecutionLabelledWithAnotherTarget() =>
+    public void RejectsAnExecutionLabeledWithAnotherTarget() =>
         Assert.Throws<InvalidOperationException>(() =>
             _verifier.Verify(Fixture(), WasmTarget.Wasm64, Execution(WasmTarget.Wasm32)));
 

@@ -11,7 +11,7 @@ public sealed class JavaScriptHostIntrinsicEmitterTests
     [Theory]
     [InlineData(true, 1)]
     [InlineData(false, 0)]
-    public void ReportsTheCompiledHostFlavourAsAConstant(bool javaScriptExportBoundary, byte expected)
+    public void ReportsTheCompiledHostFlavorAsAConstant(bool javaScriptExportBoundary, byte expected)
     {
         var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.JavaScriptHost, []);
         var instruction = request.Instruction;

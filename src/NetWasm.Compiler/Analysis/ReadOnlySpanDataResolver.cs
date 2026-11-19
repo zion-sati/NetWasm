@@ -77,7 +77,7 @@ internal sealed class ReadOnlySpanDataResolver : IReadOnlySpanDataResolver
         {
             return null;
         }
-        if (!TryGetPrimitiveSize(elementType, out var elementSize))
+        if (!TryGetElementSize(elementType, out var elementSize))
         {
             return null;
         }
@@ -116,6 +116,13 @@ internal sealed class ReadOnlySpanDataResolver : IReadOnlySpanDataResolver
         elementType = null!;
         return false;
     }
+
+    // The size of a constant span's element: a primitive's, or an enum's underlying primitive's. Roslyn reads an enum's
+    // constant elements from data as it does its underlying type's (RuntimeHelpers.CreateSpan<TEnum>).
+    internal static bool TryGetElementSize(CliTypeIdentity type, out int size) =>
+        TryGetPrimitiveSize(type, out size) ||
+        type.StackStorageType is { Shape: CliTypeShape.Primitive } storage && type.IsValueType &&
+        TryGetPrimitiveSize(storage, out size);
 
     internal static bool TryGetPrimitiveSize(CliTypeIdentity type, out int size)
     {

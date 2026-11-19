@@ -41,7 +41,11 @@ internal readonly record struct IntegerRange(Int128 Low, Int128 High)
 // evaluation stack hold at its instructions, found by running the method over
 // ranges: constants, loads and stores, arithmetic that cannot wrap, divisions,
 // masks and shifts, conversions between integer sizes, and each conditional
-// branch narrowing the slots it compares on the edge it takes. A slot is
+// branch narrowing the slots it compares on the edge it takes, a comparison's
+// result among them: a branch on `a < b`, on its opposite `(a < b) == 0`, or
+// on either joined to a zero with `|` or to a one with `&`, as a folded
+// platform check leaves the test it was joined to, narrows a and b as a
+// branch that compared them would. A slot is
 // followed when it is an integer no wider than 64 bits whose address the
 // method never takes and that no handler stores, since a finally a leave runs
 // is not on the path to the leave's target. Anything else pushes an integer
@@ -66,7 +70,11 @@ internal sealed class IntegerRangeAnalysis(IStackEffectResolver effects) : IInte
     private readonly IStackEffectResolver _effects = effects ?? throw new ArgumentNullException(nameof(effects));
 
     // A stack value: its range when it is an integer, and the slot it was loaded from while the slot still holds it.
-    private readonly record struct Value(IntegerRange? Range, int Slot);
+    // Test: what a comparison's result says of its operands, where the value is one.
+    private readonly record struct Value(IntegerRange? Range, int Slot, Test? Test = null);
+
+    // The value is nonzero exactly when Left <Relation> Right holds.
+    private sealed record Test(Comparison Relation, Value Left, Value Right);
 
     private sealed record State(IntegerRange?[] Slots, ImmutableList<Value> Stack);
 
@@ -246,7 +254,14 @@ internal sealed class IntegerRangeAnalysis(IStackEffectResolver effects) : IInte
                  })
         {
             var narrowed = (IntegerRange?[])slots.Clone();
-            if (Narrow(narrowed, compared, relation)) yield return (successor, new(narrowed, rest));
+            // A branch on a comparison's result also narrows what it compared: nonzero is the comparison, zero its
+            // opposite.
+            if (Narrow(narrowed, compared, relation) &&
+                (compared is not [{ Test: { } test }] ||
+                 Narrow(narrowed, [test.Left, test.Right], relation == Comparison.NotEqual ? test.Relation : Opposite(test.Relation))))
+            {
+                yield return (successor, new(narrowed, rest));
+            }
         }
     }
 
@@ -290,19 +305,30 @@ internal sealed class IntegerRangeAnalysis(IStackEffectResolver effects) : IInte
                 {
                     slots[stored] = value.Range is { } known && known.Within(range) ? known : range;
                 }
-                // The slot no longer holds what was loaded from it.
+                // The slot no longer holds what was loaded from it, or what a comparison still on the stack compared.
                 for (var index = 0; index < stack.Count; index++)
                 {
                     if (stack[index].Slot == stored) stack[index] = stack[index] with { Slot = -1 };
+                    if (stack[index].Test is { } test && (test.Left.Slot == stored || test.Right.Slot == stored))
+                    {
+                        stack[index] = stack[index] with { Test = null };
+                    }
                 }
                 return;
             case CilOperation.Duplicate:
                 stack.Add(stack[^1]);
                 return;
         }
+        if (Unchanged(instruction.Operation, stack) is { } kept)
+        {
+            stack.RemoveRange(stack.Count - 2, 2);
+            stack.Add(kept);
+            return;
+        }
+        var compared = Compared(instruction.Operation, stack);
         if (Computed(instruction, stack, kind, controlFlow) is { } computed)
         {
-            stack.Add(new(computed, -1));
+            stack.Add(new(computed, -1, compared));
             return;
         }
         // Anything else leaves values of their types, or, when its effect is unknown, the stack the next instruction
@@ -318,6 +344,53 @@ internal sealed class IntegerRangeAnalysis(IStackEffectResolver effects) : IInte
     }
 
     private static IntegerRange Single(Int128 value) => new(value, value);
+
+    // The operand an operation leaves as it was, with what it says of a slot or of a comparison's operands: x | 0
+    // is x, and x & c is x for x zero or one and c odd.
+    private static Value? Unchanged(CilOperation operation, ImmutableList<Value>.Builder stack)
+    {
+        if (stack.Count < 2) return null;
+        var (left, right) = (stack[^2], stack[^1]);
+        return operation switch
+        {
+            CilOperation.BitwiseOr => right.Range == Single(0) ? left : left.Range == Single(0) ? right : null,
+            CilOperation.BitwiseAnd => Odd(right) && Bit(left) ? left : Odd(left) && Bit(right) ? right : null,
+            _ => null,
+        };
+
+        static bool Odd(Value value) => value.Range is { } range && range.Low == range.High && (range.Low & 1) == 1;
+
+        static bool Bit(Value value) => value.Range is { } range && range.Low >= 0 && range.High <= 1;
+    }
+
+    // What the result of a signed comparison or an equality of the two values on top says of them. A comparison's
+    // result tested against zero is the comparison's opposite.
+    private static Test? Compared(CilOperation operation, ImmutableList<Value>.Builder stack)
+    {
+        if (stack.Count < 2) return null;
+        var (left, right) = (stack[^2] with { Test = null }, stack[^1] with { Test = null });
+        return operation switch
+        {
+            // Validated IL compares a comparison's int32 result only with an int32, whose range is known.
+            CilOperation.CompareEqual when stack[^2].Test is { } inner && right.Range.Equals(Single(0)) =>
+                inner with { Relation = Opposite(inner.Relation) },
+            CilOperation.CompareEqual => new(Comparison.Equal, left, right),
+            CilOperation.CompareLessThanSigned => new(Comparison.Less, left, right),
+            CilOperation.CompareGreaterThanSigned => new(Comparison.Greater, left, right),
+            _ => null,
+        };
+    }
+
+    // A test's relation is an equality or a signed comparison (Compared), or the opposite of one; never Unsigned.
+    private static Comparison Opposite(Comparison relation) => relation switch
+    {
+        Comparison.Equal => Comparison.NotEqual,
+        Comparison.NotEqual => Comparison.Equal,
+        Comparison.Less => Comparison.GreaterOrEqual,
+        Comparison.GreaterOrEqual => Comparison.Less,
+        Comparison.LessOrEqual => Comparison.Greater,
+        _ => Comparison.LessOrEqual,
+    };
 
     private static int Slot(CilInstruction instruction, int arguments) =>
         ((CilOperand.Index)instruction.Operand).Value +

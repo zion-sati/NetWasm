@@ -11,11 +11,11 @@ using NetWasm.TestInfrastructure;
 namespace NetWasm.Compiler.Tests.Units;
 
 // The early cutoff re-analyses only edited methods. At O0's defaults no analysis crosses
-// methods, so a method analysed alone must equal its analysis within the whole program.
+// methods, so a method analyzed alone must equal its analysis within the whole program.
 public sealed class EditedMethodAnalysisTests
 {
     [Fact]
-    public void EveryMethodAnalysedAloneEqualsItsWholeProgramAnalysis()
+    public void EveryMethodAnalyzedAloneEqualsItsWholeProgramAnalysis()
     {
         using var assets = TestAssets.Create();
         var options = new CompilerOptions(assets.CompileOptimizedSource("EditedMethods", CompiledUnitRestoreTests.BaseSource),
@@ -35,13 +35,13 @@ public sealed class EditedMethodAnalysisTests
 
         Assert.True(definitions.Length > 50, $"only {definitions.Length} methods were compared");
         Assert.Equal(definitions.Length, alone.Length);
-        Assert.Empty(edited.Unanalysed);
+        Assert.Empty(edited.Unanalyzed);
         var differing = alone
             .Where(analysis => Fingerprint(analysis.Body) != Fingerprint(program.Methods[analysis.Method.Definition.Key]))
             .Select(analysis => analysis.Method.CanonicalName)
             .ToArray();
         Assert.True(differing.Length == 0,
-            $"{differing.Length} of {definitions.Length} methods analyse differently alone: " +
+            $"{differing.Length} of {definitions.Length} methods analyze differently alone: " +
             string.Join(", ", differing.Take(8)));
 
         // Their sites, resolved against the program's allocated types, are the program's.

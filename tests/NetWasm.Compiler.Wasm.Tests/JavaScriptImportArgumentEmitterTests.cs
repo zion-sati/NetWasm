@@ -23,7 +23,7 @@ public sealed class JavaScriptImportArgumentEmitterTests
             CliTypeIdentity.FromStackKind(CliValueKind.I4),
             7,
             EmitterTestSupport.CreateMethodEmissionContext(),
-            new InteropImportPlan([], default, default, default, default, default, default));
+            new InteropImportPlan([], default, default, default, default));
 
         Assert.Empty(addresses.Values);
         Assert.Equal([WasmOpcodes.LocalGet, 7], code.ToArray());
@@ -50,7 +50,7 @@ public sealed class JavaScriptImportArgumentEmitterTests
             type,
             7,
             EmitterTestSupport.CreateMethodEmissionContext(),
-            new InteropImportPlan([], default, default, default, default, default, default));
+            new InteropImportPlan([], default, default, default, default));
 
         Assert.Equal(
             [AddressOperation.EqualZero, expectedHeaderSize, AddressOperation.Add],

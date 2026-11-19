@@ -11,7 +11,7 @@ namespace NetWasm.Compiler.Analysis.Attributes;
 internal sealed class AttributeMatchSelector(
     ICustomAttributeDescriptorReader descriptors,
     IAttributeUsageReader usages,
-    ITypeRelationshipClassifier relationships,
+    IAttributeTypeFilter types,
     IBaseTypeResolver bases) : IAttributeMatchSelector
 {
     public ImmutableArray<CustomAttributeDescriptor> Select(CliTypeIdentity target, CliTypeIdentity filter,
@@ -24,7 +24,7 @@ internal sealed class AttributeMatchSelector(
             var level = ImmutableArray.CreateBuilder<CustomAttributeDescriptor>();
             foreach (var attribute in descriptors.Read(current))
             {
-                if (!relationships.Classify(attribute.AttributeType, filter).IsAssignmentCompatible) continue;
+                if (!types.Matches(attribute.AttributeType, filter)) continue;
                 if (!current.Equals(target))
                 {
                     var usage = usages.Read(attribute.AttributeType);

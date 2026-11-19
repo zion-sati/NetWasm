@@ -91,7 +91,7 @@ public sealed class ManagedTracingCompilationTests
                 if (sourceFilter.ShouldTrace(null, "src", TraceEventType.Critical, 0, null, null, null, null) || !sourceFilter.ShouldTrace(null, "other", TraceEventType.Critical, 0, null, null, null, null)) return 10;
                 if (!Throws<ArgumentNullException>(() => new SourceFilter(null!))) return 11;
 
-                // Delimited listener escapes quoted fields and honours output options.
+                // Delimited listener escapes quoted fields and honors output options.
                 var csv = new StringWriter();
                 var delimited = new DelimitedListTraceListener(csv) { Delimiter = "," };
                 delimited.TraceEvent(null, "s\"x", TraceEventType.Warning, 9, "a,b");

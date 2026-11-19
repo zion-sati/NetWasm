@@ -13,6 +13,8 @@ internal sealed class JavaScriptResultDescriptorSizeResolver(
         CliValueKind.I8 or CliValueKind.F8 => sizeof(long),
         _ when InteropTypeClassifier.IsDate(result) => sizeof(double),
         _ when InteropTypeClassifier.IsNullable(result) => JavaScriptNullable.RecordSize,
+        // A number array's staged block: its address, then its length at ByteArrayJavaScriptImportResultMarshaller.LengthOffset.
+        _ when InteropTypeClassifier.IsValueArray(result) => ByteArrayJavaScriptImportResultMarshaller.LengthOffset + sizeof(int),
         CliValueKind.NativeInt when layouts.Target.UsesMemory64 => sizeof(long),
         _ => sizeof(int),
     };

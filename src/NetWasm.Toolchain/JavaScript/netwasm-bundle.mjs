@@ -151,6 +151,10 @@ async function bundleRuntime(facades, output, minify) {
       entryFileNames: "netwasm.runtime.[name].[hash].mjs",
       format: "esm",
       minify,
+      // V8's explicit compile hint: a page or worker runs most of its runtime while it starts, so the
+      // engine compiles every function as it streams the file, off the main thread, instead of each one
+      // lazily on the main thread at its first call. Engines without the hint read a comment.
+      postBanner: "//# allFunctionsCalledOnLoad",
       sourcemap: false,
     });
     const chunks = new Map(generated.output.map(chunk => {
@@ -173,7 +177,9 @@ async function bundleRuntime(facades, output, minify) {
   }
 }
 
-// The files a runtime module loads: itself and every chunk it imports.
+// The files a runtime module loads when it loads: itself and every chunk it imports statically. A chunk it imports
+// only dynamically, such as code that runs when something fails, loads when it is first used, so a page does not
+// preload it.
 function closure(entry, chunks) {
   const files = new Set();
   const pending = [entry.fileName];
@@ -181,8 +187,7 @@ function closure(entry, chunks) {
     const fileName = pending.pop();
     if (files.has(fileName)) continue;
     files.add(fileName);
-    const chunk = chunks.get(fileName);
-    pending.push(...chunk.imports, ...chunk.dynamicImports);
+    pending.push(...chunks.get(fileName).imports);
   }
   return [...files].sort();
 }

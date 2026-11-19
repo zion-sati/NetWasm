@@ -3,6 +3,7 @@
 
 import { createLinkedCorpusObserver } from "./linked-corpus-observer.mjs";
 import { readCorpusTrace } from "./corpus-trace-reader.mjs";
+import { addUnprovidedWasiImports } from "./unprovided-wasi-imports.mjs";
 
 export function createLinkedCorpusProgram({
   readBinary,
@@ -40,7 +41,8 @@ export function createLinkedCorpusProgram({
         fileName: request.methodSymbols.fileName,
         bytes: await readBinary(request.methodSymbols.path),
       };
-      if (listImports(module).some(({ module: name }) =>
+      const declaredImports = listImports(module);
+      if (declaredImports.some(({ module: name }) =>
         name === "wasi_snapshot_preview1" || name === "wasi_unstable"))
         throw new TypeError("Linked corpus module imports forbidden Preview 1 services");
 
@@ -50,9 +52,9 @@ export function createLinkedCorpusProgram({
           managed = await instantiate({
             module,
             manifest,
-            runtimeModules: createRuntimeImports(
+            runtimeModules: addUnprovidedWasiImports(declaredImports, createRuntimeImports(
               request.target, () => managed.instance.exports.memory,
-              () => managed.instance.exports, sidecar),
+              () => managed.instance.exports, sidecar), "the linked corpus host"),
             managedExceptionReporting: { reportImmediate },
           });
           return managed;

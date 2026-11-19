@@ -51,6 +51,7 @@ namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Sin(double value)
     {
 
@@ -75,6 +76,7 @@ public static partial class Math
     // musl's sincos: one argument reduction for both results, each exactly what
     // Sin and Cos return. NetWasm: the pair comes back as one v128 value, so
     // neither the call nor the tuple needs a value frame.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static (double Sin, double Cos) SinCos(double value)
     {
         var both = SinCosPair(value);

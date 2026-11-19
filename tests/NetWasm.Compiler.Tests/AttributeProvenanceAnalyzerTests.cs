@@ -16,7 +16,124 @@ public sealed class AttributeProvenanceAnalyzerTests
     private static readonly CliTypeIdentity First = CliTypeIdentity.Named(Assembly, "Example", "First", false);
     private static readonly CliTypeIdentity Second = CliTypeIdentity.Named(Assembly, "Example", "Second", false);
     private static readonly CliTypeIdentity Nullable = CliTypeIdentity.Named(Assembly, "System", "Nullable`1", true);
+    private static readonly CliTypeIdentity TypeType = CliTypeIdentity.Named(Assembly, "System", "Type", false);
+    private static readonly CliTypeIdentity Reference = CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference);
+    private static readonly CliTypeIdentity Integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
     private static readonly MethodInstanceModel Unwrap = Method(2, CliValueKind.ManagedReference, CliValueKind.ManagedReference);
+
+    // With the Type-value classifier, a value statically typed Type is a Type the analysis cannot name: an argument, a
+    // local, a static field, a cast or test to Type, a call returning Type, GetType() and a materialized non-token.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TypedValuesProveARuntimeTypeOnlyWithTheClassifier(bool classified)
+    {
+        var typed = TypedMethod(6, isStatic: true, TypeType);
+        var untyped = TypedMethod(7, isStatic: true, Reference);
+        var field = new FieldInstanceModel(
+            new(new(Assembly, 8), new(Assembly, 1), "Current", CliValueKind.ManagedReference, true), First, TypeType);
+        var caller = TypedMethod(9, isStatic: true, Reference, TypeType, Integer);
+        var body = new CilMethodBody(caller.Definition, 5, [CliValueKind.ManagedReference, CliValueKind.ManagedReference], [
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.StoreLocal, new CilOperand.Index(1)),
+            I(2, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(3, CilOperation.LoadLocal, new CilOperand.Index(1)),
+            I(4, CilOperation.Pop),
+            I(5, CilOperation.Pop),
+            I(6, CilOperation.LoadNull),
+            I(7, CilOperation.GetObjectType),
+            I(8, CilOperation.Pop),
+            I(9, CilOperation.LoadStaticField, new CilOperand.FieldInstance(field)),
+            I(10, CilOperation.Pop),
+            I(11, CilOperation.LoadNull),
+            I(12, CilOperation.IsInstance, new CilOperand.TypeIdentity(TypeType)),
+            I(13, CilOperation.Pop),
+            I(14, CilOperation.Call, new CilOperand.MethodInstance(untyped)),
+            I(15, CilOperation.CastClass, new CilOperand.TypeIdentity(TypeType)),
+            I(16, CilOperation.Pop),
+            I(17, CilOperation.Call, new CilOperand.MethodInstance(typed)),
+            I(18, CilOperation.Pop),
+            I(19, CilOperation.LoadArgument, new CilOperand.Index(1)),
+            I(20, CilOperation.MaterializeType),
+            I(21, CilOperation.Pop),
+            I(22, CilOperation.Call, new CilOperand.MethodInstance(untyped)),
+            I(23, CilOperation.Pop),
+            I(24, CilOperation.LoadNull),
+            I(25, CilOperation.Return)])
+        {
+            MethodInstance = caller,
+            LocalSignatureTypes = [TypeType, Reference],
+        };
+
+        var facts = Analyze(body, field: field.Definition, typeValues: classified);
+
+        var runtime = classified ? new AttributeValueProof(AttributeValueKind.RuntimeType) : default;
+        Assert.Equal(runtime, facts[1][^1]);
+        Assert.Equal(runtime, facts[3][^1]);
+        Assert.Equal(runtime, facts[4][^1]);
+        Assert.Equal(runtime, facts[8][^1]);
+        Assert.Equal(runtime, facts[10][^1]);
+        Assert.Equal(runtime, facts[13][^1]);
+        Assert.Equal(runtime, facts[16][^1]);
+        Assert.Equal(runtime, facts[18][^1]);
+        Assert.Equal(default, facts[20][^1]);
+        Assert.Equal(runtime, facts[21][^1]);
+        Assert.Equal(default, facts[23][^1]);
+    }
+
+    [Fact]
+    public void AnInstanceMethodsReceiverIsTypedByItsDeclaringType()
+    {
+        var caller = TypedMethod(10, isStatic: false, Reference, Integer);
+        var body = new CilMethodBody(caller.Definition, 2, [], [
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.Pop),
+            I(2, CilOperation.LoadArgument, new CilOperand.Index(1)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.LoadNull),
+            I(5, CilOperation.Return)])
+        { MethodInstance = caller };
+
+        var facts = Analyze(body, typeValues: true);
+
+        Assert.Equal(new(AttributeValueKind.RuntimeType), facts[1][^1]);
+        Assert.Equal(default, facts[3][^1]);
+    }
+
+    // Types (or nulls) meeting at a join are a Type the analysis cannot name; anything else meeting a type is unknown.
+    [Theory]
+    [InlineData("types", true)]
+    [InlineData("null", true)]
+    [InlineData("unknown", false)]
+    [InlineData("integers", false)]
+    public void ValuesMeetAsARuntimeTypeOnlyWhenEveryOneIsAType(string incoming, bool runtimeType)
+    {
+        var untyped = TypedMethod(11, isStatic: true, Reference);
+        CilInstruction[] Value(int offset, CliTypeIdentity type) => incoming switch
+        {
+            "integers" => [I(offset, CilOperation.LoadInt32, new CilOperand.ConstantI4(offset)), I(offset + 1, CilOperation.Nop)],
+            "null" when type == Second => [I(offset, CilOperation.LoadNull), I(offset + 1, CilOperation.Nop)],
+            "unknown" when type == Second => [I(offset, CilOperation.Call, new CilOperand.MethodInstance(untyped)), I(offset + 1, CilOperation.Nop)],
+            _ => [I(offset, CilOperation.LoadTypeToken, new CilOperand.TypeIdentity(type)), I(offset + 1, CilOperation.MaterializeType)],
+        };
+        var body = Body([
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(5)),
+            .. Value(2, First),
+            I(4, CilOperation.Branch, new CilOperand.BranchTarget(12)),
+            I(5, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(6, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(10)),
+            .. Value(7, Second),
+            I(9, CilOperation.Branch, new CilOperand.BranchTarget(12)),
+            .. Value(10, Nullable),
+            I(12, CilOperation.Pop),
+            I(13, CilOperation.LoadNull),
+            I(14, CilOperation.Return)]);
+
+        var facts = Analyze(body, typeValues: true);
+
+        Assert.Equal(runtimeType ? new(AttributeValueKind.RuntimeType) : default, Assert.Single(facts[12]));
+    }
 
     [Fact]
     public void TracksTypeTokensMaterializationAndLocalCopies()
@@ -396,17 +513,17 @@ public sealed class AttributeProvenanceAnalyzerTests
     }
 
     private static ImmutableDictionary<int, ImmutableArray<AttributeValueProof>> Analyze(
-        CilMethodBody body, Fields? fields = null, FieldDefinitionModel? field = null)
+        CilMethodBody body, Fields? fields = null, FieldDefinitionModel? field = null, bool typeValues = false)
     {
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
         var repository = new Repository(field);
         var validated = new TypedStackValidatorFactory(new StackTypeCompatibilityValidator())
             .Create(repository, repository, repository).Validate(graph);
-        return Analyze(CreateAnalyzer(fields ?? new Fields(null)), validated);
+        return Analyze(CreateAnalyzer(fields ?? new Fields(null), typeValues ? new TypeValues() : null), validated);
     }
 
-    private static AttributeProvenanceAnalyzer CreateAnalyzer(Fields fields) =>
-        new(new Calls(), new Types(), fields, [Unwrap.Definition.Key], Nullable);
+    private static AttributeProvenanceAnalyzer CreateAnalyzer(Fields fields, IAttributeTypeValueClassifier? typeValues = null) =>
+        new(new Calls(), new Types(), fields, [Unwrap.Definition.Key], Nullable, typeValues: typeValues);
 
     private static ImmutableDictionary<int, ImmutableArray<AttributeValueProof>> Analyze<TAnalyzer>(
         TAnalyzer analyzer, ValidatedControlFlowGraph graph) where TAnalyzer : IAttributeProvenanceAnalyzer =>
@@ -423,6 +540,18 @@ public sealed class AttributeProvenanceAnalyzerTests
     {
         var signature = MethodSignatureModel.Create(result, parameters);
         return new(new(new(Assembly, token), new(Assembly, 1), "Method", true, signature, 1), First, [], signature);
+    }
+
+    private static MethodInstanceModel TypedMethod(int token, bool isStatic, CliTypeIdentity returnType,
+        params CliTypeIdentity[] parameters)
+    {
+        var signature = new MethodSignatureModel(returnType, [.. parameters]);
+        return new(new(new(Assembly, token), new(Assembly, 1), "Typed", isStatic, signature, 1), TypeType, [], signature);
+    }
+
+    private sealed class TypeValues : IAttributeTypeValueClassifier
+    {
+        public bool IsTypeValue(CliTypeIdentity type) => type == TypeType;
     }
 
     private sealed class Calls : ICalledMethodResolver
@@ -457,8 +586,10 @@ public sealed class AttributeProvenanceAnalyzerTests
 
     private sealed class Repository(FieldDefinitionModel? field = null) : ITypeRepository, IFieldRepository, IMethodRepository
     {
-        public TypeDefinitionModel GetTypeDefinition(EntityKey key) =>
-            throw new InvalidOperationException("The fixture uses resolved type operands.");
+        // Only an instance method's declaring type, which its receiver argument names.
+        public TypeDefinitionModel GetTypeDefinition(EntityKey key) => key == new EntityKey(Assembly, 1)
+            ? new(key, "System", "Type", false, [], [])
+            : throw new InvalidOperationException("The fixture uses resolved type operands.");
 
         public FieldDefinitionModel GetField(EntityKey key) =>
             field?.Key == key ? field : throw new InvalidOperationException("The fixture uses resolved field operands.");

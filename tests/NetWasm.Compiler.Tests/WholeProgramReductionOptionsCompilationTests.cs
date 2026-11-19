@@ -32,6 +32,8 @@ public sealed class WholeProgramReductionOptionsCompilationTests
             }
             public static class EntryPoint
             {
+                // A call, so only constant argument propagation can remove it.
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
                 private static int Slow(int value) => value + 1000;
                 private static bool IsDefault(string? format) => format is null;
                 private static int Choose(int value, string? format) => IsDefault(format) ? value : Slow(value);
@@ -71,7 +73,9 @@ public sealed class WholeProgramReductionOptionsCompilationTests
                     method.Method.DeclaringType.FullName == "EntryPoint" && method.Method.Definition.Name == "Slow"));
                 var initializer = Assert.Single(warm.Program.Methods.Values, method =>
                     method.Method.DeclaringType.FullName == "Data" && method.Method.Definition.Name == ".cctor");
-                Assert.Equal(population ? 0 : 1, initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewObject));
+                // Unused's one element writes 7, whether Value's constructor stays a call or is inlined.
+                Assert.Equal(!population, initializer.Body.Instructions.Any(instruction =>
+                    instruction.Operand is CilOperand.ConstantI4 { Value: 7 }));
                 Assert.Single(initializer.Body.Instructions, instruction => instruction.Operation == CilOperation.NewArray);
                 Assert.Equal(42, ExecuteWithStandardWasiNode(warm.ApplicationModule,
                     assets.Directory, 40, target, warm.StaticDataEnd));

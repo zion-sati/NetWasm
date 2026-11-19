@@ -34,15 +34,23 @@ public sealed record ReachableProgram(
     // Types RuntimeHelpers.GetUninitializedObject creates; empty unless it is reachable.
     public ImmutableArray<CliTypeIdentity> UninitializedObjectTypes { get; init; } = [];
 
+    // Every closed type the program has at run time: with the allocated types, the only types a Type object can exist
+    // for (a typeof, a GetType() result).
+    public ImmutableHashSet<CliTypeIdentity> RuntimeTypes { get; init; } = [];
+
     // Types that receive structure-marshalling descriptors, and whether those descriptors carry
     // field names for Marshal.OffsetOf; empty unless Marshal's structure members are reachable.
     public ImmutableArray<CliTypeIdentity> StructMarshallingTypes { get; init; } = [];
 
     public bool StructMarshallingFieldNames { get; init; }
 
+    // The parameterless constructors PtrToStructure runs on structures it creates by their runtime type.
+    public ImmutableDictionary<CliTypeIdentity, MethodInstanceModel> StructMarshallingConstructors { get; init; } =
+        ImmutableDictionary<CliTypeIdentity, MethodInstanceModel>.Empty;
+
     public ImmutableArray<EntityKey> ModuleInitializers { get; init; } = [];
 
-    // What each analysed method adds to the whole program, by canonical name: an edit that
+    // What each analyzed method adds to the whole program, by canonical name: an edit that
     // keeps every changed method's contribution leaves the rest of the program as it was.
     internal ImmutableDictionary<string, NetWasm.Compiler.Analysis.MethodContribution> MethodContributions { get; init; } =
         ImmutableDictionary<string, NetWasm.Compiler.Analysis.MethodContribution>.Empty;
@@ -109,6 +117,9 @@ public sealed record ReachableProgram(
     public bool RequiresTypeAttributes { get; init; }
 
     public bool RequiresInterfaces { get; init; }
+    public bool RequiresManifestResources { get; init; }
+    public bool RequiresAssemblyNames { get; init; }
+    public bool RequiresAssemblyEnumeration { get; init; }
 
 
     public ImmutableArray<string> ConstructedStaticInitializers { get; init; } = [];

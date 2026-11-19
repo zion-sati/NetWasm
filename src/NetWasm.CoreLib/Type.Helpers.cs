@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Managed Type helpers; shape predicates use existing canonical runtime facts.
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public partial class Type
@@ -21,8 +23,9 @@ public partial class Type
     protected virtual bool HasElementTypeImpl() => IsArray || IsByRef || IsPointer;
 
     // An array's, pointer's or by-reference type's element, from the type table.
-    public virtual bool IsFunctionPointer => false;
-    public virtual bool IsUnmanagedFunctionPointer => false;
+    public virtual bool IsFunctionPointer => Kind() == RuntimeTypeFactsFlags.FunctionPointer;
+    public virtual bool IsUnmanagedFunctionPointer => IsFunctionPointer &&
+        (RuntimeTypeTable.Flags(SemanticTypeId) >> RuntimeTypeFactsFlags.ArrayRankShift & RuntimeTypeFactsFlags.ArrayRankMask) != 0;
 
     public virtual Array GetEnumValuesAsUnderlyingType()
     {
@@ -41,18 +44,26 @@ public partial class Type
     public virtual string? GetEnumName(object value) => Enum.GetName(this, value);
     public virtual string[] GetEnumNames() => Enum.GetNames(this);
     public virtual Array GetEnumValues() => Enum.GetValues(this);
+    [Intrinsic]
     public virtual Type GetEnumUnderlyingType() => Enum.GetUnderlyingType(this);
     public virtual bool IsEnumDefined(object value) => Enum.IsDefined(this, value);
 
     // The canonical Type supplies runtime facts directly. Upstream exposes
     // these hooks on Type and implements them on its RuntimeType subclass.
     protected virtual bool IsArrayImpl() => HasFlag(RuntimeTypeFactsFlags.Array);
-    protected virtual bool IsByRefImpl() => HasFlag(RuntimeTypeFactsFlags.ByReference);
-    protected virtual bool IsPointerImpl() => HasFlag(RuntimeTypeFactsFlags.Pointer);
+    protected virtual bool IsByRefImpl() => Kind() == RuntimeTypeFactsFlags.ByReference;
+    protected virtual bool IsPointerImpl() => Kind() == RuntimeTypeFactsFlags.Pointer;
+
+    // Which of a by-reference, pointer or function pointer type this is, or none.
+    private int Kind() => RuntimeTypeTable.Flags(SemanticTypeId) & RuntimeTypeFactsFlags.FunctionPointer;
     protected virtual bool IsValueTypeImpl() => HasFlag(RuntimeTypeFactsFlags.ValueType);
     protected virtual TypeCode GetTypeCodeImpl() => (TypeCode)(RuntimeTypeTable.Flags(SemanticTypeId) >> 24 & 0x1f);
 
-    public bool IsPrimitive => IsPrimitiveImpl();
+    public bool IsPrimitive
+    {
+        [Intrinsic]
+        get => IsPrimitiveImpl();
+    }
 
     protected virtual bool IsPrimitiveImpl() => !IsEnum &&
         (GetTypeCodeImpl() is >= TypeCode.Boolean and <= TypeCode.Double ||
@@ -121,7 +132,11 @@ public partial class Type
     public virtual bool IsSecurityCritical => true;
     public virtual bool IsSecuritySafeCritical => false;
     public virtual bool IsSecurityTransparent => false;
-    public virtual bool IsByRefLike => HasFlag(RuntimeTypeFactsFlags.ByRefLike);
+    public virtual bool IsByRefLike
+    {
+        [Intrinsic]
+        get => HasFlag(RuntimeTypeFactsFlags.ByRefLike);
+    }
     public virtual bool IsGenericParameter => HasFlag(RuntimeTypeFactsFlags.GenericTypeParameter | RuntimeTypeFactsFlags.GenericMethodParameter);
     public virtual bool IsGenericTypeParameter => HasFlag(RuntimeTypeFactsFlags.GenericTypeParameter);
     public virtual bool IsGenericMethodParameter => HasFlag(RuntimeTypeFactsFlags.GenericMethodParameter);

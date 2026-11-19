@@ -27,6 +27,33 @@ public sealed class SdkRoutingTests
         Assert.DoesNotContain("NU1202", codes);
     }
 
+    // NuGet restores a project that targets several frameworks from its outer evaluation, whose NoWarn property
+    // never sees the netwasm0.1 suppression above, but it takes each package reference from that framework's own
+    // evaluation. A library targeting net10.0-netwasm and netwasm0.1 with warnings as errors failed to restore a
+    // .NET Standard package (NU1701) that a netwasm0.1-only one restores. The suppression is per framework: the
+    // other frameworks keep NuGet's warning for their own fallbacks (net10.0-netwasm's .NET Framework ones).
+    [Theory]
+    [InlineData("<TargetFrameworks>net10.0-netwasm;netwasm0.1</TargetFrameworks>", "netwasm0.1", "", true)]
+    [InlineData("<TargetFrameworks>net10.0-netwasm;netwasm0.1</TargetFrameworks>", "net10.0-netwasm", "", false)]
+    [InlineData("<TargetFrameworks>netwasm0.1;net10.0</TargetFrameworks>", "net10.0", "", false)]
+    [InlineData("<TargetFramework>netwasm0.1</TargetFramework>", null, "", true)]
+    [InlineData("<TargetFramework>netwasm0.1</TargetFramework>", null, "NU1603", true)]
+    [InlineData("<TargetFramework>netwasm0.1</TargetFramework><AssetTargetFallback>netstandard2.1;net472</AssetTargetFallback>", null, "", false)]
+    public void StandardFallbackWarningIsSuppressedOnEachNetWasmPackageReference(
+        string frameworks, string? innerFramework, string existingNoWarn, bool suppressed)
+    {
+        var noWarn = existingNoWarn.Length == 0 ? string.Empty : $" NoWarn=\"{existingNoWarn}\"";
+        using var project = EvaluationProject.Create(
+            frameworks,
+            innerFramework,
+            projectItems: $"<PackageReference Include=\"Example.Standard\" Version=\"1.0.0\"{noWarn} />");
+
+        var reference = Assert.Single(project.Items("PackageReferenceNoWarn"), item => item.StartsWith("Example.Standard|", StringComparison.Ordinal));
+        var codes = reference["Example.Standard|".Length..].Split(';', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(suppressed, codes.Contains("NU1701", StringComparer.Ordinal));
+        if (existingNoWarn.Length > 0) Assert.Contains(existingNoWarn, codes);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -167,6 +194,25 @@ public sealed class SdkRoutingTests
         Assert.Equal("true", project.Property("NetWasmRequiresHostTools"));
         Assert.Contains(project.Items("PackageReference"),
             package => package.StartsWith("NetWasm.HostTools.", StringComparison.Ordinal));
+    }
+
+    // A module compiled as a library links its packages' assemblies, which the stock SDK resolves only when it copies
+    // lock-file assemblies; a project that says otherwise keeps its choice, and an ordinary library copies none.
+    [Theory]
+    [InlineData("<OutputType>JsModule</OutputType>", "true")]
+    [InlineData("<OutputType>WitWebWorker</OutputType>", "true")]
+    [InlineData("<OutputType>CoreModule</OutputType>", "true")]
+    [InlineData("<OutputType>Component</OutputType>", "true")]
+    [InlineData("<OutputType>JsModule</OutputType><CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>", "false")]
+    [InlineData("<OutputType>Library</OutputType>", "false")]
+    public void ModulesCompiledAsLibrariesCopyTheirPackageAssemblies(string output, string expected)
+    {
+        using var project = EvaluationProject.Create($"""
+            <TargetFramework>net10.0-netwasm</TargetFramework>
+            {output}
+            """);
+
+        Assert.Equal(expected, project.Property("CopyLocalLockFileAssemblies"));
     }
 
     [Theory]
@@ -317,7 +363,7 @@ public sealed class SdkRoutingTests
         Assert.Contains("run an application or browser project that references the library", output, StringComparison.Ordinal);
     }
 
-    // A component is served or loaded by a host the user runs (owner, 2026-11-09), so dotnet run
+    // A component is served or loaded by a host the user runs, so dotnet run
     // says how to publish and host it instead of the library advice.
     [Theory]
     [InlineData("service", "serve Greeter.wasm with wasmtime serve -Sp3 -Scli, Spin or wasmCloud")]
@@ -775,7 +821,9 @@ public sealed class SdkRoutingTests
         Assert.Contains("DependsOnTargets=\"ResolvePackageAssets\"", sdkTargets, StringComparison.Ordinal);
         Assert.Contains("@(ResolvedCompileFileDefinitions)", sdkTargets, StringComparison.Ordinal);
         Assert.Contains("NuGetPackageId", sdkTargets, StringComparison.Ordinal);
-        Assert.Contains("/ref/NetWasm,Version=v0.1/NetWasm.CoreLib.dll", sdkTargets, StringComparison.Ordinal);
+        // NetWasm.Ref's CoreLib under ref/, from its netwasm0.1 or net10.0-netwasm folder.
+        Assert.Contains("EndsWith('/NetWasm.CoreLib.dll')", sdkTargets, StringComparison.Ordinal);
+        Assert.Contains("Contains('/ref/')", sdkTargets, StringComparison.Ordinal);
         Assert.Contains("Code=\"NWSDK001\"", sdkTargets, StringComparison.Ordinal);
         Assert.DoesNotContain("NetWasmRefAssemblyPath", sdkTargets, StringComparison.Ordinal);
         Assert.DoesNotContain("<HintPath>", sdkTargets, StringComparison.Ordinal);
@@ -789,7 +837,7 @@ public sealed class SdkRoutingTests
 
         Assert.Contains("'@(_NetWasmSdkResolvedReferenceContract)' == ''", sdkTargets, StringComparison.Ordinal);
         Assert.Contains("'$(NetWasmRefPackageId)'", sdkTargets, StringComparison.Ordinal);
-        Assert.Contains("EndsWith('/ref/NetWasm,Version=v0.1/NetWasm.CoreLib.dll')", sdkTargets, StringComparison.Ordinal);
+        Assert.Contains("EndsWith('/NetWasm.CoreLib.dll')) AND", sdkTargets, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1033,6 +1081,40 @@ public sealed class SdkRoutingTests
             "netwasm:component/diagnostic-command@1.0.0",
             debug.Property("NetWasmWorld"));
         Assert.Equal("command", release.Property("NetWasmWorld"));
+    }
+
+    // net10.0-netwasm is .NET's own target framework on the netwasm platform: NuGet sees .NETCoreApp 10.0 with platform
+    // netwasm 1.0, and the build compiles against NetWasm's framework, not Microsoft.NETCore.App, as a netwasm0.1 build
+    // does. A dual-target library's net10.0 build stays a desktop build.
+    [Fact]
+    public void PlatformTargetFrameworkIsANetWasmGuestBuild()
+    {
+        using var project = EvaluationProject.Create("<TargetFramework>net10.0-netwasm</TargetFramework>");
+        Assert.Equal("true", project.Property("NetWasmGuestFramework"));
+        Assert.Equal(".NETCoreApp", project.Property("TargetFrameworkIdentifier"));
+        Assert.Equal("netwasm", project.Property("TargetPlatformIdentifier"));
+        Assert.Equal("1.0", project.Property("TargetPlatformVersion"));
+        Assert.Equal(".NETCoreApp,Version=v10.0", project.Property("NuGetTargetMoniker"));
+        Assert.Equal("true", project.Property("DisableImplicitFrameworkReferences"));
+        Assert.Equal("false", project.Property("UseAppHost"));
+        // No .NET host file reaches a build or a deployment (a netwasm0.1 build never wrote one).
+        Assert.Equal("false", project.Property("GenerateDependencyFile"));
+        Assert.Equal("false", project.Property("GenerateRuntimeConfigurationFiles"));
+        Assert.Contains("NETWASM", project.Property("DefineConstants").Split(';'));
+        Assert.Equal("wasm32", project.Property("NetWasmTarget"));
+
+        // dotnet run starts NetWasm's launcher on Node, not the dotnet exec Microsoft.NET.Sdk picks for .NETCoreApp.
+        using var executable = EvaluationProject.Create(
+            "<TargetFramework>net10.0-netwasm</TargetFramework><OutputType>Exe</OutputType>");
+        Assert.NotEqual("dotnet", executable.Property("RunCommand"));
+        Assert.Contains("--netwasm-execution", executable.Property("RunArguments"), StringComparison.Ordinal);
+        Assert.DoesNotContain("exec ", executable.Property("RunArguments"), StringComparison.Ordinal);
+
+        using var desktop = EvaluationProject.Create("<TargetFrameworks>net10.0-netwasm;net10.0</TargetFrameworks>", "net10.0");
+        Assert.Equal("", desktop.Property("NetWasmGuestFramework"));
+        Assert.Equal("", desktop.Property("TargetPlatformIdentifier"));
+        Assert.Equal("", desktop.Property("DisableImplicitFrameworkReferences"));
+        Assert.Equal("true", desktop.Property("GenerateDependencyFile"));
     }
 
     [Fact]
@@ -1388,11 +1470,12 @@ public sealed class SdkRoutingTests
         Assert.Equal(!disabled, pruned.Contains("System.Buffers|5.0.0"));
         Assert.Equal(!disabled, pruned.Contains("System.Runtime|4.3.1"));
         Assert.Equal(!disabled, pruned.Contains("System.Threading.Channels|11.0.0"));
+        Assert.Equal(!disabled, pruned.Contains("System.Text.Encoding.CodePages|11.0.0"));
         Assert.DoesNotContain(pruned, item => item.StartsWith("System.Drawing.Common|", StringComparison.Ordinal));
         if (!disabled)
         {
             Assert.Equal("true", project.Property("RestoreEnablePackagePruning"));
-            Assert.Equal(127, pruned.Count(item => item.StartsWith("System.", StringComparison.Ordinal) ||
+            Assert.Equal(128, pruned.Count(item => item.StartsWith("System.", StringComparison.Ordinal) ||
                 item.StartsWith("NetWasm.System.", StringComparison.Ordinal)));
         }
     }
@@ -1536,6 +1619,30 @@ public sealed class SdkRoutingTests
         throw new DirectoryNotFoundException("The NetWasm repository root was not found.");
     }
 
+    // TLS is on unless a project for a host without wasi:tls turns it off; either way the compiler gets a folded
+    // switch, and a desktop target gets none.
+    [Theory]
+    [InlineData("", "true")]
+    [InlineData("<NetWasmTlsSupport>false</NetWasmTlsSupport>", "false")]
+    public void TlsSupportIsAFoldedSwitch(string setting, string expected)
+    {
+        using var project = EvaluationProject.Create($"""
+            <TargetFramework>net10.0-netwasm</TargetFramework>
+            <OutputType>Exe</OutputType>
+            {setting}
+            """);
+
+        Assert.Equal(expected, project.Property("NetWasmTlsSupport"));
+        Assert.Contains($"NetWasm.Net.Security.TlsSupport={expected}/true", project.Items("RuntimeHostConfigurationOption"));
+
+        using var desktop = EvaluationProject.Create("""
+            <TargetFramework>net10.0</TargetFramework>
+            <OutputType>Exe</OutputType>
+            """);
+
+        Assert.DoesNotContain(desktop.Items("RuntimeHostConfigurationOption"), option => option.StartsWith("NetWasm.", StringComparison.Ordinal));
+    }
+
     private sealed class EvaluationProject : IDisposable
     {
         private const string ItemSeparator = "||#||";
@@ -1653,7 +1760,11 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmBrowserPublishDir=$(NetWasmBrowserPublishDir)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmWorkerPublishDir=$(NetWasmWorkerPublishDir)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__PackageReference=@(PackageReference, '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__PackageReferenceNoWarn=@(PackageReference->'%(Identity)|%(NoWarn)', '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__PackageDownload=@(PackageDownload, '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmTlsSupport=$(NetWasmTlsSupport)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__CopyLocalLockFileAssemblies=$(CopyLocalLockFileAssemblies)" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__RuntimeHostConfigurationOption=@(RuntimeHostConfigurationOption->'%(Identity)=%(Value)/%(Trim)', '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmWitBinding=@(_NetWasmWitBinding->'%(Identity)|%(BindingPath)|%(Arguments)|%(GeneratorInput)', '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmWitBindingInput=@(_NetWasmWitBindingInput, '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmCompilationIdentityLine=@(_NetWasmCompilationIdentityLine, '{ItemSeparator}')" />
@@ -1661,6 +1772,17 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__TargetFrameworkVersion=$(TargetFrameworkVersion)" />
                     <Message Importance="High" Text="__NETWASM_PROP__TargetFrameworkMoniker=$(TargetFrameworkMoniker)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NuGetTargetMoniker=$(NuGetTargetMoniker)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__RunArguments=$(RunArguments)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__RunCommand=$(RunCommand)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmTarget=$(NetWasmTarget)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmGuestFramework=$(NetWasmGuestFramework)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__TargetPlatformIdentifier=$(TargetPlatformIdentifier)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__TargetPlatformVersion=$(TargetPlatformVersion)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__DisableImplicitFrameworkReferences=$(DisableImplicitFrameworkReferences)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__UseAppHost=$(UseAppHost)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__GenerateDependencyFile=$(GenerateDependencyFile)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__GenerateRuntimeConfigurationFiles=$(GenerateRuntimeConfigurationFiles)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__DefineConstants=$(DefineConstants)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmSdkCustomProfileEnabled=$(NetWasmSdkCustomProfileEnabled)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NuGetBuildTasksPackTargets=$(NuGetBuildTasksPackTargets)" />
                     <Message Importance="High" Text="__NETWASM_PROP__PackDependsOn=$(PackDependsOn)" />

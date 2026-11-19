@@ -4,3 +4,4 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("NetWasm.Compiler.Cli.Tests")]
+[assembly: InternalsVisibleTo("NetWasm.Compiler.Tasks.Tests")]

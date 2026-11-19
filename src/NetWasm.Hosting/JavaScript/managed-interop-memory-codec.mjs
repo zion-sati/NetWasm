@@ -68,25 +68,6 @@ export function writeManagedInteropString(request) {
   }
 }
 
-export function readManagedInteropBytes(request) {
-  assertExactDataObject(request, readKeys, "managed interop byte-array read");
-  return readManagedInteropValueArray(request, Uint8Array);
-}
-
-export function writeManagedInteropBytes(request) {
-  assertExactDataObject(request, writeKeys, "managed interop byte-array write");
-  if (!(request.value instanceof Uint8Array)) {
-    throw new TypeError("managed interop byte-array value is invalid");
-  }
-  writeManagedInteropValueArray(request);
-}
-
-// Copies a managed array of primitive numbers out as a typed array.
-export function readManagedInteropValueArray(request, constructor) {
-  assertExactDataObject(request, readKeys, "managed interop value-array read");
-  return readValueArray(request.reference, request.target, request.targetLayout, request.memory, constructor);
-}
-
 export function readValueArray(reference, target, targetLayout, memory, constructor) {
   if (typeof constructor?.BYTES_PER_ELEMENT !== "number") {
     throw new TypeError("managed interop value-array type is invalid");
@@ -120,21 +101,6 @@ export function readMemoryView(reference, target, targetLayout, memory, construc
     throw new NetWasmHostError("managed span is not aligned to its element size");
   }
   return new constructor(memory.buffer, dataAddress, length);
-}
-
-// Copies a typed array into a managed array the guest allocated with its length.
-export function writeManagedInteropValueArray(request) {
-  assertExactDataObject(request, writeKeys, "managed interop value-array write");
-  const value = request.value;
-  if (!ArrayBuffer.isView(value) || value instanceof DataView) {
-    throw new TypeError("managed interop value-array value is invalid");
-  }
-  const { byteOffset, length } = readElementRange(request, value.BYTES_PER_ELEMENT);
-  if (length !== value.length) {
-    throw new NetWasmHostError("managed array result destination is invalid");
-  }
-  new Uint8Array(request.memory.buffer, byteOffset, value.byteLength)
-    .set(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
 }
 
 function readElementRange(request, elementSize) {

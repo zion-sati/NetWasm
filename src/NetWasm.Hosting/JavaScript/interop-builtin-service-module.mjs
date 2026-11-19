@@ -1,15 +1,16 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
-import { isValueArray } from "./interop-abi-types.mjs";
+import { resolveGlobalJavaScriptImport } from "./javascript-import-resolver.mjs";
+import { ManagedMemoryView } from "./managed-memory-view.mjs";
 import {
   writeManagedInteropString,
-  writeManagedInteropValueArray,
 } from "./managed-interop-memory-codec.mjs";
 
 const builtinModule = "netwasm.host.v1";
 const requestKeys = [
   "builtinServices",
+  "consumerModules",
   "contract",
   "createStatusService",
   "exceptionReporter",
@@ -56,38 +57,15 @@ export function createInteropBuiltinServiceModule(request) {
     interop_release_subscription(handle) {
       request.handles.releaseSubscription(handle);
     },
-    interop_byte_length(handle) {
-      try {
-        const value = request.handles.get(handle);
-        return isValueArray(value) ? value.length : -1;
-      } catch {
-        return -1;
-      }
-    },
-    interop_copy_bytes(handle, destination) {
-      try {
-        const value = request.handles.get(handle);
-        if (!isValueArray(value)) return 1;
-        writeManagedInteropValueArray({
-          value,
-          reference: destination,
-          target: request.contract.target,
-          targetLayout: request.contract.targetLayout,
-          memory: request.readMemory(),
-        });
-        return 0;
-      } catch {
-        return 1;
-      }
-    },
   };
   const generatedServices = {
-    ...createGeneratedHostServices(),
-    ...createJavaScriptValueServices(request.handles),
+    ...createGeneratedHostServices(request.consumerModules),
+    ...createJavaScriptValueServices(request.handles, globalThis.FinalizationRegistry, request.readMemory),
   };
   for (const descriptor of request.contract.imports) {
     if (descriptor.module !== builtinModule) continue;
-    const generatedService = generatedServices[descriptor.name];
+    // A module-less [JSImport] named "globalThis.<path>" is .NET's way to call a global function.
+    const generatedService = generatedServices[descriptor.name] ?? resolveGlobalJavaScriptImport(descriptor.name);
     if (typeof generatedService === "function") {
       builtins[descriptor.name] = request.createStatusService(descriptor, generatedService);
     }
@@ -95,8 +73,33 @@ export function createInteropBuiltinServiceModule(request) {
   return builtins;
 }
 
-function createGeneratedHostServices() {
+// JSObject's property access, as .NET's browser runtime serves it. Each typed getter or setter is its own import; the
+// interop boundary converts the value to and from its type.
+const getProperty = (self, name) => self[name];
+const setProperty = (self, name, value) => {
+  self[name] = value;
+};
+
+function createGeneratedHostServices(modules) {
   return {
+    // JSHost: the global object, and a module the host bound for the program's imports, which JSHost.ImportAsync
+    // completes with.
+    host_global_this: () => globalThis,
+    host_module: name => Object.hasOwn(modules, name) ? modules[name] : null,
+    object_has_property: (self, name) => name in self,
+    object_type_of_property: (self, name) => typeof self[name],
+    object_get_boolean: getProperty,
+    object_get_int32: getProperty,
+    object_get_double: getProperty,
+    object_get_string: getProperty,
+    object_get_object: getProperty,
+    object_get_bytes: getProperty,
+    object_set_boolean: setProperty,
+    object_set_int32: setProperty,
+    object_set_double: setProperty,
+    object_set_string: setProperty,
+    object_set_object: setProperty,
+    object_set_bytes: setProperty,
     queue_microtask(callback) {
       let active = true;
       globalThis.queueMicrotask(() => {
@@ -126,7 +129,7 @@ class ManagedError extends Error {
 // receiver of a handle releases it. Managed objects and exceptions keep their
 // managed GC handle, which value_collected reports once JavaScript collects them;
 // without a FinalizationRegistry they stay pinned.
-export function createJavaScriptValueServices(handles, Registry = globalThis.FinalizationRegistry) {
+export function createJavaScriptValueServices(handles, Registry = globalThis.FinalizationRegistry, readMemory = null) {
   const managed = new WeakMap();
   const collected = [];
   const registry = typeof Registry === "function"
@@ -193,6 +196,16 @@ export function createJavaScriptValueServices(handles, Registry = globalThis.Fin
       if (element !== 0) handles.release(element);
     },
     value_from_managed: handle => track(Object.freeze(new ManagedObject()), handle),
+    // .NET's IMemoryView over an ArraySegment C# passed: the array's managed handle ends when JavaScript disposes or
+    // collects the view.
+    value_from_memory_view(handle, address, length, kind) {
+      const view = new ManagedMemoryView(readMemory, address, length, kind, () => {
+        registry?.unregister(view);
+        collected.push(handle);
+      });
+      registry?.register(view, handle, view);
+      return handles.acquire(view);
+    },
     value_from_managed_error: (message, handle) => track(new ManagedError(message), handle),
     // Any order frees them; taking the last costs the same however many JavaScript collected.
     value_collected: () => collected.pop() ?? 0n,

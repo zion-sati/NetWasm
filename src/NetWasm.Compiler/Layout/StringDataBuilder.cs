@@ -48,8 +48,10 @@ internal sealed class StringDataBuilder(
             _state.Cursor = ManagedTypeLayoutCompiler.Align(
                 _state.Cursor,
                 _target.ObjectReferenceAlignment);
+            // The characters and the NUL after them, as CoreCLR lays a string out and the runtime allocates one:
+            // native code given a pinned string reads up to it. The bytes start zero, so the NUL is written.
             var byteLength = ManagedTypeLayoutCompiler.Align(
-                _target.ObjectHeaderSize + sizeof(int) + (value.Length * sizeof(char)),
+                _target.ObjectHeaderSize + sizeof(int) + ((value.Length + 1) * sizeof(char)),
                 _target.ObjectReferenceAlignment);
             var bytes = new byte[byteLength];
             BinaryPrimitives.WriteInt32LittleEndian(bytes, stringObject.TypeId);

@@ -18,10 +18,13 @@
  * Return cube root of x
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Cbrt(double value)
     {
         const int B1 = 715094163; /* B1 = (682-0.03306235651)*2**20 */

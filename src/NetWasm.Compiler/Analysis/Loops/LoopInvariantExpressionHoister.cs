@@ -103,7 +103,7 @@ internal sealed class LoopInvariantExpressionHoister(
             if (end < 0 || EnteredElsewhere(sources, jump, end)) continue;
             var written = Written(instructions, jump + 1, end);
             written.UnionWith(exposed);
-            var rare = Conditional(instructions, indices, targets, handlers, jump, end);
+            var rare = Conditional(instructions, targets, handlers, jump, end);
 
             List<CilInstruction>? prefix = null;
             for (var first = jump + 1; first < end;)
@@ -430,7 +430,6 @@ internal sealed class LoopInvariantExpressionHoister(
     // every iteration but the last.
     private static bool[] Conditional(
         ImmutableArray<CilInstruction> instructions,
-        Dictionary<int, int> indices,
         int[] targets,
         (int Start, int End)[] handlers,
         int jump,
@@ -440,18 +439,10 @@ internal sealed class LoopInvariantExpressionHoister(
         var arms = new int[end - jump + 1];
         for (var source = jump + 1; source <= end; source++)
         {
-            IEnumerable<int> landings = instructions[source].Operand switch
-            {
-                CilOperand.SwitchTargets { Offsets: var offsets } =>
-                    offsets.Select(offset => indices.TryGetValue(offset, out var target) ? target : -1),
-                _ => [targets[source]],
-            };
-            foreach (var target in landings)
-            {
-                if (target <= source || target > end) continue;
-                arms[source + 1 - jump - 1]++;
-                arms[target - jump - 1]--;
-            }
+            var target = targets[source];
+            if (target <= source || target > end) continue;
+            arms[source + 1 - jump - 1]++;
+            arms[target - jump - 1]--;
         }
         var rare = new bool[end - jump];
         var depth = 0;
@@ -493,19 +484,13 @@ internal sealed class LoopInvariantExpressionHoister(
         return written;
     }
 
-    // Each instruction's index, by the indices of the branches and switches that land on it.
+    // Each instruction's index, by the indices of the branches that land on it.
     private static Dictionary<int, List<int>> BranchSources(ImmutableArray<CilInstruction> instructions, Dictionary<int, int> indices)
     {
         var sources = new Dictionary<int, List<int>>();
         for (var index = 0; index < instructions.Length; index++)
         {
-            IEnumerable<int> targets = instructions[index].Operand switch
-            {
-                CilOperand.BranchTarget { Offset: var offset } => [offset],
-                CilOperand.SwitchTargets { Offsets: var offsets } => offsets,
-                _ => [],
-            };
-            foreach (var offset in targets)
+            if (instructions[index].Operand is CilOperand.BranchTarget { Offset: var offset })
             {
                 if (!indices.TryGetValue(offset, out var target)) continue;
                 if (!sources.TryGetValue(target, out var list)) sources[target] = list = [];

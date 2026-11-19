@@ -23,6 +23,8 @@ public sealed class RootLifetimeGcTests(CorrectnessTestRunner runner)
         "DictionaryGrowth", "WeakReferenceWithStrongLocal", "ConditionalWeakTableValue", "ThreadStatic",
         "DelegateOverBoxedStruct", "VirtualCallOnTemporary", "OutParameters", "RefStructEnumerator",
         "ConditionalTemporaries", "ReceiverFieldReference", "ReceiverInArray", "WideFramesAcrossRootChunks", "InterfaceCallOnTemporaryBox", "InterfaceCallOnBoxedStruct",
+        "CapturedStructInFilter", "LiveAcrossFilterCall", "CapturedArgumentInFilter", "CapturedByrefInFilter",
+        "AsyncFilterAroundAwaits", "StackValueReplacedBetweenCalls",
     ];
 
     [Theory]
@@ -455,6 +457,136 @@ public sealed class RootLifetimeGcTests(CorrectnessTestRunner runner)
                     return failure.Payload == "xxxxx" && finished == 2 ? 0 : 2;
                 }
                 return 3;
+            }
+
+            // The slots a filter captures live in their captures, which a collection reads in place: a struct the
+            // filter reads, references live across the filter's own call, an argument, a byref that is the only path
+            // to its array, and an async method's locals around awaits.
+            public static int CapturedStructInFilter(int input)
+            {
+                var pair = MakePair(input);
+                try
+                {
+                    Throw(input);
+                }
+                catch (Failure) when (PairCheck(pair))
+                {
+                    Churn();
+                    return pair.First.Length == input % 4 + 1 ? 0 : 2;
+                }
+                return 3;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static bool PairCheck(Pair pair)
+            {
+                Churn();
+                return pair.First[0] == 'p';
+            }
+
+            public static int LiveAcrossFilterCall(int input)
+            {
+                var kept = Text('k', 6);
+                var other = Text('o', 3);
+                try
+                {
+                    Throw(input);
+                }
+                catch (Failure failure) when (Filter(failure))
+                {
+                    Churn();
+                    return kept.Length + other.Length == 9 ? 0 : 2;
+                }
+                return 3;
+            }
+
+            public static int CapturedArgumentInFilter(int input) => ArgumentFilter(Text('k', 4), input);
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int ArgumentFilter(string text, int input)
+            {
+                try
+                {
+                    Throw(input);
+                }
+                catch (Failure) when (Check(text + Text('k', 2)))
+                {
+                    Churn();
+                    return text.Length == 4 ? 0 : 2;
+                }
+                return 3;
+            }
+
+            public static int CapturedByrefInFilter(int input) => ByrefFilter(ref Element(Objects(4), 1), input);
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int ByrefFilter(ref object value, int input)
+            {
+                try
+                {
+                    Throw(input);
+                }
+                catch (Failure) when ((string)value == "bb" && Check(Text('k', 6)))
+                {
+                    Churn();
+                    return ((string)value).Length == 2 ? 0 : 2;
+                }
+                return 3;
+            }
+
+            public static int AsyncFilterAroundAwaits(int input) => AsyncFilter(input).GetAwaiter().GetResult();
+
+            private static async Task<string> Produce(char value)
+            {
+                await Task.CompletedTask;
+                Churn();
+                return Text(value, 3);
+            }
+
+            private static async Task<int> AsyncFilter(int input)
+            {
+                var kept = Text('k', 6);
+                var pair = MakePair(input);
+                try
+                {
+                    var first = await Produce('a');
+                    Throw(input);
+                    return first.Length;
+                }
+                catch (Failure failure) when (Filter(failure) && Check(kept))
+                {
+                    var second = await Produce('b');
+                    Churn();
+                    return kept.Length + pair.First.Length + second.Length == 6 + input % 4 + 1 + 3 ? 0 : 2;
+                }
+            }
+
+            // Each statement holds a fresh string at the bottom of the evaluation stack across an allocating call,
+            // in the same stack position the previous statement's string held: every value must be published
+            // where it differs from what the root slot last held. The callee allocates strings of the same size,
+            // which would take a string's memory were it not rooted.
+            public static int StackValueReplacedBetweenCalls(int input)
+            {
+                var first = Measure(Text('a', 5), Allocate(input), 'a');
+                var second = Measure(Text('b', 5), Allocate(input), 'b');
+                var third = Measure(Text('c', 5), Allocate(input), 'c');
+                return first + second + third == 3 ? 0 : 2;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Allocate(int input)
+            {
+                Churn();
+                var length = 0;
+                for (var index = 0; index < 8; index++) length = Text('z', 5).Length;
+                return length + input % 1;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Measure(string text, int length, char expected)
+            {
+                Churn();
+                return text == new string(expected, 5) && length == 5 ? 1 : 100;
             }
 
             public static int ParentLocalInFilter(int input)

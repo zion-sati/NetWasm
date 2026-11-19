@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
@@ -15,9 +17,9 @@ internal sealed class EnumGetNameEmitter(
     ITypeRepository types,
     IValueLayoutProvider values,
     ITargetLayout layouts,
-    IReferenceComparisonEmitter references,
     IAddressInstructionEmitter addresses,
-    IEnumTypeArgumentValidator typeArguments) : IEnumGetNameEmitter
+    IEnumTypeArgumentValidator typeArguments,
+    IKeyedDispatchEmitter keyedDispatch) : IEnumGetNameEmitter
 {
     public void EmitGetName(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -40,36 +42,16 @@ internal sealed class EnumGetNameEmitter(
         var result = request.Instruction.Context.ObjectTemporary;
         addresses.Emit(code, 0);
         Set(code, result);
-        foreach (var member in entry.Members)
-        {
-            Get(code, input);
-            if (storageKind == CliValueKind.I8)
+        // The value picks the first member that has it, searched among the members' values.
+        keyedDispatch.Emit(code, KeyedDispatch.Of(input, storageKind == CliValueKind.I8,
+            entry.Members.Select(member => (unchecked((long)member.RawValue), (Action)(() =>
             {
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.I64Constant,
-                    WasmInstructionOperand.Signed64(unchecked((long)member.RawValue))));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Equal));
-            }
-            else
-            {
-                WriteI32(code, unchecked((int)member.RawValue));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            }
-            Get(code, result);
-            references.Emit(code, ReferenceComparison.EqualZero);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            addresses.Emit(code, member.NameLayout.Address);
-            Set(code, result);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        }
+                addresses.Emit(code, member.NameLayout.Address);
+                Set(code, result);
+            }))),
+            () => { }));
         Get(code, result);
         Set(code, request.Local(0, CliValueKind.ManagedReference));
-
-        static void WriteI32(IWasmInstructionWriter code, int value) => code.Write(
-            WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(value)));
         static void Get(IWasmInstructionWriter code, int local) => code.Write(
             WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));
         static void Set(IWasmInstructionWriter code, int local) => code.Write(
@@ -85,6 +67,8 @@ internal sealed class EnumGetNameEmitter(
         typeArguments.Validate(code, enumType, typeId, request.Instruction.Context.ManagedThrowFunction);
         addresses.Emit(code, 0);
         Set(code, result);
+        // The enum type's id picks its metadata, searched among the enums the program describes.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var entry in metadata.EnumMetadata)
         {
             var definition = types.GetTypeDefinition(entry.Type);
@@ -92,53 +76,31 @@ internal sealed class EnumGetNameEmitter(
             var layout = values.GetValueLayout(underlying);
             var payload = WasmTargetLayout.Align(
                 layouts.Target.ObjectHeaderSize, layout.Alignment);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)typeId)));
-            WriteI32(code, entry.TypeId);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            foreach (var member in entry.Members)
+            cases.Add((entry.TypeId, () =>
             {
+                // The boxed value picks the first member that has it, searched among the members' values; the type's id, read
+                // already, leaves its local free for an int value.
+                var key = underlying.StackKind == CliValueKind.I8 ? request.Instruction.Context.NumericTemporaryI8 : typeId;
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.LocalGet,
                     WasmInstructionOperand.Unsigned((uint)value)));
                 ManagedMemoryEmitter.EmitLoadByType(
                     code, layouts.Target, payload, underlying, layout.Size);
-                if (underlying.StackKind == CliValueKind.I8)
-                {
-                    code.Write(WasmInstruction.WithOperand(
-                        WasmOpcodes.I64Constant,
-                        WasmInstructionOperand.Signed64(unchecked((long)member.RawValue))));
-                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Equal));
-                }
-                else
-                {
-                    WriteI32(code, unchecked((int)member.RawValue));
-                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-                }
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)result)));
-                references.Emit(code, ReferenceComparison.EqualZero);
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.If,
-                    WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-                addresses.Emit(code, member.NameLayout.Address);
-                Set(code, result);
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+                Set(code, key);
+                keyedDispatch.Emit(code, KeyedDispatch.Of(key, underlying.StackKind == CliValueKind.I8,
+                    entry.Members.Select(member => (unchecked((long)member.RawValue), (Action)(() =>
+                    {
+                        addresses.Emit(code, member.NameLayout.Address);
+                        Set(code, result);
+                    }))),
+                    () => { }));
             }
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(typeId, false, cases, () => { }));
         Get(code, result);
         Set(code, request.Local(0, CliValueKind.ManagedReference));
     }
-
-    private static void WriteI32(IWasmInstructionWriter code, int value) => code.Write(
-        WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(value)));
 
     private static void Get(IWasmInstructionWriter code, int local) => code.Write(
         WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));

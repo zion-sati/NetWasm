@@ -51,6 +51,9 @@ internal sealed class ReachabilityInstructionAnalyzer(
         var requiresTypeAttributes = false;
         var requiresInterfaces = false;
         var requiresMemberNames = false;
+        var requiresManifestResources = false;
+        var requiresAssemblyNames = false;
+        var requiresAssemblyEnumeration = false;
         var instructions = request.Body.Instructions;
         for (var instructionIndex = 0; instructionIndex < instructions.Length; instructionIndex++)
         {
@@ -73,6 +76,9 @@ internal sealed class ReachabilityInstructionAnalyzer(
                 requiresElementTypes |= ReachabilityMarkers.RequiresElementTypes(calledMethod);
                 requiresTypeAttributes |= ReachabilityMarkers.RequiresTypeAttributes(calledMethod);
                 requiresInterfaces |= ReachabilityMarkers.RequiresInterfaces(calledMethod);
+                requiresManifestResources |= ReachabilityMarkers.RequiresManifestResources(calledMethod);
+                requiresAssemblyNames |= ReachabilityMarkers.RequiresAssemblyNames(calledMethod);
+                requiresAssemblyEnumeration |= ReachabilityMarkers.RequiresAssemblyEnumeration(calledMethod);
                 callSites.Add(managedCallSites.Create(
                     request.Method,
                     request.Body,
@@ -232,7 +238,7 @@ internal sealed class ReachabilityInstructionAnalyzer(
                 instructions[instructionIndex - 1].Operation == CilOperation.Constrained
                     ? ((CilOperand.TypeIdentity)instructions[instructionIndex - 1].Operand).Value
                     : null;
-            // A call that names a method whose behaviour depends on its receiver's exact type,
+            // A call that names a method whose behavior depends on its receiver's exact type,
             // without a constrained prefix that names it (a struct's base.Equals, or the body a
             // delegate to ValueType.Equals runs), dispatches on the receiver like a virtual call,
             // but always to the named method (ECMA-335 III.3.19).
@@ -340,6 +346,9 @@ internal sealed class ReachabilityInstructionAnalyzer(
             RequiresTypeAttributes = requiresTypeAttributes,
             RequiresInterfaces = requiresInterfaces,
             RequiresMemberNames = requiresMemberNames,
+            RequiresManifestResources = requiresManifestResources,
+            RequiresAssemblyNames = requiresAssemblyNames,
+            RequiresAssemblyEnumeration = requiresAssemblyEnumeration,
             NativeCallbacks = reachedNativeCallbacks.ToImmutable(),
         };
 

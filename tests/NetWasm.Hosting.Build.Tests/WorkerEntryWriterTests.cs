@@ -37,6 +37,8 @@ public sealed class WorkerEntryWriterTests
         Assert.DoesNotContain("\r", source, StringComparison.Ordinal);
         Assert.Contains("createBrowserRawExportSession", source, StringComparison.Ordinal);
         Assert.Contains("createWorkerSessionHost", source, StringComparison.Ordinal);
+        // The worker's scope times its module's idle and quiet collections.
+        Assert.Contains("  scope: globalThis,", source, StringComparison.Ordinal);
         BrowserApiBindings.AssertNoneAtImport(source);
         Assert.Contains("\"consumer.worker\": Object.freeze", source, StringComparison.Ordinal);
         Assert.Contains("\"increment\": imports0[\"increment\"]", source, StringComparison.Ordinal);
@@ -64,6 +66,7 @@ public sealed class WorkerEntryWriterTests
         Assert.Contains("createImports: createWasiPlatform(Object.freeze({ initialDirectory: null, network: null })),",
             source, StringComparison.Ordinal);
         Assert.Contains("createFilesystemScope: null,", source, StringComparison.Ordinal);
+        Assert.Contains("createSidecarMaterializer: null,", source, StringComparison.Ordinal);
         Assert.Contains("\"module\":\"wasi:random/random@0.3.2\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("wasi:http/client", source, StringComparison.Ordinal);
         Assert.DoesNotContain("netwasm:runtime/filesystem", source, StringComparison.Ordinal);

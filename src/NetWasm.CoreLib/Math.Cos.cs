@@ -52,6 +52,7 @@ namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Cos(double value)
     {
 

@@ -38,7 +38,7 @@ internal sealed class AssignableTypeMetadataBuilder(
     public ImmutableArray<int> Build(CliTypeIdentity candidate)
     {
         if (candidate.Shape is CliTypeShape.ManagedByReference or
-            CliTypeShape.UnmanagedPointer ||
+            CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer ||
             candidate.ContainsGenericParameters ||
             candidate.Shape == CliTypeShape.Named &&
             typeDefinitions.ResolveTypeIdentity(candidate).GenericArity != 0)

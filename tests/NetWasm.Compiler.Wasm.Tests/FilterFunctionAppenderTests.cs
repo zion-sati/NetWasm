@@ -58,12 +58,39 @@ public sealed class FilterFunctionAppenderTests
         Assert.Equal([7], functions[0].Body);
         Assert.Same(target, sequences.Target);
         Assert.Same(target.MemberExecution, filters.MemberExecution);
+        // The filter's frame plans its method's native calls by the module's plan.
+        Assert.Same(target.NativeImports, filters.NativeImports);
         Assert.Same(
             target.RootMaps.Required(ManagedMethodBodyKey.Resolve(filter.Method)),
             filters.RootMap);
         Assert.Same(functionIndices, sequences.FunctionIndices);
         Assert.Same(filter.Method, merger.Method);
         Assert.Equal(3, merger.Counts[1]);
+    }
+
+    // A funclet publishes into its method's root frame, so it takes the method's final root map (after the value
+    // frame's map and authoritative slots took their sources) when the method's environment carries it.
+    [Fact]
+    public void AFuncletPublishesByItsMethodsFinalRootMap()
+    {
+        var filter = CreateFilter();
+        var filters = new InvokingFilterEmitter();
+        var final = new MethodRootMap(EmitterTestSupport.EntryKey,
+            ImmutableDictionary<RootSource, int>.Empty.Add(new(RootSourceKind.Local, 3), 0), []);
+        var target = EmitterTestSupport.CreateInstructionModuleTarget(new FakeProgram()) with
+        {
+            MemberExecution = MemberExecutionPlan.Empty with { MethodInvokers = [EmitterTestSupport.EntryKey] },
+            RootMaps = Lookups.Of(ImmutableDictionary<string, MethodRootMap>.Empty.Add(
+                ManagedMethodBodyKey.Resolve(filter.Method), new(EmitterTestSupport.EntryKey, [], []))),
+        };
+        var appender = new FilterFunctionAppender(
+            new FilterSequenceEmitterFactory(new RecordingSequenceEmitter()), filters, new RecordingCountMerger());
+
+        appender.Append([], 4, new Dictionary<int, int>(), filter,
+            FilterEnvironmentLayout.Empty with { Size = 8, ParentRootMap = final }, target,
+            new FixedFunctionIndexResolver(), []);
+
+        Assert.Same(final, filters.RootMap);
     }
 
     [Fact]
@@ -157,6 +184,7 @@ public sealed class FilterFunctionAppenderTests
     {
         public MemberExecutionPlan? MemberExecution { get; private set; }
         public MethodRootMap? RootMap { get; private set; }
+        public NativeImportPlan? NativeImports { get; private set; }
 
         public FilterFuncletEmission Emit(
             FilterFunclet filter,
@@ -164,9 +192,11 @@ public sealed class FilterFunctionAppenderTests
             MethodRootMap rootMap,
             IFilterSequenceEmitter emitSequence,
             MemberExecutionPlan? memberExecution = null,
-            OptionalFunctionIndex managedThrowFunction = default)
+            OptionalFunctionIndex managedThrowFunction = default,
+            NativeImportPlan? nativeImports = null)
         {
             MemberExecution = memberExecution;
+            NativeImports = nativeImports;
             RootMap = rootMap;
             var emission = emitSequence.Emit(
                 new EmitterTestSupport.RecordingInstructionWriter(),

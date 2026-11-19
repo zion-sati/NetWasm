@@ -47,8 +47,8 @@ the repository's exact Node version, and run
 
 Run the smallest relevant test project or end-to-end fixture before proposing a
 change. Compiler changes should include a focused regression that demonstrates
-the input and expected behaviour. CoreLib ports must retain upstream headers
-and licence notices.
+the input and expected behavior. CoreLib ports must retain upstream headers
+and license notices.
 
 A test that asserts how long something takes is marked
 `[Trait("Category", "Performance")]`. Its result depends on the load on the
@@ -72,11 +72,11 @@ change.
 
 ## Scope and review
 
-- Keep public behaviour, generated output, and tests in the same reviewable
+- Keep public behavior, generated output, and tests in the same reviewable
   change where practical.
 - Do not add a dependency or host capability without documenting the resulting
   target boundary.
-- Do not remove or rewrite upstream licence, copyright, or provenance notices.
+- Do not remove or rewrite upstream license, copyright, or provenance notices.
 - Do not commit build output, coverage, generated diagnostics, local paths, or
   editor/session state.
 - Do not treat the current implementation as a promise of desktop-.NET
@@ -105,7 +105,7 @@ their links in GitHub's rendered Markdown before submitting the change.
 Use the repository's issue tracker for reproducible bugs and narrowly scoped
 proposals after the public host is available.
 
-## Contributor licence agreement
+## Contributor license agreement
 
 Every contributor must accept the [NetWasm Contributor License Agreement](CLA.md)
 before a pull request can be merged. The pull request check identifies every

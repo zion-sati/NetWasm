@@ -62,6 +62,8 @@ def stage_wit(repository: Path, destination: Path) -> None:
     dependencies.mkdir()
     for package in WASI_PACKAGES:
         shutil.copytree(source / package, dependencies / f"wasi-{package}")
+    # wasi:tls is a Preview 3 draft outside WASI 0.3.2's release; the Toolchain's command world pins its copy.
+    shutil.copytree(repository / "src/NetWasm.Toolchain/wit/deps/wasi-tls", dependencies / "wasi-tls")
     shutil.copy2(
         repository / "wit/netwasm-hosting-platform-1.0.0/world.wit",
         destination / "world.wit")

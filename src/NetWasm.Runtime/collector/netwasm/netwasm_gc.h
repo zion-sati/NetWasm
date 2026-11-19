@@ -62,6 +62,13 @@ NetWasmGcResult netwasm_gc_allocate(
     bool contains_references,
     void **result);
 
+/* An untraced object whose payload bytes are unspecified: what the collector does not
+ * clear in bulk keeps what the memory held. */
+NetWasmGcResult netwasm_gc_allocate_uninitialized(
+    NetWasmGc *gc,
+    size_t bytes,
+    void **result);
+
 /* An open run of one size class: zeroed slots from cursor to end. */
 typedef struct {
     unsigned char *cursor;
@@ -77,6 +84,17 @@ typedef struct {
 NetWasmGcRun *netwasm_gc_allocation_runs(NetWasmGc *gc);
 
 void netwasm_gc_collect(NetWasmGc *gc);
+/* Collects when the embedder is idle and the heap has grown, since the last collection, by at least a
+ * quarter of the minimum budget and half of what survived: the collection the program is heading for then
+ * need not happen during its next call. Less growth than that would trace the heap again to free little.
+ * Returns whether it collected. */
+bool netwasm_gc_collect_when_idle(NetWasmGc *gc);
+/* Collects for an embedder that has stayed quiet since the program last ran, whatever the heap has grown by:
+ * what a program drops without allocating, as when it clears a table, would otherwise wait for its next burst
+ * of allocation. Returns 0 when it did not collect (a collection is under way, or the heap holds nothing), and
+ * otherwise 1 plus the share of what the heap occupied that the collection freed, in 255ths, so the embedder
+ * can tell a collection that paid from one that only traced the heap. */
+unsigned netwasm_gc_collect_when_quiet(NetWasmGc *gc);
 bool netwasm_gc_mark(NetWasmGc *gc, uintptr_t address);
 void netwasm_gc_drain(NetWasmGc *gc);
 bool netwasm_gc_is_marked(const NetWasmGc *gc, uintptr_t address);
@@ -85,6 +103,13 @@ bool netwasm_gc_contains(const NetWasmGc *gc, uintptr_t address);
 bool netwasm_gc_is_collecting(const NetWasmGc *gc);
 
 uint64_t netwasm_gc_collection_count(const NetWasmGc *gc);
+/* The collections that collected the oldest generation: every collection, without generations. */
+/* A collection of the youngest generation alone: of every object without generations. */
+void netwasm_gc_collect_young(NetWasmGc *gc);
+uint64_t netwasm_gc_oldest_generation_collection_count(const NetWasmGc *gc);
+/* The generation of the object at the address: the oldest once it has survived a collection, 0 without
+ * generations. */
+unsigned netwasm_gc_object_generation(const NetWasmGc *gc, uintptr_t address);
 uint64_t netwasm_gc_total_allocated_bytes(const NetWasmGc *gc);
 uint64_t netwasm_gc_live_bytes(const NetWasmGc *gc);
 uint64_t netwasm_gc_reserved_bytes(const NetWasmGc *gc);

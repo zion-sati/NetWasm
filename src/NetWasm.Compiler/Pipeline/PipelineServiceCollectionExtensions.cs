@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Analysis;
 using System;
@@ -23,7 +24,12 @@ internal static class PipelineServiceCollectionExtensions
             ComponentReachabilityValidator>();
         services.AddSingleton<IPlainCoreModuleValidator, PlainCoreModuleValidator>();
         services.AddSingleton<IUnlinkedNativeImportReporter, UnlinkedNativeImportReporter>();
+        services.AddSingleton<IDeclinedJavaScriptBindingReporter, DeclinedJavaScriptBindingReporter>();
+        services.AddSingleton<IMissingMemberReporter, MissingMemberReporter>();
+        services.AddSingleton<IMissingMemberBodyReaderFactory, MissingMemberBodyReaderFactory>();
         services.AddSingleton<INativeImportBinderFactory, NativeImportBinderFactory>();
+        services.AddSingleton<INativeVariadicCallPlannerFactory, NativeVariadicCallPlannerFactory>();
+        services.AddSingleton<INativeArchiveFunctionTypeReader, NetWasm.Compiler.Interop.NativeArchiveFunctionTypeReader>();
         services.AddSingleton<ICompilationPreparationBuilder,
             CompilationPreparationBuilder>();
         services.AddSingleton<ICompilationAnalysisBuilder,

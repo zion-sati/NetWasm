@@ -57,12 +57,21 @@ public sealed class RuntimeLinkExportPlanBuilderTests
             "suppress_finalize",
             "array_set_value",
             "object_clone",
-            "random_seed");
+            "random_seed",
+            "allocate_uninitialized_value_array",
+            "record_reference_write",
+            "record_reference_writes",
+            "gc_object_generation",
+            "gc_collect_young");
 
         var ordinary = builder.Build(new(manifestExports, [])
         {
             RuntimeFeatures = [],
         });
+        Assert.DoesNotContain(ordinary.Arguments,
+            argument => argument.Contains("record_reference", StringComparison.Ordinal));
+        Assert.DoesNotContain("--export=gc_object_generation", ordinary.Arguments);
+        Assert.DoesNotContain("--export=gc_collect_young", ordinary.Arguments);
         Assert.DoesNotContain(ordinary.Arguments,
             argument => argument.Contains("ephemeron_handle", StringComparison.Ordinal));
         Assert.DoesNotContain(ordinary.Arguments,
@@ -72,6 +81,7 @@ public sealed class RuntimeLinkExportPlanBuilderTests
         Assert.DoesNotContain("--export=array_set_value", ordinary.Arguments);
         Assert.DoesNotContain("--export=object_clone", ordinary.Arguments);
         Assert.DoesNotContain("--export=random_seed", ordinary.Arguments);
+        Assert.DoesNotContain("--export=allocate_uninitialized_value_array", ordinary.Arguments);
 
         var ephemerons = builder.Build(new(manifestExports, [])
         {
@@ -121,14 +131,57 @@ public sealed class RuntimeLinkExportPlanBuilderTests
         Assert.Contains("--export=object_clone", cloneAndSeed.Arguments);
         Assert.Contains("--export=random_seed", cloneAndSeed.Arguments);
         Assert.DoesNotContain("--export=array_set_value", cloneAndSeed.Arguments);
+        Assert.DoesNotContain("--export=allocate_uninitialized_value_array", cloneAndSeed.Arguments);
+
+        // GC.AllocateUninitializedArray's allocation only where the program calls it.
+        var uninitialized = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["uninitialized-arrays"],
+        });
+        Assert.Contains("--export=allocate_uninitialized_value_array", uninitialized.Arguments);
+        Assert.DoesNotContain("--export=random_seed", uninitialized.Arguments);
+
+        // The write barrier of a collector with generations only where the program was compiled for one.
+        var recording = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["reference-write-barrier"],
+        });
+        Assert.Contains("--export=record_reference_write", recording.Arguments);
+        Assert.Contains("--export=record_reference_writes", recording.Arguments);
+        Assert.DoesNotContain("--export=random_seed", recording.Arguments);
+        Assert.DoesNotContain(uninitialized.Arguments,
+            argument => argument.Contains("record_reference", StringComparison.Ordinal));
+
+        // GC.GetGeneration's runtime function only where the program asks an object's generation.
+        var generation = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["object-generation"],
+        });
+        Assert.Contains("--export=gc_object_generation", generation.Arguments);
+        Assert.DoesNotContain(generation.Arguments,
+            argument => argument.Contains("record_reference", StringComparison.Ordinal));
+        Assert.DoesNotContain("--export=gc_collect_young", generation.Arguments);
+
+        // GC.Collect(0)'s runtime function only where a program for a collector with generations collects young.
+        var young = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["young-collection"],
+        });
+        Assert.Contains("--export=gc_collect_young", young.Arguments);
+        Assert.DoesNotContain("--export=gc_object_generation", young.Arguments);
 
         var legacy = builder.Build(new(manifestExports, []));
+        Assert.Contains("--export=gc_object_generation", legacy.Arguments);
+        Assert.Contains("--export=gc_collect_young", legacy.Arguments);
+        Assert.Contains("--export=record_reference_write", legacy.Arguments);
+        Assert.Contains("--export=record_reference_writes", legacy.Arguments);
         Assert.Contains("--export=ephemeron_handle_new", legacy.Arguments);
         Assert.Contains("--export=command_exception_capture", legacy.Arguments);
         Assert.Contains("--export=allocate_finalizable", legacy.Arguments);
         Assert.Contains("--export=array_set_value", legacy.Arguments);
         Assert.Contains("--export=object_clone", legacy.Arguments);
         Assert.Contains("--export=random_seed", legacy.Arguments);
+        Assert.Contains("--export=allocate_uninitialized_value_array", legacy.Arguments);
     }
 
     [Fact]

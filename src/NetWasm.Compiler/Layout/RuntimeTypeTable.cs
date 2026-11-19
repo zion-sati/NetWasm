@@ -59,6 +59,14 @@ internal sealed record RuntimeTypeTableRequest(
     // The index of the assembly GetEntryAssembly reports, or 0.
     public int EntryAssemblyIndex { get; init; }
 
+    // The highest assembly index the program registered, which may belong to an assembly none of whose types the
+    // table describes (one the program lists, or one with only resources).
+    public int HighestAssemblyIndex { get; init; }
+
+    // The program's assemblies (ProgramAssemblyTableEncoder), appended byte-aligned past the bit stream with its
+    // offset in header field 20; empty where the program cannot ask for them.
+    public ImmutableArray<byte> AssemblyTable { get; init; } = [];
+
     // Whether each type's shape holds its TypeAttributes, as an index into the distinct values.
     public bool IncludeTypeAttributes { get; init; }
 

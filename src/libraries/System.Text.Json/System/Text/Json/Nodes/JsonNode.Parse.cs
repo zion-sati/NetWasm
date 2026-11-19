@@ -134,7 +134,6 @@ namespace System.Text.Json.Nodes
         /// <returns>
         ///   A <see cref="Task"/> to produce a <see cref="JsonNode"/> representation of the JSON value.
         /// </returns>
-#if !NETWASM
         /// <exception cref="JsonException">
         ///   <paramref name="utf8Json"/> does not represent a valid single JSON value.
         /// </exception>
@@ -149,6 +148,5 @@ namespace System.Text.Json.Nodes
             JsonDocument document = await JsonDocument.ParseAsyncCoreUnrented(utf8Json, documentOptions, cancellationToken).ConfigureAwait(false);
             return JsonNodeConverter.Create(document.RootElement, nodeOptions);
         }
-#endif
     }
 }

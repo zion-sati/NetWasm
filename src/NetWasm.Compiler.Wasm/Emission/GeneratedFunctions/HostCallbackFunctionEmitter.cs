@@ -18,7 +18,7 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 internal sealed class HostCallbackFunctionEmitter(
     ITargetLayout layouts,
     IRuntimeImportResolver runtimeImports,
-    IRuntimeStateInitializer runtimeInitialization,
+    IEntryRuntimeInitializer runtimeInitialization,
     IImplicitExceptionEmitter exceptions,
     IJavaScriptReferenceArgumentEmitter referenceArguments,
     IJavaScriptValueFramePlanner valueFramePlanner,

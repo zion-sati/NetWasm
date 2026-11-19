@@ -46,6 +46,9 @@ internal sealed class ComplexityGrowthFixtureFactory :
 
                 public static int Trace() => _trace;
 
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+                private static int Add(int value, int amount) => unchecked(value + amount);
+
                 private static int Diamond(int input)
                 {
                     var value = input;
@@ -112,9 +115,10 @@ internal sealed class ComplexityGrowthFixtureFactory :
                 CultureInfo.InvariantCulture,
                 $"if (((value + {index}) & 1) == 0)");
             source.AppendLine("{");
+            // A call is an effect, so the arms stay a diamond: arms that only compute a value become a select.
             source.AppendLine(
                 CultureInfo.InvariantCulture,
-                $"    value = unchecked(value + {index + 1});");
+                $"    value = Add(value, {index + 1});");
             source.AppendLine("}");
             source.AppendLine("else");
             source.AppendLine("{");

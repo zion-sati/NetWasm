@@ -50,7 +50,7 @@ python3 compiler-qualification/runtime-performance/run.py \
   CRC-32 over a 1 MiB buffer. The program fails if a timed region allocates, and
   each checksum is exact, the bits of the final energy for `nbody`.
 
-- `async`: single-threaded async state machines and Task, modelled on
+- `async`: single-threaded async state machines and Task, modeled on
   dotnet/performance's Perf_AsyncMethods and ValueTaskPerfTest:
   `async-completed` and `async-valuetask-completed` await methods that complete
   without suspending, `async-chain` ten nested ones, `yield` suspends through

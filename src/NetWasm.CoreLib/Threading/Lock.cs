@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // Adapted from System.Private.CoreLib Lock for a single managed reactor.
 
+using System.Runtime.CompilerServices;
+
 namespace System.Threading;
 
 /// <summary>
@@ -47,6 +49,7 @@ public sealed class Lock
         _recursionCount--;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Scope EnterScope()
     {
         Acquire();
@@ -67,6 +70,7 @@ public sealed class Lock
 
         internal Scope(Lock lockObj) => _lockObj = lockObj;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Dispose()
         {
             var lockObj = _lockObj;

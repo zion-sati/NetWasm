@@ -27,6 +27,11 @@ public sealed class BrowserLinkOptimizationInspector : IBrowserLinkOperationInsp
                 throw new ArgumentException("An optimization flag is repeated.", nameof(operation));
             if (BrowserLinkToolFlags.Optimization.Contains(flag))
                 profiles++;
+            else if (BrowserLinkToolFlags.CountedPasses.Contains(flag))
+            {
+                if (++index >= arguments.Length - 2 || !IsCount(arguments[index]))
+                    throw new ArgumentException("An optimization flag's count is invalid.", nameof(operation));
+            }
             else if (!BrowserLinkToolFlags.Features.Contains(flag) && !BrowserLinkToolFlags.Passes.Contains(flag))
                 throw new ArgumentException("An optimization flag is not supported.", nameof(operation));
         }
@@ -40,4 +45,8 @@ public sealed class BrowserLinkOptimizationInspector : IBrowserLinkOperationInsp
             OutputArgumentIndices = [arguments.Length - 1],
         };
     }
+
+    // A positive decimal count as the compiler writes it: digits only, no sign or leading zero.
+    private static bool IsCount(string value) =>
+        value.Length is > 0 and <= 9 && value[0] is >= '1' and <= '9' && !value.AsSpan().ContainsAnyExceptInRange('0', '9');
 }

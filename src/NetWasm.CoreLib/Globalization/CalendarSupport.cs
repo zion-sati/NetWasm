@@ -5,6 +5,8 @@
 // DateOnly members and one LocalAppContextSwitches value that NetWasm's types do not declare;
 // these give the same results from NetWasm's own date arithmetic.
 
+using System.Runtime.CompilerServices;
+
 namespace System.Globalization
 {
     internal static class CalendarDateParts
@@ -33,14 +35,26 @@ namespace System
     internal static partial class LocalAppContextSwitches
     {
         // Upstream caches the switch; the calendars read it only on era-range edge cases.
-        internal static bool EnforceJapaneseEraYearRanges =>
-            AppContext.TryGetSwitch("Switch.System.Globalization.EnforceJapaneseEraYearRanges", out bool enabled) && enabled;
+        internal static bool EnforceJapaneseEraYearRanges
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get =>
+                AppContext.TryGetSwitch("Switch.System.Globalization.EnforceJapaneseEraYearRanges", out bool enabled) && enabled;
+        }
 
         // DateTimeFormat and DateTimeParse read these only for a Japanese calendar.
-        internal static bool FormatJapaneseFirstYearAsANumber =>
-            AppContext.TryGetSwitch("Switch.System.Globalization.FormatJapaneseFirstYearAsANumber", out bool enabled) && enabled;
+        internal static bool FormatJapaneseFirstYearAsANumber
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get =>
+                AppContext.TryGetSwitch("Switch.System.Globalization.FormatJapaneseFirstYearAsANumber", out bool enabled) && enabled;
+        }
 
-        internal static bool EnforceLegacyJapaneseDateParsing =>
-            AppContext.TryGetSwitch("Switch.System.Globalization.EnforceLegacyJapaneseDateParsing", out bool enabled) && enabled;
+        internal static bool EnforceLegacyJapaneseDateParsing
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get =>
+                AppContext.TryGetSwitch("Switch.System.Globalization.EnforceLegacyJapaneseDateParsing", out bool enabled) && enabled;
+        }
     }
 }

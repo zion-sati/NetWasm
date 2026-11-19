@@ -16,6 +16,8 @@ internal static class SimdVectorIntrinsicClassifier
     private const string Vector128OfT = "System.Runtime.Intrinsics.Vector128`1";
     private const string Vector = "System.Numerics.Vector";
     private const string VectorOfT = "System.Numerics.Vector`1";
+    private const string Vector64 = "System.Runtime.Intrinsics.Vector64";
+    private const string Vector64OfT = "System.Runtime.Intrinsics.Vector64`1";
 
     public static RuntimeIntrinsic? Classify(string declaringType, MethodDefinitionModel method)
     {
@@ -47,6 +49,16 @@ internal static class SimdVectorIntrinsicClassifier
                 "op_UnsignedRightShift" when Shift(method) => RuntimeIntrinsic.SimdShiftRightLogical,
                 _ => null,
             };
+        }
+
+        // A Vector64 is one 64-bit lane of a Vector128, as .NET's JIT treats these named intrinsics.
+        if (declaringType is Vector64)
+        {
+            return method.Name is "ToVector128" or "ToVector128Unsafe" && method.GenericArity == 1 &&
+                method.Signature.ParameterSignatureTypes is [var half] && IsHalf(half) &&
+                IsVector(method.Signature.ReturnSignatureType)
+                    ? RuntimeIntrinsic.SimdHalfToVector
+                    : null;
         }
 
         if (declaringType is not (Vector128 or Vector))
@@ -117,6 +129,18 @@ internal static class SimdVectorIntrinsicClassifier
                 method.Signature.ParameterSignatureTypes is [var vector] && IsVector(vector) &&
                 method.Signature.ReturnSignatureType.CanonicalName == "primitive:u4" =>
                 RuntimeIntrinsic.SimdExtractMostSignificantBits,
+            // Create<T>(Vector64<T>, Vector64<T>) and its overload for each element type.
+            "Create" when IsVector(method.Signature.ReturnSignatureType) &&
+                method.Signature.ParameterSignatureTypes is [var lower, var upper] && IsHalf(lower) && IsHalf(upper) =>
+                RuntimeIntrinsic.SimdCreateFromHalves,
+            "GetLower" or "GetUpper" when method.GenericArity == 1 &&
+                method.Signature.ParameterSignatureTypes is [var vector] && IsVector(vector) &&
+                IsHalf(method.Signature.ReturnSignatureType) =>
+                RuntimeIntrinsic.SimdGetHalf,
+            "WithLower" or "WithUpper" when method.GenericArity == 1 &&
+                method.Signature.ParameterSignatureTypes is [var vector, var half] && IsVector(vector) && IsHalf(half) &&
+                IsVector(method.Signature.ReturnSignatureType) =>
+                RuntimeIntrinsic.SimdWithHalf,
             "Create" when method.GenericArity == 1 &&
                 IsVector(method.Signature.ReturnSignatureType) &&
                 method.Signature.ParameterSignatureTypes is [{ Shape: CliTypeShape.GenericMethodParameter }] =>
@@ -284,4 +308,8 @@ internal static class SimdVectorIntrinsicClassifier
     internal static bool IsVector(CliTypeIdentity type) =>
         type.Shape == CliTypeShape.GenericInstantiation &&
         type.ElementType!.FullName is Vector128OfT or VectorOfT;
+
+    // A Vector64<T>, half of a Vector128<T>.
+    private static bool IsHalf(CliTypeIdentity type) =>
+        type.Shape == CliTypeShape.GenericInstantiation && type.ElementType!.FullName is Vector64OfT;
 }

@@ -45,7 +45,7 @@ internal interface IGenericCycleSession
 // ordinary async code once a program had sixteen such calls. Growth also counts only in the type parameters the
 // method's own code names, the members and types its instructions use, as a cycle carries an instantiation onward only
 // through those. AsyncTaskMethodBuilder<TResult>.Start<TStateMachine> never names TResult, so a builder for (T,
-// Exception) reached after one for T (as every assertion in TUnit.Assertions does, for every T a suite asserts on) has
+// Exception) reached after one for T (as a generic asynchronous API does for every T it is used with) has
 // not grown through Start. A method whose body cannot be read counts every parameter, as before.
 internal sealed class GenericCycleSessionFactory(
     ITypeFinder typeFinder,

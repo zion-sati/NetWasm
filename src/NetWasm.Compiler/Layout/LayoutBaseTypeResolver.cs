@@ -16,7 +16,8 @@ internal sealed class LayoutBaseTypeResolver(
     {
         CliTypeShape.SzArray or CliTypeShape.Array =>
             identities.GetTypeIdentity(types.FindType("System.Array").Key),
-        CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer or
+        // A pointer, a function pointer and a by-reference type have no base type, as .NET reports them.
+        CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer or
             CliTypeShape.GenericTypeParameter or
             CliTypeShape.GenericMethodParameter => null,
         _ => baseTypes.GetBaseType(type),

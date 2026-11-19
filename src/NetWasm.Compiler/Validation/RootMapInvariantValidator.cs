@@ -44,7 +44,7 @@ internal sealed class RootMapInvariantValidator(
                 "constructed root-map keys do not match reachable methods");
         }
         // Each method is checked on its own; the first failing method in order is reported.
-        // Root maps taken from compiled units were checked when they were analysed.
+        // Root maps taken from compiled units were checked when they were analyzed.
         var checks = new List<(ManagedMethodBody Method, MethodRootMap Roots)>(
             program.Methods.Count + program.ConstructedMethods.Count);
         foreach (var pair in program.Methods)

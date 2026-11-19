@@ -18,6 +18,7 @@ internal sealed class AsyncJSImportCallEmitter(
     IInstanceFieldLayoutProvider fieldLayouts,
     IRuntimeImportResolver runtimeImports,
     IJavaScriptImportArgumentEmitter arguments,
+    ITransferredHostCallbackEmitter transferredCallbacks,
     IImplicitExceptionEmitter exceptions) : ICallEmitter
 {
     public void Emit(CallEmissionRequest request, IWasmInstructionWriter code, IFunctionIndexResolver functionIndices)
@@ -59,6 +60,12 @@ internal sealed class AsyncJSImportCallEmitter(
                 context,
                 request.ArgumentBase + index,
                 instruction.Stack[request.ArgumentBase + index]);
+            // A callback belongs to JavaScript, which keeps it while the operation runs and after.
+            if (instruction.Target.HostCallbacks.ContainsKey((request.Method.Definition.Key, index)))
+            {
+                transferredCallbacks.Emit(code, local);
+                continue;
+            }
             arguments.Emit(
                 code,
                 request.Method.Signature.ParameterSignatureTypes[index],

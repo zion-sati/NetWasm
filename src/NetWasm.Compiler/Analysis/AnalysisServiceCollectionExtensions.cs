@@ -41,8 +41,8 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddSingleton<IIntegerCheckEliminatorFactory, IntegerCheckEliminatorFactory>();
         services.AddSingleton<IManagedMethodOptimizerFactory,
             ManagedMethodOptimizerFactory>();
-        services.AddSingleton<NullChecks.IConstructorReceiverProverFactory,
-            NullChecks.ConstructorReceiverProverFactory>();
+        services.AddSingleton<NullChecks.IReceiverProverFactory, NullChecks.ReceiverProverFactory>();
+        services.AddSingleton<Generations.IYoungConstructorProverFactory, Generations.YoungConstructorProverFactory>();
         services.AddSingleton<IDispatchTargetResolverFactory,
             DispatchTargetResolverFactory>();
         services.AddSingleton<ITypeRelationshipClassifierFactory,
@@ -81,6 +81,7 @@ internal static class AnalysisServiceCollectionExtensions
             ReachabilityLedgerFactory>();
         services.AddSingleton<IReachableMethodBatchObserver, LoggingReachableMethodBatchObserver>();
         services.AddSingleton<IReachabilityClosureObserver, LoggingReachabilityClosureObserver>();
+        services.AddSingleton<IReachabilityProgressObserver, ReachabilityProgressReporter>();
         services.AddSingleton<IWholeProgramAnalyzerFactory, WholeProgramAnalyzerFactory>();
         services.AddSingleton<IStandaloneMethodAnalyzerFactory, StandaloneMethodAnalyzerFactory>();
         return services;

@@ -123,6 +123,90 @@ public sealed class NativeCallbackThunkEmitterTests
         Assert.Equal(CliValueKind.Void, terminal.ResultType);
     }
 
+    // Struct values the C ABI passes by address, as a scalar, or not at all, and vectors, reach the managed method as
+    // addresses: a scalar struct and an empty one are first written to a value frame the call holds. A struct result
+    // returned through the C caller's buffer is written there; one returned as a scalar, or a vector, goes through the
+    // frame, and is read back after the call.
+    [Theory]
+    [InlineData(NativeAbiValueKind.IndirectAggregate, false)]
+    [InlineData(NativeAbiValueKind.ScalarizedAggregate, false)]
+    [InlineData(NativeAbiValueKind.IndirectAggregate, true)]
+    public void StructsAndVectorsPassThroughAddressesAndTheFrame(NativeAbiValueKind resultKind, bool vectorResult)
+    {
+        var layouts = new RecordingLayoutProvider();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var writers = new RecordingWriterFactory();
+        var selection = new RuntimeImportSelection(WasmModuleProfile.CoreApplication, IncludeTerminalExceptionReporter: true);
+        var emitter = new NativeCallbackThunkEmitter(layouts, imports, new AddressInstructionEmitter(layouts),
+            new RecordingStaticInitializationEmitter(), new RecordingTerminalBoundaryEmitter(), writers);
+
+        emitter.Emit(AggregatePlan(resultKind, vectorResult), ModuleDataPlan.Empty with { NativeCallbackReadinessAddress = 256 },
+            selection, new FixedFunctionIndexResolver());
+
+        var instructions = writers.Instructions.ToInstructions();
+        var calls = instructions.Where(instruction => instruction.Opcode == WasmOpcodes.Call)
+            .Select(instruction => (int)instruction.Operand.UnsignedValue).ToArray();
+        var enter = imports.Resolve(RuntimeImportSymbol.ValueFrameEnter, selection);
+        var leave = imports.Resolve(RuntimeImportSymbol.ValueFrameLeave, selection);
+        Assert.Equal(1, calls.Count(index => index == enter));
+        Assert.Equal(1, calls.Count(index => index == leave));
+        Assert.Contains(44, calls);
+        // A SIMD memory instruction carries its opcode first, beside its memory argument.
+        var simd = instructions.Where(instruction => instruction.Opcode == WasmOpcodes.SimdPrefixed &&
+                instruction.Operand.Shape == WasmInstructionOperandShape.PrefixedUnsignedLeb128Triple)
+            .Select(instruction => instruction.Operand.Alignment).ToArray();
+        // The two vector parameters load their values (the 8-byte one into the low lanes); a vector result is stored
+        // after the call.
+        Assert.Equal(1, simd.Count(opcode => opcode == WasmSimdOpcodes.V128Load));
+        Assert.Equal(1, simd.Count(opcode => opcode == WasmSimdOpcodes.V128Load64Zero));
+        Assert.Equal(vectorResult ? 1 : 0, simd.Count(opcode => opcode == WasmSimdOpcodes.V128Store));
+        // A scalar struct result is read from the frame after the call.
+        var afterCall = instructions.SkipWhile(instruction => instruction.Opcode != WasmOpcodes.Call || instruction.Operand.UnsignedValue != 44)
+            .Skip(1).ToArray();
+        Assert.Equal(resultKind == NativeAbiValueKind.ScalarizedAggregate, afterCall.Any(instruction => instruction.Opcode == WasmOpcodes.I64Load));
+    }
+
+    private static NativeCallbackMethodPlan AggregatePlan(NativeAbiValueKind resultKind, bool vectorResult)
+    {
+        var pair = CliTypeIdentity.Named(EmitterTestSupport.Assembly, "Test", "Pair", true);
+        var vector = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(EmitterTestSupport.Assembly, "System.Runtime.Intrinsics", "Vector128`1", true),
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        var i4 = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var i8 = CliTypeIdentity.Primitive("i8", CliValueKind.I8);
+        var pointer = CliTypeIdentity.Primitive("nativeint", CliValueKind.NativeInt);
+        var indirectResult = resultKind == NativeAbiValueKind.IndirectAggregate;
+        var resultType = vectorResult ? vector : pair;
+        var result = indirectResult
+            ? new NativeAbiValuePlan(NativeAbiValueKind.IndirectAggregate, resultType, null, 16, 16)
+            : new NativeAbiValuePlan(NativeAbiValueKind.ScalarizedAggregate, resultType, i8, 8, 8, i8);
+        var hidden = indirectResult ? 1 : 0;
+        ImmutableArray<NativeAbiParameterPlan> parameters =
+        [
+            new(0, hidden, new(NativeAbiValueKind.IndirectAggregate, pair, pointer, 8, 4)),
+            new(1, hidden + 1, new(NativeAbiValueKind.ScalarizedAggregate, pair, i4, 4, 4, i4)),
+            new(2, null, new(NativeAbiValueKind.IgnoredAggregate, pair, null, 0, 1)),
+            new(3, hidden + 2, new(NativeAbiValueKind.IndirectAggregate, vector, pointer, 16, 16)),
+            new(4, hidden + 3, new(NativeAbiValueKind.ScalarizedAggregate, vector, i8, 8, 8, i8)),
+            new(5, hidden + 4, new(NativeAbiValueKind.Scalar, i4, i4)),
+        ];
+        CliValueKind[] physical = [.. indirectResult ? [CliValueKind.NativeInt] : Array.Empty<CliValueKind>(),
+            CliValueKind.NativeInt, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I8, CliValueKind.I4];
+        var logical = MethodSignatureModel.Create(resultType.StackKind, CliValueKind.ValueType, CliValueKind.ValueType,
+            CliValueKind.ValueType, CliValueKind.V128, CliValueKind.V128, CliValueKind.I4);
+        var abi = new NativeAbiSignaturePlan(logical,
+            MethodSignatureModel.Create(indirectResult ? CliValueKind.Void : CliValueKind.I8, physical), parameters, result,
+            indirectResult ? 0 : null);
+        var definition = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey) with
+        {
+            Signature = logical,
+            NativeCallback = new([], null, false, false),
+        };
+        var method = new MethodInstanceModel(definition,
+            CliTypeIdentity.Named(EmitterTestSupport.Assembly, "Test", "Callbacks", false), [], logical);
+        return new(method, abi, "native", "native", "thunk", "getter", new(3));
+    }
+
     private static NativeCallbackMethodPlan CallbackPlan(
         CliValueKind returnType = CliValueKind.I4)
     {

@@ -34,7 +34,8 @@ public sealed class ValueTypeDefaultInterfaceMethodCorpusTests(CorrectnessTestRu
 
     // The constrained call becomes the box of the value and a virtual call, with
     // the arguments carried across in new locals; no constrained prefix is left
-    // to pass the value's address.
+    // to pass the value's address. A local the constant flow knows holds an int32
+    // reads as that constant.
     [Fact]
     public void ConstrainedDefaultMethodCallsBoxTheValue()
     {
@@ -55,7 +56,8 @@ public sealed class ValueTypeDefaultInterfaceMethodCorpusTests(CorrectnessTestRu
             Assert.DoesNotContain(CilOperation.Constrained, operations);
             Assert.Equal(CilOperation.LoadObject, operations[box - 1]);
             Assert.All(operations[(box - 1 - arguments)..(box - 1)], static operation => Assert.Equal(CilOperation.StoreLocal, operation));
-            Assert.All(operations[(box + 1)..(box + 1 + arguments)], static operation => Assert.Equal(CilOperation.LoadLocal, operation));
+            Assert.All(operations[(box + 1)..(box + 1 + arguments)], static operation =>
+                Assert.Contains(operation, new[] { CilOperation.LoadLocal, CilOperation.LoadInt32 }));
             Assert.Equal(CilOperation.CallVirtual, operations[box + 1 + arguments]);
             Assert.Equal(body.Locals.Length, body.LocalSignatureTypes.Length);
         }

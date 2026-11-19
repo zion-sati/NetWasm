@@ -90,24 +90,28 @@ namespace System.Runtime.Intrinsics.X86
             ///   <para>__m512i _mm512_dpbusd_epi32 (__m512i src, __m512i a, __m512i b)</para>
             ///   <para>VPDPBUSD zmm, zmm, zmm/m512</para>
             /// </summary>
+            [Intrinsic]
             public static Vector512<int> MultiplyWideningAndAdd(Vector512<int> addend, Vector512<byte> left, Vector512<sbyte> right) { throw new PlatformNotSupportedException(); }
 
             /// <summary>
             ///   <para>__m512i _mm512_dpwssd_epi32 (__m512i src, __m512i a, __m512i b)</para>
             ///   <para>VPDPWSSD zmm, zmm, zmm/m512</para>
             /// </summary>
+            [Intrinsic]
             public static Vector512<int> MultiplyWideningAndAdd(Vector512<int> addend, Vector512<short> left, Vector512<short> right) { throw new PlatformNotSupportedException(); }
 
             /// <summary>
             ///   <para>__m512i _mm512_dpbusds_epi32 (__m512i src, __m512i a, __m512i b)</para>
             ///   <para>VPDPBUSDS zmm, zmm, zmm/m512</para>
             /// </summary>
+            [Intrinsic]
             public static Vector512<int> MultiplyWideningAndAddSaturate(Vector512<int> addend, Vector512<byte> left, Vector512<sbyte> right) { throw new PlatformNotSupportedException(); }
 
             /// <summary>
             ///   <para>__m512i _mm512_dpwssds_epi32 (__m512i src, __m512i a, __m512i b)</para>
             ///   <para>VPDPWSSDS zmm, zmm, zmm/m512</para>
             /// </summary>
+            [Intrinsic]
             public static Vector512<int> MultiplyWideningAndAddSaturate(Vector512<int> addend, Vector512<short> left, Vector512<short> right) { throw new PlatformNotSupportedException(); }
         }
     }

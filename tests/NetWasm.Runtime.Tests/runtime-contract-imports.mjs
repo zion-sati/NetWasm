@@ -26,6 +26,10 @@ export function createRuntimeContractImports(target, getMemory, getExports) {
   // that draws until a value fits a range gets a new one each time.
   let randomByte = 0;
   let nextWaitableSet = 0;
+  // A simulated host's clocks: the system clock from a fixed instant after 2023, a microsecond later on each read,
+  // and the monotonic clock counting nanoseconds from zero, a microsecond per read.
+  let systemReads = 0n;
+  let monotonic = 0n;
   return {
     'netwasm.application.v1': {
       'netwasm.filter': unexpected,
@@ -42,9 +46,17 @@ export function createRuntimeContractImports(target, getMemory, getExports) {
       // runs no other task, so the yield returns at once, not cancelled.
       '[thread-yield]': () => 0,
     },
+    // A host with no environment variables, no arguments and no initial working directory, as the oracle
+    // host is: each list is empty and the option is none.
     [`${prefix}|wasi:cli/environment@0.3`]: {
       'get-environment'(result) {
         new Uint8Array(getMemory().buffer, Number(result), width * 2).fill(0);
+      },
+      'get-arguments'(result) {
+        new Uint8Array(getMemory().buffer, Number(result), width * 2).fill(0);
+      },
+      'get-initial-cwd'(result) {
+        new Uint8Array(getMemory().buffer, Number(result), 1)[0] = 0;
       },
     },
     [`${prefix}|wasi:random/random@0.3`]: {
@@ -66,6 +78,19 @@ export function createRuntimeContractImports(target, getMemory, getExports) {
           view.setUint32(Number(result) + 4, count, true);
         }
       },
+    },
+    [`${prefix}|wasi:clocks/system-clock@0.3`]: {
+      now(result) {
+        systemReads += 1n;
+        const view = new DataView(getMemory().buffer);
+        view.setBigInt64(Number(result), 1_750_000_000n + systemReads / 1_000_000n, true);
+        view.setUint32(Number(result) + 8, Number((systemReads % 1_000_000n) * 1000n), true);
+      },
+      'get-resolution': () => 1000n,
+    },
+    [`${prefix}|wasi:clocks/monotonic-clock@0.3`]: {
+      now: () => (monotonic += 1000n),
+      'get-resolution': () => 1n,
     },
     [`${prefix}|wasi:cli/stdout@0.3`]: { 'write-via-stream': unexpected },
     [`${prefix}|wasi:cli/stderr@0.3`]: { 'write-via-stream': unexpected },

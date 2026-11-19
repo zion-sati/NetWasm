@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
+using System.Collections.Immutable;
 using NetWasm.Runtime.Pack.Materialization;
 using NetWasm.Runtime.Pack.Tests.TestSupport;
 
@@ -21,6 +22,17 @@ public sealed class RuntimeNativeValidationProfileValidatorTests
         _validator.Validate(profile with { Imports = [profile.Imports[0] with { Parameters = [0x7f, 0x7e, 0x7d, 0x7c], Results = [0x7f] }] }, target);
     }
 
+    // Exception handling in exnref, and in the legacy encoding an archive's second validation allows.
+    [Theory]
+    [InlineData("exceptions")]
+    [InlineData("legacy-exceptions")]
+    public void AcceptsExceptionHandling(string feature)
+    {
+        var profile = RuntimePackTestData.NativeProfile();
+        _validator.Validate(profile with { Features = profile.Features.Add(feature) }, "wasm32");
+        _validator.Validate(profile with { Features = profile.Features.AddRange(ImmutableArray.Create("exceptions", "legacy-exceptions")) }, "wasm32");
+    }
+
     [Fact]
     public void RejectsUnsupportedFeaturesAndTargetMismatch()
     {
@@ -33,7 +45,8 @@ public sealed class RuntimeNativeValidationProfileValidatorTests
             profile with { Version = 2 }, profile with { Features = default }, profile with { Features = [] },
             profile with { Features = ["all"] }, profile with { Features = ["bulk-memory", "mvp"] },
             profile with { Features = profile.Features.Add("simd") }, profile with { Features = profile.Features.Add("threads") },
-            profile with { Features = profile.Features.Add("exceptions") }, profile with { Features = profile.Features.Add("multi-memory") },
+            profile with { Features = profile.Features.AddRange(ImmutableArray.Create("exceptions", "exceptions")) },
+            profile with { Features = profile.Features.Add("multi-memory") },
             profile with { Features = profile.Features.Add("tail-call") }, profile with { Features = profile.Features.Add(null!) },
             profile with { Features = profile.Features.Add("mvp") }, profile with { Features = profile.Features.Add("memory64") },
         })

@@ -47,7 +47,7 @@ public sealed class ResolveStandardFallbackAssetsTask : MsBuildTask
             var target = targets.EnumerateObject().FirstOrDefault(entry => TargetNames.Contains(entry.Name, StringComparer.OrdinalIgnoreCase));
             var packageFolder = folders.EnumerateObject().Select(entry => entry.Name).FirstOrDefault();
             if (target.Value.ValueKind != JsonValueKind.Object || packageFolder is null) return true;
-            // A direct reference's IncludeAssets and ExcludeAssets, which the fallback honours as NuGet would.
+            // A direct reference's IncludeAssets and ExcludeAssets, which the fallback honors as NuGet would.
             var references = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
             if (root.TryGetProperty("project", out var project) && project.TryGetProperty("frameworks", out var frameworks))
                 foreach (var framework in frameworks.EnumerateObject().Where(entry => TargetNames.Contains(entry.Name, StringComparer.OrdinalIgnoreCase)))

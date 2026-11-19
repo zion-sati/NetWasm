@@ -17,6 +17,7 @@ using NetWasm.Compiler.Loading;
 using NetWasm.Compiler.Pipeline;
 using NetWasm.Compiler.StackTraces;
 using NetWasm.Compiler.Symbols;
+using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Validation;
 
 namespace NetWasm.Compiler;
@@ -60,10 +61,12 @@ public static class NetWasmCompilerServiceCollectionExtensions
         services.AddCompilerComponentModel();
         services.AddCompilerPipeline();
         services.AddSingleton<INetWasmCompiler>(static services =>
-            new CompilerDiagnosticCompilationDecorator(
-                services.GetRequiredService<NetWasmCompilationPipeline>(),
-                services.GetRequiredService<ILogger<CompilerDiagnosticCompilationDecorator>>(),
-                services.GetRequiredService<ICompilerDiagnosticLogPathResolver>()));
+            new LargeStackCompilationDecorator(
+                new CompilerDiagnosticCompilationDecorator(
+                    services.GetRequiredService<NetWasmCompilationPipeline>(),
+                    services.GetRequiredService<ILogger<CompilerDiagnosticCompilationDecorator>>(),
+                    services.GetRequiredService<ICompilerDiagnosticLogPathResolver>()),
+                services.GetRequiredService<CompilerParallelism>()));
         return services;
     }
 }

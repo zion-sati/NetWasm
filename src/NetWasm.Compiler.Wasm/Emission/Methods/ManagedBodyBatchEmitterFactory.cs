@@ -37,7 +37,7 @@ internal sealed class ManagedBodyBatchEmitterFactory(
         if (built.Length == 1)
             Build(0);
         else
-            System.Threading.Tasks.Parallel.For(0, built.Length, Build);
+            LargeStackThreads.Run(built.Length, Build);
         if (Array.Find(failures, failure => failure is not null) is { } first)
         {
             foreach (var worker in built) worker?.Dispose();

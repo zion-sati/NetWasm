@@ -14,6 +14,7 @@ internal sealed class MetadataTypeDefinitionResolver : ITypeDefinitionResolver
 {
     private readonly FrozenDictionary<(string Assembly, string FullName),
         TypeDefinitionModel> _types;
+    private readonly FrozenSet<string> _assemblies;
     private readonly ImmutableDictionary<string, string> _aliases;
     private readonly ITypeFinder _typeFinder;
     private readonly IMetadataAvailabilityValidator _availability;
@@ -34,6 +35,7 @@ internal sealed class MetadataTypeDefinitionResolver : ITypeDefinitionResolver
         IMetadataAvailabilityValidator availability)
     {
         _types = types;
+        _assemblies = types.Keys.Select(static key => key.Assembly).ToFrozenSet(StringComparer.Ordinal);
         _aliases = aliases;
         _typeFinder = typeFinder;
         _availability = availability;
@@ -72,11 +74,17 @@ internal sealed class MetadataTypeDefinitionResolver : ITypeDefinitionResolver
         var assemblyName = _aliases.TryGetValue(assembly.Name, out var alias)
             ? alias
             : assembly.Name;
-        return _types.TryGetValue((assemblyName, fullName), out var definition)
-            ? definition
-            : throw new CompilerException(new CompilerDiagnostic(
-                DiagnosticCode.AssemblyResolution,
-                $"type identity '{identity}' was not found"));
+        if (_types.TryGetValue((assemblyName, fullName), out var definition)) return definition;
+        var message = $"type identity '{identity}' was not found";
+        // A type an assembly the compilation has lacks is an API NetWasm lacks: a method whose IL names it compiles to
+        // a body that throws TypeLoadException, and the reader that decodes the method says where. An assembly the
+        // compilation lacks altogether is a missing reference, which stays an error.
+        throw new CompilerException(new CompilerDiagnostic(DiagnosticCode.AssemblyResolution, message)
+        {
+            MissingMember = _assemblies.Contains(assemblyName)
+                ? new(MissingMemberKind.Type, fullName, "", 0, message) { Assembly = assembly.Name }
+                : null,
+        });
     }
 
     private static string PrimitiveTypeName(CliTypeIdentity identity) =>

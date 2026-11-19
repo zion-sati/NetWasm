@@ -32,7 +32,7 @@ on:
         type: string
         default: ''
       collector:
-        description: NETWASM_CORPUS_COLLECTOR, the linked runtime's collector; empty is Compact.
+        description: NETWASM_CORPUS_COLLECTOR, the linked runtime's collector (compact, netwasm or netwasmgen); empty is Compact.
         type: string
         default: ''
       optimization:

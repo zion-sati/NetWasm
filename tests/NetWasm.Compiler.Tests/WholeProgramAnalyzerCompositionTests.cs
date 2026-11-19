@@ -206,6 +206,8 @@ public sealed class WholeProgramAnalyzerCompositionTests
             new NullableTypeResolver(),
             new RecordingReachableMethodBatchObserver(),
             new RecordingReachabilityClosureObserver(),
+            new ReachabilityProgressReporter(
+                new CompilerTestLogger<ReachabilityProgressReporter>(), TimeProvider.System),
             typeClassifiers,
             new ControlFlowGraphBuilderFactory());
         var settings = new WasmOptimizationSettingsResolver().Resolve(FinalWasmOptimization.Oz,
@@ -548,13 +550,15 @@ public sealed class WholeProgramAnalyzerCompositionTests
         public IReachableProgramBuilder Create(
             IAllocationCapabilityAnalyzer allocationCapabilities,
             IManagedByRefEffectAnalyzer byRefEffects,
-            IDelegateBindingPlanner delegateBindings)
+            IDelegateBindingPlanner delegateBindings,
+            IObjectDispatchSharing objectDispatchSharing)
         {
             Called = true;
             return new ReachableProgramBuilder(
                 allocationCapabilities,
                 byRefEffects,
-                delegateBindings);
+                delegateBindings,
+                objectDispatchSharing);
         }
     }
 

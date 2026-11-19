@@ -362,6 +362,7 @@ public readonly partial struct Int32 : IBinaryIntegerParseAndFormatInfo<int>
         Number.TryFormatInt32(this, ~0, format, provider, destination, out bytesWritten);
     public static long BigMul(int left, int right) => (long)left * right;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Log10(int value) => PrimitiveIntegralConversions.Log10Signed(value);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
@@ -905,6 +906,7 @@ public readonly partial struct UInt32 : IBinaryIntegerParseAndFormatInfo<uint>
         Number.TryFormatUInt32(this, format, provider, destination, out bytesWritten);
     public static ulong BigMul(uint left, uint right) => (ulong)left * right;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Log10(uint value) => (uint)PrimitiveIntegralConversions.Log10(value);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
@@ -1024,6 +1026,7 @@ public readonly partial struct Int64 : IBinaryIntegerParseAndFormatInfo<long>
         Number.TryFormatInt64(this, format, provider, destination, out bytesWritten);
     public static Int128 BigMul(long left, long right) => (Int128)left * right;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long Log10(long value) => PrimitiveIntegralConversions.Log10Signed(value);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
@@ -1143,6 +1146,7 @@ public readonly partial struct UInt64 : IBinaryIntegerParseAndFormatInfo<ulong>
         Number.TryFormatUInt64(this, format, provider, destination, out bytesWritten);
     public static UInt128 BigMul(ulong left, ulong right) => (UInt128)left * right;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Log10(ulong value) => (ulong)PrimitiveIntegralConversions.Log10(value);
     bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
     char IConvertible.ToChar(IFormatProvider? provider) => Convert.ToChar(this);
@@ -1414,12 +1418,17 @@ public readonly partial struct Single
         return Number.TryFormatFloat(this, format, provider, destination, out bytesWritten);
     }
 
+    [Intrinsic]
     public static TInteger ConvertToInteger<TInteger>(float value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
+    [Intrinsic]
     public static TInteger ConvertToIntegerNative<TInteger>(float value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
 
     public static float ClampNative(float value, float min, float max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
+    [Intrinsic]
     public static float MaxNative(float left, float right) => left > right ? left : right;
+    [Intrinsic]
     public static float MinNative(float left, float right) => left < right ? left : right;
+    [Intrinsic]
     public static float MaxNumber(float x, float y)
     {
         // This matches the IEEE 754:2019 `maximumNumber` function
@@ -1440,6 +1449,7 @@ public readonly partial struct Single
 
         return IsNegative(y) ? x : y;
     }
+    [Intrinsic]
     public static float MinNumber(float x, float y)
     {
         // This matches the IEEE 754:2019 `minimumNumber` function
@@ -1639,12 +1649,17 @@ public readonly partial struct Double
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatFloat(this, format, provider, destination, out bytesWritten);
 
+    [Intrinsic]
     public static TInteger ConvertToInteger<TInteger>(double value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
+    [Intrinsic]
     public static TInteger ConvertToIntegerNative<TInteger>(double value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
 
     public static double ClampNative(double value, double min, double max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
+    [Intrinsic]
     public static double MaxNative(double left, double right) => left > right ? left : right;
+    [Intrinsic]
     public static double MinNative(double left, double right) => left < right ? left : right;
+    [Intrinsic]
     public static double MaxNumber(double x, double y)
     {
         // This matches the IEEE 754:2019 `maximumNumber` function
@@ -1665,6 +1680,7 @@ public readonly partial struct Double
 
         return IsNegative(y) ? x : y;
     }
+    [Intrinsic]
     public static double MinNumber(double x, double y)
     {
         // This matches the IEEE 754:2019 `minimumNumber` function
@@ -1691,9 +1707,13 @@ public readonly partial struct Double
     public static double Log10P1(double value) => Math.Log10(1D + value);
     // Upstream's Mono build: the product rounds before the addend is added, as
     // the vector estimates do.
+    [Intrinsic]
     public static double MultiplyAddEstimate(double left, double right, double addend) => (left * right) + addend;
+    [Intrinsic]
     public static double ReciprocalEstimate(double value) => Math.ReciprocalEstimate(value);
+    [Intrinsic]
     public static double ReciprocalSqrtEstimate(double value) => Math.ReciprocalSqrtEstimate(value);
+    [Intrinsic]
     public static double Round(double value) => Math.Round(value);
     public static double Round(double value, int digits) => Math.Round(value, digits);
     public static double Round(double value, MidpointRounding mode) => Math.Round(value, mode);
@@ -1805,12 +1825,16 @@ public readonly partial struct Single
     public static float Exp2M1(float value) => Exp2(value) - 1F;
     public static float Exp10M1(float value) => Exp10(value) - 1F;
     public static float Lerp(float value1, float value2, float amount) => MultiplyAddEstimate(value1, 1F - amount, value2 * amount);
+    [Intrinsic]
     public static float ReciprocalEstimate(float value) => (float)Math.ReciprocalEstimate(value);
+    [Intrinsic]
     public static float ReciprocalSqrtEstimate(float value) => (float)Math.ReciprocalSqrtEstimate(value);
     public static float LogP1(float value) => MathF.Log(value + 1);
     public static float Log2P1(float value) => MathF.Log2(value + 1);
     public static float Log10P1(float value) => MathF.Log10(value + 1);
+    [Intrinsic]
     public static float MultiplyAddEstimate(float left, float right, float addend) => (left * right) + addend;
+    [Intrinsic]
     public static float Round(float value) => MathF.Round(value);
     public static float Round(float value, int digits) => MathF.Round(value, digits);
     public static float Round(float value, MidpointRounding mode) => MathF.Round(value, mode);
@@ -2001,28 +2025,35 @@ public readonly partial struct IntPtr
     }
     public static nint MinMagnitudeNumber(nint left, nint right) => MinMagnitude(left, right);
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static nint Log2(nint value)
     {
         if (value < 0) throw new ArgumentOutOfRangeException();
         return Numerics.BitOperations.Log2((nuint)value);
     }
     public static bool IsPow2(nint value) => value > 0 && (value & (value - 1)) == 0;
+    [Intrinsic]
     public static nint LeadingZeroCount(nint value)
     {
         return Numerics.BitOperations.LeadingZeroCount((nuint)value);
     }
+    [Intrinsic]
     public static nint PopCount(nint value)
     {
         return Numerics.BitOperations.PopCount((nuint)value);
     }
+    [Intrinsic]
     public static nint TrailingZeroCount(nint value)
     {
         return Numerics.BitOperations.TrailingZeroCount((nuint)value);
     }
+    [Intrinsic]
     public static nint RotateLeft(nint value, int rotateAmount)
     {
         return (nint)Numerics.BitOperations.RotateLeft((nuint)value, rotateAmount);
     }
+    [Intrinsic]
     public static nint RotateRight(nint value, int rotateAmount) =>
         (nint)Numerics.BitOperations.RotateRight((nuint)value, rotateAmount);
     public static (nint Quotient, nint Remainder) DivRem(nint left, nint right)
@@ -2190,16 +2221,22 @@ public readonly partial struct UIntPtr
     public static nuint MinMagnitude(nuint left, nuint right) => Min(left, right);
     public static nuint MinMagnitudeNumber(nuint left, nuint right) => Min(left, right);
 
+    [Intrinsic]
     public static nuint Log2(nuint value) => (nuint)Numerics.BitOperations.Log2(value);
     public static bool IsPow2(nuint value) => value != 0 && (value & (value - 1)) == 0;
+    [Intrinsic]
     public static nuint LeadingZeroCount(nuint value) =>
         (nuint)Numerics.BitOperations.LeadingZeroCount(value);
+    [Intrinsic]
     public static nuint PopCount(nuint value) =>
         (nuint)Numerics.BitOperations.PopCount(value);
+    [Intrinsic]
     public static nuint TrailingZeroCount(nuint value) =>
         (nuint)Numerics.BitOperations.TrailingZeroCount(value);
+    [Intrinsic]
     public static nuint RotateLeft(nuint value, int rotateAmount) =>
         Numerics.BitOperations.RotateLeft(value, rotateAmount);
+    [Intrinsic]
     public static nuint RotateRight(nuint value, int rotateAmount) =>
         Numerics.BitOperations.RotateRight(value, rotateAmount);
     public static (nuint Quotient, nuint Remainder) DivRem(nuint left, nuint right)

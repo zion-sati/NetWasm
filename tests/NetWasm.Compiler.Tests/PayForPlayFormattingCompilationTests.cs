@@ -58,7 +58,7 @@ public sealed class PayForPlayFormattingCompilationTests
     // The console writes integers as their ToString() does: its provider is the current culture,
     // whose number format is always the invariant one here, so the text is the same and writing an
     // integer builds no culture state. The negative sign is read through NumberFormatInfo's static
-    // CurrentNegativeSign, the current culture's mirror (owner decision 2026-10-25); where nothing sets
+    // CurrentNegativeSign, the current culture's mirror; where nothing sets
     // a culture its load folds to null and it returns the invariant sign, so it is the one Globalization
     // method reached.
     [Theory]

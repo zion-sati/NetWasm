@@ -68,6 +68,8 @@ internal static class JavaScriptRuntime
             [
                 $"export {{ createWasiFilesystem }} from {Hosting("wasi-filesystem.mjs")};",
                 $"export {{ createBrowserFileMounts }} from {Hosting("browser-file-mounts.mjs")};",
+                // Sidecars mount in the filesystem scope, so only an application with one loads their reader.
+                $"export {{ createBrowserSidecarMaterializer }} from {Hosting("browser-sidecar-materializer.mjs")};",
             ],
             [Http] = [$"export {{ createWasiHttpFetch }} from {Hosting("wasi-http-fetch.mjs")};"],
         };

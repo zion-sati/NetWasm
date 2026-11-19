@@ -220,6 +220,165 @@ public sealed class RuntimeNativeModuleMaterializerTests
         Assert.Equal("/owned/native-logs/native-archive-features-0.log", features.Module.LogPath);
         Assert.Equal(request.Consumer.NativeWasmToolsPath, features.Module.NativeWasmToolsPath);
         Assert.True(fixture.Events.IndexOf("archive-features") < fixture.Events.IndexOf("calculate"));
+        Assert.Empty(fixture.Translations);
+    }
+
+    // Raw output's declared env functions: allowed undefined, part of the cache key, and moved to their
+    // modules after each link, before its imports are checked.
+    [Fact]
+    public void DeclaredEnvImportsAreAllowedHashedAndMovedAfterEachLink()
+    {
+        var fixture = new Fixture();
+        var request = Request();
+        request = request with
+        {
+            Consumer = request.Consumer with { RawWasmOutput = true, EnvImports = [new("glViewport", "gl2"), new("glClear", "webgl")] },
+            SourceLayout = request.SourceLayout with { ImportModules = ["webgl", "gl2"] },
+        };
+
+        fixture.Create().Materialize(request);
+
+        ImmutableArray<RuntimeEnvImport> expected = [new("glClear", "webgl"), new("glViewport", "gl2")];
+        Assert.Equal(expected, fixture.NativeKeyRequest!.EnvImports);
+        var allow = Path.Combine(fixture.Workspace.DirectoryPath, "combined.allow-undefined");
+        Assert.Equal("runtime_symbol\nglClear\nglViewport\n",
+            System.Text.Encoding.UTF8.GetString(fixture.WrittenArtifacts[allow]));
+        Assert.All(fixture.LinkRequests.Skip(1), link =>
+        {
+            Assert.Equal(allow, link.AllowedUndefinedPath);
+            Assert.Null(link.NativeCallbackAllowedUndefinedPath);
+        });
+        Assert.Equal(2, fixture.Relocations.Count);
+        Assert.All(fixture.Relocations, imports => Assert.Equal(expected, imports));
+        // Its JavaScript supplies Emscripten's GL functions, which the stand-ins would replace.
+        Assert.All(fixture.LinkRequests, link => Assert.True(link.ScriptSuppliesEmscriptenFunctions));
+    }
+
+    // A raw output that supplies none of the functions NetWasm stands in for links the stand-ins, as a component
+    // does; one without declared env functions never reads their archive.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void RawOutputLinksTheStandInsUnlessItSuppliesOne(bool declaresOther)
+    {
+        var fixture = new Fixture();
+        var request = Request();
+        request = request with
+        {
+            Consumer = request.Consumer with
+            {
+                RawWasmOutput = true,
+                EnvImports = declaresOther ? [new("app_notify", "app")] : [],
+            },
+            SourceLayout = request.SourceLayout with { ImportModules = ["app"] },
+        };
+
+        fixture.Create().Materialize(request);
+
+        Assert.All(fixture.LinkRequests, link => Assert.False(link.ScriptSuppliesEmscriptenFunctions));
+        Assert.Equal(declaresOther ? 1 : 0, fixture.StandInReads);
+    }
+
+    [Fact]
+    public void WithoutEnvImportsNothingIsMovedOrAllowed()
+    {
+        var fixture = new Fixture();
+
+        fixture.Create().Materialize(Request());
+
+        Assert.Empty(fixture.Relocations);
+        Assert.Empty(fixture.NativeKeyRequest!.EnvImports);
+        Assert.All(fixture.LinkRequests, link => Assert.Null(link.AllowedUndefinedPath));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OutputOtherThanRawCannotDeclareEnvImports(bool plainCoreModule)
+    {
+        var fixture = new Fixture();
+        var request = Request();
+        request = request with
+        {
+            Consumer = request.Consumer with { PlainCoreModule = plainCoreModule, EnvImports = [new("glClear", "webgl")] },
+            SourceLayout = request.SourceLayout with { ImportModules = ["webgl"] },
+        };
+
+        var error = Assert.Throws<InvalidOperationException>(() => fixture.Create().Materialize(request));
+
+        Assert.Contains("A component has no JavaScript", error.Message, StringComparison.Ordinal);
+        Assert.Empty(fixture.Commands);
+    }
+
+    // The probe link is the first to resolve every function; one it leaves undefined is named.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ALinkThatLeavesFunctionsUndefinedNamesThem(bool explained)
+    {
+        var explanation = new InvalidOperationException("named");
+        var fixture = new Fixture { FailCommand = 2, Explanation = explained ? explanation : null };
+
+        var error = Assert.Throws<InvalidOperationException>(() => fixture.Create().Materialize(Request()));
+
+        Assert.Same(explained ? explanation : fixture.Failure, error);
+        Assert.Equal([false], fixture.Explained);
+        Assert.EndsWith("native-probe-link.log", fixture.Commands[1].LogPath, StringComparison.Ordinal);
+    }
+
+    // An archive that throws or catches C++ exceptions links the pack's C++ exception closure in place of the ordinary
+    // one; the cache key keeps the identity link's, which the archives' bytes determine.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnArchiveWithCxxExceptionsLinksTheCxxExceptionLibraries(bool cxxExceptions)
+    {
+        var fixture = new Fixture { ArchiveUsesCxxExceptions = cxxExceptions };
+        var request = Request() with
+        {
+            SystemLibraryPaths = ["/runtime/wasm32/system-libraries/libc.a", "/runtime/wasm32/system-libraries/libc++-noexcept.a"],
+            ExceptionSystemLibraryPaths =
+                ["/runtime/wasm32/system-libraries/libc++-wasmexcept.a", "/runtime/wasm32/system-libraries/libunwind-wasmexcept.a"],
+        };
+
+        fixture.Create().Materialize(request);
+
+        Assert.Equal(request.SystemLibraryPaths, fixture.LinkRequests[0].SystemLibraryPaths);
+        var expected = cxxExceptions ? request.ExceptionSystemLibraryPaths : request.SystemLibraryPaths;
+        Assert.All(fixture.LinkRequests.Skip(1), link => Assert.Equal(expected, link.SystemLibraryPaths));
+    }
+
+    [Fact]
+    public void AnArchiveWithCxxExceptionsNeedsAPackWithTheirLibraries()
+    {
+        var fixture = new Fixture { ArchiveUsesCxxExceptions = true };
+
+        var error = Assert.Throws<InvalidOperationException>(() => fixture.Create().Materialize(Request()));
+
+        Assert.Contains("no C++ exception libraries", error.Message, StringComparison.Ordinal);
+    }
+
+    // An archive in exception handling's legacy encoding: the final linked module is translated to exnref, after
+    // its link checks and before optimization and the profile's validation, at every optimization level.
+    [Theory]
+    [InlineData(RuntimeWasmOptimization.None)]
+    [InlineData(RuntimeWasmOptimization.Oz)]
+    public void AnArchiveWithLegacyExceptionHandlingIsTranslatedAfterTheFinalLink(RuntimeWasmOptimization optimization)
+    {
+        var fixture = new Fixture { ArchiveUsesLegacyExceptions = true };
+        var request = Request(optimization);
+
+        fixture.Create().Materialize(request);
+
+        var translation = Assert.Single(fixture.Translations);
+        Assert.Equal(request.Consumer.WasmOptPath, translation.WasmOptPath);
+        Assert.Equal(fixture.LinkRequests[^1].OutputPath, translation.ModulePath);
+        Assert.Equal(request.Target.NativeValidation!.Features, translation.Features);
+        Assert.Equal("/owned/native-logs/native-exnref.log", translation.LogPath);
+        Assert.Equal(3, fixture.CommandsBeforeTranslation); // the archive's own link, the probe link, the final link
+        Assert.True(fixture.Events.IndexOf("translate") < fixture.Events.IndexOf("validate"));
+        var optimize = fixture.Commands.FindIndex(command => command.LogPath.EndsWith("native-optimize.log", StringComparison.Ordinal));
+        Assert.Equal(optimization != RuntimeWasmOptimization.None, optimize >= 0);
     }
 
     [Fact]
@@ -506,7 +665,8 @@ public sealed class RuntimeNativeModuleMaterializerTests
         IRuntimeNativeArchiveSnapshotter,
         ICommandInvoker, IRuntimeNativeLinkWorkspaceFactory
         , IRuntimeLinkExportPlanBuilder, IRuntimeLinkedImportValidator, IRuntimeNativeModuleValidator, IRuntimeNativeValidationProfileValidator,
-        IRuntimeNativeArchiveFeatureValidator, ILinkerCommandFactory
+        IRuntimeNativeArchiveFeatureValidator, ILinkerCommandFactory, IRuntimeExceptionHandlingTranslator,
+        IRuntimeEnvImportRelocator, IRuntimeUndefinedSymbolReporter
     {
         public RuntimeMemoryPlan Plan { get; } = new("wasm32", 4, 65_536, 16, 65_537, 65_552, 65_536, 2_147_483_648, 65_536);
         public RuntimeLinkedMemoryLayout Expected { get; } = new("wasm32", 65_552, 100_000, 100_000, 165_536, 165_536, 262_144, 2_147_483_648);
@@ -549,14 +709,39 @@ public sealed class RuntimeNativeModuleMaterializerTests
         public IRuntimeNativeModuleMaterializer Create() => Assert.IsAssignableFrom<IRuntimeNativeModuleMaterializer>(
             new RuntimeNativeModuleMaterializer(this, this, this, this,
                 this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this, this,
-                this));
+                this, this, this, this));
         public List<RuntimeNativeArchiveFeatureValidationRequest> ArchiveFeatureRequests { get; } = [];
         public bool ArchiveBeyondProfile { get; set; }
-        public void Validate(RuntimeNativeArchiveFeatureValidationRequest request)
+        public bool ArchiveUsesLegacyExceptions { get; set; }
+        public bool ArchiveUsesCxxExceptions { get; set; }
+        public RuntimeNativeArchiveFeatures Validate(RuntimeNativeArchiveFeatureValidationRequest request)
         {
             Events.Add("archive-features");
             ArchiveFeatureRequests.Add(request);
             if (ArchiveBeyondProfile) throw Failure;
+            return new(ArchiveUsesLegacyExceptions, ArchiveUsesCxxExceptions);
+        }
+        public List<ImmutableArray<RuntimeEnvImport>> Relocations { get; } = [];
+        public byte[] Relocate(ReadOnlyMemory<byte> module, ImmutableArray<RuntimeEnvImport> imports)
+        {
+            Events.Add("relocate");
+            Relocations.Add(imports);
+            return module.ToArray();
+        }
+        public InvalidOperationException? Explanation { get; set; }
+        public List<bool> Explained { get; } = [];
+        public InvalidOperationException? Explain(string linkLog, bool rawWasmOutput, Exception failure)
+        {
+            Explained.Add(rawWasmOutput);
+            return Explanation;
+        }
+        public List<RuntimeExceptionHandlingTranslationRequest> Translations { get; } = [];
+        public int CommandsBeforeTranslation { get; private set; }
+        public void Translate(RuntimeExceptionHandlingTranslationRequest request)
+        {
+            Events.Add("translate");
+            Translations.Add(request);
+            CommandsBeforeTranslation = Commands.Count;
         }
         public void Validate(RuntimeNativeValidationProfile profile, string target)
         {
@@ -651,10 +836,14 @@ public sealed class RuntimeNativeModuleMaterializerTests
             ValidationRequests.Add(request);
             Invoke(new(request.NodePath, ["validate", request.Path], request.LogPath));
         }
-        byte[] IRuntimeArtifactReader.Read(string path) =>
-            path.EndsWith("allowed-undefined-symbols.txt", StringComparison.Ordinal)
-                ? RuntimeAllowedSymbols
-                : Bytes;
+        public int StandInReads { get; private set; }
+        byte[] IRuntimeArtifactReader.Read(string path)
+        {
+            if (path.EndsWith("allowed-undefined-symbols.txt", StringComparison.Ordinal)) return RuntimeAllowedSymbols;
+            if (!path.EndsWith("libnetwasm-emscripten-stand-ins.a", StringComparison.Ordinal)) return Bytes;
+            StandInReads++;
+            return RuntimeArchiveSymbolTableTests.GnuArchive(false, "glClear", "glViewport", "emscripten_has_asyncify");
+        }
         public ImmutableArray<RuntimeNativeArchiveSnapshot> Snapshot(RuntimeNativeArchiveSnapshotRequest request)
         {
             ArchiveChecks++;

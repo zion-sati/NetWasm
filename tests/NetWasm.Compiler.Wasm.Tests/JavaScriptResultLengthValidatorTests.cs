@@ -21,7 +21,7 @@ public sealed class JavaScriptResultLengthValidatorTests
         var exceptions = new RecordingExceptionEmitter();
         var target = new InteropMarshallingTarget(new(
             [], default, default, OptionalFunctionIndex.At(23),
-            default, default, default));
+            default));
         var code = new RecordingInstructionWriter();
         var validator = ThroughContract(new JavaScriptResultLengthValidator(
             handles,

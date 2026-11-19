@@ -20,24 +20,31 @@ public sealed class RuntimeInlineIntentIntegrationTests
 {
     private static readonly string[] ExpectedExports =
         ["allocate_object", "allocate_object_fallback", "allocate_string", "allocation_run",
-         "allocation_runs_enabled", "allocation_slot", "gc_handle_new", "gc_handle_release", "root_frame_enter",
-         "root_frame_leave", "value_frame_enter",
+         "allocation_runs_enabled", "allocation_slot", "gc_handle_new", "gc_handle_release",
+         "record_reference_write", "root_frame_enter", "root_frame_leave", "value_frame_enter",
          "value_frame_enter_mapped", "value_frame_leave", "value_frame_leave_mapped"];
 
+    // The write barrier is linked only into the runtime of a program built for NetWasmGen, which records its
+    // stores of references; its intent has nothing to annotate in any other.
+    private const string WriteBarrier = "record_reference_write";
+    private static readonly string[] RecordsReferenceWrites = ["reference-write-barrier"];
+
     [Theory]
-    [InlineData("wasm32")]
-    [InlineData("wasm64")]
+    [InlineData("wasm32", false)]
+    [InlineData("wasm64", false)]
+    [InlineData("wasm32", true)]
+    [InlineData("wasm64", true)]
     [Trait("Category", "RuntimeInlineIntentIntegration")]
-    public void MaterializedRuntimeCarriesOnlyDeclaredAggressiveFunctionHints(string target)
+    public void MaterializedRuntimeCarriesOnlyDeclaredAggressiveFunctionHints(string target, bool generations)
     {
         using var temporary = new TemporaryDirectory();
         var evidenceRoot = Environment.GetEnvironmentVariable(
             "NETWASM_INLINE_INTENT_EVIDENCE_ROOT") ?? temporary.Path;
-        var cell = Path.Combine(evidenceRoot, target);
+        var cell = Path.Combine(evidenceRoot, generations ? target + "-netwasmgen" : target);
         Assert.False(Directory.Exists(cell));
         Directory.CreateDirectory(cell);
         var outputPath = Path.Combine(cell, "runtime.wasm");
-        var request = CreateRequest(target, outputPath, cell, temporary);
+        var request = CreateRequest(target, outputPath, cell, temporary, generations);
         var manifestPath = request.ManifestPath;
         var manifest = new RuntimePackManifestReader(new RuntimePackManifestParser()).Read(manifestPath);
 
@@ -58,7 +65,9 @@ public sealed class RuntimeInlineIntentIntegrationTests
             manifest.InlineIntents.Select(intent => intent.Export));
         Assert.All(manifest.InlineIntents, intent =>
             Assert.Equal(RuntimeFunctionInlinePreference.Aggressive, intent.Preference));
+        Assert.Equal(generations, evidence.Exports.ContainsKey(WriteBarrier));
         var expectedIndices = ExpectedExports
+            .Where(name => generations || name != WriteBarrier)
             .Select(name => evidence.Exports[name])
             .Order()
             .ToArray();
@@ -130,8 +139,9 @@ public sealed class RuntimeInlineIntentIntegrationTests
         var mergedPath = request.OutputPath;
 
         var evidence = ReadEvidence(File.ReadAllBytes(mergedPath));
+        // This program is not built for NetWasmGen, so its runtime has no write barrier to carry a hint.
         var expectedExports = optimization == FinalWasmOptimization.O3
-            ? ExpectedExports
+            ? ExpectedExports.Where(name => name != WriteBarrier)
             : ["application_inline_candidate"];
         var expectedIndices = expectedExports
             .Select(name => evidence.Exports[name])
@@ -144,7 +154,8 @@ public sealed class RuntimeInlineIntentIntegrationTests
         string target,
         string outputPath,
         string cell,
-        TemporaryDirectory temporary)
+        TemporaryDirectory temporary,
+        bool generations = false)
     {
         var repository = RepositoryRoot();
         var assetRoot = Path.Combine(repository, "src", "NetWasm.Runtime.Pack", "runtime");
@@ -156,7 +167,7 @@ public sealed class RuntimeInlineIntentIntegrationTests
             schemaVersion = 3,
             target,
             applicationStaticDataEnd = 65_537,
-            runtimeFeatures = Array.Empty<string>(),
+            runtimeFeatures = generations ? RecordsReferenceWrites : Array.Empty<string>(),
             nativeImports = Array.Empty<object>(),
         }));
         return new(
@@ -187,7 +198,7 @@ public sealed class RuntimeInlineIntentIntegrationTests
                 "qualified-wasm-tools",
                 "qualified-node"))
         {
-            GarbageCollector = "Compact",
+            GarbageCollector = generations ? "NetWasmGen" : "Compact",
         };
     }
 

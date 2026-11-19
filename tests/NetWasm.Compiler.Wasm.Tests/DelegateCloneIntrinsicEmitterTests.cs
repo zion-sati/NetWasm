@@ -5,6 +5,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -94,6 +95,52 @@ public sealed class DelegateCloneIntrinsicEmitterTests
         Assert.Equal(1, EmitterTestSupport.CountManagedThrows(instructions));
     }
 
+    // Delegate types of one size share a run of type ids, whose clone allocates the source's own type; a type of
+    // another size, were there one, starts a run of its own.
+    [Fact]
+    public void DelegateTypesOfOneSizeShareARun()
+    {
+        CliTypeIdentity Delegate(string name) => CliTypeIdentity.Named(EmitterTestSupport.Assembly, "Fixtures", name, isValueType: false);
+        var first = Delegate("First");
+        var second = Delegate("Second");
+        var wide = Delegate("Wide");
+        var layouts = new RecordingLayoutProvider
+        {
+            TypeIds = new Dictionary<string, int>
+            {
+                [first.CanonicalName] = 3,
+                [second.CanonicalName] = 4,
+                [wide.CanonicalName] = 6,
+            },
+            ObjectSizes = new Dictionary<string, int> { [wide.CanonicalName] = 24 },
+        };
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var request = CreateRequest(layouts.Target, argumentBase: 0);
+        request = request with
+        {
+            Call = request.Call with
+            {
+                Instruction = request.Instruction with
+                {
+                    Target = request.Instruction.Target with
+                    {
+                        DelegateTypes = Lookups.Whole<IReadOnlyList<CliTypeIdentity>>([wide, second, first]),
+                    },
+                },
+            },
+        };
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+
+        ((IRuntimeIntrinsicEmitter)CreateEmitter(layouts, imports)).Emit(request, writer);
+
+        var instructions = writer.ToInstructions();
+        Assert.Equal(2, instructions.Count(instruction => IsCall(instruction, imports.Resolve(RuntimeImportSymbol.Allocate))));
+        // The run 3 through 4 is a distance below 2; 6 alone is an equality.
+        Assert.Contains(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract), instructions);
+        Assert.Contains(Constant(layouts.Target, 16), instructions);
+        Assert.Contains(Constant(layouts.Target, 24), instructions);
+    }
+
     // Issue 144: the clone allocates, so DelegateRuntime.Clone must be a
     // safepoint, or a multicast delegate's new invocation list, which only its
     // caller holds, is collected while the clone allocates. Any other method
@@ -123,7 +170,8 @@ public sealed class DelegateCloneIntrinsicEmitterTests
         layouts,
         layouts,
         imports,
-        new ImplicitExceptionEmitter(layouts));
+        new ImplicitExceptionEmitter(layouts),
+        new KeyedDispatchEmitter());
 
     private static RuntimeIntrinsicEmissionRequest CreateRequest(
         WasmTargetLayout target,

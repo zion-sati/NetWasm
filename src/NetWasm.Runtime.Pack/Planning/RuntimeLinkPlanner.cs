@@ -100,9 +100,15 @@ public static class RuntimeLinkPlanner
         var nativeInputs = nativeBindings.Select(binding => binding.Provider)
             .DistinctBy(provider => provider.Path, StringComparer.Ordinal)
             .Select(provider => new RuntimeLinkPlanAsset(provider.Path, provider.Sha256));
+        // A browser link takes the stand-ins too: like a component's, its module has no Emscripten JavaScript.
+        var emscriptenArchives = target.EmscriptenArchives is { } emscripten
+            ? ImmutableArray.Create(emscripten.Support, emscripten.StandIns)
+            : [];
+        var emscriptenInputs = emscriptenArchives.Select(asset => ResolveInput(request.AssetRoot, asset));
         var inputs = ImmutableArray.Create(runtimeInput, collectorInput, allowedUndefinedInput, platformInput)
             .AddRange(nativeInputs)
-            .AddRange(request.SystemLibraries);
+            .AddRange(request.SystemLibraries)
+            .AddRange(emscriptenInputs);
         if (inputs.Any(asset => asset.Path == request.OutputPath))
         {
             throw new ArgumentException("The runtime output cannot overwrite a runtime input.", nameof(request));
@@ -124,6 +130,11 @@ public static class RuntimeLinkPlanner
         foreach (var systemLibrary in request.SystemLibraries)
         {
             paths[Path.GetFullPath(systemLibrary.Path)] = systemLibrary.Path;
+        }
+        foreach (var asset in emscriptenArchives)
+        {
+            paths[Path.GetFullPath(Path.Combine(Path.GetFullPath(request.AssetRoot), asset.Path))] =
+                ResolveInput(request.AssetRoot, asset).Path;
         }
         foreach (var nativeLibrary in request.NativeLibraries)
         {

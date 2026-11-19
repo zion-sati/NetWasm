@@ -29,7 +29,8 @@ public sealed class NumericInstructionEmitterTests
                 layouts,
                 new CheckedBinaryEmitter(layouts.Target, exceptions),
                 new FloatingRemainderEmitter(),
-                exceptions));
+                exceptions),
+            new ConditionalSelectEmitter(layouts));
         var commands = emitter.Commands;
 
         Assert.Equal(commands.Length, commands.Select(command => command.Operation).Distinct().Count());

@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
-import { sha256 } from "./sha256.mjs";
 
 // The web actions every browser host takes. Each looks its browser API up when
 // it runs, so a page whose browser lacks one still imports, and the failure
@@ -56,9 +55,9 @@ async function compileCoreModule(bytes) {
 // Browsers provide crypto.subtle only in a secure context, a page served over
 // HTTPS or from localhost, so a page served over plain HTTP, such as a
 // development build opened from a phone on the local network, hashes in
-// JavaScript.
+// JavaScript. That code loads only on such a page, the first time it hashes.
 async function digest(algorithm, data) {
   if (algorithm !== "SHA-256") throw new TypeError(`unsupported digest algorithm '${algorithm}'`);
   const subtle = globalThis.crypto?.subtle;
-  return subtle === undefined ? sha256(data) : subtle.digest(algorithm, data);
+  return subtle === undefined ? (await import("./sha256.mjs")).sha256(data) : subtle.digest(algorithm, data);
 }

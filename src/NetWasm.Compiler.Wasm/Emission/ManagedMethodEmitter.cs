@@ -38,12 +38,14 @@ internal sealed class ManagedMethodEmitter(
     IInstructionCountingWriterFactory instructionWriters,
     ITerminalBranchValueFramePlanner branchValueFrames,
     IArrayMetadataCachingPlanner arrayMetadata,
+    IArrayLengthRunPlanner arrayLengthRuns,
     IArrayMetadataSnapshotEmitter arraySnapshots,
     IArrayStoreCheckPlanner arrayStoreChecks,
     IScalarCallLifetimePlanner scalarCallLifetimes,
     IAuthoritativeRootSourceSelector authoritativeSources,
     IAuthoritativeRootLayoutPlanner authoritativeLayouts,
     IRootClearElisionPlanner rootClearElisions,
+    IRootFrameEntryClearPlanner rootFrameEntryClears,
     IRootValueElisionPlanner rootValueElisions,
     IValueFrameReferenceMapPlanner frameReferences,
     IRootSlotAllocator rootSlots) : IManagedMethodEmitter
@@ -64,7 +66,7 @@ internal sealed class ManagedMethodEmitter(
         AddressTakenAggregatePromotionPlan? addressTakenAggregatePromotions = null,
         ManagedByRefAggregatePromotionPlan? managedByRefAggregatePromotions = null,
         ManagedAggregateSsaPlan? managedAggregateValues = null,
-        bool enableBranchValueFramePlacement = false,
+        BranchPrefixDuplicationPolicy branchPrefixDuplication = BranchPrefixDuplicationPolicy.Disabled,
         bool enableArrayMetadataCaching = false,
         bool enableScalarCallPreservation = false,
         bool hoistArrayNullChecks = false,
@@ -110,9 +112,10 @@ internal sealed class ManagedMethodEmitter(
             ? functionTypes.Resolve(method).Parameters.Length
             : functionTypes.Resolve(effectiveMethodInstance).Parameters.Length;
         var groups = exceptionGroups.Enumerate(emissionStructure).ToArray();
-        var placement = enableBranchValueFramePlacement && filterEnvironment.Size == 0 &&
+        var placement = branchPrefixDuplication != BranchPrefixDuplicationPolicy.Disabled && filterEnvironment.Size == 0 &&
             valueLayout.ScalarCallLifetimes.CallLocals.IsEmpty
-            ? branchValueFrames.Plan(emissionStructure, valueLayout, rootMap)
+            ? branchValueFrames.Plan(emissionStructure, valueLayout, rootMap,
+                copyTails: branchPrefixDuplication == BranchPrefixDuplicationPolicy.Speed)
             : null;
         var allocationLayout = placement is null ? valueLayout : valueLayout with
         {
@@ -121,6 +124,7 @@ internal sealed class ManagedMethodEmitter(
                 index => index, index => emissionStructure.Header.LocalSignatureTypes[index]), []),
         };
         var arrayPlan = arrayMetadata.Plan(emissionStructure, enableArrayMetadataCaching, hoistArrayNullChecks);
+        var lengthRuns = arrayLengthRuns.Plan(emissionStructure, arrayPlan, enableArrayMetadataCaching);
         // A collection reads the frame storage its map covers, so no safepoint
         // publishes it; a frame placed on terminal branches keeps publishing.
         var references = placement is null
@@ -130,6 +134,11 @@ internal sealed class ManagedMethodEmitter(
         var authoritative = authoritativeLayouts.Plan(rootMap,
             authoritativeSources.Select(rootMap, allocationLayout, filterEnvironment, arrayPlan));
         rootMap = authoritative.RootMap;
+        // A collection reads every capture where it lives when the value frame's map covers them, so no
+        // filter root frame copies them; funclets publish into this method's root frame by its final slots.
+        if (filterEnvironment.RootSlotCount != 0 && references.CoversCaptures(filterEnvironment))
+            filterEnvironment = filterEnvironment.WithoutRootFrame();
+        if (!filterEnvironment.IsEmpty) filterEnvironment = filterEnvironment with { ParentRootMap = rootMap };
         var emissionLayout = MethodEmissionContextFactory.Create(
             emissionStructure.Header,
             rootMap,
@@ -140,7 +149,8 @@ internal sealed class ManagedMethodEmitter(
             filterEnvironment,
             callerIdentity,
             managedAggregateValues,
-            arrayPlan);
+            arrayPlan,
+            lengthRuns);
         var context = emissionLayout.Context with
         {
             StackTraceMethodId = stackTraceMethodId,
@@ -166,6 +176,7 @@ internal sealed class ManagedMethodEmitter(
                 },
             };
         }
+        context = context with { RootFrameStartsZeroed = rootFrameEntryClears.Plan(emissionStructure, context) };
         context = context with { RootClearElisions = rootClearElisions.Plan(emissionStructure, context) };
         context = context with { RootValueElisions = rootValueElisions.Plan(emissionStructure, context) };
         if (placement is { DefersRootFrame: true } && context.TerminalBranchValueFramePlacement is { } branchFrame)

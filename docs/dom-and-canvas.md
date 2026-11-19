@@ -230,7 +230,7 @@ dotnet run
 `dotnet run` publishes the page and serves it on localhost; open the address it
 prints. Type a name and select **Greet**, and the page shows the greeting from
 C#; the canvas animates until you select **Pause**. `dotnet publish -c Release`
-writes the same site to `bin/Release/netwasm0.1/publish` for any static HTTP
+writes the same site to `bin/Release/net10.0-netwasm/publish` for any static HTTP
 server.
 
 ## How the pieces fit

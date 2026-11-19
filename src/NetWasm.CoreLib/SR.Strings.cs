@@ -18,6 +18,7 @@ namespace System
         internal const string Arg_BufferTooSmall = "Not enough space available in the buffer.";
         internal const string Arg_ByteArrayTooSmallForValue = "The array starting from the specified index is not long enough to read a value of the specified type.";
         internal const string Arg_CannotBeNaN = "TimeSpan does not accept floating point Not-a-Number values.";
+        internal const string Arg_EntryPointNotFoundException = "Entry point was not found.";
         internal const string Arg_EnumIllegalVal = "Illegal enum value: {0}.";
         internal const string Arg_InvalidHandle = "Invalid handle.";
         internal const string Arg_KeyNotFoundWithKey = "The given key '{0}' was not present in the dictionary.";
@@ -40,8 +41,8 @@ namespace System
         internal const string Arg_SpanMustHaveElementsForColor = "Span must have at least 4 elements for color components.";
         internal const string Arg_SynchronizationLockException = "Object synchronization method was called from an unsynchronized block of code.";
         internal const string Arg_WrongType = "The value \"{0}\" is not of type \"{1}\" and cannot be used in this generic collection.";
-        internal const string ArgumentException_NotIsomorphic = "Object contains references.";
         internal const string ArgumentException_BufferNotFromPool = "The buffer is not associated with this pool and may not be returned to it.";
+        internal const string ArgumentException_NotIsomorphic = "Object contains references.";
         internal const string ArgumentException_OtherNotArrayOfCorrectLength = "The object is not an array with the same number of elements as the array to compare it to.";
         internal const string ArgumentNull_Array = "Array cannot be null.";
         internal const string ArgumentNull_ArrayElement = "At least one element in the specified array was null.";
@@ -51,6 +52,7 @@ namespace System
         internal const string ArgumentOutOfRange_BadHourMinuteSecond = "Hour, Minute, and Second parameters describe an un-representable DateTime.";
         internal const string ArgumentOutOfRange_BadYearMonthDay = "Year, Month, and Day parameters describe an un-representable DateTime.";
         internal const string ArgumentOutOfRange_BiggerThanCollection = "Larger than collection size.";
+        internal const string ArgumentOutOfRange_Bounds_Lower_Upper = "Argument must be between {0} and {1}.";
         internal const string ArgumentOutOfRange_Count = "Count must be positive and count must refer to a location within the string/array/collection.";
         internal const string ArgumentOutOfRange_DayNumber = "Day number must be between 0 and DateOnly.MaxValue.DayNumber.";
         internal const string ArgumentOutOfRange_EndIndexStartIndex = "endIndex cannot be greater than startIndex.";
@@ -130,6 +132,9 @@ namespace System
         internal const string Format_UnclosedFormatItem = "Format item ends prematurely.";
         internal const string Format_UnexpectedClosingBrace = "Unexpected closing brace without a corresponding opening brace.";
         internal const string Format_UnknownDateTimeWord = "The string '{0}' was not recognized as a valid DateTime. There is an unknown word starting at index '{1}'.";
+        internal const string IDynamicInterfaceCastable_DoesNotImplementRequested = "Type '{0}' returned by IDynamicInterfaceCastable does not implement the requested interface '{1}'.";
+        internal const string IDynamicInterfaceCastable_MissingImplementationAttribute = "Type '{0}' returned by IDynamicInterfaceCastable does not have the attribute '{1}'.";
+        internal const string IDynamicInterfaceCastable_NotInterface = "Type '{0}' returned by IDynamicInterfaceCastable is not an interface.";
         internal const string IO_DiskFull_Path_AllocationSize = "Failed to create '{0}' with allocation size '{1}' because the disk was full.";
         internal const string IO_EOF_ReadBeyondEOF = "Unable to read beyond the end of the stream.";
         internal const string IO_FileExists_Name = "The file '{0}' already exists.";
@@ -145,6 +150,7 @@ namespace System
         internal const string InsufficientMemory_MemFailPoint = "Insufficient available memory to meet the expected demands of an operation at this time.  Please try again later.";
         internal const string InsufficientMemory_MemFailPoint_TooBig = "Insufficient memory to meet the expected demands of an operation, and this system is likely to never satisfy this request.  If this is a 32 bit system, consider booting in 3 GB mode.";
         internal const string InsufficientMemory_MemFailPoint_VAFrag = "Insufficient available memory to meet the expected demands of an operation at this time, possibly due to virtual address space fragmentation.  Please try again later.";
+        internal const string InvalidCast_FromTo = "Invalid cast from '{0}' to '{1}'.";
         internal const string InvalidOperation_ConcurrentOperationsNotSupported = "Operations that change non-concurrent collections must have exclusive access. A concurrent update was performed on this collection and corrupted its state. The collection's state is no longer correct.";
         internal const string InvalidOperation_EnumEnded = "Enumeration already finished.";
         internal const string InvalidOperation_EnumFailedVersion = "Collection was modified; enumeration operation may not execute.";
@@ -157,9 +163,8 @@ namespace System
         internal const string InvalidOperation_InvalidHandle = "The handle is invalid.";
         internal const string InvalidOperation_InvalidUtf8 = "Formatted string contains characters not representable as valid UTF-8.";
         internal const string InvalidOperation_NoElements = "Sequence contains no elements.";
-        internal const string ArgumentOutOfRange_Bounds_Lower_Upper = "Argument must be between {0} and {1}.";
-        internal const string InvalidOperation_NotWithConcurrentGC = "This API is not available when the concurrent GC is enabled.";
         internal const string InvalidOperation_NoValue = "Cannot read the Value property of a Nullable object that has no value. Check HasValue before reading Value.";
+        internal const string InvalidOperation_NotWithConcurrentGC = "This API is not available when the concurrent GC is enabled.";
         internal const string InvalidOperation_NullArray = "The underlying array is null.";
         internal const string InvalidOperation_ReadOnly = "Instance is read-only.";
         internal const string InvalidOperation_SpanOverlappedOperation = "This operation is invalid on overlapping buffers.";

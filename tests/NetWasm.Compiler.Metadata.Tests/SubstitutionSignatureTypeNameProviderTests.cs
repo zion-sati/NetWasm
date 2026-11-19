@@ -11,7 +11,7 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Metadata.Tests;
 
-// Method signatures named as ILLink.Substitutions.xml writes them, and the stubs of instance, parameterised and void
+// Method signatures named as ILLink.Substitutions.xml writes them, and the stubs of instance, parameterized and void
 // methods matched by them.
 public sealed class SubstitutionSignatureTypeNameProviderTests
 {
@@ -57,7 +57,7 @@ public sealed class SubstitutionSignatureTypeNameProviderTests
     // An instance method with parameters matches its stub by signature, and a void method's stub applies whatever value
     // it carries; another overload or a Boolean stub without a value applies nowhere.
     [Fact]
-    public void InstanceParameterisedAndVoidMethodsTakeTheirStubs()
+    public void InstanceParameterizedAndVoidMethodsTakeTheirStubs()
     {
         var image = Image(out var handles, """
             <linker>

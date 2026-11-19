@@ -228,6 +228,9 @@ public sealed class CapabilityBindingValidatorTests
     [InlineData("module@1.0")]
     [InlineData("module@1..0")]
     [InlineData("module@1.x.0")]
+    [InlineData("module@01.0.0")]
+    [InlineData("module@1.0.0-")]
+    [InlineData("module@1.0.0+a..b")]
     [InlineData(" module@1.0.0")]
     [InlineData("module@1.0.0\n")]
     public void RejectsMalformedProviderModule(string? module)

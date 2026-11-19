@@ -22,9 +22,9 @@ internal interface IConstructedReceiverPlanner
 // dup made, needs no null check; nor does an access through a local or argument
 // that the block itself stored such an object to, or that is stored exactly once,
 // with such an object, in a block that dominates the access's own and so ran
-// before it. A this that the caller has proven non-null, as a constructor's is
-// when only newobj and chained constructors call it, counts as such an object
-// while the method never stores to it or exposes its address. Exception handlers
+// before it. A this that the callers have proven non-null, as a method's is when
+// every call of it checks or proves its receiver, counts as such an object while
+// the method never stores to it or exposes its address. Exception handlers
 // can enter blocks no dominating store reached, so a method with them is left
 // alone, as the structured lowering drops its proof anyway.
 internal sealed class ConstructedReceiverPlanner(
@@ -110,15 +110,15 @@ internal sealed class ConstructedReceiverPlanner(
     }
 
     // How deep beneath the top of the stack an access's object reference lies. A
-    // constructor called directly, as a chained constructor is, takes its object
-    // as a receiver too, which tells the constructor prover what this it passes.
+    // method called directly, as a chained constructor or `this.Ensure(4)` is, takes
+    // its object as a receiver too, which tells the receiver prover what this it passes.
     private int ReceiverDepth(CilInstruction instruction) => instruction.Operation switch
     {
         CilOperation.LoadField or CilOperation.LoadFieldAddress => 1,
         CilOperation.StoreField => 2,
         CilOperation.CallVirtual when _calledMethods.Resolve(instruction) is { Definition.IsStatic: false } callee =>
             callee.Signature.ParameterTypes.Length + 1,
-        CilOperation.Call when _calledMethods.Resolve(instruction) is { } callee && ConstructorReceivers.IsInstanceConstructor(callee) =>
+        CilOperation.Call when _calledMethods.Resolve(instruction) is { } callee && ConstructorReceivers.IsClassInstanceMethod(callee) =>
             callee.Signature.ParameterTypes.Length + 1,
         _ => 0,
     };

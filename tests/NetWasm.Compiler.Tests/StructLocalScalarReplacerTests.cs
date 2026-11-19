@@ -250,6 +250,40 @@ public sealed class StructLocalScalarReplacerTests
 
     // static int Run(Pair pair, ref Pair element), whose pair the code reads
     // through its address: a span argument's Slice and Length, inlined.
+    // A System.Numerics vector field is one value: read whole only as a vector of its width (not a narrower vector or
+    // a scalar), and its lanes read by their field instances through its address.
+    [Fact]
+    public void AVectorFieldIsReadWholeAtItsWidthAndByItsLanes()
+    {
+        var vector4 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector4", isValueType: true);
+        var vector2 = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector2", isValueType: true);
+        var holder = new Struct("Holder", 10, ("V", vector4));
+        var lane = new FieldInstanceModel(
+            new FieldDefinitionModel(new(Assembly, 0x04000200), new(Assembly, 0x02000200), "X", CliValueKind.F4, false)
+            {
+                SignatureType = Single,
+            }, vector4, Single);
+        var narrow = Body([holder.Type], code => code
+            .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.LoadFieldAddress, Field(holder, 0))
+            .Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(vector2)).Op(CilOperation.Pop)
+            .Op(CilOperation.LoadInt32, 0).Return());
+        var lanes = Body([holder.Type], code => code
+            .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.LoadFieldAddress, Field(holder, 0))
+            .Op(CilOperation.LoadField, new CilOperand.FieldInstance(lane)).Op(CilOperation.Pop)
+            .Op(CilOperation.LoadInt32, 0).Return());
+
+        var scalar = Body([holder.Type], code => code
+            .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.LoadFieldAddress, Field(holder, 0))
+            .Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(Int64)).Op(CilOperation.Pop)
+            .Op(CilOperation.LoadInt32, 0).Return());
+
+        Assert.Same(narrow, Replacer(holder).Rewrite(narrow));
+        Assert.Same(scalar, Replacer(holder).Rewrite(scalar));
+        var split = Replacer(holder).Rewrite(lanes);
+        Assert.NotSame(lanes, split);
+        Validate(split);
+    }
+
     [Fact]
     public void StructArgumentSplitsIntoLocalsCopiedOnEntry()
     {
@@ -322,7 +356,8 @@ public sealed class StructLocalScalarReplacerTests
     {
         var program = new Program([Pair, Other, Mixed, Sized, Span, .. structs]);
         return new(new ControlFlowGraphBuilderFactory().Create(), Validator(program),
-            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer()), program, program, enabled: true);
+            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer()), program, program,
+            new VectorLaneFields(program, program), enabled: true);
     }
 
     private static ITypedStackValidator Validator(Program program) =>

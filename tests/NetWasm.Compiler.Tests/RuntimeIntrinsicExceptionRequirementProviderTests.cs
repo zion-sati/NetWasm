@@ -122,6 +122,7 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.StringLength or
             RuntimeIntrinsic.ArrayLength or
             RuntimeIntrinsic.ArrayRank or
+            RuntimeIntrinsic.ArrayPrimitiveElementType or
             RuntimeIntrinsic.JSObjectDispose or
             RuntimeIntrinsic.JSSubscriptionDispose or
             RuntimeIntrinsic.GetArrayDataReference or
@@ -134,6 +135,7 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             // The frozen OutOfMemoryException it returns is built only when required.
             RuntimeIntrinsic.PreallocatedOutOfMemoryException => [ManagedExceptionKind.OutOfMemory],
             RuntimeIntrinsic.NullableGetUnderlyingType => [ManagedExceptionKind.ArgumentNull],
+            RuntimeIntrinsic.AllocateUninitializedArray => [ManagedExceptionKind.Overflow, ManagedExceptionKind.OutOfMemory],
             RuntimeIntrinsic.ArrayGetLength or RuntimeIntrinsic.ArrayGetLowerBound or
             RuntimeIntrinsic.StringCharacterAt =>
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.IndexOutOfRange],

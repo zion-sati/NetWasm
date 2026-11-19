@@ -32,12 +32,14 @@ function read(path) {
   return readFileSync(resolve(repository, path), 'utf8');
 }
 
-function parseOperations(model) {
+export function parseOperations(model) {
   const match = model.match(/public enum CilOperation\s*\{([\s\S]*?)\n\}/);
   if (!match) {
     throw new Error('CilOperation enum was not found');
   }
-  return match[1].split(',').map(value => value.trim()).filter(Boolean);
+  // Comments document members; they are not members.
+  return match[1].replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    .split(',').map(value => value.trim()).filter(Boolean);
 }
 
 function parseFamilies(source) {
@@ -51,7 +53,22 @@ function parseFamilies(source) {
   return result;
 }
 
-function parseDecoder(source) {
+function operandForm(body) {
+  return body.match(/(?:new\s+)?CilOperand\.(\w+)/)?.[1] ??
+    (body.includes('Conversion(') ? 'NumericConversion' : null) ??
+    (body.includes('ReadMethod(') ? 'Entity|MethodInstance' : null) ??
+    (body.includes('ReadField(') ? 'Entity|FieldInstance' : null) ??
+    (body.includes('ReadType(') ||
+     body.includes('ReadSignatureType(') ||
+     body.includes('PrimitiveArrayElement(') ? 'TypeIdentity' : null) ??
+    (body.includes('ReadBranch(') ? 'BranchTarget' : null) ??
+    (body.includes('ReadSwitch(') ? 'SwitchTargets' : null) ??
+    (body.includes('ReadUserString(') ? 'UserString' : null) ??
+    // The call-site signature resolver returns the CallSite operand itself.
+    (body.includes('_callSiteSignatures.Resolve(') ? 'CallSite' : null);
+}
+
+export function parseDecoder(source) {
   const cases = [];
   const expression = /case "([^"]+)":([\s\S]*?)(?=\n\s*case "|\n\s*default:)/g;
   for (const match of source.matchAll(expression)) {
@@ -62,26 +79,22 @@ function parseDecoder(source) {
         { opcode: match[1], operation: 'LoadMethodToken', operand: 'MethodInstance' });
       continue;
     }
-    const operation = match[2].match(/operation\s*=\s*CilOperation\.(\w+)/)?.[1];
-    if (!operation) {
+    // An opcode can decode to more than one operation (calli calls a marshalling stub or calls
+    // indirectly); each assignment and the operand read after it, up to the next assignment, is one outcome.
+    const assignments = [...match[2].matchAll(/operation\s*=\s*CilOperation\.(\w+)/g)];
+    if (assignments.length === 0) {
       throw new Error(`decoder opcode ${match[1]} has no CilOperation`);
     }
-    const operand = match[2].match(/(?:new\s+)?CilOperand\.(\w+)/)?.[1] ??
-      (match[2].includes('Conversion(') ? 'NumericConversion' : null) ??
-      (match[2].includes('ReadMethod(') ? 'Entity|MethodInstance' : null) ??
-      (match[2].includes('ReadField(') ? 'Entity|FieldInstance' : null) ??
-      (match[2].includes('ReadType(') ||
-       match[2].includes('ReadSignatureType(') ||
-       match[2].includes('PrimitiveArrayElement(') ? 'TypeIdentity' : null) ??
-      (match[2].includes('ReadBranch(') ? 'BranchTarget' : null) ??
-      (match[2].includes('ReadSwitch(') ? 'SwitchTargets' : null) ??
-      (match[2].includes('ReadUserString(') ? 'UserString' : null) ??
-      // The call-site signature resolver returns the CallSite operand itself.
-      (match[2].includes('_callSiteSignatures.Resolve(') ? 'CallSite' : null);
-    if (!operand) {
-      throw new Error(`decoder opcode ${match[1]} has no identifiable operand form`);
-    }
-    cases.push({ opcode: match[1], operation, operand });
+    assignments.forEach((assignment, index) => {
+      const body = assignments.length === 1
+        ? match[2]
+        : match[2].slice(assignment.index, assignments[index + 1]?.index ?? match[2].length);
+      const operand = operandForm(body);
+      if (!operand) {
+        throw new Error(`decoder opcode ${match[1]} has no identifiable operand form`);
+      }
+      cases.push({ opcode: match[1], operation: assignment[1], operand });
+    });
   }
   return cases;
 }
@@ -127,7 +140,7 @@ export function validateCoverage(inventory) {
       throw new Error(`CIL opcode is both decoded and unsupported: ${item.opcode}`);
     }
   }
-  if (decodedOpcodeNames.size !== 215 || unsupportedOpcodeNames.length !== 11) {
+  if (decodedOpcodeNames.size !== 216 || unsupportedOpcodeNames.length !== 10) {
     throw new Error('CIL opcode universe count changed; update explicit policy');
   }
   read('tests/NetWasm.Compiler.Metadata.Tests/CilOpcodeUniverseTests.cs');

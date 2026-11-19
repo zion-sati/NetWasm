@@ -8,8 +8,9 @@
 // UpgradeResponse at the end of this file) are an HTTP/1.1 exchange over a TCP Socket that does what
 // SocketsHttpHandler does for it, including the cookie container; the rest is upstream's. Without an
 // invoker, HTTP/2 is rejected as upstream rejects it, and what the exchange cannot do throws
-// PlatformNotSupportedException before connecting: wss:// (no TLS), proxies, HTTP authentication
-// and permessage-deflate (no zlib). The response status code is not exposed (HttpStatusCode lives
+// PlatformNotSupportedException before connecting: proxies, HTTP authentication and permessage-deflate
+// (no zlib). wss:// runs the exchange over SslStream (NetWasm's wasi:tls client), with the options'
+// validation callback and client certificates, as upstream gives them to SocketsHttpHandler. The response status code is not exposed (HttpStatusCode lives
 // with HttpClient, outside CoreLib).
 
 using System.Collections.Generic;
@@ -18,6 +19,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -64,7 +66,7 @@ namespace System.Net.WebSockets
             bool disposeResponse = false;
             try
             {
-                var request = new UpgradeRequest(uri);
+                var request = new UpgradeRequest(uri, options);
 
                 if (options._requestHeaders?.Count > 0) // use field to avoid lazily initializing the collection
                 {
@@ -197,11 +199,6 @@ namespace System.Net.WebSockets
         // NetWasm: what the HTTP/1.1 exchange over a Socket cannot do.
         private static void ThrowIfUnsupported(Uri uri, ClientWebSocketOptions options)
         {
-            if (uri.Scheme == UriScheme.Wss)
-            {
-                throw new PlatformNotSupportedException("wss:// needs TLS, which NetWasm does not provide yet; use ws://.");
-            }
-
             if (options.Proxy is not null && options.Proxy != DefaultWebProxy.Instance)
             {
                 throw new PlatformNotSupportedException("A WebSocket proxy is not supported on NetWasm.");
@@ -470,7 +467,7 @@ namespace System.Net.WebSockets
         // socket, adds the Host header and the cookie container's cookies, writes the request as
         // Latin-1, reads the response head one byte at a time (so no WebSocket frame after it is
         // consumed, up to SocketsHttpHandler's 64 KB default limit) and stores Set-Cookie values.
-        private sealed class UpgradeRequest(Uri uri)
+        private sealed class UpgradeRequest(Uri uri, ClientWebSocketOptions options)
         {
             private const int MaxResponseHeadersLength = 64 * 1024;
 
@@ -478,7 +475,8 @@ namespace System.Net.WebSockets
 
             public async Task<UpgradeResponse> SendAsync(CookieContainer? cookies, CancellationToken cancellationToken)
             {
-                var httpUri = new UriBuilder(uri) { Scheme = UriScheme.Http }.Uri;
+                var secure = uri.Scheme == UriScheme.Wss;
+                var httpUri = new UriBuilder(uri) { Scheme = secure ? UriScheme.Https : UriScheme.Http }.Uri;
                 var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
                 Stream stream;
                 try
@@ -490,6 +488,26 @@ namespace System.Net.WebSockets
                 {
                     socket.Dispose();
                     throw;
+                }
+
+                if (secure)
+                {
+                    var tls = new SslStream(stream, leaveInnerStreamOpen: false);
+                    try
+                    {
+                        await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                        {
+                            TargetHost = uri.IdnHost,
+                            ClientCertificates = options.ClientCertificates,
+                            RemoteCertificateValidationCallback = options.RemoteCertificateValidationCallback,
+                        }, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await tls.DisposeAsync().ConfigureAwait(false);
+                        throw;
+                    }
+                    stream = tls;
                 }
 
                 try

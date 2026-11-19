@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System.Collections.Immutable;
+using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Arrays;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -109,8 +110,11 @@ public sealed class RepeatedArrayAccessPlannerTests
         Assert.Contains(body.Instructions, instruction => instruction is { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: 100 } });
         var proof = Assert.IsType<ArrayBoundsProof>(body.ArrayBoundsProof);
         Assert.True(proof.Describes(body.Instructions, body.Locals, body.LocalSignatureTypes));
-        Assert.Contains(body.Instructions.Single(instruction => instruction.Operation == CilOperation.LoadArrayElementAddress).Offset,
-            proof.NonNullOffsets);
+        // Av[i]'s address, in the loop as written and in each copy the unroller made of it: an earlier access to Av
+        // proves it non-null, or an earlier access to Av[i] in the copy's block proves the whole access.
+        var addresses = body.Instructions.Where(instruction => instruction.Operation == CilOperation.LoadArrayElementAddress).ToArray();
+        Assert.NotEmpty(addresses);
+        Assert.All(addresses, address => Assert.True(proof.ProvesNonNull(address.Offset)));
     }
 
     // A rectangular access skips the check of each dimension whose index an
@@ -164,9 +168,11 @@ public sealed class RepeatedArrayAccessPlannerTests
         Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
     }
 
-    // A field access proves its object non-null for the accesses after it in
-    // the block, and for those its block dominates while the slot keeps one
-    // reference; a field's own value is no slot, and `this` is argument 0.
+    // A field access or a callvirt proves its object non-null for the accesses
+    // after it in the block, and for those its block dominates while the slot
+    // keeps one reference; a field's own value is no slot, and `this` is
+    // argument 0. Sum's first access is proven too, as every call of Sum is a
+    // callvirt.
     [Theory]
     [InlineData("result = node.A + node.B;", 1)]
     [InlineData("result = node.A + other.B;", 0)]
@@ -176,7 +182,10 @@ public sealed class RepeatedArrayAccessPlannerTests
     [InlineData("result = node.A; node = other; result += node.B;", 0)]
     [InlineData("result = node.A + node.B; Touch(ref node);", 0)]
     [InlineData("result = node.Next.A + node.Next.B;", 1)]
-    [InlineData("result = node.Sum();", 2)]
+    [InlineData("result = node.Sum();", 3)]
+    [InlineData("result = node.A + node.Size();", 1)]
+    [InlineData("result = node.Size() + node.A;", 1)]
+    [InlineData("result = other.Size() + node.A;", 0)]
     [InlineData("result = values[0] + node.A + values[1];", 1)]
     public void ProvesFieldAccessesOfAnObjectAlreadyAccessed(string statement, int nonNull)
     {
@@ -191,6 +200,9 @@ public sealed class RepeatedArrayAccessPlannerTests
 
                 [MethodImpl(MethodImplOptions.NoInlining)]
                 public int Sum() => A + B + Next.A;
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                public int Size() => A;
             }
 
             public static class EntryPoint
@@ -219,6 +231,52 @@ public sealed class RepeatedArrayAccessPlannerTests
         var proof = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == name).Body.ArrayBoundsProof;
 
         Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
+    }
+
+    // A direct call checks nothing: it is proven only after an access of its
+    // object that checked, and proves nothing after it. Delegates bind both
+    // methods, so their this may be null.
+    [Fact]
+    public void ADirectCallIsProvenByAnEarlierCheckOfItsObjectAndProvesNothing()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("RepeatedCallReceivers", """
+            using System;
+            using System.Runtime.CompilerServices;
+
+            public sealed class Node
+            {
+                public int A;
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                public int Size() => A;
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                public int After() => A + Size();
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                public int Before() => Size() + A;
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int count)
+                {
+                    var node = new Node { A = count };
+                    Func<int> after = node.After, before = node.Before;
+                    return after() + before();
+                }
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O3));
+        ImmutableHashSet<int> NonNull(string name) => compilation.Program.Methods.Values
+            .Single(m => m.Method.Definition.Name == name).Body.ArrayBoundsProof?.NonNullOffsets ?? [];
+        var after = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "After").Body;
+
+        Assert.Equal([after.Instructions.Single(instruction => instruction.Operation == CilOperation.Call).Offset],
+            NonNull("After"));
+        Assert.Empty(NonNull("Before"));
     }
 
     [Theory]
@@ -298,7 +356,7 @@ public sealed class RepeatedArrayAccessPlannerTests
             graph.Blocks.ToImmutableDictionary(block => block.Index, _ => ImmutableArray<CliValueKind>.Empty),
             stacks.ToImmutableDictionary());
 
-        var plan = new RepeatedArrayAccessPlanner(new ControlFlowDominanceAnalyzer()).Plan(flow);
+        var plan = new RepeatedArrayAccessPlanner(new ControlFlowDominanceAnalyzer(), new NoCalls()).Plan(flow);
 
         Assert.Equal(checkedAccesses, plan.Checked.Count);
     }
@@ -308,15 +366,21 @@ public sealed class RepeatedArrayAccessPlannerTests
     {
         var graphs = new ControlFlowGraphBuilderFactory().Create();
         var dominance = new ControlFlowDominanceAnalyzer();
-        Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(null!));
-        Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(dominance).Plan(null!));
+        Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(null!, new NoCalls()));
+        Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(dominance, null!));
+        Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(dominance, new NoCalls()).Plan(null!));
         Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessEliminator(null!, new Validator(),
-            new RepeatedArrayAccessPlanner(dominance), true));
+            new RepeatedArrayAccessPlanner(dominance, new NoCalls()), true));
         Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessEliminator(graphs, null!,
-            new RepeatedArrayAccessPlanner(dominance), true));
+            new RepeatedArrayAccessPlanner(dominance, new NoCalls()), true));
         Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessEliminator(graphs, new Validator(), null!, true));
         Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessEliminator(graphs, new Validator(),
-            new RepeatedArrayAccessPlanner(dominance), true).Rewrite(null!));
+            new RepeatedArrayAccessPlanner(dominance, new NoCalls()), true).Rewrite(null!));
+    }
+
+    private sealed class NoCalls : ICalledMethodResolver
+    {
+        public MethodInstanceModel? Resolve(CilInstruction instruction) => null;
     }
 
     private sealed class Validator : ITypedStackValidator

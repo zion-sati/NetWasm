@@ -507,7 +507,6 @@ namespace System
 
         private static TimeZoneInfo CreateLocal()
         {
-            PlatformServices.EnsureLocalTimeReady();
             return (s_catalog ??= new TimeZoneCatalog()).CreateLocal();
         }
 

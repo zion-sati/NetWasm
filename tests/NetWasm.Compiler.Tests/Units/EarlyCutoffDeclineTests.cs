@@ -166,7 +166,7 @@ public sealed class EarlyCutoffDeclineTests
         { "cycle", References, References.Replace("value + 1", "value + 2", StringComparison.Ordinal),
             "reads its by-ref effects back through a call cycle" },
         { "generic", Generic, Generic.Replace("count > 1", "count > 2", StringComparison.Ordinal),
-            "has no instance of its own to analyse alone" },
+            "has no instance of its own to analyze alone" },
         { "native", Native, Native.Replace("Add(input, 1)", "Add(input, 2)", StringComparison.Ordinal),
             "the last compile's plans cannot be replayed" },
     };
@@ -264,6 +264,45 @@ public sealed class EarlyCutoffDeclineTests
         var report = Compile(assets, Plain, Plain, _ => { }, options => options with { EmitTypeNames = true });
 
         Assert.Contains("early cutoff: nothing changed", report, StringComparison.Ordinal);
+    }
+
+    // Units are kept by what the collector asks of compiled code. A program for a collector with generations
+    // records its reference stores, so it is not served from units compiled for a collector without them, nor
+    // the reverse; two collectors that ask the same share their units.
+    [Fact]
+    public void UnitsAreKeptByWhatTheCollectorAsksOfCompiledCode()
+    {
+        using var assets = TestAssets.Create();
+        var obj = Path.Combine(assets.Directory, "obj");
+        var assembly = assets.CompileOptimizedSource("UnitCutoff", Sites);
+        string Compile(RuntimeCollector? collector)
+        {
+            var options = new CompilerOptions(assembly, [assets.CoreLib],
+                "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O0)
+            {
+                Collector = collector,
+            };
+            var plain = NetWasmCompiler.Compile(options).ApplicationModule;
+            using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+            var module = services.GetRequiredService<INetWasmModuleCompiler>().Compile(options with
+            {
+                IntermediateOutputPath = obj,
+                CompiledUnits = true,
+            }).ApplicationModule;
+            Assert.True(plain.AsSpan().SequenceEqual(module), $"{collector?.Name}: the module differs from a plain compile");
+            return File.ReadAllText(Path.Combine(obj, "netwasm-units", "last-inputs.txt"));
+        }
+
+        Compile(RuntimeCollector.Compact);
+        var generations = Compile(RuntimeCollector.NetWasmGen);
+        var back = Compile(RuntimeCollector.NetWasm);
+        var same = Compile(RuntimeCollector.Bump);
+        var unnamed = Compile(null);
+
+        Assert.DoesNotContain("early cutoff: nothing changed", generations, StringComparison.Ordinal);
+        Assert.DoesNotContain("early cutoff: nothing changed", back, StringComparison.Ordinal);
+        Assert.Contains("early cutoff: nothing changed", same, StringComparison.Ordinal);
+        Assert.Contains("early cutoff: nothing changed", unnamed, StringComparison.Ordinal);
     }
 
     // An edited method's own dispatch and type-test sites answer the cutoff's replay.

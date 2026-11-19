@@ -36,6 +36,8 @@ public static class Interlocked
         return location1 = unchecked(location1 + value);
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Exchange(ref int location1, int value)
     {
         ValidateLocation(ref location1);
@@ -44,6 +46,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long Exchange(ref long location1, long value)
     {
         ValidateLocation(ref location1);
@@ -52,6 +56,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static nint Exchange(ref nint location1, nint value)
     {
         ValidateLocation(ref location1);
@@ -60,6 +66,7 @@ public static class Interlocked
         return previous;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float Exchange(ref float location1, float value)
     {
         ValidateLocation(ref location1);
@@ -68,6 +75,7 @@ public static class Interlocked
         return previous;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double Exchange(ref double location1, double value)
     {
         ValidateLocation(ref location1);
@@ -77,6 +85,8 @@ public static class Interlocked
     }
 
     [return: NotNullIfNotNull(nameof(location1))]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static object? Exchange([NotNullIfNotNull(nameof(value))] ref object? location1, object? value)
     {
         ValidateLocation(ref location1);
@@ -86,6 +96,8 @@ public static class Interlocked
     }
 
     // T is a reference, enum or primitive type, as upstream requires.
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T Exchange<T>(ref T location1, T value)
     {
         RequireReferenceEnumOrPrimitive<T>();
@@ -95,6 +107,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int CompareExchange(ref int location1, int value, int comparand)
     {
         ValidateLocation(ref location1);
@@ -106,6 +120,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long CompareExchange(ref long location1, long value, long comparand)
     {
         ValidateLocation(ref location1);
@@ -117,6 +133,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static nint CompareExchange(ref nint location1, nint value, nint comparand)
     {
         ValidateLocation(ref location1);
@@ -128,6 +146,7 @@ public static class Interlocked
         return previous;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float CompareExchange(ref float location1, float value, float comparand)
     {
         ValidateLocation(ref location1);
@@ -141,6 +160,7 @@ public static class Interlocked
         return previous;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double CompareExchange(ref double location1, double value, double comparand)
     {
         ValidateLocation(ref location1);
@@ -155,6 +175,8 @@ public static class Interlocked
     }
 
     [return: NotNullIfNotNull(nameof(location1))]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static object? CompareExchange(ref object? location1, object? value, object? comparand)
     {
         ValidateLocation(ref location1);
@@ -167,6 +189,8 @@ public static class Interlocked
     }
 
     [return: NotNullIfNotNull(nameof(location1))]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T CompareExchange<T>(ref T location1, T value, T comparand)
     {
         RequireReferenceEnumOrPrimitive<T>();
@@ -185,10 +209,13 @@ public static class Interlocked
         return location;
     }
 
+    [Intrinsic]
     public static void MemoryBarrier() { }
 
     public static void MemoryBarrierProcessWide() { }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int And(ref int location1, int value)
     {
         ValidateLocation(ref location1);
@@ -198,6 +225,7 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint And(ref uint location1, uint value)
     {
         ValidateLocation(ref location1);
@@ -206,6 +234,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long And(ref long location1, long value)
     {
         ValidateLocation(ref location1);
@@ -215,6 +245,7 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong And(ref ulong location1, ulong value)
     {
         ValidateLocation(ref location1);
@@ -223,6 +254,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Or(ref int location1, int value)
     {
         ValidateLocation(ref location1);
@@ -232,6 +265,7 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Or(ref uint location1, uint value)
     {
         ValidateLocation(ref location1);
@@ -240,6 +274,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long Or(ref long location1, long value)
     {
         ValidateLocation(ref location1);
@@ -249,6 +285,7 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Or(ref ulong location1, ulong value)
     {
         ValidateLocation(ref location1);
@@ -258,6 +295,8 @@ public static class Interlocked
     }
     // The integer-primitive and integer-enum forms of dotnet/runtime deae2e32's generic And and Or,
     // which System.Net.Http's header flags use. As the sized forms above, each combines in place.
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T And<T>(ref T location1, T value) where T : struct
     {
         RequireIntegerOrEnum<T>();
@@ -284,6 +323,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T Or<T>(ref T location1, T value) where T : struct
     {
         RequireIntegerOrEnum<T>();
@@ -332,12 +373,15 @@ public static class Interlocked
 
     // Upstream's unsigned and small-integer overloads, sequential like the rest.
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Increment(ref uint location) => Add(ref location, 1u);
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Decrement(ref uint location) => Add(ref location, unchecked((uint)-1));
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Add(ref uint location1, uint value)
     {
         ValidateLocation(ref location1);
@@ -345,18 +389,23 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Increment(ref ulong location) => Add(ref location, 1ul);
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Decrement(ref ulong location) => Add(ref location, unchecked((ulong)-1));
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Add(ref ulong location1, ulong value)
     {
         ValidateLocation(ref location1);
         return location1 = unchecked(location1 + value);
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static byte Exchange(ref byte location1, byte value)
     {
         ValidateLocation(ref location1);
@@ -365,6 +414,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static byte CompareExchange(ref byte location1, byte value, byte comparand)
     {
         ValidateLocation(ref location1);
@@ -377,6 +428,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static sbyte Exchange(ref sbyte location1, sbyte value)
     {
         ValidateLocation(ref location1);
@@ -386,6 +439,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static sbyte CompareExchange(ref sbyte location1, sbyte value, sbyte comparand)
     {
         ValidateLocation(ref location1);
@@ -397,6 +452,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short Exchange(ref short location1, short value)
     {
         ValidateLocation(ref location1);
@@ -405,6 +462,8 @@ public static class Interlocked
         return previous;
     }
 
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short CompareExchange(ref short location1, short value, short comparand)
     {
         ValidateLocation(ref location1);
@@ -417,6 +476,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ushort Exchange(ref ushort location1, ushort value)
     {
         ValidateLocation(ref location1);
@@ -426,6 +487,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ushort CompareExchange(ref ushort location1, ushort value, ushort comparand)
     {
         ValidateLocation(ref location1);
@@ -438,6 +501,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Exchange(ref uint location1, uint value)
     {
         ValidateLocation(ref location1);
@@ -447,6 +512,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint CompareExchange(ref uint location1, uint value, uint comparand)
     {
         ValidateLocation(ref location1);
@@ -459,6 +526,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Exchange(ref ulong location1, ulong value)
     {
         ValidateLocation(ref location1);
@@ -468,6 +537,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong CompareExchange(ref ulong location1, ulong value, ulong comparand)
     {
         ValidateLocation(ref location1);
@@ -480,6 +551,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static nuint Exchange(ref nuint location1, nuint value)
     {
         ValidateLocation(ref location1);
@@ -489,6 +562,8 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [Intrinsic]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static nuint CompareExchange(ref nuint location1, nuint value, nuint comparand)
     {
         ValidateLocation(ref location1);
@@ -501,6 +576,7 @@ public static class Interlocked
     }
 
     [CLSCompliant(false)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Read(ref ulong location)
     {
         ValidateLocation(ref location);

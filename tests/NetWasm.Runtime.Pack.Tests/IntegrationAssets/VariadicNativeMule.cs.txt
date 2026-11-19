@@ -1,0 +1,65 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+internal sealed class MuleSafeHandle : SafeHandle
+{
+    private MuleSafeHandle() : base(IntPtr.Zero, ownsHandle: false)
+    {
+    }
+
+    internal MuleSafeHandle(nint value) : base(IntPtr.Zero, ownsHandle: false) => SetHandle(value);
+
+    public override bool IsInvalid => handle == IntPtr.Zero;
+
+    protected override bool ReleaseHandle() => true;
+}
+
+// C variadic functions declared through fixed-signature overloads, as SQLitePCLRaw declares sqlite3_config and
+// sqlite3_db_config: each overload's first parameters are the function's own, the rest its variadic arguments.
+internal static unsafe class Native
+{
+    [DllImport("mule", EntryPoint = "native_mule_config")]
+    internal static extern int ConfigNone(int op);
+
+    [DllImport("mule", EntryPoint = "native_mule_config")]
+    internal static extern int ConfigInt(int op, int value);
+
+    [DllImport("mule", EntryPoint = "native_mule_config")]
+    internal static extern int ConfigPointers(int op, IntPtr pointer, int* result);
+
+    [DllImport("mule", EntryPoint = "native_mule_config")]
+    internal static extern int ConfigWide(int op, long wide, int last);
+
+    [DllImport("mule", EntryPoint = "native_mule_config")]
+    internal static extern int ConfigFloats(int op, int first, float promoted, double exact);
+
+    [DllImport("mule", EntryPoint = "native_mule_db_config")]
+    internal static extern int DbConfig(MuleSafeHandle db, int op, int value, int* result);
+
+    [DllImport("mule", EntryPoint = "native_mule_db_config")]
+    internal static extern int DbConfigPointer(MuleSafeHandle db, int op, IntPtr pointer, int* result);
+}
+
+public static unsafe class EntryPoint
+{
+    public static int Run(int input)
+    {
+        if (Native.ConfigNone(0) != 100) return -1;
+        if (Native.ConfigInt(1, input) != input * 2) return -2;
+        int pointed;
+        if (Native.ConfigPointers(2, (IntPtr)input, &pointed) != 7 || pointed != input + 1) return -3;
+        if (Native.ConfigWide(3, ((long)input << 32) | 0x7fffffff, 5) != input + 5) return -4;
+        // Desktop .NET on x64 passes a float where a variadic function reads a double, and leaves the vector register
+        // count unset, so only NetWasm, which promotes the float as C's caller does, runs the floating-point case.
+        if (RuntimeInformation.ProcessArchitecture == Architecture.Wasm &&
+            Native.ConfigFloats(4, input, 0.25f, 1.5) != input + 1 + 3)
+            return -5;
+        using var db = new MuleSafeHandle(4);
+        int configured;
+        if (Native.DbConfig(db, 3, input, &configured) != 0 || configured != 40 + 3 + input) return -6;
+        if (Native.DbConfigPointer(db, 5, (IntPtr)input, &configured) != 0 || configured != 40 + 5 + input) return -7;
+        return 42;
+    }
+}

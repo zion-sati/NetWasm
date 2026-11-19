@@ -6,7 +6,7 @@ deferred, externally blocked, and intentionally unsupported capabilities.
 
 The most important current boundaries are the preview support commitment,
 selective managed-library coverage, and the lack of wasm64 Component output.
-There is no member-by-member CoreLib catalogue. wasm64
+There is no member-by-member CoreLib catalog. wasm64
 core modules and raw-core integration work, but Component packaging reports
 `NW1010` while the external `cm64p2`/Memory64 Component toolchain is
 unavailable. Components target WASI 0.3, which neither solves nor waits on

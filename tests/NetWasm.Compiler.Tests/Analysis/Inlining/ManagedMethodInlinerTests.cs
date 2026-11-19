@@ -1043,6 +1043,79 @@ public sealed class ManagedMethodInlinerTests
             resolver.Requests);
     }
 
+    [Fact]
+    public void MarksTheArgumentsThatAreALocalsOrArgumentsAddress()
+    {
+        var int32 = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var byReference = CliTypeIdentity.ManagedByReference(int32);
+        var voidType = CliTypeIdentity.FromStackKind(CliValueKind.Void);
+        var caller = Method("Caller", MethodSignatureModel.Create(voidType, [byReference]), 1);
+        var call = new CilOperand.MethodInstance(Method("Callee", MethodSignatureModel.Create(voidType, [byReference]), 2));
+        var second = new CilOperand.MethodInstance(
+            Method("Second", MethodSignatureModel.Create(voidType, [int32, byReference]), 3));
+        // A constructor's parameters count the instance newobj creates, so the address it receives is its second.
+        var constructor = new CilOperand.MethodInstance(Method(
+            ".ctor", MethodSignatureModel.Create(voidType, [byReference]), 4, isStatic: false,
+            declaringType: CliTypeIdentity.Named(new AssemblyIdentity("InliningTests"), "", "Owner", false)));
+        var body = Body(
+            caller.Definition,
+            [
+                new(0, 1, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.Call, call),
+                new(2, 3, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(3, 4, CilOperation.Call, call),
+                new(4, 5, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+                new(5, 6, CilOperation.Call, call),
+                new(6, 7, CilOperation.Call, new CilOperand.None()),
+                new(7, 8, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+                new(8, 9, CilOperation.Call, call),
+                new(9, 10, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+                new(10, 11, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+                new(11, 12, CilOperation.Call, second),
+                new(12, 13, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+                new(13, 14, CilOperation.NewObject, constructor),
+                new(14, 15, CilOperation.Pop, new CilOperand.None()),
+                new(15, 16, CilOperation.Return, new CilOperand.None()),
+            ],
+            [int32]);
+        var stacks = new Dictionary<int, ImmutableArray<CliValueKind>>
+        {
+            [0] = [],
+            [1] = [CliValueKind.ManagedAddress],
+            [2] = [],
+            [3] = [CliValueKind.ManagedAddress],
+            [4] = [],
+            [5] = [CliValueKind.ManagedAddress],
+            [6] = [],
+            [7] = [],
+            [9] = [],
+            [10] = [CliValueKind.I4],
+            [11] = [CliValueKind.I4, CliValueKind.ManagedAddress],
+            [12] = [],
+            [13] = [CliValueKind.ManagedAddress],
+            [14] = [CliValueKind.ManagedReference],
+            [15] = [],
+        };
+        var resolver = new AddressRecordingResolver();
+
+        new ManagedMethodInliner(resolver, new TerminalContinuationInliningPlanner()).Inline(caller, body, stacks);
+
+        // The call at 3 passes on the address the caller received; the one at 6 has no method operand, and the one at
+        // 8 has no entry stack.
+        Assert.Equal([(1, "0"), (3, ""), (5, "0"), (6, ""), (8, ""), (11, "1"), (13, "1")], resolver.Requests);
+    }
+
+    private sealed class AddressRecordingResolver : IManagedInliningResolver
+    {
+        public List<(int Offset, string LocalAddressArguments)> Requests { get; } = [];
+
+        public ManagedInliningPlan? Resolve(ManagedInliningRequest request)
+        {
+            Requests.Add((request.Call.Offset, string.Join(",", request.LocalAddressArguments.Order())));
+            return null;
+        }
+    }
+
     private sealed class LoopRecordingResolver : IManagedInliningResolver
     {
         public List<(int Offset, bool InLoop)> Requests { get; } = [];
@@ -1222,6 +1295,76 @@ public sealed class ManagedMethodInlinerTests
                 new ManagedMethodInliner(new RecordingResolver(Plan(callee, calleeBody), call.Offset), new TerminalContinuationInliningPlanner()),
                 caller, unchanged));
         }
+    }
+
+    // A callee with .locals init that reads a local before writing it finds it zero at each inlined entry, plainly
+    // inlined or as a terminal continuation: the zeroing follows the argument stores and precedes the body.
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void AnInlinedCalleeZeroesTheLocalsItReadsBeforeWriting(bool terminal, bool initializesLocals)
+    {
+        var caller = Method("Caller", terminal ? MethodSignatureModel.Create(Int32, Int32) : MethodSignatureModel.Create(Void), 1);
+        var callee = Method("Leaf", MethodSignatureModel.Create(Void, Int32), 2);
+        ImmutableArray<CilInstruction> calleeCode = terminal
+            ?
+            [
+                new(0, 1, CilOperation.LoadLocal, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.Pop, new CilOperand.None()),
+                new(2, 3, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(3, 4, CilOperation.BranchIfFalse, new CilOperand.BranchTarget(6)),
+                new(4, 5, CilOperation.Nop, new CilOperand.None()),
+                new(5, 6, CilOperation.Return, new CilOperand.None()),
+                new(6, 7, CilOperation.Nop, new CilOperand.None()),
+                new(7, 8, CilOperation.Return, new CilOperand.None()),
+            ]
+            :
+            [
+                new(0, 1, CilOperation.LoadLocal, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.Pop, new CilOperand.None()),
+                new(2, 3, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(3, 4, CilOperation.StoreLocal, new CilOperand.Index(0)),
+                new(4, 5, CilOperation.Return, new CilOperand.None()),
+            ];
+        var calleeBody = Body(callee.Definition, calleeCode, [Int32]) with { InitializesLocals = initializesLocals };
+        var call = new CilInstruction(1, 2, CilOperation.Call, new CilOperand.MethodInstance(callee));
+        var callerBody = Body(caller.Definition,
+            terminal
+                ?
+                [
+                    new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                    call,
+                    new(2, 3, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                    new(3, 4, CilOperation.Return, new CilOperand.None()),
+                ]
+                :
+                [
+                    new(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(7)),
+                    call,
+                    new(2, 3, CilOperation.Return, new CilOperand.None()),
+                ]);
+        var entryStacks = terminal
+            ? new Dictionary<int, ImmutableArray<CliValueKind>> { [call.Offset] = [CliValueKind.I4], [3] = [CliValueKind.I4] }
+            : new Dictionary<int, ImmutableArray<CliValueKind>>();
+
+        var result = Create(call, callee, calleeBody).Inline(caller, callerBody, entryStacks);
+
+        // The argument goes to local 0 and the callee's local to 1.
+        var operations = result.Instructions;
+        var zero = Enumerable.Range(0, operations.Length - 1).Where(index =>
+            operations[index] is { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: 0 } } &&
+            operations[index + 1] is { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index { Value: 1 } }).ToArray();
+        var read = Enumerable.Range(0, operations.Length).First(index =>
+            operations[index] is { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index { Value: 1 } });
+        if (!initializesLocals)
+        {
+            Assert.Empty(zero);
+            return;
+        }
+        Assert.Equal(CilOperation.StoreLocal, operations[Assert.Single(zero) - 1].Operation);
+        Assert.True(Assert.Single(zero) < read);
+        Assert.Equal(terminal ? 2 : 1, operations.Count(static instruction => instruction.Operation == CilOperation.Return));
     }
 
     [Fact]

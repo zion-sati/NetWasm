@@ -19,7 +19,7 @@ no reflection to drive BenchmarkDotNet. `generator/` reads the benchmark sources
 with Roslyn and writes `Benchmarks.g.cs`, a table of every case as plain C#: the
 construction, each `[Params]` value, `[GlobalSetup]`, `[IterationSetup]` and
 each `[Arguments]` set. `shim/` supplies the attributes as types without
-behaviour, and two of dotnet/performance's helper files. Every runtime compiles
+behavior, and two of dotnet/performance's helper files. Every runtime compiles
 the same sources and table, with the .NET version symbols the benchmarks test
 defined for all three.
 
@@ -39,9 +39,9 @@ reason. Five cases never use what they compute, and Mono AOT's LLVM removes
 their work: `mono-removed.txt` lists them, and `table.py` marks them with a
 dagger and leaves them out of the NetWasm / Mono AOT means.
 
-`workloads/` holds NetWasm's own workloads: issue #166's prime search, and the
+`workloads/` holds NetWasm's own workloads: issue #166's prime search, the
 timed regions of the [runtime-performance](../runtime-performance/README.md)
-allocation workloads.
+allocation workloads, and loops that read a span at a pixel's neighbors.
 
 ## Reproduce
 
@@ -61,14 +61,13 @@ NuGet.org:
 ```sh
 python3 compiler-qualification/micro-benchmarks/run.py \
   --performance <performance> \
-  --feed <empty-directory> 0.14.0 --libraries 0.11.0 \
+  --feed <empty-directory> 0.15.0 \
   --mono-aot <dotnet-root> <wasi-sdk-root> \
   --output <new-directory>
 ```
 
-`--libraries` names the `NetWasm.System.Linq` and
-`NetWasm.System.Text.RegularExpressions` version when it differs from
-NetWasm's. A full run builds the three runners, then times 2,213 cases for
+The NetWasm runner targets `net10.0-netwasm`, so it needs NetWasm 0.15 or
+later. A full run builds the three runners, then times 2,213 cases for
 about two hours; run it on an otherwise idle machine. `--filter` times only the
 cases whose name contains its text, and `--limit` the first cases only.
 `table.py` writes the table again from a `results.tsv`.

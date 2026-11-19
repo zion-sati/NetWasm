@@ -86,7 +86,8 @@ public sealed class SharedObjectDispatchCompilationTests
         }
         """;
 
-    // The size presets and O0 share; the speed presets dispatch inline (ObjectDispatchPolicy).
+    // The size presets and O0 share at 32 targets; the speed presets only at 1,024, so this program's calls stay
+    // inline at O3 (ObjectDispatchPolicy).
     [Theory]
     [InlineData(FinalWasmOptimization.O0, true)]
     [InlineData(FinalWasmOptimization.O3, false)]
@@ -103,6 +104,51 @@ public sealed class SharedObjectDispatchCompilationTests
             result.Program.SharedObjectDispatch.Values.Select(helper => helper.Definition.Name).Order());
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(
             result.ApplicationModule, assets.Directory, 41, WasmTarget.Wasm32, result.StaticDataEnd));
+    }
+
+    // A program that allocates more than 1,024 types shares at the speed presets too, and runs the same.
+    [Theory]
+    [InlineData(FinalWasmOptimization.O2)]
+    [InlineData(FinalWasmOptimization.O3)]
+    public void LargeProgramsShareAtTheSpeedPresets(FinalWasmOptimization optimization)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("SharedObjectDispatchLarge", LargeProgram(1100));
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: WasmTarget.Wasm32, Optimization: optimization));
+
+        Assert.Equal(
+            ["DispatchEquals", "DispatchGetHashCode", "DispatchToString"],
+            result.Program.SharedObjectDispatch.Values.Select(helper => helper.Definition.Name).Order());
+        Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(
+            result.ApplicationModule, assets.Directory, 41, WasmTarget.Wasm32, result.StaticDataEnd));
+    }
+
+    // Types the program allocates, each overriding object's virtual methods, and calls on object that reach them all.
+    private static string LargeProgram(int types)
+    {
+        var declarations = new System.Text.StringBuilder();
+        var allocations = new System.Text.StringBuilder();
+        for (var index = 0; index < types; index++)
+        {
+            declarations.AppendLine(System.FormattableString.Invariant(
+                $"public sealed class T{index} {{ public override int GetHashCode() => {index}; public override bool Equals(object? o) => o is T{index}; public override string ToString() => \"t{index}\"; }}"));
+            allocations.AppendLine(System.FormattableString.Invariant($"        values[{index}] = new T{index}();"));
+        }
+        return $$"""
+            {{declarations}}
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    var values = new object[{{types}}];
+            {{allocations}}
+                    var item = values[input % {{types}}];
+                    return item.GetHashCode() == input % {{types}} && item.Equals(values[input % {{types}}]) &&
+                        item.ToString() == "t" + (input % {{types}}) ? input + 1 : 0;
+                }
+            }
+            """;
     }
 
     [Fact]

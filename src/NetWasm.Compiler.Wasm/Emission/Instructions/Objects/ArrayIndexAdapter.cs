@@ -40,8 +40,11 @@ internal sealed class ArrayIndexAdapter(
         {
             return sourceLocal;
         }
+        // An access that takes its run's length takes the first access's null check too.
+        var runs = request.Context.ArrayLengthRuns;
+        var reused = runs.Plan.Reuses.TryGetValue(request.Instruction.Offset, out var reusedSlot);
         if (!request.Context.ArrayMetadata.Plan.CheckedAccesses.Contains(request.Instruction.Offset) &&
-            proof?.ProvesNonNull(request.Instruction.Offset) != true)
+            proof?.ProvesNonNull(request.Instruction.Offset) != true && !reused)
         {
             EmitNullCheck(code, arrayLocal, request.Context.ManagedThrowFunction);
         }
@@ -49,6 +52,10 @@ internal sealed class ArrayIndexAdapter(
         if (request.Context.ArrayMetadata.Plan.Accesses.TryGetValue(request.Instruction.Offset, out var slot))
         {
             Get(code, request.Context.ArrayMetadata.Slots[slot].Length);
+        }
+        else if (reused)
+        {
+            Get(code, runs.Locals[reusedSlot]);
         }
         else
         {
@@ -58,6 +65,11 @@ internal sealed class ArrayIndexAdapter(
                 WasmInstructionOperand.Memory(
                     2,
                     (uint)objects.ArrayLengthOffset)));
+            if (runs.Plan.Loads.TryGetValue(request.Instruction.Offset, out var runSlot))
+            {
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
+                    WasmInstructionOperand.Unsigned((uint)runs.Locals[runSlot])));
+            }
         }
 
         if (sourceType == CliValueKind.NativeInt && layouts.Target.UsesMemory64)

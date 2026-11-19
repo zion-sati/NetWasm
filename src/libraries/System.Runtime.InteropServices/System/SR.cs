@@ -25,6 +25,8 @@ namespace System
         internal const string PlatformNotSupported_EventReflection = "COM-aware event lookup reads the event through reflection, which NetWasm does not support.";
         internal const string Arg_InvalidThreshold = "maximumThreshold cannot be less than initialThreshold.";
         internal const string Arg_NeedNonNegNumRequired = "Non-negative number required.";
+        internal const string ComVariantMarshaller_ManagedTypeNotSupported = "Type of managed object is not supported for marshalling as ComVariant.";
+        internal const string ComVariantMarshaller_UnmanagedTypeNotSupported = "Type of unmanaged variant is not supported for marshalling to a managed object.";
         internal const string InvalidOperation_HCCountOverflow = "Handle collector count overflows or underflows.";
     }
 }

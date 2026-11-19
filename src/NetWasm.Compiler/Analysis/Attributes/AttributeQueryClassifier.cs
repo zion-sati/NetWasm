@@ -12,7 +12,8 @@ namespace NetWasm.Compiler.Analysis.Attributes;
 internal sealed class AttributeQueryClassifier(
     ImmutableDictionary<EntityKey, AttributeQueryApiKind> declaringTypes,
     CliTypeIdentity memberInfoType,
-    CliTypeIdentity typeType) : IAttributeQueryClassifier
+    CliTypeIdentity typeType,
+    CliTypeIdentity? assemblyType = null) : IAttributeQueryClassifier
 {
     private static readonly ImmutableDictionary<string, AttributeQueryOperation> Operations =
         ImmutableDictionary<string, AttributeQueryOperation>.Empty
@@ -40,7 +41,8 @@ internal sealed class AttributeQueryClassifier(
         if (api == AttributeQueryApiKind.Instance &&
             (method.Definition.IsStatic || generic || operation == AttributeQueryOperation.GetOne || !hasInherit) ||
             api != AttributeQueryApiKind.Instance &&
-            (!method.Definition.IsStatic || parameters.IsEmpty || !parameters[0].Equals(memberInfoType)) ||
+            (!method.Definition.IsStatic || parameters.IsEmpty ||
+             !parameters[0].Equals(memberInfoType) && !parameters[0].Equals(assemblyType)) ||
             generic && (api != AttributeQueryApiKind.Extension || operation == AttributeQueryOperation.IsDefined) ||
             method.MethodArguments.Length > 1 ||
             parameters.Length != filteredParameters && !hasInherit ||

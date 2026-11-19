@@ -1,6 +1,6 @@
 # Third-party notices
 
-This repository retains source-level copyright, licence, and provenance notices
+This repository retains source-level copyright, license, and provenance notices
 when copying upstream material. The complete notice text referenced by copied
 source comments is available as [THIRD-PARTY-NOTICES.TXT](THIRD-PARTY-NOTICES.TXT).
 The corresponding standard texts are also available under [LICENSES](LICENSES/).
@@ -68,16 +68,16 @@ in the source files and in `THIRD-PARTY-NOTICES.TXT`.
 v1.2.5 carries them in `src/math/exp.c`, `exp2.c`, `exp_data.c`, `pow.c` and
 `pow_data.c` (commit
 `0784374d561435f7c787a555aeab8ede699ed298`). They retain the "Copyright (c)
-2018, Arm Limited" notice under the MIT licence. `MathF.Exp`, `MathF.Log`,
+2018, Arm Limited" notice under the MIT license. `MathF.Exp`, `MathF.Log`,
 `MathF.Log2` and `MathF.Pow` port the float versions from the same release
 (`expf.c`, `logf.c`, `log2f.c`, `powf.c`, `exp2f_data.c`, `logf_data.c`,
 `log2f_data.c` and `powf_data.c`), which retain the "Copyright (c) 2017-2018,
-Arm Limited" notice under the MIT licence. `MathF.Sin`, `MathF.Cos`,
+Arm Limited" notice under the MIT license. `MathF.Sin`, `MathF.Cos`,
 `MathF.Tan` and `MathF.SinCos` port musl's float trigonometry from the same
 release (`sinf.c`, `cosf.c`, `sincosf.c`, `tanf.c`, `__sindf.c`, `__cosdf.c`,
 `__tandf.c` and `__rem_pio2f.c`), FreeBSD msun code that retains the 1993 Sun
 Microsystems notice. `Math.FusedMultiplyAdd` ports musl's own `fma.c` under
-musl's MIT licence ("Copyright © 2005-2020 Rich Felker, et al."), and
+musl's MIT license ("Copyright © 2005-2020 Rich Felker, et al."), and
 `MathF.FusedMultiplyAdd` ports `fmaf.c`, FreeBSD msun code that retains the
 "Copyright (c) 2005-2011 David Schultz" BSD-2-Clause notice.
 

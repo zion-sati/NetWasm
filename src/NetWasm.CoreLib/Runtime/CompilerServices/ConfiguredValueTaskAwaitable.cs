@@ -21,6 +21,7 @@ namespace System.Runtime.CompilerServices
             _continueOnCapturedContext = continueOnCapturedContext;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ConfiguredValueTaskAwaiter GetAwaiter() =>
             new(_awaiter, _continueOnCapturedContext);
 
@@ -38,11 +39,16 @@ namespace System.Runtime.CompilerServices
                 _continueOnCapturedContext = continueOnCapturedContext;
             }
 
-            public bool IsCompleted => _awaiter.IsCompleted;
+            public bool IsCompleted
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => _awaiter.IsCompleted;
+            }
             public void OnCompleted(Action continuation) =>
                 _awaiter.OnCompleted(continuation, _continueOnCapturedContext);
             public void UnsafeOnCompleted(Action continuation) =>
                 _awaiter.UnsafeOnCompleted(continuation, _continueOnCapturedContext);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void GetResult() => _awaiter.GetResult();
         }
     }
@@ -61,6 +67,7 @@ namespace System.Runtime.CompilerServices
             _continueOnCapturedContext = continueOnCapturedContext;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ConfiguredValueTaskAwaiter GetAwaiter() =>
             new(_awaiter, _continueOnCapturedContext);
 
@@ -78,11 +85,16 @@ namespace System.Runtime.CompilerServices
                 _continueOnCapturedContext = continueOnCapturedContext;
             }
 
-            public bool IsCompleted => _awaiter.IsCompleted;
+            public bool IsCompleted
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => _awaiter.IsCompleted;
+            }
             public void OnCompleted(Action continuation) =>
                 _awaiter.OnCompleted(continuation, _continueOnCapturedContext);
             public void UnsafeOnCompleted(Action continuation) =>
                 _awaiter.UnsafeOnCompleted(continuation, _continueOnCapturedContext);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public T GetResult() => _awaiter.GetResult();
         }
     }

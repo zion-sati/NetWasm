@@ -3,7 +3,7 @@
 
 namespace System
 {
-    using System.Collections.Generic;
+    using System.Runtime.InteropServices.Sidecars;
 
     // NetWasm: a program carries no type or assembly names (issue 225). Its type-symbols sidecar supplies them, a type's
     // by runtime type ID and an assembly's as the display text of the entry just past the type IDs by the index the
@@ -14,18 +14,60 @@ namespace System
     {
         internal const string AssemblyNameUnavailable = "<Assembly name unavailable>";
 
-        private static Dictionary<int, TypeSymbol>? s_symbols;
+        // The type-symbols file, its entries in ID order, and each entry's names once something has read them.
+        private static SymbolSidecar? s_sidecar;
+        private static TypeSymbol?[]? s_symbols;
 
-        internal static void Install(Dictionary<int, TypeSymbol> symbols) => s_symbols = symbols;
+        internal static void Install(SymbolSidecar? sidecar)
+        {
+            s_sidecar = sidecar;
+            s_symbols = sidecar is null ? null : new TypeSymbol?[sidecar.Count];
+        }
 
-        // Whether the program loaded type names, which looking a type up by name needs.
-        internal static bool Available => s_symbols is not null;
+        // Whether the program loaded type names, which looking a type up by name needs. Reading the names is what
+        // keeps their loader in the program.
+        internal static bool Available
+        {
+            get
+            {
+                Runtime.InteropServices.ProgramSidecars.LoadTypeSymbols();
+                return s_sidecar is not null;
+            }
+        }
 
         internal static PlatformNotSupportedException NamesUnavailable() => new(
             "Looking a type up by name needs type names: build with NetWasmTypeNames to load them from the type-symbols sidecar.");
 
-        internal static TypeSymbol? Find(int typeId) =>
-            s_symbols is { } symbols && symbols.TryGetValue(typeId, out var symbol) ? symbol : null;
+        internal static TypeSymbol? Find(int typeId)
+        {
+            Runtime.InteropServices.ProgramSidecars.LoadTypeSymbols();
+            if (s_sidecar is not { } sidecar || s_symbols is not { } symbols)
+            {
+                return null;
+            }
+            var low = 0;
+            var high = sidecar.Count - 1;
+            while (low <= high)
+            {
+                var middle = low + ((high - low) >> 1);
+                var id = sidecar.Id(middle);
+                if (id == typeId)
+                {
+                    // The installer checked that every entry has a name and display text.
+                    return symbols[middle] ??= new TypeSymbol(sidecar.String(middle, 0)!, sidecar.String(middle, 1),
+                        sidecar.String(middle, 2), sidecar.String(middle, 3)!);
+                }
+                if (id < typeId)
+                {
+                    low = middle + 1;
+                }
+                else
+                {
+                    high = middle - 1;
+                }
+            }
+            return null;
+        }
 
         internal static string IdName(int typeId) => "type#" + typeId.ToString();
     }

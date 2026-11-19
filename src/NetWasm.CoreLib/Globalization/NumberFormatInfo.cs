@@ -231,8 +231,8 @@ namespace System.Globalization
         /// </summary>
         private static NumberFormatInfo? s_invariantInfo;
 
-        // NetWasm: the symbols formatting with a null provider needs, read without constructing a NumberFormatInfo
-        // (owner decision 2026-10-25): the assigned culture's when one is current, else the invariant constants.
+        // NetWasm: the symbols formatting with a null provider needs, read without constructing a NumberFormatInfo:
+        // the assigned culture's when one is current, else the invariant constants.
         // They are what CurrentInfo would report, since InvariantInfo is read-only.
         internal static string CurrentNegativeSign => CurrentNumberFormatInfo.Value?.NegativeSign ?? InvariantNegativeSign;
         internal static string CurrentNaNSymbol => CurrentNumberFormatInfo.Value?.NaNSymbol ?? InvariantNaNSymbol;

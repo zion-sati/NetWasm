@@ -3,7 +3,7 @@
        hashing and linking remain owned by executable-root materialization. -->
   <Target Name="NetWasmCollectNativeLibraries"
           DependsOnTargets="PrepareProjectReferences"
-          Condition="'$(TargetFramework)' != ''">
+          Condition="'$(TargetFramework)' != '' AND '@(ProjectReference)' != ''">
     <ItemGroup>
       <!-- The SDK promotes transitive references to synthetic direct edges.
            Recurse only through original edges so shortcuts cannot bypass an

@@ -196,6 +196,93 @@ test("opens, initializes and closes an export session exactly once", async () =>
   assert.throws(() => state.controls.lifetime.assertAsyncDeliveryAvailable(), /closed/);
 });
 
+test("offers the runtime's idle collection while the session is ready", async () => {
+  // A runtime without the entry offers none.
+  const plain = fixture();
+  assert.equal((await plain.opener.open(plain.request)).collectWhenIdle, null);
+
+  let collected = 1;
+  let trap = null;
+  let calls = 0;
+  const idleInstance = () => ({
+    exports: {
+      [initializeExport]() {},
+      [runExport]() { return 0; },
+      [callbackExport]() { return 0; },
+      collect_when_idle() {
+        calls++;
+        if (trap !== null) throw trap;
+        return collected;
+      },
+    },
+  });
+  const state = fixture({ instanceOverride: idleInstance() });
+  const session = await state.opener.open(state.request);
+  assert.equal(session.collectWhenIdle(), true);
+  collected = 0;
+  assert.equal(session.collectWhenIdle(), false);
+  assert.equal(calls, 2);
+
+  // A trap while collecting fails the session, which then collects no more.
+  trap = new Error("collector trapped");
+  assert.equal(session.collectWhenIdle(), false);
+  assert.equal((await session.failure).cause, trap);
+  assert.equal(session.collectWhenIdle(), false);
+  assert.equal(calls, 3);
+
+  // Nor does a closed session.
+  trap = null;
+  const closing = fixture({ instanceOverride: idleInstance() });
+  const closed = await closing.opener.open(closing.request);
+  await closed.close();
+  assert.equal(closed.collectWhenIdle(), false);
+  assert.equal(calls, 3);
+});
+
+test("offers the runtime's quiet collection while the session is ready", async () => {
+  // A runtime without the entry offers none.
+  const plain = fixture();
+  assert.equal((await plain.opener.open(plain.request)).collectWhenQuiet, null);
+
+  let answer = 256;
+  let trap = null;
+  let calls = 0;
+  const quietInstance = () => ({
+    exports: {
+      [initializeExport]() {},
+      [runExport]() { return 0; },
+      [callbackExport]() { return 0; },
+      collect_when_quiet() {
+        calls++;
+        if (trap !== null) throw trap;
+        return answer;
+      },
+    },
+  });
+  const state = fixture({ instanceOverride: quietInstance() });
+  const session = await state.opener.open(state.request);
+  // The runtime's answer passes through: one more than the share it freed, or zero.
+  assert.equal(session.collectWhenQuiet(), 256);
+  answer = 0;
+  assert.equal(session.collectWhenQuiet(), 0);
+  assert.equal(calls, 2);
+
+  // A trap while collecting fails the session, which then collects no more.
+  trap = new Error("collector trapped");
+  assert.equal(session.collectWhenQuiet(), 0);
+  assert.equal((await session.failure).cause, trap);
+  assert.equal(session.collectWhenQuiet(), 0);
+  assert.equal(calls, 3);
+
+  // Nor does a closed session.
+  trap = null;
+  const closing = fixture({ instanceOverride: quietInstance() });
+  const closed = await closing.opener.open(closing.request);
+  await closed.close();
+  assert.equal(closed.collectWhenQuiet(), 0);
+  assert.equal(calls, 3);
+});
+
 test("runs the module's event loop after each call, completion and failure", async () => {
   const state = fixture();
   const session = await state.opener.open(state.request);

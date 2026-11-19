@@ -40,6 +40,7 @@ public sealed class WasiCapabilityClassifierTests
             [
                 "wasi:sockets/ip-name-lookup@0.3.2", "wasi:sockets/types@0.3.2",
                 "wasi:http/client@0.3.2", "wasi:http/types@0.3.2",
+                "wasi:tls/client@0.3.0-draft", "wasi:tls/types@0.3.0-draft",
             ]
         },
     };

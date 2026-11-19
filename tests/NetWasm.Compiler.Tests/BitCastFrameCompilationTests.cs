@@ -40,6 +40,12 @@ public sealed partial class BitCastFrameCompilationTests
             [MethodImpl(MethodImplOptions.NoInlining)]
             private static double Log(double value) => Math.Log(value);
 
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static byte Bytes(sbyte value) => Unsafe.BitCast<sbyte, byte>(value);
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Units(ReadOnlySpan<char> text) => Unsafe.BitCast<ReadOnlySpan<char>, ReadOnlySpan<ushort>>(text)[0];
+
             // Every kind of cast, each checked against its plain equivalent.
             [MethodImpl(MethodImplOptions.NoInlining)]
             private static int Casts(int input)
@@ -63,6 +69,19 @@ public sealed partial class BitCastFrameCompilationTests
                 Func<double, long> bits = BitConverter.DoubleToInt64Bits;
                 if (bits(d) != BitConverter.DoubleToInt64Bits(d)) return 15;
                 if (Unsafe.BitCast<short, ushort>((short)-1) != ushort.MaxValue) return 16;
+                // Small integers keep their bits and extend as the destination does; one type, spans and
+                // fixed-size vectors read as they are.
+                var small = (byte)(200 + input % 2);
+                if (Unsafe.BitCast<sbyte, byte>((sbyte)-1) != 255 || Unsafe.BitCast<byte, sbyte>(small) != (sbyte)small) return 19;
+                if (Unsafe.BitCast<char, short>('\uFFFF') != -1 || Unsafe.BitCast<short, char>((short)-2) != '\uFFFE') return 20;
+                if (Unsafe.BitCast<bool, byte>(input >= 0) != 1 || !Unsafe.BitCast<byte, bool>(1)) return 21;
+                if (Unsafe.BitCast<byte, byte>((byte)input) != (byte)input || Unsafe.BitCast<char, char>('x') != 'x') return 22;
+                var letters = new[] { 'a', (char)('b' + input % 3) };
+                if (Unsafe.BitCast<Span<char>, ReadOnlySpan<char>>(letters.AsSpan())[1] != letters[1]) return 23;
+                if (Unsafe.BitCast<ReadOnlySpan<char>, ReadOnlySpan<char>>(letters)[0] != 'a') return 24;
+                if (Unsafe.BitCast<Vector256<int>, Vector256<uint>>(Vector256.Create(-1 - input)).GetElement(5) != (uint)(-1 - input)) return 25;
+                if (Unsafe.BitCast<Vector64<int>, Vector64<float>>(Vector64.Create(BitConverter.SingleToInt32Bits(f))).GetElement(1) != f) return 26;
+                if (Unsafe.BitCast<Vector512<long>, Vector512<double>>(Vector512.Create(BitConverter.DoubleToInt64Bits(d))).GetElement(7) != d) return 27;
                 // A Vector2 fills 8 of a Vector128's bytes and a Vector3 12: as upstream, their casts throw.
                 try { _ = Unsafe.BitCast<Vector2, Vector128<float>>(new Vector2(f, 2)); return 17; } catch (NotSupportedException) { }
                 try { _ = Unsafe.BitCast<Vector3, Vector128<float>>(new Vector3(f, 2, 3)); return 18; } catch (NotSupportedException) { }
@@ -78,6 +97,8 @@ public sealed partial class BitCastFrameCompilationTests
                 if (Unsigned(-input) != unchecked((uint)-input)) return -3;
                 if (Lanes(Vector128.Create((float)value)).GetElement(2) != BitConverter.SingleToInt32Bits((float)value)) return -4;
                 if (Log(value) != Math.Log(value)) return -5;
+                if (Bytes((sbyte)-input) != unchecked((byte)-input)) return -6;
+                if (Units("NetWasm".AsSpan(input % 3)) != "NetWasm"[input % 3]) return -7;
                 return input + 1;
             }
         }
@@ -98,12 +119,19 @@ public sealed partial class BitCastFrameCompilationTests
         using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
         var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
         Assert.True(printed.ExitCode == 0, printed.StandardError);
-        string[] probes = ["$EntryPoint::DoubleBits", "$EntryPoint::SingleOf", "$EntryPoint::Unsigned", "$EntryPoint::Lanes", "$System.Math::Log"];
+        string[] probes = ["$EntryPoint::DoubleBits", "$EntryPoint::SingleOf", "$EntryPoint::Unsigned", "$EntryPoint::Lanes", "$System.Math::Log",
+            "$EntryPoint::Bytes"];
         var framed = FunctionHeader().Split(printed.StandardOutput).Skip(1)
             .Select(static function => (Name: function[..function.IndexOf(' ', StringComparison.Ordinal)], Body: function))
             .Where(function => probes.Contains(function.Name))
             .ToDictionary(static function => function.Name, static function => FrameEnter().IsMatch(function.Body));
-        Assert.Equal(probes.ToDictionary(static probe => probe, static _ => false), framed);
+        Assert.All(probes, probe =>
+        {
+            Assert.True(framed.TryGetValue(probe, out var frame), $"{probe} is not in the module");
+            Assert.False(frame, $"{probe} enters a value frame");
+        });
+        // A span indexed after its cast takes a frame for the local the indexer addresses, with the cast or without,
+        // so its cast is checked for its result only; BitCastCallRewriterTests check which casts read in place.
         foreach (var input in new[] { 0, 1, 3, 40, 1000000 })
         {
             Assert.Equal(input + 1, ExecuteWithStandardWasiNode(

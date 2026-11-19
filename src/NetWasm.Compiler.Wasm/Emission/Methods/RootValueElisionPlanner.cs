@@ -52,8 +52,9 @@ internal sealed class RootValueElisionPlanner(IStructuredBlockPredecessorReader 
             var published = new Dictionary<int, RootSource>(entry);
             var instructions = block.Exit is StructuredTerminalExit terminal
                 ? block.Instructions.Add(terminal.Instruction) : block.Instructions;
-            foreach (var instruction in instructions)
+            for (var position = 0; position < instructions.Length; position++)
             {
+                var instruction = instructions[position];
                 if (context.ManagedAggregateValues.Plan.Accesses.ContainsKey(instruction.Offset))
                 {
                     published.Clear();
@@ -96,16 +97,59 @@ internal sealed class RootValueElisionPlanner(IStructuredBlockPredecessorReader 
                 };
                 if (assigned is { } value && context.RootMap.Slots.TryGetValue(value, out var assignedSlot))
                     published.Remove(assignedSlot);
+                // An evaluation-stack value stays until the stack drops to its position.
+                var kept = KeptStackPositions(method, instructions, position);
+                foreach (var (slot, source) in published.ToArray())
+                {
+                    if (source.Kind is RootSourceKind.EvaluationStack or RootSourceKind.ManagedAddressEvaluationStack &&
+                        source.Index >= kept)
+                        published.Remove(slot);
+                }
             }
             return published.ToImmutableDictionary();
         }
     }
 
-    private static bool IsStable(RootSource source, MethodEmissionContext context) =>
-        !source.IsIndirect && source.Kind is RootSourceKind.Argument or RootSourceKind.Local &&
-        !context.AuthoritativeRootSlots.ContainsKey(source) &&
-        !context.FilterEnvironment.Captures.ContainsKey(new(source.Kind == RootSourceKind.Argument, source.Index)) &&
-        (source.Kind == RootSourceKind.Argument
-            ? !context.ValueLayout.ArgumentOffsets.ContainsKey(source.Index)
-            : !context.ValueLayout.SpilledScalarLocals.Contains(source.Index));
+    // The evaluation-stack positions an instruction leaves holding the values they held before it. A CIL
+    // instruction pushes at most one value, except dup, which pushes the value it pops back with a copy. So a
+    // taller stack after it means only pushes (every earlier position kept); otherwise every position below the
+    // height after it is kept, less the one it may have pushed into unless it pushes nothing (a store, pop, nop
+    // or call without a result). A block's last instruction is followed by another block's, so it is taken to
+    // pop as much as a branch can (two). Without heights (an instruction no path reaches), nothing is kept.
+    internal static int KeptStackPositions(StructuredMethod method, ImmutableArray<CilInstruction> instructions, int position)
+    {
+        var instruction = instructions[position];
+        if (!method.InstructionEntryStacks.TryGetValue(instruction.Offset, out var before)) return 0;
+        if (position + 1 >= instructions.Length ||
+            !method.InstructionEntryStacks.TryGetValue(instructions[position + 1].Offset, out var after))
+            return Math.Max(0, before.Length - 2);
+        if (after.Length > before.Length) return before.Length;
+        return Math.Max(0, PushesNothing(instruction) ? after.Length : after.Length - 1);
+    }
+
+    private static bool PushesNothing(CilInstruction instruction) => instruction.Operation switch
+    {
+        CilOperation.Nop or CilOperation.Pop or CilOperation.StoreLocal or CilOperation.StoreArgument or
+            CilOperation.StoreField or CilOperation.StoreStaticField => true,
+        CilOperation.Call or CilOperation.CallVirtual => instruction.Operand is CilOperand.MethodInstance
+        {
+            Value.Signature.ReturnSignatureType.StackKind: CliValueKind.Void,
+        },
+        _ => false,
+    };
+
+    // A source whose published value stays current until a write the planner sees: an argument or a local
+    // held in a Wasm local (written by starg and stloc), or an evaluation-stack value (written only by pushes to
+    // its position). A local holding a byref is not one: the emitter rebinds some pointers outside stloc.
+    private static bool IsStable(RootSource source, MethodEmissionContext context) => !source.IsIndirect && source.Kind switch
+    {
+        RootSourceKind.EvaluationStack or RootSourceKind.ManagedAddressEvaluationStack => true,
+        RootSourceKind.Argument or RootSourceKind.Local =>
+            !context.AuthoritativeRootSlots.ContainsKey(source) &&
+            !context.FilterEnvironment.Captures.ContainsKey(new(source.Kind == RootSourceKind.Argument, source.Index)) &&
+            (source.Kind == RootSourceKind.Argument
+                ? !context.ValueLayout.ArgumentOffsets.ContainsKey(source.Index)
+                : !context.ValueLayout.SpilledScalarLocals.Contains(source.Index)),
+        _ => false,
+    };
 }

@@ -21,8 +21,11 @@ public sealed class CalleeMethodBodyReader(IMethodBodyReader bodies) : ICalleeMe
     {
         try
         {
-            body = read();
-            return true;
+            // A body that only throws for a member its IL names but NetWasm lacks is no body to analyze or inline,
+            // as .NET does not inline a method it cannot compile.
+            var decoded = read();
+            body = decoded.MissingMember is null ? decoded : null;
+            return body is not null;
         }
         catch (CompilerException)
         {

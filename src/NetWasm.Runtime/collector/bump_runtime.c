@@ -26,6 +26,11 @@ void *collector_allocate_object(size_t bytes, bool contains_references)
     return netwasm_bump_allocate(bytes);
 }
 
+void *collector_allocate_uninitialized_object(size_t bytes)
+{
+    return netwasm_bump_allocate(bytes);
+}
+
 void collector_initialize(void)
 {
     runtime_initialize_libc();
@@ -34,7 +39,12 @@ void collector_initialize(void)
 
 
 void collector_collect(void) { }
+void collector_collect_young(void) { }
+bool collector_collect_when_idle(void) { return false; }
+unsigned collector_collect_when_quiet(void) { return 0; }
 uint64_t collector_collection_count(void) { return 0; }
+uint64_t collector_oldest_generation_collection_count(void) { return 0; }
+uint32_t collector_object_generation(uintptr_t object) { (void)object; return 0; }
 uint64_t collector_total_allocated_bytes(void) { return netwasm_bump_total_allocated_bytes(); }
 uint64_t collector_heap_size(void) { return netwasm_bump_heap_size(); }
 uint64_t collector_free_bytes(void) { return netwasm_bump_free_bytes(); }

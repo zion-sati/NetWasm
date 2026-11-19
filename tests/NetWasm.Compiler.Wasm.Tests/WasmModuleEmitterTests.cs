@@ -72,7 +72,7 @@ public sealed class WasmModuleEmitterTests
             new FakeIntrinsics(),
             layouts);
         var initialization = new RecordingInitialization();
-        services.AddSingleton<IRuntimeStateInitializer>(initialization);
+        services.AddSingleton<IEntryRuntimeInitializer>(initialization);
         var entryValidation = new RecordingEntryValidation();
         services.AddSingleton<IEntryPointValidator>(entryValidation);
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
@@ -132,7 +132,7 @@ public sealed class WasmModuleEmitterTests
         public void Validate(MethodDefinitionModel entryPoint) => Calls++;
     }
 
-    private sealed class RecordingInitialization : IRuntimeStateInitializer
+    private sealed class RecordingInitialization : IEntryRuntimeInitializer
     {
         public List<RuntimeInitializationPlan> Plans { get; } = [];
         public void Initialize(GeneratedFunctionWriterLease code, RuntimeInitializationPlan plan) => Plans.Add(plan);
@@ -145,6 +145,7 @@ public sealed class WasmModuleEmitterTests
             methods,
             symbols,
             layouts,
+            null!,
             null!,
             null!,
             null!,

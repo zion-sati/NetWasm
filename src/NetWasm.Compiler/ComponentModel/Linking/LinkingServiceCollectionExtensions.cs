@@ -3,6 +3,7 @@
 
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ComponentModel.ManagedExecutables;
@@ -26,6 +27,10 @@ internal static class LinkingServiceCollectionExtensions
         services.AddSingleton<IWasmCoreModuleMerger, WasmCoreModuleMerger>();
         services.AddSingleton<IComponentCoreModuleMergeRunner, WasmCoreModuleMergeRunner>();
         services.AddSingleton<ComponentCoreModuleOptimizer>();
+        // The reporting optimizer's own dependencies, so the component model composes alone; the
+        // diagnostics registration configures the same logging when both are present.
+        services.AddLogging();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IComponentCoreModuleOptimizer>(provider => new ReportingComponentCoreModuleOptimizer(
             provider.GetRequiredService<ComponentCoreModuleOptimizer>(),
             provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ReportingComponentCoreModuleOptimizer>>(),

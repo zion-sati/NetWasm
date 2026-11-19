@@ -10,6 +10,7 @@ using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -218,6 +219,7 @@ public sealed class CallIndirectEmitterTests
         var layouts = new RecordingLayoutProvider(target);
         return new CallIndirectEmitter(
             layouts,
+            new KeyedDispatchEmitter(),
             new ImplicitExceptionEmitter(layouts),
             new ValueFrameAddressEmitter(layouts),
             new NativeAbiCallEmitter(layouts, new NoInitialization(), new AddressInstructionEmitter(layouts),

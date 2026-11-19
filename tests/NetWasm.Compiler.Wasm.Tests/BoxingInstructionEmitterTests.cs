@@ -12,6 +12,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -216,7 +217,7 @@ public sealed class BoxingInstructionEmitterTests
             new BoxedValueTypeValidator(
                 layouts,
                 new EmptyEnumStorageResolver(),
-                exceptions),
+                exceptions, new KeyedDispatchEmitter()),
             new ValueFrameAddressEmitter(layouts));
         return new BoxingInstructionEmitter(layouts, addresses, layouts, layouts, types,
             runtimeImports,
@@ -251,7 +252,7 @@ public sealed class BoxingInstructionEmitterTests
             new BoxedValueTypeValidator(
                 layouts,
                 new EmptyEnumStorageResolver(),
-                new ImplicitExceptionEmitter(layouts)),
+                new ImplicitExceptionEmitter(layouts), new KeyedDispatchEmitter()),
             new ValueFrameAddressEmitter(layouts));
     }
 

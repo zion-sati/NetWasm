@@ -50,13 +50,25 @@ internal sealed class MethodFrameEntryEmitter(
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                     RuntimeImportSymbol.RootFrameEnter))));
             code.Write(WasmInstruction.WithOperand(
-                context.ExceptionRootSlots.Count == 0
+                context.ExceptionRootSlots.Count == 0 || context.RootFrameStartsZeroed
                     ? WasmOpcodes.LocalSet
                     : WasmOpcodes.LocalTee,
                 WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
-            InitializeExceptionRoots(code, context);
+            if (context.RootFrameStartsZeroed)
+            {
+                // Every slot, the exception slots and authoritative locals' among them, starts null.
+                FrameRangeZeroing.Emit(code, layouts.Target,
+                    writer => writer.Write(WasmInstruction.WithOperand(
+                        WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)context.RootFrame))),
+                    checked(context.RootSlotCount * layouts.Target.ObjectReferenceSize));
+            }
+            else
+            {
+                InitializeExceptionRoots(code, context);
+            }
             foreach (var (source, slot) in context.AuthoritativeRootSlots.OrderBy(pair => pair.Value))
             {
+                if (context.RootFrameStartsZeroed && source.Kind == RootSourceKind.Local) continue;
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                     WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
                 if (source.Kind != RootSourceKind.Local)

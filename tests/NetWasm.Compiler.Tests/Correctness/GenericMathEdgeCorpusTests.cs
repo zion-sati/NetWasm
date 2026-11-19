@@ -7,7 +7,7 @@ using NetWasm.Compiler.ComponentModel;
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // Every exact generic-math member of each primitive type at its edge values:
-// MinValue, MaxValue, zero and its neighbours, ties, NaN, infinities and
+// MinValue, MaxValue, zero and its neighbors, ties, NaN, infinities and
 // subnormals, through the static abstract interfaces as generic code reaches
 // them, and the conversions between the types. A member that throws reports
 // the exception's kind. NaN results hash alike, since Wasm does not keep the

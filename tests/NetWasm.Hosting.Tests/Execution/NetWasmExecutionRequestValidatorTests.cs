@@ -31,6 +31,17 @@ public sealed class NetWasmExecutionRequestValidatorTests
         });
     }
 
+    // A WIT package version is a full semantic version, with a prerelease such as wasi:tls's 0.3.0-draft.
+    [Fact]
+    public void AcceptsAPrereleaseApplicationModule()
+    {
+        var request = ExecutionRequestFixture.Create();
+        _subject.Validate(request with
+        {
+            ApplicationImports = [request.ApplicationImports[0] with { Module = "example:widgets/render@1.0.0-preview.2" }],
+        });
+    }
+
     [Fact]
     public void AcceptsExplicitlyEmptyCollectionsAndRootPreopen()
     {
@@ -136,7 +147,7 @@ public sealed class NetWasmExecutionRequestValidatorTests
             data.Add(valid with { ApplicationImports = [import with { ArtifactPath = path! }] });
         }
 
-        foreach (var module in new[] { null, "", " ", "@1.0.0", "module@", "a@b@1.0.0", "Module@1.0.0", "bad_module@1.0.0", ":bad@1.0.0", "module@1.0", "module@1..0", "module@1.x.0", "bad\0module@1.0.0", " module@1.0.0", "module@1.0.0 " })
+        foreach (var module in new[] { null, "", " ", "@1.0.0", "module@", "a@b@1.0.0", "Module@1.0.0", "bad_module@1.0.0", ":bad@1.0.0", "module@1.0", "module@1..0", "module@1.x.0", "module@01.0.0", "module@1.0.0-", "module@1.0.0+", "bad\0module@1.0.0", " module@1.0.0", "module@1.0.0 " })
         {
             data.Add(valid with { ApplicationImports = [import with { Module = module! }] });
         }

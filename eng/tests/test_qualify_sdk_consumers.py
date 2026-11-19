@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -27,7 +28,7 @@ class SdkConsumerArtifactTests(unittest.TestCase):
         dotnet.chmod(0o755)
         self.environment = dict(os.environ)
         self.environment.pop("NETWASM_QUALIFY_DOTNET_ROOT", None)
-        self.environment.pop("NETWASM_QUALIFY_SDK_VERSION", None)
+        self.environment["NETWASM_QUALIFY_SDK_VERSION"] = "11.0.100"
         self.environment["PATH"] = str(self.tools) + os.pathsep + os.environ["PATH"]
         self.environment["RUNNER_TEMP"] = str(self.root)
 
@@ -36,6 +37,15 @@ class SdkConsumerArtifactTests(unittest.TestCase):
             ["bash", str(SCRIPT), str(self.packages), "0.4.1-test", *arguments],
             env=self.environment, capture_output=True, text=True, check=False,
         )
+
+    def test_rejects_a_missing_sdk_version_before_creating_output(self):
+        # Without it no consumer pins an SDK and the package size canary cannot run.
+        del self.environment["NETWASM_QUALIFY_SDK_VERSION"]
+        output = self.root / "output"
+        result = self.invoke("--artifact-directory", str(output))
+        self.assertEqual(2, result.returncode)
+        self.assertIn("NETWASM_QUALIFY_SDK_VERSION", result.stderr)
+        self.assertFalse(output.exists())
 
     def test_rejects_missing_artifact_path(self):
         result = self.invoke("--artifact-directory")
@@ -109,6 +119,14 @@ class SdkConsumerArtifactTests(unittest.TestCase):
         self.assertLess(first_run, restore)
         self.assertIn('--project "$app_project" --disable-build-servers',
                       script[first_run:restore])
+
+    def test_new_project_fixtures_follow_the_template_target_framework(self):
+        # A fixture that stands for a new project targets what the template creates; only the TUnit consumer pins
+        # a framework (it uses the released TUnit-NetWasm pinned in tests/libraries, which ships for netwasm0.1).
+        script = SCRIPT.read_text(encoding="utf-8")
+        pinned = re.findall(r"<TargetFramework>([^<$%]+)</TargetFramework>", script)
+        self.assertEqual(["netwasm0.1"], pinned)
+        self.assertNotIn("/netwasm0.1/", script)
 
 
 if __name__ == "__main__":

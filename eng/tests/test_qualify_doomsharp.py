@@ -22,7 +22,7 @@ class CellTests(unittest.TestCase):
     def test_every_preset_runs_with_each_collector(self) -> None:
         self.assertEqual(
             [(preset, collector) for preset in ("O0", "O1", "O2", "O3", "Os", "Oz")
-             for collector in ("NetWasm", "Compact")],
+             for collector in ("NetWasm", "NetWasmGen", "Compact")],
             MODULE.cells())
 
     def test_the_pin_names_a_commit_and_the_desktop_checksum(self) -> None:

@@ -45,6 +45,18 @@ public sealed class NativeManagedExecutionIntegrationTests
     public void ExecutesOrdinaryManagedNativeCallsAgainstRealArchivesBeforeAndAfterOptimization(string target, bool lto)
         => Execute(target, lto, generated: false);
 
+    // Archives that need Emscripten's runtime support link and run: Wasm setjmp/longjmp, C++ exceptions thrown,
+    // caught and rethrown, and the C library's clocks and entropy, with exception handling in the exnref encoding and
+    // in the legacy one that the link translates.
+    [Theory]
+    [InlineData("wasm32", false)]
+    [InlineData("wasm32", true)]
+    [InlineData("wasm64", false)]
+    [InlineData("wasm64", true)]
+    [Trait("Category", "NativeInteropIntegration")]
+    public void ExecutesArchivesThatNeedEmscriptensRuntimeSupport(string target, bool legacyExceptions)
+        => Execute(target, lto: false, generated: false, nativeRuntime: true, legacyExceptions: legacyExceptions);
+
     // An archive built with -msimd128, whose summing loops clang vectorizes, links,
     // optimizes and runs as the scalar one does (NetWasm#200).
     [Theory]
@@ -98,6 +110,39 @@ public sealed class NativeManagedExecutionIntegrationTests
     [Trait("Category", "NativeSafeHandleIntegration")]
     public void ExecutesStockGeneratedSafeHandleBorrowingAndOwnershipAfterDesktopOracle(string target, bool lto)
         => Execute(target, lto, generated: true, safeHandles: true);
+
+    // Raw DllImports that take desktop .NET's runtime marshalling of handles, HandleRefs and arrays of blittable
+    // elements: the compiler gives each a marshalling stub.
+    [Theory]
+    [InlineData("wasm32", false)]
+    [InlineData("wasm32", true)]
+    [InlineData("wasm64", false)]
+    [InlineData("wasm64", true)]
+    [Trait("Category", "NativeRawMarshallingIntegration")]
+    public void ExecutesRawHandleAndArrayMarshallingAfterDesktopOracle(string target, bool lto)
+        => Execute(target, lto, generated: true, rawMarshalling: true);
+
+    // C variadic functions called through fixed-signature overloads, as SQLitePCLRaw calls sqlite3_config: the
+    // archive's Wasm objects, or its LLVM bitcode under LTO, give each function its type, and every overload passes its
+    // variadic arguments in a buffer laid out as Wasm's C ABI lays them out, so all of them share one import.
+    [Theory]
+    [InlineData("wasm32", false)]
+    [InlineData("wasm32", true)]
+    [InlineData("wasm64", false)]
+    [InlineData("wasm64", true)]
+    [Trait("Category", "NativeVariadicIntegration")]
+    public void ExecutesVariadicCallsThroughFixedSignatureOverloadsAfterDesktopOracle(string target, bool lto)
+    {
+        // The desktop oracle calls the variadic C function through fixed-signature overloads, which Apple's arm64
+        // calling convention breaks: it passes variadic arguments on the stack, the overloads in registers, so
+        // desktop .NET itself reads garbage there (sum(3, 10, 20, 30) returned 1965122605). Linux and Windows pass
+        // them alike.
+        Assert.SkipWhen(
+            OperatingSystem.IsMacOS() && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
+                System.Runtime.InteropServices.Architecture.Arm64,
+            "Desktop .NET cannot call a variadic C function through a fixed signature on Apple arm64.");
+        Execute(target, lto, generated: true, variadic: true);
+    }
 
     [Theory]
     [InlineData("wasm32", false)]
@@ -158,13 +203,16 @@ public sealed class NativeManagedExecutionIntegrationTests
             callbackFailure: true);
 
     private static void Execute(string target, bool lto, bool generated, bool aggregates = false,
-        bool aggregateProfile = false, bool arraysUtf8 = false, bool safeHandles = false,
+        bool aggregateProfile = false, bool arraysUtf8 = false, bool safeHandles = false, bool rawMarshalling = false,
+        bool variadic = false,
         bool callbacks = false,
         bool namedCallbacks = false,
         bool callbackOnly = false,
         bool callbackFailure = false,
         bool simd = false,
-        bool unmanagedCalls = false)
+        bool unmanagedCalls = false,
+        bool nativeRuntime = false,
+        bool legacyExceptions = false)
     {
         var providerlessCallbacks = callbackOnly || callbackFailure;
         using var temporary = new TemporaryDirectory();
@@ -179,6 +227,14 @@ public sealed class NativeManagedExecutionIntegrationTests
         if (safeHandles)
         {
             cell += "-safe-handles";
+        }
+        if (rawMarshalling)
+        {
+            cell += "-raw-marshalling";
+        }
+        if (variadic)
+        {
+            cell += "-variadic";
         }
         if (callbacks)
         {
@@ -204,6 +260,10 @@ public sealed class NativeManagedExecutionIntegrationTests
         {
             cell += "-unmanaged-calls";
         }
+        if (nativeRuntime)
+        {
+            cell += legacyExceptions ? "-native-runtime-legacy-eh" : "-native-runtime";
+        }
         Assert.False(Directory.Exists(cell));
         Directory.CreateDirectory(cell);
         var hostTools = RequiredDirectory("NETWASM_NATIVE_INTEROP_HOST_TOOLS_ROOT");
@@ -220,7 +280,7 @@ public sealed class NativeManagedExecutionIntegrationTests
             : Path.Combine(
                 AppContext.BaseDirectory,
                 "IntegrationAssets",
-                namedCallbacks ? "named-callback-mule.c" : "native-mule.c");
+                nativeRuntime ? "native-runtime-mule.c" : namedCallbacks ? "named-callback-mule.c" : "native-mule.c");
         var objectPath = Path.Combine(cell, "mule.o");
         var archive = Path.Combine(cell, "libmule.a");
         if (!providerlessCallbacks)
@@ -229,8 +289,22 @@ public sealed class NativeManagedExecutionIntegrationTests
                 "-ffunction-sections", "-fdata-sections", "-c", nativeSource!, "-o", objectPath);
             if (lto) compile = compile.Add("-flto");
             if (simd) compile = compile.Add("-msimd128");
+            // Emscripten's flags for Wasm exception handling and setjmp/longjmp, in either encoding.
+            ImmutableArray<string> exceptions = ["-fwasm-exceptions", "-mllvm", "-wasm-enable-eh", "-mllvm", "-wasm-enable-sjlj",
+                "-mllvm", "-wasm-use-legacy-eh=" + (legacyExceptions ? "1" : "0")];
+            if (nativeRuntime) compile = compile.AddRange(exceptions);
             commands.Invoke(new(Path.Combine(producerTools!, "clang" + suffix), compile, Path.Combine(cell, "produce.log")));
-            commands.Invoke(new(Path.Combine(producerTools!, "llvm-ar" + suffix), ["rcs", archive, objectPath], Path.Combine(cell, "archive.log")));
+            ImmutableArray<string> members = [objectPath];
+            if (nativeRuntime)
+            {
+                var cxxObject = Path.Combine(cell, "mule-cxx.o");
+                commands.Invoke(new(Path.Combine(producerTools!, "clang++" + suffix),
+                    ["--target=" + target + "-unknown-emscripten", "-O2", "-ffreestanding", "-nostdinc++", "-c",
+                        Path.Combine(AppContext.BaseDirectory, "IntegrationAssets", "native-runtime-mule.cpp"), "-o", cxxObject,
+                        .. exceptions], Path.Combine(cell, "produce-cxx.log")));
+                members = members.Add(cxxObject);
+            }
+            commands.Invoke(new(Path.Combine(producerTools!, "llvm-ar" + suffix), ["rcs", archive, .. members], Path.Combine(cell, "archive.log")));
             if (simd && !lto)
             {
                 var disassembly = Path.Combine(cell, "mule.disassembly.txt");
@@ -239,11 +313,14 @@ public sealed class NativeManagedExecutionIntegrationTests
             }
         }
         var sourcePath = Path.Combine(AppContext.BaseDirectory, "IntegrationAssets",
+            nativeRuntime ? "NativeRuntimeMule.cs.txt" :
             unmanagedCalls ? "UnmanagedCallNativeMule.cs.txt" :
             callbackFailure ? "CallbackFailureNativeMule.cs.txt" :
                 callbackOnly ? "CallbackOnlyNativeMule.cs.txt" :
                 namedCallbacks ? "NamedCallbackNativeMule.cs.txt" :
                 callbacks ? "CallbackNativeMule.cs.txt" : safeHandles ? "SafeHandleNativeMule.cs.txt" :
+                rawMarshalling ? "RawMarshallingNativeMule.cs.txt" :
+                variadic ? "VariadicNativeMule.cs.txt" :
                 arraysUtf8 ? "ArrayUtf8NativeMule.cs.txt" :
                 aggregateProfile ? "AggregateProfileNativeMule.cs.txt" : aggregates ? "AggregateNativeMule.cs.txt" :
                 generated ? "GeneratedNativeMule.cs.txt" : "NativeMule.cs.txt");
@@ -280,7 +357,8 @@ public sealed class NativeManagedExecutionIntegrationTests
             try
             {
                 assembly = generated
-                    ? CompileAndExecuteDesktopOracle(assets.Root, run, sourcePath, nativeSource!, optimizedCil, commands)
+                    ? CompileAndExecuteDesktopOracle(assets.Root, run, sourcePath, nativeSource!, optimizedCil, commands,
+                        runtimeMarshalling: rawMarshalling || variadic)
                     : optimizedCil
                         ? assets.CompileOptimizedUnsafeSource("NativeMuleOptimized", source)
                         : assets.CompileUnsafeSource("NativeMuleDebug", source);
@@ -297,8 +375,11 @@ public sealed class NativeManagedExecutionIntegrationTests
             var compilation = NetWasmCompiler.Compile(new(assembly,
                 [.. TestAssets.WithFrameworkReferences(assembly, [coreLib])], "NativeMule.EntryPoint", "Run", [], wasmTarget,
                 DiagnosticTracePath: Path.Combine(run, "compiler-trace.json"), DiagnosticLogPath: Path.Combine(run, "compiler.log"),
-                ReferenceAssemblyAliases: generated ? DesktopAliases : null));
-            Assert.Equal(providerlessCallbacks ? 0 : unmanagedCalls ? 8 : namedCallbacks ? 1 : callbacks ? 9 : safeHandles ? 7 : arraysUtf8 ? 7 :
+                ReferenceAssemblyAliases: generated ? DesktopAliases : null)
+            {
+                NativeArchives = variadic ? [("mule", archive)] : [],
+            });
+            Assert.Equal(providerlessCallbacks ? 0 : variadic ? 2 : nativeRuntime ? 9 : unmanagedCalls ? 10 : namedCallbacks ? 1 : callbacks ? 15 : safeHandles ? 7 : rawMarshalling ? 53 : arraysUtf8 ? 7 :
                     aggregateProfile ? 19 : aggregates ? 4 : 14,
                 compilation.NativeImports.Length);
             Assert.DoesNotContain(compilation.NativeImports, import => import.LibraryName == "unused");
@@ -311,19 +392,34 @@ public sealed class NativeManagedExecutionIntegrationTests
                 // aggregate swap's (result, argument) pointers, mix and Mark; scale and Half's
                 // floats, narrow's extended integers, sum's pointer and the one-double struct,
                 // which travels as a double. Every other convention shares these signatures.
+                // Twelve [UnmanagedCallersOnly] methods have their addresses taken, Add among them, four of them
+                // taking or returning structs: a pair's (pointer)->int and (result pointer, int, int), and a wrapped
+                // double's (double, int)->double.
                 var support = Assert.IsType<WasmNativeCallbackSupportArtifact>(compilation.NativeCallbackSupport);
-                Assert.Equal(7, support.Callbacks.Length);
-                Assert.Equal(["netwasm_calli_dd", "netwasm_calli_didl", "netwasm_calli_ff", "netwasm_calli_fff",
-                        "netwasm_calli_ii", "netwasm_calli_iii", "netwasm_calli_lpi", "netwasm_calli_vi", "netwasm_calli_vpp"],
+                Assert.Equal(12, support.Callbacks.Length);
+                Assert.Equal(["netwasm_calli_dd", "netwasm_calli_ddi", "netwasm_calli_didl", "netwasm_calli_ff",
+                        "netwasm_calli_fff", "netwasm_calli_ii", "netwasm_calli_iii", "netwasm_calli_ip",
+                        "netwasm_calli_lpi", "netwasm_calli_vi", "netwasm_calli_vpii", "netwasm_calli_vpp"],
                     support.Trampolines);
                 Assert.Equal([.. support.Callbacks.Select(callback => callback.RuntimeGetterExportName!),
                     .. support.Trampolines], support.TemporaryRuntimeExports);
                 File.WriteAllBytes(callbackObject, support.ObjectBytes);
             }
+            else if (rawMarshalling)
+            {
+                // Calls through unmanaged function pointers whose stubs marshal a bool, char, string or struct that
+                // holds a bool reach three C ABI signatures: (int)->int for a BOOL or ANSI char, (pointer)->int for a
+                // string or a struct's copy, and a struct result written through its leading pointer.
+                var support = Assert.IsType<WasmNativeCallbackSupportArtifact>(compilation.NativeCallbackSupport);
+                Assert.Empty(support.Callbacks);
+                Assert.Equal(["netwasm_calli_ii", "netwasm_calli_ip", "netwasm_calli_vpii"], support.Trampolines);
+                Assert.Equal(support.Trampolines, support.TemporaryRuntimeExports);
+                File.WriteAllBytes(callbackObject, support.ObjectBytes);
+            }
             else if (callbacks || namedCallbacks || providerlessCallbacks)
             {
                 var support = Assert.IsType<WasmNativeCallbackSupportArtifact>(compilation.NativeCallbackSupport);
-                Assert.Equal(namedCallbacks || providerlessCallbacks ? 1 : 15, support.Callbacks.Length);
+                Assert.Equal(namedCallbacks || providerlessCallbacks ? 1 : 16, support.Callbacks.Length);
                 if (namedCallbacks || providerlessCallbacks)
                 {
                     var callback = Assert.Single(support.Callbacks);
@@ -391,7 +487,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                 NativeLibraries = providerlessCallbacks
                     ? []
                     : [new("mule", target, archive), new("unused", target, Path.Combine(cell, "missing-unused.a"))],
-                NativeCallbackObjectPath = callbacks || namedCallbacks || providerlessCallbacks || unmanagedCalls
+                NativeCallbackObjectPath = callbacks || namedCallbacks || providerlessCallbacks || unmanagedCalls || rawMarshalling
                     ? callbackObject
                     : null,
             };
@@ -462,7 +558,9 @@ public sealed class NativeManagedExecutionIntegrationTests
                 commands.Invoke(new(Path.Combine(tools, "node" + suffix),
                     [Path.Combine(AppContext.BaseDirectory, "IntegrationAssets", "native-mule-runner.mjs"),
                         assets.Root, target, manifestPath, module, observation, internalExportsPath,
+                        nativeRuntime ? "native-runtime" :
                         unmanagedCalls ? "unmanaged-calls" :
+                        variadic ? "variadic" :
                         callbackFailure ? "callback-failure" :
                             callbackOnly ? "callback-only" :
                             namedCallbacks ? "named-callbacks" : callbacks ? "callbacks" : "ordinary"],
@@ -517,6 +615,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                 aggregateProfile,
                 arraysUtf8,
                 safeHandles,
+                rawMarshalling,
                 callbacks,
                 namedCallbacks,
                 callbackOnly,
@@ -552,8 +651,9 @@ public sealed class NativeManagedExecutionIntegrationTests
         }
     }
 
+    // A fixture of raw DllImports keeps runtime marshalling, which the others disable, and has no generated sources.
     private static string CompileAndExecuteDesktopOracle(string repository, string run, string source,
-        string nativeSource, bool optimizedCil, CommandInvoker commands)
+        string nativeSource, bool optimizedCil, CommandInvoker commands, bool runtimeMarshalling = false)
     {
         // Maintainer composition only. Ordinary SDK consumers never need a native compiler.
         var projectDirectory = Path.Combine(run, "desktop-generator");
@@ -566,7 +666,8 @@ public sealed class NativeManagedExecutionIntegrationTests
             Path.Combine(projectDirectory, "Program.cs"));
         var configuration = optimizedCil ? "Release" : "Debug";
         commands.Invoke(new("dotnet", ["build", project, "-c", configuration,
-            "-p:CompilerGeneratedFilesOutputPath=" + Path.Combine(projectDirectory, "obj", "generated")],
+            "-p:CompilerGeneratedFilesOutputPath=" + Path.Combine(projectDirectory, "obj", "generated"),
+            "-p:DisableRuntimeMarshalling=" + (runtimeMarshalling ? "false" : "true")],
             Path.Combine(run, "desktop-build.log")));
         var output = Path.Combine(projectDirectory, "bin", configuration, "net10.0");
         var library = Path.Combine(output, "libmule" + (OperatingSystem.IsMacOS() ? ".dylib" : ".so"));
@@ -574,8 +675,11 @@ public sealed class NativeManagedExecutionIntegrationTests
             nativeSource, "-o", library], Path.Combine(run, "desktop-native.log")));
         var assembly = Path.Combine(output, "NativeGenerator.dll");
         commands.Invoke(new("dotnet", [assembly], Path.Combine(run, "desktop-execution.log")));
-        var generatedSources = Directory.GetFiles(Path.Combine(projectDirectory, "obj", "generated"), "*.cs", SearchOption.AllDirectories);
-        Assert.NotEmpty(generatedSources);
+        var generatedDirectory = Path.Combine(projectDirectory, "obj", "generated");
+        var generatedSources = Directory.Exists(generatedDirectory)
+            ? Directory.GetFiles(generatedDirectory, "*.cs", SearchOption.AllDirectories)
+            : [];
+        Assert.Equal(runtimeMarshalling, generatedSources.Length == 0);
         File.WriteAllText(Path.Combine(run, "desktop-receipt.json"), JsonSerializer.Serialize(new
         {
             AssemblySha256 = new Sha256ArtifactDigestCalculator().Calculate(assembly),

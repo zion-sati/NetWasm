@@ -617,6 +617,7 @@ namespace System
             return Encoding.UTF8.GetString(left).AsSpan().Equals(Encoding.UTF8.GetString(right), StringComparison.OrdinalIgnoreCase);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ReadOnlySpan<TChar> SpanTrimStart<TChar>(ReadOnlySpan<TChar> span)
             where TChar : unmanaged, IUtfChar<TChar>
         {

@@ -35,27 +35,22 @@ public sealed class IndexedWorkExecutor : IIndexedWorkExecutor
         }
         var failures = new ExceptionDispatchInfo?[requestCount];
         var next = -1;
-        var tasks = new Task[Math.Min(workers.Count, requestCount)];
-        for (var index = 0; index < tasks.Length; index++)
+        // Large-stack threads: a pass recurses once per nesting level of the method it works on.
+        LargeStackThreads.Run(Math.Min(workers.Count, requestCount), index =>
         {
             var worker = workers[index];
-            tasks[index] = Task.Run(() =>
+            while (true)
             {
-                while (true)
+                var requestIndex = Interlocked.Increment(ref next);
+                if (requestIndex >= requestCount) return;
+                try { results[requestIndex] = work(worker, requestIndex); }
+                catch (Exception exception)
                 {
-                    var requestIndex = Interlocked.Increment(ref next);
-                    if (requestIndex >= requestCount) return;
-                    try { results[requestIndex] = work(worker, requestIndex); }
-                    catch (Exception exception)
-                    {
-                        failures[requestIndex] = ExceptionDispatchInfo.Capture(
-                            exception);
-                    }
+                    failures[requestIndex] = ExceptionDispatchInfo.Capture(
+                        exception);
                 }
-            });
-        }
-
-        Task.WaitAll(tasks);
+            }
+        });
         foreach (var failure in failures)
             failure?.Throw();
         return results;

@@ -63,8 +63,6 @@ internal sealed class InteropDeclarationValidator(
                         $"{symbols.Format(method)} in {method.Key.Assembly.Name}");
                 }
                 ValidateExport(symbols, method);
-                // An export takes no delegate.
-                ValidateMarshalAs(symbols, method, method.JSExport.MarshalAs, _ => null);
             }
             if (method.WitImport is not null)
             {
@@ -134,6 +132,8 @@ internal sealed class InteropDeclarationValidator(
         ValidateScalarSignature(symbols, method, "WitExport");
     }
 
+    private const string GlobalPrefix = "globalThis.";
+
     private static void ValidateImport(
         IDelegateTypeRecognizer delegateTypes,
         ITypeDefinitionResolver typeDefinitions,
@@ -146,10 +146,14 @@ internal sealed class InteropDeclarationValidator(
             throw Invalid(symbols, method,
                 "JSImport must be a bodyless static method");
         }
-        if (method.JSImport!.ModuleName is null)
+        // As on .NET's browser runtime, an import without a module calls a global function, "globalThis.<path>";
+        // any other names the module it comes from.
+        if (method.JSImport!.ModuleName is null &&
+            !(method.JSImport.FunctionName.StartsWith(GlobalPrefix, StringComparison.Ordinal) &&
+              method.JSImport.FunctionName.Length > GlobalPrefix.Length))
         {
             throw Invalid(symbols, method,
-                "JSImport currently requires an explicit consumer module name");
+                "JSImport without a module name must name a global function, as \"globalThis.<path>\"; any other import names its module");
         }
         ValidateImportSignature(
             delegateTypes,
@@ -168,27 +172,9 @@ internal sealed class InteropDeclarationValidator(
             throw Invalid(symbols, method,
                 "JSExport must be a static method with a CIL body");
         }
-        var asyncReturn = JavaScriptAsyncSignature.Classify(
-            method.Signature.ReturnSignatureType);
-        if (!asyncReturn.IsAsync)
+        if (JavaScriptBoundaryShapes.UnsupportedExport(method.Signature, method.JSExport!.MarshalAs) is { } reason)
         {
-            if (method.Signature.ParameterSignatureTypes.Any(type =>
-                    !IsJavaScriptScalar(type) && !IsExportReference(type)) ||
-                method.Signature.ReturnType != CliValueKind.Void &&
-                !IsJavaScriptScalar(method.Signature.ReturnSignatureType) &&
-                !IsExportReference(method.Signature.ReturnSignatureType))
-            {
-                throw Invalid(symbols, method,
-                    "JSExport currently supports primitive scalars, DateTime, DateTimeOffset, their nullables, string, object, Exception, primitive number arrays such as byte[] or double[], string[], JSObject[], object[], JSObject, or void results and the same parameters");
-            }
-            return;
-        }
-        ValidateAsyncResult(symbols, method, asyncReturn, "JSExport");
-        if (method.Signature.ParameterSignatureTypes.Any(type =>
-                !IsJavaScriptScalar(type) && !IsExportReference(type)))
-        {
-            throw Invalid(symbols, method,
-                "asynchronous JSExport currently supports primitive scalar, DateTime, DateTimeOffset, nullable, string, object, Exception, primitive number array, string[], JSObject[], object[], or JSObject parameters");
+            throw Invalid(symbols, method, reason);
         }
     }
 
@@ -199,81 +185,11 @@ internal sealed class InteropDeclarationValidator(
         ISymbolFormatter symbols,
         MethodDefinitionModel method)
     {
-        var asyncReturn = JavaScriptAsyncSignature.Classify(
-            method.Signature.ReturnSignatureType);
-        if ((!asyncReturn.IsAsync && method.Signature.ReturnType != CliValueKind.Void &&
-            !IsHostValue(method.Signature.ReturnSignatureType)) ||
-            method.Signature.ParameterSignatureTypes.Any(type =>
-                !IsJavaScriptScalar(type) && !IsString(type) && !IsValueArray(type) &&
-                !IsMemoryView(type) && !IsHostObject(type) && !JavaScriptConversion.IsHandleValue(type) &&
-                !delegateTypes.Recognize(type)))
+        if (JavaScriptBoundaryShapes.UnsupportedImport(method.Signature, method.JSImport!.MarshalAs,
+                method.JSImport.IsPromise, type => delegateTypes.Recognize(type) ? GetInvokeSignature(type) : null) is
+            { } reason)
         {
-            throw Invalid(symbols, method,
-                "JSImport currently supports primitive scalars, DateTime, DateTimeOffset, their nullables, string, object, Exception, primitive number arrays such as byte[] or double[], string[], JSObject[], object[], Span<T> or ReadOnlySpan<T> of a primitive number, JSObject, and supported delegate parameters and the same values, JSSubscription, or void results");
-        }
-        ValidateMarshalAs(symbols, method, method.JSImport!.MarshalAs,
-            type => delegateTypes.Recognize(type) ? GetInvokeSignature(type) : null);
-        // A span reaches JavaScript as a view that is valid only until the call returns.
-        if ((asyncReturn.IsAsync || method.JSImport!.IsPromise) &&
-            method.Signature.ParameterSignatureTypes.Any(IsMemoryView))
-        {
-            throw Invalid(symbols, method,
-                "JSImport Span<T> and ReadOnlySpan<T> parameters are views valid only during the call, so an asynchronous JSImport cannot take them; pass a number array instead");
-        }
-        if (asyncReturn.IsAsync)
-        {
-            if (method.JSImport!.IsPromise)
-            {
-                throw Invalid(symbols, method,
-                    "JSImportPromise is the callback-compatible lowered form; use ordinary [JSImport] for Task or ValueTask results");
-            }
-            ValidateAsyncResult(symbols, method, asyncReturn, "JSImport");
-        }
-        var callbacks = method.Signature.ParameterSignatureTypes
-            .Where(delegateTypes.Recognize)
-            .ToArray();
-        if (method.JSImport!.IsPromise)
-        {
-            if (callbacks.Length != 2 ||
-                !IsJSSubscription(method.Signature.ReturnSignatureType) ||
-                !method.Signature.ParameterSignatureTypes.TakeLast(2)
-                    .All(delegateTypes.Recognize))
-            {
-                throw Invalid(symbols, method,
-                    "JSImportPromise requires success and failure delegate parameters at the end of the signature and a JSSubscription result");
-            }
-            var success = GetInvokeSignature(callbacks[0]);
-            var failure = GetInvokeSignature(callbacks[1]);
-            if (success.ReturnType != CliValueKind.Void ||
-                success.ParameterSignatureTypes.Length != 1 ||
-                failure.ReturnType != CliValueKind.Void ||
-                !failure.ParameterSignatureTypes.IsEmpty)
-            {
-                throw Invalid(symbols, method,
-                    "JSImportPromise requires Action<T> success and Action failure callbacks");
-            }
-        }
-        if (callbacks.Length == 0)
-        {
-            return;
-        }
-        if (!method.JSImport.IsPromise &&
-            (callbacks.Length != 1 || !IsJSSubscription(method.Signature.ReturnSignatureType)))
-        {
-            throw Invalid(symbols, method,
-                "JSImport callbacks require exactly one delegate parameter and a JSSubscription result");
-        }
-        foreach (var callback in callbacks)
-        {
-            // A callback is entered as a synchronous export is, with the same values.
-            var invoke = GetInvokeSignature(callback);
-            if (invoke.ReturnType != CliValueKind.Void &&
-                !IsJavaScriptScalar(invoke.ReturnSignatureType) && !IsExportReference(invoke.ReturnSignatureType) ||
-                invoke.ParameterSignatureTypes.Any(type => !IsJavaScriptScalar(type) && !IsExportReference(type)))
-            {
-                throw Invalid(symbols, method,
-                    "JSImport callbacks support primitive scalar, DateTime, DateTimeOffset, nullable, string, object, Exception, primitive number array, string[], JSObject[], object[], or JSObject parameters and the same results or void, as a synchronous JSExport does");
-            }
+            throw Invalid(symbols, method, reason);
         }
 
         MethodSignatureModel GetInvokeSignature(CliTypeIdentity callback)
@@ -287,30 +203,6 @@ internal sealed class InteropDeclarationValidator(
                 callback.Shape == CliTypeShape.GenericInstantiation
                     ? callback.TypeArguments
                     : []);
-        }
-    }
-
-    // A [JSMarshalAs<T>] marker must name the JavaScript type its parameter or result takes.
-    private static void ValidateMarshalAs(
-        ISymbolFormatter symbols,
-        MethodDefinitionModel method,
-        JavaScriptMarshalAs marshalAs,
-        Func<CliTypeIdentity, MethodSignatureModel?> invoke)
-    {
-        for (var index = 0; index < method.Signature.ParameterSignatureTypes.Length; index++)
-        {
-            Check(method.Signature.ParameterSignatureTypes[index], marshalAs.Parameter(index), $"parameter {index + 1}");
-        }
-        Check(method.Signature.ReturnSignatureType, marshalAs.Result, "result");
-
-        void Check(CliTypeIdentity type, string? marker, string position)
-        {
-            if (marker is not null && JavaScriptMarshalAsRules.Mismatch(type, marker, invoke) is { } expected)
-            {
-                throw Invalid(symbols, method,
-                    $"JSMarshalAs<{JavaScriptMarshalAsRules.Describe(marker)}> does not fit the {position}, which takes " +
-                    JavaScriptMarshalAsRules.Describe(expected));
-            }
         }
     }
 
@@ -328,56 +220,7 @@ internal sealed class InteropDeclarationValidator(
         }
     }
 
-    private static bool IsString(CliTypeIdentity type) =>
-        type.CanonicalName == "primitive:string";
-
-    private static bool IsHostScalar(CliTypeIdentity type) =>
-        type.StackKind is CliValueKind.I4 or CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8 or
-            CliValueKind.NativeInt;
-
-    // A JavaScript boundary also passes a date, as a Date, and either as nullable.
-    private static bool IsJavaScriptScalar(CliTypeIdentity type) =>
-        IsHostScalar(type) || JavaScriptConversion.IsDate(type) || JavaScriptNullable.IsSupported(type);
-
-    private static bool IsHostValue(CliTypeIdentity type) =>
-        IsJavaScriptScalar(type) || IsString(type) || IsValueArray(type) || IsHostObject(type) ||
-        JavaScriptConversion.IsHandleValue(type);
-
-    private static void ValidateAsyncResult(
-        ISymbolFormatter symbols,
-        MethodDefinitionModel method,
-        JavaScriptAsyncReturn asyncReturn,
-        string declaration)
-    {
-        // A settled value takes the types a synchronous call returns: an import's is
-        // copied (string, arrays) or wrapped (JSObject) as it arrives, and the host
-        // reads an export's from the completed task as it reads a synchronous result.
-        if (asyncReturn.ResultType is not { } result || IsJavaScriptScalar(result) ||
-            IsString(result) || IsValueArray(result) || IsJSObject(result) || JavaScriptConversion.IsHandleValue(result))
-        {
-            return;
-        }
-        throw Invalid(symbols, method,
-            $"{declaration} Task and ValueTask results currently support primitive scalars, DateTime, DateTimeOffset, their nullables, string, object, Exception, primitive number arrays, string[], JSObject[], object[], or JSObject");
-    }
-
-    private static bool IsValueArray(CliTypeIdentity type) => JavaScriptValueArray.IsSupported(type);
-
-    private static bool IsMemoryView(CliTypeIdentity type) => JavaScriptMemoryView.IsSupported(type);
-
-    // A value that crosses as a host handle: a string, number array or JSObject, or
-    // an object, exception or array of references that CoreLib converts.
-    private static bool IsExportReference(CliTypeIdentity type) =>
-        IsString(type) || IsValueArray(type) || IsJSObject(type) || JavaScriptConversion.IsHandleValue(type);
-
-    private static bool IsJSObject(CliTypeIdentity type) =>
-        type.FullName == "System.Runtime.InteropServices.JavaScript.JSObject";
-
-    private static bool IsHostObject(CliTypeIdentity type) =>
-        IsJSObject(type) || IsJSSubscription(type);
-
-    private static bool IsJSSubscription(CliTypeIdentity type) =>
-        type.FullName == "System.Runtime.InteropServices.JavaScript.JSSubscription";
+    private static bool IsHostScalar(CliTypeIdentity type) => JavaScriptBoundaryShapes.IsHostScalar(type);
 
     private static CompilerException Invalid(
         ISymbolFormatter symbols,

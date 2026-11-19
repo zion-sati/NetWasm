@@ -75,7 +75,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 state),
             new RuntimeTypeTableBuilder(program, types.Target, state, identities,
                 new RuntimeTypeAssemblyResolver(typeDefinitions), _implementedInterfaces.Create(metadata),
-                new RuntimeTypeTableEncoder()),
+                new RuntimeTypeTableEncoder(), new ProgramAssemblyNames(metadata), new ProgramManifestResources(metadata, program)),
             new MemberDescriptorDataBuilder(
                 typeFinder,
                 typeDefinitions,
@@ -109,7 +109,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
             new EnumMetadataCollector(
                 typeDefinitions, identities, types, program.EnumMetadataRequirements, state),
             new EnumMetadataBuilder(state, types.Target),
-            new StructMarshallingDataCollector(typeDefinitions, fields, metadata.Methods, program, types, state),
+            new StructMarshallingDataCollector(typeDefinitions, fields, metadata.Methods, identityBaseTypes,
+                new CompilationNativeStructSource(typeDefinitions, fields), program, types, state),
             new StructMarshallingDataBuilder(program, types, state),
             program.UninitializedObjectTypes);
     }

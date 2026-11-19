@@ -8,6 +8,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -31,7 +32,7 @@ public sealed class BoxedValueTypeValidatorTests
 
         Assert.Equal([21], AcceptedTypeIds(instructions));
         Assert.Single(instructions.Where(instruction =>
-            instruction.Opcode == WasmOpcodes.BranchIf));
+            instruction.Opcode == WasmOpcodes.If));
         Assert.True(ContainsManagedThrow(instructions));
     }
 
@@ -70,7 +71,7 @@ public sealed class BoxedValueTypeValidatorTests
         var validator = new BoxedValueTypeValidator(
             layouts,
             new StorageResolver(storages),
-            new ImplicitExceptionEmitter(exceptionLayouts));
+            new ImplicitExceptionEmitter(exceptionLayouts), new KeyedDispatchEmitter());
         var writer = new RecordingInstructionWriter();
 
         ((IBoxedValueTypeValidator)validator).Validate(writer, 3, targetType, OptionalFunctionIndex.At(7));
@@ -78,14 +79,31 @@ public sealed class BoxedValueTypeValidatorTests
         return writer.ToInstructions();
     }
 
-    private static int[] AcceptedTypeIds(
-        ImmutableArray<WasmInstruction> instructions) =>
-        [.. instructions
-            .Zip(instructions.Skip(1))
-            .Where(pair =>
-                pair.First.Opcode == WasmOpcodes.I32Constant &&
-                pair.Second.Opcode == WasmOpcodes.I32Equal)
-            .Select(pair => pair.First.Operand.SignedValue)];
+    // The type ids the emitted membership accepts: an equality its constant, a range test (the id less the run's first,
+    // below the run's length) each id of the run.
+    private static int[] AcceptedTypeIds(ImmutableArray<WasmInstruction> instructions)
+    {
+        var accepted = new List<int>();
+        for (var index = 0; index + 1 < instructions.Length; index++)
+        {
+            if (instructions[index].Opcode != WasmOpcodes.I32Constant)
+            {
+                continue;
+            }
+            var value = instructions[index].Operand.SignedValue;
+            if (instructions[index + 1].Opcode == WasmOpcodes.I32Equal)
+            {
+                accepted.Add(value);
+            }
+            else if (instructions[index + 1].Opcode == WasmOpcodes.I32Subtract &&
+                instructions[index + 2].Opcode == WasmOpcodes.I32Constant &&
+                instructions[index + 3].Opcode == WasmOpcodes.I32LessThanUnsigned)
+            {
+                accepted.AddRange(Enumerable.Range(value, instructions[index + 2].Operand.SignedValue));
+            }
+        }
+        return [.. accepted];
+    }
 
     private static ImmutableArray<EnumStorage> Storages() =>
         [

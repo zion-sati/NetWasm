@@ -50,6 +50,25 @@ public sealed class NativeCallSitePlannerTests
         Assert.Same(plan.Trampolines[2], plan.For(mark).Trampoline);
     }
 
+    // Each assembly's calls follow its own rules: a bool signature lowers for an assembly with
+    // [DisableRuntimeMarshalling], and the same signature in another assembly still fails, whichever comes first.
+    [Fact]
+    public void ChecksEachSignatureUnderEveryCallingAssemblysRules()
+    {
+        var boolean = CliTypeIdentity.Primitive("bool", CliValueKind.I4);
+        var flag = MethodSignatureModel.Create(boolean, boolean);
+        var planner = NativeAbiTestSupport.CallSitePlanner();
+
+        var plan = planner.Plan([new(flag, "A", 1, NativeMarshallingRules.Disabled), new(flag, "B", 2, NativeMarshallingRules.Disabled)], 0);
+        Assert.Equal("netwasm_calli_ii", Assert.Single(plan.Trampolines).Symbol);
+        Assert.Equal(boolean, plan.For(flag).Lowering.LogicalSignature.ReturnSignatureType);
+        var mixed = Assert.Throws<CompilerException>(() => planner.Plan(
+            [new(flag, "A", 1, NativeMarshallingRules.Disabled), new(flag, "B", 2)], 0));
+        Assert.Equal(DiagnosticCode.NativeInterop, mixed.Diagnostic.Code);
+        Assert.Equal("B", mixed.Diagnostic.Method);
+        Assert.Equal(2, mixed.Diagnostic.IlOffset);
+    }
+
     [Fact]
     public void AProgramWithoutUnmanagedCallsPlansNothing()
     {
@@ -112,12 +131,12 @@ public sealed class NativeCallSitePlannerTests
     private sealed class ThrowingSignatures(CompilerDiagnostic diagnostic) : INativeAbiSignaturePlanner
     {
         public NativeAbiSignaturePlan Plan(MethodSignatureModel signature, NativeAbiSignatureKind kind,
-            string methodName) => throw new CompilerException(diagnostic);
+            string methodName, NativeMarshallingRules rules) => throw new CompilerException(diagnostic);
     }
 
     private sealed class FixedSignatures(MethodSignatureModel physical) : INativeAbiSignaturePlanner
     {
         public NativeAbiSignaturePlan Plan(MethodSignatureModel signature, NativeAbiSignatureKind kind,
-            string methodName) => new(signature, physical, [], new(NativeAbiValueKind.Void, signature.ReturnSignatureType, null), null);
+            string methodName, NativeMarshallingRules rules) => new(signature, physical, [], new(NativeAbiValueKind.Void, signature.ReturnSignatureType, null), null);
     }
 }

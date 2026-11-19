@@ -26,6 +26,7 @@ public sealed class CompileCliOptionsTests
         Assert.Empty(options.Sources);
         Assert.Empty(options.ImportModules);
         Assert.False(options.UseJavaScriptExportBoundary);
+        Assert.Null(options.DiagnosticLogLevel);
         Assert.False(options.StructuredDiagnostics);
         Assert.Null(options.CompiledUnits);
         Assert.False(options.VerifyCompiledUnits);
@@ -48,10 +49,10 @@ public sealed class CompileCliOptionsTests
             "-optimize:O3", "-pathmap:/src=/_/", "-source:Entry.cs", "-source:Math.cs",
             "-interopmanifest:interop.json", "-runtimelayout:layout.json", "-compilermetadata:metadata.json",
             "-typesymbols:app.wasm.type-symbols", "-methodsymbols:app.wasm.method-symbols", "-typenames+",
-            "-callbackobject:callbacks.o", "-wit:contract.wit", "-world:example:test/test",
+            "-gc:NetWasmGen", "-callbackobject:callbacks.o", "-wit:contract.wit", "-world:example:test/test",
             "-importmodule:host_ui", "-importmodule:host_gl", "-diagnostictrace:trace.json",
-            "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics",
-            "-compiledunits-", "-verifycompiledunits+",
+            "-diagnosticlog:compiler.jsonl", "-diagnosticloglevel:Information", "-jsexportboundary+",
+            "-structureddiagnostics", "-compiledunits-", "-verifycompiledunits+",
             "-projectdirectory:/project", "-intermediatedirectory:/project/obj",
             "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
             "-managedloopinvariantfieldhoisting:Disabled", "-managedstaticdataviewelimination:Enabled",
@@ -109,12 +110,14 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("app.wasm.type-symbols", options.TypeSymbols);
         Assert.Equal("app.wasm.method-symbols", options.MethodSymbols);
         Assert.True(options.TypeNames);
+        Assert.Same(RuntimeCollector.NetWasmGen, options.Collector);
         Assert.Equal("callbacks.o", options.CallbackObject);
         Assert.Equal("contract.wit", options.Wit);
         Assert.Equal("example:test/test", options.World);
         Assert.Equal(["host_ui", "host_gl"], options.ImportModules);
         Assert.Equal("trace.json", options.DiagnosticTrace);
         Assert.Equal("compiler.jsonl", options.DiagnosticLog);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Information, options.DiagnosticLogLevel);
         Assert.True(options.UseJavaScriptExportBoundary);
         Assert.True(options.StructuredDiagnostics);
         Assert.False(options.CompiledUnits);
@@ -235,6 +238,14 @@ public sealed class CompileCliOptionsTests
     [InlineData("-platform must be 'wasm32' or 'wasm64'", "App.dll", "-out:a.wasm", "-platform:x64")]
     [InlineData("-optimize must be 'None', 'O0', 'O1', 'O2', 'O3', 'Os' or 'Oz'",
         "App.dll", "-out:a.wasm", "-optimize:O4")]
+    [InlineData("-gc must be 'Compact', 'NetWasm', 'NetWasmGen' or 'Bump'", "App.dll", "-out:a.wasm", "-gc:Boehm")]
+    [InlineData("-gc must be 'Compact', 'NetWasm', 'NetWasmGen' or 'Bump'", "App.dll", "-out:a.wasm", "-gc:netwasmgen")]
+    [InlineData("-diagnosticloglevel must be 'Trace', 'Debug', 'Information', 'Warning', 'Error' or 'Critical'",
+        "App.dll", "-out:a.wasm", "-diagnosticloglevel:Verbose")]
+    [InlineData("-diagnosticloglevel must be 'Trace', 'Debug', 'Information', 'Warning', 'Error' or 'Critical'",
+        "App.dll", "-out:a.wasm", "-diagnosticloglevel:trace")]
+    [InlineData("-diagnosticloglevel must be 'Trace', 'Debug', 'Information', 'Warning', 'Error' or 'Critical'",
+        "App.dll", "-out:a.wasm", "-diagnosticloglevel:None")]
     [InlineData("option '-jsexportboundary:yes' takes '+' or '-', not a value",
         "App.dll", "-out:a.wasm", "-jsexportboundary:yes")]
     [InlineData("-wasmtoolsnode, -wasmtoolscommand and -wasmtoolsmodule must be given together",
@@ -333,6 +344,8 @@ public sealed class CompileCliOptionsTests
             new Dictionary<string, bool> { ["Example.A"] = false, ["Example.B"] = false },
             options.FeatureSwitches);
         Assert.True(options.LinkedNativeOnly);
+        Assert.False(options.MissingApiError);
+        Assert.True(Parse("App.dll", "-out:app.wasm", "-missingapierror+").MissingApiError);
         Assert.Equal(["libz", "libgpu"], options.NativeLibraries);
         Assert.Equal([("Example.A", ""), ("Example.Z", "last")], options.RuntimeProperties);
         Assert.Equal("a=b", Parse("App.dll", "-out:app.wasm", "-runtimeproperty:Example.Z=a=b").RuntimeProperties[0].Value);
@@ -344,6 +357,29 @@ public sealed class CompileCliOptionsTests
         var exception = Assert.Throws<CompilerException>(() => Parse("App.dll", "-out:app.wasm", "-runtimeproperty:=value"));
 
         Assert.Equal("-runtimeproperty '=value' must be name=value", exception.Diagnostic.Message);
+    }
+
+    [Fact]
+    public void ReadsNativeArchivesAsLibraryAndPath()
+    {
+        var options = Parse("App.dll", "-out:app.wasm", "-nativearchive:libz=/native/libz.a",
+            "-nativearchive:libgpu=archives/gpu=v2.a");
+
+        Assert.Equal([("libz", "/native/libz.a"), ("libgpu", "archives/gpu=v2.a")], options.NativeArchives);
+    }
+
+    // A name, a path and no NUL: an archive whose library or path is missing, or that carries a NUL, is rejected.
+    [Theory]
+    [InlineData("-nativearchive:=/native/libz.a", "=/native/libz.a")]
+    [InlineData("-nativearchive:libz=", "libz=")]
+    [InlineData("-nativearchive:libz", "libz")]
+    [InlineData("-nativearchive:libz=/native/lib\0z.a", "libz=/native/lib\0z.a")]
+    public void RejectsANativeArchiveWithoutALibraryAndPath(string argument, string value)
+    {
+        var exception = Assert.Throws<CompilerException>(() => Parse("App.dll", "-out:app.wasm", argument));
+
+        Assert.Equal(DiagnosticCode.InvalidCommandLine, exception.Diagnostic.Code);
+        Assert.Equal($"-nativearchive '{value}' must be library=path", exception.Diagnostic.Message);
     }
 
     [Theory]

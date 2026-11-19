@@ -41,6 +41,52 @@ public sealed class NetWasmRunSettingsReaderTests
         Assert.Null(configuration);
     }
 
+    // VSTest receives net10.0-netwasm as .NETCoreApp, like a desktop project; the bridge's build names the
+    // platform target framework in a NetWasm.TargetFramework test run parameter.
+    [Theory]
+    [InlineData("net10.0-netwasm")]
+    [InlineData("net10.0-netwasm1.0")]
+    [InlineData("NET11.0-NETWASM")]
+    public void ReadsAPlatformTargetFrameworkRun(string alias)
+    {
+        var settings = $"""
+            <RunSettings>
+              <RunConfiguration>
+                <TargetFrameworkVersion>.NETCoreApp,Version=v10.0</TargetFrameworkVersion>
+              </RunConfiguration>
+              <TestRunParameters>
+                <Parameter name="NetWasm.TargetFramework" value="{alias}" />
+              </TestRunParameters>
+            </RunSettings>
+            """;
+
+        Assert.True(new NetWasmRunSettingsReader().TryRead(settings, out var configuration));
+        Assert.Equal(".NETCoreApp,Version=v10.0", configuration!.TargetFrameworkMoniker);
+        Assert.Null(configuration.DotnetHostPath);
+    }
+
+    [Theory]
+    // A desktop alias, an empty alias, a framework that is not .NETCoreApp, and netwasm0.1's own framework. (A
+    // parameter named twice is VSTest's to resolve: its parser keeps the last value.)
+    [InlineData(".NETCoreApp,Version=v10.0", "<Parameter name=\"NetWasm.TargetFramework\" value=\"net10.0\" />")]
+    [InlineData(".NETCoreApp,Version=v10.0", "<Parameter name=\"NetWasm.TargetFramework\" value=\"\" />")]
+    [InlineData(".NETFramework,Version=v4.7.2", "<Parameter name=\"NetWasm.TargetFramework\" value=\"net10.0-netwasm\" />")]
+    [InlineData("NetWasm,Version=v0.1", "<Parameter name=\"NetWasm.TargetFramework\" value=\"net10.0-netwasm\" />")]
+    public void DeclinesARunThatIsNotAPlatformTargetFrameworkRun(string framework, string parameters)
+    {
+        var settings = $"""
+            <RunSettings>
+              <RunConfiguration>
+                <TargetFrameworkVersion>{framework}</TargetFrameworkVersion>
+              </RunConfiguration>
+              <TestRunParameters>{parameters}</TestRunParameters>
+            </RunSettings>
+            """;
+
+        Assert.False(new NetWasmRunSettingsReader().TryRead(settings, out var configuration));
+        Assert.Null(configuration);
+    }
+
     [Fact]
     public void AcceptsNamespacedSettingsWithoutWeakeningElementIdentity()
     {

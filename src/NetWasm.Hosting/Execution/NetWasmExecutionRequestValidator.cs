@@ -232,8 +232,7 @@ public sealed class NetWasmExecutionRequestValidator : INetWasmExecutionRequestV
             throw new ArgumentException("Application module keys must begin with a lowercase letter or digit.", nameof(value));
         }
 
-        var versionParts = value[(separator + 1)..].Split('.');
-        if (versionParts.Length != 3 || versionParts.Any(part => part.Length == 0 || !part.All(char.IsAsciiDigit)))
+        if (!ExactSemanticVersion.IsValid(value[(separator + 1)..]))
         {
             throw new ArgumentException("Application module keys require an exact numeric version.", nameof(value));
         }

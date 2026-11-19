@@ -17,6 +17,7 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 public sealed class RectangularArrayEmitterTests
 {
@@ -442,7 +443,9 @@ public sealed class RectangularArrayEmitterTests
             layouts,
             WasmRuntimeImports.CreateCatalog(),
             exceptions,
-            addresses);
+            addresses,
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(layouts)),
+            new ReferenceWriteAddressRememberer(new ReferenceWriteRecordPolicy(layouts)));
 
         Emit(emitter, request);
 
@@ -458,6 +461,52 @@ public sealed class RectangularArrayEmitterTests
                     ? WasmOpcodes.Call
                     : WasmOpcodes.I32Store,
             GetCodeBytes(request));
+    }
+
+    // For a collector with generations, a store of a reference, or of a value that holds one, keeps the
+    // element's address before the store and records the store there after it; a scalar's store does neither.
+    [Theory]
+    [InlineData(CliValueKind.ManagedReference, false, true)]
+    [InlineData(CliValueKind.ValueType, true, true)]
+    [InlineData(CliValueKind.ValueType, false, false)]
+    [InlineData(CliValueKind.I4, false, false)]
+    public void AStoredReferenceIsRecordedAtItsElementForACollectorWithGenerations(
+        CliValueKind elementKind, bool valuesHoldReferences, bool recorded)
+    {
+        var layouts = new RecordingLayoutProvider(valuesHoldReferences: valuesHoldReferences);
+        var elementType = elementKind == CliValueKind.ValueType
+            ? CliTypeIdentity.Named(Assembly, "Test", "Value", true)
+            : elementKind == CliValueKind.ManagedReference
+                ? CliTypeIdentity.Named(Assembly, "Test", "Reference", false)
+                : CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        InstructionEmissionRequest Store() => CreateInstructionRequest(
+            CilOperation.StoreRectangularArrayElement,
+            [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4, elementKind],
+            new CilOperand.TypeIdentity(CliTypeIdentity.Array(elementType, 2)),
+            maxStack: 4);
+        IInstructionCommandProvider emitter = new RectangularArrayElementStoreEmitter(
+            layouts,
+            CreateAddressInstructions(layouts),
+            layouts,
+            layouts,
+            WasmRuntimeImports.CreateCatalog(),
+            new RecordingExceptionEmitter(),
+            new RecordingRectangularAddressEmitter(),
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(layouts)),
+            new ReferenceWriteAddressRememberer(new ReferenceWriteRecordPolicy(layouts)));
+        var request = RecordingReferenceWrites(Store());
+        var silent = Store();
+
+        Emit(emitter, request);
+        Emit(emitter, silent);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        var unrecorded = ((RecordingInstructionWriter)GetCodeWriter(silent)).ToInstructions();
+        var scratch = (uint)request.Context.ObjectTemporary;
+        Assert.Equal(unrecorded.Length + (recorded ? 3 : 0), instructions.Length);
+        Assert.Equal(recorded, EndsWithRecordAt(request, instructions, scratch));
+        Assert.Equal(recorded ? 1 : 0, instructions.Count(instruction =>
+            instruction.Opcode == WasmOpcodes.LocalTee && instruction.Operand.UnsignedValue == scratch));
     }
 
     [Theory]

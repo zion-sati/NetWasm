@@ -28,6 +28,13 @@ public sealed class ManagedAssembly : IDisposable
     private readonly Dictionary<int, EntityHandle> _baseTypes;
     private readonly Dictionary<int, ImmutableArray<EntityHandle>> _implementedInterfaces;
     private readonly MetadataAssemblySnapshot _metadata;
+    private readonly GeneratedJavaScriptBinding _javaScriptBinding;
+    // This assembly's value types, as runtime marshalling lays them out natively; and, when it keeps runtime marshalling,
+    // the P/Invokes and unmanaged calli signatures whose struct positions name a value type of another assembly at any
+    // depth, which are laid out once the compilation has read every assembly (LayCrossAssemblyStructStubs).
+    private readonly AssemblyStructSource _structs;
+    private readonly List<int> _crossAssemblyStructMethods = [];
+    private readonly List<int> _crossAssemblyCalliSignatures = [];
     private bool _disposed;
     private static readonly Dictionary<string, int> PrimitiveInitializerSizes =
         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -55,22 +62,25 @@ public sealed class ManagedAssembly : IDisposable
             INativeCallbackDeclarationReader nativeCallbacks,
             IUnsafeAccessorDeclarationReader unsafeAccessors,
             INativeImportBinder nativeBinding,
-            IFeatureSwitchSubstitutionReader substitutions)
+            INativeVariadicCallPlanner nativeVariadics,
+            IFeatureSwitchSubstitutionReader substitutions,
+            GeneratedJavaScriptBinding javaScriptBinding)
     {
         Path = path;
+        _javaScriptBinding = javaScriptBinding;
         _image = image;
         // Over the image itself, so concurrent method body reads take no lock.
         _peReader = new PEReader(ImmutableCollectionsMarshal.AsImmutableArray(image));
         Reader = _peReader.GetMetadataReader();
         var definition = Reader.GetAssemblyDefinition();
         Identity = new AssemblyIdentity(Reader.GetString(definition.Name));
-        (_types, _fields, _methods, _properties) = ReadDefinitions(
+        (_types, _fields, _methods, _properties, _structs) = ReadDefinitions(
             assemblyIdentityAliases,
             stackKinds,
             nativeImports,
             nativeCallbacks,
             unsafeAccessors,
-            nativeBinding);
+            nativeBinding, nativeVariadics);
         foreach (var (token, stubs) in substitutions.Read(_peReader, Reader))
         {
             if (_methods.TryGetValue(token, out var method))
@@ -147,7 +157,9 @@ public sealed class ManagedAssembly : IDisposable
             IValueTypeDefinitionStackKindResolver stackKinds,
             INativeImportDeclarationReader nativeImports,
             INativeCallbackDeclarationReader nativeCallbacks,
-            INativeImportBinder? nativeBinding = null)
+            INativeImportBinder? nativeBinding = null,
+        INativeVariadicCallPlanner? nativeVariadics = null,
+        GeneratedJavaScriptBinding? javaScriptBinding = null)
     {
         ArgumentNullException.ThrowIfNull(stackKinds);
         ArgumentNullException.ThrowIfNull(nativeImports);
@@ -164,7 +176,9 @@ public sealed class ManagedAssembly : IDisposable
                 nativeCallbacks,
                 new UnsafeAccessorDeclarationReader(new CustomAttributeTypeNameProvider()),
                 nativeBinding ?? NativeLibraryBinding.All,
-                SubstitutionReader());
+                nativeVariadics ?? NoNativeVariadicCalls.Instance,
+                SubstitutionReader(),
+                javaScriptBinding ?? GeneratedJavaScriptBinding.OrdinaryCode);
         }
         catch (BadImageFormatException exception)
         {
@@ -196,19 +210,22 @@ public sealed class ManagedAssembly : IDisposable
         Dictionary<int, TypeDefinitionModel> Types,
         Dictionary<int, FieldDefinitionModel> Fields,
         Dictionary<int, MethodDefinitionModel> Methods,
-        Dictionary<int, PropertyDefinitionModel> Properties) ReadDefinitions(
+        Dictionary<int, PropertyDefinitionModel> Properties,
+        AssemblyStructSource Structs) ReadDefinitions(
         AssemblyIdentityAliases assemblyIdentityAliases,
         IValueTypeDefinitionStackKindResolver stackKinds,
         INativeImportDeclarationReader nativeImports,
         INativeCallbackDeclarationReader nativeCallbacks,
         IUnsafeAccessorDeclarationReader unsafeAccessors,
-        INativeImportBinder nativeBinding)
+        INativeImportBinder nativeBinding,
+            INativeVariadicCallPlanner nativeVariadics)
     {
         // Sized from the metadata tables, so CoreLib's definitions never rehash.
         var types = new Dictionary<int, TypeDefinitionModel>(Reader.TypeDefinitions.Count);
         var fields = new Dictionary<int, FieldDefinitionModel>(Reader.FieldDefinitions.Count);
         var methods = new Dictionary<int, MethodDefinitionModel>(Reader.MethodDefinitions.Count);
         var properties = new Dictionary<int, PropertyDefinitionModel>(Reader.PropertyDefinitions.Count);
+        var disablesRuntimeMarshalling = DisablesRuntimeMarshalling();
         ILookup<string, TypeDefinitionModel>? typesByName = null;
         var constants = Enumerable.Range(1, Reader.GetTableRowCount(TableIndex.Constant))
             .Select(index => Reader.GetConstant(MetadataTokens.ConstantHandle(index)))
@@ -217,6 +234,8 @@ public sealed class ManagedAssembly : IDisposable
             Identity,
             Reader,
             assemblyIdentityAliases);
+        var (pinvokes, variadicCalls) =
+            NativeVariadicDeclarations.Resolve(Reader, nativeImports, nativeBinding, nativeVariadics, signatureProvider);
 
         foreach (var typeHandle in Reader.TypeDefinitions)
         {
@@ -251,6 +270,11 @@ public sealed class ManagedAssembly : IDisposable
                             : null,
                         IsInitOnly = (field.Attributes & FieldAttributes.InitOnly) != 0,
                         IsLiteral = (field.Attributes & FieldAttributes.Literal) != 0,
+                        MarshalAs = FieldMarshalAs(field, out var complexMarshalAs, out var sizeConst, out var arraySubType),
+                        HasComplexMarshalAs = complexMarshalAs,
+                        MarshalAsSizeConst = sizeConst,
+                        MarshalAsArraySubType = arraySubType,
+                        IsPrivate = (field.Attributes & FieldAttributes.FieldAccessMask) == FieldAttributes.Private,
                     });
             }
 
@@ -263,11 +287,33 @@ public sealed class ManagedAssembly : IDisposable
                 var methodToken = MetadataTokens.GetToken(methodHandle);
                 var methodKey = new EntityKey(Identity, methodToken);
                 methodKeys.Add(methodKey);
-                var (Import, Export, WitImport, WitExport, WitPostReturn) =
-                    ReadInteropDeclarations(method, methodKey, signature.ParameterTypes.Length);
                 var methodName = Reader.GetString(method.Name);
-                var nativeImport = nativeImports.Read(Reader, method);
+                var methodSignature = new MethodSignatureModel(signature.ReturnType, signature.ParameterTypes);
+                var (Import, Export, WitImport, WitExport, WitPostReturn, declinedBinding, generatedImportBody) =
+                    ReadInteropDeclarations(method, methodKey, methodName, methodSignature);
+                var nativeImport = pinvokes.GetValueOrDefault(methodToken);
                 var binds = nativeImport is null || nativeBinding.Binds(nativeImport);
+                // A bound P/Invoke that takes runtime marshalling, or one of the fixed-signature declarations of a C
+                // variadic function, compiles to a stub over an inner native method. One the stub cannot express
+                // (CLI varargs, HRESULT translation, [MarshalAs], generics) stays an import, which the native
+                // declaration validator rejects.
+                NativeMarshallingStub? marshallingStub = null;
+                var variadic = variadicCalls.GetValueOrDefault(methodToken);
+                if (nativeImport is not null && binds &&
+                    !nativeImport.IsVarArg && !nativeImport.TranslatesHResult && !nativeImport.HasMarshalling &&
+                    method.GetGenericParameters().Count == 0 && definition.GetGenericParameters().Count == 0 &&
+                    StubSignature(methodSignature, nativeImport, variadic, disablesRuntimeMarshalling) is { } nativeSignature)
+                {
+                    var nativeToken = NativeMarshallingStubSignature.NativeMethodToken(methodToken);
+                    var nativeKey = new EntityKey(Identity, nativeToken);
+                    methods.Add(nativeToken, new MethodDefinitionModel(
+                        nativeKey, typeKey, methodName, IsStatic: true, nativeSignature, RelativeVirtualAddress: 0)
+                    {
+                        NativeImport = nativeImport,
+                        IsStackTraceHidden = true,
+                    });
+                    marshallingStub = new(nativeKey) { Variadic = variadic };
+                }
                 methods.Add(
                     methodToken,
                     new MethodDefinitionModel(
@@ -275,19 +321,21 @@ public sealed class ManagedAssembly : IDisposable
                         typeKey,
                         methodName,
                         (method.Attributes & MethodAttributes.Static) != 0,
-                        new MethodSignatureModel(
-                            signature.ReturnType,
-                            signature.ParameterTypes),
-                        method.RelativeVirtualAddress)
+                        methodSignature,
+                        // A generated JSImport bound to the host is bodyless, as NetWasm's own import is.
+                        generatedImportBody ? 0 : method.RelativeVirtualAddress)
                     {
                         JSImport = Import,
                         JSExport = Export,
+                        DeclinedJavaScriptBinding = declinedBinding,
                         WitImport = WitImport,
                         WitExport = WitExport,
                         WitPostReturn = WitPostReturn,
-                        NativeImport = binds ? nativeImport : null,
+                        NativeImport = binds && marshallingStub is null ? nativeImport : null,
                         UnboundNativeImport = binds ? null : nativeImport,
+                        NativeMarshallingStub = marshallingStub,
                         NativeCallback = nativeCallbacks.Read(Reader, method),
+                        DisablesRuntimeMarshalling = disablesRuntimeMarshalling,
                         UnsafeAccessor = unsafeAccessors.Read(Reader, method),
                         GenericArity = method.GetGenericParameters().Count,
                         IsPublic = (method.Attributes & MethodAttributes.MemberAccessMask) ==
@@ -301,6 +349,8 @@ public sealed class ManagedAssembly : IDisposable
                         IsNoInlining = (method.ImplAttributes & MethodImplAttributes.NoInlining) != 0,
                         IsStackTraceHidden = typeStackTraceHidden ||
                             HasStackTraceHiddenAttribute(method.GetCustomAttributes()),
+                        // The JIT honors the attribute only in the core library, whose internal type it is.
+                        IsIntrinsic = Identity.Name == CoreLibraryName && HasIntrinsicAttribute(method),
                         IsDelegateAsynchronousCall =
                             (method.ImplAttributes & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Runtime &&
                             methodName is "BeginInvoke" or "EndInvoke",
@@ -421,7 +471,28 @@ public sealed class ManagedAssembly : IDisposable
             };
         }
 
-        return (types, fields, methods, properties);
+        // A struct's native layout is its own, whatever assembly declares it, so another assembly may ask for it.
+        var source = new AssemblyStructSource(types, fields, Reader, signatureProvider);
+        if (!disablesRuntimeMarshalling)
+        {
+            Func<CliTypeIdentity, NativeStructLayout?> structs = type => NativeStructLayouts.Plan(type, source, pointerSize: 4);
+            // A P/Invoke may name a struct declared after it, so stubs are laid out once every type is read.
+            foreach (var token in methods.Keys.ToArray())
+            {
+                source.Missed = false;
+                LayStructStub(token, types, methods, structs);
+                if (source.Missed)
+                    _crossAssemblyStructMethods.Add(token);
+            }
+            for (var row = 1; row <= Reader.GetTableRowCount(TableIndex.StandAloneSig); row++)
+            {
+                source.Missed = false;
+                LayFunctionPointerStub(row, methods, signatureProvider, structs);
+                if (source.Missed)
+                    _crossAssemblyCalliSignatures.Add(row);
+            }
+        }
+        return (types, fields, methods, properties, source);
 
         EntityKey? ToEntityKey(MethodDefinitionHandle handle) => handle.IsNil
             ? null
@@ -498,6 +569,12 @@ public sealed class ManagedAssembly : IDisposable
             };
     }
 
+    private bool HasIntrinsicAttribute(MethodDefinition method) =>
+        method.GetCustomAttributes()
+            .Select(handle => Reader.GetCustomAttribute(handle))
+            .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
+                "System.Runtime.CompilerServices.IntrinsicAttribute");
+
     private bool HasPreserveBaseOverridesAttribute(MethodDefinition method) =>
         method.GetCustomAttributes()
             .Select(handle => Reader.GetCustomAttribute(handle))
@@ -518,6 +595,231 @@ public sealed class ManagedAssembly : IDisposable
         }
         return null;
     }
+
+    // The resources embedded in the image's resources directory: each a little-endian length and its bytes at its
+    // offset. A linked resource, or one in another file, is not embedded. Read only when a program needs them.
+    public ImmutableArray<ManifestResourceData> ManifestResources
+    {
+        get
+        {
+            if (_manifestResources.IsDefault)
+            {
+                _manifestResources = ReadManifestResources();
+            }
+            return _manifestResources;
+        }
+    }
+
+    private ImmutableArray<ManifestResourceData> _manifestResources;
+
+    private ImmutableArray<ManifestResourceData> ReadManifestResources()
+    {
+        var resources = ImmutableArray.CreateBuilder<ManifestResourceData>();
+        // A managed assembly has a CLI header: its metadata was read through it.
+        var directory = _peReader.PEHeaders.CorHeader!.ResourcesDirectory;
+        foreach (var handle in Reader.ManifestResources)
+        {
+            var resource = Reader.GetManifestResource(handle);
+            if (!resource.Implementation.IsNil || directory is not { Size: > 0 } section)
+            {
+                continue;
+            }
+            var data = _peReader.GetSectionData(section.RelativeVirtualAddress);
+            var reader = data.GetReader((int)resource.Offset, section.Size - (int)resource.Offset);
+            var length = reader.ReadInt32();
+            resources.Add(new(Reader.GetString(resource.Name), reader.ReadBytes(length)));
+        }
+        return resources.ToImmutable();
+    }
+
+    // The native signature a P/Invoke's stub calls, or null when it compiles to a plain import: a variadic call's fixed
+    // parameters and buffer, or the runtime-marshalled signature, which disabled runtime marshalling leaves out (a
+    // variadic call under it passes only blittable values).
+    private static MethodSignatureModel? StubSignature(MethodSignatureModel signature, NativeImportDeclaration import,
+        NativeVariadicCall? variadic, bool disablesRuntimeMarshalling) => variadic switch
+        {
+            not null when !disablesRuntimeMarshalling || NativeMarshallingStubSignature.Lower(signature) is null =>
+                NativeVariadicDeclarations.NativeSignature(signature, variadic),
+            null when !disablesRuntimeMarshalling => NativeMarshallingStubSignature.Lower(signature, import),
+            _ => null,
+        };
+
+    // A P/Invoke whose struct positions take runtime marshalling: a struct that holds a bool or char at any depth passes
+    // as its native copy (NativeStructLayouts, NativeMarshallingStubSignature). A plain import becomes a stub, and a
+    // stub's native method takes the struct's native form too.
+    private void LayStructStub(int token, Dictionary<int, TypeDefinitionModel> types,
+        Dictionary<int, MethodDefinitionModel> methods, Func<CliTypeIdentity, NativeStructLayout?> structs)
+    {
+        // A stub's own native method, whose token has the high bit set, is already in its native form.
+        if (token < 0)
+            return;
+        var method = methods[token];
+        var stub = method.NativeMarshallingStub;
+        var import = stub is { Variadic: null } ? methods[stub.NativeMethod.MetadataToken].NativeImport : method.NativeImport;
+        if (import is not { IsVarArg: false, TranslatesHResult: false, HasMarshalling: false } || stub is { Variadic: not null } ||
+            method.GenericArity != 0 || types[method.DeclaringType.MetadataToken].GenericArity != 0 ||
+            NativeMarshallingStubSignature.Lower(method.Signature, import, structs) is not { } native)
+        {
+            return;
+        }
+        if (stub is not null)
+        {
+            var inner = methods[stub.NativeMethod.MetadataToken];
+            methods[stub.NativeMethod.MetadataToken] = inner with { Signature = native };
+            return;
+        }
+        var nativeToken = NativeMarshallingStubSignature.NativeMethodToken(token);
+        var nativeKey = new EntityKey(Identity, nativeToken);
+        methods[nativeToken] = new MethodDefinitionModel(
+            nativeKey, method.DeclaringType, method.Name, IsStatic: true, native, RelativeVirtualAddress: 0)
+        {
+            NativeImport = import,
+            IsStackTraceHidden = true,
+        };
+        methods[token] = method with { NativeImport = null, NativeMarshallingStub = new(nativeKey) };
+    }
+
+    // Lays out the P/Invokes and unmanaged calli signatures whose structs reach into other assemblies, as desktop .NET
+    // lays out a struct of any assembly, once the compilation has read every assembly. Before the compilation's
+    // snapshot is taken; an assembly whose signatures name only its own structs has nothing to do.
+    internal void LayCrossAssemblyStructStubs(INativeStructSource compilation)
+    {
+        ArgumentNullException.ThrowIfNull(compilation);
+        Func<CliTypeIdentity, NativeStructLayout?> structs = type => NativeStructLayouts.Plan(type, compilation, pointerSize: 4);
+        foreach (var token in _crossAssemblyStructMethods)
+            LayStructStub(token, _types, _methods, structs);
+        foreach (var row in _crossAssemblyCalliSignatures)
+            LayFunctionPointerStub(row, _methods, _structs.Signatures, structs);
+    }
+
+    // One of this assembly's value types and its instance fields, for a compilation that lays out another assembly's
+    // struct; null when this assembly does not declare it.
+    internal (TypeDefinitionModel Definition, ImmutableArray<FieldDefinitionModel> Fields)? DescribeValueType(CliTypeIdentity type) =>
+        _structs.Describe(type);
+
+    // The declaration an unmanaged function pointer stands for: no DllImport attributes, so ANSI chars and strings,
+    // BOOL bools, and no [In], [Out] or [MarshalAs], which a function pointer's signature cannot carry.
+    private static readonly NativeImportDeclaration FunctionPointerDeclaration =
+        new(string.Empty, string.Empty, MethodImportAttributes.None, IsVarArg: false, HasMarshalling: false,
+            UnsupportedCallingConvention: null);
+
+    // An unmanaged calli signature that takes runtime marshalling, as desktop .NET's IL stub for an unmanaged calli
+    // marshals bool, char, string and structs that hold them. It becomes a stub that takes the call's arguments and
+    // then the pointer, which the body reader calls in the calli's place (NativeFunctionPointerCall); its token is the
+    // signature's with the high bit set. A signature that names generic parameters, or conventions the C ABI cannot
+    // honor, keeps its calli and the diagnostics that go with it.
+    private void LayFunctionPointerStub(int row, Dictionary<int, MethodDefinitionModel> methods,
+        SignatureTypeProvider signatureProvider, Func<CliTypeIdentity, NativeStructLayout?> structs)
+    {
+        var handle = MetadataTokens.StandaloneSignatureHandle(row);
+        var standalone = Reader.GetStandaloneSignature(handle);
+        // Besides calli and locals signatures the table holds field signatures, which compilers leave for the
+        // constants a Windows PDB describes and StandaloneSignature.GetKind refuses; the header alone says a method's.
+        var blob = Reader.GetBlobReader(standalone.Signature);
+        if (blob.ReadSignatureHeader().Kind != SignatureKind.Method)
+            return;
+        var decoded = standalone.DecodeMethodSignature(signatureProvider, genericContext: null);
+        if (!UnmanagedCallingConventions.IsUnmanagedHeader((byte)decoded.Header.CallingConvention))
+            return;
+        var returnType = decoded.ReturnType;
+        var conventions = new List<string?>();
+        while (returnType.Shape == CliTypeShape.Modified)
+        {
+            if (!returnType.IsRequiredModifier)
+                conventions.Add(returnType.CustomModifier!.FullName);
+            returnType = returnType.ElementType!;
+        }
+        var signature = new MethodSignatureModel(returnType, decoded.ParameterTypes);
+        if (decoded.Header.CallingConvention == SignatureCallingConvention.Unmanaged &&
+            UnmanagedCallingConventions.Unsupported(conventions) is not null ||
+            returnType.ContainsGenericParameters || decoded.ParameterTypes.Any(type => type.ContainsGenericParameters) ||
+            NativeMarshallingStubSignature.Lower(signature, FunctionPointerDeclaration, structs) is not { } native)
+        {
+            return;
+        }
+        var token = NativeMarshallingStubSignature.NativeMethodToken(MetadataTokens.GetToken(handle));
+        var key = new EntityKey(Identity, token);
+        var module = new EntityKey(Identity, MetadataTokens.GetToken(MetadataTokens.TypeDefinitionHandle(1)));
+        methods[token] = new MethodDefinitionModel(key, module, $"<calli>{row:x}", IsStatic: true,
+            new MethodSignatureModel(returnType, [.. decoded.ParameterTypes, CliTypeIdentity.FromStackKind(CliValueKind.NativeInt)]),
+            RelativeVirtualAddress: 0)
+        {
+            NativeMarshallingStub = new(key) { FunctionPointer = new(native, FunctionPointerDeclaration) },
+            IsStackTraceHidden = true,
+        };
+    }
+
+    // The stub an unmanaged calli of this standalone signature calls instead, when its signature takes runtime
+    // marshalling (LayFunctionPointerStubs).
+    internal MethodDefinitionModel? FunctionPointerStub(int signatureToken) =>
+        _methods.TryGetValue(NativeMarshallingStubSignature.NativeMethodToken(signatureToken), out var stub) &&
+        stub.NativeMarshallingStub is { FunctionPointer: not null } ? stub : null;
+
+    // This assembly's value types by identity, as a P/Invoke's signature names them. Missed: a value type was asked
+    // for that another assembly declares.
+    private sealed class AssemblyStructSource(
+        Dictionary<int, TypeDefinitionModel> types,
+        Dictionary<int, FieldDefinitionModel> fields,
+        MetadataReader reader,
+        SignatureTypeProvider signatureProvider) : INativeStructSource
+    {
+        public bool Missed { get; set; }
+
+        public SignatureTypeProvider Signatures => signatureProvider;
+
+        private readonly Lazy<Dictionary<string, int>> _tokens = new(() => types
+            .Where(pair => pair.Value.IsValueType)
+            .ToDictionary(
+                pair => signatureProvider.GetTypeFromDefinition(reader,
+                    (TypeDefinitionHandle)MetadataTokens.Handle(pair.Key), (byte)SignatureTypeKind.ValueType).CanonicalName,
+                pair => pair.Key,
+                StringComparer.Ordinal));
+
+        public (TypeDefinitionModel Definition, ImmutableArray<FieldDefinitionModel> Fields)? Describe(CliTypeIdentity type)
+        {
+            if (!_tokens.Value.TryGetValue(type.CanonicalName, out var token))
+            {
+                Missed = true;
+                return null;
+            }
+            var definition = types[token];
+            return (definition, [.. definition.Fields.Select(key => fields[key.MetadataToken]).Where(field => !field.IsStatic)]);
+        }
+    }
+
+    // A field's [MarshalAs] native type when its descriptor is just that, and whether it says more. An inline string or
+    // array (ByValTStr or ByValArray) also gives its SizeConst and, for an array, its ArraySubType: the descriptor is
+    // the native type, the compressed size, then the optional element type.
+    private UnmanagedType? FieldMarshalAs(FieldDefinition field, out bool complex, out int? sizeConst,
+        out UnmanagedType? arraySubType)
+    {
+        complex = false;
+        sizeConst = null;
+        arraySubType = null;
+        var descriptor = field.GetMarshallingDescriptor();
+        if (descriptor.IsNil)
+            return null;
+        var blob = Reader.GetBlobReader(descriptor);
+        if (blob.Length == 1)
+            return (UnmanagedType)blob.ReadByte();
+        complex = true;
+        var native = (UnmanagedType)blob.ReadByte();
+        if (native is not (UnmanagedType.ByValTStr or UnmanagedType.ByValArray) ||
+            !blob.TryReadCompressedInteger(out var size))
+        {
+            return null;
+        }
+        sizeConst = size;
+        if (native == UnmanagedType.ByValArray && blob.RemainingBytes > 0)
+            arraySubType = (UnmanagedType)blob.ReadByte();
+        return native;
+    }
+
+    private bool DisablesRuntimeMarshalling() =>
+        Reader.GetAssemblyDefinition().GetCustomAttributes()
+            .Select(handle => Reader.GetCustomAttribute(handle))
+            .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
+                "System.Runtime.CompilerServices.DisableRuntimeMarshallingAttribute");
 
     private bool HasStackTraceHiddenAttribute(CustomAttributeHandleCollection attributes) =>
         attributes
@@ -575,18 +877,24 @@ public sealed class ManagedAssembly : IDisposable
         InteropExportDeclaration? Export,
         WitImportDeclaration? WitImport,
         WitExportDeclaration? WitExport,
-        WitPostReturnDeclaration? WitPostReturn)
-        ReadInteropDeclarations(MethodDefinition method, EntityKey methodKey, int parameterCount)
+        WitPostReturnDeclaration? WitPostReturn,
+        DeclinedJavaScriptBinding? Declined,
+        bool SetsGeneratedBodyAside)
+        ReadInteropDeclarations(MethodDefinition method, EntityKey methodKey, string methodName,
+            MethodSignatureModel signature)
     {
+        var parameterCount = signature.ParameterTypes.Length;
         var import = (InteropImportDeclaration?)null;
         var export = (InteropExportDeclaration?)null;
         var witImport = (WitImportDeclaration?)null;
         var witExport = (WitExportDeclaration?)null;
         var witPostReturn = (WitPostReturnDeclaration?)null;
+        var generatedBinding = false;
         foreach (var attributeHandle in method.GetCustomAttributes())
         {
             var attribute = Reader.GetCustomAttribute(attributeHandle);
             var attributeType = GetAttributeTypeName(attribute.Constructor);
+            generatedBinding |= attributeType == "System.Diagnostics.DebuggerNonUserCodeAttribute";
             if (attributeType is "System.Runtime.InteropServices.JavaScript.JSImportAttribute" or
                 "System.Runtime.InteropServices.JavaScript.JSImportPromiseAttribute")
             {
@@ -671,6 +979,40 @@ public sealed class ManagedAssembly : IDisposable
                 witPostReturn = new(interfaceName, functionName);
             }
         }
+        // .NET's JSImport generator gives the method a body that binds the import through JSFunctionBinding and marks
+        // it [DebuggerNonUserCode]. With a JavaScript host the method is NetWasm's own import, its body set aside, when
+        // NetWasm's interop takes its shape; otherwise it is ordinary managed code, whose binding throws
+        // PlatformNotSupportedException, as on .NET's platforms without a browser. A body on a JSImport of NetWasm's
+        // own, which has none, stays an error.
+        DeclinedJavaScriptBinding? declined = null;
+        var setsGeneratedBodyAside = false;
+        if (import is not null && generatedBinding && method.RelativeVirtualAddress != 0)
+        {
+            if (!_javaScriptBinding.BindsToHost)
+            {
+                import = null;
+            }
+            else if (JavaScriptBoundaryShapes.UnsupportedImport(signature, import.MarshalAs, import.IsPromise,
+                         JavaScriptBoundaryShapes.StandardDelegateInvoke) is { } reason)
+            {
+                import = null;
+                declined = new("JSImport", reason);
+            }
+            else
+            {
+                setsGeneratedBodyAside = true;
+            }
+        }
+        // .NET's JSExport generator leaves the method as written and adds a [DebuggerNonUserCode] wrapper beside it,
+        // which .NET's browser runtime registers. NetWasm exports the method itself; one whose shape NetWasm's
+        // interop does not take stays an ordinary method JavaScript cannot call, where NetWasm's own export is an
+        // error.
+        if (export is not null && HasGeneratedExportWrapper(method, methodName) &&
+            JavaScriptBoundaryShapes.UnsupportedExport(signature, export.MarshalAs) is { } exportReason)
+        {
+            export = null;
+            declined = new("JSExport", exportReason);
+        }
         var declarationCount = (import is null ? 0 : 1) +
             (export is null ? 0 : 1) +
             (witImport is null ? 0 : 1) +
@@ -681,7 +1023,27 @@ public sealed class ManagedAssembly : IDisposable
             throw InvalidInteropDeclaration(methodKey,
                 "a method cannot declare more than one host/component interop boundary");
         }
-        return (import, export, witImport, witExport, witPostReturn);
+        return (import, export, witImport, witExport, witPostReturn, declined, setsGeneratedBodyAside);
+    }
+
+    // .NET's JSExport generator names its wrapper __Wrapper_<method>_<hash> and marks it [DebuggerNonUserCode], in the
+    // method's own type.
+    private bool HasGeneratedExportWrapper(MethodDefinition method, string methodName)
+    {
+        var prefix = $"__Wrapper_{methodName}_";
+        foreach (var handle in Reader.GetTypeDefinition(method.GetDeclaringType()).GetMethods())
+        {
+            var candidate = Reader.GetMethodDefinition(handle);
+            var name = Reader.GetString(candidate.Name);
+            if (name.Length > prefix.Length && name.StartsWith(prefix, StringComparison.Ordinal) &&
+                name.AsSpan(prefix.Length).TrimStart('-').ToString() is { Length: > 0 } hash && hash.All(char.IsAsciiDigit) &&
+                candidate.GetCustomAttributes().Any(attribute => GetAttributeTypeName(Reader.GetCustomAttribute(attribute).Constructor) ==
+                    "System.Diagnostics.DebuggerNonUserCodeAttribute"))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private WitImportDeclaration ReadWitImport(
@@ -835,6 +1197,7 @@ public sealed class ManagedAssembly : IDisposable
         return ([.. Enumerable.Range(1, count).Select(NotNull)], NotNull(0));
     }
 
+    private const string CoreLibraryName = "NetWasm.CoreLib";
     private const string NullableAttributeName = "System.Runtime.CompilerServices.NullableAttribute";
     private const string NullableContextAttributeName = "System.Runtime.CompilerServices.NullableContextAttribute";
 

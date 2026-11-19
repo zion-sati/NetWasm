@@ -368,9 +368,7 @@ namespace System.Text.Json.Serialization.Metadata
 
         internal JsonPropertyInfo(Type declaringType, Type propertyType, JsonTypeInfo? declaringTypeInfo, JsonSerializerOptions options)
         {
-#if !NETWASM
             Debug.Assert(declaringTypeInfo is null || declaringType.IsAssignableFrom(declaringTypeInfo.Type));
-#endif
 
             DeclaringType = declaringType;
             PropertyType = propertyType;
@@ -474,11 +472,7 @@ namespace System.Text.Json.Serialization.Metadata
             Debug.Assert(Name is not null);
 
             if (Options.ReferenceHandlingStrategy is JsonKnownReferenceHandler.Preserve &&
-#if NETWASM
-                DeclaringTypeInfo?.Converter.IsValueType != true &&
-#else
                 this is { DeclaringType.IsValueType: false, IsIgnored: false, IsExtensionData: false } &&
-#endif
                 this is { IsIgnored: false, IsExtensionData: false } &&
                 Name is JsonSerializer.IdPropertyName or JsonSerializer.RefPropertyName)
             {
@@ -1088,11 +1082,7 @@ namespace System.Text.Json.Serialization.Metadata
 
         internal bool IsOverriddenOrShadowedBy(JsonPropertyInfo other)
         {
-#if NETWASM
-            return MemberName == other.MemberName && DeclaringType == other.DeclaringType;
-#else
             return MemberName == other.MemberName && DeclaringType.IsAssignableFrom(other.DeclaringType);
-#endif
         }
 
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]

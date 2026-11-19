@@ -161,6 +161,67 @@ public sealed class NetWasmWritePageEntriesTaskTests
         task.RequiredImportModules = [Item("wasi:cli/stdout@0.3.2"), Item("wasi:filesystem/types@0.3.2")];
         Assert.True(task.Execute());
         Assert.True(Assert.IsType<PageModuleRequest>(writer.Module).FileMounts);
+        // Without deployment artifacts (Node.js code) the module imports the bundle statically.
+        Assert.Null(Assert.IsType<PageModuleRequest>(writer.Module).StartupLoad);
+    }
+
+    // A browser page prefetches the artifacts its runtime fetches at every startup, and preloads the runtime modules.
+    [Fact]
+    public void ModuleTaskPassesThePageStartupDownloads()
+    {
+        var writer = new RecordingWriter();
+        var task = new NetWasmWritePageModuleTask(writer)
+        {
+            PageFileName = "netwasm.page.mjs",
+            BuildFingerprint = new string('1', 64),
+            ManifestSha256 = new string('2', 64),
+            OutputPath = Path.GetFullPath("App.mjs"),
+            DeclarationPath = Path.GetFullPath("App.d.mts"),
+            Exports = [Item("Add", ("Name", "Add"), ("Parameters", "[]"), ("Result", "i32"))],
+            RuntimeModules = [Item("./netwasm.runtime.page.a.mjs"), Item("./netwasm.runtime.b.mjs")],
+            DeploymentArtifacts =
+            [
+                Item("/obj/App.wasm", ("RelativePath", "App.wasm"), ("Role", "application")),
+                Item("/obj/zones", ("RelativePath", "tz\\zones.bin"), ("Role", "timezone-data")),
+                Item("/obj/netwasm.page.mjs", ("RelativePath", "netwasm.page.mjs"), ("Role", "hosting-javascript")),
+                Item("/obj/App.raw-adapter.mjs", ("RelativePath", "App.raw-adapter.mjs"), ("Role", "raw-adapter")),
+                Item("/obj/runtime-layout.json", ("RelativePath", "runtime-layout.json"), ("Role", "runtime-layout")),
+                Item("/obj/interop.json", ("RelativePath", "interop.json"), ("Role", "interop-manifest")),
+                Item("/obj/App.wasm.type-symbols", ("RelativePath", "App.wasm.type-symbols"), ("Role", "type-symbols")),
+                Item("/obj/m", ("RelativePath", "sym\\App.wasm.method-symbols"), ("Role", "method-symbols")),
+            ],
+        };
+
+        Assert.True(task.Execute());
+
+        var load = Assert.IsType<PageStartupLoad>(Assert.IsType<PageModuleRequest>(writer.Module).StartupLoad);
+        Assert.Equal(["./netwasm.runtime.page.a.mjs", "./netwasm.runtime.b.mjs"], load.RuntimeModules.ToArray());
+        Assert.Equal(["App.wasm", "App.raw-adapter.mjs", "runtime-layout.json", "interop.json", "App.wasm.type-symbols",
+            "sym/App.wasm.method-symbols"], load.DeploymentFiles.ToArray());
+    }
+
+    [Theory]
+    [InlineData("Role")]
+    [InlineData("RelativePath")]
+    public void ModuleTaskRejectsDeploymentArtifactsWithoutTheirMetadata(string missing)
+    {
+        var build = new RecordingBuildEngine();
+        var metadata = new[] { ("RelativePath", "App.wasm"), ("Role", "application") }
+            .Where(pair => pair.Item1 != missing).ToArray();
+        var task = new NetWasmWritePageModuleTask(new RecordingWriter())
+        {
+            BuildEngine = build,
+            PageFileName = "netwasm.page.mjs",
+            BuildFingerprint = new string('1', 64),
+            ManifestSha256 = new string('2', 64),
+            OutputPath = Path.GetFullPath("App.mjs"),
+            DeclarationPath = Path.GetFullPath("App.d.mts"),
+            Exports = [Item("Add", ("Name", "Add"), ("Parameters", "[]"), ("Result", "i32"))],
+            DeploymentArtifacts = [Item("/obj/App.wasm", metadata)],
+        };
+
+        Assert.False(task.Execute());
+        Assert.Contains("NWSDK078", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
     [Theory]

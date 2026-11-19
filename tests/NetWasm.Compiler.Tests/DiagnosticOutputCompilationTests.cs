@@ -27,19 +27,29 @@ public sealed class DiagnosticOutputCompilationTests
         var output = methods.Where(method => method.DeclaringType.FullName == "System.Diagnostics.Debug").ToArray();
         if (debug)
         {
-            // Upstream Debug routes through its static DebugProvider, which reads the indentation.
-            Assert.Equal(5, output.Count(method => method.Definition.Name == "WriteLine"));
-            Assert.Equal([".cctor", "get_IndentLevel", "get_IndentSize"], output
-                .Select(method => method.Definition.Name).Where(name => name != "WriteLine").Order(StringComparer.Ordinal));
+            // Upstream Debug routes through its static DebugProvider, which reads the indentation. The overloads that
+            // only forward to another, and the indentation accessors, may be inlined into their callers.
+            Assert.Contains(output, method => method.Definition.Name == "WriteLine");
+            Assert.Subset(new HashSet<string>(StringComparer.Ordinal) { ".cctor", "get_IndentLevel", "get_IndentSize", "WriteLine" },
+                output.Select(method => method.Definition.Name).ToHashSet(StringComparer.Ordinal));
+            Assert.Contains(methods, method => method.DeclaringType.FullName == "System.Diagnostics.DebugProvider" &&
+                method.Definition.Name == "GetIndentString");
             Assert.Contains(methods, method => method.DeclaringType.FullName == "Program" && method.Definition.Name == "Evaluate");
-            Assert.Contains(methods, method => method.DeclaringType.FullName == "System.Console" && method.Definition.Name == "get_Error");
+            // DebugProvider writes to standard error; Console.Error is an accessor that may be inlined, while the
+            // standard error writer's initializer is a method of its own.
+            Assert.Contains(methods, IsStandardErrorInitializer);
         }
         else
         {
             Assert.Empty(output);
             Assert.DoesNotContain(methods, method => method.DeclaringType.FullName == "Program" && method.Definition.Name == "Evaluate");
-            Assert.DoesNotContain(methods, method => method.DeclaringType.FullName == "System.Console" && method.Definition.Name == "get_Error");
+            Assert.DoesNotContain(methods, IsStandardErrorInitializer);
         }
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
     }
+
+    private static bool IsStandardErrorInitializer(MethodInstanceModel method) =>
+        method.Definition.Name == ".cctor" &&
+        method.DeclaringType.FullName?.StartsWith("System.Console", StringComparison.Ordinal) == true &&
+        method.DeclaringType.FullName.EndsWith("StandardError", StringComparison.Ordinal);
 }

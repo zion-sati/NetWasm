@@ -2,6 +2,7 @@
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
 // Source reference: dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -22,48 +23,105 @@ namespace System
         public const double PI = 3.141592653589793;
         public const double Tau = 6.283185307179586;
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Abs(double value) =>
             BitConverter.UInt64BitsToDouble(BitConverter.DoubleToUInt64Bits(value) & 0x7FFFFFFFFFFFFFFFUL);
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Abs(float value) =>
             BitConverter.UInt32BitsToSingle(BitConverter.SingleToUInt32Bits(value) & 0x7FFFFFFFU);
+        [Intrinsic]
         public static double Ceiling(double value) => CeilingCore(value);
+        [Intrinsic]
         public static double Floor(double value) => FloorCore(value);
+        [Intrinsic]
         public static double Truncate(double value) => TruncateCore(value);
+        [Intrinsic]
         public static double Sqrt(double value) => SqrtCore(value);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static short Abs(short value)
         {
-            if (value == short.MinValue) throw new OverflowException();
-            return value < 0 ? (short)-value : value;
+            if (value < 0)
+            {
+                value = (short)-value;
+                if (value < 0)
+                {
+                    ThrowNegateTwosCompOverflow();
+                }
+            }
+            return value;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int Abs(int value)
         {
-            if (value == int.MinValue) throw new OverflowException();
-            return value < 0 ? -value : value;
+            if (value < 0)
+            {
+                value = -value;
+                if (value < 0)
+                {
+                    ThrowNegateTwosCompOverflow();
+                }
+            }
+            return value;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long Abs(long value)
         {
-            if (value == long.MinValue) throw new OverflowException();
-            return value < 0 ? -value : value;
+            if (value < 0)
+            {
+                value = -value;
+                if (value < 0)
+                {
+                    ThrowNegateTwosCompOverflow();
+                }
+            }
+            return value;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static nint Abs(nint value)
         {
-            if (value == nint.MinValue) throw new OverflowException();
-            return value < 0 ? -value : value;
+            if (value < 0)
+            {
+                value = -value;
+                if (value < 0)
+                {
+                    ThrowNegateTwosCompOverflow();
+                }
+            }
+            return value;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static sbyte Abs(sbyte value)
         {
-            if (value == sbyte.MinValue) throw new OverflowException();
-            return value < 0 ? (sbyte)-value : value;
+            if (value < 0)
+            {
+                value = (sbyte)-value;
+                if (value < 0)
+                {
+                    ThrowNegateTwosCompOverflow();
+                }
+            }
+            return value;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Abs(decimal value) => decimal.Abs(value);
 
+        [DoesNotReturn]
+        [StackTraceHidden]
+        internal static void ThrowNegateTwosCompOverflow()
+        {
+            throw new OverflowException(SR.Overflow_NegateTwosCompNum);
+        }
+
+        [Intrinsic]
         public static double Asinh(double value)
         {
             if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
@@ -75,6 +133,7 @@ namespace System
             return value < 0 ? -result : result;
         }
 
+        [Intrinsic]
         public static double Atanh(double value)
         {
             if (IsNaN(value)) return value;
@@ -87,6 +146,7 @@ namespace System
         }
 
         public static long BigMul(int a, int b) => (long)a * b;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong BigMul(uint a, uint b) => (ulong)a * b;
 
         public static long BigMul(long a, long b, out long low)
@@ -96,6 +156,7 @@ namespace System
             return (long)high - ((a >> 63) & b) - ((b >> 63) & a);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong BigMul(ulong a, ulong b, out ulong low)
         {
             var al = (uint)a;
@@ -130,6 +191,7 @@ namespace System
             return BitConverter.UInt64BitsToDouble(bits);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Ceiling(decimal value) => decimal.Ceiling(value);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -393,6 +455,7 @@ namespace System
         }
 
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double CopySign(double value, double sign)
         {
             var magnitude = BitConverter.DoubleToUInt64Bits(value) & 0x7FFFFFFFFFFFFFFFUL;
@@ -400,6 +463,7 @@ namespace System
             return BitConverter.UInt64BitsToDouble(magnitude | signBit);
         }
 
+        [Intrinsic]
         public static double Cosh(double value)
         {
             if (IsNaN(value)) return value;
@@ -424,30 +488,35 @@ namespace System
             return 0.5 * (exponential + 1 / exponential);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (sbyte Quotient, sbyte Remainder) DivRem(sbyte left, sbyte right)
         {
             var quotient = (sbyte)(left / right);
             return (quotient, (sbyte)(left - quotient * right));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (byte Quotient, byte Remainder) DivRem(byte left, byte right)
         {
             var quotient = (byte)(left / right);
             return (quotient, (byte)(left - quotient * right));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (short Quotient, short Remainder) DivRem(short left, short right)
         {
             var quotient = (short)(left / right);
             return (quotient, (short)(left - quotient * right));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (ushort Quotient, ushort Remainder) DivRem(ushort left, ushort right)
         {
             var quotient = (ushort)(left / right);
             return (quotient, (ushort)(left - quotient * right));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (int Quotient, int Remainder) DivRem(int left, int right)
         {
             var quotient = left / right;
@@ -461,12 +530,14 @@ namespace System
             return quotient;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (uint Quotient, uint Remainder) DivRem(uint left, uint right)
         {
             var quotient = left / right;
             return (quotient, left - quotient * right);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (long Quotient, long Remainder) DivRem(long left, long right)
         {
             var quotient = left / right;
@@ -480,24 +551,28 @@ namespace System
             return quotient;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (ulong Quotient, ulong Remainder) DivRem(ulong left, ulong right)
         {
             var quotient = left / right;
             return (quotient, left - quotient * right);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (nint Quotient, nint Remainder) DivRem(nint left, nint right)
         {
             var quotient = left / right;
             return (quotient, left - quotient * right);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (nuint Quotient, nuint Remainder) DivRem(nuint left, nuint right)
         {
             var quotient = left / right;
             return (quotient, left - quotient * right);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Floor(decimal value) => decimal.Floor(value);
 
         public static double IEEERemainder(double x, double y)
@@ -542,33 +617,51 @@ namespace System
             return Log(value) / Log(newBase);
         }
 
+        [Intrinsic]
         public static double Log10(double value) => Log(value) / 2.302585092994046;
+        [Intrinsic]
         public static double Log2(double value) => Log(value) / 0.6931471805599453;
 
+        [Intrinsic]
         public static byte Max(byte left, byte right) => left >= right ? left : right;
+        [Intrinsic]
         public static short Max(short left, short right) => left >= right ? left : right;
+        [Intrinsic]
         public static int Max(int left, int right) => left >= right ? left : right;
+        [Intrinsic]
         public static long Max(long left, long right) => left >= right ? left : right;
+        [Intrinsic]
         public static nint Max(nint left, nint right) => left >= right ? left : right;
+        [Intrinsic]
         public static sbyte Max(sbyte left, sbyte right) => left >= right ? left : right;
+        [Intrinsic]
         public static ushort Max(ushort left, ushort right) => left >= right ? left : right;
+        [Intrinsic]
         public static uint Max(uint left, uint right) => left >= right ? left : right;
+        [Intrinsic]
         public static ulong Max(ulong left, ulong right) => left >= right ? left : right;
+        [Intrinsic]
         public static nuint Max(nuint left, nuint right) => left >= right ? left : right;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Max(decimal left, decimal right) => decimal.Max(left, right);
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Max(double left, double right)
         {
             if (left != right) return !IsNaN(left) ? left > right ? left : right : left;
             return IsNegative(right) ? left : right;
         }
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Max(float left, float right)
         {
             if (left != right) return !IsNaN(left) ? left > right ? left : right : left;
             return IsNegative(right) ? left : right;
         }
 
+        [Intrinsic]
         public static double MaxMagnitude(double x, double y)
         {
             // This matches the IEEE 754:2019 `maximumMagnitude` function
@@ -593,30 +686,46 @@ namespace System
             return y;
         }
 
+        [Intrinsic]
         public static byte Min(byte left, byte right) => left <= right ? left : right;
+        [Intrinsic]
         public static short Min(short left, short right) => left <= right ? left : right;
+        [Intrinsic]
         public static int Min(int left, int right) => left <= right ? left : right;
+        [Intrinsic]
         public static long Min(long left, long right) => left <= right ? left : right;
+        [Intrinsic]
         public static nint Min(nint left, nint right) => left <= right ? left : right;
+        [Intrinsic]
         public static sbyte Min(sbyte left, sbyte right) => left <= right ? left : right;
+        [Intrinsic]
         public static ushort Min(ushort left, ushort right) => left <= right ? left : right;
+        [Intrinsic]
         public static uint Min(uint left, uint right) => left <= right ? left : right;
+        [Intrinsic]
         public static ulong Min(ulong left, ulong right) => left <= right ? left : right;
+        [Intrinsic]
         public static nuint Min(nuint left, nuint right) => left <= right ? left : right;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Min(decimal left, decimal right) => decimal.Min(left, right);
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Min(double left, double right)
         {
             if (left != right) return !IsNaN(left) ? left < right ? left : right : left;
             return IsNegative(left) ? left : right;
         }
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Min(float left, float right)
         {
             if (left != right) return !IsNaN(left) ? left < right ? left : right : left;
             return IsNegative(left) ? left : right;
         }
 
+        [Intrinsic]
         public static double MinMagnitude(double x, double y)
         {
             // This matches the IEEE 754:2019 `minimumMagnitude` function
@@ -641,16 +750,26 @@ namespace System
             return y;
         }
 
+        [Intrinsic]
         public static double ReciprocalEstimate(double value) => 1 / value;
+        [Intrinsic]
         public static double ReciprocalSqrtEstimate(double value) => 1 / Sqrt(value);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Round(decimal value) => decimal.Round(value);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Round(decimal value, int decimals) => decimal.Round(value, decimals);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Round(decimal value, MidpointRounding mode) => decimal.Round(value, mode);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Round(decimal value, int decimals, MidpointRounding mode) => decimal.Round(value, decimals, mode);
+        [Intrinsic]
         public static double Round(double value) => RoundCore(value);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Round(double value, int digits) => Round(value, digits, MidpointRounding.ToEven);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Round(double value, MidpointRounding mode) => RoundMode(value, mode);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Round(double value, int digits, MidpointRounding mode)
         {
             if (digits < 0)
@@ -730,11 +849,14 @@ namespace System
             return y * u;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int Sign(short value) => value < 0 ? -1 : value > 0 ? 1 : 0;
         public static int Sign(int value) => value < 0 ? -1 : value > 0 ? 1 : 0;
         public static int Sign(long value) => value < 0 ? -1 : value > 0 ? 1 : 0;
         public static int Sign(nint value) => value < 0 ? -1 : value > 0 ? 1 : 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int Sign(sbyte value) => value < 0 ? -1 : value > 0 ? 1 : 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int Sign(decimal value) => decimal.Sign(value);
         public static int Sign(float value)
         {
@@ -748,6 +870,7 @@ namespace System
             return value < 0 ? -1 : value > 0 ? 1 : 0;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static decimal Truncate(decimal value) => decimal.Truncate(value);
 
         // The throw stays out of line, so each clamp inlines into its caller.
@@ -840,18 +963,31 @@ namespace System
         public const float PI = 3.1415927f;
         public const float Tau = 6.2831855f;
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Abs(float value) => Math.Abs(value);
+        [Intrinsic]
         public static float Ceiling(float value) => (float)Math.Ceiling(value);
+        [Intrinsic]
         public static float Floor(float value) => (float)Math.Floor(value);
+        [Intrinsic]
         public static float Truncate(float value) => (float)Math.Truncate(value);
+        [Intrinsic]
         public static float Round(float value) => (float)Math.Round(value);
+        [Intrinsic]
         public static float Sqrt(float value) => (float)Math.Sqrt(value);
 
+        [Intrinsic]
         public static float Acos(float value) => (float)Math.Acos(value);
+        [Intrinsic]
         public static float Asin(float value) => (float)Math.Asin(value);
+        [Intrinsic]
         public static float Asinh(float value) => (float)Math.Asinh(value);
+        [Intrinsic]
         public static float Atan(float value) => (float)Math.Atan(value);
+        [Intrinsic]
         public static float Atan2(float y, float x) => (float)Math.Atan2(y, x);
+        [Intrinsic]
         public static float Atanh(float value) => (float)Math.Atanh(value);
         public static float BitDecrement(float value)
         {
@@ -870,10 +1006,12 @@ namespace System
             bits = (bits & 0x80000000U) != 0 ? bits - 1 : bits + 1;
             return BitConverter.UInt32BitsToSingle(bits);
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float CopySign(float value, float sign) =>
             BitConverter.UInt32BitsToSingle(
                 (BitConverter.SingleToUInt32Bits(value) & 0x7FFFFFFFU) |
                 (BitConverter.SingleToUInt32Bits(sign) & 0x80000000U));
+        [Intrinsic]
         public static float Cosh(float value) => (float)Math.Cosh(value);
         // A float product is exact in double, and rounding the double sum to odd
         // keeps enough bits that rounding it to float rounds the exact result once.
@@ -896,18 +1034,23 @@ namespace System
         public static int ILogB(float value) => Math.ILogB(value);
         public static float Log(float value, float newBase) => (float)Math.Log(value, newBase);
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Min(float left, float right)
         {
             if (left != right) return !float.IsNaN(left) ? left < right ? left : right : left;
             return IsNegative(left) ? left : right;
         }
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Max(float left, float right)
         {
             if (left != right) return !float.IsNaN(left) ? left > right ? left : right : left;
             return IsNegative(right) ? left : right;
         }
 
+        [Intrinsic]
         public static float MaxMagnitude(float x, float y)
         {
             // This matches the IEEE 754:2019 `maximumMagnitude` function
@@ -932,6 +1075,7 @@ namespace System
             return y;
         }
 
+        [Intrinsic]
         public static float MinMagnitude(float x, float y)
         {
             // This matches the IEEE 754:2019 `minimumMagnitude` function
@@ -956,13 +1100,18 @@ namespace System
             return y;
         }
 
+        [Intrinsic]
         public static float ReciprocalEstimate(float value) => 1 / value;
+        [Intrinsic]
         public static float ReciprocalSqrtEstimate(float value) => 1 / Sqrt(value);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Round(float value, int digits)
         {
             return Round(value, digits, MidpointRounding.ToEven);
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Round(float value, MidpointRounding mode) => (float)Math.Round(value, mode);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Round(float x, int digits, MidpointRounding mode)
         {
             if (digits < 0)
@@ -1041,7 +1190,9 @@ namespace System
             return y * u;
         }
 
+        [Intrinsic]
         public static float Sinh(float value) => (float)Math.Sinh(value);
+        [Intrinsic]
         public static float Tanh(float value) => (float)Math.Tanh(value);
 
         public static float Clamp(float value, float minimum, float maximum)
@@ -1052,6 +1203,7 @@ namespace System
             return value;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int Sign(float value)
         {
             if (float.IsNaN(value)) throw new ArithmeticException();

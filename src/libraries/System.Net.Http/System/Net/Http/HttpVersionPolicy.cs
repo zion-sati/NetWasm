@@ -6,7 +6,7 @@ namespace System.Net.Http
     /// <summary>
     /// Determines behavior when selecting and negotiating HTTP version for a request.
     /// </summary>
-    internal enum HttpVersionPolicy
+    public enum HttpVersionPolicy
     {
         /// <summary>
         /// Default behavior, either uses requested version or downgrades to a lower one.

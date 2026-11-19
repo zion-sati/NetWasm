@@ -1,8 +1,11 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System;
+using System.Collections.Generic;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -15,7 +18,8 @@ internal sealed class ArraySetValueIntrinsicEmitter(
     IValueLayoutProvider values,
     IRuntimeObjectLayout objects,
     IRuntimeImportResolver imports,
-    IAddressInstructionEmitter addresses) : IRuntimeIntrinsicEmitter
+    IAddressInstructionEmitter addresses,
+    IKeyedDispatchEmitter keyedDispatch) : IRuntimeIntrinsicEmitter
 {
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -28,20 +32,22 @@ internal sealed class ArraySetValueIntrinsicEmitter(
         Set(code, element);
         I32(code, 0); Set(code, underlying);
         addresses.Emit(code, 0); Set(code, offset);
+        // The element type's id picks the Nullable<T> whose boxes the array's elements unbox, searched among them.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var descriptor in descriptors.ConstructedTypeDescriptors)
         {
             // A Nullable<T> that no array holds has no boxed layout and cannot be an element here.
             var type = nullableTypes.Resolve(descriptor.Type);
             if (type is null || !types.GetObjectLayout(type, out var boxed)) continue;
-            Get(code, element); I32(code, descriptor.TypeId);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            I32(code, boxed.TypeId); Set(code, underlying);
-            addresses.Emit(code, WasmTargetLayout.Align(sizeof(byte), values.GetValueLayout(type).Alignment));
-            Set(code, offset);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            cases.Add((descriptor.TypeId, () =>
+            {
+                I32(code, boxed.TypeId); Set(code, underlying);
+                addresses.Emit(code, WasmTargetLayout.Align(sizeof(byte), values.GetValueLayout(type).Alignment));
+                Set(code, offset);
+            }
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(element, false, cases, () => { }));
         Get(code, request.Local(0, CliValueKind.ManagedReference));
         Get(code, request.Local(1, CliValueKind.I4));
         Get(code, request.Local(2, CliValueKind.ManagedReference));

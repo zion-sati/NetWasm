@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
+import { exactSemanticVersion } from "./exact-semantic-version.mjs";
 import { isCanonicalWitFunctionName } from "./canonical-wit-function-name.mjs";
 const symbolSidecars = Object.freeze({
   "type-symbols": "application/vnd.netwasm.type-symbols;version=1",
@@ -31,7 +32,7 @@ const targets = new Set(["wasm32", "wasm64"]);
 const supportedRuntimeFeatures = new Set(["local-time"]);
 const digestPattern = /^[0-9a-f]{64}$/u;
 const tokenPattern = /^[a-z0-9][a-z0-9.-]*$/u;
-const versionedIdentifierPattern = /^[a-z0-9][a-z0-9.\-:/]*@[0-9]+\.[0-9]+\.[0-9]+$/u;
+const versionedIdentifierPattern = new RegExp(`^[a-z0-9][a-z0-9.\\-:/]*@${exactSemanticVersion}$`, "u");
 
 export function validateDeploymentManifest(manifest) {
   assertExactDataObject(manifest, rootKeys, "deployment manifest");

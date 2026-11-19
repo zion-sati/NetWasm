@@ -57,8 +57,8 @@ namespace NetWasm.Compiler.Layout;
 // The encoder uses one where it makes the section smaller.
 internal sealed class RuntimeTypeTableEncoder : IRuntimeTypeTableEncoder
 {
-    internal const int Format = 1;
-    internal const int HeaderFields = 20;
+    internal const int Format = 2;
+    internal const int HeaderFields = 21;
     internal const int RankBlockBits = 256;
     internal const int ListSampleInterval = 8;
     internal const int Padding = 8;
@@ -151,7 +151,8 @@ internal sealed class RuntimeTypeTableEncoder : IRuntimeTypeTableEncoder
         var layoutIndexBits = RuntimeTypeTableBitWriter.Width(Math.Max(0, layouts.Count - 1));
         var definitionBits = request.IncludeGenericDefinitions ? idBits : 0;
         var assemblyBits = request.IncludeAssemblies
-            ? RuntimeTypeTableBitWriter.Width(entries.Select(entry => entry.AssemblyIndex).Append(request.EntryAssemblyIndex).Max())
+            ? RuntimeTypeTableBitWriter.Width(entries.Select(entry => entry.AssemblyIndex)
+                .Append(request.EntryAssemblyIndex).Append(request.HighestAssemblyIndex).Max())
             : 0;
         var attributeBits = RuntimeTypeTableBitWriter.Width(Math.Max(0, attributeWords.Length - 1));
         var shapeBits = flagIndexBits + layoutIndexBits + definitionBits + attributeBits;
@@ -330,7 +331,16 @@ internal sealed class RuntimeTypeTableEncoder : IRuntimeTypeTableEncoder
                 writer.Write(relatedIds.Value(entry.RelatedTypeId), relatedIds.ValueBits);
             }
         }
-        return writer.ToBytes(Padding);
+        if (request.AssemblyTable.IsDefaultOrEmpty)
+        {
+            return writer.ToBytes(Padding);
+        }
+        // The assembly table starts past the padded bit stream, at the next multiple of eight bytes, so its resources
+        // keep the alignment it gives them.
+        var assemblyTableOffset = (writer.ToBytes(Padding).Length + 7) / 8 * 8;
+        Header(20, checked((uint)assemblyTableOffset));
+        var stream = writer.ToBytes(Padding);
+        return [.. stream, .. new byte[assemblyTableOffset - stream.Length], .. request.AssemblyTable];
 
         void Header(int field, uint value) => writer.Patch(field * 32L, value, 32);
 

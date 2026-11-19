@@ -20,6 +20,9 @@ public sealed class ControlFlowPostDominanceAnalyzer : IControlFlowPostDominance
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(allowed);
         var sets = new DominanceBitSets(DominanceBitSets.CountFor(graph, allowed));
+        // A block that can continue starts post-dominated by all allowed blocks: one full row, copied.
+        var all = new ulong[sets.Scratch.Length];
+        DominanceBitSets.Fill(all, allowed);
         foreach (var node in allowed)
         {
             var row = sets.Row(node);
@@ -39,7 +42,7 @@ public sealed class ControlFlowPostDominanceAnalyzer : IControlFlowPostDominance
             }
             else
             {
-                DominanceBitSets.Fill(row, allowed);
+                all.CopyTo(row);
             }
         }
         var order = new List<int>(allowed);

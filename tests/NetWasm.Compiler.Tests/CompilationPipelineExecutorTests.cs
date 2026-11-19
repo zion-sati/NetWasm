@@ -285,7 +285,7 @@ public sealed class CompilationPipelineExecutorTests
                 FunctionImports = [new("host", "read", WasmFunctionType.Create(CliValueKind.I4))],
                 RuntimeFeatures = [NetWasmRuntimeFeatureIds.LocalTime],
                 BuildId = new string('b', 32),
-            }, new([], []), new([], [], []));
+            }, new([], []), new([], [], []), readsTypeNames: false);
             var lease = Capability<IMetadataCompilationLease>("lease", invoke: (method, _) =>
             {
                 Calls.Add((method.Name == "Dispose" ? "lease-dispose" : "lease-snapshot", []));
@@ -323,7 +323,8 @@ public sealed class CompilationPipelineExecutorTests
                 new NoCompiledUnits(Calls),
                 cutoff is null ? new NoEarlyCutoff() : new FixedEarlyCutoff(cutoff),
                 cutoff is null ? new NoKeptCompiles() : new RecordingKeptCompiles(Calls),
-                new NativeImportBinderFactory());
+                new NativeImportBinderFactory(),
+                new NativeVariadicCallPlannerFactory(new NetWasm.Compiler.Interop.NativeArchiveFunctionTypeReader()));
         }
 
         public CompilationPipelineExecutor Executor { get; }

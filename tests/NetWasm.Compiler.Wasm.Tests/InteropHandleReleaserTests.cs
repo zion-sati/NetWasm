@@ -23,8 +23,6 @@ public sealed class InteropHandleReleaserTests
             default,
             default,
             OptionalFunctionIndex.At(23),
-            default,
-            default,
             default));
 
         releaser.Release(code, CreateMethodEmissionContext(), target);

@@ -46,7 +46,7 @@ internal sealed class ManagedMethodInliner(
         var constructed = new HashSet<int>();
         var maximumInlineStack = 0;
         var changed = false;
-        var loops = LoopSpans(body);
+        var loops = LoopSpans.Of(body);
         var exposed = body.Instructions
             .Where((instruction, index) => instruction.Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress &&
                 !ReadsFieldOnly(body, index))
@@ -67,15 +67,18 @@ internal sealed class ManagedMethodInliner(
                 continue;
             }
             // A constrained call passes its receiver by address.
-            var plan = instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject) ||
-                callerIndex > 0 && body.Instructions[callerIndex - 1].Operation == CilOperation.Constrained
-                ? null
-                : _resolver.Resolve(new(caller, instruction)
+            ManagedInliningPlan? plan = null;
+            if (instruction.Operation is CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject &&
+                !(callerIndex > 0 && body.Instructions[callerIndex - 1].Operation == CilOperation.Constrained))
+            {
+                plan = _resolver.Resolve(new(caller, instruction)
                 {
                     Nested = nested,
                     SmallOnly = smallOnly,
-                    InLoop = loops.Any(loop => loop.Start <= instruction.Offset && instruction.Offset <= loop.End),
+                    InLoop = LoopSpans.Contain(loops, instruction.Offset),
+                    LocalAddressArguments = LocalAddressArguments(body, callerIndex, instructionEntryStacks, producers),
                 });
+            }
             if (plan is null ||
                 expanded.Count + body.Instructions.Length - callerIndex + plan.Body.Instructions.Length > MaximumInstructions ||
                 locals.Count + GetArgumentTypes(plan.Method).Length + plan.Body.Locals.Length + 1 > MaximumLocals ||
@@ -246,6 +249,12 @@ internal sealed class ManagedMethodInliner(
             localTypes,
             pinned);
         AppendArgumentStores(call, plan.Method, argumentStart, receiver is not null, forwarded, expanded);
+        // The callee's locals that it may read before writing start zero, as they would where it is entered.
+        foreach (var (operation, operand) in InlineeLocalInitialization.Zeroing(
+                     plan.Body, InlineeLocalInitialization.MaybeUnassigned(plan.Body), calleeLocalStart))
+        {
+            expanded.Add(new(CreateSynthetic(call, operation, operand), RemapCallerBranch: false));
+        }
 
         var calleeOffsets = CreateTerminalContinuationCalleeOffsets(
             plan.Body,
@@ -306,6 +315,12 @@ internal sealed class ManagedMethodInliner(
             expanded.Add(new(CreateSynthetic(call, CilOperation.InitializeObject, new CilOperand.TypeIdentity(plan.Method.DeclaringType)),
                 RemapCallerBranch: false));
         }
+        // The callee's locals that it may read before writing start zero, as they would where it is entered.
+        foreach (var (operation, operand) in InlineeLocalInitialization.Zeroing(
+                     plan.Body, InlineeLocalInitialization.MaybeUnassigned(plan.Body), calleeLocalStart))
+        {
+            expanded.Add(new(CreateSynthetic(call, operation, operand), RemapCallerBranch: false));
+        }
 
         var calleeOffsets = CreateCalleeOffsets(plan.Body, expanded.Count);
         var continuation = calleeOffsets[plan.Body.Instructions[^1].NextOffset];
@@ -356,7 +371,7 @@ internal sealed class ManagedMethodInliner(
         CilOperation.Add, CilOperation.Subtract, CilOperation.Multiply,
         CilOperation.BitwiseAnd, CilOperation.BitwiseOr, CilOperation.BitwiseXor,
         CilOperation.ShiftLeft, CilOperation.ShiftRightSigned, CilOperation.ShiftRightUnsigned,
-        CilOperation.Negate, CilOperation.OnesComplement,
+        CilOperation.Negate, CilOperation.OnesComplement, CilOperation.Select,
     }.ToFrozenSet();
 
     // The store of a constructed value type into a local of that type, when
@@ -528,6 +543,33 @@ internal sealed class ManagedMethodInliner(
         }
     }
 
+    // The positions, among the callee's parameters, of the call's arguments that are the address of one of the caller's
+    // locals or arguments.
+    private static ImmutableHashSet<int> LocalAddressArguments(
+        CilMethodBody body,
+        int callerIndex,
+        IReadOnlyDictionary<int, ImmutableArray<CliValueKind>> instructionEntryStacks,
+        StackSlotProducers producers)
+    {
+        var call = body.Instructions[callerIndex];
+        if (call.Operand is not CilOperand.MethodInstance { Value: var method } ||
+            !instructionEntryStacks.TryGetValue(call.Offset, out var stack))
+        {
+            return [];
+        }
+        var arguments = method.Signature.ParameterTypes.Length +
+            (method.Definition.IsStatic || call.Operation == CilOperation.NewObject ? 0 : 1);
+        // The callee's parameters count its instance, which newobj does not take from the stack.
+        var first = stack.Length - arguments - (call.Operation == CilOperation.NewObject ? 1 : 0);
+        return
+        [
+            .. Enumerable.Range(Math.Max(0, stack.Length - arguments), Math.Min(arguments, stack.Length)).Where(depth =>
+                producers.Find(callerIndex, depth) is { } producer &&
+                body.Instructions[producer].Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress)
+                .Select(depth => depth - first),
+        ];
+    }
+
     private static ImmutableArray<CliTypeIdentity> GetArgumentTypes(
         MethodInstanceModel method) => method.Definition.IsStatic
         ? method.Signature.ParameterSignatureTypes
@@ -675,12 +717,4 @@ internal sealed class ManagedMethodInliner(
         bool RemapCallerBranch);
 
     // Each backward branch closes a loop from its target to the branch itself.
-    private static (int Start, int End)[] LoopSpans(CilMethodBody body) =>
-        body.Instructions
-            .SelectMany(static instruction => instruction.Operand is CilOperand.BranchTarget target
-                    ? [target.Offset]
-                    : ImmutableArray<int>.Empty,
-                static (instruction, target) => (Start: target, End: instruction.Offset))
-            .Where(static loop => loop.Start <= loop.End)
-            .ToArray();
 }

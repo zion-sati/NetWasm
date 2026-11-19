@@ -35,7 +35,7 @@ public sealed class AsyncJSImportHelperAppenderTests
             indices,
             binding,
             new FixedFunctionIndexResolver(),
-            new InteropImportPlan([], default, default, default, default, default, default),
+            new InteropImportPlan([], default, default, default, default),
             boundaryEntries);
 
         Assert.Equal(3, functions.Count);
@@ -56,7 +56,7 @@ public sealed class AsyncJSImportHelperAppenderTests
         var binding = CreateBinding();
         var functionIndices = new FixedFunctionIndexResolver();
         var boundaries = new List<ManagedBoundaryPlanEntry>();
-        var plan = new InteropImportPlan([], default, default, default, default, default, default);
+        var plan = new InteropImportPlan([], default, default, default, default);
 
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             null!, 0, indices, binding, functionIndices, plan, boundaries));

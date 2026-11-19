@@ -47,12 +47,24 @@ internal sealed class RuntimeLinkArgumentBuilder(IRuntimeLinkExportPlanBuilder e
         {
             arguments.Add(Path.GetFullPath(input));
         }
+        // Lazy, after the program's archives, so an archive's own definitions win and unused members cost nothing.
+        // An output whose JavaScript supplies Emscripten's GL functions takes no stand-ins, which would replace them.
+        if (request.Target.EmscriptenArchives is { } emscripten)
+        {
+            arguments.Add(ResolveAsset(request.AssetRoot, emscripten.Support.Path));
+            if (!request.ScriptSuppliesEmscriptenFunctions)
+            {
+                arguments.Add(ResolveAsset(request.AssetRoot, emscripten.StandIns.Path));
+            }
+        }
 
         var allowedUndefinedPath = hasCallbacks
             ? Path.GetFullPath(request.NativeCallbackAllowedUndefinedPath!)
-            : ResolveAsset(
-                request.AssetRoot,
-                request.Target.AllowedUndefinedSymbols.Path);
+            : !string.IsNullOrWhiteSpace(request.AllowedUndefinedPath)
+                ? Path.GetFullPath(request.AllowedUndefinedPath)
+                : ResolveAsset(
+                    request.AssetRoot,
+                    request.Target.AllowedUndefinedSymbols.Path);
         arguments.Add($"--allow-undefined-file={allowedUndefinedPath}");
         arguments.Add("--no-entry");
         arguments.Add("--gc-sections");

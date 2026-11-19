@@ -21,11 +21,11 @@ public sealed class StackTraceReachabilityRootProviderTests
     private static readonly EntityKey LoadMethodsKey = new(Assembly, 0x06000003);
 
     [Fact]
-    public void NeitherStackTracesNorNamesProvideNoRoots()
+    public void ProgramsWithoutStackTracesProvideNoRoots()
     {
         var provider = new StackTraceReachabilityRootProvider();
 
-        var roots = provider.Provide(false, false, new TypeFinder(), new FieldRepository(), new MethodRepository());
+        var roots = provider.Provide(false, new TypeFinder(), new FieldRepository(), new MethodRepository());
 
         Assert.Same(NetWasm.Compiler.Analysis.ReachabilityRoots.Empty, roots);
     }
@@ -35,24 +35,11 @@ public sealed class StackTraceReachabilityRootProviderTests
     {
         var provider = new StackTraceReachabilityRootProvider();
 
-        var roots = provider.Provide(true, false, new TypeFinder(), new FieldRepository(), new MethodRepository());
+        var roots = provider.Provide(true, new TypeFinder(), new FieldRepository(), new MethodRepository());
 
         Assert.Equal([ExceptionKey, StringKey], roots.Types.ToArray());
         Assert.Equal([StackTraceKey], roots.Fields.ToArray());
         Assert.Equal([LoadMethodsKey], roots.Methods.ToArray());
-    }
-
-    // Issue 225: a program built with type names loads them at startup.
-    [Fact]
-    public void TypeNamesKeepOnlyTheTypeSymbolsLoader()
-    {
-        var provider = new StackTraceReachabilityRootProvider();
-
-        var roots = provider.Provide(false, true, new TypeFinder(), new FieldRepository(), new MethodRepository());
-
-        Assert.Empty(roots.Types);
-        Assert.Empty(roots.Fields);
-        Assert.Equal([LoadTypesKey], roots.Methods.ToArray());
     }
 
     [Fact]
@@ -61,11 +48,11 @@ public sealed class StackTraceReachabilityRootProviderTests
         var provider = new StackTraceReachabilityRootProvider();
 
         Assert.Throws<ArgumentNullException>(() =>
-            provider.Provide(false, false, null!, new FieldRepository(), new MethodRepository()));
+            provider.Provide(false, null!, new FieldRepository(), new MethodRepository()));
         Assert.Throws<ArgumentNullException>(() =>
-            provider.Provide(false, false, new TypeFinder(), null!, new MethodRepository()));
+            provider.Provide(false, new TypeFinder(), null!, new MethodRepository()));
         Assert.Throws<ArgumentNullException>(() =>
-            provider.Provide(false, false, new TypeFinder(), new FieldRepository(), null!));
+            provider.Provide(false, new TypeFinder(), new FieldRepository(), null!));
     }
 
     private sealed class TypeFinder : ITypeFinder

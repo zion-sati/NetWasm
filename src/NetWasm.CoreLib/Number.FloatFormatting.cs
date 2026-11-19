@@ -4,8 +4,8 @@
 // System.Private.CoreLib Number.Formatting.cs (FormatFloat, GetFloatingPointMaxDigitsAndPrecision,
 // FormatDecimal and TryFormatDecimal); FormatFloatingPointAsHex and ExtractFractionAndBiasedExponent
 // are copied unchanged.
-// The digits come from upstream's Grisu3, falling back to Dragon4, as upstream does (owner decision
-// 2026-11-13, replacing NetWasm's exact rational generator, which allocated 4 KB to 30 KB per call).
+// The digits come from upstream's Grisu3, falling back to Dragon4, as upstream does (replacing NetWasm's
+// exact rational generator, which allocated 4 KB to 30 KB per call).
 // The layout is upstream's NumberToString/NumberToStringFormat with the caller's NumberFormatInfo, as on
 // desktop .NET in invariant globalization mode.
 
@@ -191,6 +191,7 @@ namespace System
             return null;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetFloatingPointMaxDigitsAndPrecision(char fmt, ref int precision, NumberFormatInfo info, out bool isSignificantDigits)
         {
             // We want to fast path the common case of no format and general format + precision.

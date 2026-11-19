@@ -1,5 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// NetWasm: Basic and Digest authentication take the pool as IHttpAuthenticationPool, which WasiHttpHandler's pool
+// implements too.
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -203,14 +205,14 @@ namespace System.Net.Http
             return true;
         }
 
-        private static ValueTask<HttpResponseMessage> InnerSendAsync(HttpRequestMessage request, bool async, bool isProxyAuth, bool doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+        private static ValueTask<HttpResponseMessage> InnerSendAsync(HttpRequestMessage request, bool async, bool isProxyAuth, bool doRequestAuth, IHttpAuthenticationPool pool, CancellationToken cancellationToken)
         {
             return isProxyAuth ?
                 pool.SendWithVersionDetectionAndRetryAsync(request, async, doRequestAuth, cancellationToken) :
                 pool.SendWithProxyAuthAsync(request, async, doRequestAuth, cancellationToken);
         }
 
-        private static async ValueTask<HttpResponseMessage> SendWithAuthAsync(HttpRequestMessage request, Uri authUri, bool async, ICredentials credentials, bool preAuthenticate, bool isProxyAuth, bool doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+        private static async ValueTask<HttpResponseMessage> SendWithAuthAsync(HttpRequestMessage request, Uri authUri, bool async, ICredentials credentials, bool preAuthenticate, bool isProxyAuth, bool doRequestAuth, IHttpAuthenticationPool pool, CancellationToken cancellationToken)
         {
             // If preauth is enabled, try to set a Basic auth header proactively on the first request.
             // Currently we only support preauth for Basic.
@@ -372,12 +374,12 @@ namespace System.Net.Http
             return response;
         }
 
-        public static ValueTask<HttpResponseMessage> SendWithProxyAuthAsync(HttpRequestMessage request, Uri proxyUri, bool async, ICredentials proxyCredentials, bool doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+        public static ValueTask<HttpResponseMessage> SendWithProxyAuthAsync(HttpRequestMessage request, Uri proxyUri, bool async, ICredentials proxyCredentials, bool doRequestAuth, IHttpAuthenticationPool pool, CancellationToken cancellationToken)
         {
             return SendWithAuthAsync(request, proxyUri, async, proxyCredentials, preAuthenticate: GlobalHttpSettings.SocketsHttpHandler.ProxyPreAuthenticate, isProxyAuth: true, doRequestAuth, pool, cancellationToken);
         }
 
-        public static ValueTask<HttpResponseMessage> SendWithRequestAuthAsync(HttpRequestMessage request, bool async, ICredentials credentials, bool preAuthenticate, HttpConnectionPool pool, CancellationToken cancellationToken)
+        public static ValueTask<HttpResponseMessage> SendWithRequestAuthAsync(HttpRequestMessage request, bool async, ICredentials credentials, bool preAuthenticate, IHttpAuthenticationPool pool, CancellationToken cancellationToken)
         {
             Debug.Assert(request.RequestUri != null);
             return SendWithAuthAsync(request, request.RequestUri, async, credentials, preAuthenticate, isProxyAuth: false, doRequestAuth: true, pool, cancellationToken);

@@ -91,6 +91,68 @@ public sealed class RuntimeLinkArgumentBuilderTests
         Assert.Contains("platform archives are missing", missing.Message);
     }
 
+    // Emscripten support follows the program's archives and the system libraries, lazily, so an archive's own
+    // definitions win; an output whose JavaScript supplies Emscripten's GL functions takes no stand-ins, which would
+    // replace them. Every other output takes them, a plain core module (no WASI) included.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void LinksTheEmscriptenArchivesLazilyAfterTheSystemLibraries(bool scriptSupplies, bool plainCoreModule)
+    {
+        using var directory = new TemporaryDirectory();
+        var selected = RuntimePackTestData.Target("wasm32");
+        var systemLibrary = Path.GetFullPath(directory.PathTo("libc.a"));
+        var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(new(
+            RuntimePackTestData.Manifest(),
+            selected,
+            RuntimePackTestData.LinkLimits(),
+            directory.Path,
+            [systemLibrary],
+            directory.PathTo("runtime.wasm"))
+        {
+            PlainCoreModule = plainCoreModule,
+            ScriptSuppliesEmscriptenFunctions = scriptSupplies,
+        });
+
+        var support = arguments.IndexOf(Path.GetFullPath(directory.PathTo(selected.EmscriptenArchives!.Support.Path)));
+        var standIns = arguments.IndexOf(Path.GetFullPath(directory.PathTo(selected.EmscriptenArchives.StandIns.Path)));
+        Assert.Equal(arguments.IndexOf(systemLibrary) + 1, support);
+        Assert.True(arguments.IndexOf("--no-whole-archive") < support);
+        Assert.Equal(scriptSupplies ? -1 : support + 1, standIns);
+
+        var without = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(new(
+            RuntimePackTestData.Manifest(),
+            selected with { EmscriptenArchives = null },
+            RuntimePackTestData.LinkLimits(),
+            directory.Path,
+            [systemLibrary],
+            directory.PathTo("runtime.wasm")));
+        Assert.DoesNotContain(without, argument => argument.Contains("libnetwasm-emscripten", StringComparison.Ordinal));
+    }
+
+    // The runtime's undefined functions plus a plain core module's declared env functions, in a workspace file.
+    [Fact]
+    public void AllowsTheGivenUndefinedFunctionsWithoutCallbacks()
+    {
+        using var directory = new TemporaryDirectory();
+        var selected = RuntimePackTestData.Target("wasm32");
+        var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(new(
+            RuntimePackTestData.Manifest(),
+            selected,
+            RuntimePackTestData.LinkLimits(),
+            directory.Path,
+            [directory.PathTo("libc.a")],
+            directory.PathTo("runtime.wasm"))
+        {
+            AllowedUndefinedPath = directory.PathTo("work/combined.allow-undefined"),
+        });
+
+        Assert.Contains($"--allow-undefined-file={Path.GetFullPath(directory.PathTo("work/combined.allow-undefined"))}", arguments);
+        Assert.DoesNotContain(arguments, argument => argument.EndsWith("allowed-undefined-symbols.txt", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void RejectsAssetOutsidePackRoot()
     {

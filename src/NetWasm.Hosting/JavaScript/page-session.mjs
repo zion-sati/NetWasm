@@ -7,12 +7,16 @@ import {
   mergeEnvironment,
   readEnvironmentOverride,
 } from "./session-options.mjs";
+import { createSessionCollection } from "./session-collection.mjs";
+import { createPrefetchedFetch } from "./prefetched-fetch.mjs";
 import { bindWorkerImports } from "./worker-import-bindings.mjs";
 
 const factoryKeys = [
   "configuration", "manifestUrl", "modules", "platform", "platformProviderCatalog", "snapshotDeploymentManifest",
 ];
 const requestKeys = ["exports", "options", "startup"];
+// The generated module passes the responses it started fetching when it loaded.
+const prefetchedRequestKeys = ["exports", "options", "prefetched", "startup"];
 const optionNames = new Set(["environment", "modules", "onNotification", "platform", "stderr", "stdout"]);
 const platformHookNames = new Set(["now", "random"]);
 const wallClockModule = "wasi:clocks/system-clock@0.3.2";
@@ -32,20 +36,37 @@ const reservedExportNames = new Set([
 
 // Hosts one JsModule deployment in the page realm: exports are called directly,
 // and import modules run beside the page, so they may use the DOM.
-export function createPageSessionFactory(createExportSession) {
+// requestIdle calls back when the host is idle (null where nothing does): whenever the module has run, the
+// session lets its collector use the next idle period. quietTimer is the host's timer and clock (null without
+// them): once the module has run and then stayed quiet, the session lets its collector collect what the
+// program dropped.
+export function createPageSessionFactory(createExportSession, requestIdle = null, quietTimer = null) {
   if (typeof createExportSession !== "function") {
     throw new TypeError("page session export-session factory is required");
+  }
+  if (requestIdle !== null && typeof requestIdle !== "function") {
+    throw new TypeError("page session idle scheduler must be a function");
+  }
+  if (quietTimer !== null && (typeof quietTimer !== "object" || typeof quietTimer.setTimer !== "function"
+      || typeof quietTimer.now !== "function")) {
+    throw new TypeError("page session quiet timer must be a timer and a clock");
   }
   return function createPageSession(options) {
     assertExactDataObject(options, factoryKeys, "page session options");
     const bundled = snapshotNamespaces(options.modules, "bundled page module");
 
     return Object.freeze(async function openPage(request) {
-      assertExactDataObject(request, requestKeys, "page session open request");
+      assertPlainDataObject(request, "page session open request");
+      assertExactDataObject(request, Object.hasOwn(request, "prefetched") ? prefetchedRequestKeys : requestKeys,
+        "page session open request");
       const exportNames = snapshotExportNames(request.exports);
       const openOptions = readOpenOptions(request.options);
       let open = true;
       const notify = createNotifier(openOptions.onNotification, () => open);
+      // Set once the session is open: the module ran, so its collector may use the host's next idle period, and
+      // the quiet that follows the module's last run.
+      let collection = null;
+      const moduleRan = () => collection?.();
       const consumerModules = bindModules(
         bundled,
         snapshotNamespaces(openOptions.modules ?? {}, "page module"),
@@ -57,8 +78,10 @@ export function createPageSessionFactory(createExportSession) {
           readEnvironmentOverride(openOptions.environment, "page session environment")),
         consumerModules,
         manifestUrl: options.manifestUrl,
-        platform: withPlatformHooks(options.platform, openOptions.platform),
+        platform: withPrefetchedResponses(withPlatformHooks(options.platform, openOptions.platform),
+          request.prefetched),
         platformProviderCatalog: options.platformProviderCatalog,
+        observeImportCall: moduleRan,
         snapshotDeploymentManifest: options.snapshotDeploymentManifest,
         stderr: stderr.sink,
         stdout: stdout.sink,
@@ -81,8 +104,15 @@ export function createPageSessionFactory(createExportSession) {
         }
         throw mismatch;
       }
+      collection = createSessionCollection({
+        collectWhenIdle: session.collectWhenIdle,
+        collectWhenQuiet: session.collectWhenQuiet,
+        quietTimer,
+        requestIdle,
+      });
+      moduleRan();
       const surface = {};
-      for (const name of exportNames) surface[name] = session.exports[name];
+      for (const name of exportNames) surface[name] = reportingRun(session.exports[name], moduleRan);
       surface.close = () => {
         open = false;
         return session.close();
@@ -125,6 +155,12 @@ function readOpenOptions(value) {
     }
   }
   return value;
+}
+
+// Requests for the files the generated module prefetched take its responses.
+function withPrefetchedResponses(platform, responses) {
+  if (responses === undefined) return platform;
+  return Object.freeze({ ...platform, fetch: createPrefetchedFetch({ fetch: platform.fetch, responses }) });
 }
 
 // Test hooks replace the system clock and the random sources the WASI platform supplies.
@@ -192,6 +228,8 @@ function snapshotNamespaces(value, label) {
   return modules;
 }
 
+// The modules stay as written: a call through a dotted name reaches a class's static member, and an exported class
+// stays constructible. The program calling an import says it ran; the export session reports each call.
 function bindModules(bundled, supplied, notify) {
   const modules = {};
   for (const [moduleName, members] of [...bundled, ...supplied]) {
@@ -203,6 +241,14 @@ function bindModules(bundled, supplied, notify) {
       .filter(([name]) => name !== "createWorkerImports")));
   }
   return Object.freeze(modules);
+}
+
+function reportingRun(member, moduleRan) {
+  if (typeof member !== "function") return member;
+  return function (...parameters) {
+    moduleRan();
+    return member.apply(this, parameters);
+  };
 }
 
 // Mirrors worker notifications: one-way, delivered after the import returns,

@@ -15,7 +15,7 @@ internal sealed class AsyncJSImportResolveEmitter(
     IRuntimeImportResolver runtimeImports,
     IGeneratedFunctionWriterFactory writers,
     IHostCallbackStringArgumentMarshaller stringResults,
-    IHostCallbackByteArrayArgumentMarshaller valueArrayResults,
+    IStagedValueArrayEmitter valueArrayResults,
     IHostCallbackHostObjectArgumentMarshaller hostObjectResults,
     IJavaScriptNullableEmitter nullables) : IAsyncJSImportResolveEmitter
 {
@@ -33,7 +33,8 @@ internal sealed class AsyncJSImportResolveEmitter(
         // and value. Either becomes its struct in a value frame, whose address SetResult
         // receives.
         var convertedResult = result is not null && InteropTypeClassifier.IsConvertedValue(result);
-        var taskLocal = result is null ? 1 : InteropTypeClassifier.IsNullable(result) ? 3 : 2;
+        var taskLocal = result is null ? 1
+            : InteropTypeClassifier.IsNullable(result) || InteropTypeClassifier.IsValueArray(result) ? 3 : 2;
         var valueLocal = taskLocal + 1;
         var temporaryI4 = valueLocal + 1;
         var objectTemporary = temporaryI4 + 1;
@@ -65,8 +66,8 @@ internal sealed class AsyncJSImportResolveEmitter(
             }
             else if (InteropTypeClassifier.IsValueArray(result!))
             {
-                valueArrayResults.Emit(code.Instructions, result!, 1, valueLocal, temporaryI4,
-                    objectTemporary, target, functionIndices.ManagedThrowFunction);
+                valueArrayResults.Emit(code.Instructions, result!, 1, 2, valueLocal, objectTemporary,
+                    functionIndices.ManagedThrowFunction);
             }
             else if (InteropTypeClassifier.IsHandleValue(result!))
             {

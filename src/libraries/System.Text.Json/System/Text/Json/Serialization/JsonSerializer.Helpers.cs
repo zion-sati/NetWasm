@@ -74,14 +74,9 @@ namespace System.Text.Json
             if (value is not null)
             {
                 Type runtimeType = value.GetType();
-                if (inputType != runtimeType)
+                if (!inputType.IsAssignableFrom(runtimeType))
                 {
-#if NETWASM
-                    throw new PlatformNotSupportedException(
-                        "Polymorphic Type-based JSON serialization requires runtime type relationship metadata, which is not deployed.");
-#else
                     ThrowHelper.ThrowArgumentException_DeserializeWrongType(inputType, value);
-#endif
                 }
             }
         }
@@ -203,6 +198,5 @@ namespace System.Text.Json
             elementTypeInfo._asyncEnumerableRootLevelSerializer = asyncEnumerableTypeInfo;
             return asyncEnumerableTypeInfo;
         }
-
     }
 }

@@ -7,12 +7,13 @@ namespace System;
 
 public sealed partial class AppDomain
 {
-    public Assembly Load(AssemblyName assemblyRef) => throw new PlatformNotSupportedException("Runtime assembly loading is not supported on NetWasm.");
+    // The program's assemblies are all loaded: Load finds one by name, as Assembly.Load does.
+    public Assembly Load(AssemblyName assemblyRef) => Assembly.Load(assemblyRef);
     public int ExecuteAssemblyByName(AssemblyName assemblyName, params string?[]? args) => throw new PlatformNotSupportedException("Executing additional assemblies is not supported on NetWasm.");
     public Assembly Load(byte[] rawAssembly) => throw new PlatformNotSupportedException("Runtime assembly loading and enumeration are not supported on NetWasm.");
     public Assembly Load(byte[] rawAssembly, byte[]? rawSymbolStore) => throw new PlatformNotSupportedException("Runtime assembly loading and enumeration are not supported on NetWasm.");
-    public Assembly Load(string assemblyString) => throw new PlatformNotSupportedException("Runtime assembly loading and enumeration are not supported on NetWasm.");
-    public Assembly[] GetAssemblies() => throw new PlatformNotSupportedException("Runtime assembly loading and enumeration are not supported on NetWasm.");
+    public Assembly Load(string assemblyString) => Assembly.Load(assemblyString);
+    public Assembly[] GetAssemblies() => RuntimeAssembly.All();
     public Assembly[] ReflectionOnlyGetAssemblies() => throw new PlatformNotSupportedException("Runtime assembly loading and enumeration are not supported on NetWasm.");
     public event AssemblyLoadEventHandler? AssemblyLoad
     {

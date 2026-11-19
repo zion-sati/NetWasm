@@ -18,7 +18,14 @@ public static class UnmanagedCallingConventions
 {
     private const string Namespace = "System.Runtime.CompilerServices.";
 
-    // Each base convention, and whether the C ABI honours it.
+    // A function-pointer signature's calling convention (ECMA-335 II.23.2.3): C, StdCall and ThisCall
+    // (0x01 to 0x03), and Unmanaged (0x09), whose return type's modifiers name its CallConv types, are the
+    // unmanaged conventions the C ABI calls.
+    public const byte UnmanagedHeader = 0x09;
+
+    public static bool IsUnmanagedHeader(byte header) => header is >= 0x01 and <= 0x03 or UnmanagedHeader;
+
+    // Each base convention, and whether the C ABI honors it.
     private static readonly FrozenDictionary<string, bool> Bases = new Dictionary<string, bool>
     {
         [Namespace + "CallConvCdecl"] = true,
@@ -28,7 +35,7 @@ public static class UnmanagedCallingConventions
         [Namespace + "CallConvSwift"] = false,
     }.ToFrozenDictionary();
 
-    // Why the C ABI cannot honour these CallConv types (full names, null for a type without one), or
+    // Why the C ABI cannot honor these CallConv types (full names, null for a type without one), or
     // null when it can.
     public static string? Unsupported(IEnumerable<string?> conventions)
     {

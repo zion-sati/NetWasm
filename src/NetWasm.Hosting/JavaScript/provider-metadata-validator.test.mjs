@@ -60,6 +60,10 @@ test("validates and snapshots exact platform and application metadata", () => {
     assert.notStrictEqual(result, source);
   }
 
+  // A prerelease WIT package version is exact.
+  const tls = "wasi:tls/client@0.3.0-draft";
+  assert.equal(validate("platform", platform({ module: tls, functions: [func(tls, "[constructor]connector", [], ["own<connector>"])] })).module, tls);
+
   const source = application();
   const result = validate("application", source);
   assert.deepEqual(result, source);

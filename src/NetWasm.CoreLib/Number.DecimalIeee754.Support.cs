@@ -10,6 +10,7 @@
 
 using System.Globalization;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace System.Globalization
@@ -55,6 +56,7 @@ namespace System.Globalization
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void ValidateParseStyleInteger(NumberStyles style)
         {
             const NumberStyles allowed = NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite |
@@ -179,7 +181,6 @@ namespace System
     public static partial class Math
     {
         internal static void ThrowMinMaxException<T>(T min, T max) => throw new ArgumentException();
-        internal static void ThrowNegateTwosCompOverflow() => throw new OverflowException();
     }
 
     internal static partial class Number

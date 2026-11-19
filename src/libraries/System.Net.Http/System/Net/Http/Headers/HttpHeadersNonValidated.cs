@@ -14,7 +14,7 @@ namespace System.Net.Http.Headers
     /// on the <see cref="HttpHeaders"/> will be surfaced as a single header value rather than two.  For any header values that have already
     /// been parsed and validated, that value will be converted to a string to be returned from operations on this view.
     /// </remarks>
-    internal readonly struct HttpHeadersNonValidated : IReadOnlyDictionary<string, HeaderStringValues>
+    public readonly struct HttpHeadersNonValidated : IReadOnlyDictionary<string, HeaderStringValues>
     {
         /// <summary>The wrapped headers collection.</summary>
         private readonly HttpHeaders? _headers;

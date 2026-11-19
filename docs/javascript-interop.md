@@ -15,7 +15,7 @@ cd Greeter
 dotnet publish -c Release
 ```
 
-Serve `bin/Release/netwasm0.1/publish` over HTTP and open `index.html`. The
+Serve `bin/Release/net10.0-netwasm/publish` over HTTP and open `index.html`. The
 template contains a managed export, a managed import, its JavaScript module that
 writes to the page, and a page script that opens the module, calls the export,
 and closes it. Use `--host worker` to run the same kind of module in a Web Worker
@@ -102,8 +102,8 @@ it, so the worker host rejects exports that pass one (NWSDK081).
 
 ## Declare imports and exports
 
-Every reached import must be a bodyless static method and must name its module
-explicitly:
+Every reached import must be a bodyless static method that names its module,
+or, as on .NET's browser runtime, a global function:
 
 ```csharp
 using System.Runtime.InteropServices.JavaScript;
@@ -121,6 +121,12 @@ public static partial class WorkerExports
     }
 }
 ```
+
+As on .NET, a dotted name is a path through the module: `[JSImport("Format.wrap",
+"example.text")]` calls `wrap` on the module's `Format` export, with `Format` as
+`this`. An import without a module names a function on `globalThis`, such as
+`[JSImport("globalThis.clearTimeout")]`; any other import without a module stops
+the build.
 
 An import may also be declared `static partial`, as on .NET's browser runtime,
 so such declarations compile unchanged; the SDK supplies the implementing
@@ -272,11 +278,11 @@ SHA-256.
 
 | Boundary | Supported managed signature |
 | --- | --- |
-| Synchronous `JSImport` | Primitive scalars, dates, their nullables, `string`, `object`, `Exception`, number arrays, reference arrays, spans of numbers, `JSObject`, and one supported delegate parameter; the same values except spans, `JSSubscription`, or `void` result |
-| Asynchronous `JSImport` | Ordinary `[JSImport]` returning `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>`; `T` is any synchronous result value |
+| Synchronous `JSImport` | Primitive scalars, dates, their nullables, `string`, `object`, `Exception`, number arrays, reference arrays, spans of numbers, `ArraySegment<T>` of a number, `JSObject`, and supported delegate parameters; the same values except spans and segments, `JSSubscription`, or `void` result |
+| Asynchronous `JSImport` | Ordinary `[JSImport]` returning `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>`, with a synchronous import's parameters except spans; `T` is any synchronous result value |
 | Synchronous `JSExport` | Primitive scalar, date, nullable, `string`, `object`, `Exception`, number array, reference array, or `JSObject` parameters; the same result types or `void` |
 | Asynchronous `JSExport` | A synchronous export's parameters and a `Task`/`ValueTask` result whose value is `void` or a synchronous export's result type |
-| Import callback | One delegate parameter and a `JSSubscription` result; the callback takes and returns what a synchronous `JSExport` does |
+| Import callback | A delegate parameter of any import; the callback takes and returns what a synchronous `JSExport` does. An import returning `JSSubscription` takes exactly one |
 
 Primitive scalars are `bool`, signed and unsigned integer types, `char`,
 `nint`/`nuint`, `float`, and `double`. Number arrays are one-dimensional
@@ -286,6 +292,12 @@ is `T?` of either, such as `int?` or `DateTime?`. Reference arrays are
 `string[]`, `JSObject[]` and `object[]`. `JSObject` and
 `JSSubscription` own host handles and must be disposed. Disposing a
 subscription also releases the managed callback root.
+
+A callback passed to an import that returns anything but `JSSubscription`
+belongs to JavaScript, as on .NET: the delegate stays alive while JavaScript
+holds the function it received, and is released once JavaScript collects that
+function or at once if the import fails. Return `JSSubscription` instead when
+C# should decide when the callback ends.
 
 A synchronous `JSImport` whose parameters and result are all primitive scalars
 (or `void`) compiles to a direct WebAssembly call into the JavaScript function,
@@ -305,7 +317,10 @@ one from JavaScript has `Kind` `Utc`. A `Date` outside the years 1 to 9999
 throws `ArgumentOutOfRangeException`. A nullable uses the value's JavaScript
 type or `null`, typed `T | null`. Where C# expects a plain scalar or date,
 JavaScript's `null` or `undefined` gives its default (`0`, `false`, or
-`DateTime.MinValue`), as on .NET's browser runtime. A delegate cannot bind
+`DateTime.MinValue`), as on .NET's browser runtime, and `undefined` reads as
+`null` for a string, an object, an array or a nullable. An export called with
+fewer arguments than it declares receives `undefined` for the rest, as on .NET;
+more arguments than it declares are an error. A delegate cannot bind
 directly to an import that returns a date or a nullable; bind a lambda that
 calls it.
 
@@ -337,7 +352,8 @@ back as the same exception. A JavaScript value that is not an `Error` arrives
 as a `JSException` whose message is the value as a string. `string[]`,
 `JSObject[]` and `object[]` are JavaScript arrays, whose elements must be
 strings, objects, or any values, or `null`. Each number array
-uses the typed array with the same element type:
+uses the typed array with the same element type, and, as on .NET's browser
+runtime, a plain JavaScript array of numbers entering C# is copied into one:
 
 | C# | JavaScript |
 | --- | --- |
@@ -349,7 +365,7 @@ uses the typed array with the same element type:
 | `float[]` / `double[]` | `Float32Array` / `Float64Array` |
 
 A typed array of a different element type is rejected, and `null` maps to a
-`null` array. Strings and arrays are copied through the boundary in both
+`null` array. C# always gives JavaScript the typed array. Strings and arrays are copied through the boundary in both
 directions, including the value a Promise settles with; arbitrary managed
 references are not passed to JavaScript. A `JSObject` that an imported Promise
 settles with is owned by the managed task result and must be disposed like any
@@ -396,7 +412,61 @@ valid only until the function returns, so copy it with `slice()` to keep the
 data. Calling back into .NET can grow memory and detach the view, so read it
 before such a call. A span whose start is not a multiple of its element size
 cannot be viewed, and the call throws `JSException`. Asynchronous `JSImport`
-and `JSExport` do not take spans; use a number array instead.
+and `JSExport` do not take spans; use a number array or an `ArraySegment<T>`
+instead.
+
+An import can take an `ArraySegment<T>` of the same element types, with or
+without `[JSMarshalAs<JSType.MemoryView>]`, as .NET's `MemoryView`. JavaScript
+receives an object with .NET's `IMemoryView` members: `set(source, offset)`,
+`copyTo(target, offset)`, `slice(start, end)`, `length`, `byteLength`,
+`isDisposed` and `dispose()`. It reads and writes the array in place, stays
+valid when memory grows, and keeps the array alive until JavaScript disposes
+it or collects it, so an asynchronous import can read it after it awaits:
+
+```csharp
+[JSImport("write", "app.files")]
+private static extern Task WriteAsync(JSObject stream, [JSMarshalAs<JSType.MemoryView>] ArraySegment<byte> data);
+```
+
+```js
+export async function write(stream, data) {
+  await stream.write(data.slice());
+  data.dispose();
+}
+```
+
+A `JSObject` has .NET's property API: `HasProperty`, `GetTypeOfProperty`,
+`GetPropertyAsBoolean`, `GetPropertyAsInt32`, `GetPropertyAsDouble`,
+`GetPropertyAsString`, `GetPropertyAsJSObject`, `GetPropertyAsByteArray`, the
+matching `SetProperty` overloads, and `IsDisposed`. A property reads and
+converts as an import's result does, so a missing one is a number's default or
+`null`, and a disposed object throws `ObjectDisposedException`.
+
+`JSHost.GlobalThis` is the global object. NetWasm binds a program's modules,
+its `NetWasmJavaScriptModule` items and those the host supplies, before the
+program starts, so `JSHost.ImportAsync(moduleName, moduleUrl)` completes with
+the module already bound under that name, whatever the URL, as .NET's second
+import of a module name does. A module the host does not have fails the task
+with `JSException`. `JSHost.DotnetInstance` and .NET's generated binding types
+(`JSFunctionBinding`, `JSMarshalerType`, `JSMarshalerArgument`) throw
+`PlatformNotSupportedException`.
+
+### Libraries built for the browser
+
+A library built for `net10.0-browser` carries the bindings .NET's JavaScript
+generator wrote for its `[JSImport]` and `[JSExport]` methods. In a program a
+JavaScript host runs, a `JsModule` or raw Wasm that a page or Node.js loads,
+NetWasm binds them as its own: each import calls the function its module
+names, from the modules the program binds, and each export joins the
+module's `open()` object, a `Task` result as a Promise. A binding whose shape
+NetWasm's interop does not take, such as an export with a delegate parameter,
+stays an ordinary method, and the build warns `NW1018`: JavaScript cannot call
+that export, and such an import throws `PlatformNotSupportedException`.
+Without a JavaScript host, as in a WASI component, the library's imports keep
+the generator's bodies, whose binding throws `PlatformNotSupportedException`
+as on .NET's platforms without a browser, and its exports are ordinary
+methods. Page code reaches a browser library's exports through `open()`, not
+.NET's `getAssemblyExports`.
 
 An export that takes a `JSObject` receives its own handle to the caller's
 object; dispose it when the export no longer needs it. An export that returns

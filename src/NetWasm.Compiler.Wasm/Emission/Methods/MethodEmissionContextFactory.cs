@@ -27,7 +27,8 @@ internal static class MethodEmissionContextFactory
         FilterEnvironmentLayout filterEnvironment,
         ManagedMethodIdentity callerIdentity,
         ManagedAggregateSsaPlan? managedAggregateValues = null,
-        ArrayMetadataCachingPlan? arrayMetadata = null)
+        ArrayMetadataCachingPlan? arrayMetadata = null,
+        ArrayLengthRunPlan? arrayLengthRuns = null)
     {
         ArgumentNullException.ThrowIfNull(header);
         ArgumentNullException.ThrowIfNull(rootMap);
@@ -172,6 +173,13 @@ internal static class MethodEmissionContextFactory
             localTypes = localTypes.Add(CliValueKind.ManagedAddress);
             arrayLocals.Add(slot, new(length, data));
         }
+        var runPlan = arrayLengthRuns ?? ArrayLengthRunPlan.Empty;
+        var runLocals = ImmutableDictionary.CreateBuilder<ArrayReferenceSlot, int>();
+        foreach (var slot in runPlan.Loads.Values.Distinct().OrderBy(slot => slot.IsArgument).ThenBy(slot => slot.Index))
+        {
+            runLocals.Add(slot, checked(parameterCount + localTypes.Length));
+            localTypes = localTypes.Add(CliValueKind.I4);
+        }
         var context = new MethodEmissionContext(
             rootMap,
             localBase,
@@ -199,6 +207,7 @@ internal static class MethodEmissionContextFactory
             {
                 RectangularSlots = rectangularLocals.ToImmutable(),
             },
+            ArrayLengthRuns = new(runPlan, runLocals.ToImmutable()),
             CopyDestinationTemporary = copyDestination,
             CopySourceTemporary = copySource,
             ExceptionRootSlots = exceptionRootSlots.ToImmutableDictionary(),

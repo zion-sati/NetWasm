@@ -415,6 +415,7 @@ namespace System
         public ArgumentNullException(string? paramName, string? message) : base(message, paramName) => HResult = HResults.E_POINTER;
         public ArgumentNullException(string? paramName, Exception? innerException) : base(null, paramName, innerException) => HResult = HResults.E_POINTER;
 
+        [Intrinsic]
         public static void ThrowIfNull([NotNull] object? argument, [CallerArgumentExpression(nameof(argument))] string? paramName = null)
         {
             if (argument is null) throw new ArgumentNullException(paramName);
@@ -432,6 +433,7 @@ namespace System
         }
 
         // Upstream's internal overload for CoreLib callers that name the argument with ExceptionArgument.
+        [Intrinsic]
         internal static void ThrowIfNull([NotNull] object? argument, ExceptionArgument paramName)
         {
             if (argument is null)
@@ -776,7 +778,7 @@ namespace System
         [System.Obsolete(System.Obsoletions.LegacyFormatterImplMessage, DiagnosticId = System.Obsoletions.LegacyFormatterImplDiagId, UrlFormat = System.Obsoletions.SharedUrlFormat)]
         protected EntryPointNotFoundException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) =>
             throw new System.PlatformNotSupportedException("EntryPointNotFoundException formatter deserialization is not available on this NetWasm platform.");
-        public EntryPointNotFoundException() => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND;
+        public EntryPointNotFoundException() : base(SR.Arg_EntryPointNotFoundException) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message) : base(message) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND; public EntryPointNotFoundException(string? message, Exception? innerException) : base(message, innerException) => HResult = HResults.COR_E_ENTRYPOINTNOTFOUND;
     }
     [Serializable]
     [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
@@ -1158,11 +1160,15 @@ namespace System.Runtime.ExceptionServices
 
         public static ExceptionDispatchInfo Capture(System.Exception sourceException) =>
             sourceException is null ? throw new System.ArgumentNullException(nameof(sourceException)) : new(sourceException);
+        // As upstream's, neither returns.
+        [System.Diagnostics.CodeAnalysis.DoesNotReturn]
         public void Throw() => InternalThrow(_sourceException);
+        [System.Diagnostics.CodeAnalysis.DoesNotReturn]
         public static void Throw(System.Exception sourceException) =>
             InternalThrow(sourceException ?? throw new System.ArgumentNullException(
                 nameof(sourceException)));
 
+        [System.Diagnostics.CodeAnalysis.DoesNotReturn]
         [System.Runtime.CompilerServices.MethodImpl(
             System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
         private static extern void InternalThrow(System.Exception sourceException);

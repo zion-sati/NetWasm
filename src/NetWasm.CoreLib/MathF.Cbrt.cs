@@ -16,6 +16,8 @@
  * ====================================================
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class MathF
@@ -23,6 +25,7 @@ public static partial class MathF
     private const uint CbrtB1 = 709958130; /* B1 = (127-127.0/3-0.03306235651)*2**23 */
     private const uint CbrtB2 = 642849266; /* B2 = (127-127.0/3-24/3-0.03306235651)*2**23 */
 
+    [Intrinsic]
     public static float Cbrt(float x)
     {
         uint u = BitConverter.SingleToUInt32Bits(x);

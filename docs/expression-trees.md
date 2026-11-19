@@ -155,15 +155,12 @@ extraction from
 member-name cache keys, root-parameter type identity, cache reuse, and accessor
 execution. It passes Debug and Release CIL on wasm32 and wasm64.
 
-This is not a claim that the unmodified FluentValidation package runs on the
-current NetWasm profile. The package also depends on
-`ConcurrentDictionary<TKey, TValue>` and culture/globalization behavior, which
-are separate library-profile concerns. Within the retained expression-facing
-cache algorithm, the fixture replaces `ConcurrentDictionary<TKey, TValue>`
-with `Dictionary<TKey, TValue>` for NetWasm's current single-threaded profile.
-The fixture does not reproduce FluentValidation's full rule, validation, or
-localization machinery. It does not add managed threading, broad reflection,
-or a package-specific compiler path.
+The FluentValidation 12.2.0 package itself, unmodified from NuGet, also runs in
+a `net10.0-netwasm` project: its expression-based rules, including nested
+struct members and boxing conversions, compile and validate as on desktop .NET.
+Only culture-specific messages are unavailable, because NetWasm's globalization
+is invariant. The fixture does not add managed threading, broad reflection, or
+a package-specific compiler path.
 
 The optimized source-adapted consumer is 402,808 bytes after final `-Oz`.
 The same qualified tree still produces the byte-identical 84,653-byte Hello42

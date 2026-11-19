@@ -15,6 +15,7 @@ public sealed class RuntimeMaterializationTaskTests
     [InlineData("", null)]
     [InlineData("Compact", "Compact")]
     [InlineData("NetWasm", "NetWasm")]
+    [InlineData("NetWasmGen", "NetWasmGen")]
     [InlineData("Bump", "Bump")]
     public void ForwardsOptionalCanonicalCollectorAndResolvedMetadata(string value, string? expected)
     {
@@ -24,6 +25,22 @@ public sealed class RuntimeMaterializationTaskTests
         Assert.True(task.Execute());
         Assert.Equal(expected, actor.Request!.GarbageCollector);
         Assert.Equal(expected ?? "Compact", Assert.Single(task.RuntimeModules).GetMetadata("GarbageCollector"));
+    }
+
+    [Fact]
+    public void ForwardsEnvImportsWithTheirModules()
+    {
+        var actor = new RecordingMaterializer(Materialization());
+        var task = Create(actor, new RecordingBuildEngine());
+        var item = new TaskItem("glClear");
+        item.SetMetadata("Module", "webgl");
+        task.EnvImports = [item];
+        task.RawWasmOutput = true;
+
+        Assert.True(task.Execute());
+
+        Assert.Equal([new RuntimeEnvImport("glClear", "webgl")], actor.Request!.EnvImports);
+        Assert.True(actor.Request.RawWasmOutput);
     }
 
     [Theory]

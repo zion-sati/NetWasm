@@ -17,6 +17,11 @@ internal sealed class AsyncJSImportResolveTypeResolver(ITargetLayout layouts) :
             return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4);
         }
 
+        if (InteropTypeClassifier.IsValueArray(result))
+        {
+            // The settled array's elements, staged in linear memory, and its length.
+            return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4);
+        }
         if (InteropTypeClassifier.IsJavaScriptReference(result))
         {
             return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, CliValueKind.I4);

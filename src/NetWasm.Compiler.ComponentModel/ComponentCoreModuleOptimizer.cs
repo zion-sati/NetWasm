@@ -39,6 +39,11 @@ public sealed class ComponentCoreModuleOptimizer(
             [FinalWasmOptimization.Oz] = "-Oz",
         }.ToFrozenDictionary();
 
+    // In Binaryen's size measure, the expressions of a function's body. At 1,000 a routine of a few hundred
+    // instructions, such as an image encoder's row filter, still joins its one caller, where it ran faster; the
+    // decoder and encoder loops this limit is for are larger, and a limit of 2,000 gave back half of their gain.
+    internal const string OneCallerInlineMaxFunctionSize = "1000";
+
     private readonly IBinaryenToolRunner _tools = tools ??
         throw new ArgumentNullException(nameof(tools));
     private readonly IFileExistence _files = files ??
@@ -86,6 +91,8 @@ public sealed class ComponentCoreModuleOptimizer(
             "--enable-exception-handling",
             // Preserve exnref cleanup blocks when optimizing async process completion.
             "--enable-reference-types",
+            // Static native code may use multi-value blocks, as exception handling's exnref encoding does.
+            "--enable-multivalue",
             "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int",
             "--enable-simd",
@@ -93,6 +100,17 @@ public sealed class ComponentCoreModuleOptimizer(
         if (target.Width == "wasm64")
         {
             arguments.Add("--enable-memory64");
+        }
+        if (optimization is FinalWasmOptimization.O3 or FinalWasmOptimization.Oz)
+        {
+            // Binaryen inlines every function that has one caller, at any size. At O3 that merged a decoder's pixel
+            // loop and the routines around it into one function thousands of instructions long, whose loop the
+            // engine's register allocator then ran with the memory base and the loop's pointers spilled to the
+            // stack. A larger function with one caller stays a call, as .NET's JIT and LLVM keep one past their
+            // inlining budget. Oz takes the limit too: the same merged functions ran its loops slower, and the limit
+            // costs a module next to nothing in size. The other presets keep Binaryen's rule.
+            arguments.Add("--one-caller-inline-max-function-size");
+            arguments.Add(OneCallerInlineMaxFunctionSize);
         }
         if (converge)
         {
@@ -111,11 +129,8 @@ public sealed class ComponentCoreModuleOptimizer(
             _validator.Validate(outputPath, target);
             return;
         }
-        var error = result.StandardError.Replace('\r', ' ')
-            .Replace('\n', ' ').Trim();
         throw ComponentException.Tool(
-            "wasm-opt failed to optimize the component core module: " +
-            (error.Length == 0 ? "unknown error" : error));
+            "wasm-opt failed to optimize the component core module: " + result.FailureDescription);
     }
 
     private void RequireFile(string path)

@@ -1,13 +1,19 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Runtime.CompilerServices;
+
 namespace System
 {
     public static partial class Environment
     {
         private static Collections.Generic.KeyValuePair<string, string>[]? s_environment;
 
-        public static int CurrentManagedThreadId => 1;
+        public static int CurrentManagedThreadId
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => 1;
+        }
 
         public static bool Is64BitProcess => IntPtr.Size == 8;
 

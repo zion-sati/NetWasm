@@ -12,8 +12,12 @@ public static class NetWasmRuntimeFeatureIds
     public const string Finalization = "finalization";
     public const string LocalTime = "local-time";
     public const string ObjectClone = "object-clone";
+    public const string ObjectGeneration = "object-generation";
+    public const string YoungCollection = "young-collection";
     public const string RandomSeed = "random-seed";
+    public const string ReferenceWriteBarrier = "reference-write-barrier";
     public const string StructuredCommandDiagnostics = "structured-command-diagnostics";
+    public const string UninitializedArrays = "uninitialized-arrays";
     public const string WeakHandles = "weak-handles";
 
     // Every feature a compiler may record, in ordinal order. The runtime pack's layout
@@ -25,8 +29,12 @@ public static class NetWasmRuntimeFeatureIds
         Finalization,
         LocalTime,
         ObjectClone,
+        ObjectGeneration,
         RandomSeed,
+        ReferenceWriteBarrier,
         StructuredCommandDiagnostics,
+        UninitializedArrays,
         WeakHandles,
+        YoungCollection,
     ];
 }

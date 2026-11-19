@@ -21,7 +21,7 @@ test("full coverage is reported in green", () => {
   });
 });
 
-test("rates round down and the lower rate picks the colour", () => {
+test("rates round down and the lower rate picks the color", () => {
   assert.equal(badgeFor({ overall: { line: 0.99999, branch: 0.96 } }).message, "99.9% lines, 96% branches");
   assert.equal(badgeFor({ overall: { line: 0.99999, branch: 0.96 } }).color, "green");
   assert.equal(badgeFor({ overall: { line: 1, branch: 0.91 } }).color, "yellow");

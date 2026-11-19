@@ -19,7 +19,10 @@ public sealed class NativeAggregateAbiPlanner(
     private readonly IValueLayoutProvider _values = values ?? throw new ArgumentNullException(nameof(values));
     private readonly IInstanceFieldLayoutProvider _fieldLayouts = fieldLayouts ?? throw new ArgumentNullException(nameof(fieldLayouts));
 
-    public NativeAbiValuePlan Plan(CliTypeIdentity type, string methodName)
+    public NativeAbiValuePlan Plan(
+        CliTypeIdentity type,
+        string methodName,
+        NativeMarshallingRules rules = NativeMarshallingRules.Runtime)
     {
         ArgumentNullException.ThrowIfNull(type);
         ArgumentException.ThrowIfNullOrWhiteSpace(methodName);
@@ -27,7 +30,7 @@ public sealed class NativeAggregateAbiPlanner(
             type.Shape is not (CliTypeShape.Named or CliTypeShape.GenericInstantiation))
             throw Unsupported(methodName, "Native aggregates must be closed value types.");
 
-        var shape = Describe(type, methodName, []);
+        var shape = Describe(type, methodName, rules, []);
         if (shape.IsEmpty)
             return new(NativeAbiValueKind.IgnoredAggregate, type, null,
                 shape.Layout.Size, shape.Layout.Alignment);
@@ -44,17 +47,21 @@ public sealed class NativeAggregateAbiPlanner(
             shape.Layout.Size, shape.Layout.Alignment);
     }
 
-    private AggregateShape Describe(CliTypeIdentity type, string methodName, HashSet<CliTypeIdentity> active)
+    private AggregateShape Describe(
+        CliTypeIdentity type, string methodName, NativeMarshallingRules rules, HashSet<CliTypeIdentity> active)
     {
         if (type.ContainsGenericParameters)
             throw Unsupported(methodName, "Native aggregate fields must be closed.");
-        if (type.Shape == CliTypeShape.UnmanagedPointer ||
-            type.Shape == CliTypeShape.Primitive && NativeAbiScalars.IsBlittable(type))
+        // A field holding an unmanaged function pointer is a pointer to C, as on desktop .NET; the function
+        // whose address it holds had its C signature checked where that address was taken.
+        var isPointer = type.Shape == CliTypeShape.UnmanagedPointer ||
+            type.Shape == CliTypeShape.FunctionPointer &&
+            UnmanagedCallingConventions.IsUnmanagedHeader(type.FunctionPointerSignature!.Header);
+        if (isPointer || type.Shape == CliTypeShape.Primitive && NativeAbiScalars.IsBlittable(type, rules))
         {
             var scalar = _values.GetValueLayout(type);
             ValidateStorage(scalar, methodName);
-            return new(scalar, 1, type.Shape == CliTypeShape.UnmanagedPointer
-                ? CliTypeIdentity.FromStackKind(CliValueKind.NativeInt) : type,
+            return new(scalar, 1, isPointer ? CliTypeIdentity.FromStackKind(CliValueKind.NativeInt) : type,
                 0, scalar.Size, scalar.Alignment, false);
         }
         if (!type.IsValueType || type.Shape is not (CliTypeShape.Named or CliTypeShape.GenericInstantiation))
@@ -65,7 +72,7 @@ public sealed class NativeAggregateAbiPlanner(
         var definition = _types.ResolveTypeIdentity(type);
         if (definition.IsEnum)
         {
-            var underlying = Describe(definition.EnumUnderlyingType, methodName, active);
+            var underlying = Describe(definition.EnumUnderlyingType, methodName, rules, active);
             active.Remove(type);
             return underlying;
         }
@@ -89,7 +96,7 @@ public sealed class NativeAggregateAbiPlanner(
         foreach (var field in instanceFields)
         {
             var fieldType = field.SignatureType.Substitute(type.TypeArguments);
-            var child = Describe(fieldType, methodName, active);
+            var child = Describe(fieldType, methodName, rules, active);
             if (child.IsEmpty)
                 throw Unsupported(methodName, "Embedded empty aggregates have different managed and C storage and are not supported.");
             var position = _fieldLayouts.GetFieldLayout(new FieldInstanceModel(field, type, fieldType));

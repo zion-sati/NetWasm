@@ -103,6 +103,19 @@ public sealed class CompileCliCommandTests
         Assert.Null(unlinked.Sessions.Options!.LinkedNativeLibraries);
     }
 
+    // -missingapierror+ makes a reached method naming a member its type lacks fail the compile.
+    [Fact]
+    public void PassesTheMissingApiErrorChoice()
+    {
+        var error = new Harness(entryPoint: null);
+        error.Run("App.dll", "-out:app.wasm", "-target:library", "-missingapierror+");
+        var warning = new Harness(entryPoint: null);
+        warning.Run("App.dll", "-out:app.wasm", "-target:library");
+
+        Assert.True(error.Sessions.Options!.MissingApiAsError);
+        Assert.False(warning.Sessions.Options!.MissingApiAsError);
+    }
+
     [Fact]
     public void PassesEveryOptionToTheCompilerAndTheArtifactWriter()
     {
@@ -114,11 +127,11 @@ public sealed class CompileCliCommandTests
             "-referenceorigin:view.dll;package=Framework.Backport;version=4.5.5;original=contract.dll",
             "-export:add=Example.Math::Add", "-platform:wasm64", "-optimize:O3", "-pathmap:/src=/_/",
             "-source:Entry.cs", "-interopmanifest:interop.json", "-runtimelayout:layout.json",
-            "-compilermetadata:metadata.json", "-typesymbols:app.wasm.type-symbols", "-typenames+",
+            "-compilermetadata:metadata.json", "-typesymbols:app.wasm.type-symbols", "-typenames+", "-gc:NetWasmGen",
             "-methodsymbols:app.wasm.method-symbols", "-callbackobject:native/callbacks.o", "-wit:contract.wit",
             "-world:example:test/test", "-importmodule:host_ui", "-diagnostictrace:trace.json",
-            "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics+",
-            "-verifycompiledunits+",
+            "-diagnosticlog:compiler.jsonl", "-diagnosticloglevel:Trace", "-jsexportboundary+",
+            "-structureddiagnostics+", "-verifycompiledunits+",
             "-projectdirectory:/project", "-intermediatedirectory:/project/obj", "-wasmtoolsnode:node",
             "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
             "-managedloopinvariantfieldhoisting:Disabled", "-managedstaticdataviewelimination:Enabled",
@@ -166,11 +179,13 @@ public sealed class CompileCliCommandTests
         Assert.Equal(["Entry.cs"], options.SourcePaths);
         Assert.True(options.EmitStackTrace);
         Assert.True(options.EmitTypeNames);
+        Assert.Same(RuntimeCollector.NetWasmGen, options.Collector);
         Assert.Equal("contract.wit", options.WitPath);
         Assert.Equal("example:test/test", options.WitWorld);
         Assert.Equal(["host_ui"], options.ImportModules);
         Assert.Equal("trace.json", options.DiagnosticTracePath);
         Assert.Equal("compiler.jsonl", options.DiagnosticLogPath);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Trace, options.DiagnosticLogLevel);
         Assert.True(options.UseJavaScriptExportBoundary);
         Assert.True(options.StructuredDiagnostics);
         Assert.True(options.CompiledUnits);
@@ -233,6 +248,7 @@ public sealed class CompileCliCommandTests
         Assert.Null(options.IntermediateOutputPath);
         Assert.False(options.EmitStackTrace);
         Assert.False(options.EmitTypeNames);
+        Assert.Null(options.Collector);
         Assert.Equal(FinalWasmOptimization.Oz, options.Optimization);
     }
 

@@ -2,6 +2,8 @@
 // The retained implementation is the ordinal, culture-independent scalar-value closure.
 // Licensed to the .NET Foundation under one or more agreements under the MIT license.
 
+using System.Runtime.CompilerServices;
+
 namespace System.Text;
 
 /// <summary>Represents a Unicode scalar value.</summary>
@@ -85,6 +87,7 @@ public readonly partial struct Rune : IComparable, IComparable<Rune>, IEquatable
         if (!TryEncodeToUtf16(destination, out var charsWritten)) throw new ArgumentException();
         return charsWritten;
     }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryEncodeToUtf16(Span<char> destination, out int charsWritten)
     {
         if (destination.Length < Utf16SequenceLength) { charsWritten = 0; return false; }
@@ -97,6 +100,7 @@ public readonly partial struct Rune : IComparable, IComparable<Rune>, IEquatable
         if (!TryEncodeToUtf8(destination, out var bytesWritten)) throw new ArgumentException();
         return bytesWritten;
     }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryEncodeToUtf8(Span<byte> destination, out int bytesWritten)
     {
         var count = Utf8SequenceLength;

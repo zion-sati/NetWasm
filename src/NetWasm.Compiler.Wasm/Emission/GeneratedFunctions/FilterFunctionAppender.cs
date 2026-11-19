@@ -35,14 +35,16 @@ internal sealed class FilterFunctionAppender(
 
         indices.Add(filter.Id, importCount + functions.Count);
         var sequence = sequenceEmitters.Create(target, functionIndices);
-        var rootMap = target.RootMaps.Required(ManagedMethodBodyKey.Resolve(filter.Method));
+        // The funclet publishes into its method's root frame, so by the slots the method's own safepoints use.
+        var rootMap = environment.ParentRootMap ?? target.RootMaps.Required(ManagedMethodBodyKey.Resolve(filter.Method));
         var emission = filters.Emit(
             filter,
             environment,
             rootMap,
             sequence,
             target.MemberExecution,
-            target.FunctionIndices.ManagedThrowFunctionIndex);
+            target.FunctionIndices.ManagedThrowFunctionIndex,
+            target.NativeImports);
         functions.Add(new WasmFunctionDefinition(
             $"filter.{filter.Id}",
             WasmFunctionType.Create(

@@ -262,6 +262,43 @@ public sealed class BranchJoinSelectorTests
         Assert.Empty(result.DuplicatedPrefixBlocks);
     }
 
+    // Every candidate duplicates blocks here, so none ends the search early: the one with the fewest wins whatever its
+    // distance order (11 duplicates three blocks and comes first, 10 duplicates two, 12 four).
+    [Fact]
+    public void SelectionTakesTheCandidateWithFewestDuplicatedBlocksWhenEveryOneDuplicates()
+    {
+        var state = CreateState(Edges(
+            (1, [3]),
+            (2, [3]),
+            (3, [4]),
+            (4, [10]),
+            (10, [11]),
+            (11, [12]),
+            (12, [])));
+        var selector = CreateSelector(
+            join: 12,
+            new MappedReachableBlockFinder(
+                ((1, 10), [1, 3, 4]),
+                ((2, 10), [2, 3, 4]),
+                ((1, 11), [1, 3, 4, 10]),
+                ((2, 11), [2, 3, 4, 10]),
+                ((1, 12), [1, 3, 4, 10, 11]),
+                ((2, 12), [2, 3, 4, 10, 11]),
+                ((10, null), [10]),
+                ((11, null), [11]),
+                ((12, null), [12])),
+            new MappedDistanceFinder(
+                (1, [(11, 1), (10, 2), (12, 3)]),
+                (2, [(11, 1), (10, 2), (12, 3)])),
+            overlaps: true,
+            duplicationPolicy: BranchPrefixDuplicationPolicy.Speed);
+
+        var result = selector.Select(Request(state));
+
+        Assert.Equal(10, result.Join);
+        Assert.Equal(ImmutableHashSet.Create(3, 4), result.DuplicatedPrefixBlocks);
+    }
+
     [Fact]
     public void SpeedSelectionAcceptsAnyStructurallySafeSharedPrefix()
     {

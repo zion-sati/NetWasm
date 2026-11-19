@@ -19,9 +19,10 @@ public sealed class ConstantArgumentProgramReducerTests
         var body = Managed();
         var calls = new FixedArguments([new(body.Method, []), new(body.Method, [new ScalarConstant.Int32(1)])]);
         var rewrites = new RecordingRewrites();
-        Assert.Throws<ArgumentNullException>(() => new ConstantArgumentProgramReducer(null!, rewrites));
-        Assert.Throws<ArgumentNullException>(() => new ConstantArgumentProgramReducer(calls, null!));
-        var reducer = AsReducer(new ConstantArgumentProgramReducer(calls, rewrites));
+        Assert.Throws<ArgumentNullException>(() => new ConstantArgumentProgramReducer(null!, rewrites, new GraphAnalyzer()));
+        Assert.Throws<ArgumentNullException>(() => new ConstantArgumentProgramReducer(calls, null!, new GraphAnalyzer()));
+        Assert.Throws<ArgumentNullException>(() => new ConstantArgumentProgramReducer(calls, rewrites, null!));
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(calls, rewrites, new GraphAnalyzer()));
         Assert.Throws<ArgumentNullException>(() => reducer.Reduce(null!, ReachabilityRoots.Empty));
         Assert.Throws<ArgumentNullException>(() => reducer.Reduce(Program(body), null!));
         Assert.Throws<InvalidOperationException>(() => reducer.Reduce(Program(body), ReachabilityRoots.Empty));
@@ -42,7 +43,7 @@ public sealed class ConstantArgumentProgramReducerTests
             ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty,
             ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty));
         var rewrites = new RecordingRewrites();
-        var reducer = AsReducer(new ConstantArgumentProgramReducer(new FixedArguments([new(method, [new ScalarConstant.Null()])]), rewrites));
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(new FixedArguments([new(method, [new ScalarConstant.Null()])]), rewrites, new GraphAnalyzer()));
 
         var result = reducer.Reduce(Program(managed), ReachabilityRoots.Empty);
 
@@ -67,7 +68,7 @@ public sealed class ConstantArgumentProgramReducerTests
             new(body.Method, [second is { } value ? new ScalarConstant.Int32(value) : null]),
         ]);
         var rewrites = new RecordingRewrites();
-        var reducer = AsReducer(new ConstantArgumentProgramReducer(collector, rewrites));
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(collector, rewrites, new GraphAnalyzer()));
 
         var result = reducer.Reduce(Program(body), ReachabilityRoots.Empty);
 
@@ -114,7 +115,7 @@ public sealed class ConstantArgumentProgramReducerTests
                 break;
         }
         var rewrites = new RecordingRewrites();
-        var reducer = AsReducer(new ConstantArgumentProgramReducer(new FixedArguments([new(body.Method, [new ScalarConstant.Int32(7)])]), rewrites));
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(new FixedArguments([new(body.Method, [new ScalarConstant.Int32(7)])]), rewrites, new GraphAnalyzer()));
 
         Assert.Empty(reducer.Reduce(program, roots));
         Assert.Null(rewrites.Body);
@@ -138,17 +139,47 @@ public sealed class ConstantArgumentProgramReducerTests
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
         var method = new ManagedMethodBody(original.Method, new(graph, ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty,
             ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty));
-        var reducer = AsReducer(new ConstantArgumentProgramReducer(new FixedArguments([new(method.Method, [new ScalarConstant.Int32(7)])]), new RecordingRewrites()));
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(new FixedArguments([new(method.Method, [new ScalarConstant.Int32(7)])]), new RecordingRewrites(), new GraphAnalyzer()));
 
         Assert.Empty(reducer.Reduce(Program(method), ReachabilityRoots.Empty));
     }
 
+    // A rewrite that makes a caller pass a constant specializes the callee in the same reduction: the caller's rewritten
+    // body is analyzed again and its calls collected again, without another closure.
+    [Fact]
+    public void ACalleeTheRewriteMakesConstantChangesInTheSameReduction()
+    {
+        var outer = Managed(1);
+        var caller = Managed(2);
+        var callee = Managed(3);
+        Assert.NotEqual(caller.Method.CanonicalName, callee.Method.CanonicalName);
+        // The outer method passes 7 to the caller, which passes its own argument to the callee: unknown until the
+        // caller's load of it becomes the constant.
+        var collector = new BodyArguments(body =>
+            body.Method == outer.Method ? [new(caller.Method, [new ScalarConstant.Int32(7)])]
+            : body.Method == caller.Method
+                ? [new(callee.Method, [body.Body.Instructions[0].Operation == CilOperation.LoadInt32 ? new ScalarConstant.Int32(7) : null])]
+                : []);
+        var analyzer = new GraphAnalyzer();
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(collector, new RecordingRewrites(), analyzer));
+        var program = Program(outer) with
+        {
+            Methods = Program(outer).Methods.Add(caller.Method.Definition.Key, caller).Add(callee.Method.Definition.Key, callee),
+        };
+
+        var result = reducer.Reduce(program, ReachabilityRoots.Empty);
+
+        Assert.Equal([caller.Method.CanonicalName, callee.Method.CanonicalName], result.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(CilOperation.LoadInt32, result[callee.Method.CanonicalName].Instructions[0].Operation);
+        Assert.Equal(2, analyzer.Analyzed);
+    }
+
     private static IReachableProgramReducer AsReducer(IReachableProgramReducer reducer) => reducer;
 
-    internal static ManagedMethodBody Managed()
+    internal static ManagedMethodBody Managed(int token = 1)
     {
         var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
-        var method = Method();
+        var method = Method(token);
         method = method with { Definition = method.Definition with { Signature = signature }, Signature = signature };
         var body = new CilMethodBody(method.Definition, 1, [],
             [Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)), Instruction(1, CilOperation.Return)])
@@ -166,6 +197,26 @@ public sealed class ConstantArgumentProgramReducerTests
     private sealed class FixedArguments(ImmutableArray<ConstantCallEvaluation> calls) : ICallArgumentConstantCollector
     {
         public ImmutableArray<ConstantCallEvaluation> Collect(ManagedMethodBody method) => calls;
+    }
+
+    private sealed class BodyArguments(Func<ManagedMethodBody, ImmutableArray<ConstantCallEvaluation>> calls) : ICallArgumentConstantCollector
+    {
+        public ImmutableArray<ConstantCallEvaluation> Collect(ManagedMethodBody method) => calls(method);
+    }
+
+    // Analyses a rewritten body as far as the reducer reads it: its control flow.
+    private sealed class GraphAnalyzer : IReachableMethodAnalyzer
+    {
+        public int Analyzed { get; private set; }
+
+        public ReachableMethodAnalysis Analyze(ReachableMethodRequest request)
+        {
+            Analyzed++;
+            var graph = new ControlFlowGraphBuilderFactory().Create().Build(request.RewrittenBody!);
+            var body = new ManagedMethodBody(request.Method, new(graph, ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty,
+                ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty));
+            return new(request.Method, body, [], [], new([], [], [], [], [], [], [], [], [], [], []));
+        }
     }
 
     private sealed class RecordingRewrites : IMethodSpecializer

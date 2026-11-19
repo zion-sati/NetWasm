@@ -36,9 +36,34 @@ void collector_collect(void)
     netwasm_gc_collect(netwasm_gc_runtime);
 }
 
+void collector_collect_young(void)
+{
+    netwasm_gc_collect_young(netwasm_gc_runtime);
+}
+
+bool collector_collect_when_idle(void)
+{
+    return netwasm_gc_collect_when_idle(netwasm_gc_runtime);
+}
+
+unsigned collector_collect_when_quiet(void)
+{
+    return netwasm_gc_collect_when_quiet(netwasm_gc_runtime);
+}
+
 uint64_t collector_collection_count(void)
 {
     return netwasm_gc_collection_count(netwasm_gc_runtime);
+}
+
+uint64_t collector_oldest_generation_collection_count(void)
+{
+    return netwasm_gc_oldest_generation_collection_count(netwasm_gc_runtime);
+}
+
+uint32_t collector_object_generation(uintptr_t object)
+{
+    return netwasm_gc_object_generation(netwasm_gc_runtime, object);
 }
 
 uint64_t collector_total_allocated_bytes(void)

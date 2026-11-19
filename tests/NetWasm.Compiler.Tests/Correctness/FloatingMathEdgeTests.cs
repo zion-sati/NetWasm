@@ -59,7 +59,7 @@ public sealed class FloatingMathEdgeTests(CorrectnessTestRunner runner) : CSharp
 
     [Theory]
     [MemberData(nameof(RoundingCells))]
-    public void RoundingModesRespectHalfwayNeighboursAndSignedZero(string caseId, string cell) =>
+    public void RoundingModesRespectHalfwayNeighborsAndSignedZero(string caseId, string cell) =>
         Run(CorpusCaseTestData.Get(caseId), cell);
 
     [Theory]

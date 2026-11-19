@@ -389,8 +389,10 @@ public sealed class AsyncCompilationTests
             WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.NotEmpty(result.ApplicationModule);
+        // The await suspends through the builder: AwaitUnsafeOnCompleted, or, once that AggressiveInlining call is
+        // inlined into MoveNext, the completion action it registers.
         Assert.Contains(result.Program.MethodInstances.Values,
-            method => method.Definition.Name == "AwaitUnsafeOnCompleted");
+            method => method.Definition.Name is "AwaitUnsafeOnCompleted" or "GetCompletionAction");
         // A delay is an async-lowered wait-for whose subtask joins the event loop's waitable set.
         Assert.Contains(result.Program.WitImportMethods,
             method => method.WitImport is

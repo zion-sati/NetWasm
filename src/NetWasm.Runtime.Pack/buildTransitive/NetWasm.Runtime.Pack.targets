@@ -1,4 +1,9 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- NetWasm.Sdk defines NetWasmGuestFramework; a project that imports this file without it, or before it, gets
+       the same answer: a .NET platform target framework on netwasm, or netwasm0.1. -->
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == ''">
+    <NetWasmGuestFramework Condition="'$(TargetFramework)' == 'netwasm0.1' OR $(TargetFramework.ToLowerInvariant().Contains('-netwasm'))">true</NetWasmGuestFramework>
+  </PropertyGroup>
   <!-- MSBuild on .NET runs the runtime pack's tasks in its own process. MSBuild on .NET Framework, as Visual
        Studio's is, runs these .NET tasks in a .NET task host, as does a build that sets
        NetWasmIsolateBuildTasks=true: a process of their own for each task. -->
@@ -8,7 +13,7 @@
          project importing these targets alone builds one as an executable or a worker. -->
     <_NetWasmBuildsModule Condition="'$(_NetWasmBuildsModule)' == '' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">true</_NetWasmBuildsModule>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmRuntimePackRoot Condition="'$(NetWasmRuntimePackRoot)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'runtime'))</NetWasmRuntimePackRoot>
     <NetWasmRuntimePackManifestPath Condition="'$(NetWasmRuntimePackManifestPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmRuntimePackRoot)', 'runtime-pack.json'))</NetWasmRuntimePackManifestPath>
@@ -16,14 +21,37 @@
     <NetWasmRuntimePackProvided>true</NetWasmRuntimePackProvided>
   </PropertyGroup>
 
+  <UsingTask TaskName="NetWasm.Runtime.Pack.MsBuild.PackageNativeArchiveSelectionTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
+             AssemblyFile="$(NetWasmRuntimePackSelectorAssemblyPath)"
+             Condition="'$(NetWasmGuestFramework)' == 'true'" />
+
+  <!-- A package that ships its static archives per Emscripten version, as SkiaSharp and HarfBuzzSharp do for .NET's
+       WebAssembly SDKs, gives an executable its matching build: the newest no newer than this runtime pack's
+       Emscripten, single-threaded, with SIMD where there is one. A library the project names itself keeps the
+       project's archive. NetWasm links an archive only where a native import reaches it. -->
+  <Target Name="NetWasmSelectPackageNativeArchives"
+          BeforeTargets="NetWasmCollectNativeLibraries"
+          DependsOnTargets="ResolvePackageAssets"
+          Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(NetWasmTarget)' == 'wasm32' AND Exists('$(ProjectAssetsFile)') AND Exists('$(NetWasmRuntimePackManifestPath)')">
+    <PackageNativeArchiveSelectionTask ProjectAssetsFile="$(ProjectAssetsFile)"
+                                       RuntimePackManifestPath="$(NetWasmRuntimePackManifestPath)"
+                                       WasmTarget="$(NetWasmTarget)"
+                                       ExistingNativeLibraries="@(NativeLibrary)">
+      <Output TaskParameter="NativeLibraries" ItemName="NativeLibrary" />
+    </PackageNativeArchiveSelectionTask>
+  </Target>
+
   <UsingTask TaskName="NetWasm.Runtime.Pack.MsBuild.RuntimeMaterializationTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
              TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(NetWasmRuntimePackSelectorAssemblyPath)"
-             Condition="'$(TargetFramework)' == 'netwasm0.1'" />
+             Condition="'$(NetWasmGuestFramework)' == 'true'" />
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+  <ItemGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
     <NetWasmRuntimePackAsset Include="$(NetWasmRuntimePackManifestPath)"
                              Condition="Exists('$(NetWasmRuntimePackManifestPath)')">
       <Kind>RuntimePackManifest</Kind>
@@ -34,7 +62,7 @@
   </ItemGroup>
 
   <Target Name="NetWasmRuntimePackResolveOutputPaths"
-          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+          Condition="'$(NetWasmGuestFramework)' == 'true'">
     <Error Code="NWPACK005"
            Condition="'$(NetWasmIntermediateOutputPath)' == '' AND ('$(NetWasmRuntimePackMaterializedPath)' == '' OR '$(NetWasmRuntimePackLogDirectory)' == '' OR '$(NetWasmRuntimePackCacheDirectory)' == '')"
            Text="The NetWasm intermediate output directory is unavailable for runtime-pack artifacts." />
@@ -48,7 +76,7 @@
 
   <Target Name="NetWasmRuntimePackWriteMaterializationIdentity"
           DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
+          Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(_NetWasmBuildsModule)' == 'true'">
     <WriteLinesToFile File="$(NetWasmRuntimePackMaterializationIdentityPath)"
                       Lines="target=$(NetWasmTarget);garbageCollector=$(NetWasmGarbageCollector);optimization=$(_NetWasmCanonicalOptimization);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);wasmOpt=$(NetWasmNativeBinaryenWasmOptPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath);sdk=$(NetWasmSdkVersion);compiler=$(NetWasmCompilerVersion);runtime=$(NetWasmRuntimeVersion);runtimePack=$(NetWasmRuntimePackPackageVersion);hostTools=$(NetWasmHostToolsPackageId)@$(NetWasmHostToolsPackageVersion);wasmLdVersion=$(NetWasmWasmLdVersion);wasmOptVersion=$(NetWasmNativeBinaryenWasmOptVersion);wasmToolsVersion=$(NetWasmWasmToolsVersion);nodeVersion=$(NetWasmNodeVersion)"
                       Overwrite="true"
@@ -59,7 +87,7 @@
           DependsOnTargets="NetWasmRuntimePackWriteMaterializationIdentity"
           AfterTargets="NetWasmCompileCoreModule"
           BeforeTargets="NetWasmSdkComponentize;NetWasmSdkValidateFinalArtifactForNoBuild"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(DesignTimeBuild)' != 'true'">
+          Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(DesignTimeBuild)' != 'true'">
     <!-- The materializer's content cache is authoritative. Timestamp-only target
          skipping cannot detect a replaced archive whose timestamp is preserved. -->
     <Error Code="NWPACK002"
@@ -72,6 +100,7 @@
       <_NetWasmRuntimePackMaterialization Remove="@(_NetWasmRuntimePackMaterialization)" />
     </ItemGroup>
     <RuntimeMaterializationTask PlainCoreModule="$(_NetWasmPlainCoreModule)"
+                                RawWasmOutput="$([MSBuild]::ValueOrDefault('$(NetWasmRawWasm)', 'false'))"
                                 ManifestPath="$(NetWasmRuntimePackManifestPath)"
                                 RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
                                 AssetRoot="$(NetWasmRuntimePackRoot)"
@@ -90,6 +119,7 @@
                                 InitialHeapSizeBytes="$(NetWasmInitialHeapSizeBytes)"
                                 MaximumMemorySizeBytes="$(NetWasmMaximumMemorySizeBytes)"
                                 NativeLibraries="@(NativeLibrary)"
+                                EnvImports="@(NetWasmEnvImport)"
                                 NativeCallbackObjectPath="$(NetWasmNativeCallbackObjectPath)"
                                 SdkVersion="$(NetWasmSdkVersion)"
                                 CompilerVersion="$(NetWasmCompilerVersion)"
@@ -118,7 +148,7 @@
   <Target Name="NetWasmRuntimePackCleanMaterializedRuntime"
           DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
           BeforeTargets="CoreClean"
-          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+          Condition="'$(NetWasmGuestFramework)' == 'true'">
     <Delete Files="$(NetWasmRuntimePackMaterializedPath);$(NetWasmRuntimePackMaterializationIdentityPath)" />
     <RemoveDir Directories="$(NetWasmRuntimePackLogDirectory)"
                Condition="'$(NetWasmRuntimePackLogDirectory)' != '' AND Exists('$(NetWasmRuntimePackLogDirectory)')" />

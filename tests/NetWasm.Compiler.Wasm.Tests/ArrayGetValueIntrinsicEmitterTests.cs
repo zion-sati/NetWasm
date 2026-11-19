@@ -9,6 +9,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -35,7 +36,7 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         var exceptions = new RecordingExceptions();
         var imports = WasmRuntimeImports.CreateCatalog();
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(
-            new ArrayGetValueIntrinsicEmitter(receiver, imports, addresses, exceptions, descriptors, new NullableTypeResolver(), layout, layout, layout));
+            new ArrayGetValueIntrinsicEmitter(receiver, imports, addresses, exceptions, descriptors, new NullableTypeResolver(), layout, layout, layout, new KeyedDispatchEmitter()));
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayGetValue,
             [CliValueKind.ManagedReference, CliValueKind.I4]) with
         { Target = WasmTargetLayout.For(target) };
@@ -73,7 +74,7 @@ public sealed class ArrayGetValueIntrinsicEmitterTests
         var addresses = new RecordingAddresses();
         var emitter = new ArrayGetValueIntrinsicEmitter(new RecordingReceiver(), WasmRuntimeImports.CreateCatalog(),
             addresses, new RecordingExceptions(), new Descriptors(true, 0),
-            new NullableTypeResolver(), new UnboxedLayouts(layout), layout, layout);
+            new NullableTypeResolver(), new UnboxedLayouts(layout), layout, layout, new KeyedDispatchEmitter());
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayGetValue,
             [CliValueKind.ManagedReference, CliValueKind.I4]);
         var writer = new RecordingInstructionWriter();

@@ -214,8 +214,10 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         Assert.Contains(instructionWriter.ToInstructions(), instruction => instruction.Opcode == store);
     }
 
+    // A component's instantiation calls this function and may not wait, so it runs no managed
+    // code: the planned module initializers are left to the entry initializer.
     [Fact]
-    public void ModuleInitializersDelegateToTheirPlannedGuardFunction()
+    public void StateInitializationRunsNoModuleInitializer()
     {
         var code = new GeneratedFunctionWriterFactory().Create();
         var instructionWriter = new EmitterTestSupport.RecordingInstructionWriter();
@@ -237,7 +239,7 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         var instructions = instructionWriter.ToInstructions();
 
         Assert.DoesNotContain(256, addresses.Constants);
-        Assert.Contains(instructions, instruction =>
+        Assert.DoesNotContain(instructions, instruction =>
             instruction.Opcode == WasmOpcodes.Call &&
             instruction.Operand.UnsignedValue == 37);
         Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
@@ -246,7 +248,7 @@ public sealed class RuntimeInitializerFunctionEmitterTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void CallbackReadinessPublishesAfterStaticRootsAndBeforeModuleInitializers(
+    public void CallbackReadinessPublishesAfterStaticRoots(
         WasmTarget target)
     {
         var code = new GeneratedFunctionWriterFactory().Create();
@@ -260,7 +262,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         var plan = TestRuntimeInitialization.Create(512) with
         {
             NativeCallbackReadinessAddress = 300,
-            ModuleInitializers = [new ModuleInitializerCall(256, 37)],
         };
 
         new InitializerHarness(
@@ -276,12 +277,8 @@ public sealed class RuntimeInitializerFunctionEmitterTests
                 RuntimeImportSymbol.RegisterStaticRoot));
         var readinessStore = Enumerable.Range(0, instructions.Length).Single(index =>
             instructions[index].Opcode == WasmOpcodes.I32Store);
-        var moduleInitializer = Enumerable.Range(0, instructions.Length).Single(index =>
-            instructions[index].Opcode == WasmOpcodes.Call &&
-            instructions[index].Operand.UnsignedValue == 37);
 
         Assert.True(rootRegistration < readinessStore);
-        Assert.True(readinessStore < moduleInitializer);
         Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.If);
         Assert.Equal(WasmOpcodes.I32Constant, instructions[readinessStore - 1].Opcode);
         Assert.Equal(1, instructions[readinessStore - 1].Operand.SignedValue);
@@ -318,7 +315,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         {
             StateRegistrationGuardAddress = 320,
             NativeCallbackReadinessAddress = 300,
-            ModuleInitializers = [new ModuleInitializerCall(256, 37)],
         };
 
         new InitializerHarness(
@@ -365,8 +361,6 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         Assert.Equal(stores[0] + 1, guardEnd);
         Assert.True(IsAddress(instructions[stores[1] - 2], 300));
         Assert.True(guardEnd < stores[1]);
-        Assert.True(stores[1] < IndexOf(instruction =>
-            instruction.Opcode == WasmOpcodes.Call && instruction.Operand.UnsignedValue == 37));
     }
 
     private static byte[] Emit(

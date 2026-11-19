@@ -965,6 +965,7 @@ public sealed class CoreModelTests
         Assert.Equal("register_types", RuntimeAbi.RuntimeRegisterTypes);
         Assert.Equal("type_base_id", RuntimeAbi.RuntimeTypeBaseId);
         Assert.Equal("type_is_assignable", RuntimeAbi.RuntimeTypeIsAssignable);
+        Assert.Equal("allocate_uninitialized_value_array", RuntimeAbi.RuntimeAllocateUninitializedValueArray);
         Assert.Equal("register_static_root", RuntimeAbi.RuntimeRegisterStaticRoot);
         Assert.Equal("root_frame_enter", RuntimeAbi.RuntimeRootFrameEnter);
         Assert.Equal("root_frame_leave", RuntimeAbi.RuntimeRootFrameLeave);

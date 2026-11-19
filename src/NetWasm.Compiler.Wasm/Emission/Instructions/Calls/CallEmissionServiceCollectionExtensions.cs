@@ -8,6 +8,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls.ManagedCallSites;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
@@ -23,9 +24,11 @@ internal static class CallEmissionServiceCollectionExtensions
         services.AddSingleton<IVirtualDispatchEmissionPlanBuilder,
             VirtualDispatchEmissionPlanBuilder>();
         services.AddSingleton<IVirtualDispatchCasePlanner, VirtualDispatchCasePlanner>();
+        services.AddSingleton<IKeyedDispatchEmitter, KeyedDispatchEmitter>();
         services.AddSingleton<DelegateInvokeCallEmitter>();
         services.AddSingleton<VirtualDispatchCallEmitter>();
         services.AddSingleton<SharedObjectDispatchCallEmitter>();
+        services.AddSingleton<SharedVirtualDispatchCallEmitter>();
         services.AddSingleton<IJSImportInvocationEmitter, JSImportInvocationEmitter>();
         services.AddSingleton<JSImportCallEmitter>();
         services.AddSingleton<AsyncJSImportCallEmitter>();
@@ -33,6 +36,9 @@ internal static class CallEmissionServiceCollectionExtensions
         services.AddSingleton<INativeAbiCallEmitter, NativeAbiCallEmitter>();
         services.AddSingleton<NativeCallEmitter>();
         services.AddSingleton<ICallEmissionKindResolver, CallEmissionKindResolver>();
+        services.AddSingleton<CallEmissionRegistration>(provider => new(
+            CallEmissionKind.SharedVirtualDispatch,
+            provider.GetRequiredService<SharedVirtualDispatchCallEmitter>()));
         services.AddSingleton<CallEmissionRegistration>(provider => new(
             CallEmissionKind.DelegateInvoke,
             provider.GetRequiredService<DelegateInvokeCallEmitter>()));

@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptation: MD5 has a managed implementation beside the browser's managed SHA family, for hashes and
-// HMAC alike (owner decision 2026-11-13).
+// HMAC alike.
 
 using System.Diagnostics;
 

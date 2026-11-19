@@ -54,7 +54,7 @@ internal sealed class MethodAnalysisFactories(
 /// <summary>
 /// What a compile's per-method analysis consults, built once from its metadata, settings
 /// and platform. The whole-program analyzer and a standalone method analyzer are built from
-/// the same parts, so a method analysed alone is analysed as the closure analyses it.
+/// the same parts, so a method analyzed alone is analyzed as the closure analyses it.
 /// </summary>
 internal sealed class MethodAnalysisParts
 {
@@ -74,6 +74,8 @@ internal sealed class MethodAnalysisParts
     public ITypeRelationshipKeyResolver RelationshipKeys { get; private init; } = null!;
     public IDelegateTypeRecognizer DelegateTypeRecognizer { get; private init; } = null!;
     public ICalledMethodResolver Calls { get; private init; } = null!;
+    // Answers attribute queries on a Type known only at run time, from the closure's run-time types.
+    public IReachableProgramReducer RuntimeTypeAttributeQueries { get; private init; } = null!;
     public ITypeOperandResolver Types { get; private init; } = null!;
     public IReachabilityInstructionAnalyzer InstructionAnalyzer { get; private init; } = null!;
     public IMethodSpecializer Specializer { get; private init; } = null!;
@@ -147,11 +149,13 @@ internal sealed class MethodAnalysisParts
             intrinsics,
             world,
             typeIdentities);
-        specializer = factories.AttributeQueries.Create(specializer, metadata, typeRepository, fieldRepository,
-            methodRepository, typeFinder, typeDefinitions, typeIdentities, methodInstances,
+        var attributeQueries = factories.AttributeQueries.Create(specializer, metadata, typeRepository,
+            fieldRepository, methodRepository, typeFinder, typeDefinitions, typeIdentities, methodInstances,
             relationships, baseTypes, calls, types, symbols);
+        specializer = attributeQueries.Specializer;
         var parts = new MethodAnalysisParts
         {
+            RuntimeTypeAttributeQueries = attributeQueries.RuntimeTypeQueries,
             _factories = factories,
             _methodBodies = methodBodies,
             _typeRepository = typeRepository,
@@ -231,16 +235,16 @@ internal sealed class MethodAnalysisParts
         InstructionAnalyzer);
 }
 
-/// <summary>A method analyzer, and a planner of the sites of what it analysed.</summary>
-internal sealed class StandaloneMethodAnalysis(IReachableMethodAnalyzer analyzer, IAnalysedSitePlanner sites)
+/// <summary>A method analyzer, and a planner of the sites of what it analyzed.</summary>
+internal sealed class StandaloneMethodAnalysis(IReachableMethodAnalyzer analyzer, IAnalyzedSitePlanner sites)
 {
     public IReachableMethodAnalyzer Analyzer { get; } = analyzer;
-    public IAnalysedSitePlanner Sites { get; } = sites;
+    public IAnalyzedSitePlanner Sites { get; } = sites;
 }
 
 internal interface IStandaloneMethodAnalyzerFactory
 {
-    // A method analyzer built as the whole-program analyzer builds its own, for analysing
+    // A method analyzer built as the whole-program analyzer builds its own, for analyzing
     // single methods without the closure.
     StandaloneMethodAnalysis Create(
         MetadataCompilationSnapshot metadata,
@@ -308,7 +312,7 @@ internal sealed class StandaloneMethodAnalyzerFactory(
             metadata, typeRepository, fieldRepository, methodRepository, typeFinder, typeDefinitions, typeIdentities,
             baseTypeIdentities, implementedInterfaces, methodBodies, methodInstances, methodImplementations, symbols,
             intrinsics, optimizationSettings, world, inliningExcludedCallers);
-        return new(parts.CreateAnalyzer(), new AnalysedSitePlanner(
+        return new(parts.CreateAnalyzer(), new AnalyzedSitePlanner(
             new DispatchCandidateIndexFactory(parts.Relationships, parts.RelationshipKeys), parts.DispatchTargets,
             typeTestPlanners.Create(parts.Types, parts.Relationships, parts.RelationshipKeys)));
     }

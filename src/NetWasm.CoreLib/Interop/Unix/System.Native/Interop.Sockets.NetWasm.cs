@@ -524,6 +524,7 @@ namespace System
                     : SocketAddressPal.IPv4AddressSize;
                 var length = Math.Min(*socketAddressLen, size);
                 Span<byte> buffer = stackalloc byte[SocketAddressPal.MaxAddressSize];
+                buffer.Clear();
                 endPoint.Serialize(buffer);
                 buffer[..length].CopyTo(new Span<byte>(socketAddress, length));
                 *socketAddressLen = size;

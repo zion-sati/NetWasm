@@ -31,10 +31,13 @@
  *    only sinh(0)=0 is exact for finite x.
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Sinh(double value)
     {
         const double one = 1.0;

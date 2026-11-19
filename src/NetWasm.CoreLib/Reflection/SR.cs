@@ -10,6 +10,9 @@ namespace System.Reflection
         internal const string Arg_MustBePointer =
             "Type must be a Pointer.";
 
+        internal const string FileNotFound_ResolveAssembly =
+            "Could not resolve assembly '{0}'.";
+
         internal static string Format(string format, object? arg0) =>
             string.Format(format, arg0);
 

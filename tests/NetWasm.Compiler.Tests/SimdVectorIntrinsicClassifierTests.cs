@@ -29,6 +29,7 @@ public sealed class SimdVectorIntrinsicClassifierTests
     private static readonly CliTypeIdentity Vector3 = Numerics("Vector3");
     private static readonly CliTypeIdentity Plane = Numerics("Plane");
     private static readonly CliTypeIdentity Matrix3x2 = Numerics("Matrix3x2");
+    private static readonly CliTypeIdentity Half = Vector64Of(Int32);
 
     private const string Vector128 = "System.Runtime.Intrinsics.Vector128";
     private const string Vector128OfT = "System.Runtime.Intrinsics.Vector128`1";
@@ -135,6 +136,30 @@ public sealed class SimdVectorIntrinsicClassifierTests
         { Vector128, "AsHalf", true, 1, Floats, [Vector], null },
         { Vector128, "ConvertToInt32Native", true, 0, Vector, [Floats], RuntimeIntrinsic.SimdConvert },
         { Vector128, "ConvertToHalf", true, 0, Floats, [Floats], null },
+        // A Vector128's Vector64 halves, as .NET's JIT names them: each is one 64-bit lane.
+        { Vector128, "GetLower", true, 1, Half, [Vector], RuntimeIntrinsic.SimdGetHalf },
+        { Vector128, "GetUpper", true, 1, Half, [Vector], RuntimeIntrinsic.SimdGetHalf },
+        { Vector128, "GetLower", true, 1, Int32, [Vector], null },
+        { Vector128, "GetUpper", true, 0, Half, [Vector], null },
+        { Vector128, "GetLower", true, 1, Half, [Half], null },
+        { Vector128, "WithLower", true, 1, Vector, [Vector, Half], RuntimeIntrinsic.SimdWithHalf },
+        { Vector128, "WithUpper", true, 1, Vector, [Vector, Half], RuntimeIntrinsic.SimdWithHalf },
+        { Vector128, "WithUpper", true, 1, Vector, [Vector, Int32], null },
+        { Vector128, "WithLower", true, 1, Int32, [Vector, Half], null },
+        { Vector128, "WithLower", true, 1, Vector, [Half, Half], null },
+        { Vector128, "WithUpper", true, 0, Vector, [Vector, Half], null },
+        { Vector128, "Create", true, 1, Vector, [Half, Half], RuntimeIntrinsic.SimdCreateFromHalves },
+        { Vector128, "Create", true, 0, Vector128Of(Int64), [Vector64Of(Int64), Vector64Of(Int64)], RuntimeIntrinsic.SimdCreateFromHalves },
+        { Vector128, "Create", true, 1, Vector, [Half, Int32], null },
+        { Vector128, "Create", true, 1, Vector, [Int32, Half], null },
+        { Vector128, "Create", true, 1, Half, [Half, Half], null },
+        { "System.Runtime.Intrinsics.Vector64", "ToVector128", true, 1, Vector, [Half], RuntimeIntrinsic.SimdHalfToVector },
+        { "System.Runtime.Intrinsics.Vector64", "ToVector128Unsafe", true, 1, Vector, [Half], RuntimeIntrinsic.SimdHalfToVector },
+        { "System.Runtime.Intrinsics.Vector64", "ToVector128", true, 0, Vector, [Half], null },
+        { "System.Runtime.Intrinsics.Vector64", "ToVector128", true, 1, Half, [Half], null },
+        { "System.Runtime.Intrinsics.Vector64", "ToVector128", true, 1, Vector, [Vector], null },
+        { "System.Runtime.Intrinsics.Vector64", "ToVector128", true, 1, Vector, [Half, Half], null },
+        { "System.Runtime.Intrinsics.Vector64", "ToVector256", true, 1, Vector, [Half], null },
         // Vector<T> moves as a v128 as Vector128<T> does.
         { "System.Numerics.Vector", "Add", true, 0, VectorOf(Int32), [VectorOf(Int32), VectorOf(Int32)], RuntimeIntrinsic.SimdAdd },
     };
@@ -156,6 +181,9 @@ public sealed class SimdVectorIntrinsicClassifierTests
 
     private static CliTypeIdentity Vector128Of(CliTypeIdentity element) => CliTypeIdentity.GenericInstantiation(
         CliTypeIdentity.Named(Core, "System.Runtime.Intrinsics", "Vector128`1", isValueType: true), [element]);
+
+    private static CliTypeIdentity Vector64Of(CliTypeIdentity element) => CliTypeIdentity.GenericInstantiation(
+        CliTypeIdentity.Named(Core, "System.Runtime.Intrinsics", "Vector64`1", isValueType: true), [element]);
 
     private static CliTypeIdentity Numerics(string name) =>
         CliTypeIdentity.Named(Core, "System.Numerics", name, isValueType: true);

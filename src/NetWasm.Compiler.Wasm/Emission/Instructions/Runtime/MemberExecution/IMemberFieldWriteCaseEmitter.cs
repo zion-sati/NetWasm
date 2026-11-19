@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
@@ -17,6 +18,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 
 internal interface IMemberFieldWriteCaseEmitter
 {
-    // Opens one case per planned member and returns how many it opened.
-    int EmitCases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan);
+    // The case of each planned member, by its descriptor's address; each case writes its code when it is run.
+    ImmutableArray<MemberCase> Cases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan);
 }

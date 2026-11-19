@@ -13,6 +13,8 @@ namespace System.Net
             "Enumeration has either not started or has already finished.";
         internal const string bad_endpoint_string =
             "An invalid IPEndPoint was specified.";
+        internal const string net_bad_ip_network =
+            "An invalid IP network was specified.";
         internal const string net_InvalidAddressFamily =
             "The AddressFamily {0} is not valid for the {1} end point, use {2} instead.";
         internal const string net_InvalidSocketAddressSize =

@@ -13,10 +13,10 @@ namespace NetWasm.Compiler.Pipeline;
 
 internal interface IEditedMethodAnalyzer
 {
-    // Each method definition's own instance analysed alone, as whole-program analysis
+    // Each method definition's own instance analyzed alone, as whole-program analysis
     // analyses it when no analysis crosses methods (O0's defaults), with its sites resolved
     // against the types the program allocates. Generic methods and methods of generic types
-    // have no instance of their own and are left unanalysed.
+    // have no instance of their own and are left unanalyzed.
     EditedMethods Analyze(
         MetadataCompilationSnapshot metadata,
         CompilationPreparation preparation,
@@ -26,8 +26,8 @@ internal interface IEditedMethodAnalyzer
 
 internal sealed record EditedMethods(
     ImmutableArray<ReachableMethodAnalysis> Methods,
-    AnalysedSites Sites,
-    ImmutableArray<EntityKey> Unanalysed);
+    AnalyzedSites Sites,
+    ImmutableArray<EntityKey> Unanalyzed);
 
 internal sealed class EditedMethodAnalyzer(
     IStandaloneMethodAnalyzerFactory analyzers,
@@ -76,7 +76,7 @@ internal sealed class EditedMethodAnalyzer(
             preparation.World,
             preparation.InliningExcludedMethods);
         var analyses = ImmutableArray.CreateBuilder<ReachableMethodAnalysis>(definitions.Count);
-        var unanalysed = ImmutableArray.CreateBuilder<EntityKey>();
+        var unanalyzed = ImmutableArray.CreateBuilder<EntityKey>();
         foreach (var key in definitions)
         {
             var definition = methods.GetMethod(key);
@@ -84,12 +84,12 @@ internal sealed class EditedMethodAnalyzer(
             if (instance.IsConstructed || instance.DeclaringType.ContainsGenericParameters ||
                 !instance.MethodArguments.IsEmpty || definition.GenericArity != 0)
             {
-                unanalysed.Add(key);
+                unanalyzed.Add(key);
                 continue;
             }
             analyses.Add(analyzer.Analyzer.Analyze(new ReachableMethodRequest(instance)));
         }
-        var analysed = analyses.ToImmutable();
-        return new(analysed, analyzer.Sites.Plan(analysed, allocatedTypes), unanalysed.ToImmutable());
+        var analyzed = analyses.ToImmutable();
+        return new(analyzed, analyzer.Sites.Plan(analyzed, allocatedTypes), unanalyzed.ToImmutable());
     }
 }

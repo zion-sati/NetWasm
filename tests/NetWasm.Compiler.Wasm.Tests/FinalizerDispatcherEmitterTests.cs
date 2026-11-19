@@ -6,6 +6,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -63,6 +64,6 @@ public sealed class FinalizerDispatcherEmitterTests
         return new(
             layouts,
             new ExceptionPayloadBlockEmitter(layouts),
-            new GeneratedFunctionWriterFactory());
+            new GeneratedFunctionWriterFactory(), new KeyedDispatchEmitter());
     }
 }

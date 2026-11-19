@@ -134,6 +134,21 @@ public sealed class ArrayLoopInductionAnalyzerTests
     [InlineData(CilOperation.BranchIfGreaterThanOrEqualUnsigned)]
     public void ProvesTopTestedLoopWhenTheGuardBranchesToTheExit(CilOperation comparison)
     {
+        var (analyzer, flow) = TopTested(comparison);
+        var graph = flow.Graph;
+
+        var proof = Assert.Single(analyzer.Analyze(flow));
+
+        Assert.Equal(5, graph.GetBlock(proof.GuardBlock).StartOffset);
+        Assert.Equal(10, graph.GetBlock(proof.BodyEntryBlock).StartOffset);
+        Assert.Equal(17, proof.IncrementOffset);
+        Assert.Equal(0, proof.IndexLocal);
+        Assert.Equal(1, proof.ArrayLocal);
+    }
+
+    // Create(0, 1)'s loop with its guard first: the guard exits on the comparison, its body follows it.
+    internal static (IArrayLoopInductionAnalyzer Analyzer, ValidatedControlFlowGraph Flow) TopTested(CilOperation comparison)
+    {
         var fixture = Create(0, 1);
         var instructions = fixture.Flow.Graph.MethodBody.Instructions;
         var reordered = instructions[..5].AddRange(instructions[14..19]).AddRange(instructions[5..14]).Add(instructions[19]);
@@ -150,17 +165,9 @@ public sealed class ArrayLoopInductionAnalyzerTests
         };
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
         var dominance = new ControlFlowDominanceAnalyzer();
-        var flow = new ValidatedControlFlowGraph(graph,
-            graph.Blocks.ToImmutableDictionary(block => block.Index, _ => ImmutableArray<CliValueKind>.Empty), []);
-        var analyzer = new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance);
-
-        var proof = Assert.Single(analyzer.Analyze(flow));
-
-        Assert.Equal(5, graph.GetBlock(proof.GuardBlock).StartOffset);
-        Assert.Equal(10, graph.GetBlock(proof.BodyEntryBlock).StartOffset);
-        Assert.Equal(17, proof.IncrementOffset);
-        Assert.Equal(0, proof.IndexLocal);
-        Assert.Equal(1, proof.ArrayLocal);
+        return (new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance),
+            new ValidatedControlFlowGraph(graph,
+                graph.Blocks.ToImmutableDictionary(block => block.Index, _ => ImmutableArray<CliValueKind>.Empty), []));
     }
 
     [Fact]

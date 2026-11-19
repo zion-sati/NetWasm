@@ -9,6 +9,12 @@ internal sealed class NetWasmRunSettingsReader : INetWasmRunSettingsReader
 {
     internal const string SupportedTargetFrameworkMoniker = "NetWasm,Version=v0.1";
 
+    // VSTest receives a platform target framework such as net10.0-netwasm as its .NETCoreApp framework, the same
+    // as a desktop project; NetWasm.Testing.VSTest's build adds this test run parameter with the project's alias.
+    internal const string PlatformTargetFrameworkParameter = "NetWasm.TargetFramework";
+    private const string PlatformFrameworkPrefix = ".NETCoreApp,";
+    private const string PlatformAliasMarker = "-netwasm";
+
     public bool TryRead(string? runsettingsXml, out NetWasmRunConfiguration? configuration)
     {
         configuration = null;
@@ -26,8 +32,11 @@ internal sealed class NetWasmRunSettingsReader : INetWasmRunSettingsReader
             }
 
             var targetFramework = runConfiguration.TargetFramework?.Name;
-            if (targetFramework is null ||
-                !targetFramework.Equals(SupportedTargetFrameworkMoniker, StringComparison.Ordinal))
+            var parameters = XmlRunSettingsUtilities.GetTestRunParameters(runsettingsXml);
+            var platformAlias = parameters.TryGetValue(PlatformTargetFrameworkParameter, out var value)
+                ? value as string ?? string.Empty
+                : null;
+            if (targetFramework is null || !IsNetWasmRun(targetFramework, platformAlias))
             {
                 return false;
             }
@@ -44,4 +53,11 @@ internal sealed class NetWasmRunSettingsReader : INetWasmRunSettingsReader
             return false;
         }
     }
+
+    // netwasm0.1 has its own framework name. A platform alias makes a .NETCoreApp run NetWasm's, and only that.
+    private static bool IsNetWasmRun(string targetFramework, string? platformAlias) =>
+        platformAlias is null
+            ? targetFramework.Equals(SupportedTargetFrameworkMoniker, StringComparison.Ordinal)
+            : platformAlias.Contains(PlatformAliasMarker, StringComparison.OrdinalIgnoreCase)
+                && targetFramework.StartsWith(PlatformFrameworkPrefix, StringComparison.Ordinal);
 }

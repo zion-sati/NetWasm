@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 
 namespace System.Runtime.InteropServices;
 
-/// <summary>The host flavour the application was compiled for.</summary>
+/// <summary>The host flavor the application was compiled for.</summary>
 internal static class NetWasmHost
 {
     /// <summary>

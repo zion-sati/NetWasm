@@ -12,6 +12,13 @@ namespace System.Net.Http
         /// <summary>The default message used by <see cref="OperationCanceledException"/>.</summary>
         private static readonly string s_cancellationMessage = new OperationCanceledException().Message; // use same message as the default ctor
 
+        /// <summary>Determines whether to wrap an <see cref="Exception"/> in a cancellation exception.</summary>
+        /// <param name="exception">The exception.</param>
+        /// <param name="cancellationToken">The <see cref="CancellationToken"/> that may have triggered the exception.</param>
+        /// <returns>true if the exception should be wrapped; otherwise, false.</returns>
+        internal static bool ShouldWrapInOperationCanceledException(Exception exception, CancellationToken cancellationToken) =>
+            !(exception is OperationCanceledException) && cancellationToken.IsCancellationRequested;
+
         /// <summary>Creates a cancellation exception.</summary>
         /// <param name="innerException">The inner exception to wrap. May be null.</param>
         /// <param name="cancellationToken">The <see cref="CancellationToken"/> that triggered the cancellation.</param>

@@ -49,10 +49,13 @@ public sealed class ComponentCoreModuleOptimizerTests
         var expected = new List<string>
         {
             "input", flag, "--remove-unused-module-elements", "--strip-debug",
-            "--enable-multimemory", "--enable-exception-handling", "--enable-reference-types", "--enable-bulk-memory",
-            "--enable-nontrapping-float-to-int", "--enable-simd",
+            "--enable-multimemory", "--enable-exception-handling", "--enable-reference-types", "--enable-multivalue",
+            "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-simd",
         };
         if (width == "wasm64") expected.Add("--enable-memory64");
+        // O3 and Oz bound the size of a function Binaryen inlines into its one caller.
+        if (optimization is FinalWasmOptimization.O3 or FinalWasmOptimization.Oz)
+            expected.AddRange(["--one-caller-inline-max-function-size", ComponentCoreModuleOptimizer.OneCallerInlineMaxFunctionSize]);
         expected.AddRange(["--output", "output"]);
         Assert.Equal(expected, stages.Arguments);
     }
@@ -106,7 +109,7 @@ public sealed class ComponentCoreModuleOptimizerTests
 
     [Theory]
     [InlineData("bad module\n", "bad module")]
-    [InlineData("", "unknown error")]
+    [InlineData("", "it exited with code 1 without an error message")]
     public void OptimizerFailureStopsValidationAndAnnotationCleanup(string error, string expected)
     {
         var stages = new RecordingStages { Result = new(1, "", error) };

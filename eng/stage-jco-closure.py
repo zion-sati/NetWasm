@@ -75,7 +75,7 @@ ACCEPTED_INVOCATION = [
 ]
 
 
-def _normalise_package_path(path: str) -> str:
+def _normalize_package_path(path: str) -> str:
     if not isinstance(path, str) or not path:
         raise ClosureStagingError("closure policy contains an empty package path")
     if "\\" in path:
@@ -168,7 +168,7 @@ def _policy_entry_map(policy: dict[str, Any], field: str) -> dict[str, dict[str,
             entry = value
         else:
             raise ClosureStagingError(f"closure policy {field} contains an invalid entry")
-        path = _normalise_package_path(path)
+        path = _normalize_package_path(path)
         if path in entries:
             raise ClosureStagingError(f"closure policy repeats package path '{path}'")
         entries[path] = entry
@@ -395,7 +395,7 @@ def _validate_locked_record(
     record: dict[str, Any],
     policy_entry: dict[str, Any] | None,
 ) -> None:
-    _normalise_package_path(key)
+    _normalize_package_path(key)
     version = record.get("version")
     resolved = record.get("resolved")
     integrity = record.get("integrity")
@@ -441,7 +441,7 @@ def _cache_tarball(record: dict[str, Any], cache: Path) -> bytes:
     # The reusable audit cache predates the hex cache name and stores the
     # canonical digest using a deliberately URL/filesystem-safe alphabet.  Do
     # not derive a path from the raw SRI token: even a seemingly harmless
-    # sanitiser can make distinct tokens collide, and an invalid token must
+    # sanitizer can make distinct tokens collide, and an invalid token must
     # never influence a filesystem path.
     safe_integrity_path = cache / (
         "sha512-"
@@ -766,7 +766,7 @@ def _validate_sha256(value: Any, owner: str) -> str:
     return value
 
 
-def _normalise_patch_path(value: Any, owner: str) -> PurePosixPath:
+def _normalize_patch_path(value: Any, owner: str) -> PurePosixPath:
     if not isinstance(value, str) or not value or "\\" in value:
         raise ClosureStagingError(f"{owner} has an invalid path")
     if "//" in value or any(part in ("", ".", "..") for part in value.split("/")):
@@ -815,7 +815,7 @@ def _apply_bindgen_patch(
         if not isinstance(value, str) or not value.strip():
             raise ClosureStagingError(f"jco patch manifest has no upstream {field}")
 
-    target_relative = _normalise_patch_path(manifest.get("targetPath"), "jco patch target")
+    target_relative = _normalize_patch_path(manifest.get("targetPath"), "jco patch target")
     if target_relative.as_posix() != BINDGEN_PATCH_TARGET:
         raise ClosureStagingError("jco patch manifest has the wrong target path")
     target = canonical_stage.joinpath(*target_relative.parts)
@@ -833,7 +833,7 @@ def _apply_bindgen_patch(
     if not isinstance(replacement, dict) or not isinstance(source_patch, dict):
         raise ClosureStagingError("jco patch manifest has invalid patch inputs")
 
-    replacement_relative = _normalise_patch_path(
+    replacement_relative = _normalize_patch_path(
         replacement.get("path"),
         "jco patch replacement",
     )
@@ -850,7 +850,7 @@ def _apply_bindgen_patch(
     if hashlib.sha256(replacement_bytes).hexdigest() != replacement_sha256:
         raise ClosureStagingError("jco patch replacement digest does not match")
 
-    source_patch_relative = _normalise_patch_path(
+    source_patch_relative = _normalize_patch_path(
         source_patch.get("path"),
         "jco source patch",
     )
@@ -866,7 +866,7 @@ def _apply_bindgen_patch(
     if hashlib.sha256(source_patch_bytes).hexdigest() != source_patch_sha256:
         raise ClosureStagingError("jco source patch digest does not match")
 
-    license_relative = _normalise_patch_path(
+    license_relative = _normalize_patch_path(
         manifest.get("licensePath"),
         "jco patch license",
     )

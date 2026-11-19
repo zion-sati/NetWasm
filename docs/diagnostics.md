@@ -10,7 +10,7 @@ The size-first Release profile normally leaves those optional features out.
 | --- | --- | --- | --- |
 | `NetWasmStructuredDiagnostics` | `true` | `false` | Structured managed failure reporting for the selected execution contract |
 | `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and the frame names in `<program>.wasm.method-symbols`; also backs `System.Diagnostics.StackTrace` and `StackFrame` |
-| `NetWasmTypeNames` | `true` | `false` | Every type's and assembly's names in `<program>.wasm.type-symbols`, which the program reads. Without them a name reads `type#<id>`, an assembly name `<Assembly name unavailable>`, and looking a type up by name (`Type.GetType(string)`, `Assembly.GetType(string)`, `GetNestedType(string)`, `GetInterface(string)`) throws `PlatformNotSupportedException` |
+| `NetWasmTypeNames` | `true` | `true` | Every type's and assembly's names in `<program>.wasm.type-symbols`, which a program that reads a name loads; a program that reads none carries neither the names nor their loader. Without them a name reads `type#<id>`, an assembly name `<Assembly name unavailable>`, and looking a type up by name (`Type.GetType(string)`, `Assembly.GetType(string)`, `GetNestedType(string)`, `GetInterface(string)`) throws `PlatformNotSupportedException` |
 
 The switches are independent. Enable the desired features explicitly, for
 example for an application that needs rich Release diagnostics:
@@ -51,7 +51,7 @@ program:
 
 | File | Holds | Written |
 | --- | --- | --- |
-| `<program>.wasm.type-symbols` | Type names by runtime type ID | Every build: the exception types; with `NetWasmTypeNames`, every type |
+| `<program>.wasm.type-symbols` | Type names by runtime type ID | Every build: the exception types; every type when the program reads type names (`NetWasmTypeNames`, on by default) |
 | `<program>.wasm.method-symbols` | Stack frame names by method ID, with file and line in Debug | With `NetWasmManagedStackTrace` |
 | `<program>.wasm.tz-info` | Time zone data | When local time is reachable; see [timezone assets](timezone-assets.md) |
 
@@ -62,12 +62,12 @@ JavaScript hosts mount them there. Under Wasmtime, mount the folder that holds
 the program:
 
 ```sh
-wasmtime run --dir bin/Debug/netwasm0.1::/netwasm-sidecars bin/Debug/netwasm0.1/App.wasm
+wasmtime run --dir bin/Debug/net10.0-netwasm::/netwasm-sidecars bin/Debug/net10.0-netwasm/App.wasm
 ```
 
-A program built with `NetWasmTypeNames` or `NetWasmManagedStackTrace` reads its
-symbols files at startup. A component without a process entry starts in the
-first call to one of its exports, and the Component Model never lets a
+A program that reads type names (built with `NetWasmTypeNames`, the default), or
+built with `NetWasmManagedStackTrace`, reads its symbols files at startup. A component without a process entry reads them
+when its code first needs a name, in a call to one of its exports, and the Component Model never lets a
 synchronous WIT function wait, so a component that exports one (rather than an
 `async func`) reads none and its names read `type#<id>`; a JavaScript module
 still reads them. Each file carries the build ID of the program that
@@ -106,8 +106,9 @@ reported by `NW1010`, see the [support status and roadmap](support-status.md).
 | `NW1013` `FunctionLimit` | Module encoding, right after emission and before linking or optimization | A method compiles to a WebAssembly function past a limit browsers, Node and Wasmtime put on one function: a body larger than 7,654,321 bytes, more than 50,000 locals (its parameters among them) or more than 1,000 parameters. When inlining made a method's function too large, the compiler first compiles it again with nothing inlined into it, so the diagnostic means the method is over the limit on its own. It names the managed method and the limit | Split the method, for example a large generated initializer, into smaller methods, or pass many values in an array or an object |
 | `NW1014` `HostFailure` | `nwc` reading inputs and writing outputs | The host failed outside the compiler, such as a missing input or an unwritable output directory. Correct the path or permission the message names. |
 | `NW1015` `PlatformService` | Preparing compilation, before reachability | A `NetWasmPlatformServiceAttribute` binding is invalid: it names a type that is not a platform service contract, binds one contract twice, binds an implementation that is an interface, abstract, a value type, generic, lacks a public parameterless constructor or does not implement the contract, or binds `ITimerScheduler` in a program with WASI, whose timers run on the Component Model's event loop | Correct the attribute the message names |
-| `NW1016` `MissingApi` | Method and field reference binding after the declaring type resolves | The selected implementation has no member matching the requested name, signature, static/instance shape and generic arity. Check that package and implementation versions agree. If they do, use a supported API or an alternative library path. Adding unrelated references does not supply a missing member on an already resolved type. |
+| `NW1016` `MissingApi` | Warning, after reachability; an error with `NetWasmMissingApiAsError` | A reached method names a type its assembly does not have, or a method or field its declaring type does not have: the selected implementation has no type of that name, or no member matching the requested name, signature, static/instance shape and generic arity. The method compiles to a body that throws `TypeLoadException`, `MissingMethodException` or `MissingFieldException` when called, as .NET throws when it first compiles such a method and Native AOT compiles it to a throw. A method nothing reaches costs nothing. Check that package and implementation versions agree. If they do, use a supported API or an alternative library path, or leave the call unreached. Adding unrelated references does not supply a missing member on an already resolved type. Set `<NetWasmMissingApiAsError>true</NetWasmMissingApiAsError>` to fail the build instead. |
 | `NW1017` `UnlinkedNativeLibrary` | Warning, after reachability | A reached P/Invoke names a native library that no `NativeLibrary` item provides, so it compiles to a body that throws `DllNotFoundException` when called. Reference the package or `NativeLibrary` item that provides the library, or leave the call unreached. See [static native interop](static-native-interop.md#library-and-package-propagation). |
+| `NW1018` `DeclinedJavaScriptBinding` | Warning, while preparing compilation, in a program a JavaScript host runs | A library built for the browser carries a `[JSImport]` or `[JSExport]` that .NET's JavaScript generator wrote, with a shape NetWasm's JavaScript interop does not take, such as an export with a delegate parameter. The method stays ordinary code: JavaScript cannot call the export, and calling the import throws `PlatformNotSupportedException`. See [JavaScript interop](javascript-interop.md#libraries-built-for-the-browser). |
 | `NWA2001` `GenericExpansion` | Identifier formatting only; no current production emitter | The enum reserves this identifier but no current source path emits it. Preserve and report the exact value if observed. |
 
 When available, method and IL offset are part of the diagnostic. The CLI also
@@ -117,8 +118,8 @@ paths; these are diagnostic artifacts rather than deployment outputs.
 ## Package compatibility failures
 
 A missing API (`NW1016`) differs from a missing or ambiguous binding (`NW1004`).
-The former means the compiler found the declaring type but not the requested
-member contract. It can indicate a version mismatch or an API that the selected
+The former means the compiler found the assembly but not the requested type, or
+the declaring type but not the requested member contract; the method naming it throws when called, and the build warns. It can indicate a version mismatch or an API that the selected
 implementation does not provide; it does not by itself identify a compiler bug.
 Unsupported CIL, metadata shapes and static interop use their respective codes.
 An internal invariant failure (`NW1011`) should be reported as a compiler defect.
@@ -138,7 +139,22 @@ not invent an application caller.
 
 Use `-diagnosticlog:<path>` when only the structured `ILogger` event stream
 is needed. It writes flushed JSON Lines and is disabled when the option is
-absent.
+absent. A build passes it with
+`dotnet build -p:NetWasmDiagnosticLogPath=<path>`. The log keeps Debug
+entries and up; `-p:NetWasmDiagnosticLogLevel=<level>` (`-diagnosticloglevel`)
+chooses `Trace`, `Debug`, `Information`, `Warning`, `Error` or `Critical`
+instead. `Trace` adds an entry for each emitted function and each method's
+metrics, which for a large program is most of the log: hundreds of megabytes.
+
+The log also shows where a long or failing compile spends its memory. After
+each compiler stage, and every 30 seconds while it runs, it records the
+process's working set, its peak and the managed heap. While the compiler works
+out which methods and types the program reaches, it records every 10 seconds
+how many it has reached, how many are queued, and the generic methods and
+types with the most instances, which is where an analysis that keeps growing
+grows. Each entry is flushed as it is written, so a compile that runs out of
+memory leaves these entries up to the failure. None of them appear in the
+build's output.
 
 For a reproducible compiler report, use `-diagnostictrace:<path>` and pass
 each relevant source with `-source:<path>`. The compiler writes the primary

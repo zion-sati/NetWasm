@@ -103,6 +103,13 @@ internal enum RuntimeImportSymbol
     AllocationRunsEnabled,
     AllocateObjectFallback,
     TypeIsAssignable,
+    AllocateUninitializedValueArray,
+    RecordReferenceWrite,
+    RecordReferenceWrites,
+    GcObjectGeneration,
+    CollectWhenIdle,
+    CollectWhenQuiet,
+    GcCollectYoung,
 }
 
 internal readonly record struct RuntimeImportBinding(
@@ -186,5 +193,6 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
             IncludeRandomSeed: true,
             IncludeArraySetValue: true,
             IncludeUnhandledExceptionHint: true,
-            IncludeObjectClone: true);
+            IncludeObjectClone: true,
+            IncludeUninitializedArrays: true);
 }

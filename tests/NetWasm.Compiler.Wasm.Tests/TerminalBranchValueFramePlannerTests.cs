@@ -47,7 +47,7 @@ public sealed class TerminalBranchValueFramePlannerTests
                 shape == 5 ? StructuredSequence.Empty : Code(4)]),
         };
 
-        var plan = _planner.Plan(method, Layout(), _roots);
+        var plan = _planner.Plan(method, Layout(), _roots, copyTails: true);
 
         if (!accepted)
         {
@@ -72,7 +72,7 @@ public sealed class TerminalBranchValueFramePlannerTests
         branch = trueArm ? branch with { WhenTrue = unsupported } : branch with { WhenFalse = unsupported };
         method = method with { Body = new([branch, Code(3)]) };
 
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class TerminalBranchValueFramePlannerTests
         var method = Method();
         method = method with { Body = new([method.Body.Regions[0], new StructuredExceptionRegion(new(0), null)]) };
 
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     // A root map that names an offset no block of the method holds leaves the frame where it is.
@@ -95,7 +95,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             Safepoints = ImmutableDictionary<int, SafepointRootMap>.Empty.Add(50, new(50, [source], [])),
         };
 
-        Assert.Null(_planner.Plan(Method(), Layout(), roots));
+        Assert.Null(_planner.Plan(Method(), Layout(), roots, copyTails: true));
     }
 
     [Theory]
@@ -117,7 +117,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             Body = new([branch with { WhenTrue = new([loop]) }, Code(3)]),
         };
 
-        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots));
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots, copyTails: true));
 
         Assert.True(plan.FramedWhenTrue);
         Assert.Same(loop, plan.WhenTrue.Regions[0]);
@@ -131,7 +131,7 @@ public sealed class TerminalBranchValueFramePlannerTests
         branch = branch with { WhenTrue = new([Code(1), new StructuredDispatcherContinue(new(1))]) };
         method = method with { Body = new([branch, Code(3)]) };
 
-        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots));
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots, copyTails: true));
 
         Assert.True(plan.FramedWhenTrue);
         Assert.IsType<StructuredDispatcherContinue>(plan.WhenTrue.Regions[1]);
@@ -158,7 +158,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             Body = new([branch with { WhenTrue = new([nested]) }, Code(3)]),
         };
 
-        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots));
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots, copyTails: true));
 
         Assert.True(plan.FramedWhenTrue);
         Assert.Same(nested, plan.WhenTrue.Regions[0]);
@@ -177,7 +177,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             method = method with { Body = new([branch, method.Body.Regions[1]]) };
         }
 
-        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots));
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots, copyTails: true));
 
         Assert.Equal(!reverse, plan.FramedWhenTrue);
         Assert.Equal(branch.Condition, plan.Condition);
@@ -190,6 +190,21 @@ public sealed class TerminalBranchValueFramePlannerTests
         Assert.Equal(StructuredBlockRole.ExecutingReplica, replica.Occurrence.Role);
         Assert.Equal(StructuredBlockRole.Owner,
             ((StructuredCode)method.Body.Regions[1]).Occurrence.Role);
+    }
+
+    // When both arms leave the method, no tail follows the branch for a frame to move into: nothing is placed.
+    [Fact]
+    public void ArmsThatBothLeaveTheMethodPlaceNoFrame()
+    {
+        var method = Method();
+        method = method with
+        {
+            Blocks = method.Blocks
+                .SetItem(new(1), method.Blocks[new(1)] with { Exit = new StructuredTerminalExit(I(12, CilOperation.Return)) })
+                .SetItem(new(2), method.Blocks[new(2)] with { Exit = new StructuredTerminalExit(I(22, CilOperation.Return)) }),
+        };
+
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     [Theory]
@@ -214,7 +229,7 @@ public sealed class TerminalBranchValueFramePlannerTests
                     I(0, CilOperation.DefaultValue, new CilOperand.TypeIdentity(CliTypeIdentity.FromStackKind(kind)))),
             }),
         };
-        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots));
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots, copyTails: true));
         Assert.Contains(0, plan.IncomingScalarLocals);
         Assert.Same(((StructuredIf)method.Body.Regions[0]).WhenTrue.Regions[0], plan.WhenTrue.Regions[0]);
     }
@@ -222,9 +237,9 @@ public sealed class TerminalBranchValueFramePlannerTests
     [Fact]
     public void RejectsNullInputs()
     {
-        Assert.Throws<ArgumentNullException>(() => _planner.Plan(null!, Layout(), _roots));
-        Assert.Throws<ArgumentNullException>(() => _planner.Plan(Method(), null!, _roots));
-        Assert.Throws<ArgumentNullException>(() => _planner.Plan(Method(), Layout(), null!));
+        Assert.Throws<ArgumentNullException>(() => _planner.Plan(null!, Layout(), _roots, copyTails: true));
+        Assert.Throws<ArgumentNullException>(() => _planner.Plan(Method(), null!, _roots, copyTails: true));
+        Assert.Throws<ArgumentNullException>(() => _planner.Plan(Method(), Layout(), null!, copyTails: true));
     }
 
     [Theory]
@@ -250,7 +265,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             _ => throw new ArgumentOutOfRangeException(nameof(shape)),
         };
 
-        Assert.Null(_planner.Plan(Method(), layout, _roots));
+        Assert.Null(_planner.Plan(Method(), layout, _roots, copyTails: true));
     }
 
     [Theory]
@@ -269,7 +284,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             }),
         };
 
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     [Theory]
@@ -280,7 +295,7 @@ public sealed class TerminalBranchValueFramePlannerTests
     {
         var method = Method();
         method = method with { Header = method.Header with { LocalSignatureTypes = [CliTypeIdentity.FromStackKind(kind)] } };
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     [Theory]
@@ -302,7 +317,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             4 => method with { Blocks = method.Blocks.SetItem(new(3), terminal with { Exit = new StructuredBranchExit(31, new(0)) }) },
             _ => throw new ArgumentOutOfRangeException(nameof(shape)),
         };
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     [Fact]
@@ -316,7 +331,7 @@ public sealed class TerminalBranchValueFramePlannerTests
                 Instructions = [I(10, CilOperation.LocalAllocate)],
             })
         };
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     [Fact]
@@ -324,7 +339,7 @@ public sealed class TerminalBranchValueFramePlannerTests
     {
         var method = Method();
         method = method with { Blocks = method.Blocks.SetItem(new(1), method.Blocks[new(1)] with { Instructions = [] }) };
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     // An argument the frame holds is copied in where the framed arm begins; the other arm and the
@@ -333,7 +348,7 @@ public sealed class TerminalBranchValueFramePlannerTests
     public void AnArgumentOnlyTheFramedArmAddressesIsCopiedInThere()
     {
         var plan = _planner.Plan(WithAddressedArgument(CliTypeIdentity.FromStackKind(CliValueKind.I8), 1),
-            WithArgument(Layout()), _roots);
+            WithArgument(Layout()), _roots, copyTails: true);
 
         Assert.True(Assert.IsType<TerminalBranchValueFramePlan>(plan).FramedWhenTrue);
     }
@@ -344,14 +359,14 @@ public sealed class TerminalBranchValueFramePlannerTests
     [InlineData(3)]
     public void RejectsAnArgumentAddressedOutsideTheFramedArm(int block) =>
         Assert.Null(_planner.Plan(WithAddressedArgument(CliTypeIdentity.FromStackKind(CliValueKind.I8), block),
-            WithArgument(Layout()), _roots));
+            WithArgument(Layout()), _roots, copyTails: true));
 
     // A value-type argument's parameter becomes the address of its frame copy, which the
     // unframed arm would not have.
     [Fact]
     public void RejectsAValueTypeArgumentInTheFrame() =>
         Assert.Null(_planner.Plan(WithAddressedArgument(CliTypeIdentity.Named(Assembly, "Test", "Pair", isValueType: true), 1),
-            WithArgument(Layout()), _roots));
+            WithArgument(Layout()), _roots, copyTails: true));
 
     private static StructuredMethod WithAddressedArgument(CliTypeIdentity type, int block)
     {
@@ -405,7 +420,7 @@ public sealed class TerminalBranchValueFramePlannerTests
                 LocalSignatureTypes = [CliTypeIdentity.Primitive(primitive, CliValueKind.I4)],
             }
         };
-        Assert.Null(_planner.Plan(method, Layout(), _roots));
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: true));
     }
 
     [Theory]
@@ -424,7 +439,7 @@ public sealed class TerminalBranchValueFramePlannerTests
             Slots = ImmutableDictionary<RootSource, int>.Empty.Add(source, 0),
             Safepoints = ImmutableDictionary<int, SafepointRootMap>.Empty.Add(20, new(20, [source], [])),
         };
-        Assert.Equal(rejected, _planner.Plan(Method(), Layout(), roots) is null);
+        Assert.Equal(rejected, _planner.Plan(Method(), Layout(), roots, copyTails: true) is null);
     }
 
     [Theory]
@@ -442,7 +457,81 @@ public sealed class TerminalBranchValueFramePlannerTests
             Slots = ImmutableDictionary<RootSource, int>.Empty.Add(source, 0),
             Safepoints = ImmutableDictionary<int, SafepointRootMap>.Empty.Add(offset, new(offset, [], [source])),
         };
-        Assert.Equal(rejected, _planner.Plan(Method(), Layout(), roots) is null);
+        Assert.Equal(rejected, _planner.Plan(Method(), Layout(), roots, copyTails: true) is null);
+    }
+
+    // Where tails are not copied, a frame that holds only roots, all of them at safepoints in one arm,
+    // is left where that arm ends and the code after the if runs without it; with copies allowed,
+    // each arm carries the straight-line tail as before.
+    [Fact]
+    public void WithoutTailCopiesAFrameHoldingOnlyRootsIsLeftWhereItsArmEnds()
+    {
+        var (method, roots) = RootedArm(10);
+
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, NoValueFrame, roots, copyTails: false));
+        var copied = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, NoValueFrame, roots, copyTails: true));
+
+        Assert.True(plan is { FramedWhenTrue: true, DefersRootFrame: true });
+        Assert.Equal([new StructuredBlockId(1)], plan.WhenTrue.Regions.Cast<StructuredCode>().Select(code => code.Occurrence.Block));
+        Assert.Equal([new StructuredBlockId(2)], plan.WhenFalse.Regions.Cast<StructuredCode>().Select(code => code.Occurrence.Block));
+        Assert.Equal([new StructuredBlockId(3)], plan.UnframedTail!.Regions.Cast<StructuredCode>().Select(code => code.Occurrence.Block));
+        Assert.Null(copied.UnframedTail);
+        Assert.Equal(2, copied.WhenTrue.Regions.Length);
+    }
+
+    // A root held at a safepoint in the tail, the condition or the other arm needs the frame there too,
+    // and a value frame's contents would be lost with it.
+    [Theory]
+    [InlineData(30)]
+    [InlineData(20)]
+    [InlineData(2)]
+    public void ARootHeldOutsideTheFramedArmKeepsTheFrameForTheMethod(int safepoint)
+    {
+        var (method, roots) = RootedArm(10);
+        var argument = roots.Slots.Keys.Single();
+        roots = roots with { Safepoints = roots.Safepoints.Add(safepoint, new(safepoint, [argument], [])) };
+
+        Assert.Null(_planner.Plan(method, NoValueFrame, roots, copyTails: false));
+    }
+
+    // Without tail copies a value frame stays with the method even where one arm returns: placed in
+    // the other, it would leave its roots to the root frame's publication.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WithoutTailCopiesAValueFrameIsNeverMoved(bool armReturns)
+    {
+        var method = Method();
+        if (armReturns)
+        {
+            method = method with
+            {
+                Blocks = method.Blocks.SetItem(new(2), Block(2, [I(20, CilOperation.LoadLocal, new CilOperand.Index(0)),
+                    I(21, CilOperation.Pop)], new StructuredTerminalExit(I(22, CilOperation.Return)))),
+            };
+        }
+
+        Assert.Null(_planner.Plan(method, Layout(), _roots, copyTails: false));
+        Assert.NotNull(_planner.Plan(method, Layout(), _roots, copyTails: true));
+    }
+
+    private static readonly ValueFrameLayout NoValueFrame = new(0, ImmutableDictionary<int, int>.Empty, [], [], []);
+
+    // The method with a call where its true arm took the local's address, at whose safepoint argument 0 is a root.
+    private (StructuredMethod Method, MethodRootMap Roots) RootedArm(int safepoint)
+    {
+        var method = Method();
+        method = method with
+        {
+            Blocks = method.Blocks.SetItem(new(1), Block(1, [I(10, CilOperation.Nop), I(11, CilOperation.Nop)],
+                new StructuredBranchExit(12, new(3)))),
+        };
+        var argument = new RootSource(RootSourceKind.Argument, 0);
+        return (method, _roots with
+        {
+            Slots = ImmutableDictionary<RootSource, int>.Empty.Add(argument, 0),
+            Safepoints = ImmutableDictionary<int, SafepointRootMap>.Empty.Add(safepoint, new(safepoint, [argument], [])),
+        });
     }
 
     private static StructuredMethod Method()

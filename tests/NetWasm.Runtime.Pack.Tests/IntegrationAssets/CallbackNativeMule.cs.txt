@@ -4,6 +4,15 @@ using System.Runtime.InteropServices;
 
 namespace NativeMule;
 
+// A struct C holds as { bool; char16_t; int }, as disabled runtime marshalling passes it.
+[StructLayout(LayoutKind.Sequential)]
+public struct Flagged
+{
+    public bool Flag;
+    public char Letter;
+    public int Value;
+}
+
 public static unsafe partial class EntryPoint
 {
     private const int OpaqueTokenInput = 0x1234567;
@@ -167,8 +176,49 @@ public static unsafe partial class EntryPoint
     private static int ThrowDynamicTarget(int _) =>
         throw new InvalidOperationException("dynamic callback qualification");
 
+    // The project disables runtime marshalling, so bool is C's one-byte bool and char is char16_t, and
+    // [MarshalAs] has no effect.
+    [DllImport("mule", EntryPoint = "native_mule_flag_not", ExactSpelling = true)]
+    private static extern bool FlagNot(bool flag);
+    [DllImport("mule", EntryPoint = "native_mule_char_next", ExactSpelling = true)]
+    private static extern char CharNext(char letter);
+    [DllImport("mule", EntryPoint = "native_mule_flag_width", ExactSpelling = true)]
+    private static extern int FlagWidth([MarshalAs(UnmanagedType.I1)] bool flag);
+    [DllImport("mule", EntryPoint = "native_mule_flagged_flip", ExactSpelling = true)]
+    private static extern Flagged FlaggedFlip(Flagged value);
+    [DllImport("mule", EntryPoint = "native_mule_flag_callback", ExactSpelling = true)]
+    private static extern int FlagCallback(delegate* unmanaged<int, char, bool> predicate, int value);
+    [DllImport("mule", EntryPoint = "native_mule_flag_and_address", ExactSpelling = true)]
+    private static extern void* FlagAndAddress();
+    // CharSet, BestFitMapping and ThrowOnUnmappableChar have no effect on a signature without strings.
+    [DllImport("mule", EntryPoint = "native_mule_char_next", CharSet = CharSet.Ansi, BestFitMapping = true, ThrowOnUnmappableChar = true)]
+    private static extern char CharNextAnsi(char letter);
+
+    // HarfBuzzSharp's shape: a bool result with [return: MarshalAs(UnmanagedType.I1)].
+    [UnmanagedCallersOnly]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static bool IsPositiveA(int value, char letter) => value > 0 && letter == 'A';
+
+    private static int DisabledRuntimeMarshalling(int input)
+    {
+        if (FlagNot(input > 0) != (input <= 0) || CharNext('y') != 'z' || FlagWidth(true) != 1 ||
+            CharNextAnsi('\u0100') != '\u0101')
+            return -20;
+        var flipped = FlaggedFlip(new Flagged { Flag = true, Letter = 'a', Value = input });
+        if (flipped.Flag || flipped.Letter != 'b' || flipped.Value != (input ^ 0x55))
+            return -21;
+        if (FlagCallback(&IsPositiveA, input) != (input > 0 ? 1 : 2))
+            return -22;
+        var flagAnd = (delegate* unmanaged<bool, char, bool>)FlagAndAddress();
+        if (!flagAnd(true, 'Z') || flagAnd(true, 'Y') || flagAnd(false, 'Z'))
+            return -23;
+        return 0;
+    }
+
     public static int Run(int input)
     {
+        if (DisabledRuntimeMarshalling(input) is var disabled and not 0)
+            return disabled;
         if (InvokeDynamic(&Dynamic, input) != input + 7)
             return -10;
         if (QualifyCallbackSignatures(

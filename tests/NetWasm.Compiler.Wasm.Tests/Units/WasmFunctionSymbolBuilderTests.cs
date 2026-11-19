@@ -87,7 +87,6 @@ public sealed class WasmFunctionSymbolBuilderTests
         ],
         [], StackTraceMethodPlan.Disabled, [], indices,
         new([], OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
-            OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
             OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing));
 
     private static ModuleDataPlan Data(params StaticInitializerGuard[] guards) => new(

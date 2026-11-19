@@ -1,13 +1,12 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
-// NetWasm adaptation: only the .NET Standard 2.1 members are ported (TryGetProcessById, the
-// TimeSpan and IEnumerable<string> overloads, WaitForExitAsync, Signal and the exit-status
-// methods are omitted). Process.NetWasm.cs supplies the platform layer: NetWasm has no host
+// NetWasm adaptation: Process.NetWasm.cs supplies the platform layer. NetWasm has no host
 // processes, so launching, lookup and every operation on a process throw
 // PlatformNotSupportedException after upstream's argument and association checks. Start keeps
 // upstream's StartInfo validation and then rejects the platform, as upstream does on iOS and
-// tvOS; the pipe and standard-stream setup that follows it upstream is omitted.
+// tvOS; the pipe and standard-stream setup that follows it upstream is omitted. The members
+// upstream answers from that check (Signal and the exit-status methods) are in Process.NetWasm.cs.
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -787,6 +786,11 @@ namespace System.Diagnostics
             return WaitForInputIdleCore(milliseconds);
         }
 
+        /// <summary>
+        /// Causes the Process component to wait the specified timeout for the associated process to enter an idle state.
+        /// </summary>
+        public bool WaitForInputIdle(TimeSpan timeout) => WaitForInputIdle(ProcessUtils.ToTimeoutMilliseconds(timeout));
+
         public ISynchronizeInvoke? SynchronizingObject { get; set; }
 
         /// <devdoc>
@@ -970,6 +974,26 @@ namespace System.Diagnostics
             }
 
             return new Process(".", false, processId, null);
+        }
+
+        /// <summary>
+        /// Attempts to get the process with the specified identifier on the local computer.
+        /// </summary>
+        [UnsupportedOSPlatform("ios")]
+        [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
+        public static bool TryGetProcessById(int processId, [NotNullWhen(true)] out Process? process)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(processId, 0);
+
+            if (ProcessManager.IsProcessRunning(processId))
+            {
+                process = new Process(".", false, processId, null);
+                return true;
+            }
+
+            process = null;
+            return false;
         }
 
 
@@ -1194,7 +1218,7 @@ namespace System.Diagnostics
             Close();
 
             ProcessStartInfo startInfo = StartInfo;
-            startInfo.ThrowIfInvalid(out _);
+            startInfo.ThrowIfInvalid(out _, out _);
 
             // NetWasm has no process launcher: like upstream on iOS and tvOS, Start rejects the
             // platform once StartInfo is valid.
@@ -1235,6 +1259,17 @@ namespace System.Diagnostics
             // the underlying Start method can only return null on Windows platforms,
             // when the ProcessStartInfo.UseShellExecute property is set to true.
             // We can thus safely assert non-nullability for this overload.
+            return Start(new ProcessStartInfo(fileName, arguments))!;
+        }
+
+        /// <summary>
+        /// Starts a process resource by specifying the name of an application and a set of command line arguments.
+        /// </summary>
+        [UnsupportedOSPlatform("ios")]
+        [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
+        public static Process Start(string fileName, IEnumerable<string> arguments)
+        {
             return Start(new ProcessStartInfo(fileName, arguments))!;
         }
 
@@ -1340,6 +1375,85 @@ namespace System.Diagnostics
                 RaiseOnExited();
             }
             return exited;
+        }
+
+        /// <summary>
+        /// Instructs the Process component to wait the specified amount of time for
+        /// the associated process to exit.
+        /// </summary>
+        public bool WaitForExit(TimeSpan timeout) => WaitForExit(ProcessUtils.ToTimeoutMilliseconds(timeout));
+
+        /// <summary>
+        /// Instructs the Process component to wait for the associated process to exit, or
+        /// for the <paramref name="cancellationToken"/> to be canceled.
+        /// </summary>
+        public async Task WaitForExitAsync(CancellationToken cancellationToken = default)
+        {
+            // As upstream: the process may exit before the handler is registered (handled by checking HasExited
+            // after registering it), or before events are enabled (EnableRaisingEvents then throws), and the
+            // user may have enabled events already.
+            if (!Associated)
+            {
+                throw new InvalidOperationException(SR.NoAssociatedProcess);
+            }
+
+            if (!HasExited)
+            {
+                // Early out for cancellation before doing more expensive work
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            try
+            {
+                EnableRaisingEvents = true;
+            }
+            catch (InvalidOperationException)
+            {
+                // If the process has exited, our work is done, otherwise bubble the exception up to the user
+                if (HasExited)
+                {
+                    await WaitUntilOutputEOF(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                throw;
+            }
+
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            EventHandler handler = (_, _) => tcs.TrySetResult();
+            Exited += handler;
+
+            try
+            {
+                if (!HasExited)
+                {
+                    using (cancellationToken.UnsafeRegister(static (s, cancellationToken) => ((TaskCompletionSource)s!).TrySetCanceled(cancellationToken), tcs))
+                    {
+                        await tcs.Task.ConfigureAwait(false);
+                    }
+                }
+
+                // Wait until output streams have been drained
+                await WaitUntilOutputEOF(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                Exited -= handler;
+            }
+
+            async Task WaitUntilOutputEOF(CancellationToken cancellationToken)
+            {
+                if (_output is not null)
+                {
+                    await _output.EOF.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                if (_error is not null)
+                {
+                    await _error.EOF.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
 
         /// <devdoc>

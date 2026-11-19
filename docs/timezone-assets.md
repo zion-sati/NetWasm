@@ -33,7 +33,8 @@ browser zone. Set it with a `NetWasmEnvironmentVariable` item, in the execution
 request's environment, or per instance with `open({ environment: { TZ } })` for a
 page-hosted `JsModule`. A page that wants the user's zone passes
 `Intl.DateTimeFormat().resolvedOptions().timeZone`, so its sidecar must include
-that zone. A `TZ` outside the sidecar fails before managed code starts.
+that zone. A `TZ` outside the sidecar fails before `Main` runs; a `JsModule`
+or a component without a `Main` fails when its code first reads local time.
 
 One zone with daylight saving time is about 210 KB (about 51 KB with Brotli).
 Each alias is stored as another full copy of its zone, which Brotli removes

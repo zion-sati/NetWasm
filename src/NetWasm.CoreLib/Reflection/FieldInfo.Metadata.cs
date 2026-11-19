@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Runtime.CompilerServices;
+
 namespace System.Reflection;
 
 public abstract partial class FieldInfo
@@ -38,6 +40,7 @@ public abstract partial class FieldInfo
     public virtual bool IsSecurityTransparent => false;
     public override bool Equals(object? obj) => base.Equals(obj);
     public override int GetHashCode() => base.GetHashCode();
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(FieldInfo? left, FieldInfo? right)
     {
         if (right is null) return left is null;

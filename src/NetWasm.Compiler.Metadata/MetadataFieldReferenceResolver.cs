@@ -149,14 +149,24 @@ internal sealed class MetadataFieldReferenceResolver(
                 field.Name == name && (isStatic is null || field.IsStatic == isStatic) &&
                 field.SignatureType.Substitute(typeArguments).Equals(expected))
             .ToArray();
-        return matches.Length == 1
-            ? matches[0]
-            : throw new CompilerException(
-                new CompilerDiagnostic(
-                    matches.Length == 0 ? DiagnosticCode.MissingApi : DiagnosticCode.AssemblyResolution,
-                    $"field reference '{declaringIdentity}::{name}' did not resolve uniquely",
-                    methodDisplayName,
-                    ilOffset));
+        if (matches.Length == 1)
+        {
+            return matches[0];
+        }
+        var message = $"field reference '{declaringIdentity}::{name}' did not resolve uniquely";
+        throw new CompilerException(
+            new CompilerDiagnostic(
+                matches.Length == 0 ? DiagnosticCode.MissingApi : DiagnosticCode.AssemblyResolution,
+                message,
+                methodDisplayName,
+                ilOffset)
+            {
+                MissingMember = matches.Length == 0
+                    ? new(MissingMemberKind.Field,
+                        $"{MissingMemberDisplay.Type(expected)} {MissingMemberDisplay.Type(declaringIdentity)}.{name}",
+                        methodDisplayName, ilOffset, message)
+                    : null,
+            });
     }
 
     private static CliTypeIdentity GetTypeIdentity(TypeDefinitionModel type) =>

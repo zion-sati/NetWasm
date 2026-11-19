@@ -199,7 +199,74 @@ namespace System
                 (long)Rank(table, presence, typeId) * valueBits, valueBits));
         }
 
-        private const int HeaderBits = 20 * 32;
+        private const int HeaderBits = 21 * 32;
+
+        // The program's assemblies (ManifestResourceTableBuilder in the compiler), byte-aligned past the bit stream
+        // at header field 20's byte offset, or null where the program cannot ask for them. A count, presence flags,
+        // then per assembly index (from 1) its display name and the range of its embedded resources, then each
+        // resource's name and bytes; every offset is from the blob's start and every value a little-endian uint32.
+        private const int AssemblyEntryBytes = 16;
+        private const int ResourceEntryBytes = 16;
+
+        private static byte* AssemblyBlob()
+        {
+            byte* table = Table;
+            uint offset = Header(table, 20);
+            return offset == 0 ? null : table + offset;
+        }
+
+        private static uint U32(byte* at, long offset) => Unsafe.ReadUnaligned<uint>(at + offset);
+
+        // How many assemblies the program has, indexed from 1, or 0 where the program cannot enumerate them.
+        // AppDomain.GetAssemblies and Assembly.Load call this; the compiler then lists every assembly in the program.
+        internal static int AssemblyCount()
+        {
+            byte* blob = AssemblyBlob();
+            return blob == null ? 0 : (int)U32(blob, 0);
+        }
+
+        // The assembly's display name, or null where the program cannot ask for it. Assembly.GetName and FullName
+        // call this; the compiler then writes every assembly's name.
+        internal static string? AssemblyDisplayName(int index)
+        {
+            byte* entry = AssemblyEntry(index, out byte* blob);
+            uint length = entry == null ? 0 : U32(entry, 4);
+            return length == 0 ? null : Text.Encoding.UTF8.GetString(blob + U32(entry, 0), (int)length);
+        }
+
+        // The assembly's embedded resources: the first of count entries, or null with none. Assembly's manifest
+        // resource members call this; the compiler then writes the program's resources.
+        internal static byte* ManifestResources(int index, out int count)
+        {
+            byte* entry = AssemblyEntry(index, out byte* blob);
+            count = entry == null ? 0 : (int)U32(entry, 12);
+            return count == 0
+                ? null
+                : blob + 8 + U32(blob, 0) * (long)AssemblyEntryBytes + U32(entry, 8) * (long)ResourceEntryBytes;
+        }
+
+        // The name of the resource at the entry ManifestResources returned, plus index entries in.
+        internal static string ManifestResourceName(byte* resources, int index)
+        {
+            byte* entry = resources + (long)index * ResourceEntryBytes;
+            return Text.Encoding.UTF8.GetString(AssemblyBlob() + U32(entry, 0), (int)U32(entry, 4));
+        }
+
+        // The bytes of the resource at the entry ManifestResources returned, plus index entries in.
+        internal static byte* ManifestResourceData(byte* resources, int index, out int length)
+        {
+            byte* entry = resources + (long)index * ResourceEntryBytes;
+            length = (int)U32(entry, 12);
+            return AssemblyBlob() + U32(entry, 8);
+        }
+
+        private static byte* AssemblyEntry(int index, out byte* blob)
+        {
+            blob = AssemblyBlob();
+            return blob == null || index <= 0 || index > (int)U32(blob, 0)
+                ? null
+                : blob + 8 + (index - 1) * (long)AssemblyEntryBytes;
+        }
 
         // The bit offset of the type's shape: its flag index, layout index and generic definition.
         private static long Shape(byte* table, int typeId)

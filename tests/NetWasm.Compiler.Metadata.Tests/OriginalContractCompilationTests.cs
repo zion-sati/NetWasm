@@ -70,7 +70,7 @@ public sealed class OriginalContractCompilationTests
 
     private static MetadataCompilationLoader CreateLoader(RecordingLoader images) =>
         new MetadataCompilationLoader(images, new MetadataCompilationFactory(),
-            new TypeForwarderReader(new ManagedAssemblyImageReader()));
+            new TypeForwarderReader(new ManagedAssemblyImageReader()), new LoadedAssemblyNativeStructSourceFactory());
 
     private sealed class RecordingLoader : IManagedAssemblyLoader
     {
@@ -79,12 +79,15 @@ public sealed class OriginalContractCompilationTests
 
         public ManagedAssembly Load(string path, ImmutableDictionary<string, string> aliases,
             ImmutableDictionary<(AssemblyIdentity Assembly, string FullName), AssemblyIdentity>? forwarders = null,
-            INativeImportBinder? nativeBinding = null)
+            INativeImportBinder? nativeBinding = null,
+        INativeVariadicCallPlanner? nativeVariadics = null,
+        GeneratedJavaScriptBinding? javaScriptBinding = null)
         {
             if (path == FailingPath) throw new InvalidOperationException();
             var image = new ManagedAssemblyLoader(new ManagedAssemblyImageReader(),
                 new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader(),
-                new NativeCallbackDeclarationReader()).Load(path, aliases, forwarders, nativeBinding);
+                new NativeCallbackDeclarationReader()).Load(path, aliases, forwarders, nativeBinding, nativeVariadics,
+                    javaScriptBinding);
             Loaded.Add(image);
             return image;
         }

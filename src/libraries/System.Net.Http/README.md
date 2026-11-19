@@ -14,6 +14,20 @@ or replace desktop .NET's built-in `System.Net.Http` reference.
 Spin, wasmCloud and NetWasm's Node.js and browser hosts provide it; a command
 run with `wasmtime run` needs `-Shttp`.
 
+## SocketsHttpHandler
+
+`SocketsHttpHandler` is upstream's handler, running over the host's
+`wasi:sockets` and, for `https`, `wasi:tls` through `SslStream`: connection
+pooling, HTTP/1.1, HTTP/2 (over TLS without ALPN it speaks HTTP/1.1; cleartext
+HTTP/2 needs `HttpVersionPolicy.RequestVersionExact`), proxies, authentication,
+`ConnectCallback` and `PlaintextStreamFilter`. HTTP/3 is not available, since
+WASI has no QUIC. NetWasm's Node.js host and Wasmtime provide both interfaces;
+`wasmtime run` needs `-S inherit-network,allow-ip-name-lookup,tls`, and
+Wasmtime trusts only its bundled public roots. A program that uses it does not
+run on hosts without them (Spin, wasmCloud, Cloudflare Workers) or in a
+browser, where `SocketsHttpHandler.IsSupported` is false. `HttpClientHandler`,
+and so a plain `HttpClient`, stays on `wasi:http`.
+
 ## HTTP services
 
 A project with `<OutputType>Component</OutputType>` and

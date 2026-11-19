@@ -13,6 +13,10 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
+# A runtime pack carries every collector for every target.
+TARGETS = ("wasm32", "wasm64")
+GARBAGE_COLLECTORS = ("Compact", "NetWasm", "NetWasmGen", "Bump")
+
 
 def inspect(package: Path, pins_root: Path, version: str) -> None:
     pins = json.loads((pins_root / "eng/toolchain.json").read_text(encoding="utf-8"))
@@ -29,7 +33,7 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
         if len(names) != len(set(names)):
             raise ValueError("Runtime-pack archive has duplicate entries.")
         manifest = json.loads(archive.read("runtime/runtime-pack.json"))
-        if manifest.get("schemaVersion") != 6 or manifest.get("emscriptenVersion") != pins["emscripten"]:
+        if manifest.get("schemaVersion") != 7 or manifest.get("emscriptenVersion") != pins["emscripten"]:
             raise ValueError("Runtime-pack manifest uses an unexpected source version.")
         exports = manifest.get("exports")
         if not isinstance(exports, list) or not exports or \
@@ -43,11 +47,10 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
             raise ValueError("Runtime-pack export file does not match its manifest.")
         targets = manifest.get("targets", [])
         pairs = [(target.get("target"), target.get("garbageCollector")) for target in targets]
-        expected_pairs = {(target, collector) for target in ("wasm32", "wasm64")
-                          for collector in ("Compact", "NetWasm", "Bump")}
+        expected_pairs = {(target, collector) for target in TARGETS for collector in GARBAGE_COLLECTORS}
         if len(pairs) != len(expected_pairs) or set(pairs) != expected_pairs:
             raise ValueError("Runtime-pack target inventory is incomplete.")
-        if manifest.get("defaultGarbageCollector") not in ("Compact", "NetWasm", "Bump") or \
+        if manifest.get("defaultGarbageCollector") not in GARBAGE_COLLECTORS or \
                 manifest.get("defaultGarbageCollector") != policy["defaultGarbageCollector"]:
             raise ValueError("Runtime-pack default collector does not match source policy.")
 
@@ -77,19 +80,29 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
             closure = target["systemLibraries"]
             if closure.get("names") != required or len(closure.get("assets", [])) != len(required):
                 raise ValueError(f"Runtime-pack {name} system-library inventory is incomplete.")
+            exception_required = policy["targets"][name].get("exceptionSystemLibraries", [])
+            exception_closure = target.get("exceptionSystemLibraries", {})
+            if exception_closure.get("names", []) != exception_required or \
+                    len(exception_closure.get("assets", [])) != len(exception_required):
+                raise ValueError(f"Runtime-pack {name} C++ exception library inventory is incomplete.")
             assets = [target["runtimeArchive"], target["collectorArchive"],
                       target["platformArchives"]["wasi"], target["platformArchives"]["noWasi"],
                       speed["runtimeArchive"], speed["collectorArchive"],
                       speed["platformArchives"]["wasi"], speed["platformArchives"]["noWasi"],
-                      target["allowedUndefinedSymbols"], *closure["assets"]]
+                      target["allowedUndefinedSymbols"], target["emscriptenArchives"]["support"],
+                      target["emscriptenArchives"]["standIns"], *closure["assets"],
+                      *exception_closure.get("assets", [])]
             expected_paths = [f"{name}/{collector}/libnetwasm-runtime.a", f"{name}/{collector}/libgc.a",
                               f"{name}/{collector}/libnetwasm-runtime-wasi.a",
                               f"{name}/{collector}/libnetwasm-runtime-nowasi.a",
                               f"{name}/{collector}/speed/libnetwasm-runtime.a", f"{name}/{collector}/speed/libgc.a",
                               f"{name}/{collector}/speed/libnetwasm-runtime-wasi.a",
                               f"{name}/{collector}/speed/libnetwasm-runtime-nowasi.a",
-                              f"{name}/allowed-undefined-symbols.txt", *(
-                f"{name}/system-libraries/{library}" for library in required)]
+                              f"{name}/allowed-undefined-symbols.txt",
+                              f"{name}/libnetwasm-emscripten-support.a",
+                              f"{name}/libnetwasm-emscripten-stand-ins.a", *(
+                f"{name}/system-libraries/{library}" for library in required), *(
+                f"{name}/system-libraries/{library}" for library in exception_required)]
             if [asset.get("path") for asset in assets] != expected_paths:
                 raise ValueError(f"Runtime-pack {name} archive paths are unexpected.")
             allowed_symbols = archive.read(

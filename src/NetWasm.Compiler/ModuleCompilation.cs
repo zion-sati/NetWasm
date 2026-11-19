@@ -14,7 +14,7 @@ using NetWasm.Compiler.Wasm.Emission;
 namespace NetWasm.Compiler;
 
 /// <summary>
-/// A compile's module and what a host writes beside it, without the analysed program and
+/// A compile's module and what a host writes beside it, without the analyzed program and
 /// layouts: what a build needs, which a compile the early cutoff serves from the last one
 /// can give too.
 /// </summary>

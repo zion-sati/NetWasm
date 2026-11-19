@@ -6,6 +6,7 @@ package netwasm:component@1.0.0;
 world diagnostic-command {
     include wasi:cli/imports@0.3.2;
     import wasi:http/client@0.3.2;
+    import wasi:tls/client@0.3.0-draft;
     export wasi:cli/run@0.3.2;
     export netwasm:diagnostics/command@1.0.0;
 }

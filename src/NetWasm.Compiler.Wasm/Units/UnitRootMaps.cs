@@ -7,6 +7,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using NetWasm.Compiler.ControlFlow;
@@ -16,7 +17,7 @@ namespace NetWasm.Compiler.Wasm.Units;
 
 /// <summary>
 /// A method's root map as its unit keeps it: little-endian words, with every map in the
-/// order the analysis produced it, so a restored map enumerates as the analysed one did.
+/// order the analysis produced it, so a restored map enumerates as the analyzed one did.
 /// </summary>
 internal static class UnitRootMapFormat
 {
@@ -76,6 +77,8 @@ internal static class UnitRootMapFormat
                 }
             }
         }
+        Word(writer, map.UnrecordedStores.Count);
+        foreach (var offset in map.UnrecordedStores.Order()) Word(writer, offset);
         return [.. writer.WrittenSpan];
     }
 
@@ -130,12 +133,16 @@ internal static class UnitRootMapFormat
             }
             assignments.Add(offset, list.MoveToImmutable());
         }
+        var storeCount = reader.Count();
+        var stores = ImmutableHashSet.CreateBuilder<int>();
+        for (var index = 0; index < storeCount; index++) stores.Add(reader.Word());
         if (!reader.AtEnd) throw new InvalidDataException("A unit's root map is corrupt.");
         return new MethodRootMap(method, slots.ToImmutable(), safepoints.ToImmutable())
         {
             AnchorPlan = anchors.Count == 0 && assignments.Count == 0
                 ? StackStorageAnchorPlan.Empty
                 : new(anchors.MoveToImmutable(), assignments.ToImmutable()),
+            UnrecordedStores = stores.ToImmutable(),
         };
     }
 
@@ -207,8 +214,8 @@ internal static class UnitRootMapFormat
 /// One root-map worker's side of the compile's units. Its providers record the
 /// whole-program facts a method's root-map analysis reads (value layouts, dispatch sites,
 /// which callees may allocate), kept for the method's unit. A method whose unit kept its
-/// root map takes that map instead of analysing, when the unit's input matches and every
-/// fact it recorded still holds; under verification it is analysed too and must match.
+/// root map takes that map instead of analyzing, when the unit's input matches and every
+/// fact it recorded still holds; under verification it is analyzed too and must match.
 /// </summary>
 internal sealed class UnitRootMapRecorder
 {
@@ -241,7 +248,7 @@ internal sealed class UnitRootMapRecorder
     public IMembership<EntityKey> AllocatingMethods { get; }
     public IMembership<string> AllocatingConstructedMethods { get; }
 
-    // The method's root map: its unit's where that holds, otherwise analysed with the facts
+    // The method's root map: its unit's where that holds, otherwise analyzed with the facts
     // it reads recorded for its unit.
     internal MethodRootMap Map(ManagedMethodBody method, Func<MethodRootMap> analyze)
     {
@@ -252,19 +259,19 @@ internal sealed class UnitRootMapRecorder
         if (restored is not null && !_state.Verifies)
             return restored;
         _log.Begin();
-        MethodRootMap analysed;
+        MethodRootMap analyzed;
         try
         {
-            analysed = analyze();
+            analyzed = analyze();
         }
         finally
         {
             _state.RootMapDependencies[identity] = _log.End();
         }
         if (restored is null)
-            return analysed;
+            return analyzed;
         var expected = new UnitFingerprintBuilder();
-        expected.Add(analysed);
+        expected.Add(analyzed);
         var actual = new UnitFingerprintBuilder();
         actual.Add(restored);
         return expected.Finish() == actual.Finish()

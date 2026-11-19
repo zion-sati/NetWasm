@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Immutable;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
@@ -20,7 +22,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 // rewrapping, so their descriptors take no case (the interpreter does not compile them).
 internal sealed class MemberFieldWriteCaseEmitter(
     IMemberDescriptorLayout descriptors,
-    IMemberDescriptorCaseEmitter descriptorCases,
     IStaticInitializationEmitter initialization,
     IMemberReferenceCheckEmitter referenceChecks,
     INullableTypeResolver nullableTypes,
@@ -31,12 +32,11 @@ internal sealed class MemberFieldWriteCaseEmitter(
     ITypeLayoutProvider types,
     IAddressInstructionEmitter addresses,
     IRuntimeImportResolver runtimeImports,
-    IImplicitExceptionEmitter exceptions) : IMemberFieldWriteCaseEmitter
+    IImplicitExceptionEmitter exceptions,
+    IReferenceWriteBarrierEmitter writeBarrier) : IMemberFieldWriteCaseEmitter
 {
     private readonly IMemberDescriptorLayout _descriptors = descriptors ??
         throw new ArgumentNullException(nameof(descriptors));
-    private readonly IMemberDescriptorCaseEmitter _descriptorCases = descriptorCases ??
-        throw new ArgumentNullException(nameof(descriptorCases));
     private readonly IStaticInitializationEmitter _initialization = initialization ??
         throw new ArgumentNullException(nameof(initialization));
     private readonly IMemberReferenceCheckEmitter _referenceChecks = referenceChecks ??
@@ -59,13 +59,14 @@ internal sealed class MemberFieldWriteCaseEmitter(
         throw new ArgumentNullException(nameof(runtimeImports));
     private readonly IImplicitExceptionEmitter _exceptions = exceptions ??
         throw new ArgumentNullException(nameof(exceptions));
+    private readonly IReferenceWriteBarrierEmitter _writeBarrier = writeBarrier ??
+        throw new ArgumentNullException(nameof(writeBarrier));
 
-    public int EmitCases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan)
+    public ImmutableArray<MemberCase> Cases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(plan);
-        int descriptorLocal = request.Local(0, CliValueKind.ManagedReference);
         int receiverLocal = request.Local(1, CliValueKind.ManagedReference);
         int valueLocal = request.Local(2, CliValueKind.ManagedReference);
         var cases = plan.Fields.Values
@@ -74,9 +75,10 @@ internal sealed class MemberFieldWriteCaseEmitter(
             .OrderBy(field => field.CanonicalName, StringComparer.Ordinal)
             .ToArray();
         var throwFunction = request.Instruction.Context.ManagedThrowFunction;
-        foreach (var field in cases)
+        return [.. cases.Select(field => new MemberCase(_descriptors.GetDescriptorAddress(field), () => EmitCase(field)))];
+
+        void EmitCase(FieldInstanceModel field)
         {
-            _descriptorCases.Open(code, descriptorLocal, _descriptors.GetDescriptorAddress(field));
             if (field.Definition.IsStatic)
             {
                 _initialization.Emit(new(field.Definition.DeclaringType, field.DeclaringType,
@@ -119,13 +121,13 @@ internal sealed class MemberFieldWriteCaseEmitter(
                         scratch: request.Instruction.Context.VectorScratch);
                 }
             }
+            // A static field is a root, which every collection reads; an instance field is in the receiver.
+            if (!field.Definition.IsStatic) _writeBarrier.Emit(request.Instruction, code, receiverLocal, fieldType);
             _addresses.Emit(code, 0);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)request.Local(0, CliValueKind.ManagedReference))));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
         }
-        return cases.Length;
     }
 
     // A non-null reference must be of a type the field accepts; object accepts any.

@@ -15,7 +15,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
     ITargetLayout layouts,
     IValueLayoutProvider valueLayouts,
     IRuntimeImportResolver runtimeImports,
-    IRuntimeStateInitializer runtimeInitialization,
+    IEntryRuntimeInitializer runtimeInitialization,
     IImplicitExceptionEmitter exceptions,
     IReferenceComparisonEmitter references,
     IGeneratedFunctionWriterFactory writers,

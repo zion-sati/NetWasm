@@ -222,7 +222,8 @@ internal static class CompilerTestSupport
         int? expectedEnvironmentReadsBeforeRun = null,
         WasmTarget target = WasmTarget.Wasm32,
         bool inputIsInt64 = false,
-        bool assertStaticRootsRegisterOnce = false)
+        bool assertStaticRootsRegisterOnce = false,
+        int? expectedEnvironmentReadsAfterRun = null)
     {
         var path = Path.Combine(directory, "application.wasm");
         File.WriteAllBytes(path, module);
@@ -232,6 +233,8 @@ internal static class CompilerTestSupport
         var invocationCountText = invocationCount.ToString(
             System.Globalization.CultureInfo.InvariantCulture);
         var expectedEnvironmentReadsText = expectedEnvironmentReadsBeforeRun?.ToString(
+            System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+        var expectedEnvironmentReadsAfterRunText = expectedEnvironmentReadsAfterRun?.ToString(
             System.Globalization.CultureInfo.InvariantCulture) ?? "null";
         var assertStaticRootsRegisterOnceText = assertStaticRootsRegisterOnce ? "true" : "false";
         var pages = DataSegmentPages(module).ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -304,9 +307,9 @@ internal static class CompilerTestSupport
             "return typeof source==='bigint'?BigInt(clone):clone;};" +
             "const allocateString=(value,length,type)=>{" +
             "if(length<0||length>0x7ffffffb)return 0;" +
-            "const p=allocate(8+length*2,type);const v=new DataView(memory.buffer);" +
+            "const p=allocate(8+(length+1)*2,type);const v=new DataView(memory.buffer);" +
             "v.setInt32(p+4,length,true);" +
-            "for(let i=0;i<length;i++)v.setUint16(p+8+i*2,value,true);return p;};" +
+            "for(let i=0;i<length;i++)v.setUint16(p+8+i*2,value,true);v.setUint16(p+8+length*2,0,true);return p;};" +
             "const getTypeObject=(semantic,type)=>{if(typeObjects.has(semantic))" +
             "return typeObjects.get(semantic);const p=allocate(8,type);" +
             "new DataView(memory.buffer).setInt32(p+4,semantic,true);" +
@@ -437,7 +440,7 @@ internal static class CompilerTestSupport
             "value_frame_leave_mapped:valueLeave," +
             "handle_new:()=>0,handle_get:()=>0,handle_release:z," +
             "begin_throw:beginThrow,begin_rethrow:beginThrow," +
-            "allocate_reference_array:array,allocate_value_array:array," +
+            "allocate_reference_array:array,allocate_value_array:array,allocate_uninitialized_value_array:array," +
             "allocate_rectangular_array:rectangularArray," +
             "allocate_bounded_rectangular_array:(...args)=>rectangularArray(...args,true)," +
             "array_rank:array=>typeSizes.get(new DataView(memory.buffer).getInt32(array,true))===24" +
@@ -530,6 +533,9 @@ internal static class CompilerTestSupport
             "let result=0,firstEntryStaticRoots=null;for(let i=0;i<" + invocationCountText + ";i++){" +
             "result=x.instance.exports[" + System.Text.Json.JsonSerializer.Serialize(exportName) + "](" +
             inputText + ");if(i===0)firstEntryStaticRoots=staticRootRegistrations;}" +
+            "const expectedEnvironmentReadsAfterRun=" + expectedEnvironmentReadsAfterRunText + ";" +
+            "if(expectedEnvironmentReadsAfterRun!==null&&environmentReads!==expectedEnvironmentReadsAfterRun)" +
+            "throw Error(`expected ${expectedEnvironmentReadsAfterRun} environment reads after run, got ${environmentReads}`);" +
             "if(" + assertStaticRootsRegisterOnceText + "){" +
             "if(!(firstEntryStaticRoots>0))throw Error('no static roots were registered by the first entry');" +
             "if(staticRootRegistrations!==firstEntryStaticRoots)" +

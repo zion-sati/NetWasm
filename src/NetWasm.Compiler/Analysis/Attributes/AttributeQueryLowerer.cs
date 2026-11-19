@@ -79,7 +79,7 @@ internal sealed class AttributeQueryLowerer(
                     continue;
                 }
                 var fragment = fragments.Build(new(call.Operation, planner.Plan(query), call.ArgumentCount,
-                    call.InheritArgument, query.InheritConstant, CliTypeIdentity.SzArray(query.Filter),
+                    call.InheritArgument, query.InheritConstant, query.ResultArrayType,
                     ambiguityConstructor, nextLocal));
                 replacements.Add(instruction.Offset, fragment);
                 nextLocal += fragment.LocalTypes.Length;

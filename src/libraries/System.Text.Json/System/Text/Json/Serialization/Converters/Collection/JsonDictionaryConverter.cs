@@ -24,6 +24,16 @@ namespace System.Text.Json.Serialization
     internal abstract class JsonDictionaryConverter<TDictionary, TKey, TValue> : JsonDictionaryConverter<TDictionary>
         where TKey : notnull
     {
+#if NETWASM
+        protected JsonDictionaryConverter()
+        {
+            if (typeof(TValue) == typeof(object))
+            {
+                s_objectValuesReachable = nameof(JsonDictionaryConverter<TDictionary, TKey, TValue>);
+            }
+        }
+#endif
+
         /// <summary>
         /// When overridden, adds the value to the collection.
         /// </summary>

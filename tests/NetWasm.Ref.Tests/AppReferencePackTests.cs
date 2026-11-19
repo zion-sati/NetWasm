@@ -7,7 +7,8 @@ namespace NetWasm.Ref.Tests;
 
 // NetWasm.App.Ref carries every NetWasm.App library's reference assembly, netstandard.dll forwarding each
 // standard type to CoreLib or the library that declares it, and the System.Text.Json and Regex generators
-// from the exact net10.0 targeting pack, through the SDK-owned pack boundary NetWasm.Ref uses.
+// from the exact .NET 11 targeting pack (the libraries are .NET 11's), through the SDK-owned pack boundary NetWasm.Ref
+// uses. The project itself still builds for net10.0.
 public sealed class AppReferencePackTests
 {
     private static XDocument Project() =>
@@ -28,10 +29,16 @@ public sealed class AppReferencePackTests
         Assert.Contains(contracts.Descendants("_NetWasmAppReferenceAssembly"), item =>
             (string?)item.Attribute("Include") == "@(_NetWasmAppLibraryOutput->'%(ReferenceAssembly)')");
         Assert.Contains(contracts.Descendants("Error"), error => (string?)error.Attribute("Code") == "NWRF009");
+        // Under both target frameworks: the platform one and the deprecated netwasm0.1.
         var references = pack.Descendants("_NetWasmAppRefPackageFile")
-            .Single(file => (string?)file.Attribute("Include") == "@(_NetWasmAppReferenceAssembly)");
-        Assert.Equal("ref/NetWasm,Version=v0.1/%(_NetWasmAppReferenceAssembly.Filename)%(_NetWasmAppReferenceAssembly.Extension)",
-            references.Element("PackagePath")!.Value);
+            .Where(file => (string?)file.Attribute("Include") == "@(_NetWasmAppReferenceAssembly)")
+            .Select(file => (file.Element("PackagePath")!.Value, file.Element("TargetFrameworkAlias")!.Value));
+        Assert.Equal(
+            [
+                ("ref/NetWasm,Version=v0.1/%(_NetWasmAppReferenceAssembly.Filename)%(_NetWasmAppReferenceAssembly.Extension)", "netwasm0.1"),
+                ("ref/net10.0-netwasm/%(_NetWasmAppReferenceAssembly.Filename)%(_NetWasmAppReferenceAssembly.Extension)", "net10.0-netwasm"),
+            ],
+            references);
     }
 
     [Fact]
@@ -51,12 +58,13 @@ public sealed class AppReferencePackTests
     }
 
     [Fact]
-    public void ShipsTheJsonAndRegexGeneratorsFromTheNet10TargetingPack()
+    public void ShipsTheJsonAndRegexGeneratorsFromTheNet11TargetingPack()
     {
         var project = Project();
         var pack = Target(project, "NetWasmAppRefPack");
 
         Assert.Equal("net10.0", project.Descendants("TargetFramework").Single().Value);
+        Assert.Equal("net11.0", project.Descendants("NetWasmRefGeneratorTargetFramework").Single().Value);
         Assert.Equal("System.Text.Json.SourceGeneration;System.Text.RegularExpressions.Generator",
             (string?)project.Descendants("NetWasmRefGeneratorAssembly").Single().Attribute("Include"));
         Assert.Equal("source-generators", project.Descendants("NetWasmRefGeneratorProvenanceName").Single().Value);

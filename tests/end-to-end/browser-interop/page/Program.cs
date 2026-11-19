@@ -16,6 +16,13 @@ public static partial class PageExports
     [JSImport("stamp", "app.bundled")]
     private static extern string Stamp(string value);
 
+    // A dotted name is a path through its module, and an import without a module calls a global function.
+    [JSImport("Format.wrap", "app.bundled")]
+    private static extern string Wrap(string value);
+
+    [JSImport("globalThis.Math.max")]
+    private static extern double Max(double left, double right);
+
     // Nothing calls this, so trimming removes it and its module is left out.
     [JSImport("optionalFeature", "app.optional")]
     internal static extern string OptionalFeature();
@@ -82,6 +89,22 @@ public static partial class PageExports
     [JSImport("words", "app.host")]
     private static extern string?[]? Words(string?[]? values);
 
+    // .NET's shape: the callback belongs to JavaScript, which keeps it as long as it holds the function.
+    [JSImport("onBack", "app.host")]
+    private static extern void OnBack(Func<int, bool> handler);
+
+    [JSImport("writeLater", "app.host")]
+    private static extern Task<int> WriteLater([JSMarshalAs<JSType.MemoryView>] ArraySegment<byte> data);
+
+    [JSImport("fillSegment", "app.host")]
+    private static extern void FillSegment([JSMarshalAs<JSType.MemoryView>] ArraySegment<int> values);
+
+    [JSImport("missing", "app.host")]
+    private static extern string? Missing();
+
+    [JSImport("plainNumbers", "app.host")]
+    private static extern int[]? PlainNumbers();
+
     [JSImport("raise", "app.host")]
     private static extern Exception? Raise(string message);
 
@@ -97,6 +120,9 @@ public static partial class PageExports
 
     [JSExport("add")]
     public static int Add(int value) => _counter += value;
+
+    [JSExport("lookups")]
+    public static string Lookups(string value) => Wrap(value) + "|" + (int)Max(3, 7);
 
     [JSExport("echo")]
     public static string? Echo(string? value)
@@ -173,6 +199,79 @@ public static partial class PageExports
     [JSExport("same")]
     public static JSObject? Same(JSObject? value) => value;
 
+    // .NET's JSObject property API reads and writes the object's own properties; a disposed object refuses them.
+    [JSExport("properties")]
+    public static string Properties(JSObject target)
+    {
+        string nestedDepth;
+        using (var nested = target.GetPropertyAsJSObject("nested"))
+        {
+            target.SetProperty("flag", true);
+            target.SetProperty("count", target.GetPropertyAsInt32("count") + 1);
+            target.SetProperty("ratio", target.GetPropertyAsDouble("ratio") * 2);
+            target.SetProperty("name", target.GetPropertyAsString("name") + "!");
+            target.SetProperty("bytes", target.GetPropertyAsByteArray("bytes"));
+            target.SetProperty("same", nested);
+            target.SetProperty("gone", (string?)null);
+            nestedDepth = nested is null ? "none" : nested.GetPropertyAsInt32("depth").ToString();
+        }
+        var disposed = target.GetPropertyAsJSObject("nested")!;
+        disposed.Dispose();
+        bool refused;
+        try
+        {
+            refused = !disposed.HasProperty("depth");
+        }
+        catch (ObjectDisposedException)
+        {
+            refused = true;
+        }
+        return string.Join(",",
+            target.HasProperty("count"), target.HasProperty("missing"),
+            target.GetTypeOfProperty("nested"), target.GetTypeOfProperty("missing"),
+            target.GetPropertyAsBoolean("flag"), target.GetPropertyAsInt32("missing"),
+            target.GetPropertyAsString("missing") is null, nestedDepth,
+            target.IsDisposed, disposed.IsDisposed && refused);
+    }
+
+    // JSHost.ImportAsync completes with a module the build declared, whatever its URL, and fails for one the host does
+    // not have; JSHost.GlobalThis is the page's global object.
+    [JSExport("importBound")]
+    public static async Task<string> ImportBound()
+    {
+        using var bundled = await JSHost.ImportAsync("app.bundled", "./bundled.mjs");
+        using var format = bundled.GetPropertyAsJSObject("Format");
+        string absent;
+        try
+        {
+            using var imported = await JSHost.ImportAsync("app.absent", "./absent.mjs");
+            absent = "imported";
+        }
+        catch (JSException)
+        {
+            absent = "refused";
+        }
+        using var global = JSHost.GlobalThis;
+        return bundled.GetTypeOfProperty("stamp") + ":" + (format?.GetPropertyAsString("prefix") ?? "none") + ":"
+            + absent + ":" + global.GetTypeOfProperty("document");
+    }
+
+    // An ArraySegment crosses as .NET's MemoryView, which an asynchronous import reads after it awaits, and through
+    // which JavaScript writes into the array.
+    [JSExport("segments")]
+    public static async Task<string> Segments()
+    {
+        var bytes = new byte[] { 9, 1, 2, 3, 9 };
+        var written = await WriteLater(new ArraySegment<byte>(bytes, 1, 3));
+        var values = new int[4];
+        FillSegment(new ArraySegment<int>(values, 1, 2));
+        return written + ":" + string.Join(",", values);
+    }
+
+    // undefined reads as null, and a plain array of numbers as the typed array, as .NET reads them.
+    [JSExport("looseResults")]
+    public static string LooseResults() => (Missing() is null) + ":" + string.Join("+", PlainNumbers() ?? []);
+
     // The async import settles with a string.
     [JSExport("later")]
     public static async Task<int> Later(string text) => (await Shout(text) == text.ToUpperInvariant() ? 1000 : 0) + text.Length;
@@ -219,6 +318,21 @@ public static partial class PageExports
 
     [JSExport("heard")]
     public static int Heard() => _heard;
+
+    [JSExport("registerBack")]
+    public static void RegisterBack()
+    {
+        var limit = _counter;
+        OnBack(value => value > limit);
+    }
+
+    // A callback JavaScript holds survives a managed collection.
+    [JSExport("collectGarbage")]
+    public static void CollectGarbage()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+    }
 
     [JSExport("labelThroughCallback")]
     public static string LabelThroughCallback()

@@ -33,6 +33,7 @@
  */
 
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace System;
 
@@ -60,6 +61,7 @@ public static partial class Math
         return ix;
     }
 
+    [Intrinsic]
     public static double FusedMultiplyAdd(double left, double right, double addend)
     {
         var nxm = FmaNormalize(left, out var nxe, out var nxsign);
@@ -237,6 +239,7 @@ public static partial class MathF
      * direct double-precision arithmetic suffices, except where double
      * rounding occurs.
      */
+    [Intrinsic]
     public static float FusedMultiplyAdd(float x, float y, float z)
     {
         var xy = (double)x * y;

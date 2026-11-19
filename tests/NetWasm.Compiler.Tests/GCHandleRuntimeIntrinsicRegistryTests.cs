@@ -19,10 +19,16 @@ public sealed class GCHandleRuntimeIntrinsicRegistryTests
     [InlineData("System.GCCollectionRuntime", "Collect", RuntimeIntrinsic.GcCollect)]
     [InlineData("System.ObjectIdentityRuntime", "GetHashCode", RuntimeIntrinsic.ObjectIdentityHash)]
     [InlineData("System.MarvinSeedRuntime", "Get", RuntimeIntrinsic.RandomSeed)]
+    [InlineData("System.Buffer", "RecordReferenceWrites", RuntimeIntrinsic.RecordReferenceWrites)]
+    [InlineData("System.GCGenerationRuntime", "Of", RuntimeIntrinsic.GcObjectGeneration)]
+    [InlineData("System.GCCollectionRuntime", "CollectYoung", RuntimeIntrinsic.GcCollectYoung)]
+    [InlineData("System.GCCollectionRuntime", "CollectWhenIdle", RuntimeIntrinsic.GcCollectWhenIdle)]
+    [InlineData("System.GCCollectionRuntime", "CollectWhenQuiet", RuntimeIntrinsic.GcCollectWhenQuiet)]
     [InlineData(
         "System.GCFinalizerRuntime",
         "WaitForPending",
         RuntimeIntrinsic.GcWaitForPendingFinalizers)]
+    [InlineData("System.GCFinalizerRuntime", "RunQueued", RuntimeIntrinsic.GcRunQueuedFinalizers)]
     public void MapsEveryGcRuntimeContract(
         string typeName,
         string methodName,

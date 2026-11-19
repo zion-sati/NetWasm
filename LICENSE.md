@@ -9,7 +9,7 @@ component or upstream notice applies, including all code a user needs to
 deploy an application: CoreLib, runtime libraries, WIT/WASI libraries, the
 JavaScript host and the other JavaScript that ships with an application,
 templates, and generated support code. NetWasmGC and CompactGC are licensed
-under Apache-2.0 and carry their own licence texts and notices.
+under Apache-2.0 and carry their own license texts and notices.
 
 The published licensor is the pseudonym **Zion Sati**. Commercial licensing
 questions and agreements: <zion.sati@netwasm.com>. Project repository:

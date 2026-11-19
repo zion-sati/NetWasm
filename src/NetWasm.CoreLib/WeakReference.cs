@@ -53,6 +53,7 @@ namespace System
         // Gets or sets the object stored in the handle.
         public virtual object? Target
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => WeakReferenceRuntime.Get(_handle);
             set
             {

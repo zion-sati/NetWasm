@@ -30,10 +30,10 @@ public sealed record AssemblyInputs(string Name, InputFingerprint Content, Assem
     public InputFingerprint Shape => Detail?.Shape ?? Content;
 }
 
-/// <summary>What one analysed method added to the whole program, and its definition.</summary>
+/// <summary>What one analyzed method added to the whole program, and its definition.</summary>
 public readonly record struct MethodContributionRecord(string Assembly, int Token, InputFingerprint Fingerprint);
 
-/// <summary>The input assemblies of one compile, and what each analysed method contributed.</summary>
+/// <summary>The input assemblies of one compile, and what each analyzed method contributed.</summary>
 public sealed record CompilationInputs(ImmutableArray<AssemblyInputs> Assemblies)
 {
     public static CompilationInputs Empty { get; } = new([]);

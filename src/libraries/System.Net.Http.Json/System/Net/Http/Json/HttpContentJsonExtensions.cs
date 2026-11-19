@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace System.Net.Http.Json;
 
-public static class HttpContentJsonExtensions
+public static partial class HttpContentJsonExtensions
 {
     public static Task<object?> ReadFromJsonAsync(
         this HttpContent content,

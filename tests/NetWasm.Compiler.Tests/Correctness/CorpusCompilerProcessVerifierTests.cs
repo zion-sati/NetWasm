@@ -21,7 +21,7 @@ public sealed class CorpusCompilerProcessVerifierTests
     [InlineData(0, null)]
     [InlineData(1, null)]
     [InlineData(2, null)]
-    public void FailedProcessIsCapturedOnceAndNeverRelabelledSuccessful(int completion, int? exit)
+    public void FailedProcessIsCapturedOnceAndNeverRelabeledSuccessful(int completion, int? exit)
     {
         var writer = new RecordingWriter();
         var invocation = Invocation();

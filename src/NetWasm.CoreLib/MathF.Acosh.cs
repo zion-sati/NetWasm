@@ -6,11 +6,14 @@
  * SPDX-License-Identifier: MIT
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class MathF
 {
     /* acosh(x) = log(x + sqrt(x*x-1)) */
+    [Intrinsic]
     public static float Acosh(float x)
     {
         uint u = BitConverter.SingleToUInt32Bits(x);

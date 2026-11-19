@@ -8,6 +8,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -236,7 +237,8 @@ public sealed class CallableLoadingEmitterTests
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var emitter = new VirtualFunctionLoadEmitter(
             layouts,
-            layouts,
+            new VirtualDispatchCasePlanner(layouts, new FakeIntrinsics()),
+            new KeyedDispatchEmitter(),
             new ImplicitExceptionEmitter(layouts),
             new InstructionCommandFactory());
         return (

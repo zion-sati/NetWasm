@@ -6,7 +6,7 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
-// Reports the compiled host flavour to CoreLib: modules behind the JavaScript export boundary
+// Reports the compiled host flavor to CoreLib: modules behind the JavaScript export boundary
 // (raw core modules and browser JavaScript modules) are JavaScript-hosted; WIT components are not.
 internal sealed class JavaScriptHostIntrinsicEmitter : IRuntimeIntrinsicEmitter
 {

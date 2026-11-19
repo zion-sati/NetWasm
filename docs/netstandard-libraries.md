@@ -1,16 +1,20 @@
-# .NET Standard libraries
+# .NET and .NET Standard libraries
 
-A `netwasm0.1` project can reference NuGet packages built for .NET Standard. This page says which packages restore,
+A NetWasm project can reference NuGet packages built for .NET 8 and later and for .NET Standard. This page says which
+packages restore,
 what happens when a library reaches something NetWasm does not provide, and how a library author can avoid those
 paths. The [support status](support-status.md) page remains the inventory of what NetWasm implements, and
 [Popular NuGet packages](package-compatibility.md) shows how the 100 most-downloaded .NET Standard packages run.
 
 ## Which packages restore
 
-NuGet picks a package's best asset for `netwasm0.1`: a `netwasm0.1` asset if the package has one, otherwise its
-.NET Standard 2.1, 2.0 or earlier asset. A package that ships only `net8.0` or later assets has nothing NetWasm can
-use; its author can add `netwasm0.1` (or `netstandard2.1`) to the package's target frameworks. Adding `netwasm0.1`
-keeps .NET 8 and later APIs, such as hardware intrinsics, that .NET Standard does not have.
+NuGet picks a package's best asset for `net10.0-netwasm` as it does for any .NET 10 platform: a `net10.0-netwasm`
+asset if the package has one, otherwise its `net10.0`, `net9.0` or `net8.0` asset, otherwise its .NET Standard 2.1, 2.0
+or earlier asset. A library that needs a NetWasm-specific build adds `net10.0-netwasm` to its target frameworks.
+
+NetWasm.App is .NET 11's framework minus what a WebAssembly guest cannot provide, so most `net8.0` and later libraries
+compile; a library that reaches an API NetWasm lacks fails the build and names it. A deprecated `netwasm0.1` project
+takes only a package's `netwasm0.1` or .NET Standard asset.
 
 Libraries built against .NET's reference assemblies (System.Runtime, System.Buffers and the rest) bind to NetWasm's
 framework without changes, and packages that only backport framework assemblies are not restored.
@@ -28,12 +32,13 @@ it, keeps working. The families a library meets most often:
   builds, but it finds an object's properties and constructors at run time, and its `JsonWriter` reads
   `JsonToken`'s fields the same way when first used, so serializing objects and writing any JSON throw. Use
   System.Text.Json with source generation instead.
-- **Manifest resources.** NetWasm deploys no embedded resources. `Assembly.GetManifestResourceStream` throws, and
-  the NetWasm SDK sets `UseSystemResourceKeys` to true, as Blazor WebAssembly's SDK does. A package that formats its
-  messages through generated `SR` resources (all of Microsoft.Extensions and many others) therefore reports the
-  resource key, such as `TryAddIndistinguishableTypeToEnumerable`, instead of the English sentence, and its
-  exceptions keep their types. Where a package embeds trimming substitutions for the switch, as Microsoft.Extensions
-  packages do, its resource lookup leaves the program altogether.
+- **Message resources.** The NetWasm SDK sets `UseSystemResourceKeys` to true, as Blazor WebAssembly's SDK does. A
+  package that formats its messages through generated `SR` resources (all of Microsoft.Extensions and many others)
+  therefore reports the resource key, such as `TryAddIndistinguishableTypeToEnumerable`, instead of the English
+  sentence, and its exceptions keep their types. Where a package embeds trimming substitutions for the switch, as
+  Microsoft.Extensions packages do, its resource lookup leaves the program altogether. Set `UseSystemResourceKeys`
+  to false for the full messages: `GetManifestResourceStream` and `ResourceManager` read embedded resources, which
+  a program carries only when it reaches a resource API.
 - **File change notifications.** WASI 0.3 has no way to watch the file system, so `FileSystemWatcher` throws when it
   starts raising events. Microsoft.Extensions.Hosting watches `appsettings.json` by default; turn that off with the
   host setting `hostBuilder:reloadConfigOnChange=false`, for example
@@ -53,8 +58,8 @@ Each of these keeps a library working on NetWasm and costs nothing elsewhere.
   time, so code inside `if (OperatingSystem.IsWindows())`, and the Windows P/Invokes it calls, is left out of the
   program. Write the check in the condition itself: a result stored in a field and read later is a run-time value,
   and the guarded P/Invoke is then reached.
-- **Probe behaviour, not the runtime's identity.** A check such as `Type.GetType("Mono.Runtime") != null` needs type
-  names. Test the behaviour the check stands for instead. For example, a library that works around Mono parsing
+- **Probe behavior, not the runtime's identity.** A check such as `Type.GetType("Mono.Runtime") != null` needs type
+  names. Test the behavior the check stands for instead. For example, a library that works around Mono parsing
   `"/path"` as an absolute URI can test `new Uri("/x", UriKind.RelativeOrAbsolute).IsAbsoluteUri`. When the runtime
   really matters, `RuntimeInformation.FrameworkDescription` names it (NetWasm reports `NetWasm <version>`); .NET 5
   and later targets also have `OperatingSystem.IsBrowser()`, and .NET 8 and later `OperatingSystem.IsWasi()`.
@@ -69,4 +74,4 @@ Each of these keeps a library working on NetWasm and costs nothing elsewhere.
   rather than reflection-based serializers, and take version strings or other build facts from a constant the build
   generates rather than from `typeof(T).Assembly` and its attributes.
 - **Keep message resources optional.** Exception types and properties should carry the information callers need;
-  NetWasm shows resource keys, not sentences.
+  by default NetWasm shows resource keys, not sentences.

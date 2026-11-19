@@ -12,19 +12,19 @@ internal interface IStackValueConsumerFinder
 {
     // The instruction in the producer's block that pops the value it pushed,
     // or null when something reads it first or an instruction is not followed.
-    // Instructions at the offsets in entries start blocks.
-    int? Find(ImmutableArray<CilInstruction> instructions, HashSet<int> entries, int producer);
+    // Instructions at the offsets in entries start blocks. A value the producer
+    // pushed beneath others it pushed, as dup's first copy, has those above it.
+    int? Find(ImmutableArray<CilInstruction> instructions, HashSet<int> entries, int producer, int above = 0);
 }
 
 internal sealed class StackValueConsumerFinder(IStackEffectResolver effects) : IStackValueConsumerFinder
 {
     private readonly IStackEffectResolver _effects = effects ?? throw new ArgumentNullException(nameof(effects));
 
-    public int? Find(ImmutableArray<CilInstruction> instructions, HashSet<int> entries, int producer)
+    public int? Find(ImmutableArray<CilInstruction> instructions, HashSet<int> entries, int producer, int above = 0)
     {
         // Values pushed above the producer's. A body ends in a branch, return or
         // throw, whose stack effects are not followed, so the walk stops within it.
-        var above = 0;
         for (var index = producer + 1; ; index++)
         {
             if (entries.Contains(instructions[index].Offset) ||

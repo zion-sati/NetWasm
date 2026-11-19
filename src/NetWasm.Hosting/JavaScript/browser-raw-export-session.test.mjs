@@ -8,6 +8,7 @@ import { createBrowserRawExportSession } from "./browser-raw-export-session.mjs"
 import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import { createWasiFilesystem } from "./wasi-filesystem.mjs";
+import { createBrowserSidecarMaterializer } from "./browser-sidecar-materializer.mjs";
 import { timeZoneContainer } from "./timezone-sidecar-zones.test.mjs";
 
 const encoder = new TextEncoder();
@@ -181,6 +182,7 @@ function fixture({
         return url;
       },
       createImports() { shimCalls++; throw new Error("imports should not be needed"); },
+      createSidecarMaterializer: createBrowserSidecarMaterializer,
       digest: webcrypto.subtle.digest.bind(webcrypto.subtle),
       async fetch(url) {
         const bytes = files.get(url);
@@ -315,6 +317,20 @@ test("keeps ordinary JS imports separate from WIT providers", async () => {
     /invalid/);
 });
 
+// A host may ask to be told of each import the program calls (a page's idle collection does); the observer is
+// optional, must be a function, and is no license for other keys.
+test("accepts an optional import observer and rejects one that is not a function", async () => {
+  let observed = 0;
+  const state = fixture({ mutateOptions(options) { options.observeImportCall = () => { observed++; }; } });
+  const session = await state.open({ startup: { buildFingerprint, manifestSha256: state.manifestSha256 } });
+  assert.equal(session.exports.add(20, 22), 42);
+  assert.equal(observed, 0);
+  await session.close();
+  assert.throws(() => fixture({ mutateOptions(options) { options.observeImportCall = 1; } }),
+    /import observer must be a function/);
+  assert.throws(() => fixture({ mutateOptions(options) { options.unexpected = () => {}; } }), /shape is invalid/);
+});
+
 // The final module imports an import module's functions as they are, so a
 // session requires the module like a JSImport module.
 test("requires the import modules the final module calls", async () => {
@@ -394,10 +410,18 @@ test("does not release transferred scopes twice when session opening fails", asy
   assert.equal(state.filesystemDisposals(), 1);
 });
 
+// The sidecar materializer mounts sidecars in the filesystem scope, so the generated entry passes both or neither.
+test("requires a sidecar materializer exactly with a filesystem scope", () => {
+  for (const missing of ["createFilesystemScope", "createSidecarMaterializer"]) {
+    assert.throws(() => fixture({ mutateOptions(options) { options.platform[missing] = null; } }),
+      /needs a sidecar materializer exactly with a filesystem scope/);
+  }
+});
+
 // Issue #121: an application that links no filesystem interface gets no
 // filesystem scope, so its page bundle carries no filesystem code.
 test("opens without a filesystem scope when the application links no filesystem", async () => {
-  const state = fixture({ mutateOptions(options) { options.platform.createFilesystemScope = null; } });
+  const state = fixture({ mutateOptions(options) { options.platform.createFilesystemScope = null; options.platform.createSidecarMaterializer = null; } });
   const session = await state.open({ startup: {
     buildFingerprint, manifestSha256: state.manifestSha256,
   } });
@@ -413,7 +437,7 @@ test("time zone data without a filesystem scope fails clearly", async () => {
         clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false, temporaryDirectory: false, workingDirectory: false,
       },
     },
-    mutateOptions(options) { options.platform.createFilesystemScope = null; },
+    mutateOptions(options) { options.platform.createFilesystemScope = null; options.platform.createSidecarMaterializer = null; },
     timeZoneBytes: timeZoneContainer([["Australia/Melbourne", 1]]),
   });
   await assert.rejects(() => state.open({ startup: {
@@ -425,7 +449,7 @@ test("time zone data without a filesystem scope fails clearly", async () => {
 // filesystem interface cannot read them and runs with type IDs, as without the file.
 test("a program without a filesystem scope opens without mounting its symbols", async () => {
   const state = fixture({
-    mutateOptions(options) { options.platform.createFilesystemScope = null; },
+    mutateOptions(options) { options.platform.createFilesystemScope = null; options.platform.createSidecarMaterializer = null; },
     typeSymbolsBytes: encoder.encode("symbols"),
   });
   const session = await state.open({ startup: {

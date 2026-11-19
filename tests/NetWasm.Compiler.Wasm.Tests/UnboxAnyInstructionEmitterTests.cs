@@ -9,6 +9,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -67,7 +68,7 @@ public sealed class UnboxAnyInstructionEmitterTests
             new BoxedValueTypeValidator(
                 layouts,
                 new EmptyEnumStorageResolver(),
-                exceptions),
+                exceptions, new KeyedDispatchEmitter()),
             new ValueFrameAddressEmitter(layouts));
         var typeTests = new TypeTestInstructionEmitter(layouts, new AddressInstructionEmitter(layouts), layouts, types,
             WasmRuntimeImports.CreateCatalog(),

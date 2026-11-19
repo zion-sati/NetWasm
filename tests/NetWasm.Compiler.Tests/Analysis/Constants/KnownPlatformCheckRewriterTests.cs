@@ -15,7 +15,7 @@ public sealed class KnownPlatformCheckRewriterTests
 
     [Theory]
     [InlineData("folds", true)]
-    [InlineData("switch target", false)]
+    [InlineData("branch target", false)]
     [InlineData("filter target", false)]
     [InlineData("other type", false)]
     public void ALiteralPlatformCheckFoldsWhereNothingEntersIt(string scenario, bool folds)
@@ -28,7 +28,7 @@ public sealed class KnownPlatformCheckRewriterTests
             signature, 0), owner, [], signature);
         var body = new CilMethodBody(check.Definition, 2, [],
         [
-            new(0, 1, CilOperation.Switch, new CilOperand.SwitchTargets([scenario == "switch target" ? 2 : 4])),
+            new(0, 1, CilOperation.Branch, new CilOperand.BranchTarget(scenario == "branch target" ? 2 : 4)),
             new(1, 2, CilOperation.LoadString, new CilOperand.UserString("Linux")),
             new(2, 3, CilOperation.Call, new CilOperand.MethodInstance(check)),
             new(3, 4, CilOperation.Pop, new CilOperand.None()),
@@ -49,7 +49,7 @@ public sealed class KnownPlatformCheckRewriterTests
             Assert.Same(body, rewritten);
             return;
         }
-        Assert.Equal([CilOperation.Switch, CilOperation.Nop, CilOperation.LoadInt32, CilOperation.Pop, CilOperation.Return],
+        Assert.Equal([CilOperation.Branch, CilOperation.Nop, CilOperation.LoadInt32, CilOperation.Pop, CilOperation.Return],
             rewritten.Instructions.Select(instruction => instruction.Operation));
     }
 

@@ -142,6 +142,89 @@ public sealed class StackSlotProducersTests
         Assert.Equal(producer, producers.FindTop(5, acrossBranches: true));
     }
 
+    // Across throw paths, the walk crosses a branch only when the path it skips throws using nothing already on the
+    // stack, as an inlined bounds check's does; then the value it finds has no other use.
+    [Theory]
+    [InlineData("throws", 0)]
+    [InlineData("consumes the value", null)]
+    [InlineData("throws the value", null)]
+    [InlineData("branches", null)]
+    [InlineData("ends in a branch", null)]
+    [InlineData("pushes an unknown count", null)]
+    [InlineData("has no stack", null)]
+    public void TheWalkCrossesOnlyAThrowPathThatLeavesTheStack(string path, int? producer)
+    {
+        // 0: the value, 1-2: the branch around the path, then the path, its target storing the value, and a return.
+        CilInstruction[] skipped = path switch
+        {
+            "consumes the value" =>
+            [
+                new(3, 4, CilOperation.Pop, new CilOperand.None()),
+                new(4, 5, CilOperation.LoadNull, new CilOperand.None()),
+                new(5, 6, CilOperation.Throw, new CilOperand.None()),
+            ],
+            "throws the value" => [new(3, 4, CilOperation.Throw, new CilOperand.None())],
+            "branches" =>
+            [
+                new(3, 4, CilOperation.LoadNull, new CilOperand.None()),
+                new(4, 5, CilOperation.Branch, new CilOperand.BranchTarget(7)),
+                new(5, 6, CilOperation.Throw, new CilOperand.None()),
+            ],
+            "ends in a branch" =>
+            [
+                new(3, 4, CilOperation.LoadNull, new CilOperand.None()),
+                new(4, 5, CilOperation.Branch, new CilOperand.BranchTarget(6)),
+            ],
+            "pushes an unknown count" =>
+            [
+                new(3, 4, CilOperation.Call, new CilOperand.None()),
+                new(4, 5, CilOperation.LoadNull, new CilOperand.None()),
+                new(5, 6, CilOperation.Throw, new CilOperand.None()),
+            ],
+            _ =>
+            [
+                new(3, 4, CilOperation.LoadNull, new CilOperand.None()),
+                new(4, 5, CilOperation.Throw, new CilOperand.None()),
+            ],
+        };
+        var target = 3 + skipped.Length;
+        ImmutableArray<CilInstruction> instructions =
+        [
+            Constant(0),
+            new(1, 2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            new(2, 3, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(target)),
+            .. skipped,
+            Store(target, 0),
+            new(target + 1, target + 2, CilOperation.Return, new CilOperand.None()),
+        ];
+        var stacks = new Dictionary<int, ImmutableArray<CliValueKind>>
+        {
+            [0] = [],
+            [1] = [CliValueKind.I4],
+            [2] = [CliValueKind.I4, CliValueKind.I4],
+            [target] = [CliValueKind.I4],
+            [target + 1] = [],
+        };
+        // Each skipped instruction's entry stack, from the depth the branch leaves.
+        ImmutableArray<CliValueKind> depth = [CliValueKind.I4];
+        foreach (var instruction in skipped)
+        {
+            if (path != "has no stack" || instruction.Offset != 4) stacks[instruction.Offset] = depth;
+            depth = instruction.Operation switch
+            {
+                CilOperation.Pop => depth.RemoveAt(depth.Length - 1),
+                CilOperation.LoadNull or CilOperation.Call => depth.Add(CliValueKind.ManagedReference),
+                _ => depth,
+            };
+        }
+        var producers = new StackSlotProducers(Body(instructions), stacks.ToImmutableDictionary());
+
+        Assert.Equal(producer, producers.FindTop(target, acrossThrowPaths: true));
+        Assert.Equal(producer, producers.Find(target, 0, acrossThrowPaths: true));
+        // Without a crossing the walk stops at the branch's target.
+        Assert.Null(producers.FindTop(target));
+    }
+
     private static CilInstruction Constant(int offset) => new(offset, offset + 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(offset));
 
     private static CilInstruction Store(int offset, int local) => new(offset, offset + 1, CilOperation.StoreLocal, new CilOperand.Index(local));

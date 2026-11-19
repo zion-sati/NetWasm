@@ -85,8 +85,9 @@ public sealed class CryptographicRandomSurfaceTests
         var names = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
             .Select(body => body.Method)
             .Where(method => method.DeclaringType.FullName?.StartsWith("System.Security.Cryptography.RandomNumberGenerator", StringComparison.Ordinal) == true)
-            .Select(method => method.Definition.Name).Distinct().Order();
-        Assert.Equal(FillMembers, names);
+            .Select(method => method.Definition.Name).ToHashSet(StringComparer.Ordinal);
+        // At most Fill's own path; inlining may fold some of it into the caller.
+        Assert.Subset(FillMembers.ToHashSet(StringComparer.Ordinal), names);
     }
 
     [Fact]

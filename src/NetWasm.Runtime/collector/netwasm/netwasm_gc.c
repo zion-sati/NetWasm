@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "netwasm_gc.h"
+#include "generation_points.h"
 
 #include <limits.h>
 #include <stdalign.h>
@@ -17,6 +18,13 @@
 #define NWGC_BLOCK_BYTES (64u * 1024u)
 #define NWGC_SMALL_LIMIT (4u * 1024u)
 #define NWGC_RUN_BYTES (4u * 1024u)
+/* Pacing (collection_charge_after): how far the heap may grow past what survived a collection, and the
+ * share of the heap that must survive for the program to count as building data it keeps. */
+#define NWGC_STEADY_HEAP_FACTOR 2u
+#define NWGC_GROWING_HEAP_FACTOR 3u
+#define NWGC_GROWING_SURVIVAL_PERCENT 60u
+/* An idle collection wants the heap grown by the minimum budget over this, at least. */
+#define NWGC_IDLE_BUDGET_SHARE 4u
 /* Runs up to this size are zeroed with inline v128 stores: Wasmtime implements
  * memory.fill as a call into the host, whose vectorized memset pays off only on
  * longer runs, such as a fresh block's, while a fragmented heap hands out short
@@ -79,12 +87,16 @@ struct NetWasmGcBlock {
     size_t slots_offset;
     size_t live;
     size_t search;
-    size_t class_index;
+    /* ceil(2^32 / slot_bytes), for block_slot_at. */
+    uint32_t slot_inverse;
     size_t pending_first;
     bool available;
     bool pending_queued;
     /* Every object in the block contains references and is traced. */
     bool traced;
+    /* With generations: allocated into since the last collection, and a store set a card over it since. */
+    bool touched;
+    bool written;
 };
 
 struct NetWasmGcLarge {
@@ -94,6 +106,9 @@ struct NetWasmGcLarge {
     bool marked;
     bool pending_queued;
     bool traced;
+    /* With generations: allocated since the last collection, and a store set a card over it since. */
+    bool young;
+    bool written;
     size_t allocation_bytes;
     size_t payload_bytes;
     /* The object follows, aligned like any allocation. */
@@ -159,6 +174,11 @@ struct NetWasmGc {
     size_t marked_live_bytes;
     size_t minimum_collection_budget;
     size_t next_collection_charge;
+    /* What large objects occupy, and the most small objects have occupied at a collection. */
+    size_t large_occupied_bytes;
+    size_t small_occupied_peak;
+    /* What the heap occupied after the last collection. */
+    size_t survived_bytes;
     uint64_t collections;
     uint64_t allocated_bytes;
     bool collecting;
@@ -229,14 +249,28 @@ static unsigned char *block_object(NetWasmGcBlock *block, size_t slot)
     return block_slots(block) + slot * block->slot_bytes;
 }
 
+/* The slot a distance from the block's first slot falls in, by a multiply in place of a divide. With m =
+ * ceil(2^32 / s), d * m / 2^32 is d / s rounded down exactly while d times m * s - 2^32 (under s) stays under 2^32,
+ * which holds for any distance under two blocks, as a slot is at most NWGC_SMALL_LIMIT bytes. */
+static size_t block_slot_at(const NetWasmGcBlock *block, size_t distance)
+{
+    return (size_t)(((uint64_t)distance * block->slot_inverse) >> 32);
+}
+
 static unsigned char *large_object(NetWasmGcLarge *large)
 {
     return (unsigned char *)large->object;
 }
 
+/* The size class of a block's slots, as allocate_small indexes it. */
+static size_t block_class_index(const NetWasmGcBlock *block)
+{
+    return block->slot_bytes / NWGC_ALIGNMENT - 1;
+}
+
 static NetWasmGcClass *block_class(NetWasmGc *gc, const NetWasmGcBlock *block)
 {
-    return &gc->classes[block->traced][block->class_index];
+    return &gc->classes[block->traced][block_class_index(block)];
 }
 
 /* A slot always extends past its object, so an object's end is never another
@@ -399,8 +433,14 @@ static bool page_has_space(const NetWasmGcPage *entry, const NetWasmGcRegion *re
         entry->regions[1] == NULL || entry->regions[1] == region;
 }
 
-static NetWasmGcResult register_region(NetWasmGc *gc, NetWasmGcRegion *region)
+/* A region that may hold references gets the cards a store into it records; a large object without references
+ * never takes such a store. A block may later hold either kind, so every block is covered. */
+static NetWasmGcResult register_region(NetWasmGc *gc, NetWasmGcRegion *region, bool traced)
 {
+    if (traced) {
+        NetWasmGcResult covered = generations_cover(gc, region->start, region->end);
+        if (covered != NETWASM_GC_OK) return covered;
+    }
     uintptr_t first = region->start >> NWGC_PAGE_SHIFT;
     uintptr_t last = (region->end - 1) >> NWGC_PAGE_SHIFT;
     for (uintptr_t page = first; page <= last; page++) {
@@ -510,7 +550,7 @@ static NetWasmGcResult create_block(
             .end = (uintptr_t)block + NWGC_BLOCK_BYTES,
             .kind = NWGC_REGION_BLOCK,
         };
-        NetWasmGcResult registration = register_region(gc, &block->region);
+        NetWasmGcResult registration = register_region(gc, &block->region, true);
         if (registration != NETWASM_GC_OK) {
             gc->current_arena->used -= NWGC_BLOCK_BYTES;
             return registration;
@@ -522,10 +562,10 @@ static NetWasmGcResult create_block(
     block->next = gc->blocks;
     gc->blocks = block;
     block->slot_bytes = slot_bytes;
+    block->slot_inverse = (uint32_t)((((uint64_t)1 << 32) + slot_bytes - 1) / slot_bytes);
     block->slot_count = slots;
     block->bitmap_words = words;
     block->slots_offset = slots_offset;
-    block->class_index = slot_bytes / NWGC_ALIGNMENT - 1;
     block->traced = traced;
     *result = block;
     return NETWASM_GC_OK;
@@ -578,8 +618,8 @@ static size_t find_free_run(NetWasmGc *gc, NetWasmGcBlock *block, size_t maximum
 
 static bool is_reserved_tail(const NetWasmGc *gc, const NetWasmGcBlock *block, size_t slot)
 {
-    const NetWasmGcClass *size_class = &gc->classes[block->traced][block->class_index];
-    const NetWasmGcRun *run = &gc->runs[block->class_index][block->traced];
+    const NetWasmGcClass *size_class = &gc->classes[block->traced][block_class_index(block)];
+    const NetWasmGcRun *run = &gc->runs[block_class_index(block)][block->traced];
     const unsigned char *address = block_slots_const(block) + slot * block->slot_bytes;
     return size_class->run_block == block &&
         address >= run->cursor && address < run->end;
@@ -708,29 +748,39 @@ static NetWasmGcResult allocate_small(
         if (maximum == 0) maximum = 1;
         size_t maximum_run_bytes = maximum * slot_bytes;
         if (collection_due(gc, maximum_run_bytes) && gc->occupied_bytes != 0 && !gc->collecting)
-            netwasm_gc_collect(gc);
-        NetWasmGcBlock *block = size_class->available;
+            generations_collect_due(gc);
+        NetWasmGcBlock *block;
         size_t first = 0;
         size_t end = 0;
-        while (block != NULL) {
-            first = find_free_run(gc, block, maximum, &end);
-            if (first != block->slot_count) break;
-            NWGC_COUNT(gc, exhausted_blocks, 1);
-            block->available = false;
-            size_class->available = block = block->available_next;
-        }
-        if (block == NULL) {
+        for (bool collected = false;; collected = true) {
+            block = size_class->available;
+            while (block != NULL) {
+                first = find_free_run(gc, block, maximum, &end);
+                if (first != block->slot_count) break;
+                NWGC_COUNT(gc, exhausted_blocks, 1);
+                block->available = false;
+                size_class->available = block = block->available_next;
+            }
+            if (block != NULL) break;
             NetWasmGcResult created = create_block(gc, slot_bytes, traced, &block);
-            if (created != NETWASM_GC_OK) return created;
-            block->available = true;
-            block->available_next = size_class->available;
-            size_class->available = block;
-            first = 0;
-            end = maximum < block->slot_count ? maximum : block->slot_count;
+            if (created == NETWASM_GC_OK) {
+                block->available = true;
+                block->available_next = size_class->available;
+                size_class->available = block;
+                first = 0;
+                end = maximum < block->slot_count ? maximum : block->slot_count;
+                break;
+            }
+            /* No memory for another block before a collection was due: collect once, which may
+             * empty a block or leave room in one. */
+            if (created != NETWASM_GC_OUT_OF_MEMORY || collected || gc->occupied_bytes == 0 || gc->collecting)
+                return created;
+            netwasm_gc_collect(gc);
         }
         size_t run_bytes = (end - first) * slot_bytes;
         if (gc->occupied_bytes > SIZE_MAX - run_bytes) return NETWASM_GC_SIZE_OVERFLOW;
         bitmap_set_range(block_allocated(block), first, end);
+        generations_note_allocation(block);
         if (run_bytes <= NWGC_INLINE_ZERO_BYTES) zero_short_run(block_slots(block) + first * slot_bytes, run_bytes);
         else memset(block_slots(block) + first * slot_bytes, 0, run_bytes);
         NWGC_COUNT(gc, run_refills, 1);
@@ -751,10 +801,13 @@ static NetWasmGcResult allocate_small(
     return NETWASM_GC_OK;
 }
 
-static NetWasmGcResult allocate_large(
+/* Inlined into each allocation entry with a constant zero; an uninitialized object clears
+ * only its header. */
+static inline __attribute__((always_inline)) NetWasmGcResult allocate_large(
     NetWasmGc *gc,
     size_t payload_bytes,
     bool traced,
+    bool zero,
     void **result)
 {
     size_t stored_payload = payload_bytes == 0 ? 1 : payload_bytes;
@@ -762,13 +815,18 @@ static NetWasmGcResult allocate_large(
     if (add_overflow(sizeof(NetWasmGcLarge), stored_payload, &allocation_bytes))
         return NETWASM_GC_SIZE_OVERFLOW;
     if (collection_due(gc, allocation_bytes) &&
-        gc->occupied_bytes != 0 && !gc->collecting) netwasm_gc_collect(gc);
+        gc->occupied_bytes != 0 && !gc->collecting) generations_collect_due(gc);
     if (gc->occupied_bytes > SIZE_MAX - allocation_bytes ||
         gc->live_bytes > SIZE_MAX - payload_bytes ||
         gc->backing_bytes > SIZE_MAX - allocation_bytes) return NETWASM_GC_SIZE_OVERFLOW;
     NetWasmGcLarge *large = gc->allocate(allocation_bytes, NWGC_ALIGNMENT);
+    if (large == NULL && gc->occupied_bytes != 0 && !gc->collecting) {
+        /* No memory before a collection was due: collect once, which releases dead large objects. */
+        netwasm_gc_collect(gc);
+        large = gc->allocate(allocation_bytes, NWGC_ALIGNMENT);
+    }
     if (large == NULL) return NETWASM_GC_OUT_OF_MEMORY;
-    memset(large, 0, allocation_bytes);
+    memset(large, 0, zero ? allocation_bytes : sizeof(NetWasmGcLarge));
     large->region = (NetWasmGcRegion){
         .start = (uintptr_t)large,
         .end = (uintptr_t)large + allocation_bytes,
@@ -777,7 +835,8 @@ static NetWasmGcResult allocate_large(
     large->allocation_bytes = allocation_bytes;
     large->payload_bytes = payload_bytes;
     large->traced = traced;
-    NetWasmGcResult registration = register_region(gc, &large->region);
+    generations_note_large(large);
+    NetWasmGcResult registration = register_region(gc, &large->region, traced);
     if (registration != NETWASM_GC_OK) {
         gc->release(large, allocation_bytes, NWGC_ALIGNMENT);
         return registration;
@@ -788,6 +847,7 @@ static NetWasmGcResult allocate_large(
     gc->object_count++;
     gc->live_bytes += payload_bytes;
     gc->occupied_bytes += allocation_bytes;
+    gc->large_occupied_bytes += allocation_bytes;
     *result = large_object(large);
     return NETWASM_GC_OK;
 }
@@ -818,7 +878,7 @@ static bool visit_block_matches(
 {
     uintptr_t first_slot = (uintptr_t)block_slots(block);
     if (address < first_slot) return false;
-    size_t slot = (size_t)((address - first_slot) / block->slot_bytes);
+    size_t slot = block_slot_at(block, (size_t)(address - first_slot));
     size_t candidates[2] = {slot, slot == 0 ? SIZE_MAX : slot - 1};
     bool matched = false;
     for (size_t index = 0; index < 2; index++) {
@@ -951,7 +1011,7 @@ static bool mark_reference(NetWasmGc *gc, uintptr_t address)
             uintptr_t slots = (uintptr_t)block_slots(block);
             if (address < slots) continue;
             size_t distance = (size_t)(address - slots);
-            size_t slot = distance / block->slot_bytes;
+            size_t slot = block_slot_at(block, distance);
             /* Collection retires every run first, so an allocated slot is live. */
             if (slot >= block->slot_count || distance != slot * block->slot_bytes ||
                 !bit_is_set(block_allocated_const(block), slot)) continue;
@@ -1015,12 +1075,47 @@ static void trace_object(NetWasmGc *gc, unsigned char *object)
     }
 }
 
+/* When the next collection is due, from what the heap occupied before this one and what survived it.
+ *
+ * It is due when the heap has grown to twice what survived plus the minimum budget. When most of the
+ * heap survived, the program is building data it keeps, and collecting again that soon would mark all of
+ * it once more to free little, so the heap may grow to three times what survived instead.
+ *
+ * Small objects' blocks stay with the collector for good, so refilling the most they have ever occupied
+ * takes no memory the heap has not used before: a collection is never due earlier than that. A dead large
+ * object's memory goes back to the embedder, so large objects do not count towards that peak. */
+static size_t collection_charge_after(const NetWasmGc *gc, size_t occupied_before)
+{
+    size_t survived = gc->occupied_bytes;
+    size_t factor = (uint64_t)survived * 100 >= (uint64_t)occupied_before * NWGC_GROWING_SURVIVAL_PERCENT
+        ? NWGC_GROWING_HEAP_FACTOR : NWGC_STEADY_HEAP_FACTOR;
+    size_t charge;
+    if (multiply_overflow(survived, factor, &charge) ||
+        add_overflow(charge, gc->minimum_collection_budget, &charge)) return SIZE_MAX;
+    size_t refill;
+    if (add_overflow(gc->small_occupied_peak, gc->large_occupied_bytes, &refill)) return SIZE_MAX;
+    return charge > refill ? charge : refill;
+}
+
 static void sweep(NetWasmGc *gc)
 {
+    size_t occupied_before = gc->occupied_bytes;
+    size_t small_before = occupied_before - gc->large_occupied_bytes;
+    if (small_before > gc->small_occupied_peak) gc->small_occupied_peak = small_before;
     gc->occupied_bytes = 0;
+    gc->large_occupied_bytes = 0;
     NetWasmGcBlock **block_link = &gc->blocks;
     while (*block_link != NULL) {
         NetWasmGcBlock *block = *block_link;
+        if (generations_block_unchanged(gc, block)) {
+            /* Nothing was allocated into it since the last collection, so it holds old objects alone, every one
+             * still marked and kept: its bitmaps and live count stand. */
+            NWGC_COUNT(gc, swept_blocks, 1);
+            gc->occupied_bytes += block->live * block->slot_bytes;
+            block->search = 0;
+            block_link = &block->next;
+            continue;
+        }
         uintptr_t *allocated = block_allocated(block);
         uintptr_t *marked = block_marked(block);
         uintptr_t *pending = block_pending(block);
@@ -1028,7 +1123,7 @@ static void sweep(NetWasmGc *gc)
         for (size_t word = 0; word < block->bitmap_words; word++) {
             uintptr_t survivors = marked[word] & bitmap_valid_mask(block->slot_count, word);
             allocated[word] = survivors;
-            marked[word] = 0;
+            marked[word] = generations_keep_marks ? survivors : 0;
             pending[word] = 0;
             live += bitmap_population(survivors);
         }
@@ -1036,6 +1131,9 @@ static void sweep(NetWasmGc *gc)
         block->search = 0;
         NWGC_COUNT(gc, swept_blocks, 1);
         gc->occupied_bytes += live * block->slot_bytes;
+        generations_forget_writes(block->traced, (uintptr_t)block_slots(block),
+            (uintptr_t)block_slots(block) + block->slot_count * block->slot_bytes);
+        generations_note_swept(block);
         if (live == 0) {
             NWGC_COUNT(gc, emptied_blocks, 1);
             *block_link = block->next;
@@ -1057,16 +1155,20 @@ static void sweep(NetWasmGc *gc)
             gc->release(large, large->allocation_bytes, NWGC_ALIGNMENT);
             continue;
         }
-        large->marked = false;
+        large->marked = generations_keep_marks;
+        if (!generations_large_unchanged(gc, large))
+            generations_forget_writes(large->traced, (uintptr_t)large_object(large),
+                (uintptr_t)large_object(large) + large->payload_bytes);
+        generations_note_swept_large(large);
         gc->occupied_bytes += large->allocation_bytes;
+        gc->large_occupied_bytes += large->allocation_bytes;
         link = &large->next;
     }
     gc->live_bytes = gc->marked_live_bytes;
     gc->object_count = gc->marked_object_count;
     rebuild_available(gc);
-    gc->next_collection_charge = gc->occupied_bytes >
-        (SIZE_MAX - gc->minimum_collection_budget) / 2 ? SIZE_MAX :
-        gc->occupied_bytes * 2 + gc->minimum_collection_budget;
+    gc->next_collection_charge = generations_pace(gc, collection_charge_after(gc, occupied_before));
+    gc->survived_bytes = gc->occupied_bytes;
 }
 
 NetWasmGcResult netwasm_gc_create(
@@ -1085,6 +1187,11 @@ NetWasmGcResult netwasm_gc_create(
     gc->release = release;
     gc->minimum_collection_budget = minimum_collection_budget;
     gc->next_collection_charge = minimum_collection_budget;
+    NetWasmGcResult begun = generations_begin(gc);
+    if (begun != NETWASM_GC_OK) {
+        release(gc, sizeof(*gc), alignof(NetWasmGc));
+        return begun;
+    }
     *result = gc;
     return NETWASM_GC_OK;
 }
@@ -1128,10 +1235,11 @@ NWGC_CROSS_UNIT_INLINE void *netwasm_gc_try_allocate_available(
     return object;
 }
 
-NetWasmGcResult netwasm_gc_allocate(
+static inline __attribute__((always_inline)) NetWasmGcResult allocate_object(
     NetWasmGc *gc,
     size_t bytes,
     bool contains_references,
+    bool zero,
     void **result)
 {
     if (gc == NULL || result == NULL || gc->collecting)
@@ -1139,13 +1247,13 @@ NetWasmGcResult netwasm_gc_allocate(
     if (gc->object_count == SIZE_MAX) return NETWASM_GC_SIZE_OVERFLOW;
 #ifdef NETWASM_GC_STRESS
     // Qualification only: collect before every allocation.
-    if (gc->occupied_bytes != 0) netwasm_gc_collect(gc);
+    if (gc->occupied_bytes != 0) generations_collect_due(gc);
 #endif
     size_t slot_bytes;
     if (!slot_size(bytes, &slot_bytes)) return NETWASM_GC_SIZE_OVERFLOW;
     NetWasmGcResult allocation = slot_bytes <= NWGC_SMALL_LIMIT ?
         allocate_small(gc, slot_bytes, contains_references, result) :
-        allocate_large(gc, bytes, contains_references, result);
+        allocate_large(gc, bytes, contains_references, zero, result);
     if (allocation == NETWASM_GC_OK) {
         if (slot_bytes <= NWGC_SMALL_LIMIT) {
             /* Counted with its run, like slots taken by bumping the run directly. */
@@ -1158,6 +1266,24 @@ NetWasmGcResult netwasm_gc_allocate(
     return allocation;
 }
 
+NetWasmGcResult netwasm_gc_allocate(
+    NetWasmGc *gc,
+    size_t bytes,
+    bool contains_references,
+    void **result)
+{
+    return allocate_object(gc, bytes, contains_references, true, result);
+}
+
+/* A small object comes from a run, which is zeroed in bulk when it opens. */
+NetWasmGcResult netwasm_gc_allocate_uninitialized(
+    NetWasmGc *gc,
+    size_t bytes,
+    void **result)
+{
+    return allocate_object(gc, bytes, false, false, result);
+}
+
 bool netwasm_gc_mark(NetWasmGc *gc, uintptr_t address)
 {
     if (gc == NULL || !gc->collecting) return false;
@@ -1168,7 +1294,7 @@ bool netwasm_gc_mark(NetWasmGc *gc, uintptr_t address)
 void netwasm_gc_drain(NetWasmGc *gc)
 {
     if (gc == NULL || !gc->collecting) return;
-    while (gc->pending_blocks != NULL || gc->pending_large != NULL) {
+    while ((gc->pending_blocks != NULL || gc->pending_large != NULL) && generations_may_mark(gc)) {
         if (gc->pending_blocks != NULL) {
             NetWasmGcBlock *block = gc->pending_blocks;
             gc->pending_blocks = block->pending_next;
@@ -1205,6 +1331,7 @@ void netwasm_gc_collect(NetWasmGc *gc)
     gc->pending_large = NULL;
     gc->marked_object_count = 0;
     gc->marked_live_bytes = 0;
+    generations_collect_all(gc);
     if (gc->trace_roots != NULL) gc->trace_roots(gc, gc->root_state);
     netwasm_gc_drain(gc);
     if (gc->complete_mark != NULL) gc->complete_mark(gc, gc->mark_state);
@@ -1212,6 +1339,36 @@ void netwasm_gc_collect(NetWasmGc *gc)
     sweep(gc);
     gc->collections++;
     gc->collecting = false;
+}
+
+void netwasm_gc_collect_young(NetWasmGc *gc)
+{
+    if (gc == NULL || gc->collecting) return;
+    generations_collect_young(gc);
+}
+
+/* A collection of every object is worth an idle period once the heap has grown by half what survived the last
+ * one, which it marks again; a minor one costs what has been allocated since, so the budget's share is enough.
+ * Answers whether a collection ran: a minor one given up is none. */
+bool netwasm_gc_collect_when_idle(NetWasmGc *gc)
+{
+    if (gc == NULL || gc->collecting || gc->occupied_bytes < gc->survived_bytes) return false;
+    size_t grown = gc->occupied_bytes - gc->survived_bytes;
+    if (grown < gc->minimum_collection_budget / NWGC_IDLE_BUDGET_SHARE ||
+        (!generations_minor_due(gc) && grown < gc->survived_bytes / 2))
+        return false;
+    uint64_t collections = gc->collections;
+    generations_collect_due(gc);
+    return gc->collections != collections;
+}
+
+unsigned netwasm_gc_collect_when_quiet(NetWasmGc *gc)
+{
+    if (gc == NULL || gc->collecting || gc->occupied_bytes == 0) return 0;
+    size_t before = gc->occupied_bytes;
+    netwasm_gc_collect(gc);
+    size_t freed = before > gc->occupied_bytes ? before - gc->occupied_bytes : 0;
+    return 1u + (unsigned)((uint64_t)freed * 255u / before);
 }
 
 bool netwasm_gc_is_marked(const NetWasmGc *gc, uintptr_t address)
@@ -1245,6 +1402,16 @@ uint64_t netwasm_gc_collection_count(const NetWasmGc *gc)
     return gc == NULL ? 0 : gc->collections;
 }
 
+uint64_t netwasm_gc_oldest_generation_collection_count(const NetWasmGc *gc)
+{
+    return gc == NULL ? 0 : gc->collections - generations_minor_collections(gc);
+}
+
+unsigned netwasm_gc_object_generation(const NetWasmGc *gc, uintptr_t address)
+{
+    return gc == NULL || address == 0 ? 0 : generations_of(gc, address);
+}
+
 uint64_t netwasm_gc_total_allocated_bytes(const NetWasmGc *gc)
 {
     if (gc == NULL) return 0;
@@ -1254,6 +1421,8 @@ uint64_t netwasm_gc_total_allocated_bytes(const NetWasmGc *gc)
     return bytes > UINT64_MAX - gc->allocated_bytes ? UINT64_MAX : gc->allocated_bytes + bytes;
 }
 
+_Static_assert((uint64_t)2 * NWGC_BLOCK_BYTES * NWGC_SMALL_LIMIT <= ((uint64_t)1 << 32),
+    "block_slot_at is exact for every distance under two blocks");
 _Static_assert(NWGC_ALIGNMENT == NETWASM_ALLOCATION_ALIGNMENT &&
                    NETWASM_ALLOCATION_RUN_LIMIT <= NWGC_SMALL_LIMIT,
                "The published runs are NetWasmGC's size classes");
@@ -1357,6 +1526,7 @@ void netwasm_gc_destroy(NetWasmGc *gc)
         gc->release(directory, directory->bytes, NWGC_ALIGNMENT);
         directory = next;
     }
+    generations_end(gc);
     NetWasmGcRelease release = gc->release;
     release(gc, sizeof(*gc), alignof(NetWasmGc));
 }

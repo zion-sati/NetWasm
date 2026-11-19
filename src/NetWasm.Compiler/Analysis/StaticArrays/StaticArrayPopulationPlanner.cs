@@ -17,7 +17,8 @@ internal sealed class StaticArrayPopulationPlanner(
     ITypeOperandResolver types,
     IValueConstructorPurityClassifier constructors,
     IClosedTypeIdentityComparer identities,
-    ITypeDefinitionResolver definitions) : IStaticArrayPopulationPlanner
+    ITypeDefinitionResolver definitions,
+    IValueTypeInitializationClassifier initialization) : IStaticArrayPopulationPlanner
 {
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly ICalledMethodResolver _calls = calls ?? throw new ArgumentNullException(nameof(calls));
@@ -25,6 +26,8 @@ internal sealed class StaticArrayPopulationPlanner(
     private readonly IValueConstructorPurityClassifier _constructors = constructors ?? throw new ArgumentNullException(nameof(constructors));
     private readonly IClosedTypeIdentityComparer _identities = identities ?? throw new ArgumentNullException(nameof(identities));
     private readonly ITypeDefinitionResolver _definitions = definitions ?? throw new ArgumentNullException(nameof(definitions));
+    private readonly IValueTypeInitializationClassifier _initialization = initialization ??
+        throw new ArgumentNullException(nameof(initialization));
 
     public ImmutableHashSet<int> Plan(ManagedMethodBody method, ImmutableHashSet<EntityKey> observedFields)
     {
@@ -41,12 +44,14 @@ internal sealed class StaticArrayPopulationPlanner(
                 if (operations[index].Operation != CilOperation.NewArray ||
                     operations[index - 1] is not { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: >= 0 } length }) continue;
                 var element = _types.Resolve(operations[index], method.Method);
-                var end = PopulationEnd(method.Method, operations, index + 1, length.Value, element, constructorFacts);
+                var locals = new Dictionary<int, PopulationValue>();
+                var end = PopulationEnd(method.Method, operations, index + 1, length.Value, element, constructorFacts, locals);
                 if (end <= index + 1 || end >= operations.Length || operations[end].Operation != CilOperation.StoreStaticField) continue;
                 var field = ResolveField(operations[end].Operand);
                 if (field is not { Definition.IsStatic: true, Definition.IsInitOnly: true } ||
                     observedFields.Contains(field.Definition.Key) || field.Type.Shape != CliTypeShape.SzArray ||
-                    _identities.Compare(field.Type.ElementType!, element) != true) continue;
+                    _identities.Compare(field.Type.ElementType!, element) != true ||
+                    !Confined(method.Body, operations[(index + 1)..end], locals.Keys)) continue;
                 for (var remove = index + 1; remove < end; remove++) removed.Add(operations[remove].Offset);
                 index = end;
             }
@@ -54,8 +59,20 @@ internal sealed class StaticArrayPopulationPlanner(
         return removed.ToImmutable();
     }
 
+    // The locals an inlined element constructor builds its value in belong to the population alone: nothing outside
+    // it reads, writes or takes the address of one, so removing the population removes every use.
+    private static bool Confined(CilMethodBody body, CilInstruction[] population, IEnumerable<int> locals)
+    {
+        var used = locals.ToHashSet();
+        if (used.Count == 0) return true;
+        var inside = population.Select(instruction => instruction.Offset).ToHashSet();
+        return !body.Instructions.Any(instruction => !inside.Contains(instruction.Offset) &&
+            instruction.Operation is CilOperation.LoadLocal or CilOperation.StoreLocal or CilOperation.LoadLocalAddress &&
+            instruction.Operand is CilOperand.Index { Value: var index } && used.Contains(index));
+    }
+
     private int PopulationEnd(MethodInstanceModel method, CilInstruction[] operations, int start, int length,
-        CliTypeIdentity element, Dictionary<string, bool> constructorFacts)
+        CliTypeIdentity element, Dictionary<string, bool> constructorFacts, Dictionary<int, PopulationValue> locals)
     {
         var cursor = start;
         while (cursor < operations.Length && operations[cursor].Operation == CilOperation.Duplicate)
@@ -68,7 +85,7 @@ internal sealed class StaticArrayPopulationPlanner(
             while (cursor < operations.Length && operations[cursor].Operation is not
                 (CilOperation.StoreArrayElement or CilOperation.StoreArrayElementReference))
             {
-                if (!ReadProducer(operations[cursor++], method, values, constructorFacts)) return -1;
+                if (!ReadProducer(operations[cursor++], method, values, constructorFacts, locals)) return -1;
             }
             if (cursor >= operations.Length || values.Count != 1 || !MatchesStore(operations[cursor], method, element, values[0])) return -1;
             cursor++;
@@ -77,10 +94,35 @@ internal sealed class StaticArrayPopulationPlanner(
     }
 
     private bool ReadProducer(CilInstruction instruction, MethodInstanceModel initializer,
-        List<PopulationValue> values, Dictionary<string, bool> constructorFacts)
+        List<PopulationValue> values, Dictionary<string, bool> constructorFacts, Dictionary<int, PopulationValue> locals)
     {
         switch (instruction.Operation)
         {
+            // An element constructor the inliner expanded: its arguments in locals, then the value built in a local
+            // (ldloca; initobj; ldloca, value, stfld per field; ldloc), as the pure constructor below would build it.
+            case CilOperation.StoreLocal when instruction.Operand is CilOperand.Index { Value: var stored }:
+                if (values.Count == 0 || values[^1].Address is not null) return false;
+                locals[stored] = values[^1];
+                values.RemoveAt(values.Count - 1);
+                return true;
+            case CilOperation.LoadLocal when instruction.Operand is CilOperand.Index { Value: var loaded }:
+                if (!locals.TryGetValue(loaded, out var local)) return false;
+                values.Add(local);
+                return true;
+            case CilOperation.LoadLocalAddress when instruction.Operand is CilOperand.Index { Value: var addressed }:
+                // A local the population has not built yet is one only initobj may start.
+                locals.TryAdd(addressed, new(CliValueKind.Void));
+                values.Add(new(CliValueKind.ManagedAddress, Address: addressed));
+                return true;
+            case CilOperation.InitializeObject:
+                var built = _types.Resolve(instruction, initializer);
+                if (values.Count == 0 || values[^1].Address is not { } target || !IsReferenceFreeScalarValue(built) ||
+                    !_initialization.ConstructsWithoutInitialization(built)) return false;
+                values.RemoveAt(values.Count - 1);
+                locals[target] = new(CliValueKind.ValueType, built);
+                return true;
+            case CilOperation.StoreField:
+                return StoreBuiltField(instruction, values, locals);
             case CilOperation.LoadInt32: values.Add(new(CliValueKind.I4)); return true;
             case CilOperation.LoadInt64: values.Add(new(CliValueKind.I8)); return true;
             case CilOperation.LoadFloat32: values.Add(new(CliValueKind.F4)); return true;
@@ -132,6 +174,26 @@ internal sealed class StaticArrayPopulationPlanner(
         }
     }
 
+    // A field store into a value the population is building: a scalar of the field's kind into an instance field of
+    // the value's own type, through the local's address.
+    private bool StoreBuiltField(CilInstruction instruction, List<PopulationValue> values, Dictionary<int, PopulationValue> locals)
+    {
+        // Only a local's address carries an Address, and its kind is a managed address.
+        if (values.Count < 2 || values[^1].Kind is not (CliValueKind.I4 or CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8) ||
+            values[^2].Address is not { } target || !locals.TryGetValue(target, out var built) ||
+            built is not { Kind: CliValueKind.ValueType, Type: { } type }) return false;
+        var field = instruction.Operand switch
+        {
+            CilOperand.Entity entity when type.Shape != CliTypeShape.GenericInstantiation => _fields.GetField(entity.Key),
+            CilOperand.FieldInstance instance when instance.Value.DeclaringType.Equals(type) => instance.Value.Definition,
+            _ => null,
+        };
+        if (field is null || field.IsStatic || field.DeclaringType != _definitions.ResolveTypeIdentity(type).Key ||
+            field.FieldType != values[^1].Kind) return false;
+        values.RemoveRange(values.Count - 2, 2);
+        return true;
+    }
+
     private bool MatchesStore(CilInstruction store, MethodInstanceModel method, CliTypeIdentity element, PopulationValue value)
     {
         if (store.Operation == CilOperation.StoreArrayElementReference)
@@ -164,5 +226,6 @@ internal sealed class StaticArrayPopulationPlanner(
         });
 
     private sealed record PopulationField(FieldDefinitionModel Definition, CliTypeIdentity Type, CliTypeIdentity? Owner);
-    private sealed record PopulationValue(CliValueKind Kind, CliTypeIdentity? Type = null, bool IsNull = false);
+    // Address: the local whose address the value is, for a value the population builds in a local.
+    private sealed record PopulationValue(CliValueKind Kind, CliTypeIdentity? Type = null, bool IsNull = false, int? Address = null);
 }

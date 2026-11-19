@@ -19,13 +19,15 @@ public sealed class SpeedInliningCompilationTests
             private int _count;
             public int Count => _count;
             public void Add(int value) => _count += value;
-            public int Twice() => _count * 2;
+            // Larger than the 16 IL bytes the JIT always inlines.
+            public int Twice() => _count * 2 + _count / 3 + _count % 5;
             public int Answer() => 42;
         }
         public static class EntryPoint
         {
             private static int Next(int value) => value + 1;
             private static int Square(int value) => Next(value) * Next(value);
+            private static int Half(int value) => value / 2;
             public static int Run(int input)
             {
                 var counter = new Counter();
@@ -42,6 +44,7 @@ public sealed class SpeedInliningCompilationTests
                 {
                     total += counter.Count;
                 }
+                total += Half(input);
                 var missing = input > 100 ? counter : null;
                 // The receiver's null check still precedes each inlined body.
                 try { total += missing!.Twice(); } catch (NullReferenceException) { total += 1000; }
@@ -75,8 +78,10 @@ public sealed class SpeedInliningCompilationTests
             .ToHashSet();
 
         // Next is reached only through Square, so a nested round removes it too. Oz inlines the calls inside
-        // the loop and field accessors anywhere, so Count (in the finally) goes; Twice (after the loop) stays a call.
-        string[] inlined = ["EntryPoint::Next", "EntryPoint::Square", "Counter::Add", "Counter::get_Count", "Counter::Twice"];
+        // the loop, and field accessors and callees of at most 16 IL bytes anywhere, so Count (in the finally) and
+        // Half (after the loop) go; Twice (after the loop, larger) stays a call.
+        string[] inlined =
+            ["EntryPoint::Next", "EntryPoint::Square", "EntryPoint::Half", "Counter::Add", "Counter::get_Count", "Counter::Twice"];
         string[] remaining = preset switch
         {
             FinalWasmOptimization.O3 => [],
@@ -86,8 +91,8 @@ public sealed class SpeedInliningCompilationTests
         Assert.Equal(remaining, inlined.Where(methods.Contains));
         // Answer never touches its receiver, so a virtual call to it keeps its null check.
         Assert.Contains("Counter::Answer", methods);
-        // 1^2 + ... + 5^2 = 55, Count = 1 + ... + 5 = 15.
-        Assert.Equal(3070, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 5, target, result.StaticDataEnd));
+        // 1^2 + ... + 5^2 = 55, Count = 1 + ... + 5 = 15, Half = 2.
+        Assert.Equal(3072, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 5, target, result.StaticDataEnd));
         Assert.Equal(3000, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0, target, result.StaticDataEnd));
     }
 

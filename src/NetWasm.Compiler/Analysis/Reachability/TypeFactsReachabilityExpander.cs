@@ -47,10 +47,13 @@ internal sealed class TypeFactsReachabilityExpander(
             session.State.RequiresDeclaringTypes,
             session.State.RequiresGenericDefinitions,
             session.State.RequiresElementTypes);
+        // A pointer or function pointer type in the closure is a generic argument or an element GetElementType can
+        // return; either query needs its own identity in the type table.
+        var retainElementModifiers = session.State.RequiresGenericArguments || session.State.RequiresElementTypes;
         foreach (var type in required)
         {
             session.AddRuntimeType(type);
-            session.AddConstructedType(type, retainElementModifierIdentity: session.State.RequiresGenericArguments);
+            session.AddConstructedType(type, retainElementModifierIdentity: retainElementModifiers);
         }
     }
 }

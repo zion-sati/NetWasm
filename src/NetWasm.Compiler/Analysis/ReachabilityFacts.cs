@@ -61,6 +61,9 @@ internal sealed record ReachabilityInstructionAnalysis(
     public bool RequiresInterfaces { get; init; }
 
     public bool RequiresMemberNames { get; init; }
+    public bool RequiresManifestResources { get; init; }
+    public bool RequiresAssemblyNames { get; init; }
+    public bool RequiresAssemblyEnumeration { get; init; }
 }
 
 internal sealed record ReachableMethodAnalysis(
@@ -70,7 +73,7 @@ internal sealed record ReachableMethodAnalysis(
     ImmutableArray<ReachabilityExceptionRequirement> Exceptions,
     ReachabilityInstructionAnalysis Instructions)
 {
-    // What the method adds to the whole program, fingerprinted by the worker that analysed it
+    // What the method adds to the whole program, fingerprinted by the worker that analyzed it
     // (ReachableMethodAnalyzer, which makes every analysis).
     public NetWasm.Compiler.Metadata.Inputs.InputFingerprint Contribution { get; init; }
 

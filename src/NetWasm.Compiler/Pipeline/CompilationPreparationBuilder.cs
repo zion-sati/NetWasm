@@ -35,15 +35,23 @@ internal sealed class CompilationPreparationBuilder(
     IMethodBodyReaderFactory bodies,
     IManagedExecutableExitResolver exits,
     IWasmOptimizationSettingsResolver optimizationSettings,
-    Analysis.PlatformServices.IPlatformServiceBindingResolverFactory platformServices) :
+    Analysis.PlatformServices.IPlatformServiceBindingResolverFactory platformServices,
+    IDeclinedJavaScriptBindingReporter declinedJavaScriptBindings) :
     ICompilationPreparationBuilder
 {
+    // CoreLib's ProgramSidecars.TypeNamesSwitch.
+    private const string TypeNamesSwitch = "NetWasm.Runtime.TypeNames";
+    // CoreLib's GC.GenerationsSwitch.
+    private const string GenerationsSwitch = "NetWasm.Runtime.Generations";
+
     private readonly IBaseTypeResolverFactory _baseTypes = baseTypes ??
         throw new ArgumentNullException(nameof(baseTypes));
     private readonly IJavaScriptAsyncBindingResolverFactory _asyncBindings = asyncBindings ??
         throw new ArgumentNullException(nameof(asyncBindings));
     private readonly IComponentContractResolver _contracts = contracts ??
         throw new ArgumentNullException(nameof(contracts));
+    private readonly IDeclinedJavaScriptBindingReporter _declinedJavaScriptBindings = declinedJavaScriptBindings ??
+        throw new ArgumentNullException(nameof(declinedJavaScriptBindings));
     private readonly IInteropDeclarationValidator _interop = interop ??
         throw new ArgumentNullException(nameof(interop));
     private readonly ICompilationEntryResolver _entries = entries ??
@@ -109,6 +117,8 @@ internal sealed class CompilationPreparationBuilder(
             methodInstances,
             symbols);
         _interop.Validate(metadata, typeDefinitions, baseTypeResolver, methods, symbols);
+        _declinedJavaScriptBindings.Report(metadata, symbols,
+            options.UseJavaScriptExportBoundary || options.WitPath is null);
         var entry = _entries.Resolve(metadata, methodFinder, symbols, options);
         var exports = _exports.Merge(
             entry.Exports,
@@ -122,7 +132,6 @@ internal sealed class CompilationPreparationBuilder(
             : null;
         var reachabilityRoots = _stackTraceRoots.Provide(
             options.EmitStackTrace,
-            options.EmitTypeNames,
             types,
             fields,
             methods);
@@ -154,7 +163,13 @@ internal sealed class CompilationPreparationBuilder(
             options.UseJavaScriptExportBoundary || options.WitPath is null) with
         {
             HostEventLoop = options.UseJavaScriptExportBoundary,
-            FeatureSwitches = options.FeatureSwitches,
+            // CoreLib's type-names switch follows NetWasmTypeNames, so a program built without names carries no
+            // loader for them.
+            // CoreLib's generations switch follows the collector, so GC.MaxGeneration is a constant and a program
+            // for a collector without generations asks the runtime nothing about them.
+            FeatureSwitches = options.FeatureSwitches
+                .SetItem(TypeNamesSwitch, options.EmitTypeNames)
+                .SetItem(GenerationsSwitch, options.Collector?.HasGenerations ?? false),
             RuntimeProperties = options.RuntimeProperties,
         };
         if (options.PlainCoreModule)
@@ -192,6 +207,8 @@ internal sealed class CompilationPreparationBuilder(
             })
         {
             InliningExcludedMethods = options.InliningExcludedMethods,
+            MissingApiAsError = options.MissingApiAsError,
+            CollectorHasGenerations = options.Collector?.HasGenerations == true,
         };
     }
 }

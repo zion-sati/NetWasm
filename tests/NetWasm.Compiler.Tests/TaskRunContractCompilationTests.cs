@@ -13,7 +13,7 @@ public sealed class TaskRunContractCompilationTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void OverloadsValidateAndHonourCancellation(WasmTarget target)
+    public void OverloadsValidateAndHonorCancellation(WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var executor = (ICompilationScenarioExecutor)new CompilationScenarioExecutor(assets);

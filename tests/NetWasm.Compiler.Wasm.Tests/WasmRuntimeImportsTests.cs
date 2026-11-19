@@ -34,7 +34,6 @@ public sealed class WasmRuntimeImportsTests
         var strings = WasmRuntimeImports.CreateHostInteropStringResultImports();
         var handles = WasmRuntimeImports.CreateHostInteropHandleImports();
         var subscriptions = WasmRuntimeImports.CreateHostInteropSubscriptionImports();
-        var bytes = WasmRuntimeImports.CreateHostInteropByteResultImports();
 
         Assert.Equal(
             [RuntimeAbi.HostInteropStringLength, RuntimeAbi.HostInteropCopyStringUtf16],
@@ -43,9 +42,7 @@ public sealed class WasmRuntimeImportsTests
             handles.Select(import => import.Name));
         Assert.Equal([RuntimeAbi.HostInteropReleaseSubscription],
             subscriptions.Select(import => import.Name));
-        Assert.Equal([RuntimeAbi.HostInteropByteLength, RuntimeAbi.HostInteropCopyBytes],
-            bytes.Select(import => import.Name));
-        Assert.All(strings.Concat(handles).Concat(subscriptions).Concat(bytes), import =>
+        Assert.All(strings.Concat(handles).Concat(subscriptions), import =>
             Assert.Equal(RuntimeAbi.HostModule, import.Module));
         Assert.Equal(CliValueKind.I4, strings[0].Type.Result);
         Assert.Equal(CliValueKind.Void, handles[0].Type.Result);

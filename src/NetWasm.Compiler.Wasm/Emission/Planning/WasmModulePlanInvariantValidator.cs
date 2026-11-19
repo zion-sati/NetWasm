@@ -171,6 +171,8 @@ internal sealed class WasmModulePlanInvariantValidator :
                 plan.DelegateInvokes.Length ||
             plan.FunctionIndices.DelegateMulticastHelpers.Count !=
                 plan.DelegateInvokes.Length ||
+            plan.FunctionIndices.SharedVirtualDispatches.Count !=
+                plan.SharedVirtualDispatches.Length ||
             plan.FunctionIndices.ImportedMethods.Count !=
                 request.JSImportMethods.Length + request.WitImportMethods.Length + plan.NativeImports.Methods.Length)
         {

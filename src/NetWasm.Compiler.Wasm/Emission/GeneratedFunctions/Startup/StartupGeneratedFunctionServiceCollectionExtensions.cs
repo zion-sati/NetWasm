@@ -12,8 +12,6 @@ internal static class StartupGeneratedFunctionServiceCollectionExtensions
     {
         services.AddSingleton<IStartupPreflightMethodSelector,
             StartupPreflightMethodSelector>();
-        services.AddSingleton<IStartupPreflightCallEmitter,
-            StartupPreflightCallEmitter>();
         return services;
     }
 }

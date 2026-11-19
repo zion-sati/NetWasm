@@ -1,0 +1,27 @@
+// WASI 0.3 interface declarations used by the native runtime.
+package wasi:clocks@0.3.2;
+
+interface types {
+  type duration = u64;
+}
+
+interface system-clock {
+  use types.{duration};
+
+  record instant {
+    seconds: s64,
+    nanoseconds: u32,
+  }
+
+  now: func() -> instant;
+  get-resolution: func() -> duration;
+}
+
+interface monotonic-clock {
+  use types.{duration};
+
+  type mark = u64;
+
+  now: func() -> mark;
+  get-resolution: func() -> duration;
+}

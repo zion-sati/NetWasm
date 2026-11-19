@@ -3,7 +3,6 @@
   "unsupported": [
     { "opcode": "arglist", "category": "varargs", "reason": "CLI vararg argument iteration is outside the supported managed-call ABI." },
     { "opcode": "jmp", "category": "method-transfer", "reason": "Direct method-body transfer is outside the structured managed-call ABI." },
-    { "opcode": "tail.", "category": "tail-call", "reason": "CLI tail-call semantics are not yet implemented." },
     { "opcode": "prefix1", "category": "reserved", "reason": "Reserved CLI encoding; not a valid program opcode." },
     { "opcode": "prefix2", "category": "reserved", "reason": "Reserved CLI encoding; not a valid program opcode." },
     { "opcode": "prefix3", "category": "reserved", "reason": "Reserved CLI encoding; not a valid program opcode." },

@@ -4,7 +4,7 @@ Document NetWasm-specific behavior, prerequisites and limitations. Show runnable
 commands, but do not explain standard .NET behavior when NetWasm does not deviate
 from it.
 
-User-facing behaviour and its documentation should change together. When a
+User-facing behavior and its documentation should change together. When a
 change affects any of the following, update the corresponding page under
 `docs/` in the same pull request:
 
@@ -13,7 +13,7 @@ change affects any of the following, update the corresponding page under
 - deliberate profile differences or specification-permitted results;
 - target widths, output formats, or Component Model and WASI boundaries;
 - CLI options, build inputs, generated artifacts, or deployment entry points;
-- CoreLib and runtime behaviour; or
+- CoreLib and runtime behavior; or
 - WIT, JavaScript interop, the runtime ABI, or host capabilities.
 
 Describe capabilities as available only after their implementation and

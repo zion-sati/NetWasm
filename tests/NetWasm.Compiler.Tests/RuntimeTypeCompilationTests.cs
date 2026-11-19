@@ -597,7 +597,7 @@ public sealed class RuntimeTypeCompilationTests
                     Module module = typeof(Sample).Module;
                     int passed = 0;
                     if (module.Assembly == own && own.ManifestModule == module && own.GetModules().Length == 1 &&
-                        module.Name == "<Unknown>" && module.ScopeName == "<Unknown>" && typeof(int).Module != module) passed |= 1;
+                        module.Name == "<Unknown>" && module.ScopeName == own.GetName().Name + ".dll" && typeof(int).Module != module) passed |= 1;
                     try { _ = module.MetadataToken; } catch (InvalidOperationException) { passed |= 2; }
                     Type[] types = own.GetTypes();
                     if (Array.IndexOf(types, typeof(Sample)) >= 0 && Array.IndexOf(types, typeof(Hidden)) >= 0 &&
@@ -847,6 +847,49 @@ public sealed class RuntimeTypeCompilationTests
         Assert.True(compilation.Program.RequiresElementTypes);
     }
 
+    // An array's or pointer's element that is itself a pointer or function pointer, reached only as an element (no
+    // allocation or typeof names it, and the program reads no generic arguments, either of which would keep it): the
+    // type table must still hold it, or the compilation fails (NW1008, "the element of 'primitive:i4*[]' is not
+    // registered").
+    public static TheoryData<string, bool, WasmTarget> PointerElementQueries() => new()
+    {
+        { "typeof(int*[]).GetElementType() is { IsPointer: true } element && element.GetElementType() == typeof(int)", false, WasmTarget.Wasm32 },
+        { "typeof(int*[]).GetElementType() is { IsPointer: true } element && element.GetElementType() == typeof(int)", true, WasmTarget.Wasm64 },
+        { "typeof(int**).GetElementType() is { IsPointer: true } element && element.GetElementType() == typeof(int)", false, WasmTarget.Wasm32 },
+        { "typeof(int**).GetElementType() is { IsPointer: true } element && element.GetElementType() == typeof(int)", true, WasmTarget.Wasm64 },
+        { "typeof(delegate*<int, int>[]).GetElementType() is { IsArray: false, IsPointer: false } element && element.GetElementType() == null", false, WasmTarget.Wasm32 },
+        { "typeof(delegate*<int, int>[]).GetElementType() is { IsArray: false, IsPointer: false } element && element.GetElementType() == null", true, WasmTarget.Wasm64 },
+    };
+
+    [Theory]
+    [MemberData(nameof(PointerElementQueries))]
+    public void CompilerExecutesPointerElementsOfArraysAndPointers(string query, bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "PointerElementsFixture",
+            $$"""
+            namespace PointerElementsFixture;
+
+            public static class EntryPoint
+            {
+                public static unsafe int Run(int input) => {{query}} ? 1 : 0;
+            }
+            """,
+            TestAssets.RepositorySdkVersion,
+            "latest",
+            optimized,
+            allowUnsafe: true);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "PointerElementsFixture.EntryPoint", "Run", [], Target: target));
+
+        Assert.Equal(1, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd));
+        Assert.True(compilation.Program.RequiresElementTypes);
+        Assert.False(compilation.Program.RequiresGenericArguments);
+    }
+
     // GetGenericTypeDefinition from the type table, as .NET 11 answers it: a constructed type's
     // open definition, also where code never names the definition, and the definition itself for
     // a definition. The arguments still read past the definition in the type's generic list.
@@ -1025,8 +1068,10 @@ public sealed class RuntimeTypeCompilationTests
                     if (Assembly.GetExecutingAssembly() == own && Assembly.GetEntryAssembly() == own) passed |= 4;
                     var byAssembly = new Dictionary<Assembly, int> { [own] = 1, [core] = 2 };
                     if (byAssembly[new Sample().GetType().Assembly] == 1 && byAssembly[(5).GetType().Assembly] == 2) passed |= 8;
-                    if (own.FullName == "<Assembly name unavailable>" && own.GetName().Name == "<Assembly name unavailable>") passed |= 16;
-                    if (typeof(Sample).AssemblyQualifiedName!.EndsWith(", <Assembly name unavailable>", StringComparison.Ordinal)) passed |= 32;
+                    // A program that asks for assembly names has them in its module, as desktop .NET gives them.
+                    if (own.FullName!.StartsWith("AssembliesFixture, Version=", StringComparison.Ordinal) &&
+                        own.GetName().Name == "AssembliesFixture") passed |= 16;
+                    if (typeof(Sample).AssemblyQualifiedName!.EndsWith(", " + own.FullName, StringComparison.Ordinal)) passed |= 32;
                     if (own.Equals(typeof(Sample).Assembly) && own.ToString() == own.FullName) passed |= 64;
                     if (Assembly.GetAssembly(typeof(Sample)) == own && Assembly.GetAssembly(typeof(int)) == core) passed |= 128;
                     try { Assembly.GetAssembly(null!); } catch (ArgumentNullException) { passed |= 256; }
@@ -1083,7 +1128,7 @@ public sealed class RuntimeTypeCompilationTests
         Assert.Equal(declaring || elements, table.Header(19) != 0);
         Assert.Equal(elements, compilation.Program.RequiresElementTypes);
         Assert.Equal(attributes, compilation.Program.RequiresTypeAttributes);
-        Assert.Equal(attributes, table.Header(5) > 640 + 32 * table.Header(4));
+        Assert.Equal(attributes, table.Header(5) > NetWasm.Compiler.Layout.RuntimeTypeTableEncoder.HeaderFields * 32 + 32 * table.Header(4));
         Assert.Equal(definitions, table.DefinitionBits != 0);
         Assert.Equal(assemblies, table.AssemblyBits != 0);
         Assert.True(table.Capacity > 1);

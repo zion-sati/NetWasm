@@ -17,6 +17,7 @@ using NetWasm.Compiler.Analysis.Delegates;
 using NetWasm.Compiler.Analysis.Attributes;
 using NetWasm.Compiler.Analysis.Constants;
 using NetWasm.Compiler.Analysis.StaticArrays;
+using NetWasm.Compiler.Analysis.DynamicCasts;
 using NetWasm.Compiler.Analysis.Reachability;
 using NetWasm.Compiler.ControlFlow;
 
@@ -49,6 +50,7 @@ internal sealed class WholeProgramAnalyzerFactory(
     INullableTypeResolver nullableTypes,
     IReachableMethodBatchObserver reachableMethodBatchObserver,
     IReachabilityClosureObserver reachabilityClosureObserver,
+    IReachabilityProgressObserver reachabilityProgressObserver,
     ITypeClassifierFactory typeClassifiers,
     IControlFlowGraphBuilderFactory graphBuilders) : IWholeProgramAnalyzerFactory
 {
@@ -97,6 +99,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             ConstantCallFoldingPolicy.Conservative) ||
             optimizationSettings.SwitchBitTests is not (SwitchBitTestPolicy.Disabled or
             SwitchBitTestPolicy.Conservative) ||
+            optimizationSettings.ConditionalSelects is not (ConditionalSelectPolicy.Disabled or
+            ConditionalSelectPolicy.Enabled) ||
             optimizationSettings.Devirtualization is not (DevirtualizationPolicy.Disabled or
             DevirtualizationPolicy.ExactType) ||
             optimizationSettings.AllocationElimination is not (AllocationEliminationPolicy.Disabled or
@@ -120,6 +124,36 @@ internal sealed class WholeProgramAnalyzerFactory(
         IMethodRewriteRule ConstantCalls() => parts.ConstantCalls();
         var constantCallFolding = parts.ConstantCallFolding;
         var reducers = ImmutableArray.CreateBuilder<IReachableProgramReducer>();
+        // A reducing closure builds the program again after each reduction, so the analyzers
+        // share a memo and analyze again only the bodies a reduction rewrote.
+        var reducerMemo = new ReachableMethodAnalysisMemo();
+        // The reductions that reach new code run first in every round, so the program has stopped growing before an
+        // optimization rewrites it on a fact that holds only for the whole program: a constant every call site passes
+        // (ConstantArgumentProgramReducer), a field nothing writes or an array nothing reads. A call site, write or read
+        // that a later round reached would find a body specialized without it; Type.HasFlag specialized to the one
+        // flag its callers had passed answered IsArray with another flag once IDynamicInterfaceCastable's helpers read
+        // GetElementType.
+        var growing = ImmutableArray.CreateBuilder<IReachableProgramReducer>();
+        // Correctness, not an optimization: every preset answers a query on a Type known only at run time. The answer
+        // follows the reductions' rewrites, which can change the program's run-time types: each round lowers the query
+        // again.
+        growing.Add(parts.RuntimeTypeAttributeQueries);
+        // Correctness too: a program that allocates a class implementing IDynamicInterfaceCastable has its interface
+        // casts, array stores and calls ask such an object, as .NET's runtime does.
+        if (metadata.Types.FirstOrDefault(type => type.FullName == "System.Runtime.InteropServices.IDynamicInterfaceCastable" &&
+                type.Key.Assembly == typeFinder.FindType("System.Object").Key.Assembly) is { } castableType)
+        {
+            var castable = typeIdentities.GetTypeIdentity(castableType.Key);
+            growing.Add(new DynamicInterfaceCastableProgramReducer(parts.Relationships, calls, symbols,
+                new DynamicCastBodyRewriter(types, calls, typeDefinitions,
+                    new DynamicImplementationInterfaceFinder(metadata, typeIdentities, implementedInterfaces,
+                        new CustomAttributeDescriptorReaderFactory().Create(metadata, typeDefinitions, typeIdentities),
+                        parts.Relationships),
+                    parts.DispatchTargets,
+                    new DynamicCastHelperResolver(typeFinder, methodRepository, methodInstances, symbols),
+                    castable),
+                castable));
+        }
         if (optimizationSettings.ConstantArgumentPropagation == ConstantArgumentPropagationPolicy.Conservative)
         {
             reducers.Add(new ConstantArgumentProgramReducer(
@@ -129,7 +163,8 @@ internal sealed class WholeProgramAnalyzerFactory(
                     ConstantCalls(),
                     new KnownSizeRewriter(calls, world.NativeIntegerSize),
                     ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
-                ])));
+                ]),
+                new MemoizingReachableMethodAnalyzer(parts.CreateAnalyzer(), reducerMemo)));
         }
         if (constantCallFolding is not null)
         {
@@ -137,11 +172,13 @@ internal sealed class WholeProgramAnalyzerFactory(
         }
         if (optimizationSettings.StaticArrayPopulationElimination == StaticArrayPopulationEliminationPolicy.Conservative)
         {
+            var initialization = new ValueTypeInitializationClassifier(typeDefinitions, methodRepository);
             reducers.Add(new StaticArrayPopulationReducer(
                     new StaticFieldObservationCollector(),
                     new StaticArrayPopulationPlanner(fieldRepository, calls, types,
-                        new ValueConstructorPurityClassifier(new CalleeMethodBodyReader(methodBodies), fieldRepository, typeDefinitions, methodRepository, intrinsics),
-                        new ClosedTypeIdentityComparer(typeDefinitions), typeDefinitions)));
+                        new ValueConstructorPurityClassifier(new CalleeMethodBodyReader(methodBodies), fieldRepository, intrinsics,
+                            initialization),
+                        new ClosedTypeIdentityComparer(typeDefinitions), typeDefinitions, initialization)));
         }
         if (optimizationSettings.UnwrittenStaticFieldFolding == UnwrittenStaticFieldFoldingPolicy.WholeProgram)
         {
@@ -158,14 +195,16 @@ internal sealed class WholeProgramAnalyzerFactory(
                     ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
                 ])));
         }
+        // Only optimizations analyze bodies again so often that every analysis is worth keeping: a compile without one
+        // keeps no memo, as before, and analyzes again only if a run-time Type query needs another round.
+        var optimizations = reducers.Count;
+        reducers.InsertRange(0, growing);
         var concurrency = SelectConcurrency(
             OperatingSystem.IsBrowser(), Environment.ProcessorCount);
         var methodAnalyzerWorkers =
             System.Collections.Immutable.ImmutableArray
                 .CreateBuilder<IReachableMethodAnalyzer>(concurrency.WorkerCount + 1);
-        // A reducing closure builds the program again after each reduction, so the analyzers
-        // share a memo and analyze again only the bodies a reduction rewrote.
-        var memo = reducers.Count == 0 ? null : new ReachableMethodAnalysisMemo();
+        var memo = optimizations == 0 ? null : reducerMemo;
         for (var workerIndex = 0; workerIndex < concurrency.AnalyzerCount; workerIndex++)
             methodAnalyzerWorkers.Add(memo is null
                 ? parts.CreateAnalyzer()
@@ -190,6 +229,7 @@ internal sealed class WholeProgramAnalyzerFactory(
             intrinsics,
             symbols,
             genericConstraints);
+        var objectDispatchSharing = new ObjectDispatchSharing(optimizationSettings.ObjectDispatch);
         var programBuilder = new RequiredTypeDependencyProgramBuilder(programBuilders.Create(
             allocationCapabilities.Create(
                 typeRepository,
@@ -198,7 +238,8 @@ internal sealed class WholeProgramAnalyzerFactory(
                 intrinsics,
                 typeClassifiers.Create(metadata)),
             byRefEffects.Create(methodRepository, intrinsics),
-            delegateBindingPlanners.Create(relationships)),
+            delegateBindingPlanners.Create(relationships),
+            objectDispatchSharing),
             new RequiredTypeDependencyValidator(typeDefinitions, baseTypeIdentities, implementedInterfaces, genericConstraints),
             typeIdentities, new CompilerDiagnosticDependencyPathBinder());
         var dispatchTargetResolver = dispatchTargets.Create(
@@ -245,15 +286,16 @@ internal sealed class WholeProgramAnalyzerFactory(
                 dispatchTargetResolver,
                 managedCallSites,
                 new CompilerDiagnosticProvenanceBinder(),
-                reachabilityClosureObserver),
+                reachabilityClosureObserver,
+                reachabilityProgressObserver),
             new ReachabilityDerivedRootExpander(
                 new RuntimeReachabilityExpander(
-                    optimizationSettings.ObjectDispatch == ObjectDispatchPolicy.Shared
-                        ? new SharedObjectDispatchResolver(typeFinder, methodRepository, methodInstances, symbols)
-                        : new InlineObjectDispatchResolver(),
+                    new SharedObjectDispatchResolver(typeFinder, methodRepository, methodInstances, symbols),
+                    objectDispatchSharing,
                     delegateTypeRecognizer,
                     new RuntimeIntrinsicTypeRootPlanner(intrinsics, nullableTypes, typeDefinitions,
-                        new ArrayCreationRootPlanner(typeDefinitions)),
+                        new ArrayCreationRootPlanner(typeDefinitions),
+                        new StructureMarshallingClosure(typeDefinitions, fieldRepository, baseTypes)),
                     typeDefinitions,
                     typeIdentities,
                     new ObjectArrayDelegateAdapterPlanner(
@@ -287,10 +329,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             delegateTypeRecognizer,
             typeTestPlanners.Create(types, relationships, relationshipKeys),
             new ModuleInitializerOrderer(BuildModuleDependencies(metadata)));
-        return new WholeProgramAnalyzer(reducers.Count == 0
-            ? closure
-            : new ReducingReachabilityClosureBuilder(closure,
-                new ReachableProgramReductionChain(reducers.ToImmutable())));
+        return new WholeProgramAnalyzer(new ReducingReachabilityClosureBuilder(closure,
+            new ReachableProgramReductionChain(reducers.ToImmutable())));
     }
 
     internal static AnalysisConcurrency SelectConcurrency(

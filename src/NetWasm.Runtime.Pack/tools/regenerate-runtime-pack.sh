@@ -101,9 +101,11 @@ NODE
   if [[ "$target" = wasm32 ]]; then
     machine=-mwasm32
     system_source="$emscripten_cache_root/sysroot/lib/wasm32-emscripten/lto"
+    exception_source="$emscripten_cache_root/sysroot/lib/wasm32-emscripten"
   else
     machine=-mwasm64
     system_source="$emscripten_cache_root/sysroot/lib/wasm64-emscripten/lto"
+    exception_source="$emscripten_cache_root/sysroot/lib/wasm64-emscripten"
   fi
 
   system_libraries=()
@@ -143,8 +145,55 @@ NODE
   for library in "${system_paths[@]}"; do
     system_normalization_arguments+=(--archive "$library")
   done
+  # The closure a program with C++ exceptions links instead; its libraries beyond the ordinary closure are object
+  # files from the pinned SDK's cache.
+  exception_paths=()
+  while IFS= read -r library; do
+    [[ -n "$library" ]] || continue
+    if [[ ! -f "$target_root/system-libraries/$library" ]]; then
+      [[ -f "$exception_source/$library" ]] || {
+        echo "missing pinned Emscripten C++ exception library '$library' for '$target'" >&2
+        exit 1
+      }
+      cp "$exception_source/$library" "$target_root/system-libraries/$library"
+      system_normalization_arguments+=(--archive "$target_root/system-libraries/$library")
+    fi
+    exception_paths+=("$target_root/system-libraries/$library")
+  done < <(node -p \
+    'require(process.argv[1]).targets[process.argv[2]].exceptionSystemLibraries.join("\n")' \
+    "$policy" "$target")
+  system_normalization_arguments+=(--prefix "$exception_source")
   node "$source_package_root/tools/normalize-archive-paths.mjs" \
     "${system_normalization_arguments[@]}"
+
+  # Support for archives Emscripten built, both lazy so only a program whose native code needs a member links it:
+  # Wasm setjmp/longjmp (with Wasm exception handling) for every output, and stand-ins for Emscripten's JavaScript
+  # functions for components, linked after the project's archives so those can supply their own.
+  emscripten_work="$temporary_root/$target-emscripten"
+  rm -rf "$emscripten_work"
+  mkdir -p "$emscripten_work"
+  emscripten_target_args=()
+  if [[ "$target" = wasm64 ]]; then emscripten_target_args=(-sMEMORY64=1 -sWASM_BIGINT=1); fi
+  (
+    cd "$repo_root"
+    emcc src/NetWasm.Runtime/runtime_wasm_sjlj.c -c -Oz -fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0 \
+      "${emscripten_target_args[@]}" -o "$emscripten_work/wasm-sjlj.o"
+    emcc src/NetWasm.Runtime/runtime_wasm_longjmp_tag.S -c -fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0 \
+      "${emscripten_target_args[@]}" -o "$emscripten_work/wasm-longjmp-tag.o"
+    emcc src/NetWasm.Runtime/runtime_cxx_personality.c -c -Oz \
+      "${emscripten_target_args[@]}" -o "$emscripten_work/cxx-personality.o"
+    emcc src/NetWasm.Runtime/runtime_emscripten_stand_ins.c -c -Oz -ffunction-sections \
+      "${emscripten_target_args[@]}" -o "$emscripten_work/emscripten-stand-ins.o"
+  )
+  rm -f "$target_root/libnetwasm-emscripten-support.a" "$target_root/libnetwasm-emscripten-stand-ins.a"
+  emar rcs "$target_root/libnetwasm-emscripten-support.a" \
+    "$emscripten_work/wasm-sjlj.o" "$emscripten_work/wasm-longjmp-tag.o" "$emscripten_work/cxx-personality.o"
+  emar rcs "$target_root/libnetwasm-emscripten-stand-ins.a" "$emscripten_work/emscripten-stand-ins.o"
+  node "$source_package_root/tools/normalize-archive-paths.mjs" \
+    --prefix "$repo_root" --prefix "$EMSDK" --prefix "$temporary_root" --prefix "$HOME" \
+    --archive "$target_root/libnetwasm-emscripten-support.a" \
+    --archive "$target_root/libnetwasm-emscripten-stand-ins.a"
+  rm -rf "$emscripten_work"
 
   maximum_memory="$(node -p \
     'require(process.argv[1]).targets[process.argv[2]].maximumMemorySizeBytes' \
@@ -154,7 +203,7 @@ NODE
     export_args+=("--export=$export_name")
   done < "$runtime_root/runtime-exports.txt"
 
-  for collector_directory in compact netwasm bump; do
+  for collector_directory in compact netwasm netwasmgen bump; do
   if [[ -n "$only" && "${only#*/}" != "$collector_directory" ]]; then continue; fi
   for native_profile in size speed; do
   collector_root="$target_root/$collector_directory"
@@ -224,6 +273,66 @@ NODE
     node "$source_package_root/tools/validate-runtime-component-metadata.mjs" \
       "$proof" "$temporary_root/runtime-component-type.bin"
   done
+
+  # Native code's C library imports no WASI Preview 1: each function whose musl version would import it is replaced
+  # by the runtime. Link them all, live, and reject any Preview 1 import that remains.
+  if [[ "$collector_directory" = compact && "$native_profile" = size ]]; then
+    libc_proof="$temporary_root/$target-libc-closure.wasm"
+    libc_exports=()
+    for libc_function in clock_gettime clock_getres time gettimeofday clock timespec_get getentropy \
+        read readv pread preadv pwrite pwritev fsync fcntl isatty dup2 fchdir fchmod fchmodat tmpfile \
+        localtime_r mktime if_nametoindex if_indextoname if_nameindex getifaddrs res_send \
+        close write writev lseek fopen opendir fclose fread fwrite fseek ftell fflush getenv; do
+      libc_exports+=("--export=$libc_function")
+    done
+    "$wasm_ld" "$machine" -Bstatic --strip-debug --table-base=1 \
+      --whole-archive "$collector_root/libnetwasm-runtime.a" "$collector_root/libnetwasm-runtime-wasi.a" \
+      --no-whole-archive \
+      "$collector_root/libgc.a" \
+      "${system_paths[@]}" \
+      "$target_root/libnetwasm-emscripten-support.a" \
+      --allow-undefined-file="$target_root/allowed-undefined-symbols.txt" \
+      --no-entry --gc-sections --no-stack-first \
+      --global-base=1024 -z stack-size="$native_stack_size" \
+      --initial-memory="$initial_memory" --max-memory="$maximum_memory" \
+      --export-memory --export-table \
+      -mllvm -combiner-global-alias-analysis=false \
+      -mllvm -enable-emscripten-sjlj -mllvm -disable-lsr \
+      "${export_args[@]}" "${libc_exports[@]}" -o "$libc_proof"
+    if wasm-tools print "$libc_proof" | grep -F '(import "wasi_snapshot_preview1"' >&2; then
+      echo "native code's C library imports WASI Preview 1 on '$target'" >&2
+      exit 1
+    fi
+    node "$source_package_root/tools/validate-runtime-imports.mjs" \
+      "$libc_proof" "$target" "$collector_directory"
+    rm -f "$libc_proof"
+
+    # The C++ exception closure links in place of the ordinary one, with the support archive's personality entry
+    # for older Emscripten's landing pads, validates, and imports nothing beyond the runtime's own.
+    cxx_proof="$temporary_root/$target-cxx-exceptions.wasm"
+    "$wasm_ld" "$machine" -Bstatic --strip-debug --table-base=1 \
+      --whole-archive "$collector_root/libnetwasm-runtime.a" "$collector_root/libnetwasm-runtime-wasi.a" \
+      --no-whole-archive \
+      "$collector_root/libgc.a" \
+      "${exception_paths[@]}" "$target_root/libnetwasm-emscripten-support.a" \
+      --allow-undefined-file="$target_root/allowed-undefined-symbols.txt" \
+      --no-entry --gc-sections --no-stack-first \
+      --global-base=1024 -z stack-size="$native_stack_size" \
+      --initial-memory="$initial_memory" --max-memory="$maximum_memory" \
+      --export-memory --export-table \
+      -mllvm -combiner-global-alias-analysis=false \
+      -mllvm -enable-emscripten-sjlj -mllvm -disable-lsr \
+      "${export_args[@]}" --export=__cxa_throw --export=__cxa_rethrow --export=__cxa_begin_catch \
+      --export=__cxa_end_catch --undefined=_Unwind_CallPersonality -o "$cxx_proof"
+    wasm-tools validate "$cxx_proof" --features all
+    if wasm-tools print "$cxx_proof" | grep -F '(import "wasi_snapshot_preview1"' >&2; then
+      echo "the C++ exception runtime imports WASI Preview 1 on '$target'" >&2
+      exit 1
+    fi
+    node "$source_package_root/tools/validate-runtime-imports.mjs" \
+      "$cxx_proof" "$target" "$collector_directory"
+    rm -f "$cxx_proof"
+  fi
 
   node - "$collector_root/layout.json" "$target" "$footprint" <<'NODE'
 const fs = require("node:fs");

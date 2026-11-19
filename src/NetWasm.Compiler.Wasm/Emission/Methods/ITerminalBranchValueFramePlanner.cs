@@ -8,5 +8,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
 internal interface ITerminalBranchValueFramePlanner
 {
-    TerminalBranchValueFramePlan? Plan(StructuredMethod method, ValueFrameLayout layout, MethodRootMap roots);
+    // copyTails: whether both arms may each carry a straight-line tail that follows the if.
+    TerminalBranchValueFramePlan? Plan(StructuredMethod method, ValueFrameLayout layout, MethodRootMap roots, bool copyTails);
 }

@@ -111,6 +111,31 @@ test("runtime composition supplies WASI 0.3 contracts and the clock for both wid
   }
 });
 
+test("runtime composition sends the program's standard output and error to the process's for both widths", () => {
+  const written = [];
+  const original = { stdout: process.stdout.write, stderr: process.stderr.write };
+  process.stdout.write = bytes => { written.push(["stdout", Buffer.from(bytes).toString()]); return true; };
+  process.stderr.write = bytes => { written.push(["stderr", Buffer.from(bytes).toString()]); return true; };
+  try {
+    for (const target of ["wasm32", "wasm64"]) {
+      const prefix = target === "wasm64" ? "cm64p2" : "cm32p2";
+      const memory = { buffer: new ArrayBuffer(64) };
+      new Uint8Array(memory.buffer).set(new TextEncoder().encode(target), 16);
+      const modules = linkedCorpusProgramDependencies.createRuntimeImports(target, () => memory, () => ({}));
+      for (const stream of ["stdout", "stderr"]) {
+        const handles = modules[`wasi:cli/${stream}@0.3.2`]["[stream-new-0]write-via-stream"]();
+        modules[`${prefix}|wasi:cli/${stream}@0.3`]["write-via-stream"](Number(handles & 0xffffffffn));
+        modules[`wasi:cli/${stream}@0.3.2`]["[async-lower][stream-write-0]write-via-stream"](
+          Number(handles >> 32n), 16, target.length);
+      }
+    }
+  } finally {
+    process.stdout.write = original.stdout;
+    process.stderr.write = original.stderr;
+  }
+  assert.deepEqual(written, [["stdout", "wasm32"], ["stderr", "wasm32"], ["stdout", "wasm64"], ["stderr", "wasm64"]]);
+});
+
 test("runtime composition mounts a program's sidecar under /netwasm-sidecars for both widths", () => {
   for (const target of ["wasm32", "wasm64"]) {
     const prefix = target === "wasm64" ? "cm64p2" : "cm32p2";
@@ -119,8 +144,15 @@ test("runtime composition mounts a program's sidecar under /netwasm-sidecars for
       target, () => ({ buffer: new ArrayBuffer(65536) }), () => ({
         component_realloc(...args) { allocations.push(args); return target === "wasm64" ? 1024n : 1024; },
       }), { fileName: "App.wasm.method-symbols", bytes: new Uint8Array([1, 2, 3]) });
-    assert.ok(modules[`${prefix}|wasi:filesystem/preopens@0.3`]);
     assert.ok(modules[`${prefix}|wasi:filesystem/types@0.3`]);
     assert.ok(modules[`${prefix}|wasi:clocks/monotonic-clock@0.3`]);
+    // Listing the preopened directory lowers its path and the list into the program's memory, through the
+    // program's own allocator, with the target's address width.
+    modules[`${prefix}|wasi:filesystem/preopens@0.3`]["get-directories"](target === "wasm64" ? 8n : 8);
+    const width = target === "wasm64" ? 8 : 4;
+    assert.deepEqual(allocations.map(([, , alignment, size]) => [Number(alignment), Number(size)]),
+      [[1, "/netwasm-sidecars".length], [width, width * 3]]);
+    assert.ok(allocations.every(([original, oldSize]) =>
+      typeof original === (target === "wasm64" ? "bigint" : "number") && Number(original) === 0 && Number(oldSize) === 0));
   }
 });

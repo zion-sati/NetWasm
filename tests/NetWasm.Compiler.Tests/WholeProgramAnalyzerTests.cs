@@ -214,19 +214,24 @@ public sealed class WholeProgramAnalyzerTests
         var assembly = assets.CompileSource(
             "ValueAnalyzerFixture",
             """
+            using System.Runtime.CompilerServices;
+
             namespace ValueAnalyzerFixture;
 
+            // Kept calls, so the analyzer reaches each as a method.
             public struct Pair
             {
                 public int Left;
                 public int Right;
 
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 public Pair(int left, int right)
                 {
                     Left = left;
                     Right = right;
                 }
 
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 public int Sum() => Left + Right;
             }
 
@@ -262,10 +267,14 @@ public sealed class WholeProgramAnalyzerTests
         var assembly = assets.CompileSource(
             "GenericAnalyzerFixture",
             """
+            using System.Runtime.CompilerServices;
+
             namespace GenericAnalyzerFixture;
 
             public static class EntryPoint
             {
+                // Kept a call, so the analyzer reaches its specialization as a method.
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 public static T Identity<T>(T value)
                 {
                     T copy = value;

@@ -156,6 +156,8 @@ public sealed class GenericCompilationTests
         var assembly = assets.CompileSource(
             "GenericCompilerFixture",
             """
+            using System.Runtime.CompilerServices;
+
             namespace GenericCompilerFixture;
 
             public sealed class Box<T>
@@ -170,6 +172,8 @@ public sealed class GenericCompilationTests
                 // their constructors.
                 private static object Escaped;
 
+                // Kept a call, so each specialization is a method of its own.
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 private static T Identity<T>(T value)
                 {
                     T copy = value;
@@ -291,6 +295,8 @@ public sealed class GenericCompilationTests
         var assembly = assets.CompileSource(
             "StructCompilerFixture",
             """
+            using System.Runtime.CompilerServices;
+
             namespace StructCompilerFixture;
 
             public interface IRead
@@ -314,7 +320,10 @@ public sealed class GenericCompilationTests
 
             public static class EntryPoint
             {
+                // Kept calls, so the struct crosses each by value and the constrained call stays in Read.
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 private static int Read<T>(T value) where T : IRead => value.Sum();
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 private static T Identity<T>(T value) => value;
 
                 public static int Run(int input)
@@ -460,6 +469,8 @@ public sealed class GenericCompilationTests
         var assembly = assets.CompileSource(
             "GenericValueArrayCompilerFixture",
             """
+            using System.Runtime.CompilerServices;
+
             namespace GenericValueArrayCompilerFixture;
 
             public sealed class Node { }
@@ -472,6 +483,8 @@ public sealed class GenericCompilationTests
 
             public static class EntryPoint
             {
+                // Kept a call, so the specialization over Pair[] is a method of its own.
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 private static T First<T>(T[] values) => values[0];
                 private static int Consume(Node value, int number) => number;
 
@@ -514,6 +527,8 @@ public sealed class GenericCompilationTests
         var assembly = assets.CompileSource(
             "GenericCreationCompilerFixture",
             """
+            using System.Runtime.CompilerServices;
+
             namespace GenericCreationCompilerFixture;
 
             public struct Pair
@@ -533,6 +548,8 @@ public sealed class GenericCompilationTests
 
             public static class EntryPoint
             {
+                // Kept a call, so each specialization is a method of its own.
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 private static T Create<T>() where T : new() => new T();
 
                 public static int Run(int input)

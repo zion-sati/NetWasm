@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Text.Json;
 using Microsoft.Build.Framework;
@@ -100,6 +101,11 @@ public sealed class NetWasmWritePageModuleTask : Microsoft.Build.Utilities.Task
     [Required] public ITaskItem[] Exports { get; set; } = [];
     public ITaskItem[] RequiredImportModules { get; set; } = [];
 
+    // A browser page's startup downloads: the runtime module URLs its bundle imports, relative to the module, and
+    // the deployment's artifacts (RelativePath and Role). Node.js code passes neither.
+    public ITaskItem[] RuntimeModules { get; set; } = [];
+    public ITaskItem[] DeploymentArtifacts { get; set; } = [];
+
     public override bool Execute()
     {
         try
@@ -115,6 +121,9 @@ public sealed class NetWasmWritePageModuleTask : Microsoft.Build.Utilities.Task
                 // A page that links a file system interface exports its file mounts (#142).
                 FileMounts = RequiredImportModules.Any(item =>
                     item.ItemSpec.StartsWith("wasi:filesystem/", StringComparison.Ordinal)),
+                StartupLoad = DeploymentArtifacts.Length == 0 ? null : new(
+                    [.. RuntimeModules.Select(item => item.ItemSpec)],
+                    PageStartupArtifacts.Select(DeploymentArtifacts)),
             });
             return true;
         }
@@ -124,6 +133,23 @@ public sealed class NetWasmWritePageModuleTask : Microsoft.Build.Utilities.Task
             return false;
         }
     }
+}
+
+/// <summary>
+/// Selects the deployment artifacts a browser page's runtime fetches at every startup: the application, its raw
+/// adapter, runtime layout and interop manifest, and the symbol sidecars it mounts. Time zone data is fetched only for
+/// a non-UTC TZ, and the hosting bundles are modules, so neither is prefetched.
+/// </summary>
+internal static class PageStartupArtifacts
+{
+    private static readonly FrozenSet<string> StartupRoles = FrozenSet.ToFrozenSet(
+        ["application", "raw-adapter", "runtime-layout", "interop-manifest", "type-symbols", "method-symbols"],
+        StringComparer.Ordinal);
+
+    public static ImmutableArray<string> Select(IEnumerable<ITaskItem> artifacts) =>
+        [.. artifacts
+            .Where(item => StartupRoles.Contains(JavaScriptExportItems.RequiredMetadata(item, "Role")))
+            .Select(item => JavaScriptExportItems.RequiredMetadata(item, "RelativePath").Replace('\\', '/'))];
 }
 
 /// <summary>Reads the export items <c>NetWasmReadHostInteropManifestTask</c> emits.</summary>

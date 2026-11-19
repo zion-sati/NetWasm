@@ -39,7 +39,20 @@ public sealed record PageModuleRequest(
 {
     /// <summary>Whether the page host has file mounts (#142) to re-export: it links wasi:filesystem.</summary>
     public bool FileMounts { get; init; }
+
+    /// <summary>
+    /// The files a browser page starts downloading as soon as the module loads, or null for Node.js code, which
+    /// imports the page bundle statically.
+    /// </summary>
+    public PageStartupLoad? StartupLoad { get; init; }
 }
+
+/// <summary>
+/// What a browser page's module downloads in one round trip before the runtime starts: the runtime's module files
+/// (preloaded beside the page bundle) and the deployment files the runtime fetches at every startup (prefetched,
+/// beside <c>deployment.json</c>), each a URL relative to the module.
+/// </summary>
+public sealed record PageStartupLoad(ImmutableArray<string> RuntimeModules, ImmutableArray<string> DeploymentFiles);
 
 public interface IPageEntryWriter
 {
@@ -87,7 +100,8 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         BrowserHostSource.AppendConfiguration(source, "    ", [], request.Arguments, request.Environment,
             request.Clocks, request.Network, request.Randomness);
         source.AppendLine("  }),");
-        source.AppendLine("  manifestUrl: new URL(\"./deployment.json\", import.meta.url).href,");
+        source.Append("  manifestUrl: new URL(").Append(Json("./" + DeploymentManifestFileName))
+            .AppendLine(", import.meta.url).href,");
         source.AppendLine("  modules: Object.freeze({");
         for (var index = 0; index < modules.Length; index++)
         {
@@ -107,24 +121,80 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
     {
         ValidateModule(request);
         var exports = request.Exports.OrderBy(export => export.Name, StringComparer.Ordinal).ToArray();
+        var page = Json("./" + request.PageFileName);
         var source = new StringBuilder();
-        source.Append("import { openPage } from ").Append(Json("./" + request.PageFileName)).AppendLine(";");
-        if (request.FileMounts)
+        if (request.StartupLoad is null)
         {
-            source.Append("export { mount, sync, unmount } from ").Append(Json("./" + request.PageFileName)).AppendLine(";");
+            source.Append("import { openPage } from ").Append(page).AppendLine(";");
+            if (request.FileMounts)
+            {
+                source.Append("export { mount, sync, unmount } from ").Append(page).AppendLine(";");
+            }
+            source.AppendLine();
         }
-        source.AppendLine();
         source.AppendLine("const startup = Object.freeze({");
         source.Append("  buildFingerprint: ").Append(Json(request.BuildFingerprint)).AppendLine(",");
         source.Append("  manifestSha256: ").Append(Json(request.ManifestSha256)).AppendLine(",");
         source.AppendLine("});");
         source.Append("const exports = Object.freeze(")
             .Append(JsonSerializer.Serialize([.. exports.Select(export => export.Name)], HostingBuildJsonContext.Default.StringArray)).AppendLine(");");
-        source.AppendLine("export function open(options) {");
-        source.AppendLine("  return openPage(Object.freeze({ exports, options, startup }));");
-        source.AppendLine("}");
+        if (request.StartupLoad is null)
+        {
+            source.AppendLine("export function open(options) {");
+            source.AppendLine("  return openPage(Object.freeze({ exports, options, startup }));");
+            source.AppendLine("}");
+        }
+        else
+        {
+            AppendStartupLoad(source, "./" + request.PageFileName, request.StartupLoad, request.FileMounts);
+        }
         Write(request.OutputPath, source.ToString());
         Write(request.DeclarationPath, Declaration(exports, request.FileMounts));
+    }
+
+    // The module imports the page bundle when it loads instead of statically, so its own code runs at once and
+    // starts every startup download together: the bundle and the runtime modules it imports (modulepreload links,
+    // which a static import chain would discover one level at a time), and the deployment files the runtime fetches
+    // next, which open() hands to the runtime to verify and use.
+    private static void AppendStartupLoad(StringBuilder source, string page, PageStartupLoad load, bool fileMounts)
+    {
+        source.Append("const page = import(").Append(Json(page)).AppendLine(");");
+        source.AppendLine("page.catch(() => {});");
+        source.AppendLine("if (typeof document !== \"undefined\" && document.head !== null) {");
+        source.Append("  for (const path of ").Append(JsonArray([page, .. load.RuntimeModules])).AppendLine(") {");
+        source.AppendLine("    const link = document.createElement(\"link\");");
+        source.AppendLine("    link.rel = \"modulepreload\";");
+        source.AppendLine("    link.href = new URL(path, import.meta.url).href;");
+        source.AppendLine("    document.head.append(link);");
+        source.AppendLine("  }");
+        source.AppendLine("}");
+        source.AppendLine("const prefetched = new Map();");
+        source.Append("for (const path of ").Append(JsonArray([DeploymentManifestFileName, .. load.DeploymentFiles]))
+            .AppendLine(") {");
+        source.AppendLine("  const url = new URL(path, import.meta.url).href;");
+        source.AppendLine("  const response = fetch(url);");
+        source.AppendLine("  response.catch(() => {});");
+        source.AppendLine("  prefetched.set(url, response);");
+        source.AppendLine("}");
+        if (fileMounts)
+        {
+            // Nothing is mounted before the bundle has loaded, since mounting waits for it.
+            source.AppendLine("let loaded = null;");
+            source.AppendLine("page.then(module => { loaded = module; }, () => {});");
+            source.AppendLine("export async function mount(guestPath, source) {");
+            source.AppendLine("  return (await page).mount(guestPath, source);");
+            source.AppendLine("}");
+            source.AppendLine("export async function sync(guestPath) {");
+            source.AppendLine("  return (await page).sync(guestPath);");
+            source.AppendLine("}");
+            source.AppendLine("export function unmount(guestPath) {");
+            source.AppendLine("  if (loaded === null) throw new TypeError(`'${guestPath}' is not mounted`);");
+            source.AppendLine("  return loaded.unmount(guestPath);");
+            source.AppendLine("}");
+        }
+        source.AppendLine("export function open(options) {");
+        source.AppendLine("  return page.then(({ openPage }) => openPage(Object.freeze({ exports, options, prefetched, startup })));");
+        source.AppendLine("}");
     }
 
     private static string Declaration(IEnumerable<WorkerJavaScriptExport> exports, bool fileMounts)
@@ -204,12 +274,21 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
             || Path.GetFileName(request.PageFileName) != request.PageFileName
             || !DigestPattern().IsMatch(request.BuildFingerprint)
             || !DigestPattern().IsMatch(request.ManifestSha256)
-            || request.Exports.IsDefaultOrEmpty)
+            || request.Exports.IsDefaultOrEmpty
+            || request.StartupLoad is { } load && (!IsRelativeUrlList(load.RuntimeModules)
+                || !IsRelativeUrlList(load.DeploymentFiles)
+                || load.DeploymentFiles.Contains(DeploymentManifestFileName, StringComparer.Ordinal)))
         {
             throw new ArgumentException("Page module publication contract is invalid.", nameof(request));
         }
         JavaScriptExportSurface.Validate(PageJavaScriptExportRealm.Instance, request.Exports);
     }
+
+    // Distinct URLs relative to the module: a file name, or ./ or ../ segments and a path.
+    private static bool IsRelativeUrlList(ImmutableArray<string> values) =>
+        !values.IsDefault
+        && values.All(value => RelativeUrlPattern().IsMatch(value))
+        && values.Distinct(StringComparer.Ordinal).Count() == values.Length;
 
     private static void ValidateAbsolutePaths(params string[] paths)
     {
@@ -219,7 +298,12 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         }
     }
 
+    private const string DeploymentManifestFileName = "deployment.json";
+
     private static string Json(string value) => JsonSerializer.Serialize(value, HostingBuildJsonContext.Default.String);
+
+    private static string JsonArray(string[] values) =>
+        JsonSerializer.Serialize(values, HostingBuildJsonContext.Default.StringArray);
 
     private static void Write(string path, string source)
     {
@@ -232,4 +316,7 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
 
     [GeneratedRegex("^[0-9a-f]{64}$", RegexOptions.CultureInvariant)]
     private static partial Regex DigestPattern();
+
+    [GeneratedRegex("^(\\./|(\\.\\./)+)?[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$", RegexOptions.CultureInvariant)]
+    private static partial Regex RelativeUrlPattern();
 }

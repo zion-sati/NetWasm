@@ -27,9 +27,10 @@ internal sealed class ValueTypeEqualityFieldPlanner(
         ImmutableHashSet<string> active,
         ImmutableArray<ValueTypeEqualityField>.Builder result)
     {
+        // A pointer, function pointer or by-reference field compares as its bits, as .NET's ValueType.Equals does.
         if (!type.IsValueType || type.Shape == CliTypeShape.Primitive ||
             type.Shape is CliTypeShape.ManagedByReference or
-                CliTypeShape.UnmanagedPointer)
+                CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer)
         {
             result.Add(new(baseOffset, type));
             return;

@@ -8,7 +8,7 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.GarbageCollection;
 
-/// <summary>One method's by-ref effects, analysed alone against every other method's.</summary>
+/// <summary>One method's by-ref effects, analyzed alone against every other method's.</summary>
 public interface IManagedByRefMethodSummarizer
 {
     ManagedByRefMethodSummary Summarize(ManagedByRefMethodSummaryRequest request);

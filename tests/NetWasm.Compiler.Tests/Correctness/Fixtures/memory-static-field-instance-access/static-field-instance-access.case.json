@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "caseId": "memory.static-field-instance-access",
+  "featureIds": [
+    "S14",
+    "S20"
+  ],
+  "inputKind": "Emitted",
+  "sourceFiles": [],
+  "name": "StaticFieldInstanceAccessFixture",
+  "namespace": "StaticFieldInstanceAccessFixture",
+  "entryMethod": "Run",
+  "inputs": [
+    0
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": 42,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Runtime": "NetWasm.CoreLib",
+    "System.Private.CoreLib": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Family",
+  "executionBackend": "Linked",
+  "supportsBatchedOracle": false,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.StaticFieldInstanceAccessTests.FieldInstructionsOnStaticFieldsDropTheirObject"
+}

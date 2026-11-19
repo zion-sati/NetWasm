@@ -59,7 +59,17 @@ internal sealed record RuntimePackTarget(
     public RuntimeNativeValidationProfile? NativeValidation { get; init; }
     public RuntimePackSpeedAssets? Speed { get; init; }
     public RuntimePackPlatformArchives? PlatformArchives { get; init; }
+    public RuntimePackEmscriptenArchives? EmscriptenArchives { get; init; }
+    // The C++ libraries with Wasm exception handling, for archives that throw or catch C++ exceptions.
+    public RuntimePackSystemLibraries? ExceptionSystemLibraries { get; init; }
 }
+
+// Support for native archives Emscripten built, both linked lazily after the program's own archives: Wasm
+// setjmp/longjmp for every output, and stand-ins for Emscripten's JavaScript functions for components, which have no
+// JavaScript.
+internal sealed record RuntimePackEmscriptenArchives(
+    RuntimePackAsset Support,
+    RuntimePackAsset StandIns);
 
 // The runtime's WASI uses, and their replacements for a plain core module without WASI; a link
 // takes exactly one of the two.
@@ -133,9 +143,14 @@ internal sealed record RuntimeLinkRequest(
     public ImmutableArray<RuntimeNativeBinding> NativeBindings { get; init; } = [];
     public string? NativeCallbackObjectPath { get; init; }
     public string? NativeCallbackAllowedUndefinedPath { get; init; }
+    // The runtime's undefined functions plus the project's declared env functions, without callbacks.
+    public string? AllowedUndefinedPath { get; init; }
     public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
     // Link the platform functions without WASI, for a plain core module.
     public bool PlainCoreModule { get; init; }
+    // A raw WebAssembly output (JsModule, or NetWasmRawWasm) whose JavaScript supplies one of Emscripten's GL
+    // functions supplies them all, so it links no stand-ins; every other output links them, as a component does.
+    public bool ScriptSuppliesEmscriptenFunctions { get; init; }
 }
 
 internal sealed record RuntimeOptimizationRequest(
@@ -188,6 +203,10 @@ internal sealed record RuntimeMaterializationRequest(
     public string? NativeWasmToolsPath { get; init; }
     // A plain core module's runtime: its platform functions use no WASI.
     public bool PlainCoreModule { get; init; }
+    // Raw WebAssembly output (JsModule, or NetWasmRawWasm), whose JavaScript host supplies its imports.
+    public bool RawWasmOutput { get; init; }
+    // The Emscripten JavaScript functions raw output's JavaScript supplies (<NetWasmEnvImport>).
+    public ImmutableArray<RuntimeEnvImport> EnvImports { get; init; } = [];
 }
 
 internal sealed record RuntimeMaterializationCacheKeyRequest(
@@ -240,6 +259,7 @@ internal sealed record RuntimeNativeMaterializationCacheKeyRequest(
     public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
     public string? NativeCallbackObjectPath { get; init; }
     public string? NativeCallbackAllowedUndefinedPath { get; init; }
+    public ImmutableArray<RuntimeEnvImport> EnvImports { get; init; } = [];
 }
 
 internal sealed record RuntimeMaterializationCacheMetrics(

@@ -1,5 +1,10 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+  <!-- NetWasm.Sdk defines NetWasmGuestFramework; a project that imports this file without it, or before it, gets
+       the same answer: a .NET platform target framework on netwasm, or netwasm0.1. -->
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == ''">
+    <NetWasmGuestFramework Condition="'$(TargetFramework)' == 'netwasm0.1' OR $(TargetFramework.ToLowerInvariant().Contains('-netwasm'))">true</NetWasmGuestFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
     <NetWasmRuntimeTarget>wasm64</NetWasmRuntimeTarget>
     <NetWasmRuntimeCoreLibPath>$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'runtime', 'NetWasm.CoreLib.dll'))</NetWasmRuntimeCoreLibPath>
     <NetWasmRuntimeAbiManifestPath>$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'runtime', 'runtime-abi.json'))</NetWasmRuntimeAbiManifestPath>

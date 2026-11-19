@@ -15,11 +15,6 @@ internal sealed class ValueFrameInitializationEmitter(
     IValueLayoutProvider values,
     IValueFrameAddressEmitter addresses) : IValueFrameInitializationEmitter
 {
-    // Wasmtime runs memory.fill out of line, which costs more than a few
-    // stores, so ranges up to this size are zeroed with stores instead: sixteen
-    // 16-byte stores at most. A Matrix4x4 local alone is 64 bytes.
-    private const int MaximumStoredZeroBytes = 256;
-
     public void Initialize(
         IWasmInstructionWriter code,
         StructuredMethodHeader header,
@@ -37,12 +32,25 @@ internal sealed class ValueFrameInitializationEmitter(
             EmitRange(code, context, new StorageRange(offset, size));
     }
 
+    // Under localsinit every local starts zeroed. Without it (SkipLocalsInit) a local starts with
+    // what its frame held, as on .NET, except storage the collector traces: a local that holds a
+    // reference or a byref is a root wherever its address reaches, so it starts zeroed either way.
     private StorageRange? CreateLocalRange(
         StructuredMethodHeader header,
         MethodEmissionContext context) => CreateRange(
-        context.ValueLayout.LocalOffsets.Select(item => new StorageRange(
-            item.Value,
-            GetStorageSize(header.LocalSignatureTypes[item.Key]))));
+        context.ValueLayout.LocalOffsets
+            .Where(item => header.InitializesLocals || HoldsReferences(header.LocalSignatureTypes[item.Key]))
+            .Select(item => new StorageRange(
+                item.Value,
+                GetStorageSize(header.LocalSignatureTypes[item.Key]))));
+
+    private bool HoldsReferences(CliTypeIdentity type) => type.StackKind switch
+    {
+        CliValueKind.ValueType => values.GetValueLayout(type) is var layout &&
+            (layout.ContainsReferences || !layout.ByReferenceOffsets.IsEmpty),
+        CliValueKind.ManagedReference or CliValueKind.ManagedAddress => true,
+        _ => false,
+    };
 
     private StorageRange? CreateFilterLocalRange(
         StructuredMethodHeader header,
@@ -85,61 +93,7 @@ internal sealed class ValueFrameInitializationEmitter(
             return;
         }
 
-        if (storage.Size <= MaximumStoredZeroBytes)
-        {
-            EmitZeroStores(code, context, storage);
-            return;
-        }
-
-        addresses.Emit(code, context, storage.Offset);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(0)));
-        ManagedMemoryEmitter.EmitAddressConstant(
-            code,
-            layouts.Target,
-            storage.Size);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Prefixed,
-            WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
-    }
-
-    // Zeroes the range with 16-byte stores and a narrower tail, each addressed
-    // from the range start through its memarg offset.
-    private void EmitZeroStores(
-        IWasmInstructionWriter code,
-        MethodEmissionContext context,
-        StorageRange storage)
-    {
-        for (var written = 0; written < storage.Size;)
-        {
-            var size = (storage.Size - written) switch
-            {
-                >= 16 => 16,
-                >= 8 => 8,
-                >= 4 => 4,
-                >= 2 => 2,
-                _ => 1,
-            };
-            addresses.Emit(code, context, storage.Offset);
-            if (size == 16)
-            {
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.SimdPrefixed,
-                    WasmInstructionOperand.FromBytes([(byte)WasmSimdOpcodes.V128Constant, .. new byte[16]])));
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.SimdPrefixed,
-                    WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Store, 0, (uint)written)));
-            }
-            else
-            {
-                code.Write(size == 8
-                    ? WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(0))
-                    : WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-                ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, written, size);
-            }
-            written += size;
-        }
+        FrameRangeZeroing.Emit(code, layouts.Target, writer => addresses.Emit(writer, context, storage.Offset), storage.Size);
     }
 
     private readonly record struct StorageRange(int Offset, int Size);

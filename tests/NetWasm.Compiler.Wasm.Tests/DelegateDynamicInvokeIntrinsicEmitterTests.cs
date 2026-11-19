@@ -8,6 +8,8 @@ using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using static NetWasm.Compiler.Wasm.Tests.ExpressionIntrinsicEmissionFixture;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -155,8 +157,10 @@ public sealed class DelegateDynamicInvokeIntrinsicEmitterTests
         fixture.Imports,
         fixture.Exceptions,
         fixture.Roots,
+        new KeyedDispatchEmitter(),
         new ExceptionPayloadBlockEmitter(fixture.Layouts),
         fixture,
         fixture,
-        fixture);
+        fixture,
+        new ReferenceWriteBarrierEmitter(fixture.Imports, new ReferenceWriteRecordPolicy(fixture.Scalars)));
 }

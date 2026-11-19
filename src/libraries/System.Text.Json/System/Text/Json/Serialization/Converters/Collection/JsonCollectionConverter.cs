@@ -14,6 +14,16 @@ namespace System.Text.Json.Serialization
     /// </summary>
     internal abstract class JsonCollectionConverter<TCollection, TElement> : JsonResumableConverter<TCollection>
     {
+#if NETWASM
+        protected JsonCollectionConverter()
+        {
+            if (typeof(TElement) == typeof(object))
+            {
+                s_objectValuesReachable = nameof(JsonCollectionConverter<TCollection, TElement>);
+            }
+        }
+#endif
+
         internal override bool SupportsCreateObjectDelegate => true;
         private protected sealed override ConverterStrategy GetDefaultConverterStrategy() => ConverterStrategy.Enumerable;
         internal override Type ElementType => typeof(TElement);

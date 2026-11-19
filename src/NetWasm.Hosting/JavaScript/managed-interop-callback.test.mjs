@@ -10,6 +10,7 @@ import {
 } from "./managed-interop-callback.mjs";
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { NetWasmHostError, NetWasmManagedError } from "./managed-errors.mjs";
+import { createValueArrayStaging } from "./value-array-staging.mjs";
 
 const callback = (overrides = {}) => ({
   module: "example:app/interop@1.0.0",
@@ -33,6 +34,22 @@ const targetLayout = {
   spanLengthOffset: 4,
 };
 
+// The runtime's allocator over the test memory: blocks from a bump pointer, every freed block recorded.
+function stagingOver(stagingMemory, start = 4096) {
+  let next = start;
+  const freed = [];
+  const runtime = {
+    native_alloc(size) { const address = next; next += size; return address; },
+    native_free(address) { freed.push(address); },
+  };
+  const staging = createValueArrayStaging({
+    getInstance: () => ({ exports: runtime }), getMemory: () => stagingMemory,
+    runtimeModules: {}, target: "wasm32",
+  });
+  return { staging, freed, read: (address, constructor, length) =>
+    [...new constructor(stagingMemory.buffer.slice(address, address + length * constructor.BYTES_PER_ELEMENT))] };
+}
+
 function request(overrides = {}) {
   const handles = createInteropHandleTable();
   return {
@@ -44,6 +61,7 @@ function request(overrides = {}) {
     handle: 7,
     handles,
     parameterIndex: 0,
+    staging: stagingOver(new WebAssembly.Memory({ initial: 1 })).staging,
     target: "wasm32",
     targetLayout,
     ...overrides,
@@ -62,30 +80,35 @@ test("binds scalar and void managed callbacks to the exact handle", () => {
   assert.equal(createManagedInteropCallback(request({ handle: 0 })), null);
 });
 
-test("owns transient string and byte callback handles for one invocation", () => {
+// A string argument is lent through a handle for the call; a number array is staged in linear memory, and the
+// managed callback copies and frees its block (NetWasm.UI's events take an Action<int, byte[]>).
+test("lends string handles and stages number arrays for one invocation", () => {
   const handles = createInteropHandleTable();
-  const sourceBytes = new Uint8Array([1, 2, 3]);
+  const { staging, freed, read } = stagingOver(new WebAssembly.Memory({ initial: 1 }));
   const invoke = createManagedInteropCallback(request({
-    callbacks: [callback({ parameters: ["string", "bytes", "string", "bytes"] })],
+    callbacks: [callback({ parameters: ["string", "bytes", "string", "bytes", "u16[]"] })],
     handles,
+    staging,
     getInstance: () => ({ exports: {
-      callback_1(handle, stringHandle, bytesHandle, nullString, nullBytes) {
+      callback_1(handle, stringHandle, bytesAddress, bytesLength, nullString, nullAddress, nullLength,
+        valuesAddress, valuesLength) {
         assert.equal(handle, 7);
         assert.equal(handles.get(stringHandle), "value");
-        // Lent for the call, as an export argument is; managed code copies it.
-        assert.strictEqual(handles.get(bytesHandle), sourceBytes);
-        assert.deepEqual([nullString, nullBytes], [0, 0]);
+        assert.deepEqual(read(bytesAddress, Uint8Array, bytesLength), [1, 2, 3]);
+        assert.deepEqual([nullString, nullAddress, nullLength], [0, 0, -1]);
+        assert.deepEqual(read(valuesAddress, Uint16Array, valuesLength), [1, 65_535]);
         return 5;
       },
     } }),
   }));
-  assert.equal(invoke("value", sourceBytes, null, null), 5);
+  assert.equal(invoke("value", new Uint8Array([1, 2, 3]), null, null, Uint16Array.of(1, 65_535)), 5);
   assert.equal(handles.count, 0);
+  assert.deepEqual(freed, []);
 
   for (const [parameters, value, pattern] of [
     [["string"], 1, /string value must be a string or null/],
-    [["bytes"], [], /byte-array value must be Uint8Array or null/],
-    [["f32[]"], Float64Array.of(1), /f32\[\] value must be Float32Array or null/],
+    [["bytes"], "text", /byte-array value must be Uint8Array, an array, or null/],
+    [["f32[]"], Float64Array.of(1), /f32\[\] value must be Float32Array, an array, or null/],
   ]) {
     const invalid = createManagedInteropCallback(request({
       callbacks: [callback({ parameters })],
@@ -97,21 +120,18 @@ test("owns transient string and byte callback handles for one invocation", () =>
   }
 });
 
-test("lends typed array callback arguments for the call", () => {
-  const handles = createInteropHandleTable();
-  const source = Uint16Array.of(1, 65_535);
+// A block staged for a call that never reaches the managed callback is freed by the host.
+test("frees staged arrays when a later callback argument cannot cross", () => {
+  const { staging, freed } = stagingOver(new WebAssembly.Memory({ initial: 1 }));
+  let calls = 0;
   const invoke = createManagedInteropCallback(request({
-    callbacks: [callback({ parameters: ["u16[]"] })],
-    handles,
-    getInstance: () => ({ exports: {
-      callback_1(handle, valuesHandle) {
-        assert.strictEqual(handles.get(valuesHandle), source);
-        return 2;
-      },
-    } }),
+    callbacks: [callback({ parameters: ["bytes", "string"] })],
+    staging,
+    getInstance: () => ({ exports: { callback_1() { calls++; return 0; } } }),
   }));
-  assert.equal(invoke(source), 2);
-  assert.equal(handles.count, 0);
+  assert.throws(() => invoke(Uint8Array.of(9), 3), NetWasmManagedError);
+  assert.equal(calls, 0);
+  assert.deepEqual(freed, [4096]);
 });
 
 // A callback takes and returns what a synchronous export does.
@@ -228,6 +248,7 @@ test("rejects malformed callback composition requests", () => {
     { getInstance: null }, { handles: null }, { handles: 1 }, { handles: {} },
     { handles: { acquire() {} } },
     { exceptionReporter: null }, { exceptionReporter: 1 }, { exceptionReporter: {} },
+    { staging: null }, { staging: 1 }, { staging: {} }, { staging: { stage() {} } },
   ]) assert.throws(() => createManagedInteropCallback({ ...valid, ...value }), TypeError);
   for (const value of [null, [], {}, {
     getInstance: () => ({}), handle: 1, extra: true,

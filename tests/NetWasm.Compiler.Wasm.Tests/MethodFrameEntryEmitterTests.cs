@@ -209,6 +209,54 @@ public sealed class MethodFrameEntryEmitterTests
         }
     }
 
+    // A zeroed frame is cleared once after it is entered, exception slots included, with stores from the frame's
+    // address up to 256 bytes and one fill above; the entry then writes only authoritative arguments, since an
+    // authoritative local's slot already holds null.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, 3)]
+    [InlineData(WasmTarget.Wasm64, 3)]
+    [InlineData(WasmTarget.Wasm32, 100)]
+    public void AZeroedFrameIsClearedOnceAfterEntry(WasmTarget target, int slots)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var argument = new RootSource(RootSourceKind.Argument, 0);
+        var local = new RootSource(RootSourceKind.Local, 0);
+        var slotMap = Enumerable.Range(2, slots - 2).ToImmutableDictionary(index => new RootSource(RootSourceKind.Local, index), index => index)
+            .Add(argument, 0).Add(local, 1);
+        var context = CreateMethodEmissionContext() with
+        {
+            RootMap = new MethodRootMap(EntryKey, slotMap, []),
+            AuthoritativeRootSlots = ImmutableDictionary<RootSource, int>.Empty.Add(argument, 0).Add(local, 1),
+            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), slots),
+            RootFrameStartsZeroed = true,
+        };
+        var code = new RecordingInstructionWriter();
+
+        CreateMethodFrameEntry(program, layouts, WasmRuntimeImports.CreateCatalog()).Emit(
+            code, new StructuredMethodHeader(program.GetMethod(EntryKey), null, 1, [], [], []), context);
+
+        var instructions = code.ToInstructions();
+        var size = (slots + 1) * WasmTargetLayout.For(target).ObjectReferenceSize;
+        var expected = new RecordingInstructionWriter();
+        FrameRangeZeroing.Emit(expected, WasmTargetLayout.For(target), writer => writer.Write(
+            WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)context.RootFrame))), size);
+        var zeroing = expected.ToInstructions();
+        var entered = instructions.IndexOf(instructions.First(instruction => instruction.Opcode == WasmOpcodes.LocalSet &&
+            instruction.Operand.UnsignedValue == (uint)context.RootFrame));
+        Assert.True(entered >= 0);
+        // A v128 constant's operand holds its bytes by reference, so instructions compare by their text.
+        Assert.Equal(zeroing.Select(instruction => instruction.ToString()),
+            instructions.Skip(entered + 1).Take(zeroing.Length).Select(instruction => instruction.ToString()));
+        Assert.Contains(zeroing, instruction => instruction.Opcode is WasmOpcodes.SimdPrefixed or WasmOpcodes.Prefixed);
+        Assert.Equal(size > FrameRangeZeroing.MaximumStoredBytes, zeroing.Any(instruction =>
+            instruction.Operand == WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        // After the zeroing: the argument's store, and nothing for the local or the exception slot.
+        var rest = instructions.Skip(entered + 1 + zeroing.Length).ToArray();
+        Assert.Single(rest, instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I64Store);
+        Assert.DoesNotContain(rest, instruction => instruction.Opcode == WasmOpcodes.Prefixed);
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
@@ -438,13 +486,17 @@ public sealed class MethodFrameEntryEmitterTests
 
         emitter.Emit(
             code,
+            // A C# method's header, which carries localsinit.
             new StructuredMethodHeader(
                 program.GetMethod(EntryKey),
                 null,
                 1,
                 [CliValueKind.I4],
                 [CliTypeIdentity.FromStackKind(CliValueKind.I4)],
-                []),
+                [])
+            {
+                InitializesLocals = true,
+            },
             context);
 
         var instructions = code.ToInstructions();

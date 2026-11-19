@@ -29,7 +29,7 @@ internal interface IJavaScriptReferenceArgumentEmitter
 
 internal sealed class JavaScriptReferenceArgumentEmitter(
     IHostCallbackStringArgumentMarshaller strings,
-    IHostCallbackByteArrayArgumentMarshaller valueArrays,
+    IStagedValueArrayEmitter valueArrays,
     IHostCallbackHostObjectArgumentMarshaller hostObjects) : IJavaScriptReferenceArgumentEmitter
 {
     public void Emit(
@@ -52,7 +52,8 @@ internal sealed class JavaScriptReferenceArgumentEmitter(
         }
         else if (InteropTypeClassifier.IsValueArray(type))
         {
-            valueArrays.Emit(code, type, handleParameter, destination, temporaryI4, objectTemporary, target,
+            // A number array arrives as two values: its staged elements' address, then its length.
+            valueArrays.Emit(code, type, handleParameter, handleParameter + 1, destination, objectTemporary,
                 throwFunction);
         }
         else if (InteropTypeClassifier.IsHandleValue(type))

@@ -1,4 +1,9 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- NetWasm.Sdk defines NetWasmGuestFramework; a project that imports this file without it, or before it, gets
+       the same answer: a .NET platform target framework on netwasm, or netwasm0.1. -->
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == ''">
+    <NetWasmGuestFramework Condition="'$(TargetFramework)' == 'netwasm0.1' OR $(TargetFramework.ToLowerInvariant().Contains('-netwasm'))">true</NetWasmGuestFramework>
+  </PropertyGroup>
   <!--
     Keep the declared alias as an opaque project value.  The canonical values
     below are the values consumed by NuGet/MSBuild after inference; no
@@ -14,16 +19,19 @@
     <NetWasmSdkDeclaredTargetFrameworks Condition="'$(TargetFramework)' == ''">$(TargetFrameworks)</NetWasmSdkDeclaredTargetFrameworks>
     <NetWasmSdkDeclaredTargetFrameworks Condition="'$(TargetFramework)' != ''">$(TargetFramework)</NetWasmSdkDeclaredTargetFrameworks>
     <NetWasmSdkContainsCustomProfile Condition="'$(NetWasmSdkDeclaredTargetFrameworks)' != ''">$([System.String]::Copy(';$(NetWasmSdkDeclaredTargetFrameworks);').Contains(';netwasm0.1;'))</NetWasmSdkContainsCustomProfile>
-    <NetWasmRefPackageId Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageId)' == ''">NetWasm.Ref</NetWasmRefPackageId>
-    <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.4.2</NetWasmRefPackageVersion>
-    <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.4.2</NetWasmRuntimePackageVersion>
-    <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.4.2</NetWasmRuntimePackPackageVersion>
-    <NetWasmAppRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmAppRefPackageVersion)' == ''">0.4.2</NetWasmAppRefPackageVersion>
-    <NetWasmAppRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmAppRuntimePackageVersion)' == ''">0.4.2</NetWasmAppRuntimePackageVersion>
-    <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.4.2</NetWasmToolchainPackageVersion>
-    <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.4.2</NetWasmHostingPackageVersion>
-    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.4.2</NetWasmHostingBuildPackageVersion>
-    <NetWasmHostToolsPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostToolsPackageVersion)' == ''">0.4.2</NetWasmHostToolsPackageVersion>
+    <!-- A platform target framework such as net10.0-netwasm: .NET's own framework on the netwasm platform. -->
+    <NetWasmSdkContainsPlatformFramework Condition="'$(NetWasmSdkDeclaredTargetFrameworks)' != ''">$([System.String]::Copy('$(NetWasmSdkDeclaredTargetFrameworks)').ToLowerInvariant().Contains('-netwasm'))</NetWasmSdkContainsPlatformFramework>
+    <NetWasmSdkContainsGuestFramework Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' OR '$(NetWasmSdkContainsPlatformFramework)' == 'true'">true</NetWasmSdkContainsGuestFramework>
+    <NetWasmRefPackageId Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmRefPackageId)' == ''">NetWasm.Ref</NetWasmRefPackageId>
+    <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.4.2</NetWasmRefPackageVersion>
+    <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.4.2</NetWasmRuntimePackageVersion>
+    <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.4.2</NetWasmRuntimePackPackageVersion>
+    <NetWasmAppRefPackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmAppRefPackageVersion)' == ''">0.4.2</NetWasmAppRefPackageVersion>
+    <NetWasmAppRuntimePackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmAppRuntimePackageVersion)' == ''">0.4.2</NetWasmAppRuntimePackageVersion>
+    <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.4.2</NetWasmToolchainPackageVersion>
+    <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.4.2</NetWasmHostingPackageVersion>
+    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.4.2</NetWasmHostingBuildPackageVersion>
+    <NetWasmHostToolsPackageVersion Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND '$(NetWasmHostToolsPackageVersion)' == ''">0.4.2</NetWasmHostToolsPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -50,10 +58,34 @@
     <LangVersion Condition="'$(LangVersion)' == ''">latest</LangVersion>
     <NetWasmSdkTargetFrameworkAlias>netwasm0.1</NetWasmSdkTargetFrameworkAlias>
     <NetWasmSdkCanonicalTargetFramework>NetWasm,Version=v0.1</NetWasmSdkCanonicalTargetFramework>
-    <!-- There is no installed desktop targeting pack for the custom profile.
-         The stock SDK's standard-framework resolver must be disabled; the
-         ordinary ResolvePackageAssets target supplies every compile reference
-         from the restored NetWasm.Ref contract. -->
+  </PropertyGroup>
+
+  <!-- The platform target framework: .NET's own framework, so NuGet takes a package's net10.0, net9.0, net8.0 or
+       netstandard build natively. The SDK declares the netwasm platform as a workload declares its own; NuGet
+       requires a platform version, 1.0 unless the target framework names one. -->
+  <PropertyGroup Condition="'$(_NetWasmPlatformFramework)' == 'true'">
+    <TargetPlatformSupported>true</TargetPlatformSupported>
+    <TargetPlatformVersion Condition="'$(TargetPlatformVersion)' == '' AND $(TargetFramework.ToLowerInvariant().EndsWith('-netwasm'))">1.0</TargetPlatformVersion>
+    <DefineConstants>$(DefineConstants);NETWASM</DefineConstants>
+    <!-- A NetWasm executable is a WebAssembly module, not a desktop host: no apphost, and none of the .NET host's
+         files (runtimeconfig.json, deps.json), which no NetWasm host reads and a netwasm0.1 build never wrote. -->
+    <UseAppHost>false</UseAppHost>
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <!-- A .NETCoreApp build without a runtime identifier copies every platform's native assets from runtimes/;
+         a WebAssembly guest can use none of them, as a netwasm0.1 build never received them. -->
+    <CopyLocalRuntimeTargetAssets>false</CopyLocalRuntimeTargetAssets>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(_NetWasmPlatformFramework)' == 'true'">
+    <SdkSupportedTargetPlatformIdentifier Include="netwasm" DisplayName="NetWasm" />
+    <SdkSupportedTargetPlatformVersion Include="1.0" />
+    <SupportedPlatform Include="netwasm" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
+    <!-- Every guest build compiles against NetWasm's surface (NetWasm.Ref and NetWasm.App.Ref), not a desktop
+         targeting pack: the stock framework resolver stays off, and ResolvePackageAssets supplies the
+         references. -->
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
     <DisableStandardFrameworkResolution>true</DisableStandardFrameworkResolution>
     <NoStandardLibraries>true</NoStandardLibraries>
@@ -64,6 +96,10 @@
     <CopyBuildOutputToPublishDirectory>false</CopyBuildOutputToPublishDirectory>
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
+    <!-- The 10.0.1xx SDK's NuGet keys the netwasm0.1 restore target by framework
+         name, which that SDK's build cannot find (NETSDK1005); net10.0-netwasm is
+         not qualified on it either. The templates pin the same version in global.json. -->
+    <_NetWasmMinimumSdkVersion>10.0.303</_NetWasmMinimumSdkVersion>
     <!-- A test root must declare IsTestProject during its first restore. -->
     <NetWasmRequiresHostTools Condition="'$(NetWasmRequiresHostTools)' == ''">false</NetWasmRequiresHostTools>
     <NetWasmRequiresHostTools Condition="'$(OutputType)' == 'Exe' OR '$(IsTestProject)' == 'true' OR '$(_NetWasmWorkerKind)' != '' OR '$(_NetWasmPlainCoreModule)' == 'true' OR '$(_NetWasmComponentLibrary)' == 'true'">true</NetWasmRequiresHostTools>
@@ -73,10 +109,6 @@
          RID that every SDK also reports. -->
     <_NetWasmHostRid>$(NETCoreSdkPortableRuntimeIdentifier)</_NetWasmHostRid>
     <_NetWasmHostRid Condition="'$(_NetWasmHostRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_NetWasmHostRid>
-    <!-- The 10.0.1xx SDK's NuGet keys the netwasm0.1 restore target by framework
-         name, which that SDK's build cannot find (NETSDK1005). The templates pin
-         the same version in global.json. -->
-    <_NetWasmMinimumSdkVersion>10.0.303</_NetWasmMinimumSdkVersion>
     <!-- A NetWasmWit item also needs the host tools, to run wasm-tools on Node;
          its PackageReference condition below tests the items. -->
     <NetWasmHostToolsPackageId Condition="('$(_NetWasmHostRid)' == 'linux-x64' OR '$(_NetWasmHostRid)' == 'linux-arm64' OR '$(_NetWasmHostRid)' == 'osx-arm64' OR '$(_NetWasmHostRid)' == 'win-x64' OR '$(_NetWasmHostRid)' == 'win-arm64')">NetWasm.HostTools.$(_NetWasmHostRid)</NetWasmHostToolsPackageId>
@@ -104,13 +136,17 @@
   </PropertyGroup>
 
   <Import Project="$(MSBuildThisFileDirectory)NetWasm.PackageVersions.props"
-          Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND ('$(NetWasmCompilerTasksPackageVersion)' == '' OR '$(NetWasmHostToolsPackageVersion)' == '')" />
+          Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true' AND ('$(NetWasmCompilerTasksPackageVersion)' == '' OR '$(NetWasmHostToolsPackageVersion)' == '')" />
 
-  <ItemGroup Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true'">
+  <PropertyGroup Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true'">
+    <NetWasmSdkPackTaskAssemblyFile Condition="'$(NetWasmSdkPackTaskAssemblyFile)' == ''">$(MSBuildThisFileDirectory)..\tools\net10.0\any\NetWasm.Sdk.Pack.dll</NetWasmSdkPackTaskAssemblyFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(NetWasmSdkContainsGuestFramework)' == 'true'">
     <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)NetWasm.Sdk.Analyzers.globalconfig" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+  <ItemGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
     <!-- Tool-only download: never add desktop generator assemblies to guest references. A
          component also gets it, since the bindings of the world it exports may come from a
          package's targets, which restore has not imported yet. -->
@@ -118,7 +154,7 @@
                      Condition="'@(_NetWasmWorkerReference)' != '' OR '@(NetWasmWit)' != '' OR '$(_NetWasmComponentLibrary)' == 'true'" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRefPackageId)' != ''">
+  <ItemGroup Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(NetWasmRefPackageId)' != ''">
     <PackageReference Include="$(NetWasmRefPackageId)"
                       PrivateAssets="all"
                       IncludeAssets="compile;analyzers">
@@ -159,8 +195,11 @@
       <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmRuntimePackageVersion)</Version>
       <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmRuntimePackageVersion)</VersionOverride>
     </PackageReference>
+    <!-- Its lib/net10.0 is the SDK's selector assembly, which its build files load by path; a net10.0-netwasm
+         build would otherwise take it as a reference. -->
     <PackageReference Include="NetWasm.Runtime.Pack"
-                      PrivateAssets="all">
+                      PrivateAssets="all"
+                      ExcludeAssets="compile;runtime">
       <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmRuntimePackPackageVersion)</Version>
       <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmRuntimePackPackageVersion)</VersionOverride>
     </PackageReference>
@@ -199,5 +238,5 @@
                       Condition="('$(NetWasmRequiresHostTools)' == 'true' OR '@(NetWasmWit)' != '') AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' == 'true'" />
   </ItemGroup>
   <Import Project="$(MSBuildThisFileDirectory)NetWasm.App.PackagePruning.props"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DisableImplicitNetWasmAppReference)' != 'true'" />
+          Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(DisableImplicitNetWasmAppReference)' != 'true'" />
 </Project>

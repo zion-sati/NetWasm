@@ -2,9 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections;
-#if !NETWASM
 using System.Collections.Concurrent;
-#endif
 using System.Collections.Generic;
 using System.Text.Json.Serialization.Converters;
 
@@ -64,28 +62,7 @@ namespace System.Text.Json.Serialization.Metadata
                 collectionInfo,
                 new DictionaryOfTKeyTValueConverter<TCollection, TKey, TValue>());
 
-#if NETWASM
-        /// <summary>
-        /// Creates serialization metadata for types assignable to <see cref="IAsyncEnumerable{T}"/>.
-        /// </summary>
-        /// <typeparam name="TCollection">The generic definition of the type.</typeparam>
-        /// <typeparam name="TElement">The generic definition of the element type.</typeparam>
-        /// <param name="options"></param>
-        /// <param name="collectionInfo">Provides serialization metadata about the collection type.</param>
-        /// <returns>Serialization metadata for the given type.</returns>
-        /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
-        public static JsonTypeInfo<TCollection> CreateIAsyncEnumerableInfo<TCollection, TElement>(
-            JsonSerializerOptions options,
-            JsonCollectionInfoValues<TCollection> collectionInfo)
-            where TCollection : IAsyncEnumerable<TElement>
-            => CreateCore(
-                options,
-                collectionInfo,
-                new IAsyncEnumerableOfTConverter<TCollection, TElement>());
-#endif
 
-#if !NETWASM
-#if !NETWASM
 #pragma warning disable CS1574 // XML comment has cref attribute that could not be resolved
         /// <summary>
         /// Creates serialization metadata for <see cref="System.Collections.Immutable.ImmutableDictionary{TKey, TValue}"/> and
@@ -115,7 +92,6 @@ namespace System.Text.Json.Serialization.Metadata
                 new ImmutableDictionaryOfTKeyTValueConverter<TCollection, TKey, TValue>(),
                 createObjectWithArgs: createRangeFunc);
         }
-#endif
 
         /// <summary>
         /// Creates serialization metadata for types assignable to <see cref="IDictionary{TKey, TValue}"/>.
@@ -167,7 +143,6 @@ namespace System.Text.Json.Serialization.Metadata
         /// <param name="createRangeFunc">A method to create an immutable dictionary instance.</param>
         /// <returns>Serialization metadata for the given type.</returns>
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
-#if !NETWASM
         public static JsonTypeInfo<TCollection> CreateImmutableEnumerableInfo<TCollection, TElement>(
             JsonSerializerOptions options,
             JsonCollectionInfoValues<TCollection> collectionInfo,
@@ -182,7 +157,6 @@ namespace System.Text.Json.Serialization.Metadata
                 new ImmutableEnumerableOfTConverter<TCollection, TElement>(),
                 createObjectWithArgs: createRangeFunc);
         }
-#endif
 
         /// <summary>
         /// Creates serialization metadata for types assignable to <see cref="IList"/>.
@@ -311,7 +285,6 @@ namespace System.Text.Json.Serialization.Metadata
                 collectionInfo,
                 new QueueOfTConverter<TCollection, TElement>());
 
-#if !NETWASM
         /// <summary>
         /// Creates serialization metadata for types assignable to <see cref="ConcurrentStack{T}"/>.
         /// </summary>
@@ -331,7 +304,7 @@ namespace System.Text.Json.Serialization.Metadata
                 new ConcurrentStackOfTConverter<TCollection, TElement>());
 
         /// <summary>
-        /// Creates serialization metadata for types assignable to <see cref="ConcurrentQueue{T}"/>.
+        /// Creates serialization metadata for types assignable to <see cref="Queue{T}"/>.
         /// </summary>
         /// <typeparam name="TCollection">The generic definition of the type.</typeparam>
         /// <typeparam name="TElement">The generic definition of the element type.</typeparam>
@@ -347,7 +320,6 @@ namespace System.Text.Json.Serialization.Metadata
                 options,
                 collectionInfo,
                 new ConcurrentQueueOfTConverter<TCollection, TElement>());
-#endif
 
         /// <summary>
         /// Creates serialization metadata for types assignable to <see cref="IEnumerable{T}"/>.
@@ -498,6 +470,5 @@ namespace System.Text.Json.Serialization.Metadata
                 options,
                 collectionInfo,
                 new ReadOnlyMemoryConverter<TElement>());
-#endif
     }
 }

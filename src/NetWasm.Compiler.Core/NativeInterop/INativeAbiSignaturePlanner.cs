@@ -8,5 +8,6 @@ public interface INativeAbiSignaturePlanner
     NativeAbiSignaturePlan Plan(
         MethodSignatureModel signature,
         NativeAbiSignatureKind kind,
-        string methodName);
+        string methodName,
+        NativeMarshallingRules rules = NativeMarshallingRules.Runtime);
 }

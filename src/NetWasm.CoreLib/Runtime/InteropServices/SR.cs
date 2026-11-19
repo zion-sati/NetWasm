@@ -24,13 +24,32 @@ namespace System.Runtime.InteropServices
         internal const string StructMarshalling_MissingInteropData =
             "The type is missing structure marshalling data because the compiled program neither names nor allocates it.";
         internal const string PlatformNotSupported_StructMarshallingConversion =
-            "Structure marshalling that converts fields (bool, char, references or formatted classes) is not available on this NetWasm platform.";
-        internal const string PlatformNotSupported_StructMarshallingConstructor =
-            "PtrToStructure(IntPtr, Type) cannot run a value type's parameterless constructor on this NetWasm platform; use PtrToStructure<T>.";
+            "Structure marshalling of this field is not available on this NetWasm platform.";
+        internal const string PlatformNotSupported_StructMarshallingDelegate =
+            "Structure marshalling converts a delegate field to a function pointer only when it is null on this NetWasm platform.";
+        internal const string Argument_WrongSizeArrayInNativeStruct =
+            "Type could not be marshaled because the length of an embedded array instance does not match the declared length in the layout.";
+        internal const string InvalidOperation_SafeHandleFieldsNotAllowed =
+            "Structures containing SafeHandle fields are not allowed in this operation.";
+        internal const string NotSupported_SafeHandleField =
+            "SafeHandle fields cannot be created from an unmanaged handle.";
+        internal const string NotSupported_CriticalHandleField =
+            "CriticalHandle fields cannot be created from an unmanaged handle.";
+        // NetWasm: upstream's message names the type and its assembly.
+        internal const string TypeLoad_InvalidFormat =
+            "Could not load the type because the format is invalid.";
+        // NetWasm: upstream's message names the field and type.
+        internal const string Marshaler_UnmarshalableField =
+            "Cannot marshal a field of the structure: Invalid managed/unmanaged type combination.";
+        // NetWasm: upstream's Activator_CannotCreateInstance names the type.
+        internal const string Activator_NoParameterlessConstructor =
+            "Cannot dynamically create an instance of the type. Reason: No parameterless constructor defined.";
         internal const string Arg_MustBeDecimal =
             "Object must be of type Decimal.";
         internal const string Arg_MustBeInt32 =
             "Object must be of type Int32.";
+        internal const string Arg_MustBeNFloat =
+            "Object must be of type NFloat.";
         internal const string ArgumentException_NotIsomorphic =
             "Object contains references.";
         internal const string Argument_StructArrayTooLarge =
@@ -60,6 +79,27 @@ namespace System.Runtime.InteropServices
         internal const string PlatformNotSupported_DelegateMarshalling =
             "NetWasm does not convert between delegates and native function pointers at run time.";
 
+        internal const string ComVariant_SafeArray_PlatformNotSupported =
+            "ComVariants containing SAFEARRAYs are not supported on this platform";
+        internal const string ComVariant_SizeMustMatchVariantSize =
+            "Size of {0} should be the same size as the value specified by {1}";
+        internal const string ComVariant_TypeIsNotSupportedType =
+            "Variant type '{0}' is not one of the supported variant types for this operation: [{1}]";
+        internal const string ComVariant_VT_DECIMAL_NotSupported_CreateRaw =
+            "VT_DECIMAL is not supported in CreateRaw. Use the Create method.";
+        internal const string ComVariant_VT_DECIMAL_NotSupported_RawDataRef =
+            "VT_DECIMAL is not supported in GetRawDataRef. Use the As method.";
+        internal const string ComVariant_VT_VARIANT_In_Variant =
+            "VT_VARIANT is not supported in variants.";
+        internal const string UnsupportedType =
+            "Unsupported type";
+        internal const string Arg_EntryPointNotFoundExceptionParameterizedNoLibrary =
+            "Unable to find an entry point named '{0}' in native library.";
+        internal const string InvalidOperation_CannotRegisterSecondResolver =
+            "A resolver is already set for the assembly.";
+        // NetWasm: native libraries are linked when the program is built, so none loads while it runs.
+        internal const string DllNotFound_NetWasm =
+            "Unable to load shared library '{0}': native libraries are linked into the program when it is built, and none can be loaded while it runs.";
         internal static string Format(string format, object? arg0) =>
             string.Format(format, arg0);
 

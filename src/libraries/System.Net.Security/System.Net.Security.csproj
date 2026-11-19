@@ -2,6 +2,8 @@
   <PropertyGroup>
     <AssemblyName>System.Net.Security</AssemblyName>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- The generated wasi:tls bindings' namespace carries the WIT package version (NetWasm.Wit.Netwasm.Tls._1._0._0). -->
+    <NoWarn>$(NoWarn);CS3008</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,6 +37,10 @@
     <Compile Include="System/Net/Security/SslClientAuthenticationOptions.cs" />
     <Compile Include="System/Net/Security/SslServerAuthenticationOptions.cs" />
     <Compile Include="System/Net/Security/SslStream.cs" />
+    <Compile Include="System/Net/Security/Tls/ITlsClientProvider.cs" />
+    <Compile Include="System/Net/Security/Tls/TlsOutgoingPipe.cs" />
+    <Compile Include="System/Net/Security/Tls/WasiTlsBindings.g.cs" />
+    <Compile Include="System/Net/Security/Tls/WasiTlsClientProvider.cs" />
     <Compile Include="System/SR.cs" />
     <Compile Include="System/Security/Authentication/AuthenticationException.cs" />
     <Compile Include="System/Security/Authentication/ExtendedProtection/ExtendedProtectionPolicy.cs" />

@@ -33,6 +33,31 @@ public sealed class NativeAbiSignaturePlannerTests
         }
     }
 
+    // Under disabled runtime marshalling, bool is C's one-byte bool and char is char16_t, each an i32 the sender
+    // has extended, in imports, callbacks and a function-pointer parameter's callback signature alike. An assembly
+    // that keeps runtime marshalling needs marshalling for both.
+    [Theory]
+    [InlineData("bool")]
+    [InlineData("char")]
+    public void BoolAndCharAreScalarsOnlyUnderDisabledRuntimeMarshalling(string name)
+    {
+        var type = CliTypeIdentity.Primitive(name, CliValueKind.I4);
+        foreach (var kind in new[] { NativeAbiSignatureKind.Import, NativeAbiSignatureKind.Callback })
+        {
+            var signature = MethodSignatureModel.Create(type, type);
+            var result = Planner().Plan(signature, kind, "native-call", NativeMarshallingRules.Disabled);
+            Assert.Equal(CliValueKind.I4, result.PhysicalSignature.ReturnType);
+            Assert.Equal(type, Assert.Single(result.PhysicalSignature.ParameterSignatureTypes));
+            Assert.Equal(type, Assert.Single(result.Parameters).Value.LogicalType);
+            Reject(signature, kind);
+        }
+        var callback = CliTypeIdentity.FunctionPointer(new(0x01, 0, 1, MethodSignatureModel.Create(type, type)));
+        var import = MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void), callback);
+        Assert.Equal(CliValueKind.NativeInt, Assert.Single(Planner().Plan(import, NativeAbiSignatureKind.Import,
+            "native-call", NativeMarshallingRules.Disabled).PhysicalSignature.ParameterTypes));
+        Reject(import, NativeAbiSignatureKind.Import);
+    }
+
     [Theory]
     [InlineData(NativeAbiSignatureKind.Import)]
     [InlineData(NativeAbiSignatureKind.Callback)]
@@ -64,6 +89,10 @@ public sealed class NativeAbiSignaturePlannerTests
         Reject(signature, NativeAbiSignatureKind.Callback);
         Reject(MethodSignatureModel.Create(byref), NativeAbiSignatureKind.Import);
         Reject(MethodSignatureModel.Create(byref), NativeAbiSignatureKind.Callback);
+        // Desktop .NET rejects ref, in and out under disabled runtime marshalling.
+        var disabled = Assert.Throws<CompilerException>(() => Planner().Plan(
+            signature, NativeAbiSignatureKind.Import, "import", NativeMarshallingRules.Disabled));
+        Assert.Equal(DiagnosticCode.NativeInterop, disabled.Diagnostic.Code);
     }
 
     // Each unmanaged pointer desktop .NET 11 calls with its C convention: a C, StdCall or ThisCall
@@ -204,8 +233,12 @@ public sealed class NativeAbiSignaturePlannerTests
             CliTypeIdentity.FromStackKind(CliValueKind.Void)), kind);
         Reject(MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void),
             CliTypeIdentity.ManagedByReference(CliTypeIdentity.FromStackKind(CliValueKind.Void))), kind);
-        Reject(MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void),
-            CliTypeIdentity.ManagedByReference(CliTypeIdentity.UnmanagedPointer(scalar))), kind);
+        // A by-reference pointer is an import parameter only.
+        if (kind == NativeAbiSignatureKind.Callback)
+        {
+            Reject(MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void),
+                CliTypeIdentity.ManagedByReference(CliTypeIdentity.UnmanagedPointer(scalar))), kind);
+        }
         var functionPointer = CliTypeIdentity.FunctionPointer(new(
             1,
             0,
@@ -276,9 +309,50 @@ public sealed class NativeAbiSignaturePlannerTests
         Assert.Equal(CliValueKind.Void, ignored.PhysicalSignature.ReturnType);
         Assert.Empty(ignored.PhysicalSignature.ParameterTypes);
         Assert.Null(ignored.HiddenResultParameterIndex);
-        var before = aggregates.Calls.Count;
-        RejectWith(planner, logical, NativeAbiSignatureKind.Callback);
-        Assert.Equal(before, aggregates.Calls.Count);
+        // A callback the C ABI calls takes and returns structs as an import passes them.
+        var callback = planner.Plan(logical, NativeAbiSignatureKind.Callback, "native-call");
+        Assert.Equal(plan.PhysicalSignature.ReturnType, callback.PhysicalSignature.ReturnType);
+        Assert.Equal(plan.PhysicalSignature.ParameterTypes, callback.PhysicalSignature.ParameterTypes);
+        Assert.Equal(plan.HiddenResultParameterIndex, callback.HiddenResultParameterIndex);
+    }
+
+    // Desktop .NET's runtime marshalling pins any blittable value passed by reference: a pointer, an unmanaged function
+    // pointer and a struct the C ABI lays out, as well as a scalar. Only an import parameter takes one, and disabled
+    // runtime marshalling none; a struct the aggregate planner rejects stays rejected.
+    [Fact]
+    public void ImportsPinPointersFunctionPointersAndQualifiedStructsByReference()
+    {
+        var assembly = new AssemblyIdentity("NativeFixture");
+        var pair = CliTypeIdentity.Named(assembly, "Fixture", "Pair", true);
+        var aggregates = new FixedAggregatePlanner(new Dictionary<CliTypeIdentity, NativeAbiValuePlan>
+        {
+            [pair] = new(NativeAbiValueKind.IndirectAggregate, pair, CliTypeIdentity.FromStackKind(CliValueKind.NativeInt), 16, 8),
+        });
+        var planner = new NativeAbiSignaturePlanner(aggregates);
+        var functionPointer = CliTypeIdentity.FunctionPointer(new(0x09, 0, 1, MethodSignatureModel.Create(
+            CliTypeIdentity.FromStackKind(CliValueKind.I4), CliTypeIdentity.FromStackKind(CliValueKind.I4))));
+        foreach (var element in new[]
+        {
+            CliTypeIdentity.UnmanagedPointer(CliTypeIdentity.Primitive("u1", CliValueKind.I4)),
+            CliTypeIdentity.UnmanagedPointer(CliTypeIdentity.UnmanagedPointer(pair)),
+            functionPointer,
+            pair,
+        })
+        {
+            var byReference = CliTypeIdentity.ManagedByReference(element);
+            var signature = MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.I4), byReference);
+            var plan = planner.Plan(signature, NativeAbiSignatureKind.Import, "native-call");
+            Assert.Equal(CliValueKind.NativeInt, Assert.Single(plan.PhysicalSignature.ParameterTypes));
+            Assert.Equal(NativeAbiValueKind.Scalar, Assert.Single(plan.Parameters).Value.Kind);
+            RejectWith(planner, signature, NativeAbiSignatureKind.Callback);
+            RejectWith(planner, MethodSignatureModel.Create(byReference), NativeAbiSignatureKind.Import);
+            var disabled = Assert.Throws<CompilerException>(() => planner.Plan(
+                signature, NativeAbiSignatureKind.Import, "native-call", NativeMarshallingRules.Disabled));
+            Assert.Equal(DiagnosticCode.NativeInterop, disabled.Diagnostic.Code);
+        }
+        Assert.Contains(pair, aggregates.Calls);
+        Reject(MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void),
+            CliTypeIdentity.ManagedByReference(pair)), NativeAbiSignatureKind.Import);
     }
 
     private sealed class FixedAggregatePlanner(Dictionary<CliTypeIdentity, NativeAbiValuePlan> values) : INativeAggregateAbiPlanner
@@ -286,7 +360,7 @@ public sealed class NativeAbiSignaturePlannerTests
         public Dictionary<CliTypeIdentity, NativeAbiValuePlan> Values { get; } = values;
         public List<CliTypeIdentity> Calls { get; } = [];
 
-        public NativeAbiValuePlan Plan(CliTypeIdentity type, string methodName)
+        public NativeAbiValuePlan Plan(CliTypeIdentity type, string methodName, NativeMarshallingRules rules)
         {
             Assert.Equal("native-call", methodName);
             Calls.Add(type);
@@ -294,7 +368,7 @@ public sealed class NativeAbiSignaturePlannerTests
         }
     }
 
-    private static void RejectWith(INativeAbiSignaturePlanner planner, MethodSignatureModel signature, NativeAbiSignatureKind kind)
+    private static void RejectWith(NativeAbiSignaturePlanner planner, MethodSignatureModel signature, NativeAbiSignatureKind kind)
     {
         var error = Assert.Throws<CompilerException>(() => planner.Plan(signature, kind, "native-call"));
         Assert.Equal(DiagnosticCode.NativeInterop, error.Diagnostic.Code);

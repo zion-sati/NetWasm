@@ -15,4 +15,8 @@ internal sealed record RuntimeNativeMaterializationRequest(
     RuntimePackManifest Manifest,
     RuntimePackTarget Target,
     RuntimeLayout SourceLayout,
-    ImmutableArray<string> SystemLibraryPaths);
+    ImmutableArray<string> SystemLibraryPaths)
+{
+    // The C++ libraries with Wasm exception handling, linked instead when an archive throws or catches C++ exceptions.
+    public ImmutableArray<string> ExceptionSystemLibraryPaths { get; init; } = [];
+}

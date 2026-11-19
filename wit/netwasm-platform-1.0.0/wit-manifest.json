@@ -8,9 +8,20 @@
     "sourceRepository": "https://github.com/WebAssembly/WASI",
     "sourceRevision": "bdadbbb8cadd287cc5014c4b5a0bf76efc60291c",
     "sourcePackage": "wasi:cli@0.3.2",
-    "closurePolicy": "closed-world NetWasm runtime imports with canonical WASI 0.3.2 identities"
+    "closurePolicy": "closed-world NetWasm runtime imports with canonical WASI 0.3.2 identities",
+    "additionalSources": [
+      {
+        "package": "wasi:tls@0.3.0-draft",
+        "sourceRepository": "https://github.com/bytecodealliance/wasmtime",
+        "sourceTag": "v50.0.1",
+        "sourceRevision": "c307ec81d",
+        "sourcePath": "crates/wasi-tls/src/p3/wit/deps/tls",
+        "license": "Apache-2.0 WITH LLVM-exception"
+      }
+    ],
+    "aggregateFormat": "sha256 of UTF-8 path, NUL, lowercase SHA-256, LF for each file in inventory order"
   },
-  "aggregateSha256": "bdd92191114898a64674fee9b40cc70ad27673e2a142978a79eb0a2965b5e39e",
+  "aggregateSha256": "9acaa02b9115121a449929a785ec87ca20b5f96ebcddf823ed91f1ba63645f36",
   "files": [
     {
       "path": "deps/wasi-cli/command.wit",
@@ -109,8 +120,20 @@
       "sha256": "af185d99df6d88976d359dca1b50afeeef2e76694ceda3b0878606c515b156b7"
     },
     {
+      "path": "deps/wasi-tls/client.wit",
+      "sha256": "33ec99ca9249e9d8fc4acfb55b3a5128bc1882d9eca5c09825208234fde46779"
+    },
+    {
+      "path": "deps/wasi-tls/types.wit",
+      "sha256": "68df2870d96284ae3fdcf324aeafc7317d73cf4911bb5c8f18979252d7a6a6a3"
+    },
+    {
+      "path": "deps/wasi-tls/world.wit",
+      "sha256": "150060162dfedb5c88afb88aa26a8a4eaa86781f4c5ed1840ebd0102fe0de0fc"
+    },
+    {
       "path": "world.wit",
-      "sha256": "d90214bdedbedc174a328047837a7aff998c593f93be8f1aa60e7f7ab6696b1f"
+      "sha256": "ff00e0f99291cb5ea2d7be7ea3a2a5746276ea0b9cf498ae7e7d708b8aa82d65"
     }
   ]
 }

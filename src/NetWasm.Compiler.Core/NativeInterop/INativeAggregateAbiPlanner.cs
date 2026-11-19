@@ -5,5 +5,8 @@ namespace NetWasm.Compiler.Core.NativeInterop;
 
 public interface INativeAggregateAbiPlanner
 {
-    NativeAbiValuePlan Plan(CliTypeIdentity type, string methodName);
+    NativeAbiValuePlan Plan(
+        CliTypeIdentity type,
+        string methodName,
+        NativeMarshallingRules rules = NativeMarshallingRules.Runtime);
 }

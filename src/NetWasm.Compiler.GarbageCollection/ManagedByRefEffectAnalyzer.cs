@@ -144,7 +144,7 @@ public sealed class ManagedByRefEffectAnalyzer(
         return new(effects.Own, [.. callees.Order(StringComparer.Ordinal)]);
     }
 
-    // Every method's effects as known, the analysed method's as they stand; a method of the
+    // Every method's effects as known, the analyzed method's as they stand; a method of the
     // program with no known effects has none.
     internal sealed class KnownEffects(string identity, IReadOnlySet<string> methods,
         IReadOnlyDictionary<string, ManagedByRefMethodEffects> known) : IEntryLookup<string, ManagedByRefMethodEffects>

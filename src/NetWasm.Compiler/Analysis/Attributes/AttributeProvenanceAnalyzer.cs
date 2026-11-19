@@ -18,7 +18,10 @@ internal sealed class AttributeProvenanceAnalyzer(
     ITypeOperandResolver types,
     IReadonlyTypeFieldValueResolver fields,
     ImmutableHashSet<EntityKey> nullableUnwrapMethods,
-    CliTypeIdentity nullableDefinition) : IAttributeProvenanceAnalyzer
+    CliTypeIdentity nullableDefinition,
+    IAttributeAssemblySources? assemblies = null,
+    IAttributeTypeValueClassifier? typeValues = null,
+    IFieldRepository? fieldTypes = null) : IAttributeProvenanceAnalyzer
 {
     public ImmutableDictionary<int, ImmutableArray<AttributeValueProof>> Analyze(ValidatedControlFlowGraph controlFlow)
     {
@@ -125,7 +128,8 @@ internal sealed class AttributeProvenanceAnalyzer(
                 pending.Enqueue(block);
                 return;
             }
-            var changed = Join(existing.Stack, incoming.Stack) | Join(existing.Locals, incoming.Locals);
+            var changed = Join(existing.Stack, incoming.Stack, typeValues is not null) |
+                Join(existing.Locals, incoming.Locals, typeValues is not null);
             if (changed)
             {
                 pending.Enqueue(block);
@@ -144,7 +148,22 @@ internal sealed class AttributeProvenanceAnalyzer(
                 case CilOperation.MaterializeType:
                     stack[^1] = stack[^1].Kind == AttributeValueKind.TypeToken
                         ? stack[^1] with { Kind = AttributeValueKind.Type }
-                        : default;
+                        : typeValues is null ? default : new(AttributeValueKind.RuntimeType);
+                    return;
+                case CilOperation.GetObjectType:
+                    stack[^1] = typeValues is null ? default : new(AttributeValueKind.RuntimeType);
+                    return;
+                case CilOperation.LoadArgument:
+                    stack.Add(Typed(ArgumentType(((CilOperand.Index)instruction.Operand).Value)));
+                    return;
+                case CilOperation.LoadStaticField when instruction.Operand is CilOperand.FieldInstance staticField:
+                    stack.Add(Typed(staticField.Value.FieldType));
+                    return;
+                case CilOperation.LoadStaticField when instruction.Operand is CilOperand.Entity staticEntity:
+                    stack.Add(Typed(FieldType(staticEntity.Key)));
+                    return;
+                case CilOperation.IsInstance:
+                    stack[^1] = typeValues is null ? default : Typed(types.Resolve(instruction, body.MethodInstance));
                     return;
                 case CilOperation.LoadNull:
                     stack.Add(new(AttributeValueKind.Null));
@@ -157,7 +176,8 @@ internal sealed class AttributeProvenanceAnalyzer(
                     return;
                 case CilOperation.LoadLocal:
                     var loaded = ((CilOperand.Index)instruction.Operand).Value;
-                    stack.Add(addressedLocals.Contains(loaded) ? default : locals[loaded]);
+                    var held = addressedLocals.Contains(loaded) ? default : locals[loaded];
+                    stack.Add(held.Kind == AttributeValueKind.Unknown ? Typed(body.LocalSignatureTypes.ElementAtOrDefault(loaded)) : held);
                     return;
                 case CilOperation.StoreLocal:
                     locals[((CilOperand.Index)instruction.Operand).Value] = stack[^1];
@@ -166,6 +186,10 @@ internal sealed class AttributeProvenanceAnalyzer(
                 case CilOperation.CastClass:
                     // A successful cast preserves identity; a failed cast does not
                     // reach the query. Keep the original cast in the executable CIL.
+                    if (typeValues is not null && stack[^1].Kind == AttributeValueKind.Unknown)
+                    {
+                        stack[^1] = Typed(types.Resolve(instruction, body.MethodInstance));
+                    }
                     return;
                 case CilOperation.Leave:
                     var destination = ((CilOperand.BranchTarget)instruction.Operand).Offset;
@@ -189,12 +213,12 @@ internal sealed class AttributeProvenanceAnalyzer(
                 case CilOperation.LoadField when instruction.Operand is CilOperand.FieldInstance field:
                     stack[^1] = fields.Resolve(field.Value) is { } type
                         ? new(AttributeValueKind.Type, type)
-                        : default;
+                        : Typed(field.Value.FieldType);
                     return;
                 case CilOperation.LoadField when instruction.Operand is CilOperand.Entity field:
                     stack[^1] = fields.Resolve(field.Key) is { } fieldType
                         ? new(AttributeValueKind.Type, fieldType)
-                        : default;
+                        : Typed(FieldType(field.Key));
                     return;
                 case CilOperation.Call:
                 case CilOperation.CallVirtual:
@@ -206,11 +230,15 @@ internal sealed class AttributeProvenanceAnalyzer(
                         nullableUnwrapMethods.Contains(method.Definition.Key) &&
                         stack[^1] is { Kind: AttributeValueKind.Type, Type: { } argument }
                             ? Unwrap(argument)
-                            : default;
+                            : assemblies?.Prove(operation, method, stack) ?? default;
                     stack.RemoveRange(stack.Count - consumed, consumed);
-                    if (operation == CilOperation.NewObject || method.Signature.ReturnType != CliValueKind.Void)
+                    if (operation == CilOperation.NewObject)
                     {
                         stack.Add(result);
+                    }
+                    else if (method.Signature.ReturnType != CliValueKind.Void)
+                    {
+                        stack.Add(result.Kind == AttributeValueKind.Unknown ? Typed(method.Signature.ReturnSignatureType) : result);
                     }
                     return;
                 case CilOperation.CallIndirect:
@@ -254,25 +282,49 @@ internal sealed class AttributeProvenanceAnalyzer(
             }
         }
 
+        // A value typed Type the analysis cannot name.
+        // A field of a non-generic type, which its definition types.
+        CliTypeIdentity? FieldType(EntityKey key) => fieldTypes?.GetField(key).SignatureType;
+
+        AttributeValueProof Typed(CliTypeIdentity? type) =>
+            type is not null && typeValues?.IsTypeValue(type) == true ? new(AttributeValueKind.RuntimeType) : default;
+
+        CliTypeIdentity? ArgumentType(int index)
+        {
+            if (body.MethodInstance is not { } method)
+            {
+                return null;
+            }
+            var parameter = method.Definition.IsStatic ? index : index - 1;
+            return parameter < 0 ? method.DeclaringType : method.Signature.ParameterSignatureTypes.ElementAtOrDefault(parameter);
+        }
+
         AttributeValueProof Unwrap(CliTypeIdentity type) =>
             type.Shape == CliTypeShape.GenericInstantiation && type.ElementType!.Equals(nullableDefinition)
                 ? new(AttributeValueKind.Type, type.TypeArguments[0])
                 : new(AttributeValueKind.Null);
     }
 
-    private static bool Join(AttributeValueProof[] existing, AttributeValueProof[] incoming)
+    private static bool Join(AttributeValueProof[] existing, AttributeValueProof[] incoming, bool runtimeTypes)
     {
         var changed = false;
         for (var index = 0; index < existing.Length; index++)
         {
             if (existing[index].Kind != AttributeValueKind.Unknown && existing[index] != incoming[index])
             {
-                existing[index] = default;
-                changed = true;
+                // Types (or nulls) of different kinds still meet as a Type the analysis cannot name.
+                var joined = runtimeTypes && TypeLike(existing[index]) && TypeLike(incoming[index])
+                    ? new AttributeValueProof(AttributeValueKind.RuntimeType)
+                    : default;
+                changed |= existing[index] != joined;
+                existing[index] = joined;
             }
         }
         return changed;
     }
+
+    private static bool TypeLike(AttributeValueProof proof) =>
+        proof.Kind is AttributeValueKind.Type or AttributeValueKind.RuntimeType or AttributeValueKind.Null;
 
     private sealed record ProofState(AttributeValueProof[] Stack, AttributeValueProof[] Locals);
 }

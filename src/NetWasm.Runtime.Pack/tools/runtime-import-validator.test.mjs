@@ -27,6 +27,10 @@ function importsFor(target) {
     [`${prefix}|wasi:cli/exit@0.3`, 'exit'],
     [`${prefix}|wasi:cli/exit@0.3`, 'exit-with-code'],
     [`${prefix}|wasi:random/random@0.3`, 'get-random-u64'],
+    [`${prefix}|wasi:clocks/system-clock@0.3`, 'now'],
+    [`${prefix}|wasi:clocks/system-clock@0.3`, 'get-resolution'],
+    [`${prefix}|wasi:clocks/monotonic-clock@0.3`, 'now'],
+    [`${prefix}|wasi:clocks/monotonic-clock@0.3`, 'get-resolution'],
   ].map(([module, name]) => ({ module, name, kind: 'function' }));
 }
 
@@ -34,7 +38,7 @@ for (const target of ['wasm32', 'wasm64']) {
   const allowed = importsFor(target);
   test(`${target}: accepts the supported WASI 0.3 runtime interfaces`, () => {
     assert.doesNotThrow(() => validateRuntimeImports(allowed, target));
-    for (const collector of ['compact', 'netwasm', 'bump']) {
+    for (const collector of ['compact', 'netwasm', 'netwasmgen', 'bump']) {
       assert.doesNotThrow(() => validateRuntimeImports(allowed, target, collector));
     }
   });
@@ -42,7 +46,7 @@ for (const target of ['wasm32', 'wasm64']) {
     assert.doesNotThrow(() => validateRuntimeImports(allowed.slice(0, 4), target));
   });
   test(`${target}: accepts pruned finalization for every collector`, () => {
-    for (const collector of [undefined, 'compact', 'netwasm', 'bump']) {
+    for (const collector of [undefined, 'compact', 'netwasm', 'netwasmgen', 'bump']) {
       assert.doesNotThrow(() => validateRuntimeImports(
         allowed.filter(entry => entry.name !== 'netwasm.finalize'), target, collector));
     }

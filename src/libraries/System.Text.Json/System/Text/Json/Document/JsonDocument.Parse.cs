@@ -5,6 +5,8 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace System.Text.Json
 {
@@ -140,6 +142,16 @@ namespace System.Text.Json
             }
         }
 
+        internal static JsonDocument ParseRented(PooledByteBufferWriter utf8Json, JsonDocumentOptions options = default)
+        {
+            return Parse(
+                utf8Json.WrittenMemory,
+                options.GetReaderOptions(),
+                extraRentedArrayPoolBytes: null,
+                extraPooledByteBufferWriter: utf8Json,
+                allowDuplicateProperties: options.AllowDuplicateProperties);
+        }
+
         internal static JsonDocument ParseValue(Stream utf8Json, JsonDocumentOptions options)
         {
             Debug.Assert(utf8Json is not null);
@@ -175,6 +187,77 @@ namespace System.Text.Json
         {
             Debug.Assert(json is not null);
             return ParseValue(json.AsSpan(), options);
+        }
+
+        /// <summary>
+        ///   Parse a <see cref="Stream"/> as UTF-8 encoded data representing a single JSON value into a
+        ///   JsonDocument.  The Stream will be read to completion.
+        /// </summary>
+        /// <param name="utf8Json">JSON data to parse.</param>
+        /// <param name="options">Options to control the reader behavior during parsing.</param>
+        /// <param name="cancellationToken">The token to monitor for cancellation requests.</param>
+        /// <returns>
+        ///   A Task to produce a JsonDocument representation of the JSON value.
+        /// </returns>
+        /// <exception cref="JsonException">
+        ///   <paramref name="utf8Json"/> does not represent a valid single JSON value.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <paramref name="options"/> contains unsupported options.
+        /// </exception>
+        public static Task<JsonDocument> ParseAsync(
+            Stream utf8Json,
+            JsonDocumentOptions options = default,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(utf8Json);
+
+            return ParseAsyncCore(utf8Json, options, cancellationToken);
+        }
+
+        private static async Task<JsonDocument> ParseAsyncCore(
+            Stream utf8Json,
+            JsonDocumentOptions options = default,
+            CancellationToken cancellationToken = default)
+        {
+            ArraySegment<byte> drained = await ReadToEndAsync(utf8Json, cancellationToken).ConfigureAwait(false);
+            Debug.Assert(drained.Array is not null);
+            try
+            {
+                return Parse(
+                    drained.AsMemory(),
+                    options.GetReaderOptions(),
+                    drained.Array,
+                    allowDuplicateProperties: options.AllowDuplicateProperties);
+            }
+            catch
+            {
+                // Holds document content, clear it before returning it.
+                drained.AsSpan().Clear();
+                ArrayPool<byte>.Shared.Return(drained.Array);
+                throw;
+            }
+        }
+
+        internal static async Task<JsonDocument> ParseAsyncCoreUnrented(
+            Stream utf8Json,
+            JsonDocumentOptions options = default,
+            CancellationToken cancellationToken = default)
+        {
+            ArraySegment<byte> drained = await ReadToEndAsync(utf8Json, cancellationToken).ConfigureAwait(false);
+            Debug.Assert(drained.Array is not null);
+
+            byte[] owned = new byte[drained.Count];
+            Buffer.BlockCopy(drained.Array, 0, owned, 0, drained.Count);
+
+            // Holds document content, clear it before returning it.
+            drained.AsSpan().Clear();
+            ArrayPool<byte>.Shared.Return(drained.Array);
+
+            return ParseUnrented(
+                owned.AsMemory(),
+                options.GetReaderOptions(),
+                allowDuplicateProperties: options.AllowDuplicateProperties);
         }
 
         /// <summary>
@@ -634,6 +717,7 @@ namespace System.Text.Json
             ReadOnlyMemory<byte> utf8Json,
             JsonReaderOptions readerOptions,
             byte[]? extraRentedArrayPoolBytes = null,
+            PooledByteBufferWriter? extraPooledByteBufferWriter = null,
             bool allowDuplicateProperties = true)
         {
             ReadOnlySpan<byte> utf8JsonSpan = utf8Json.Span;
@@ -644,7 +728,7 @@ namespace System.Text.Json
             try
             {
                 Parse(utf8JsonSpan, readerOptions, ref database, ref stack);
-                document = new JsonDocument(utf8Json, database, extraRentedArrayPoolBytes, isDisposable: true);
+                document = new JsonDocument(utf8Json, database, extraRentedArrayPoolBytes, extraPooledByteBufferWriter, isDisposable: true);
 
                 if (!allowDuplicateProperties)
                 {
@@ -784,5 +868,86 @@ namespace System.Text.Json
             }
         }
 
+        private static async
+#if NET
+            ValueTask<ArraySegment<byte>>
+#else
+            Task<ArraySegment<byte>>
+#endif
+            ReadToEndAsync(
+            Stream stream,
+            CancellationToken cancellationToken)
+        {
+            int written = 0;
+            byte[]? rented = null;
+
+            try
+            {
+                // Save the length to a local to be reused across awaits.
+                int utf8BomLength = JsonConstants.Utf8Bom.Length;
+
+                if (stream.CanSeek)
+                {
+                    // Ask for 1 more than the length to avoid resizing later,
+                    // which is unnecessary in the common case where the stream length doesn't change.
+                    long expectedLength = Math.Max(utf8BomLength, stream.Length - stream.Position) + 1;
+                    rented = ArrayPool<byte>.Shared.Rent(checked((int)expectedLength));
+                }
+                else
+                {
+                    rented = ArrayPool<byte>.Shared.Rent(UnseekableStreamInitialRentSize);
+                }
+
+                int lastRead;
+
+                // Read up to 3 bytes to see if it's the UTF-8 BOM
+                do
+                {
+                    // No need for checking for growth, the minimal rent sizes both guarantee it'll fit.
+                    Debug.Assert(rented.Length >= JsonConstants.Utf8Bom.Length);
+
+                    lastRead = await stream.ReadAsync(rented.AsMemory(written, utf8BomLength - written), cancellationToken).ConfigureAwait(false);
+
+                    written += lastRead;
+                } while (lastRead > 0 && written < utf8BomLength);
+
+                // If we have 3 bytes, and they're the BOM, reset the write position to 0.
+                if (written == utf8BomLength &&
+                    JsonConstants.Utf8Bom.SequenceEqual(rented.AsSpan(0, utf8BomLength)))
+                {
+                    written = 0;
+                }
+
+                do
+                {
+                    if (rented.Length == written)
+                    {
+                        byte[] toReturn = rented;
+                        rented = ArrayPool<byte>.Shared.Rent(toReturn.Length * 2);
+                        Buffer.BlockCopy(toReturn, 0, rented, 0, toReturn.Length);
+                        // Holds document content, clear it.
+                        ArrayPool<byte>.Shared.Return(toReturn, clearArray: true);
+                    }
+
+                    lastRead = await stream.ReadAsync(rented.AsMemory(written), cancellationToken).ConfigureAwait(false);
+
+                    written += lastRead;
+
+                } while (lastRead > 0);
+
+                return new ArraySegment<byte>(rented, 0, written);
+            }
+            catch
+            {
+                if (rented is not null)
+                {
+                    // Holds document content, clear it before returning it.
+                    rented.AsSpan(0, written).Clear();
+                    ArrayPool<byte>.Shared.Return(rented);
+                }
+
+                throw;
+            }
+        }
     }
 }

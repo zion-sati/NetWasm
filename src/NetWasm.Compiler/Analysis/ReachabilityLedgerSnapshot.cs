@@ -48,11 +48,16 @@ internal sealed record ReachabilityLedgerSnapshot(
 
     internal ImmutableHashSet<CliTypeIdentity> UninitializedObjectTypes { get; init; } = [];
 
+    internal ImmutableHashSet<CliTypeIdentity> RuntimeTypes { get; init; } = [];
+
     internal ImmutableHashSet<CliTypeIdentity> RequiredTypes { get; init; } = [];
 
     internal ImmutableHashSet<CliTypeIdentity> StructMarshallingTypes { get; init; } = [];
 
     internal bool StructMarshallingFieldNames { get; init; }
+
+    internal ImmutableDictionary<CliTypeIdentity, MethodInstanceModel> StructMarshallingConstructors { get; init; } =
+        ImmutableDictionary<CliTypeIdentity, MethodInstanceModel>.Empty;
 
     internal ImmutableHashSet<EntityKey> ModuleInitializers { get; init; } = [];
 
@@ -95,6 +100,9 @@ internal sealed record ReachabilityLedgerSnapshot(
     internal bool RequiresTypeAttributes { get; init; }
 
     internal bool RequiresInterfaces { get; init; }
+    internal bool RequiresManifestResources { get; init; }
+    internal bool RequiresAssemblyNames { get; init; }
+    internal bool RequiresAssemblyEnumeration { get; init; }
 
 
     internal ImmutableDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
@@ -136,9 +144,11 @@ internal sealed record ReachabilityLedgerSnapshot(
         JavaScriptConversions = ledger.JavaScriptConversions.ToImmutable(),
         EnumMetadataRequirements = ledger.EnumMetadataRequirements.ToImmutable(),
         UninitializedObjectTypes = [.. ledger.UninitializedObjectTypes],
+        RuntimeTypes = [.. ledger.RuntimeTypes],
         RequiredTypes = [.. ledger.RequiredTypes],
         StructMarshallingTypes = [.. ledger.StructMarshallingTypes],
         StructMarshallingFieldNames = ledger.StructMarshallingFieldNames,
+        StructMarshallingConstructors = ledger.StructMarshallingConstructors.ToImmutableDictionary(),
         MethodDescriptors = ledger.MethodDescriptors.ToImmutable(),
         FieldDescriptors = ledger.FieldDescriptors.ToImmutable(),
         PropertyDescriptors = ledger.PropertyDescriptors.ToImmutable(),
@@ -154,6 +164,9 @@ internal sealed record ReachabilityLedgerSnapshot(
         RequiresElementTypes = ledger.RequiresElementTypes,
         RequiresTypeAttributes = ledger.RequiresTypeAttributes,
         RequiresInterfaces = ledger.RequiresInterfaces,
+        RequiresManifestResources = ledger.RequiresManifestResources,
+        RequiresAssemblyNames = ledger.RequiresAssemblyNames,
+        RequiresAssemblyEnumeration = ledger.RequiresAssemblyEnumeration,
         NativeCallbacks = ledger.NativeCallbacks.ToImmutable(),
     };
 }

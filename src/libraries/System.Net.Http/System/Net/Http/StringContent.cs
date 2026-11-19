@@ -26,6 +26,14 @@ namespace System.Net.Http
 
         /// <summary>Creates a new instance of the <see cref="StringContent"/> class.</summary>
         /// <param name="content">The content used to initialize the <see cref="StringContent"/>.</param>
+        /// <param name="mediaType">The media type to use for the content.</param>
+        public StringContent(string content, MediaTypeHeaderValue? mediaType)
+            : this(content, DefaultStringEncoding, mediaType)
+        {
+        }
+
+        /// <summary>Creates a new instance of the <see cref="StringContent"/> class.</summary>
+        /// <param name="content">The content used to initialize the <see cref="StringContent"/>.</param>
         /// <param name="encoding">The encoding to use for the content.</param>
         /// <remarks>The media type for the <see cref="StringContent"/> created defaults to text/plain.</remarks>
         public StringContent(string content, Encoding? encoding)
@@ -65,6 +73,16 @@ namespace System.Net.Http
             Headers.ContentType = new MediaTypeHeaderValue(mediaType, encoding.WebName);
         }
 
+        /// <summary>Creates a new instance of the <see cref="StringContent"/> class.</summary>
+        /// <param name="content">The content used to initialize the <see cref="StringContent"/>.</param>
+        /// <param name="encoding">The encoding to use for the content.</param>
+        /// <param name="mediaType">The media type to use for the content.</param>
+        public StringContent(string content, Encoding? encoding, MediaTypeHeaderValue? mediaType)
+            : base(GetContentByteArray(content, encoding))
+        {
+            Headers.ContentType = mediaType;
+        }
+
         /// <summary>Serialize the string into a byte-array using encoding information provided by the caller (if any).</summary>
         /// <param name="content">The content used to initialize the <see cref="StringContent"/>.</param>
         /// <param name="encoding">The encoding to use for the content.</param>
@@ -84,7 +102,7 @@ namespace System.Net.Http
         /// <param name="context">Information about the transport, like channel binding token. This parameter may be <see langword="null" />.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the operation.</param>
         /// <returns>The task object representing the asynchronous operation.</returns>
-        internal override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) =>
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) =>
             // Only skip the original protected virtual SerializeToStreamAsync if this
             // isn't a derived type that may have overridden the behavior.
             GetType() == typeof(StringContent) ? SerializeToStreamAsyncCore(stream, cancellationToken) :

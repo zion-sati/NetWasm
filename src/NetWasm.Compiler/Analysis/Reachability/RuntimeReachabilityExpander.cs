@@ -18,6 +18,7 @@ namespace NetWasm.Compiler.Analysis.Reachability;
 
 internal sealed class RuntimeReachabilityExpander(
     ISharedObjectDispatchResolver sharedObjectDispatch,
+    IObjectDispatchSharing objectDispatchSharing,
     IDelegateTypeRecognizer delegateTypes,
     IRuntimeIntrinsicTypeRootPlanner runtimeIntrinsicTypeRoots,
     ITypeDefinitionResolver typeDefinitions,
@@ -26,6 +27,8 @@ internal sealed class RuntimeReachabilityExpander(
 {
     private readonly ISharedObjectDispatchResolver _sharedObjectDispatch = sharedObjectDispatch ??
         throw new ArgumentNullException(nameof(sharedObjectDispatch));
+    private readonly IObjectDispatchSharing _objectDispatchSharing = objectDispatchSharing ??
+        throw new ArgumentNullException(nameof(objectDispatchSharing));
     private readonly IDelegateTypeRecognizer _delegateTypes = delegateTypes ??
         throw new ArgumentNullException(nameof(delegateTypes));
     private readonly IRuntimeIntrinsicTypeRootPlanner _runtimeIntrinsicTypeRoots = runtimeIntrinsicTypeRoots ??
@@ -72,6 +75,13 @@ internal sealed class RuntimeReachabilityExpander(
         }
         session.State.StructMarshallingTypes.UnionWith(intrinsicRoots.StructMarshallingTypes);
         session.State.StructMarshallingFieldNames |= intrinsicRoots.StructMarshallingFieldNames;
+        if (intrinsicRoots.StructMarshallingConstructors)
+        {
+            foreach (var type in intrinsicRoots.StructMarshallingTypes)
+            {
+                session.AddStructureConstructor(type);
+            }
+        }
         foreach (var type in intrinsicRoots.AllocatedTypes)
         {
             session.AddAllocatedType(type);
@@ -94,7 +104,8 @@ internal sealed class RuntimeReachabilityExpander(
         }
     }
 
-    // A virtual call on object with many targets calls CoreLib's shared body for it, which is reached here.
+    // A virtual call on object with as many targets as the preset shares at calls CoreLib's shared body for it,
+    // which is reached here.
     private void AddSharedObjectDispatch(ReachabilitySession session)
     {
         var demanded = session.State.DispatchDeclarations
@@ -102,7 +113,7 @@ internal sealed class RuntimeReachabilityExpander(
                 pair.Value.ReceiverBound is null &&
                 !session.State.SharedObjectDispatch.ContainsKey(pair.Value.Declaration.CanonicalName) &&
                 session.State.DispatchTargets.TryGetValue(pair.Key, out var siteTargets) &&
-                siteTargets.Count >= SharedDispatchPolicy.MinimumTargets)
+                _objectDispatchSharing.Shares(siteTargets.Count))
             .Select(pair => pair.Value.Declaration)
             .DistinctBy(declaration => declaration.CanonicalName)
             .ToArray();

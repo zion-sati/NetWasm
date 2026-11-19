@@ -11,15 +11,14 @@ namespace NetWasm.Compiler.Analysis.StaticArrays;
 internal sealed class ValueConstructorPurityClassifier(
     ICalleeMethodBodyReader bodies,
     IFieldRepository fields,
-    ITypeDefinitionResolver types,
-    IMethodRepository methods,
-    IRuntimeIntrinsicRegistry intrinsics) : IValueConstructorPurityClassifier
+    IRuntimeIntrinsicRegistry intrinsics,
+    IValueTypeInitializationClassifier initialization) : IValueConstructorPurityClassifier
 {
     private readonly ICalleeMethodBodyReader _bodies = bodies ?? throw new ArgumentNullException(nameof(bodies));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
-    private readonly ITypeDefinitionResolver _types = types ?? throw new ArgumentNullException(nameof(types));
-    private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ?? throw new ArgumentNullException(nameof(intrinsics));
+    private readonly IValueTypeInitializationClassifier _initialization = initialization ??
+        throw new ArgumentNullException(nameof(initialization));
 
     public bool IsPure(MethodInstanceModel method)
     {
@@ -27,9 +26,8 @@ internal sealed class ValueConstructorPurityClassifier(
         if (!method.DeclaringType.IsValueType || method.Definition.IsStatic || method.Definition.Name != ".ctor" ||
             method.Definition.IsNoInlining || !method.Definition.HasManagedBody || method.Signature.ReturnType != CliValueKind.Void ||
             method.Definition.JSImport is not null || method.Definition.WitImport is not null || method.Definition.NativeImport is not null ||
-            _intrinsics.TryGetIntrinsic(method.Definition.Key, out _)) return false;
-        var owner = _types.ResolveTypeIdentity(method.DeclaringType);
-        if (!owner.IsBeforeFieldInit && owner.Methods.Any(key => _methods.GetMethod(key).Name == ".cctor")) return false;
+            _intrinsics.TryGetIntrinsic(method.Definition.Key, out _) ||
+            !_initialization.ConstructsWithoutInitialization(method.DeclaringType)) return false;
         if (!_bodies.TryReadMethodBody(method, out var body) || !body.ExceptionRegions.IsEmpty) return false;
         var operations = body.Instructions.Where(instruction => instruction.Operation != CilOperation.Nop).ToArray();
         if (operations.Length == 0 || operations[^1].Operation != CilOperation.Return || (operations.Length - 1) % 3 != 0) return false;

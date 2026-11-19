@@ -20,9 +20,6 @@ public sealed class StartupGeneratedFunctionServiceCollectionExtensionsTests
             descriptor.ServiceType == typeof(IStartupPreflightMethodSelector) &&
             descriptor.ImplementationType == typeof(StartupPreflightMethodSelector) &&
             descriptor.Lifetime == ServiceLifetime.Singleton);
-        Assert.Contains(services, descriptor =>
-            descriptor.ServiceType == typeof(IStartupPreflightCallEmitter) &&
-            descriptor.ImplementationType == typeof(StartupPreflightCallEmitter) &&
-            descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.Single(services);
     }
 }

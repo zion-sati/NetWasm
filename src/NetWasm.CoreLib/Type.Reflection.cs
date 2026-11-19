@@ -3,6 +3,7 @@
 // Upstream forwarding and validation; runtime member discovery is unavailable.
 using System.Reflection;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace System;
 
@@ -102,6 +103,7 @@ public partial class Type : IReflect
     private static PlatformNotSupportedException UnsupportedTypeOwnerMetadata() => new(
         "Runtime type owner and attribute metadata is not available on NetWasm.");
 
+    [Intrinsic]
     public virtual Type GetGenericTypeDefinition()
     {
         if (!IsGenericType) throw new InvalidOperationException("This operation is only valid on generic types.");

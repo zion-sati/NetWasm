@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm;
 using NetWasm.Compiler.Wasm.Emission;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -17,7 +19,8 @@ internal sealed class EnumGetNamesEmitter(
     IRuntimeImportResolver runtimeImports,
     ITargetLayout layouts,
     IAddressInstructionEmitter addresses,
-    IEnumTypeArgumentValidator typeArguments) : IEnumGetNamesEmitter
+    IEnumTypeArgumentValidator typeArguments,
+    IKeyedDispatchEmitter keyedDispatch) : IEnumGetNamesEmitter
 {
     public void EmitGetNames(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -50,19 +53,17 @@ internal sealed class EnumGetNamesEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)result)));
+        // The enum type's id picks its metadata, searched among the enums the program describes.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var entry in metadata.EnumMetadata)
         {
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)typeId)));
-            WriteI32(code, entry.TypeId);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitArray(code, result, temporary, entry, request.Instruction.Context.InlineArrayData);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            cases.Add((entry.TypeId, () =>
+            {
+                EmitArray(code, result, temporary, entry, request.Instruction.Context.InlineArrayData);
+            }
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(typeId, false, cases, () => { }));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)result)));

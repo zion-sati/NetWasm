@@ -266,7 +266,15 @@ public sealed class CryptographyTests
         "collection 1 6DA2943FB6A55BE3A2668AF9ED49E96064CC4D63",
         "legacy B509B70EA7DF03221011EDC1C44EACC2FB9D2A39",
         "missing CryptographicException",
-        "wrong password CryptographicException");
+        "wrong password CryptographicException",
+        "from pem B509B70EA7DF03221011EDC1C44EACC2FB9D2A39 False",
+        "from pem file B509B70EA7DF03221011EDC1C44EACC2FB9D2A39 True 256:CF256630520228F6",
+        "from pem files B509B70EA7DF03221011EDC1C44EACC2FB9D2A39 True",
+        "from encrypted pem B509B70EA7DF03221011EDC1C44EACC2FB9D2A39 True",
+        "pem without key CryptographicException",
+        "pem other key CryptographicException",
+        "pem wrong password CryptographicException",
+        "pem garbage CryptographicException");
 
     [Test]
     public async Task ChainsWithCustomTrustMatchDesktop() => await Matches(CryptographyCases.Chains(),

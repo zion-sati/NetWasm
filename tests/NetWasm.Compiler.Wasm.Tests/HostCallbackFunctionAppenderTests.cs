@@ -106,7 +106,7 @@ public sealed class HostCallbackFunctionAppenderTests
         []);
 
     private static InteropImportPlan EmptyInteropImports() => new(
-        [], default, default, default, default, default, default);
+        [], default, default, default, default);
 
     private static RuntimeImportSelection CoreImports =>
         new(WasmModuleProfile.CoreApplication, true);

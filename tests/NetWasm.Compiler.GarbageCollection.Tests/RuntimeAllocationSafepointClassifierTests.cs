@@ -41,6 +41,7 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.Object", "MemberwiseClone")]
     [InlineData("System.Array", "InternalCreateInstance")]
     [InlineData("System.Array", "InternalCreateRectangularInstance")]
+    [InlineData("System.GC", "InternalAllocateUninitializedArray")]
     [InlineData("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AllocateUninitializedObject")]
     [InlineData("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "RunClassConstructor")]
     [InlineData("System.Nullable", "GetUnderlyingType")]

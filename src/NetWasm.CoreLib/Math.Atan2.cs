@@ -42,10 +42,13 @@
  * to produce the hexadecimal values shown.
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Atan2(double y, double x)
     {
         const double tiny = 1.0e-300;

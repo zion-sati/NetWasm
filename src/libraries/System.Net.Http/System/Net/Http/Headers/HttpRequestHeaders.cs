@@ -16,7 +16,8 @@ namespace System.Net.Http.Headers
         private const int TransferEncodingSlot = 6;
         private const int UserAgentSlot = 7;
         private const int ExpectSlot = 8;
-        private const int NumCollectionsSlots = 9;
+        private const int ProtocolSlot = 9;
+        private const int NumCollectionsSlots = 10;
 
         private object?[]? _specialCollectionsSlots;
         private HttpGeneralHeaders? _generalHeaders;
@@ -157,6 +158,19 @@ namespace System.Net.Http.Headers
                 return null;
             }
             set { SetOrRemoveParsedValue(KnownHeaders.MaxForwards.Descriptor, value); }
+        }
+
+        /// <summary>Gets or sets the value of the <see langword=":protocol" /> pseudo-header for an HTTP request.</summary>
+        /// <value>The value of the <see langword=":protocol" /> pseudo-header for an HTTP request.</value>
+        public string? Protocol
+        {
+            get => _specialCollectionsSlots is null ? null : (string?)_specialCollectionsSlots[ProtocolSlot];
+            set
+            {
+                CheckContainsNewLineOrNull(value);
+                _specialCollectionsSlots ??= new object[NumCollectionsSlots];
+                _specialCollectionsSlots[ProtocolSlot] = value;
+            }
         }
 
         public AuthenticationHeaderValue? ProxyAuthorization

@@ -60,6 +60,30 @@ public sealed class KeptCompilationFactsTests
         Assert.NotEqual(CompilationOptionsFingerprint.Of(Base), CompilationOptionsFingerprint.Of(changed));
     }
 
+    // An archive gives a variadic function's stubs their type, so it is taken by its size and time: missing, present
+    // and changed each fingerprint apart. Archives never set fingerprint as none.
+    [Fact]
+    public void ANativeArchiveIsTakenByItsSizeAndTime()
+    {
+        var archive = Path.Combine(Path.GetTempPath(), "netwasm-fingerprint-" + Guid.NewGuid().ToString("N") + ".a");
+        try
+        {
+            var options = Base with { NativeArchives = [("sqlite3", archive)] };
+            var missing = CompilationOptionsFingerprint.Of(options);
+            File.WriteAllBytes(archive, [1]);
+            var first = CompilationOptionsFingerprint.Of(options);
+            File.WriteAllBytes(archive, [1, 2]);
+
+            Assert.NotEqual(missing, first);
+            Assert.NotEqual(first, CompilationOptionsFingerprint.Of(options));
+            Assert.Equal(CompilationOptionsFingerprint.Of(Base), CompilationOptionsFingerprint.Of(Base with { NativeArchives = default }));
+        }
+        finally
+        {
+            File.Delete(archive);
+        }
+    }
+
     [Fact]
     public void AWitFileIsTakenByItsContent()
     {

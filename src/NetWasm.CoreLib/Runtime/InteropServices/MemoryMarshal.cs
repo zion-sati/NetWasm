@@ -3,7 +3,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Buffers;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -139,15 +138,64 @@ namespace System.Runtime.InteropServices
 #pragma warning restore 8762
         }
 
-        // The current ReadOnlyMemory representation is either an array slice or
-        // a MemoryManager slice.  Keep the enumerable as a view over that
-        // representation instead of materializing a copy; this preserves the
-        // observable behavior of the upstream API for mutable backing stores
-        // and for managers whose span changes between iterations.
-        public static IEnumerable<T> ToEnumerable<T>(System.ReadOnlyMemory<T> memory) =>
-            memory.IsEmpty
-                ? System.Array.Empty<T>()
-                : new ReadOnlyMemoryEnumerable<T>(memory);
+        public static IEnumerable<T> ToEnumerable<T>(ReadOnlyMemory<T> memory)
+        {
+            object? obj = memory.GetObjectStartLength(out int index, out int length);
+
+            // If the memory is empty, just return an empty array as the enumerable.
+            if (length is 0 || obj is null)
+            {
+                return [];
+            }
+
+            // If the object is a string, we can optimize. If it isn't a slice, just return the string as the
+            // enumerable. Otherwise, return an iterator dedicated to enumerating the object; while we could
+            // use the general one for any ReadOnlyMemory, that will incur a .Span access for every element.
+            if (typeof(T) == typeof(char) && obj is string str)
+            {
+                return (IEnumerable<T>)(object)(index == 0 && length == str.Length ?
+                    str :
+                    FromString(str, index, length));
+
+                static IEnumerable<char> FromString(string s, int offset, int count)
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        yield return s[offset + i];
+                    }
+                }
+            }
+
+            // If the object is an array, we can optimize. If it isn't a slice, just return the array as the
+            // enumerable. Otherwise, return an iterator dedicated to enumerating the object.
+            if (RuntimeHelpers.ObjectHasComponentSize(obj)) // Same check as in TryGetArray to confirm that obj is a T[] or a U[] which is blittable to a T[].
+            {
+                T[] array = Unsafe.As<T[]>(obj);
+                index &= ReadOnlyMemory<T>.RemoveFlagsBitMask; // the array may be prepinned, so remove the high bit from the start index in the line below.
+                return index == 0 && length == array.Length ?
+                    array :
+                    FromArray(array, index, length);
+
+                static IEnumerable<T> FromArray(T[] array, int offset, int count)
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        yield return array[offset + i];
+                    }
+                }
+            }
+
+            // The object must be a MemoryManager<T>, which we can't access directly.
+            return FromMemoryManager(memory);
+
+            static IEnumerable<T> FromMemoryManager(ReadOnlyMemory<T> memory)
+            {
+                for (int i = 0; i < memory.Length; i++)
+                {
+                    yield return memory.Span[i];
+                }
+            }
+        }
 
         public static ref T GetReference<T>(System.Span<T> span) =>
             ref span._reference;
@@ -155,6 +203,10 @@ namespace System.Runtime.InteropServices
         public static ref T GetReference<T>(System.ReadOnlySpan<T> span) =>
             ref span._reference;
 
+        // The compiler replaces calls to both GetArrayDataReference overloads with the array's data address
+        // (RuntimeIntrinsic.GetArrayDataReference), as upstream's bodies give it: a valid reference for an
+        // empty array too, and the first element of any array. These bodies are not reached.
+        [Intrinsic]
         public static ref T GetArrayDataReference<T>(T[] array)
         {
             if (array.Length == 0)
@@ -165,263 +217,272 @@ namespace System.Runtime.InteropServices
             return ref array[0];
         }
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe ref byte GetArrayDataReference(System.Array array) =>
             throw new System.PlatformNotSupportedException();
 
-        public static System.Span<T> CreateSpan<T>(scoped ref T reference, int length) =>
-            length < 0
-                ? throw new ArgumentOutOfRangeException()
-                : new(ref Unsafe.AsRef(in reference), length);
+        // The bodies below are upstream's, from the same file at deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
-        public static System.ReadOnlySpan<T> CreateReadOnlySpan<T>(
-            scoped ref readonly T reference,
-            int length) =>
-            length < 0
-                ? throw new ArgumentOutOfRangeException()
-                : new(ref Unsafe.AsRef(in reference), length);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Span<T> CreateSpan<T>(scoped ref T reference, int length) =>
+            new Span<T>(ref Unsafe.AsRef(in reference), length);
 
-        // Exact-layout projections adapted from dotnet/runtime
-        // System.Private.CoreLib MemoryMarshal (MIT). The compiler lowers the
-        // Unsafe operations below; no managed pointer arithmetic is emulated.
-        public static unsafe System.ReadOnlySpan<byte> AsBytes<T>(
-            System.ReadOnlySpan<T> span)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ReadOnlySpan<T> CreateReadOnlySpan<T>(scoped ref readonly T reference, int length) =>
+            new ReadOnlySpan<T>(ref Unsafe.AsRef(in reference), length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe Span<byte> AsBytes<T>(Span<T> span)
             where T : struct
         {
-            ThrowIfContainsReferences<T>();
-            ref T source = ref Unsafe.AsRef(in GetReference(span));
-            ref byte bytes = ref Unsafe.As<T, byte>(ref source);
-            return new System.ReadOnlySpan<byte>(
-                ref bytes,
-                GetByteLength<T>(span.Length));
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
+
+            return new Span<byte>(
+                ref Unsafe.As<T, byte>(ref GetReference(span)),
+                checked(span.Length * sizeof(T)));
         }
 
-        public static unsafe System.Span<byte> AsBytes<T>(System.Span<T> span)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe ReadOnlySpan<byte> AsBytes<T>(ReadOnlySpan<T> span)
             where T : struct
         {
-            ThrowIfContainsReferences<T>();
-            ref T source = ref GetReference(span);
-            ref byte bytes = ref Unsafe.As<T, byte>(ref source);
-            return new System.Span<byte>(ref bytes, GetByteLength<T>(span.Length));
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
+
+            return new ReadOnlySpan<byte>(
+                ref Unsafe.As<T, byte>(ref GetReference(span)),
+                checked(span.Length * sizeof(T)));
         }
 
-        public static unsafe ref readonly T AsRef<T>(
-            System.ReadOnlySpan<byte> span)
-            where T : struct
-        {
-            ThrowIfContainsReferences<T>();
-            EnsureCanRead<T>(span.Length);
-            ref byte source = ref Unsafe.AsRef(in GetReference(span));
-            return ref Unsafe.As<byte, T>(ref source);
-        }
-
-        public static unsafe ref T AsRef<T>(System.Span<byte> span)
-            where T : struct
-        {
-            ThrowIfContainsReferences<T>();
-            EnsureCanRead<T>(span.Length);
-            ref byte source = ref GetReference(span);
-            return ref Unsafe.As<byte, T>(ref source);
-        }
-
-        public static unsafe System.ReadOnlySpan<TTo> Cast<TFrom, TTo>(
-            System.ReadOnlySpan<TFrom> span)
+        /// <summary>
+        /// Casts a Span of one primitive type <typeparamref name="TFrom"/> to another primitive type <typeparamref name="TTo"/>.
+        /// These types may not contain pointers or references. This is checked at runtime in order to preserve type safety.
+        /// </summary>
+        /// <remarks>
+        /// Supported only for platforms that support misaligned memory access or when the memory block is aligned by other means.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe Span<TTo> Cast<TFrom, TTo>(Span<TFrom> span)
             where TFrom : struct
             where TTo : struct
         {
-            ThrowIfContainsReferences<TFrom>();
-            ThrowIfContainsReferences<TTo>();
-            var length = GetCastLength<TFrom, TTo>(span.Length);
-            ref TFrom source = ref Unsafe.AsRef(in GetReference(span));
-            ref TTo target = ref Unsafe.As<TFrom, TTo>(ref source);
-            return new System.ReadOnlySpan<TTo>(ref target, length);
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<TFrom>())
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(TFrom));
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<TTo>())
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(TTo));
+
+            // Use unsigned integers - unsigned division by constant (especially by power of 2)
+            // and checked casts are faster and smaller.
+            uint fromSize = (uint)sizeof(TFrom);
+            uint toSize = (uint)sizeof(TTo);
+            uint fromLength = (uint)span.Length;
+            int toLength;
+            if (fromSize == toSize)
+            {
+                // Special case for same size types - `(ulong)fromLength * (ulong)fromSize / (ulong)toSize`
+                // should be optimized to just `length` but the JIT doesn't do that today.
+                toLength = (int)fromLength;
+            }
+            else if (fromSize == 1)
+            {
+                // Special case for byte sized TFrom - `(ulong)fromLength * (ulong)fromSize / (ulong)toSize`
+                // becomes `(ulong)fromLength / (ulong)toSize` but the JIT can't narrow it down to `int`
+                // and can't eliminate the checked cast. This also avoids a 32 bit specific issue,
+                // the JIT can't eliminate long multiply by 1.
+                toLength = (int)(fromLength / toSize);
+            }
+            else
+            {
+                // Ensure that casts are done in such a way that the JIT is able to "see"
+                // the uint->ulong casts and the multiply together so that on 32 bit targets
+                // 32x32to64 multiplication is used.
+                ulong toLengthUInt64 = (ulong)fromLength * (ulong)fromSize / (ulong)toSize;
+                toLength = checked((int)toLengthUInt64);
+            }
+
+            return new Span<TTo>(
+                ref Unsafe.As<TFrom, TTo>(ref span._reference),
+                toLength);
         }
 
-        public static unsafe System.Span<TTo> Cast<TFrom, TTo>(
-            System.Span<TFrom> span)
+        /// <summary>
+        /// Casts a ReadOnlySpan of one primitive type <typeparamref name="TFrom"/> to another primitive type <typeparamref name="TTo"/>.
+        /// These types may not contain pointers or references. This is checked at runtime in order to preserve type safety.
+        /// </summary>
+        /// <remarks>
+        /// Supported only for platforms that support misaligned memory access or when the memory block is aligned by other means.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe ReadOnlySpan<TTo> Cast<TFrom, TTo>(ReadOnlySpan<TFrom> span)
             where TFrom : struct
             where TTo : struct
         {
-            ThrowIfContainsReferences<TFrom>();
-            ThrowIfContainsReferences<TTo>();
-            var length = GetCastLength<TFrom, TTo>(span.Length);
-            ref TFrom source = ref GetReference(span);
-            ref TTo target = ref Unsafe.As<TFrom, TTo>(ref source);
-            return new System.Span<TTo>(ref target, length);
-        }
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<TFrom>())
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(TFrom));
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<TTo>())
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(TTo));
 
-        public static unsafe T Read<T>(System.ReadOnlySpan<byte> source)
-            where T : struct
-        {
-            ThrowIfContainsReferences<T>();
-            EnsureCanRead<T>(source.Length);
-            return AsRef<T>(source);
-        }
-
-        public static unsafe bool TryRead<T>(
-            System.ReadOnlySpan<byte> source,
-            out T value)
-            where T : struct
-        {
-            ThrowIfContainsReferences<T>();
-            if (source.Length < Unsafe.SizeOf<T>())
+            // Use unsigned integers - unsigned division by constant (especially by power of 2)
+            // and checked casts are faster and smaller.
+            uint fromSize = (uint)sizeof(TFrom);
+            uint toSize = (uint)sizeof(TTo);
+            uint fromLength = (uint)span.Length;
+            int toLength;
+            if (fromSize == toSize)
             {
-                value = default(T)!;
-                return false;
+                // Special case for same size types - `(ulong)fromLength * (ulong)fromSize / (ulong)toSize`
+                // should be optimized to just `length` but the JIT doesn't do that today.
+                toLength = (int)fromLength;
+            }
+            else if (fromSize == 1)
+            {
+                // Special case for byte sized TFrom - `(ulong)fromLength * (ulong)fromSize / (ulong)toSize`
+                // becomes `(ulong)fromLength / (ulong)toSize` but the JIT can't narrow it down to `int`
+                // and can't eliminate the checked cast. This also avoids a 32 bit specific issue,
+                // the JIT can't eliminate long multiply by 1.
+                toLength = (int)(fromLength / toSize);
+            }
+            else
+            {
+                // Ensure that casts are done in such a way that the JIT is able to "see"
+                // the uint->ulong casts and the multiply together so that on 32 bit targets
+                // 32x32to64 multiplication is used.
+                ulong toLengthUInt64 = (ulong)fromLength * (ulong)fromSize / (ulong)toSize;
+                toLength = checked((int)toLengthUInt64);
             }
 
-            value = AsRef<T>(source);
-            return true;
+            return new ReadOnlySpan<TTo>(
+                ref Unsafe.As<TFrom, TTo>(ref GetReference(span)),
+                toLength);
         }
 
-        public static unsafe void Write<T>(
-            System.Span<byte> destination,
-            in T value)
-            where T : struct
-        {
-            ThrowIfContainsReferences<T>();
-            EnsureCanWrite<T>(destination.Length);
-            ref T target = ref AsRef<T>(destination);
-            target = value;
-        }
+        /// <summary>Creates a new read-only span for a null-terminated string.</summary>
+        /// <exception cref="ArgumentException">The string is longer than <see cref="int.MaxValue"/>.</exception>
+        [CLSCompliant(false)]
+        public static unsafe ReadOnlySpan<char> CreateReadOnlySpanFromNullTerminated(char* value) =>
+            value != null ? new ReadOnlySpan<char>(value, string.wcslen(value)) :
+            default;
 
-        public static unsafe bool TryWrite<T>(
-            System.Span<byte> destination,
-            in T value)
-            where T : struct
-        {
-            ThrowIfContainsReferences<T>();
-            if (destination.Length < Unsafe.SizeOf<T>())
-            {
-                return false;
-            }
+        /// <summary>Creates a new read-only span for a null-terminated UTF-8 string.</summary>
+        /// <exception cref="ArgumentException">The string is longer than <see cref="int.MaxValue"/>.</exception>
+        [CLSCompliant(false)]
+        public static unsafe ReadOnlySpan<byte> CreateReadOnlySpanFromNullTerminated(byte* value) =>
+            value != null ? new ReadOnlySpan<byte>(value, string.strlen(value)) :
+            default;
 
-            Write(destination, in value);
-            return true;
-        }
-
-        public static unsafe System.ReadOnlySpan<byte>
-            CreateReadOnlySpanFromNullTerminated(byte* value)
-        {
-            if (value == null)
-            {
-                return default;
-            }
-
-            var length = 0;
-            while (value[length] != 0)
-            {
-                length++;
-            }
-
-            return new System.ReadOnlySpan<byte>(value, length);
-        }
-
-        public static unsafe System.ReadOnlySpan<char>
-            CreateReadOnlySpanFromNullTerminated(char* value)
-        {
-            if (value == null)
-            {
-                return default;
-            }
-
-            var length = 0;
-            while (value[length] != '\0')
-            {
-                length++;
-            }
-
-            return new System.ReadOnlySpan<char>(value, length);
-        }
-
-        private static void ThrowIfContainsReferences<T>()
+        /// <summary>
+        /// Reads a structure of type T out of a read-only span of bytes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe T Read<T>(ReadOnlySpan<byte> source)
             where T : struct
         {
             if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
             {
-                throw new ArgumentException();
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
             }
-        }
-
-        private static int GetByteLength<T>(int elementCount)
-            where T : struct =>
-            checked(elementCount * Unsafe.SizeOf<T>());
-
-        private static int GetCastLength<TFrom, TTo>(int elementCount)
-            where TFrom : struct
-            where TTo : struct
-        {
-            var byteLength = GetByteLength<TFrom>(elementCount);
-            var targetSize = Unsafe.SizeOf<TTo>();
-            if (targetSize == 0 || byteLength % targetSize != 0)
+            if (source.Length < sizeof(T))
             {
-                throw new ArgumentException();
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length);
             }
-
-            return byteLength / targetSize;
+            return Unsafe.ReadUnaligned<T>(ref GetReference(source));
         }
 
-        private static void EnsureCanRead<T>(int byteLength)
+        /// <summary>
+        /// Reads a structure of type T out of a span of bytes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool TryRead<T>(ReadOnlySpan<byte> source, out T value)
             where T : struct
         {
-            if (byteLength < Unsafe.SizeOf<T>())
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
             {
-                throw new ArgumentOutOfRangeException();
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
             }
+            if (source.Length < sizeof(T))
+            {
+                value = default;
+                return false;
+            }
+            value = Unsafe.ReadUnaligned<T>(ref GetReference(source));
+            return true;
         }
 
-        private static void EnsureCanWrite<T>(int byteLength)
-            where T : struct => EnsureCanRead<T>(byteLength);
-
-        private sealed class ReadOnlyMemoryEnumerable<T> : IEnumerable<T>
+        /// <summary>
+        /// Writes a structure of type T into a span of bytes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void Write<T>(Span<byte> destination, in T value)
+            where T : struct
         {
-            private readonly System.ReadOnlyMemory<T> _memory;
-
-            public ReadOnlyMemoryEnumerable(System.ReadOnlyMemory<T> memory) =>
-                _memory = memory;
-
-            public IEnumerator<T> GetEnumerator() => new Enumerator(_memory);
-
-            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-            private sealed class Enumerator : IEnumerator<T>
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
             {
-                private readonly System.ReadOnlyMemory<T> _memory;
-                private int _index = -1;
-
-                public Enumerator(System.ReadOnlyMemory<T> memory) =>
-                    _memory = memory;
-
-                public bool MoveNext()
-                {
-                    if (_index < _memory.Length - 1)
-                    {
-                        _index++;
-                        return true;
-                    }
-
-                    _index = _memory.Length;
-                    return false;
-                }
-
-                public T Current
-                {
-                    get
-                    {
-                        if ((uint)_index >= (uint)_memory.Length)
-                        {
-                            throw new InvalidOperationException();
-                        }
-
-                        return _memory.Span[_index];
-                    }
-                }
-
-                object IEnumerator.Current => Current!;
-
-                public void Reset() => _index = -1;
-
-                public void Dispose() { }
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
             }
+            if (destination.Length < sizeof(T))
+            {
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length);
+            }
+            Unsafe.WriteUnaligned(ref GetReference(destination), value);
+        }
+
+        /// <summary>
+        /// Writes a structure of type T into a span of bytes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool TryWrite<T>(Span<byte> destination, in T value)
+            where T : struct
+        {
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            {
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
+            }
+            if (destination.Length < sizeof(T))
+            {
+                return false;
+            }
+            Unsafe.WriteUnaligned(ref GetReference(destination), value);
+            return true;
+        }
+
+        /// <summary>
+        /// Re-interprets a span of bytes as a reference to structure of type T.
+        /// The type may not contain pointers or references. This is checked at runtime in order to preserve type safety.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe ref T AsRef<T>(Span<byte> span)
+            where T : struct
+        {
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            {
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
+            }
+            if (span.Length < sizeof(T))
+            {
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length);
+            }
+            return ref Unsafe.As<byte, T>(ref GetReference(span));
+        }
+
+        /// <summary>
+        /// Re-interprets a span of bytes as a reference to structure of type T.
+        /// The type may not contain pointers or references. This is checked at runtime in order to preserve type safety.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe ref readonly T AsRef<T>(ReadOnlySpan<byte> span)
+            where T : struct
+        {
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            {
+                ThrowHelper.ThrowArgument_TypeContainsReferences(typeof(T));
+            }
+            if (span.Length < sizeof(T))
+            {
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length);
+            }
+            return ref Unsafe.As<byte, T>(ref GetReference(span));
         }
     }
 }

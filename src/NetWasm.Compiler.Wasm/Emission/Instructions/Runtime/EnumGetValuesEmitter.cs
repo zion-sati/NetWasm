@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm;
 using NetWasm.Compiler.Wasm.Emission;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -20,7 +22,8 @@ internal sealed class EnumGetValuesEmitter(
     ITargetLayout layouts,
     IAddressInstructionEmitter addresses,
     IEnumTypeArgumentValidator typeArguments,
-    IImplicitExceptionEmitter exceptions) : IEnumGetValuesEmitter
+    IImplicitExceptionEmitter exceptions,
+    IKeyedDispatchEmitter keyedDispatch) : IEnumGetValuesEmitter
 {
     public void EmitGetValues(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -98,58 +101,56 @@ internal sealed class EnumGetValuesEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)result)));
+        // The enum type's id picks its metadata, searched among the enums the program describes.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var entry in metadata.EnumMetadata)
         {
             var definition = types.GetTypeDefinition(entry.Type);
             var element = definition.EnumUnderlyingType;
             var elementLayout = values.GetValueLayout(element);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)typeId)));
-            WriteI32(code, entry.TypeId);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)underlyingType)));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitArray(
-                code,
-                result,
-                temporary,
-                entry,
-                element,
-                elementLayout,
-                typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(element)).TypeId,
-                typeLayouts.GetObjectLayout(element).TypeId,
-                request.Instruction.Context.InlineArrayData);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-            if (entry.IsOpenDefinition)
+            cases.Add((entry.TypeId, () =>
             {
-                exceptions.Emit(code, ManagedExceptionKind.NotSupported, request.Instruction.Context.ManagedThrowFunction);
-            }
-            else
-            {
-                var enumType = entry.EnumType;
-                var enumLayout = values.GetValueLayout(enumType);
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.LocalGet,
+                    WasmInstructionOperand.Unsigned((uint)underlyingType)));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.If,
+                    WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
                 EmitArray(
                     code,
                     result,
                     temporary,
                     entry,
-                    enumType,
-                    enumLayout,
-                    typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(enumType)).TypeId,
-                    entry.TypeId,
+                    element,
+                    elementLayout,
+                    typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(element)).TypeId,
+                    typeLayouts.GetObjectLayout(element).TypeId,
                     request.Instruction.Context.InlineArrayData);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+                if (entry.IsOpenDefinition)
+                {
+                    exceptions.Emit(code, ManagedExceptionKind.NotSupported, request.Instruction.Context.ManagedThrowFunction);
+                }
+                else
+                {
+                    var enumType = entry.EnumType;
+                    var enumLayout = values.GetValueLayout(enumType);
+                    EmitArray(
+                        code,
+                        result,
+                        temporary,
+                        entry,
+                        enumType,
+                        enumLayout,
+                        typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(enumType)).TypeId,
+                        entry.TypeId,
+                        request.Instruction.Context.InlineArrayData);
+                }
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
             }
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(typeId, false, cases, () => { }));
     }
 
     private void EmitArray(

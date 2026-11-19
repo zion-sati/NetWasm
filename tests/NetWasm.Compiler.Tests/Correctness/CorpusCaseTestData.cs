@@ -73,6 +73,7 @@ internal static class CorpusCaseTestData
     public const string ReadonlyCopies = "memory.readonly-copies";
     public const string ExactRootSlots = "memory.exact-root-slots";
     public const string ValueFrameInitialization = "memory.value-frame-initialization";
+    public const string StaticFieldInstanceAccess = "memory.static-field-instance-access";
     public const string ExceptionOrder = "flow.exception-order";
     public const string StaticInitialization = "flow.static-initialization";
     public const string AsyncLifetime = "flow.async-lifetime";
@@ -121,6 +122,8 @@ internal static class CorpusCaseTestData
             nameof(MemoryBoundaryTests.RealCollectionDistinguishesManagedReferenceSlotsFromOpaqueAddressBits), CorpusInputKind.CSharp),
         new(ValueFrameInitialization, typeof(ValueFrameInitializationTests).FullName + "." +
             nameof(ValueFrameInitializationTests.ReusedValueFramesPreserveInitializedLocalSemantics), CorpusInputKind.Emitted),
+        new(StaticFieldInstanceAccess, typeof(StaticFieldInstanceAccessTests).FullName + "." +
+            nameof(StaticFieldInstanceAccessTests.FieldInstructionsOnStaticFieldsDropTheirObject), CorpusInputKind.Emitted),
         new(NativeOwnership, typeof(MemoryBoundaryTests).FullName + "." +
             nameof(MemoryBoundaryTests.RealNativeAllocationsPreserveAlignmentContentsAndOwnership), CorpusInputKind.CSharp),
         new(ReadonlyCopies, typeof(MemoryBoundaryTests).FullName + "." +
@@ -208,7 +211,7 @@ internal static class CorpusCaseTestData
         new(RoundingArguments, typeof(FloatingMathEdgeTests).FullName + "." +
             nameof(FloatingMathEdgeTests.RoundingArgumentsRespectSelectedNet11Contract), CorpusInputKind.CSharp),
         new(FloatingRounding, typeof(FloatingMathEdgeTests).FullName + "." +
-            nameof(FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero), CorpusInputKind.CSharp),
+            nameof(FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero), CorpusInputKind.CSharp),
         new(FloatingMathExact, typeof(FloatingMathEdgeTests).FullName + "." +
             nameof(FloatingMathEdgeTests.ExactMathOperationsRespectNaNZeroAndAdjacentValueContracts), CorpusInputKind.CSharp),
         new(WideConversions, typeof(WideIntegerEdgeTests).FullName + "." +

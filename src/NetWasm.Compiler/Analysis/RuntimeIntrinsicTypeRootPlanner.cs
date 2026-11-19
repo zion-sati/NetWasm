@@ -13,8 +13,11 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
     IRuntimeIntrinsicRegistry intrinsics,
     INullableTypeResolver nullableTypes,
     ITypeDefinitionResolver typeDefinitions,
-    IArrayCreationRootPlanner arrayCreation) : IRuntimeIntrinsicTypeRootPlanner
+    IArrayCreationRootPlanner arrayCreation,
+    IStructureMarshallingClosure structureClosure) : IRuntimeIntrinsicTypeRootPlanner
 {
+    private readonly IStructureMarshallingClosure _structureClosure = structureClosure ??
+        throw new ArgumentNullException(nameof(structureClosure));
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
     private readonly INullableTypeResolver _nullableTypes = nullableTypes ??
@@ -169,15 +172,38 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
                     .Distinct()
                     .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)]
                 : [];
-        // Marshal's structure members receive the types the program names, or boxed values of
-        // the value types it allocates.
+        // Marshal's structure members receive the types the program names, boxed values of the
+        // value types it allocates, and the formatted classes (sequential or explicit) it allocates.
         System.Collections.Immutable.ImmutableArray<CliTypeIdentity> structMarshallingTypes =
             marshalStructures
                 ? [.. seeds.Where(IsStructMarshallingCandidate)
-                    .Concat(programAllocated.Where(type => type.IsValueType && IsStructMarshallingCandidate(type)))
+                    .Concat(programAllocated.Where(type =>
+                        (type.IsValueType || IsFormattedClass(type)) && IsStructMarshallingCandidate(type)))
                     .Distinct()
                     .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)]
                 : [];
+        // Their fields reach embedded formatted classes and the structures of ByValArray arrays, which have
+        // descriptors of their own and which PtrToStructure creates: the classes, and each element's boxed value as
+        // it fills the element's array.
+        if (marshalStructures)
+        {
+            var reach = _structureClosure.Reach(structMarshallingTypes);
+            structMarshallingTypes = [.. structMarshallingTypes.Concat(reach.Types)
+                .Distinct()
+                .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)];
+            uninitializedObjectTypes = [.. uninitializedObjectTypes.Concat(reach.EmbeddedClasses).Concat(reach.ArrayElements)
+                .Distinct()
+                .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)];
+            foreach (var element in reach.ArrayElements)
+            {
+                AddArray(element);
+                allocatedTypes.Add(element);
+            }
+            foreach (var element in reach.EnumArrayElements)
+            {
+                AddArray(element);
+            }
+        }
         return runtimeTypes.Count == 0 && allocatedTypes.Count == 0 && initializedTypes.IsEmpty &&
             uninitializedObjectTypes.IsEmpty && !marshalStructures
             ? RuntimeIntrinsicTypeRootPlan.Empty
@@ -190,6 +216,8 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
                 StructMarshallingTypes = structMarshallingTypes,
                 StructMarshallingFieldNames = demands.Any(demand =>
                     demand.Intrinsic == RuntimeIntrinsic.StructMarshallingFieldNames),
+                StructMarshallingConstructors = marshalStructures && demands.Any(demand =>
+                    demand.Intrinsic == RuntimeIntrinsic.StructMarshallingConstruct),
             };
 
         void AddArray(CliTypeIdentity element)
@@ -234,6 +262,10 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
         type.Shape == CliTypeShape.Named && !type.ContainsGenericParameters ||
         type.Shape == CliTypeShape.Primitive && type.IsValueType &&
             type.CanonicalName is not ("primitive:void" or "primitive:typedref");
+
+    private bool IsFormattedClass(CliTypeIdentity type) =>
+        type.Shape == CliTypeShape.Named && !type.ContainsGenericParameters &&
+        _typeDefinitions.ResolveTypeIdentity(type) is { IsInterface: false, LayoutKind: not CliTypeLayoutKind.Auto };
 
     private TypeDefinitionModel? ResolveEnum(CliTypeIdentity type)
     {

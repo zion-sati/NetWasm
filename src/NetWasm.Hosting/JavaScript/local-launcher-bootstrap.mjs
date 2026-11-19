@@ -9,6 +9,7 @@ import {
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { connect as connectTls } from "node:tls";
 
 import { createExecutionDescriptorReader } from "./execution-descriptor-reader.mjs";
 import {
@@ -29,6 +30,7 @@ import { selectProviderKind } from "./provider-kind-selector.mjs";
 import { parseStrictJson } from "./strict-json-reader.mjs";
 import { createWasiFilesystem } from "./wasi-filesystem.mjs";
 import { createWasiPlatform } from "./wasi-platform.mjs";
+import { createNodeWasiTls } from "./wasi-tls-node.mjs";
 
 // dotnet run, dotnet test and NetWasm's test hosts start the launcher with this option and
 // their channels; any other invocation runs the deployment beside the launcher.
@@ -54,6 +56,7 @@ export async function runLocalNetWasmLauncher(createExecution, launcherPath) {
     }),
   });
   const loadNetwork = createLocalNodeNetworkLoader({
+    createTls: () => createNodeWasiTls(Object.freeze({ connect: connectTls })),
     hashBytes,
     importModule: value => import(value),
     readFile,

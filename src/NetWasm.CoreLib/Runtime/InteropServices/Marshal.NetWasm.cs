@@ -27,9 +27,24 @@ namespace System.Runtime.InteropServices
 
         public static void SetLastPInvokeError(int error) => s_lastPInvokeError = error;
 
-        // Upstream's Unix GetPInvokeErrorMessage, internal here (it is newer than netstandard 2.1): the C library's
-        // message for the error, from NetWasm's table of the WASI C library's messages.
-        internal static string GetPInvokeErrorMessage(int error) => Interop.Sys.StrError(error);
+        // Upstream's Unix GetPInvokeErrorMessage: the C library's message for the error, from NetWasm's table of the
+        // WASI C library's messages.
+        public static string GetPInvokeErrorMessage(int error) => Interop.Sys.StrError(error);
+
+        public static string GetLastPInvokeErrorMessage() => GetPInvokeErrorMessage(GetLastPInvokeError());
+
+        // Upstream's Unix pair reads and writes errno. NetWasm's system calls are managed shims, which keep the
+        // last one's error in Interop.Sys; an errno no shim reports reads back as ENONSTANDARD's value.
+        public static int GetLastSystemError() => Interop.Sys.ConvertErrorPalToPlatform(Interop.Sys.GetLastError());
+
+        public static void SetLastSystemError(int error) =>
+            Interop.Sys.SetLastError(Interop.Sys.ConvertErrorPlatformToPal(error));
+
+        // Upstream's NativeAOT and Mono body: there are no Windows exception pointers.
+        public static IntPtr GetExceptionPointers()
+        {
+            throw new PlatformNotSupportedException();
+        }
 
         private static void PrelinkCore(MethodInfo m) =>
             throw new PlatformNotSupportedException(SR.PlatformNotSupported_Prelink);

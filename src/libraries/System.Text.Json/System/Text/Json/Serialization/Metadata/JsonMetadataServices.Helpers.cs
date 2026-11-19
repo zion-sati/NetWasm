@@ -122,12 +122,14 @@ namespace System.Text.Json.Serialization.Metadata
             JsonTypeClassifierFactory? typeClassifierFactory)
         {
 #if NETWASM
-            // The selected NetWasm profile is closed-world and source-generated:
-            // runtime attribute inspection and classifier discovery are excluded.
-            _ = typeInfo;
-            _ = polymorphismOptions;
-            _ = typeClassifierFactory;
-            return;
+            // The selected NetWasm profile is closed-world and source-generated: the generator states a type's
+            // polymorphism (an empty instance when it has none), so nothing is read from attributes at run time.
+            // Options are non-empty only once their mutators have set the marker, so a program that never configures
+            // polymorphism compiles the rest away.
+            if (JsonConverter.s_polymorphicTypesReachable is null || polymorphismOptions is null || polymorphismOptions.IsEmpty)
+            {
+                return;
+            }
 #else
             if (polymorphismOptions is null)
             {
@@ -142,6 +144,7 @@ namespace System.Text.Json.Serialization.Metadata
                 polymorphismOptions = null;
                 typeClassifierFactory = null;
             }
+#endif
 
             if (polymorphismOptions is not null)
             {
@@ -152,7 +155,6 @@ namespace System.Text.Json.Serialization.Metadata
                     typeInfo.TypeClassifierResolutionPending = true;
                 }
             }
-#endif
         }
 
         private static void PopulateParameterInfoValues(JsonTypeInfo typeInfo, Func<JsonParameterInfoValues[]?>? paramFactory)
@@ -223,6 +225,12 @@ namespace System.Text.Json.Serialization.Metadata
 
         private static JsonPropertyInfo<T> CreatePropertyInfoCore<T>(JsonPropertyInfoValues<T> propertyInfoValues, JsonSerializerOptions options)
         {
+#if NETWASM
+            if (typeof(T) == typeof(object))
+            {
+                JsonConverter.s_objectValuesReachable = nameof(CreatePropertyInfoCore);
+            }
+#endif
             var propertyInfo = new JsonPropertyInfo<T>(propertyInfoValues.DeclaringType, declaringTypeInfo: null, options);
 
             DeterminePropertyName(propertyInfo,

@@ -5,6 +5,8 @@ namespace System.Net.Http
 {
     public class HttpRequestException : Exception
     {
+        internal RequestRetryType AllowRetry { get; } = RequestRetryType.NoRetry;
+
         public HttpRequestException()
         { }
 
@@ -27,7 +29,7 @@ namespace System.Net.Http
         /// <param name="message">A message that describes the current exception.</param>
         /// <param name="inner">The inner exception.</param>
         /// <param name="statusCode">The HTTP status code.</param>
-        internal HttpRequestException(string? message, Exception? inner, HttpStatusCode? statusCode)
+        public HttpRequestException(string? message, Exception? inner, HttpStatusCode? statusCode)
             : this(message, inner)
         {
             StatusCode = statusCode;
@@ -40,7 +42,7 @@ namespace System.Net.Http
         /// <param name="message">A message that describes the current exception.</param>
         /// <param name="inner">The inner exception.</param>
         /// <param name="statusCode">The HTTP status code.</param>
-        internal HttpRequestException(HttpRequestError httpRequestError, string? message = null, Exception? inner = null, HttpStatusCode? statusCode = null)
+        public HttpRequestException(HttpRequestError httpRequestError, string? message = null, Exception? inner = null, HttpStatusCode? statusCode = null)
             : this(message, inner, statusCode)
         {
             HttpRequestError = httpRequestError;
@@ -58,5 +60,13 @@ namespace System.Net.Http
         /// An HTTP status code if the exception represents a non-successful result, otherwise <c>null</c>.
         /// </value>
         public HttpStatusCode? StatusCode { get; }
+
+        // This constructor is used internally to indicate that a request was not successfully sent due to an IOException,
+        // and the exception occurred early enough so that the request may be retried on another connection.
+        internal HttpRequestException(HttpRequestError httpRequestError, string? message, Exception? inner, RequestRetryType allowRetry)
+            : this(httpRequestError, message, inner)
+        {
+            AllowRetry = allowRetry;
+        }
     }
 }

@@ -155,6 +155,29 @@ public sealed class RuntimeTypeFactsEncodingTests
         Assert.Equal(1, TypeCode(word));
     }
 
+    // A function pointer type is marked as both a pointer and a by-reference type, which no other type is; its rank
+    // field is 1 when its calling convention (the header's low four bits) is unmanaged: C, stdcall, thiscall, fastcall
+    // or unmanaged, and 0 for the managed default and vararg.
+    [Theory]
+    [InlineData(0x00, 0)]
+    [InlineData(0x05, 0)]
+    [InlineData(0x01, 1)]
+    [InlineData(0x02, 1)]
+    [InlineData(0x03, 1)]
+    [InlineData(0x04, 1)]
+    [InlineData(0x09, 1)]
+    [InlineData(0x29, 1)]
+    public void AFunctionPointerIsMarkedWithItsCallingConvention(int header, int rank)
+    {
+        var signature = new MethodSignatureModel(CliTypeIdentity.FromStackKind(CliValueKind.Void), []);
+        var pointer = CliTypeIdentity.FunctionPointer(new CliFunctionPointerSignature((byte)header, 0, 0, signature));
+
+        var word = Word(pointer, Definition("System", "IntPtr", isValueType: true));
+
+        Assert.Equal(RuntimeTypeFactsFlags.FunctionPointer, Flags(word) & RuntimeTypeFactsFlags.FunctionPointer);
+        Assert.Equal(rank, Rank(word));
+    }
+
     [Theory]
     [InlineData("i4", CliValueKind.I4, true,
         (int)(RuntimeTypeFactsFlags.ValueType | RuntimeTypeFactsFlags.Sealed | RuntimeTypeFactsFlags.TypeDefinition))]

@@ -11,8 +11,9 @@
 #
 # Usage: eng/build-compression-native.sh --target wasm32|wasm64 --output <archive>
 # Needs the pinned Emscripten SDK (NETWASM_EMSDK_ROOT, as eng/build-netwasm-runtime.sh does), cmake and ninja.
-# The archive holds ordinary objects built with Emscripten's default Wasm features, at -O2: one archive serves every
-# optimization level, and the final link's wasm-opt applies the program's own.
+# The archive holds ordinary objects built for speed, at -O3 with Wasm SIMD (-msimd128), which every NetWasm program
+# already requires: one archive serves every optimization level, and the final link's wasm-opt applies the program's
+# own.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,10 +51,11 @@ if [[ "$target" = wasm64 ]]; then
     target_flags=(-sMEMORY64=1)
 fi
 # No DWARF, and no build paths in what remains (NetWasm does not publish native debug information).
-common_flags=(-O2 -DNDEBUG -g0 "-ffile-prefix-map=$repo_root=." "-ffile-prefix-map=$work=." "${target_flags[@]}")
+common_flags=(-O3 -msimd128 -DNDEBUG -g0 "-ffile-prefix-map=$repo_root=." "-ffile-prefix-map=$work=." "${target_flags[@]}")
 
 # Upstream's zlib-ng.cmake: zlib-compatible API with prefixed symbols, static only, no tests, and no aligned_alloc on
-# WASI. zlib-ng has no WebAssembly-specific code, so its generic C paths are used.
+# WASI. zlib-ng has no WebAssembly-specific code, so its generic C paths are used, which -msimd128 lets clang
+# vectorize.
 "$emscripten/emcmake" cmake -S "$zlib_source" -B "$work/zlib-ng" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     "-DCMAKE_C_FLAGS=${common_flags[*]}" \

@@ -125,6 +125,12 @@
         <AssetFolder>NetWasm,Version=v0.1</AssetFolder>
         <DependencyGroup>NetWasm,Version=v0.1</DependencyGroup>
       </_NetWasmRefTargetProfile>
+      <_NetWasmRefTargetProfile Include="net10.0-netwasm">
+        <Alias>net10.0-netwasm</Alias>
+        <Identifier>.NETCoreApp</Identifier>
+        <Version>v10.0</Version>
+        <AssetFolder>net10.0-netwasm</AssetFolder>
+      </_NetWasmRefTargetProfile>
       <_NetWasmRefPackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))">
         <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))</SourcePath>
         <PackagePath>README.md</PackagePath>
@@ -134,6 +140,12 @@
         <SourcePath>$(CoreLibReferenceAssemblyPath)</SourcePath>
         <PackagePath>ref/NetWasm,Version=v0.1/NetWasm.CoreLib.dll</PackagePath>
         <TargetFrameworkAlias>netwasm0.1</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmRefPackageFile>
+      <_NetWasmRefPackageFile Include="$(CoreLibReferenceAssemblyPath)">
+        <SourcePath>$(CoreLibReferenceAssemblyPath)</SourcePath>
+        <PackagePath>ref/net10.0-netwasm/NetWasm.CoreLib.dll</PackagePath>
+        <TargetFrameworkAlias>net10.0-netwasm</TargetFrameworkAlias>
         <PackKind>BuildOutput</PackKind>
       </_NetWasmRefPackageFile>
       <_NetWasmRefPackageFile Include="@(_NetWasmRefGeneratorPackageFile)" />

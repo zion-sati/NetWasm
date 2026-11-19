@@ -161,6 +161,28 @@ test("ordinary Preview 2 imports are accepted and dependency failures propagate"
   await assert.rejects(failed.program.run(baseRequest), error => error === cause);
 });
 
+test("a function of sockets, tls or the file system that the module links and the host lacks exists and fails when called", async () => {
+  let runtimeModules;
+  const lookup = "wasi:sockets/ip-name-lookup@0.3.2";
+  const state = fixture({
+    listImports: () => [
+      { module: lookup, name: "resolve-addresses", kind: "function" },
+      { module: "netwasm.runtime.v1", name: "collect", kind: "function" },
+    ],
+    createRuntimeImports: () => ({ "netwasm.runtime.v1": { collect() { return 7; } } }),
+    async instantiate(options) {
+      runtimeModules = options.runtimeModules;
+      return { instance: { exports: { run: input => input, trace: () => 0 } }, dispose() {} };
+    },
+  });
+
+  await state.program.run({ ...baseRequest, inputs: [1], usesTypedTrace: false });
+
+  assert.equal(runtimeModules["netwasm.runtime.v1"].collect(), 7);
+  assert.throws(() => runtimeModules[lookup]["resolve-addresses"](),
+    { message: `the linked corpus host does not provide ${lookup} resolve-addresses` });
+});
+
 test("all capabilities are required", () => {
   const valid = fixture();
   const names = ["readBinary", "readText", "compileModule", "listImports", "hash",

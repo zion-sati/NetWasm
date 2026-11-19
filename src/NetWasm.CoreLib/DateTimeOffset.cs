@@ -51,7 +51,6 @@ namespace System
             }
             if (dateTime.Kind == DateTimeKind.Local)
             {
-                PlatformServices.EnsureLocalTimeReady();
                 var localOffset = PlatformServices.LocalTimeOffsets.Resolve(
                     dateTime.Ticks,
                     dateTime.IsAmbiguousDaylightSavingTime()
@@ -160,7 +159,6 @@ namespace System
         }
         public DateTimeOffset ToLocalTime()
         {
-            PlatformServices.EnsureLocalTimeReady();
             var offset = PlatformServices.LocalTimeOffsets.Resolve(
                 _utcTicks,
                 LocalTimeBasis.Utc);
@@ -174,7 +172,6 @@ namespace System
 
         private static TimeSpan ResolveLocalOffset(DateTime dateTime)
         {
-            PlatformServices.EnsureLocalTimeReady();
             return new TimeSpan(PlatformServices.LocalTimeOffsets.Resolve(
                 dateTime.Ticks,
                 dateTime.IsAmbiguousDaylightSavingTime()

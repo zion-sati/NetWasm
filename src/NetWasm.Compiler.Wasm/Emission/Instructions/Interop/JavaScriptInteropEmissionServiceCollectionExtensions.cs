@@ -64,10 +64,11 @@ internal static class JavaScriptInteropEmissionServiceCollectionExtensions
             JavaScriptImportArgumentEmitter>();
         services.AddSingleton<IHostCallbackHandleEmitter,
             HostCallbackHandleEmitter>();
+        services.AddSingleton<ITransferredHostCallbackEmitter,
+            TransferredHostCallbackEmitter>();
         services.AddSingleton<IHostCallbackStringArgumentMarshaller,
             HostCallbackStringArgumentMarshaller>();
-        services.AddSingleton<IHostCallbackByteArrayArgumentMarshaller,
-            HostCallbackByteArrayArgumentMarshaller>();
+        services.AddSingleton<IStagedValueArrayEmitter, StagedValueArrayEmitter>();
         services.AddSingleton<IHostCallbackHostObjectArgumentMarshaller,
             HostCallbackHostObjectArgumentMarshaller>();
         services.AddSingleton<IJavaScriptReferenceArgumentEmitter,

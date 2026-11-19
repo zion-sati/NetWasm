@@ -44,6 +44,9 @@ namespace System.Text.Json.Serialization.Metadata
             {
                 VerifyMutable();
                 _isConfigured = true;
+#if NETWASM
+                MarkPolymorphismReachable();
+#endif
                 field = value;
             }
         }
@@ -61,6 +64,9 @@ namespace System.Text.Json.Serialization.Metadata
             {
                 VerifyMutable();
                 _isConfigured = true;
+#if NETWASM
+                MarkPolymorphismReachable();
+#endif
                 field = value;
             }
         }
@@ -80,11 +86,22 @@ namespace System.Text.Json.Serialization.Metadata
             {
                 VerifyMutable();
                 _isConfigured = true;
+#if NETWASM
+                MarkPolymorphismReachable();
+#endif
                 field = value;
             }
         }
 
         private void VerifyMutable() => DeclaringTypeInfo?.VerifyMutable();
+
+#if NETWASM
+        // NetWasm: options become non-empty only here and in DerivedTypes, so a program whose code never configures
+        // polymorphism (the generator emits an empty instance for every other type) never sets the markers, and the
+        // polymorphic paths they guard compile away.
+        private static void MarkPolymorphismReachable() =>
+            JsonConverter.s_polymorphicTypesReachable = nameof(JsonPolymorphismOptions);
+#endif
 
         internal JsonTypeInfo? DeclaringTypeInfo { get; set; }
 
@@ -132,7 +149,13 @@ namespace System.Text.Json.Serialization.Metadata
             }
 
             public override bool IsReadOnly => _parent.DeclaringTypeInfo?.IsReadOnly == true;
-            protected override void OnCollectionModifying() => _parent.DeclaringTypeInfo?.VerifyMutable();
+            protected override void OnCollectionModifying()
+            {
+#if NETWASM
+                MarkPolymorphismReachable();
+#endif
+                _parent.DeclaringTypeInfo?.VerifyMutable();
+            }
         }
 
     }

@@ -222,12 +222,8 @@ public sealed class UninitializedObjectAndStructureMarshallingCompilationTests
                     if (Marshal.PtrToStructure<WithConstructor>(native).X != 77) return 12;
                     if (Marshal.PtrToStructure(IntPtr.Zero, typeof(Point)) != null) return 13;
                     try { _ = Marshal.PtrToStructure<Point>(IntPtr.Zero); return 14; } catch (NullReferenceException) { }
-        #if DESKTOP_ORACLE
+                    // The Type overload runs the declared constructor too, then the native data overwrites the field.
                     if (((WithConstructor)Marshal.PtrToStructure(native, typeof(WithConstructor))!).X != 77) return 15;
-        #else
-                    // Zeroed storage would skip the declared constructor, so the Type overload refuses.
-                    try { Marshal.PtrToStructure(native, typeof(WithConstructor)); return 15; } catch (PlatformNotSupportedException) { }
-        #endif
                 }
                 finally
                 {
@@ -247,17 +243,10 @@ public sealed class UninitializedObjectAndStructureMarshallingCompilationTests
                 try { Marshal.DestroyStructure(unused, typeof(Color)); return 22; } catch (ArgumentException) { }
                 try { Marshal.StructureToPtr(new Generic<int>(), unused, false); return 23; } catch (ArgumentException) { }
 
-        #if DESKTOP_ORACLE
-                if (Marshal.SizeOf<WithBool>() != 8 || Marshal.SizeOf<WithChar>() != 1 ||
-                    Marshal.SizeOf(typeof(WithString)) != IntPtr.Size || Marshal.SizeOf(typeof(Formatted)) != 4) return 24;
-        #else
-                // Layouts that need field conversion are not available.
-                try { Marshal.SizeOf<WithBool>(); return 24; } catch (PlatformNotSupportedException) { }
-                try { Marshal.SizeOf<WithChar>(); return 25; } catch (PlatformNotSupportedException) { }
-                try { Marshal.SizeOf(typeof(WithString)); return 26; } catch (PlatformNotSupportedException) { }
-                try { Marshal.SizeOf(typeof(Formatted)); return 27; } catch (PlatformNotSupportedException) { }
-                try { Marshal.StructureToPtr(new WithBool(), unused, false); return 28; } catch (PlatformNotSupportedException) { }
-        #endif
+                // A string field is a pointer to a native copy, and a formatted class has its native size.
+                if (Marshal.SizeOf(typeof(WithString)) != IntPtr.Size || Marshal.SizeOf(typeof(Formatted)) != 4) return 24;
+                // A struct that holds a bool or char lays out as desktop .NET's runtime marshalling lays it out on Unix.
+                if (Marshal.SizeOf<WithBool>() != 8 || Marshal.SizeOf<WithChar>() != 1) return 25;
                 return input + 1;
             }
         }

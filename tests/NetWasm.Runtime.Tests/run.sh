@@ -70,6 +70,48 @@ echo "Independent NetWasmGC core contract PASS"
 
 cc -std=c11 -Wall -Wextra -Werror -pedantic \
   "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/netwasm_gc.c" \
+  "$script_dir/netwasm_gc_pacing_contract.c" \
+  -o "$output_dir/netwasm_gc_pacing_contract"
+"$output_dir/netwasm_gc_pacing_contract"
+echo "NetWasmGC pacing contract PASS"
+
+# NetWasmGC with generations, and again as qualification builds it, where it reports a store nothing recorded.
+for optimization in O0 Oz O3; do
+  for qualification in "" -DNETWASM_GC_STRESS; do
+    cc -std=c11 -Wall -Wextra -Werror -pedantic "-$optimization" $qualification \
+      "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/generational_gc.c" \
+      "$script_dir/netwasm_gc_generations_contract.c" \
+      -o "$output_dir/netwasm_gc_generations_contract"
+    "$output_dir/netwasm_gc_generations_contract"
+  done
+done
+# What does not depend on which objects are old holds with generations as without.
+for contract in recycling available_run uninitialized; do
+  cc -std=c11 -Wall -Wextra -Werror -pedantic \
+    "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/generational_gc.c" \
+    "$script_dir/netwasm_gc_${contract}_contract.c" \
+    -o "$output_dir/netwasm_gc_${contract}_generations_contract"
+  "$output_dir/netwasm_gc_${contract}_generations_contract"
+done
+echo "NetWasmGC generations contract PASS"
+
+# GC.AllocateUninitializedArray's allocation leaves what each core does not clear in bulk.
+for optimization in O0 Oz O3; do
+  cc -std=c11 -Wall -Wextra -Werror -pedantic "-$optimization" \
+    "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/netwasm_gc.c" \
+    "$script_dir/netwasm_gc_uninitialized_contract.c" \
+    -o "$output_dir/netwasm_gc_uninitialized_contract_$optimization"
+  "$output_dir/netwasm_gc_uninitialized_contract_$optimization"
+  cc -std=c11 -Wall -Wextra -Werror -pedantic "-$optimization" -DNETWASM_GC_COMPACT \
+    "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/compact_gc.c" \
+    "$script_dir/netwasm_gc_uninitialized_contract.c" \
+    -o "$output_dir/compact_gc_uninitialized_contract_$optimization"
+  "$output_dir/compact_gc_uninitialized_contract_$optimization"
+done
+echo "Uninitialized allocation contract PASS"
+
+cc -std=c11 -Wall -Wextra -Werror -pedantic \
+  "$workspace_dir/src/NetWasm.Runtime/collector/netwasm/netwasm_gc.c" \
   "$script_dir/netwasm_gc_available_run_contract.c" \
   -o "$output_dir/netwasm_gc_available_run_contract"
 "$output_dir/netwasm_gc_available_run_contract"
@@ -333,6 +375,12 @@ cc -std=c11 -Wall -Wextra -Werror \
     "$script_dir/collector_reference_store_contract.c" \
     -o "$output_dir/collector_reference_store_contract"
 "$output_dir/collector_reference_store_contract"
+cc -std=c11 -Wall -Wextra -Werror -DNETWASM_GC_GENERATIONAL \
+    -I"$workspace_dir/src/NetWasm.Runtime" \
+    "$workspace_dir/src/NetWasm.Runtime/collector/reference_store.c" \
+    "$script_dir/collector_reference_store_contract.c" \
+    -o "$output_dir/collector_reference_store_generations_contract"
+"$output_dir/collector_reference_store_generations_contract"
 
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$workspace_dir/src/NetWasm.Runtime" \
@@ -410,9 +458,10 @@ cc -std=c11 -Wall -Wextra -Werror \
   -o "$output_dir/runtime_posix_exit_contract"
 "$output_dir/runtime_posix_exit_contract"
 
-# fopen and opendir are renamed so the executable's own C library keeps them.
+# fopen, opendir, dlopen and __dlsym are renamed so the executable's own C library keeps them.
 cc -std=c11 -Wall -Wextra -Werror \
   -Dfopen=netwasm_contract_fopen -Dopendir=netwasm_contract_opendir \
+  -Ddlopen=netwasm_contract_dlopen -D__dlsym=netwasm_contract_dlsym \
   -I"$workspace_dir/src/NetWasm.Runtime" \
   "$workspace_dir/src/NetWasm.Runtime/runtime_posix_unavailable.c" \
   "$script_dir/runtime_posix_unavailable_contract.c" \

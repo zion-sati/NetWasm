@@ -5,6 +5,7 @@ using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission;
@@ -50,7 +51,7 @@ public sealed class ManagedMethodEmitterTests
             {
                 bodyContext = context;
                 code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
-            }, enableBranchValueFramePlacement: enabled);
+            }, branchPrefixDuplication: enabled ? BranchPrefixDuplicationPolicy.Speed : BranchPrefixDuplicationPolicy.Disabled);
 
         Assert.NotNull(bodyContext);
         Assert.Equal(enabled ? 1 : 0, placement.Calls);
@@ -284,11 +285,14 @@ public sealed class ManagedMethodEmitterTests
             new GeneratedFunctionWriterFactory(),
             new InstructionCountingWriterFactory(), branchFrames ?? new TerminalBranchValueFramePlanner(CreateArgumentSignatureTypes(program)),
             new ArrayMetadataCachingPlanner(types),
+            new ArrayLengthRunPlanner(types),
             new ArrayMetadataSnapshotEmitter(layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), CreateAddressInstructions(layouts),
                 new ImplicitExceptionEmitter(layouts)),
             new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),
             new EmptyFloatingCallPlanner(), new AuthoritativeRootSourceSelector(), new AuthoritativeRootLayoutPlanner(),
-            new RootClearElisionPlanner(new StructuredBlockPredecessorReader()), new RootValueElisionPlanner(new StructuredBlockPredecessorReader()),
+            new RootClearElisionPlanner(new StructuredBlockPredecessorReader()),
+                new RootFrameEntryClearPlanner(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()), layouts),
+                new RootValueElisionPlanner(new StructuredBlockPredecessorReader()),
             new ValueFrameReferenceMapPlanner(layouts, layouts, types),
             new NetWasm.Compiler.GarbageCollection.RootSlotAllocator());
     }
@@ -302,7 +306,8 @@ public sealed class ManagedMethodEmitterTests
     {
         public int Calls { get; private set; }
 
-        public TerminalBranchValueFramePlan? Plan(StructuredMethod method, ValueFrameLayout layout, MethodRootMap roots)
+        public TerminalBranchValueFramePlan? Plan(StructuredMethod method, ValueFrameLayout layout, MethodRootMap roots,
+            bool copyTails)
         {
             Calls++;
             return plan;

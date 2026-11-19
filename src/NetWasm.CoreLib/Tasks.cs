@@ -236,8 +236,13 @@ namespace System.Runtime.CompilerServices
 
         public static AsyncTaskMethodBuilder Create() => default;
 
-        public Threading.Tasks.Task Task => EnsureTask();
+        public Threading.Tasks.Task Task
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => EnsureTask();
+        }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine =>
             AsyncMethodBuilderCore.Start(ref stateMachine);
@@ -281,6 +286,7 @@ namespace System.Runtime.CompilerServices
             awaiter.OnCompleted(GetCompletionAction(ref stateMachine));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
             ref TAwaiter awaiter,
             ref TStateMachine stateMachine)
@@ -329,6 +335,7 @@ namespace System.Runtime.CompilerServices
             };
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine =>
             AsyncMethodBuilderCore.Start(ref stateMachine);
@@ -393,8 +400,13 @@ namespace System.Runtime.CompilerServices
 
         public static AsyncTaskMethodBuilder<T> Create() => default;
 
-        public Threading.Tasks.Task<T> Task => EnsureTask();
+        public Threading.Tasks.Task<T> Task
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => EnsureTask();
+        }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine =>
             AsyncMethodBuilderCore.Start(ref stateMachine);
@@ -438,6 +450,7 @@ namespace System.Runtime.CompilerServices
             awaiter.OnCompleted(GetCompletionAction(ref stateMachine));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
             ref TAwaiter awaiter,
             ref TStateMachine stateMachine)
@@ -484,6 +497,7 @@ namespace System.Runtime.CompilerServices
             ? default
             : new(_task);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine =>
             AsyncMethodBuilderCore.Start(ref stateMachine);
@@ -526,6 +540,7 @@ namespace System.Runtime.CompilerServices
             awaiter.OnCompleted(continuation.MoveNext);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
             ref TAwaiter awaiter,
             ref TStateMachine stateMachine)
@@ -564,6 +579,7 @@ namespace System.Runtime.CompilerServices
             ? new(_result)
             : new(_task);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine =>
             AsyncMethodBuilderCore.Start(ref stateMachine);
@@ -607,6 +623,7 @@ namespace System.Runtime.CompilerServices
             awaiter.OnCompleted(continuation.MoveNext);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
             ref TAwaiter awaiter,
             ref TStateMachine stateMachine)
@@ -642,6 +659,7 @@ namespace System.Runtime.CompilerServices
 
         public static PoolingAsyncValueTaskMethodBuilder Create() => new();
         public Threading.Tasks.ValueTask Task => _builder.Task;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine => _builder.Start(ref stateMachine);
         public void SetStateMachine(IAsyncStateMachine stateMachine) => _builder.SetStateMachine(stateMachine);
@@ -653,6 +671,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : INotifyCompletion
             where TStateMachine : IAsyncStateMachine =>
             _builder.AwaitOnCompleted(ref awaiter, ref stateMachine);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
             ref TAwaiter awaiter,
             ref TStateMachine stateMachine)
@@ -668,6 +687,7 @@ namespace System.Runtime.CompilerServices
 
         public static PoolingAsyncValueTaskMethodBuilder<T> Create() => new();
         public Threading.Tasks.ValueTask<T> Task => _builder.Task;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine => _builder.Start(ref stateMachine);
         public void SetStateMachine(IAsyncStateMachine stateMachine) => _builder.SetStateMachine(stateMachine);
@@ -679,6 +699,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : INotifyCompletion
             where TStateMachine : IAsyncStateMachine =>
             _builder.AwaitOnCompleted(ref awaiter, ref stateMachine);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
             ref TAwaiter awaiter,
             ref TStateMachine stateMachine)
@@ -692,6 +713,7 @@ namespace System.Runtime.CompilerServices
     {
         public static AsyncIteratorMethodBuilder Create() => new();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void MoveNext<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine =>
             AsyncMethodBuilderCore.Start(ref stateMachine);
@@ -896,7 +918,11 @@ namespace System.Runtime.CompilerServices
         internal ValueTaskAwaiter(global::System.Threading.Tasks.ValueTask value) =>
             _value = value;
 
-        public bool IsCompleted => _value.IsCompleted;
+        public bool IsCompleted
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _value.IsCompleted;
+        }
         public void OnCompleted(Action continuation) =>
             _value.OnCompleted(continuation, flowExecutionContext: true);
         public void UnsafeOnCompleted(Action continuation) =>
@@ -911,6 +937,7 @@ namespace System.Runtime.CompilerServices
                 continuation,
                 continueOnCapturedContext,
                 flowExecutionContext: false);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void GetResult() => _value.GetResult();
     }
 
@@ -921,7 +948,11 @@ namespace System.Runtime.CompilerServices
         internal ValueTaskAwaiter(global::System.Threading.Tasks.ValueTask<T> value) =>
             _value = value;
 
-        public bool IsCompleted => _value.IsCompleted;
+        public bool IsCompleted
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _value.IsCompleted;
+        }
         public void OnCompleted(Action continuation) =>
             _value.OnCompleted(continuation, flowExecutionContext: true);
         public void UnsafeOnCompleted(Action continuation) =>
@@ -936,6 +967,7 @@ namespace System.Runtime.CompilerServices
                 continuation,
                 continueOnCapturedContext,
                 flowExecutionContext: false);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public T GetResult() => _value.GetResult();
     }
 
@@ -1396,13 +1428,19 @@ namespace System.Threading.Tasks
             return task;
         }
 
-        public static Task CompletedTask => s_completedTask;
+        public static Task CompletedTask
+        {
+            [Intrinsic]
+            get => s_completedTask;
+        }
 
         public global::System.Runtime.CompilerServices.TaskAwaiter GetAwaiter() => new(this);
 
+        [Intrinsic]
         public ConfiguredTaskAwaitable ConfigureAwait(bool continueOnCapturedContext) =>
             new(new global::System.Runtime.CompilerServices.TaskAwaiter(this), continueOnCapturedContext);
 
+        [Intrinsic]
         public ConfiguredTaskAwaitable ConfigureAwait(ConfigureAwaitOptions options)
         {
             const ConfigureAwaitOptions validOptions =
@@ -1576,6 +1614,8 @@ namespace System.Threading.Tasks
             return task;
         }
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Task<TResult> FromResult<TResult>(TResult result)
         {
             if (result is null)
@@ -2983,6 +3023,25 @@ namespace System.Threading.Tasks
         {
             ArgumentNullException.ThrowIfNull(tasks);
             ArgumentOutOfRangeException.ThrowIfLessThan(millisecondsTimeout, -1);
+            return WaitAllCore(tasks, millisecondsTimeout, cancellationToken);
+        }
+
+        // As upstream's: a list or an array is waited on in place, any other sequence after copying it.
+        public static void WaitAll(Collections.Generic.IEnumerable<Task> tasks, Threading.CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(tasks);
+            ReadOnlySpan<Task> span =
+                tasks is Collections.Generic.List<Task> list ? Runtime.InteropServices.CollectionsMarshal.AsSpan(list) :
+                tasks is Task[] array ? array :
+                Runtime.InteropServices.CollectionsMarshal.AsSpan(new Collections.Generic.List<Task>(tasks));
+            WaitAllCore(span, Threading.Timeout.Infinite, cancellationToken);
+        }
+
+        public static void WaitAll(params ReadOnlySpan<Task> tasks) =>
+            WaitAllCore(tasks, Threading.Timeout.Infinite, default);
+
+        private static bool WaitAllCore(ReadOnlySpan<Task> tasks, int millisecondsTimeout, Threading.CancellationToken cancellationToken)
+        {
             cancellationToken.ThrowIfCancellationRequested();
             var allCompleted = true;
             for (var index = tasks.Length - 1; index >= 0; index--)
@@ -3071,6 +3130,9 @@ namespace System.Threading.Tasks
 
         public bool Wait(TimeSpan timeout) =>
             Wait(Threading.WaitHandle.ToTimeoutMilliseconds(timeout), default);
+
+        public bool Wait(TimeSpan timeout, Threading.CancellationToken cancellationToken) =>
+            Wait(Threading.WaitHandle.ToTimeoutMilliseconds(timeout), cancellationToken);
 
         // Retain upstream completion/error ordering and nonblocking polling.
         // This profile has no host blocking wait for an incomplete task.
@@ -3271,9 +3333,11 @@ namespace System.Threading.Tasks
 
         public new global::System.Runtime.CompilerServices.TaskAwaiter<T> GetAwaiter() => new(this);
 
+        [Intrinsic]
         public new ConfiguredTaskAwaitable<T> ConfigureAwait(bool continueOnCapturedContext) =>
             new(new global::System.Runtime.CompilerServices.TaskAwaiter<T>(this), continueOnCapturedContext);
 
+        [Intrinsic]
         public new ConfiguredTaskAwaitable<T> ConfigureAwait(ConfigureAwaitOptions options)
         {
             const ConfigureAwaitOptions validOptions =
@@ -3597,6 +3661,8 @@ namespace System.Threading.Tasks
             return new ValueTask(valueTask.AsTask());
         }
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask(Task task)
         {
             if (task == null)
@@ -3608,6 +3674,7 @@ namespace System.Threading.Tasks
             _token = 0;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask(IValueTaskSource source, short token)
         {
             _source = source ?? throw new ArgumentNullException();
@@ -3615,12 +3682,20 @@ namespace System.Threading.Tasks
             _task = null;
         }
 
-        public bool IsCompleted => _source != null
-            ? _source.GetStatus(_token) != ValueTaskSourceStatus.Pending
-            : _task == null || _task.IsCompleted;
-        public bool IsCompletedSuccessfully => _source != null
-            ? _source.GetStatus(_token) == ValueTaskSourceStatus.Succeeded
-            : _task == null || _task.IsCompletedSuccessfully;
+        public bool IsCompleted
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _source != null
+                ? _source.GetStatus(_token) != ValueTaskSourceStatus.Pending
+                : _task == null || _task.IsCompleted;
+        }
+        public bool IsCompletedSuccessfully
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _source != null
+                ? _source.GetStatus(_token) == ValueTaskSourceStatus.Succeeded
+                : _task == null || _task.IsCompletedSuccessfully;
+        }
         public bool IsFaulted => _source != null
             ? _source.GetStatus(_token) == ValueTaskSourceStatus.Faulted
             : _task != null && _task.IsFaulted;
@@ -3628,8 +3703,13 @@ namespace System.Threading.Tasks
             ? _source.GetStatus(_token) == ValueTaskSourceStatus.Canceled
             : _task != null && _task.IsCanceled;
 
-        public static ValueTask CompletedTask => default;
+        public static ValueTask CompletedTask
+        {
+            [Intrinsic]
+            get => default;
+        }
 
+        [Intrinsic]
         public static ValueTask<TResult> FromResult<TResult>(TResult result) => new(result);
 
         public static ValueTask FromCanceled(Threading.CancellationToken cancellationToken) =>
@@ -3660,11 +3740,14 @@ namespace System.Threading.Tasks
 
         public global::System.Runtime.CompilerServices.ValueTaskAwaiter GetAwaiter() => new(this);
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ConfiguredValueTaskAwaitable ConfigureAwait(bool continueOnCapturedContext) =>
             new(new global::System.Runtime.CompilerServices.ValueTaskAwaiter(this), continueOnCapturedContext);
 
         public ValueTask Preserve() => _source == null ? this : new ValueTask(AsTask());
 
+        [Intrinsic]
         public Task AsTask()
         {
             if (_source == null)
@@ -3783,6 +3866,8 @@ namespace System.Threading.Tasks
         private readonly IValueTaskSource<T>? _source;
         private readonly short _token;
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask(T result)
         {
             _result = result;
@@ -3791,6 +3876,8 @@ namespace System.Threading.Tasks
             _token = 0;
         }
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask(Task<T> task)
         {
             if (task == null)
@@ -3803,6 +3890,7 @@ namespace System.Threading.Tasks
             _token = 0;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask(IValueTaskSource<T> source, short token)
         {
             _source = source ?? throw new ArgumentNullException();
@@ -3811,12 +3899,20 @@ namespace System.Threading.Tasks
             _task = null;
         }
 
-        public bool IsCompleted => _source != null
-            ? _source.GetStatus(_token) != ValueTaskSourceStatus.Pending
-            : _task == null || _task.IsCompleted;
-        public bool IsCompletedSuccessfully => _source != null
-            ? _source.GetStatus(_token) == ValueTaskSourceStatus.Succeeded
-            : _task == null || _task.IsCompletedSuccessfully;
+        public bool IsCompleted
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _source != null
+                ? _source.GetStatus(_token) != ValueTaskSourceStatus.Pending
+                : _task == null || _task.IsCompleted;
+        }
+        public bool IsCompletedSuccessfully
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _source != null
+                ? _source.GetStatus(_token) == ValueTaskSourceStatus.Succeeded
+                : _task == null || _task.IsCompletedSuccessfully;
+        }
         public bool IsFaulted => _source != null
             ? _source.GetStatus(_token) == ValueTaskSourceStatus.Faulted
             : _task != null && _task.IsFaulted;
@@ -3824,15 +3920,23 @@ namespace System.Threading.Tasks
             ? _source.GetStatus(_token) == ValueTaskSourceStatus.Canceled
             : _task != null && _task.IsCanceled;
 
-        public T Result => GetResult();
+        public T Result
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => GetResult();
+        }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public global::System.Runtime.CompilerServices.ValueTaskAwaiter<T> GetAwaiter() => new(this);
 
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ConfiguredValueTaskAwaitable<T> ConfigureAwait(bool continueOnCapturedContext) =>
             new(new global::System.Runtime.CompilerServices.ValueTaskAwaiter<T>(this), continueOnCapturedContext);
 
         public ValueTask<T> Preserve() => _source == null ? this : new ValueTask<T>(AsTask());
 
+        [Intrinsic]
         public Task<T> AsTask()
         {
             if (_source == null)
@@ -3993,7 +4097,17 @@ namespace System.Threading.Tasks
             _aggregateContainer = aggregateContainer;
         }
 
-        internal void Observe() => _observed = true;
+        // As upstream's TaskExceptionHolder.MarkAsHandled: an observed fault has nothing left to report, so its finalizer
+        // is suppressed and the collector forgets the tracker, instead of keeping every awaited fault registered until
+        // the tracker is collected and its finalizer runs.
+        internal void Observe()
+        {
+            if (!_observed)
+            {
+                _observed = true;
+                GC.SuppressFinalize(this);
+            }
+        }
 
         ~TaskExceptionTracker()
         {

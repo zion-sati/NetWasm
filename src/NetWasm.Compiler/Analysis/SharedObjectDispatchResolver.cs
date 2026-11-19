@@ -15,16 +15,6 @@ internal interface ISharedObjectDispatchResolver
     MethodInstanceModel? Resolve(MethodInstanceModel declaration);
 }
 
-// The speed presets dispatch every call on object inline (ObjectDispatchPolicy.Inline).
-internal sealed class InlineObjectDispatchResolver : ISharedObjectDispatchResolver
-{
-    public MethodInstanceModel? Resolve(MethodInstanceModel declaration)
-    {
-        ArgumentNullException.ThrowIfNull(declaration);
-        return null;
-    }
-}
-
 internal sealed class SharedObjectDispatchResolver(
     ITypeFinder typeFinder,
     IMethodRepository methods,

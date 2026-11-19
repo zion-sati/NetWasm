@@ -52,7 +52,9 @@ public sealed class NativeAbiPlannerTests
         Assert.Equal(CliValueKind.NativeInt, ((INativeAbiPlanner)planner).Plan(Method(pointer)).Signature.ReturnType);
         Reject(Method(type, type));
         Reject(Method(CliTypeIdentity.ManagedByReference(type)));
-        Reject(Method(type, CliTypeIdentity.ManagedByReference(pointer)));
+        // A pointer passed by reference passes its storage's address, as desktop .NET pins it.
+        Assert.Equal(CliValueKind.NativeInt, Assert.Single(((INativeAbiPlanner)planner)
+            .Plan(Method(type, CliTypeIdentity.ManagedByReference(pointer))).Signature.ParameterTypes));
     }
 
     [Theory]
@@ -196,7 +198,7 @@ public sealed class NativeAbiPlannerTests
         public CompilerException? Failure { get; set; }
         public List<(MethodSignatureModel Signature, NativeAbiSignatureKind Kind, string Method)> Calls { get; } = [];
 
-        public NativeAbiSignaturePlan Plan(MethodSignatureModel signature, NativeAbiSignatureKind kind, string methodName)
+        public NativeAbiSignaturePlan Plan(MethodSignatureModel signature, NativeAbiSignatureKind kind, string methodName, NativeMarshallingRules rules)
         {
             Calls.Add((signature, kind, methodName));
             return Failure is null ? Result : throw Failure;

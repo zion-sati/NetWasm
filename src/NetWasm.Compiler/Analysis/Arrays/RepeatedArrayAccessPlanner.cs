@@ -39,14 +39,20 @@ internal sealed record RepeatedArrayAccessPlan(ImmutableHashSet<int> Checked, Im
 // block nothing returns to and before any read of it, holds one value too, as
 // the locals field load reuse fills do. Field accesses take part as accesses
 // of their object: an instance method that reads several fields of `this`
-// checks it once. A rectangular array's dimensions share their bounds between
+// checks it once. So do calls of instance methods: a callvirt checks its object
+// as a field access does, and a direct call, which checks nothing, takes an
+// object an earlier access checked as proven, which the receiver prover reads. A rectangular array's dimensions share their bounds between
 // accesses, so within a block an access skips the check of each dimension
 // whose index an earlier access to the same array checked against it, as
 // `a[j, k] = a[i, k] + a[j, k]` checks k once and j once.
-internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer dominance) : IRepeatedArrayAccessPlanner
+internal sealed class RepeatedArrayAccessPlanner(
+    IControlFlowDominanceAnalyzer dominance,
+    ICalledMethodResolver calledMethods) : IRepeatedArrayAccessPlanner
 {
     private readonly IControlFlowDominanceAnalyzer _dominance = dominance ??
         throw new ArgumentNullException(nameof(dominance));
+    private readonly ICalledMethodResolver _calledMethods = calledMethods ??
+        throw new ArgumentNullException(nameof(calledMethods));
 
     public RepeatedArrayAccessPlan Plan(ValidatedControlFlowGraph controlFlow)
     {
@@ -144,6 +150,26 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                     Dereference(owner, instruction.Offset, block.Index, checkedReferences.Contains(owner));
                     checkedReferences.Add(owner);
                 }
+                // An instance call's object, beneath its arguments.
+                if (CallReceiver(instruction) is > 0 and var depth && stack.Length >= depth &&
+                    stack[^depth] == CliValueKind.ManagedReference && origins[^depth].Slot is { } target &&
+                    !exposed.Contains(target))
+                {
+                    if (instruction.Operation == CilOperation.CallVirtual)
+                    {
+                        Dereference(target, instruction.Offset, block.Index, checkedReferences.Contains(target));
+                        checkedReferences.Add(target);
+                    }
+                    else if (checkedReferences.Contains(target))
+                    {
+                        nonNull.Add(instruction.Offset);
+                    }
+                    else if (stable.Contains(target))
+                    {
+                        // Proven where an access dominates it; the call itself proves nothing later.
+                        unproven.Add((block.Index, instruction.Offset, target));
+                    }
+                }
                 if (Stored(instruction) is { } stored)
                 {
                     checkedReferences.Remove(stored);
@@ -166,8 +192,9 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
             }
             foreach (var (block, offset, array) in unproven)
             {
-                if (!checkedAccesses.Contains(offset) &&
-                    accessedBlocks[array].Any(other => other != block && dominators[block].Contains(other)))
+                // A direct call's object may be one no access checked anywhere.
+                if (!checkedAccesses.Contains(offset) && accessedBlocks.TryGetValue(array, out var blocks) &&
+                    blocks.Any(other => other != block && dominators[block].Contains(other)))
                 {
                     nonNull.Add(offset);
                 }
@@ -194,6 +221,13 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
             }
         }
     }
+
+    // How deep beneath the top of the stack an instance call's object lies.
+    private int CallReceiver(CilInstruction instruction) =>
+        instruction.Operation is CilOperation.Call or CilOperation.CallVirtual &&
+        _calledMethods.Resolve(instruction) is { Definition.IsStatic: false } callee
+            ? callee.Signature.ParameterTypes.Length + 1
+            : 0;
 
     private static HashSet<Slot> ExposedSlots(CilMethodBody body) =>
     [

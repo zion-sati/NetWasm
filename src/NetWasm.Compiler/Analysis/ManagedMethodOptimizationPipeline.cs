@@ -49,7 +49,8 @@ internal sealed class ManagedMethodOptimizationPipeline(
     IAddressInductionRewriter addressInduction,
     IWholeLocalBlockCopyFolder blockCopies,
     IConstructedObjectNullCheckEliminator constructedObjects,
-    IRangeBranchRewriter rangeBranches) : IManagedMethodOptimizer
+    IRangeBranchRewriter rangeBranches,
+    ILoopArgumentLocalizer loopArguments) : IManagedMethodOptimizer
 {
     private readonly IManagedMethodOptimizer _staticDataViews = staticDataViews ??
         throw new ArgumentNullException(nameof(staticDataViews));
@@ -105,6 +106,8 @@ internal sealed class ManagedMethodOptimizationPipeline(
         throw new ArgumentNullException(nameof(emptyFinallies));
     private readonly IStructLocalScalarReplacer _structLocals = structLocals ??
         throw new ArgumentNullException(nameof(structLocals));
+    private readonly ILoopArgumentLocalizer _loopArguments = loopArguments ??
+        throw new ArgumentNullException(nameof(loopArguments));
     private readonly Allocations.INonEscapingAllocationReplacer _objects = objects ??
         throw new ArgumentNullException(nameof(objects));
 
@@ -178,7 +181,8 @@ internal sealed class ManagedMethodOptimizationPipeline(
         }
         // Inlined callees leave receivers and allocations that nothing reads,
         // objects reached only for their fields, finally handlers with nothing
-        // to run, struct locals used field by field, reads and writes through a
+        // to run, struct locals used field by field, arguments a loop reads, which the
+        // loop rules then follow as locals, reads and writes through a
         // local's address, branches the ranges of their operands settle, which
         // leave the loop rules none of the code they cut off, counted loops that
         // only repeat their first iteration,
@@ -194,7 +198,7 @@ internal sealed class ManagedMethodOptimizationPipeline(
         // final instructions, as the integer check proof does, and so does the
         // proof that objects newobj produced are not null.
         return _integerChecks.Rewrite(_constructedObjects.Rewrite(_repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
-            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_addressInduction.Rewrite(_invariantExpressions.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_blockCopies.Rewrite(_idempotentLoops.Rewrite(_rangeBranches.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
-                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized))))))))))))))))))))))))));
+            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_addressInduction.Rewrite(_invariantExpressions.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_blockCopies.Rewrite(_idempotentLoops.Rewrite(_rangeBranches.Rewrite(_addressDereferences.Rewrite(_loopArguments.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
+                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))))))))))));
     }
 }

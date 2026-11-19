@@ -10,7 +10,7 @@ namespace NetWasm.Compiler.Tests;
 public sealed class RuntimeIdentityIntrinsicRegistryTests
 {
     [Fact]
-    public void MapsTheHostFlavourGetterToItsIntrinsic()
+    public void MapsTheHostFlavorGetterToItsIntrinsic()
     {
         var assembly = new AssemblyIdentity("CoreLib");
         var typeKey = new EntityKey(assembly, 1);

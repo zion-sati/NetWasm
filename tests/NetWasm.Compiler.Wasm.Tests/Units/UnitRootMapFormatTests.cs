@@ -51,6 +51,19 @@ public sealed class UnitRootMapFormatTests
     // A name is two bytes a character: one longer than a quarter of the bytes after it reads
     // back too, as a namespaced struct's does where no assignments follow.
     [Fact]
+    public void TheStoresIntoYoungObjectsReadBack()
+    {
+        var map = Anchored with { UnrecordedStores = [7, 3, 12] };
+
+        var read = UnitRootMapFormat.Read(UnitRootMapFormat.Write(map).AsSpan(), Method,
+            name => name == Holder.CanonicalName ? Holder : null);
+
+        Assert.Equal(map.UnrecordedStores, read!.UnrecordedStores);
+        Assert.Empty(UnitRootMapFormat.Read(UnitRootMapFormat.Write(Anchored).AsSpan(), Method,
+            name => name == Holder.CanonicalName ? Holder : null)!.UnrecordedStores);
+    }
+
+    [Fact]
     public void AnAnchorOfALongTypeNameReadsBack()
     {
         var shipment = CliTypeIdentity.Named(new AssemblyIdentity("Contoso.Inventory"), "Contoso.Inventory.Warehouse.Logistics",
@@ -96,8 +109,9 @@ public sealed class UnitRootMapFormatTests
         // Words: the slot count and two slots of four; the safepoint count and one safepoint
         // of ten; then the anchor count, whose first anchor's name length follows its location.
         var firstNameLength = 4 * (1 + 2 * 4 + 1 + 10 + 1 + 2);
-        // The last offset's three assignments of three words each end the map.
-        var firstAssignmentKind = bytes.Length - 4 * 3 * 3;
+        // The last offset's three assignments of three words each come before the map's last word, the count of
+        // its stores into young objects.
+        var firstAssignmentKind = bytes.Length - 4 - 4 * 3 * 3;
         bytes = damage switch
         {
             "truncated" => bytes[..^2],

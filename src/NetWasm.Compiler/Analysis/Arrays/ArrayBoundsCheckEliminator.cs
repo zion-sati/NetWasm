@@ -14,7 +14,8 @@ internal sealed class ArrayBoundsCheckEliminator(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
     IArrayBoundsCheckEliminationPlanner planner,
-    bool enabled) : IArrayBoundsCheckEliminator
+    bool enabled,
+    IArrayLoopVersioner? versioner = null) : IArrayBoundsCheckEliminator
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
@@ -25,7 +26,10 @@ internal sealed class ArrayBoundsCheckEliminator(
         ArgumentNullException.ThrowIfNull(body);
         var clean = body.ArrayBoundsProof is null ? body : body with { ArrayBoundsProof = null };
         if (!enabled) return clean;
-        var proven = _planner.Plan(_stacks.Validate(_graphs.Build(clean)));
+        // A loop whose checks a test before it can prove runs a copy without them when the test passes.
+        var (versioned, held) = versioner?.Version(clean) ?? (clean, ImmutableHashSet<int>.Empty);
+        clean = versioned;
+        var proven = _planner.Plan(_stacks.Validate(_graphs.Build(clean))).Union(held);
         // A proven index check's branch goes one way, so its operands are
         // dropped and the throw it skips is unreachable; the element accesses'
         // proof then describes the folded body.

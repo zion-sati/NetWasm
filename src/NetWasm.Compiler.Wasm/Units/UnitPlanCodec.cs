@@ -37,7 +37,7 @@ internal sealed record UnitStackTraces(
     UnitFingerprint Table);
 
 /// <summary>
-/// What a compile's whole-program analysis found that a method analysed alone needs: the
+/// What a compile's whole-program analysis found that a method analyzed alone needs: the
 /// allocated types its dispatch and type tests resolve against, every method's identity,
 /// and the by-ref effects of methods that have any, with the methods each by-ref analysis
 /// read effects from.
@@ -74,7 +74,7 @@ internal sealed record UnitRuntimeObjectLayout(
 internal static class UnitPlanCodec
 {
     private const uint Magic = 0x4C504E4E; // "NNPL"
-    private const int Version = 9;
+    private const int Version = 17;
 
     public static byte[] Encode(InstructionModuleTarget target, IRuntimeObjectLayout runtimeObjects, UnitProgramFacts program)
     {
@@ -122,7 +122,7 @@ internal static class UnitPlanCodec
         Members(writer, target.MemberExecution);
         writer.Bool(target.CollectManagedMethodMemoryMetrics);
         writer.Bool(target.EnableAddressTakenAggregatePromotion);
-        writer.Bool(target.EnableBranchValueFramePlacement);
+        writer.Int((int)target.BranchPrefixDuplication);
         writer.Bool(target.EnableAggregateReferenceLanes);
         writer.Bool(target.EnableArrayMetadataCaching);
         writer.Bool(target.HoistArrayNullChecks);
@@ -205,7 +205,7 @@ internal static class UnitPlanCodec
             Lookups.NoEntries<Core.IntermediateRepresentation.Calls.ManagedCallSiteKey, Core.IntermediateRepresentation.Calls.ManagedCallSite>(),
             adapters, members, metrics, promotion)
         {
-            EnableBranchValueFramePlacement = reader.Bool(),
+            BranchPrefixDuplication = (BranchPrefixDuplicationPolicy)reader.Int(),
             EnableAggregateReferenceLanes = reader.Bool(),
             EnableArrayMetadataCaching = reader.Bool(),
             HoistArrayNullChecks = reader.Bool(),
@@ -328,6 +328,7 @@ internal static class UnitPlanCodec
         Named(writer, map.DelegateMulticastHelpers.Select(pair => KeyValuePair.Create(pair.Key, pair.Value.Value)));
         Keyed(writer, map.DelegateInvokeMethods);
         Named(writer, map.ConstructedDelegateInvokeMethods.Select(pair => KeyValuePair.Create(pair.Key, pair.Value.Value)));
+        Named(writer, map.SharedVirtualDispatches.Select(pair => KeyValuePair.Create(pair.Key, pair.Value.Value)));
     }
 
     private static FunctionIndexMap Functions(UnitModelReader reader)
@@ -345,6 +346,8 @@ internal static class UnitPlanCodec
                 pair => pair.Key, pair => new WasmFunctionIndex(pair.Value), StringComparer.Ordinal),
             DelegateInvokeMethods = Keyed(reader),
             ConstructedDelegateInvokeMethods = Named(reader).ToImmutableDictionary(
+                pair => pair.Key, pair => new WasmFunctionIndex(pair.Value), StringComparer.Ordinal),
+            SharedVirtualDispatches = Named(reader).ToImmutableDictionary(
                 pair => pair.Key, pair => new WasmFunctionIndex(pair.Value), StringComparer.Ordinal),
         };
     }
@@ -410,8 +413,6 @@ internal static class UnitPlanCodec
         Optional(writer, plan.CopyStringUtf16);
         Optional(writer, plan.ReleaseHandle);
         Optional(writer, plan.ReleaseSubscription);
-        Optional(writer, plan.ByteLength);
-        Optional(writer, plan.CopyBytes);
         writer.Bool(plan.UseJavaScriptExportBoundary);
         Named(writer, plan.Conversions);
     }
@@ -422,7 +423,7 @@ internal static class UnitPlanCodec
         var imports = ImmutableArray.CreateBuilder<WasmFunctionImport>(count);
         for (var index = 0; index < count; index++) imports.Add(Import(reader));
         return new InteropImportPlan(imports.MoveToImmutable(), Optional(reader), Optional(reader), Optional(reader),
-            Optional(reader), Optional(reader), Optional(reader), reader.Bool())
+            Optional(reader), reader.Bool())
         {
             Conversions = Named(reader).ToImmutableDictionary(StringComparer.Ordinal),
         };
@@ -613,11 +614,17 @@ internal static class UnitPlanCodec
         writer.Bool(selection.IncludeArraySetValue);
         writer.Bool(selection.IncludeUnhandledExceptionHint);
         writer.Bool(selection.IncludeObjectClone);
+        writer.Bool(selection.IncludeUninitializedArrays);
+        writer.Bool(selection.IncludeReferenceWriteBarrier);
+        writer.Bool(selection.IncludeObjectGeneration);
+        writer.Bool(selection.IncludeEventLoopCollection);
+        writer.Bool(selection.IncludeYoungCollection);
     }
 
     private static RuntimeImportSelection Runtime(UnitModelReader reader) => new(
         (WasmModuleProfile)reader.Byte(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(),
-        reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool());
+        reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(),
+        reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool());
 
     private static void Adapters(UnitModelWriter writer, ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan> adapters)
     {

@@ -160,7 +160,7 @@ export const processHost = {
   readText: path => readFile(path, "utf8"),
   // How long a launcher waits for the server it started to listen.
   startup: 15000,
-  // A process exists while it can be signalled, or refuses to be.
+  // A process exists while it can be signaled, or refuses to be.
   alive: pid => {
     try {
       process.kill(pid, 0);

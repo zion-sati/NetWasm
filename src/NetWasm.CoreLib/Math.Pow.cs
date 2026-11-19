@@ -169,6 +169,7 @@ public static partial class Math
     // NetWasm: a square is the most common use of pow. Pow is small enough to
     // inline, so a constant exponent of 2 becomes x * x at the call, which is
     // correctly rounded and keeps pow's results for zeros, infinities and NaN.
+    [Intrinsic]
     public static double Pow(double x, double y) => y == 2 ? x * x : PowCore(x, y);
 
     private static double PowCore(double x, double y)

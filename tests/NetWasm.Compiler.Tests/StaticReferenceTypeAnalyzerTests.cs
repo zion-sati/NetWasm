@@ -121,12 +121,63 @@ public sealed class StaticReferenceTypeAnalyzerTests
         Assert.Equal([null], types[33]);
     }
 
+    // A filter's handler is not an exceptional successor of anything: the filter decides. When the protected code
+    // always throws, the code after the handler follows only the handler, and is analyzed all the same.
+    [Fact]
+    public void AFiltersHandlerAndWhatFollowsOnlyItAreAnalyzed()
+    {
+        var body = Body(
+            null,
+            [new CilExceptionRegion(CilExceptionRegionKind.Filter, 0, 2, 5, 2, null, 2)],
+            (CilOperation.LoadNull, new CilOperand.None(), 0),
+            (CilOperation.Throw, new CilOperand.None(), 1),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.LoadArgument, new CilOperand.Index(0), 0),
+            (CilOperation.EndFilter, new CilOperand.None(), 1),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.Leave, new CilOperand.BranchTarget(7), 0),
+            (CilOperation.LoadLocal, new CilOperand.Index(0), 0),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.Return, new CilOperand.None(), 0));
+
+        var types = Analyzer(new()).Analyze(body.Graph);
+
+        Assert.Equal([null], types[2]);
+        Assert.Equal([null], types[5]);
+        Assert.Equal([A], types[8]);
+    }
+
+    // A finally runs on leave even when nothing in its protected code can throw.
+    [Fact]
+    public void AFinallyWhoseProtectedCodeCannotThrowIsAnalyzed()
+    {
+        var body = Body(
+            null,
+            [new CilExceptionRegion(CilExceptionRegionKind.Finally, 0, 1, 1, 3, null, null)],
+            (CilOperation.Leave, new CilOperand.BranchTarget(4), 0),
+            (CilOperation.LoadLocal, new CilOperand.Index(0), 0),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.EndFinally, new CilOperand.None(), 0),
+            (CilOperation.Return, new CilOperand.None(), 0));
+
+        var types = Analyzer(new()).Analyze(body.Graph);
+
+        Assert.Equal([A], types[2]);
+        Assert.Empty(types[4]);
+    }
+
     private static StaticReferenceTypeAnalyzer Analyzer(Dictionary<int, MethodInstanceModel> calls) =>
         new(new Calls(calls), new Fields());
 
     // A body whose instructions sit one offset apart, with each instruction's entry stack height.
     private static (CilMethodBody Body, ValidatedControlFlowGraph Graph) Body(
         MethodInstanceModel? method,
+        params (CilOperation Operation, CilOperand Operand, int Height)[] instructions) =>
+        Body(method, [], instructions);
+
+    private static (CilMethodBody Body, ValidatedControlFlowGraph Graph) Body(
+        MethodInstanceModel? method,
+        ImmutableArray<CilExceptionRegion> regions,
         params (CilOperation Operation, CilOperand Operand, int Height)[] instructions)
     {
         var body = new CilMethodBody(
@@ -138,6 +189,7 @@ public sealed class StaticReferenceTypeAnalyzerTests
         {
             MethodInstance = method,
             LocalSignatureTypes = method is null ? [A, B] : [MethodParameter, TypeParameter],
+            ExceptionRegions = regions,
         };
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
         return (body, new(

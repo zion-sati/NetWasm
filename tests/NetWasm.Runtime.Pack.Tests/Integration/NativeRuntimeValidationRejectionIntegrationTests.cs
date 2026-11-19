@@ -155,10 +155,12 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
                 return (int)next[0];
             }
             """, "relaxed SIMD support is not enabled" },
+        // Exception handling is inside the profile: a throw of the C++ exception tag links with the
+        // C++ exception closure, which defines the tag.
         { "exceptions", "-mexception-handling", """
             static int native_thrown;
             int native_probe(void) { __builtin_wasm_throw(0, &native_thrown); }
-            """, "exceptions" },
+            """, null },
     };
 
     [Theory]

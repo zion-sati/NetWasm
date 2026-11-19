@@ -23,10 +23,12 @@ public sealed class AsyncJSImportCallEmitterTests
     [InlineData(WasmTarget.Wasm32, JavaScriptAsyncReturnKind.ValueTask, 0)]
     [InlineData(WasmTarget.Wasm32, JavaScriptAsyncReturnKind.ValueTask, 4)]
     [InlineData(WasmTarget.Wasm64, JavaScriptAsyncReturnKind.ValueTask, 4)]
+    [InlineData(WasmTarget.Wasm32, JavaScriptAsyncReturnKind.Task, 0, true)]
     public void EmitsTaskAndValueTaskCallsForEachTargetWidth(
         WasmTarget target,
         JavaScriptAsyncReturnKind returnKind,
-        int temporaryOffset)
+        int temporaryOffset,
+        bool callback = false)
     {
         var program = new FakeProgram();
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
@@ -93,9 +95,15 @@ public sealed class AsyncJSImportCallEmitterTests
                     ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty.Add(
                         EntryKey,
                         binding),
+                // A callback argument's handle passes to JavaScript instead of through the argument emitter.
+                HostCallbacks = callback
+                    ? ImmutableDictionary<(EntityKey, int), HostCallbackDeclaration>.Empty.Add(
+                        (EntryKey, 0), new HostCallbackDeclaration(EntryKey, 0, method, "callback"))
+                    : ImmutableDictionary<(EntityKey, int), HostCallbackDeclaration>.Empty,
             },
         };
         var arguments = new RecordingArgumentEmitter();
+        var transferred = new RecordingTransferredCallbackEmitter();
         ICallEmitter emitter = new[]
         {
             new AsyncJSImportCallEmitter(
@@ -105,6 +113,7 @@ public sealed class AsyncJSImportCallEmitterTests
                 layouts,
                 WasmRuntimeImports.CreateCatalog(),
                 arguments,
+                transferred,
                 new ImplicitExceptionEmitter(layouts)),
         }.Cast<ICallEmitter>().Single();
         var code = new RecordingInstructionWriter();
@@ -117,7 +126,8 @@ public sealed class AsyncJSImportCallEmitterTests
                 new FunctionIndexMap([], [], [],
                     ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(EntryKey, new(40)))));
 
-        Assert.True(arguments.Called);
+        Assert.Equal(!callback, arguments.Called);
+        Assert.Equal(callback ? 1 : 0, transferred.Count);
         Assert.Equal(
             returnKind == JavaScriptAsyncReturnKind.Task
                 ? CliValueKind.ManagedReference
@@ -125,6 +135,13 @@ public sealed class AsyncJSImportCallEmitterTests
             Assert.Single(instruction.Stack));
         Assert.Contains(code.ToInstructions(), emitted =>
             emitted.Opcode == WasmOpcodes.Call && emitted.Operand.UnsignedValue == 40);
+    }
+
+    private sealed class RecordingTransferredCallbackEmitter : ITransferredHostCallbackEmitter
+    {
+        public int Count { get; private set; }
+
+        public void Emit(IWasmInstructionWriter code, int delegateLocal) => Count++;
     }
 
     private sealed class RecordingArgumentEmitter : IJavaScriptImportArgumentEmitter

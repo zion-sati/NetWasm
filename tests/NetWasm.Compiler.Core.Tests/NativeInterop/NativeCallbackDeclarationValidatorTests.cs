@@ -25,7 +25,7 @@ public sealed class NativeCallbackDeclarationValidatorTests
     [Theory]
     [InlineData("calling convention 'System.Runtime.CompilerServices.CallConvFastcall' is not supported", "CallConvFastcall")]
     [InlineData("are both named", "CallConvCdecl", "CallConvStdcall")]
-    public void NamesTheConventionItCannotHonour(string reason, params string[] conventions)
+    public void NamesTheConventionItCannotHonor(string reason, params string[] conventions)
     {
         var method = Callback([.. conventions.Select(static name => "System.Runtime.CompilerServices." + name)]);
 

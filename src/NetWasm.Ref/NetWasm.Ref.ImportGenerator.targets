@@ -6,8 +6,13 @@
     <PrunePackageTargetingPackRoots Condition="'$(PrunePackageTargetingPackRoots)' == ''">$(NetCoreTargetingPackRoot)</PrunePackageTargetingPackRoots>
     <NetCoreTargetingPackRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'import-generator-targeting-packs'))</NetCoreTargetingPackRoot>
   </PropertyGroup>
+  <!-- The target framework whose Microsoft.NETCore.App targeting pack supplies the generators: the project's own
+       unless the producer names a newer one, whose generators still load into the consumer's compiler. -->
+  <PropertyGroup>
+    <NetWasmRefGeneratorTargetFramework Condition="'$(NetWasmRefGeneratorTargetFramework)' == ''">$(TargetFramework)</NetWasmRefGeneratorTargetFramework>
+  </PropertyGroup>
   <ItemGroup>
-    <_NetWasmRefGeneratorReferencePack Include="@(KnownFrameworkReference->WithMetadataValue('Identity', 'Microsoft.NETCore.App')->WithMetadataValue('TargetFramework', '$(TargetFramework)'))" />
+    <_NetWasmRefGeneratorReferencePack Include="@(KnownFrameworkReference->WithMetadataValue('Identity', 'Microsoft.NETCore.App')->WithMetadataValue('TargetFramework', '$(NetWasmRefGeneratorTargetFramework)'))" />
   </ItemGroup>
   <!-- The stock generators a package carries, by assembly name: NetWasm.Ref's LibraryImport generator by
        default, NetWasm.App.Ref's System.Text.Json and Regex generators. -->
@@ -25,12 +30,44 @@
            Text="The Ref producer requires exactly one SDK-selected .NET targeting pack for its import generator." />
   </Target>
 
+  <!-- Another target framework's pack is not one the SDK restores for this project, so restore downloads it
+       beside the project's own: one PackageDownload item per package, as NU1505 requires. -->
+  <Target Name="NetWasmRefDownloadGeneratorReferencePack"
+          AfterTargets="ProcessFrameworkReferences"
+          BeforeTargets="CollectPackageDownloads"
+          DependsOnTargets="NetWasmRefValidateGeneratorReferencePack"
+          Condition="'$(NetWasmRefGeneratorTargetFramework)' != '$(TargetFramework)'">
+    <ItemGroup>
+      <_NetWasmRefGeneratorPackDownload Include="@(PackageDownload->WithMetadataValue('Identity', 'Microsoft.NETCore.App.Ref'))" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_NetWasmRefGeneratorPackDownloadVersions>@(_NetWasmRefGeneratorPackDownload->'%(Version)');[@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackVersion)')]</_NetWasmRefGeneratorPackDownloadVersions>
+    </PropertyGroup>
+    <ItemGroup>
+      <PackageDownload Remove="Microsoft.NETCore.App.Ref" />
+      <PackageDownload Include="Microsoft.NETCore.App.Ref" Version="$(_NetWasmRefGeneratorPackDownloadVersions.Trim(';'))" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="NetWasmRefResolveImportGeneratorAssets"
           DependsOnTargets="NetWasmRefValidateGeneratorReferencePack;ResolveReferences">
-    <ItemGroup>
+    <PropertyGroup>
+      <_NetWasmRefGeneratorPackVersion>@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackVersion)')</_NetWasmRefGeneratorPackVersion>
+    </PropertyGroup>
+    <!-- The project's own pack's generators are the analyzers the SDK resolved from it; another framework's are
+         the downloaded package's. -->
+    <ItemGroup Condition="'$(NetWasmRefGeneratorTargetFramework)' == '$(TargetFramework)'">
       <_NetWasmRefAnalyzerByName Include="@(Analyzer->'%(Filename)')">
         <Path>%(Analyzer.FullPath)</Path>
       </_NetWasmRefAnalyzerByName>
+    </ItemGroup>
+    <ItemGroup Condition="'$(NetWasmRefGeneratorTargetFramework)' != '$(TargetFramework)'">
+      <_NetWasmRefDownloadedAnalyzer Include="$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'microsoft.netcore.app.ref', '$(_NetWasmRefGeneratorPackVersion)', 'analyzers', 'dotnet', 'cs'))*.dll" />
+      <_NetWasmRefAnalyzerByName Include="@(_NetWasmRefDownloadedAnalyzer->'%(Filename)')">
+        <Path>%(_NetWasmRefDownloadedAnalyzer.FullPath)</Path>
+      </_NetWasmRefAnalyzerByName>
+    </ItemGroup>
+    <ItemGroup>
       <_NetWasmRefUnwantedAnalyzer Include="@(_NetWasmRefAnalyzerByName)" Exclude="@(NetWasmRefGeneratorAssembly)" />
       <_NetWasmRefWantedAnalyzer Include="@(_NetWasmRefAnalyzerByName)" Exclude="@(_NetWasmRefUnwantedAnalyzer)" />
       <_NetWasmRefResolvedImportAnalyzer Include="@(_NetWasmRefWantedAnalyzer->'%(Path)')" />
@@ -39,7 +76,6 @@
            Code="NWRF003"
            Text="The Ref producer did not resolve the stock generators (@(NetWasmRefGeneratorAssembly)) from one targeting pack." />
     <PropertyGroup>
-      <_NetWasmRefGeneratorPackVersion>@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackVersion)')</_NetWasmRefGeneratorPackVersion>
       <_NetWasmRefGeneratorArchive>$([MSBuild]::NormalizePath('$(NuGetPackageRoot)', 'microsoft.netcore.app.ref', '$(_NetWasmRefGeneratorPackVersion)', 'microsoft.netcore.app.ref.$(_NetWasmRefGeneratorPackVersion).nupkg'))</_NetWasmRefGeneratorArchive>
       <_NetWasmRefGeneratorArchiveRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'import-generator', '$(_NetWasmRefGeneratorPackVersion)'))</_NetWasmRefGeneratorArchiveRoot>
       <_NetWasmRefResolvedGeneratorRoot>@(_NetWasmRefResolvedImportAnalyzer->'%(RootDir)%(Directory)'->Distinct())</_NetWasmRefResolvedGeneratorRoot>

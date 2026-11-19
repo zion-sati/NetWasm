@@ -1,0 +1,43 @@
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+// Calls native code that needs Emscripten's runtime support (Wasm setjmp/longjmp, C++ exceptions, clocks and
+// entropy); 42 when every result is the one native code computes on desktop.
+public static class EntryPoint
+{
+    [DllImport("mule", EntryPoint = "native_runtime_jump", ExactSpelling = true)]
+    private static extern int Jump(int depth);
+    [DllImport("mule", EntryPoint = "native_runtime_jump_zero", ExactSpelling = true)]
+    private static extern int JumpZero();
+    [DllImport("mule", EntryPoint = "native_runtime_two", ExactSpelling = true)]
+    private static extern int Two();
+    [DllImport("mule", EntryPoint = "native_runtime_clock", ExactSpelling = true)]
+    private static extern int Clock();
+    [DllImport("mule", EntryPoint = "native_runtime_entropy", ExactSpelling = true)]
+    private static extern int Entropy();
+    [DllImport("mule", EntryPoint = "native_runtime_time", ExactSpelling = true)]
+    private static extern long Time();
+    [DllImport("mule", EntryPoint = "native_runtime_catch", ExactSpelling = true)]
+    private static extern int Catch(int value);
+    [DllImport("mule", EntryPoint = "native_runtime_rethrow", ExactSpelling = true)]
+    private static extern int Rethrow(int value);
+    [DllImport("mule", EntryPoint = "native_runtime_catch_int", ExactSpelling = true)]
+    private static extern int CatchInt(int value);
+
+    public static int Run(int input)
+    {
+        if (Jump(5) != 701) return 1;
+        if (Jump(0) != 701) return 2;
+        if (JumpZero() != 1) return 3;
+        if (Two() != 111) return 4;
+        if (Catch(4) != 40) return 5;
+        if (Catch(-3) != -3) return 6;
+        if (Rethrow(8) != 9) return 7;
+        if (CatchInt(6) != 7) return 8;
+        if (Clock() != 1) return 9;
+        if (Entropy() != 1) return 10;
+        if (Time() < 1_700_000_000) return 11;
+        return 42;
+    }
+}

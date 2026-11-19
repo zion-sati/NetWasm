@@ -95,9 +95,14 @@ internal sealed class CilDecoder(
             {
                 var next = guardPlan.NextOffsets[offset];
                 if (!guardPlan.LiveOffsets.Contains(offset)) { position = next; continue; }
-                if (guardPlan.FalseCalls.Contains(offset))
+                if (guardPlan.FalseCalls.TryGetValue(offset, out var arguments))
                 {
-                    instructions.Add(new(offset, next, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)));
+                    // The call's arguments are popped within its bytes; a call has at least one byte per argument.
+                    for (var argument = 0; argument < arguments; argument++)
+                        instructions.Add(new(offset + argument, offset + argument + 1, CilOperation.Pop, new CilOperand.None())
+                        { OriginalOffset = argument == 0 ? null : offset });
+                    instructions.Add(new(offset + arguments, next, CilOperation.LoadInt32, new CilOperand.ConstantI4(0))
+                    { OriginalOffset = arguments == 0 ? null : offset });
                     position = next;
                     continue;
                 }
@@ -169,6 +174,7 @@ internal sealed class CilDecoder(
             LocalSignatureTypes = [.. localSignatureTypes, .. reentered.AddedLocals],
             ExceptionRegions = reentered.ExceptionRegions,
             PinnedLocals = pinnedLocals,
+            InitializesLocals = body.LocalVariablesInitialized,
         };
     }
 
@@ -374,13 +380,19 @@ internal sealed class CilDecoder(
             case "call": operation = CilOperation.Call; operand = ReadMethod(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "callvirt": operation = CilOperation.CallVirtual; operand = ReadMethod(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "calli":
+                var signatureToken = ReadInt32(bytes, ref position, displayName, offset);
+                // An unmanaged calli whose signature takes runtime marshalling calls its stub, which takes the
+                // arguments and then the pointer the calli would have popped last.
+                if (assembly.FunctionPointerStub(signatureToken) is { } callStub)
+                {
+                    operation = CilOperation.Call;
+                    operand = new CilOperand.MethodInstance(new(callStub,
+                        CliTypeIdentity.FromDefinition(assembly.Types[callStub.DeclaringType.MetadataToken]), [],
+                        callStub.Signature));
+                    break;
+                }
                 operation = CilOperation.CallIndirect;
-                operand = _callSiteSignatures.Resolve(
-                    assembly.Metadata,
-                    ReadInt32(bytes, ref position, displayName, offset),
-                    genericContext,
-                    displayName,
-                    offset);
+                operand = _callSiteSignatures.Resolve(assembly.Metadata, signatureToken, genericContext, displayName, offset);
                 break;
             case "newobj": operation = CilOperation.NewObject; operand = ReadMethod(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "box": operation = CilOperation.Box; operand = ReadSignatureType(assembly, genericContext, displayName, bytes, ref position, offset); break;
@@ -388,6 +400,9 @@ internal sealed class CilDecoder(
             case "unbox.any": operation = CilOperation.UnboxAny; operand = ReadSignatureType(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "constrained.": operation = CilOperation.Constrained; operand = ReadSignatureType(assembly, genericContext, displayName, bytes, ref position, offset); break;
             case "volatile.": operation = CilOperation.Volatile; operand = new CilOperand.None(); break;
+            // A tail call is a request, and the call it prefixes computes the same result without one, so it runs
+            // as an ordinary call (compiled XAML emits the prefix); only unbounded tail recursion uses more stack.
+            case "tail.": operation = CilOperation.Nop; operand = new CilOperand.None(); break;
             case "readonly.": operation = CilOperation.Readonly; operand = new CilOperand.None(); break;
             case "unaligned.": operation = CilOperation.Unaligned; operand = new CilOperand.Index(ReadByte(bytes, ref position, displayName, offset)); break;
             case "break": operation = CilOperation.Break; operand = new CilOperand.None(); break;

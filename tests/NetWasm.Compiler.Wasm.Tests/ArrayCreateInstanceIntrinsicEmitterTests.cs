@@ -9,6 +9,7 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -29,7 +30,7 @@ public sealed class ArrayCreateInstanceIntrinsicEmitterTests
         var roots = new RecordingRoots(); var addresses = new RecordingAddresses(); var exceptions = new RecordingExceptions();
         var imports = WasmRuntimeImports.CreateCatalog();
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayCreateInstance, [CliValueKind.I4, CliValueKind.I4]) with { Target = WasmTargetLayout.For(target) };
-        var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(new ArrayCreateInstanceIntrinsicEmitter(descriptors, layout, layout, imports, roots, addresses, exceptions));
+        var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(new ArrayCreateInstanceIntrinsicEmitter(descriptors, layout, layout, imports, roots, addresses, exceptions, new KeyedDispatchEmitter()));
         var writer = new RecordingInstructionWriter();
         emitter.Emit(request, writer);
         var code = writer.ToInstructions();
@@ -58,7 +59,7 @@ public sealed class ArrayCreateInstanceIntrinsicEmitterTests
         var imports = WasmRuntimeImports.CreateCatalog();
         var writer = new RecordingInstructionWriter();
         new ArrayCreateInstanceIntrinsicEmitter(new Descriptors(element, hidden), types, layout, imports,
-            new RecordingRoots(), new RecordingAddresses(), new RecordingExceptions()).Emit(request, writer);
+            new RecordingRoots(), new RecordingAddresses(), new RecordingExceptions(), new KeyedDispatchEmitter()).Emit(request, writer);
         var code = writer.ToInstructions();
 
         Assert.Single(code.Where(i => i.Opcode == WasmOpcodes.Call));

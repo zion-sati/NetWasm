@@ -8,6 +8,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
@@ -19,6 +20,7 @@ internal sealed class VirtualDispatchCallEmitter(
     IValueLayoutProvider values,
     IVirtualDispatchEmissionPlanBuilder plans,
     IVirtualDispatchCasePlanner cases,
+    IKeyedDispatchEmitter keyedDispatch,
     IRuntimeIntrinsicRegistry intrinsics,
     IImplicitExceptionEmitter exceptions,
     IEnumEqualsEmitter enumEquals,
@@ -36,8 +38,6 @@ internal sealed class VirtualDispatchCallEmitter(
     IMethodInitializationTriggerClassifier initializationTriggers) :
     ICallEmitter
 {
-    private const int MinimumBalancedTargetCount = 4;
-
     public void Emit(
         CallEmissionRequest request, IWasmInstructionWriter code,
         IFunctionIndexResolver functionIndices)
@@ -93,6 +93,7 @@ internal sealed class VirtualDispatchCallEmitter(
         }
     }
 
+    // The receiver's type id picks the case whose run holds it; an id in no run takes the fallback.
     private void EmitDispatch(
         CallEmissionRequest request,
         IWasmInstructionWriter code,
@@ -103,16 +104,17 @@ internal sealed class VirtualDispatchCallEmitter(
         int returnOffset,
         IFunctionIndexResolver functionIndices)
     {
+        void EmitFallbackCase() => EmitFallback(
+            request,
+            code,
+            fallback,
+            receiverLocal,
+            returnsValue,
+            returnOffset,
+            functionIndices);
         if (dispatchCases.IsEmpty)
         {
-            EmitFallback(
-                request,
-                code,
-                fallback,
-                receiverLocal,
-                returnsValue,
-                returnOffset,
-                functionIndices);
+            EmitFallbackCase();
             return;
         }
 
@@ -126,202 +128,19 @@ internal sealed class VirtualDispatchCallEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)typeIdLocal)));
-
-        if (dispatchCases.Length < MinimumBalancedTargetCount)
-        {
-            EmitLinearDispatch(
-                request,
-                code,
-                dispatchCases,
-                fallback,
-                receiverLocal,
-                typeIdLocal,
-                returnsValue,
-                returnOffset,
-                functionIndices);
-            return;
-        }
-
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Block,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Block,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        EmitBalancedDispatch(
-            request,
-            code,
-            dispatchCases,
-            0,
-            dispatchCases.Length,
-            0,
-            receiverLocal,
+        keyedDispatch.Emit(code, new(
             typeIdLocal,
-            returnsValue,
-            returnOffset,
-            functionIndices);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        EmitFallback(
-            request,
-            code,
-            fallback,
-            receiverLocal,
-            returnsValue,
-            returnOffset,
-            functionIndices);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-    }
-
-    private void EmitLinearDispatch(
-        CallEmissionRequest request,
-        IWasmInstructionWriter code,
-        ImmutableArray<VirtualDispatchCase> dispatchCases,
-        DispatchTargetModel? fallback,
-        int receiverLocal,
-        int typeIdLocal,
-        bool returnsValue,
-        int returnOffset,
-        IFunctionIndexResolver functionIndices)
-    {
-        foreach (var dispatchCase in dispatchCases)
-        {
-            EmitCaseTest(code, typeIdLocal, dispatchCase);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitTarget(
+            wide: false,
+            [.. dispatchCases.Select(dispatchCase => new KeyRange(dispatchCase.LowTypeId, dispatchCase.HighTypeId))],
+            index => EmitTarget(
                 request,
                 code,
-                dispatchCase.Target,
+                dispatchCases[index].Target,
                 receiverLocal,
                 returnsValue,
                 returnOffset,
-                functionIndices);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        }
-
-        EmitFallback(
-            request,
-            code,
-            fallback,
-            receiverLocal,
-            returnsValue,
-            returnOffset,
-            functionIndices);
-        for (var index = 0; index < dispatchCases.Length; index++)
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        }
-    }
-
-    private void EmitBalancedDispatch(
-        CallEmissionRequest request,
-        IWasmInstructionWriter code,
-        ImmutableArray<VirtualDispatchCase> dispatchCases,
-        int start,
-        int count,
-        int enclosingIfDepth,
-        int receiverLocal,
-        int typeIdLocal,
-        bool returnsValue,
-        int returnOffset,
-        IFunctionIndexResolver functionIndices)
-    {
-        if (count == 1)
-        {
-            var dispatchCase = dispatchCases[start];
-            EmitCaseTest(code, typeIdLocal, dispatchCase);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitTarget(
-                request,
-                code,
-                dispatchCase.Target,
-                receiverLocal,
-                returnsValue,
-                returnOffset,
-                functionIndices);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Branch,
-                WasmInstructionOperand.Unsigned(
-                    checked((uint)(enclosingIfDepth + 2)))));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Branch,
-                WasmInstructionOperand.Unsigned(
-                    checked((uint)(enclosingIfDepth + 1)))));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-            return;
-        }
-
-        var leftCount = count / 2;
-        var pivot = start + leftCount;
-        EmitTypeIdComparison(
-            code,
-            typeIdLocal,
-            dispatchCases[pivot].LowTypeId,
-            WasmOpcodes.I32LessThanUnsigned);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.If,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        EmitBalancedDispatch(
-            request,
-            code,
-            dispatchCases,
-            start,
-            leftCount,
-            enclosingIfDepth + 1,
-            receiverLocal,
-            typeIdLocal,
-            returnsValue,
-            returnOffset,
-            functionIndices);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        EmitBalancedDispatch(
-            request,
-            code,
-            dispatchCases,
-            pivot,
-            count - leftCount,
-            enclosingIfDepth + 1,
-            receiverLocal,
-            typeIdLocal,
-            returnsValue,
-            returnOffset,
-            functionIndices);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-    }
-
-    // Whether the receiver's type id is in the case's run: one equality, or one unsigned
-    // comparison of its distance from the run's start, which wraps for ids below it.
-    private static void EmitCaseTest(IWasmInstructionWriter code, int typeIdLocal, VirtualDispatchCase dispatchCase)
-    {
-        if (dispatchCase.LowTypeId == dispatchCase.HighTypeId)
-        {
-            EmitTypeIdComparison(code, typeIdLocal, dispatchCase.LowTypeId, WasmOpcodes.I32Equal);
-            return;
-        }
-        EmitTypeIdComparison(code, typeIdLocal, dispatchCase.LowTypeId, WasmOpcodes.I32Subtract);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(dispatchCase.HighTypeId - dispatchCase.LowTypeId + 1)));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanUnsigned));
-    }
-
-    private static void EmitTypeIdComparison(
-        IWasmInstructionWriter code,
-        int typeIdLocal,
-        int expectedTypeId,
-        byte comparison)
-    {
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)typeIdLocal)));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(expectedTypeId)));
-        code.Write(WasmInstruction.NoOperand(comparison));
+                functionIndices),
+            EmitFallbackCase));
     }
 
     private void EmitFallback(

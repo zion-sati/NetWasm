@@ -65,7 +65,23 @@ public sealed class TaskWaitAllContractCompilationTests
                 try { Task.WaitAll(null!, -2, canceled); return 18; } catch (ArgumentNullException ex) { if (ex.ParamName != "tasks") return 19; }
                 try { Task.WaitAll(Array.Empty<Task>(), -2, canceled); return 20; } catch (ArgumentOutOfRangeException ex) { if (ex.ParamName != "millisecondsTimeout") return 21; }
                 try { Task.WaitAll(Array.Empty<Task>(), TimeSpan.FromMilliseconds(-2)); return 22; } catch (ArgumentOutOfRangeException ex) { if (ex.ParamName != "timeout") return 23; }
+                // .NET 9's span and sequence overloads, and Wait with both a timeout and a token.
+                Task.WaitAll(Task.CompletedTask, Task.FromResult(1));
+                Task.WaitAll((ReadOnlySpan<Task>)[]);
+                Task.WaitAll(new System.Collections.Generic.List<Task> { Task.CompletedTask }, CancellationToken.None);
+                Task.WaitAll(Sequence(Task.CompletedTask));
+                try { Task.WaitAll(Sequence(fault, canceledTask)); return 24; }
+                catch (AggregateException ex) { if (ex.InnerExceptions.Count != 2 || !ReferenceEquals(ex.InnerExceptions[0], first)) return 25; }
+                try { Task.WaitAll((System.Collections.Generic.IEnumerable<Task>)null!); return 26; } catch (ArgumentNullException ex) { if (ex.ParamName != "tasks") return 27; }
+                try { Task.WaitAll(Sequence(pending, null!)); return 28; } catch (ArgumentException ex) { if (ex.ParamName != "tasks") return 29; }
+                try { Task.WaitAll(Sequence(Task.CompletedTask), canceled); return 30; } catch (OperationCanceledException) { }
+                if (!Task.CompletedTask.Wait(TimeSpan.Zero, CancellationToken.None) || pending.Wait(TimeSpan.Zero, CancellationToken.None)) return 31;
+                try { pending.Wait(TimeSpan.FromMilliseconds(-2), CancellationToken.None); return 32; } catch (ArgumentOutOfRangeException ex) { if (ex.ParamName != "timeout") return 33; }
                 return input + 1;
+            }
+            private static System.Collections.Generic.IEnumerable<Task> Sequence(params Task[] tasks)
+            {
+                foreach (var task in tasks) yield return task;
             }
         }
         """;

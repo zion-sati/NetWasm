@@ -1,6 +1,8 @@
 // Adapted from dotnet/runtime System.Private.CoreLib delegate contracts.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
+using System.Runtime.CompilerServices;
+
 namespace System
 {
     public delegate void Action();
@@ -556,12 +558,14 @@ namespace System
 
         internal object GetTargetForSingleCastInstanceDelegate() => _target!;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(Delegate? left, Delegate? right)
         {
             if (right is null) return left is null;
             return ReferenceEquals(left, right) || right.Equals(left);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator !=(Delegate? left, Delegate? right) => !(left == right);
 
         public override bool Equals(object? value)
@@ -755,8 +759,10 @@ namespace System
         // operations as upstream does without changing the delegate layout.
         protected sealed override Delegate CombineImpl(Delegate? follow) => base.CombineImpl(follow);
         protected sealed override Delegate? RemoveImpl(Delegate? value) => base.RemoveImpl(value);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(MulticastDelegate? left, MulticastDelegate? right) =>
             (Delegate?)left == right;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator !=(MulticastDelegate? left, MulticastDelegate? right) =>
             (Delegate?)left != right;
     }

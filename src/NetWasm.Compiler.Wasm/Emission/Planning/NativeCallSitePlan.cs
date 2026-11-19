@@ -9,8 +9,13 @@ using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
-// One unmanaged calli in the program: its call-site signature and where it is, for diagnostics.
-internal sealed record NativeCallSiteUse(MethodSignatureModel Signature, string Method, int Offset);
+// One unmanaged calli in the program: its call-site signature, where it is, for diagnostics, and the
+// marshalling rules of the assembly that makes it.
+internal sealed record NativeCallSiteUse(
+    MethodSignatureModel Signature,
+    string Method,
+    int Offset,
+    NativeMarshallingRules Rules = NativeMarshallingRules.Runtime);
 
 // The runtime function an unmanaged calli calls (issue 226): it takes the call's C ABI arguments
 // and then the function pointer, and calls the pointer through the native function table. The

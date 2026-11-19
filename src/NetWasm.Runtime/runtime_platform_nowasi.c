@@ -2,16 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 /* The runtime's platform functions for a plain core module, which has no WASI: no environment,
- * standard output and error that discard what is written, an exit that traps, and a fixed hash
- * seed. Linked whole ahead of the runtime archive, these definitions replace the WASI ones
- * (runtime_environment_reader.c, runtime_standard_output.c, runtime_process_exit.c and
- * runtime_random_seed.c), so the module imports nothing from WASI. */
+ * standard output and error that discard what is written, an exit that traps, a fixed hash
+ * seed, and no clocks or entropy for native code. Linked whole ahead of the runtime archive,
+ * these definitions replace the WASI ones (runtime_environment_reader.c,
+ * runtime_standard_output.c, runtime_process_exit.c, runtime_random_seed.c and
+ * runtime_clock_reader.c), so the module imports nothing from WASI. */
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include "runtime_clock_reader.h"
 #include "runtime_environment_reader.h"
 #include "runtime_process_exit.h"
 #include "runtime_standard_output.h"
@@ -116,3 +118,24 @@ uint64_t random_seed(void)
     return UINT64_C(0x9E3779B97F4A7C15);
 }
 #endif
+
+int runtime_read_clock(clockid_t clock, struct timespec *time)
+{
+    (void)clock;
+    (void)time;
+    return ENOSYS;
+}
+
+int runtime_read_clock_resolution(clockid_t clock, struct timespec *resolution)
+{
+    (void)clock;
+    (void)resolution;
+    return ENOSYS;
+}
+
+int runtime_read_entropy(void *buffer, size_t length)
+{
+    (void)buffer;
+    (void)length;
+    return ENOSYS;
+}

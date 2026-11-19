@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Metadata;
@@ -20,5 +21,7 @@ public interface IMetadataCompilationLoader
         ImmutableDictionary<string, string>? referenceAssemblyAliases = null,
         IEnumerable<string>? metadataReferencePaths = null,
         IEnumerable<string>? originalContractReferencePaths = null,
-        INativeImportBinder? nativeBinding = null);
+        INativeImportBinder? nativeBinding = null,
+        INativeVariadicCallPlanner? nativeVariadics = null,
+        GeneratedJavaScriptBinding? javaScriptBinding = null);
 }

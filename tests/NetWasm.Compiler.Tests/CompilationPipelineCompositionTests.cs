@@ -318,7 +318,9 @@ public sealed class CompilationPipelineCompositionTests
             ImmutableDictionary<string, string>? aliases,
             IEnumerable<string>? metadataReferencePaths,
             IEnumerable<string>? originalContractReferencePaths,
-            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding) =>
+            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding,
+            NetWasm.Compiler.Core.NativeInterop.INativeVariadicCallPlanner? nativeVariadics,
+            NetWasm.Compiler.Core.GeneratedJavaScriptBinding? javaScriptBinding) =>
             Load(entryAssemblyPath, referencePaths, aliases, metadataReferencePaths, originalContractReferencePaths);
     }
 

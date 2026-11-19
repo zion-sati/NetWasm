@@ -3,12 +3,18 @@
     <AssemblyName>System.Net.Http</AssemblyName>
     <!-- The generated wasi:http bindings are internal, under version namespaces (_1._0._0) the CLS check flags. -->
     <NoWarn>$(NoWarn);CS3008</NoWarn>
+    <!-- As upstream: SocketsHttpHandler consumes its own experimental eviction and ConnectionId APIs (SYSLIB5008). -->
+    <NoWarn>$(NoWarn);SYSLIB5008</NoWarn>
     <DefineConstants>$(DefineConstants);TARGET_WASI</DefineConstants>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../System.Net.Primitives/System.Net.Primitives.csproj" />
     <ProjectReference Include="../System.Net.Security/System.Net.Security.csproj" />
+    <!-- SocketsHttpHandler's HTTP/2 streams and connection pool, as upstream references them. -->
+    <ProjectReference Include="../System.Collections.Concurrent/System.Collections.Concurrent.csproj" />
+    <ProjectReference Include="../System.Threading.Channels/System.Threading.Channels.csproj" />
     <!-- DecompressionHandler's codecs, as upstream references them. -->
     <ProjectReference Include="../System.IO.Compression/System.IO.Compression.csproj" />
     <ProjectReference Include="../System.IO.Compression.Brotli/System.IO.Compression.Brotli.csproj" />
@@ -16,10 +22,12 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.cs" />
     <Compile Include="System/SR.cs" />
-    <Compile Include="System/Net/HttpStatusCode.cs" />
-    <!-- System.Net.Http at dotnet/runtime 811225a4 (its WASI compile list), copied verbatim and adapted where marked
-         "NetWasm:"; members newer than netstandard 2.1 are left out or internal, and WasiHttpHandler sends through
-         IHttpTransport, whose default sends through wasi:http 0.3. -->
+    <!-- HttpStatusCode lives in System.Net.Primitives, as on .NET; this assembly forwards it for programs built
+         against NetWasm.App releases that placed it here. -->
+    <Compile Include="System/Net/HttpStatusCode.Forwarded.cs" />
+    <!-- System.Net.Http at dotnet/runtime deae2e32 (.NET 11.0.0, its WASI compile list), copied verbatim and adapted
+         where marked "NetWasm:", with upstream's public surface; SocketsHttpHandler is upstream's (its Linux sources without HTTP/3), and
+         WasiHttpHandler sends through IHttpTransport, whose default sends through wasi:http 0.3. -->
     <Compile Include="Common/System/**/*.cs" />
     <Compile Include="System/Net/Http/**/*.cs" />
   </ItemGroup>

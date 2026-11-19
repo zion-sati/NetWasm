@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
+using System.Runtime.CompilerServices;
+
 namespace System.Reflection;
 
 [Serializable]
@@ -40,6 +42,7 @@ public abstract class MemberInfo : ICustomAttributeProvider
 
     public override int GetHashCode() => base.GetHashCode();
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(MemberInfo? left, MemberInfo? right)
     {
         if (right is null)
@@ -117,6 +120,7 @@ public abstract partial class MethodInfo : MethodBase
     public override bool Equals(object? obj) => base.Equals(obj);
     public override int GetHashCode() => base.GetHashCode();
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(MethodInfo? left, MethodInfo? right)
     {
         // Test "right" first to allow branch elimination when inlined for null checks (== null)

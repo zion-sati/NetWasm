@@ -3,11 +3,25 @@
 
 namespace NetWasm.Compiler.ComponentModel.Optimization;
 
+// When an unbounded virtual call on object (Equals, GetHashCode, ToString) calls CoreLib's shared body for it, which
+// carries the one copy of the dispatch over every allocated type, instead of dispatching inline: much less code, one
+// more call. Under whole-program analysis every such call has a target per allocated type, so the threshold is in
+// effect a program size.
 public enum ObjectDispatchPolicy
 {
-    // Each virtual call on object dispatches itself.
-    Inline,
-    // An unbounded virtual call on object with many targets calls CoreLib's shared body for it, which carries the
-    // one copy of the dispatch over every allocated type: much less code, one more call.
+    // At 32 targets or more (the size presets).
     Shared,
+    // At 1,024 targets or more (the speed presets): a large program shares, a small one keeps its calls inline.
+    SharedAtLargeSites,
+}
+
+public static class ObjectDispatchPolicyThresholds
+{
+    // The fewest targets at which a call uses the shared body.
+    public static int MinimumTargets(this ObjectDispatchPolicy policy) => policy switch
+    {
+        ObjectDispatchPolicy.Shared => 32,
+        ObjectDispatchPolicy.SharedAtLargeSites => 1024,
+        _ => throw new System.ArgumentOutOfRangeException(nameof(policy)),
+    };
 }

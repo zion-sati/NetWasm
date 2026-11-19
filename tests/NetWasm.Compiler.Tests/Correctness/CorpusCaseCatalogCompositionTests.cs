@@ -15,6 +15,7 @@ public sealed class CorpusCaseCatalogCompositionTests
     [InlineData(CorpusCaseTestData.NativeOwnership, 12, 0)]
     [InlineData(CorpusCaseTestData.ExactRootSlots, 4, 5)]
     [InlineData(CorpusCaseTestData.ValueFrameInitialization, 1, 0)]
+    [InlineData(CorpusCaseTestData.StaticFieldInstanceAccess, 1, 0)]
     [InlineData(CorpusCaseTestData.AsyncLifetime, 8, 1)]
     [InlineData(CorpusCaseTestData.ImplicitExceptionLifetime, 30, 1)]
     [InlineData(CorpusCaseTestData.AsyncEnumeration, 12, 1)]
@@ -62,9 +63,9 @@ public sealed class CorpusCaseCatalogCompositionTests
     {
         var catalog = CorpusCaseTestData.Catalog;
 
-        Assert.Equal(79, catalog.Cases.Count);
-        Assert.Equal(79, CorpusCaseTestData.Bindings.Length);
-        Assert.Equal(79, CorpusCaseTestData.Assets.Manifests.Length);
+        Assert.Equal(80, catalog.Cases.Count);
+        Assert.Equal(80, CorpusCaseTestData.Bindings.Length);
+        Assert.Equal(80, CorpusCaseTestData.Assets.Manifests.Length);
         Assert.Equal(73, CorpusCaseTestData.Assets.SourceFiles.Length);
         Assert.Equal(32, CorpusCaseTestData.Assets.Features.Ids.Count);
         foreach (var binding in CorpusCaseTestData.Bindings)
@@ -159,6 +160,7 @@ public sealed class CorpusCaseCatalogCompositionTests
     [InlineData(CorpusCaseTestData.ZeroBound, 8)]
     [InlineData(CorpusCaseTestData.NonZeroBound, 8)]
     [InlineData(CorpusCaseTestData.ValueFrameInitialization, 2)]
+    [InlineData(CorpusCaseTestData.StaticFieldInstanceAccess, 2)]
     public void DiscoveryExposesEveryCaseAndCellAsAnOrdinaryTheoryRow(string caseId, int count)
     {
         var rows = CorpusCaseTestData.Cells(caseId).ToArray();

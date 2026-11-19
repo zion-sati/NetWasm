@@ -13,6 +13,7 @@ internal sealed class JSImportInvocationEmitter(
     IJavaScriptResultDescriptorSizeResolver resultDescriptorSizes,
     IJavaScriptImportArgumentEmitter arguments,
     IHostCallbackHandleEmitter callbackHandles,
+    ITransferredHostCallbackEmitter transferredCallbacks,
     IInteropHandleReleaser interopHandles,
     IJavaScriptImportResultEmitter results,
     IImplicitExceptionEmitter exceptions,
@@ -36,6 +37,9 @@ internal sealed class JSImportInvocationEmitter(
             resultDescriptorSizes.Resolve(signature.ReturnSignatureType));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnter)))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(context.InteropDescriptor))));
+        // A JSSubscription result keeps its callback's handle, releasing it on failure; any other import passes its
+        // callbacks to JavaScript, which owns them.
+        var subscription = InteropTypeClassifier.IsSubscription(signature.ReturnSignatureType);
         HostCallbackDeclaration? callback = null;
         for (var index = 0; index < invocation.Consumed; index++)
         {
@@ -48,8 +52,15 @@ internal sealed class JSImportInvocationEmitter(
                     (invocation.Method.Definition.Key, index),
                     out var value))
             {
-                callback = value;
-                callbackHandles.Emit(code, local, context);
+                if (subscription)
+                {
+                    callback = value;
+                    callbackHandles.Emit(code, local, context);
+                }
+                else
+                {
+                    transferredCallbacks.Emit(code, local);
+                }
             }
             else
             {

@@ -25,6 +25,42 @@ namespace System.Runtime.InteropServices.JavaScript
         internal static double FromDateTimeOffset(DateTimeOffset value) =>
             value.ToUnixTimeMilliseconds();
 
+        // An ArraySegment crosses as .NET's MemoryView: JavaScript reads and writes the array through the view until it
+        // disposes or collects it, and the view keeps the array alive until then. The kind is the element type, in the
+        // order the host's value_from_memory_view lists them; a segment without an array is null.
+        internal static int FromByteSegment(ArraySegment<byte> segment) => FromSegment(segment, 0);
+
+        internal static int FromSByteSegment(ArraySegment<sbyte> segment) => FromSegment(segment, 1);
+
+        internal static int FromInt16Segment(ArraySegment<short> segment) => FromSegment(segment, 2);
+
+        internal static int FromUInt16Segment(ArraySegment<ushort> segment) => FromSegment(segment, 3);
+
+        internal static int FromInt32Segment(ArraySegment<int> segment) => FromSegment(segment, 4);
+
+        internal static int FromUInt32Segment(ArraySegment<uint> segment) => FromSegment(segment, 5);
+
+        internal static int FromInt64Segment(ArraySegment<long> segment) => FromSegment(segment, 6);
+
+        internal static int FromUInt64Segment(ArraySegment<ulong> segment) => FromSegment(segment, 7);
+
+        internal static int FromSingleSegment(ArraySegment<float> segment) => FromSegment(segment, 8);
+
+        internal static int FromDoubleSegment(ArraySegment<double> segment) => FromSegment(segment, 9);
+
+        // The garbage collector does not move an array, so its elements' address holds while the view keeps it alive.
+        private static unsafe int FromSegment<T>(ArraySegment<T> segment, int kind)
+            where T : unmanaged
+        {
+            if (segment.Array is not { } array)
+            {
+                return 0;
+            }
+            var address = (nuint)System.Runtime.CompilerServices.Unsafe.AsPointer(
+                ref System.Runtime.CompilerServices.Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), segment.Offset));
+            return JSHostValue.FromMemoryView(Pin(array), address, segment.Count, kind);
+        }
+
         internal static DateTimeOffset ToDateTimeOffset(double milliseconds) =>
             DateTimeOffset.FromUnixTimeMilliseconds((long)milliseconds);
 
@@ -312,6 +348,9 @@ namespace System.Runtime.InteropServices.JavaScript
 
         [JSImport("value_from_managed_error", Module)]
         internal static extern int FromManagedError(string message, long handle);
+
+        [JSImport("value_from_memory_view", Module)]
+        internal static extern int FromMemoryView(long handle, nuint address, int length, int kind);
 
         // A collected managed object's handle, or 0.
         [JSImport("value_collected", Module)]

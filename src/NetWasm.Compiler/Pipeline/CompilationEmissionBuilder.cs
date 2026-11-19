@@ -227,15 +227,14 @@ internal sealed class CompilationEmissionBuilder(
             CompiledUnits = units,
             UseJavaScriptExportBoundary = preparation.World.JavaScriptHost,
             StructuredDiagnostics = options.StructuredDiagnostics,
+            ReferenceWriteBarrier = options.Collector?.HasGenerations ?? false,
             EnableAddressTakenAggregatePromotion =
                 preparation.OptimizationSettings.AddressTakenValuePromotion !=
                 AddressTakenValuePromotionPolicy.Disabled,
             EnableAggregateReferenceLanes =
                 preparation.OptimizationSettings.AddressTakenValuePromotion ==
                 AddressTakenValuePromotionPolicy.References,
-            EnableBranchValueFramePlacement =
-                preparation.OptimizationSettings.BranchPrefixDuplication ==
-                BranchPrefixDuplicationPolicy.Speed,
+            BranchPrefixDuplication = preparation.OptimizationSettings.BranchPrefixDuplication,
             EnableArrayMetadataCaching =
                 preparation.OptimizationSettings.LoopInvariantFieldHoisting !=
                 LoopInvariantFieldHoistingPolicy.Disabled,
@@ -268,11 +267,12 @@ internal sealed class CompilationEmissionBuilder(
         var typeSymbols = _typeSymbols.Build(layouts.Snapshot, _typeIdentities.Create(metadata), typeDefinitions,
             layouts.Snapshot.StaticData.RuntimeAssemblies, _assemblyNames.Create(metadata.Assemblies),
             _assemblyResolvers.Create(typeDefinitions));
+        var readsTypeNames = options.EmitTypeNames && ReachesTypeSymbolsLoader(analysis.Program, types, methods);
         request = request with
         {
             Sidecars = new WasmSidecarRequest(
                 options.ProgramFileName,
-                options.EmitTypeNames,
+                readsTypeNames,
                 typeSymbols.Digest,
                 SidecarDescriptorSlot(analysis.Program, types, fields, staticFieldLayouts)),
         };
@@ -285,7 +285,23 @@ internal sealed class CompilationEmissionBuilder(
             units.Kept = new UnitKeptCompile(emission.Module, functions,
                 UnitPlanCodec.Encode(target, layouts.Snapshot, ProgramFacts(analysis.Program)), []);
         }
-        return new CompilationEmission(emission, lowering, typeSymbols);
+        return new CompilationEmission(emission, lowering, typeSymbols, readsTypeNames);
+    }
+
+    // CoreLib's ProgramSidecars.LoadTypeSymbols, which the name readers call: a program reaches it only when
+    // something reads a type name.
+    private static bool ReachesTypeSymbolsLoader(ReachableProgram program, ITypeRepository types, IMethodRepository methods)
+    {
+        foreach (var key in program.Methods.Keys)
+        {
+            var method = methods.GetMethod(key);
+            if (method.Name != "LoadTypeSymbols")
+                continue;
+            var type = types.GetTypeDefinition(method.DeclaringType);
+            if (type.Namespace == "System.Runtime.InteropServices" && type.Name == "ProgramSidecars")
+                return true;
+        }
+        return false;
     }
 
     // CoreLib's ProgramSidecars.s_descriptor, the word the runtime initializer fills with the sidecar

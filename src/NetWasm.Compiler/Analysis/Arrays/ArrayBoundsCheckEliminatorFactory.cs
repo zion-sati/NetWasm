@@ -12,9 +12,15 @@ internal sealed class ArrayBoundsCheckEliminatorFactory : IArrayBoundsCheckElimi
     public IArrayBoundsCheckEliminator Create(IControlFlowGraphBuilder graphs, ITypedStackValidator stacks, IControlFlowDominanceAnalyzer dominance, WasmOptimizationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        var induction = new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance);
+        // Versioning copies a loop, so it runs only where loops are unrolled, trading size for speed.
+        var versioner = settings.LoopUnrolling == LoopUnrollingPolicy.Bounded
+            ? new ArrayLoopVersioner(graphs, stacks, new ArrayLoopVersionPlanner(induction),
+                ArrayLoopVersioner.LoopInstructionBudget)
+            : null;
         return new ArrayBoundsCheckEliminator(graphs, stacks,
-            new ArrayBoundsCheckEliminationPlanner(
-                new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance), dominance),
-            settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative);
+            new ArrayBoundsCheckEliminationPlanner(induction, dominance),
+            settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative,
+            versioner);
     }
 }

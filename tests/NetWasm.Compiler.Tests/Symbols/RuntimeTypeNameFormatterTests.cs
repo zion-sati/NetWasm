@@ -96,6 +96,35 @@ public sealed class RuntimeTypeNameFormatterTests
         Assert.Equal("Fixtures." + expected, symbol.DisplayName);
     }
 
+    // .NET gives a function pointer type no name, namespace or full name; ToString() writes its return and
+    // parameter types without a calling convention, and an array of them appends to each name.
+    [Fact]
+    public void FormsFunctionPointerTypesAsDotNetDoes()
+    {
+        var sample = Definition("Sample");
+        var other = Definition("Other", 2);
+        var pointer = CliTypeIdentity.FunctionPointer(new(0, 0, 2, new MethodSignatureModel(
+            Identity(sample), [Identity(other), CliTypeIdentity.ManagedByReference(Identity(sample))])));
+
+        Assert.Equal(new RuntimeTypeSymbol(1, "", null, null, "Fixtures.Sample(Fixtures.Other, Fixtures.Sample&)"),
+            Format(pointer, sample, other));
+        Assert.Equal(new RuntimeTypeSymbol(1, "[]", null, null, "Fixtures.Sample(Fixtures.Other, Fixtures.Sample&)[]"),
+            Format(CliTypeIdentity.SzArray(pointer), sample, other));
+        var none = CliTypeIdentity.FunctionPointer(new(0, 0, 0, new MethodSignatureModel(Identity(sample), [])));
+        Assert.Equal("Fixtures.Sample()", Format(none, sample).DisplayName);
+    }
+
+    // Custom modifiers are no part of a type's names.
+    [Fact]
+    public void NamesAModifiedTypeAsTheTypeItModifies()
+    {
+        var sample = Definition("Sample");
+        var modifier = Definition("IsVolatile", 2);
+        var modified = CliTypeIdentity.Modified(Identity(sample), Identity(modifier), isRequired: true);
+
+        Assert.Equal(Format(Identity(sample), sample, modifier), Format(modified, sample, modifier));
+    }
+
     [Theory]
     [InlineData(false, "!0")]
     [InlineData(true, "!!0")]

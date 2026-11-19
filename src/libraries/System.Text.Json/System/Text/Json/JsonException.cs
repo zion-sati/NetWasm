@@ -1,14 +1,14 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.ComponentModel;
+using System.Runtime.Serialization;
 
 namespace System.Text.Json
 {
     /// <summary>
     /// Defines a custom exception object that is thrown when invalid JSON text is encountered, when the defined maximum depth is passed,
     /// or the JSON text is not compatible with the type of a property on an object.
-    /// Legacy formatter serialization is outside the reflection-free NetWasm
-    /// profile and is therefore not included in this compatibility slice.
     /// </summary>
     [Serializable]
     public class JsonException : Exception
@@ -78,9 +78,47 @@ namespace System.Text.Json
         public JsonException() : base() { }
 
         /// <summary>
+        /// Creates a new exception object with serialized data.
+        /// </summary>
+        /// <param name="info">The <see cref="SerializationInfo"/> that holds the serialized object data about the exception being thrown.</param>
+        /// <param name="context">The <see cref="StreamingContext"/> that contains contextual information about the source or destination.</param>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="info"/> is <see langword="null" />.
+        /// </exception>
+#if NET
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+#endif
+        protected JsonException(SerializationInfo info, StreamingContext context) : base(info, context)
+        {
+            LineNumber = (long?)info.GetValue("LineNumber", typeof(long?));
+            BytePositionInLine = (long?)info.GetValue("BytePositionInLine", typeof(long?));
+            Path = info.GetString("Path");
+            SetMessage(info.GetString("ActualMessage"));
+        }
+
+        /// <summary>
         /// Specifies that 'try' logic should append Path information to the exception message.
         /// </summary>
         internal bool AppendPathInformation { get; set; }
+
+        /// <summary>
+        ///  Sets the <see cref="SerializationInfo"/> with information about the exception.
+        /// </summary>
+        /// <param name="info">The <see cref="SerializationInfo"/> that holds the serialized object data about the exception being thrown.</param>
+        /// <param name="context">The <see cref="StreamingContext"/> that contains contextual information about the source or destination.</param>
+#if NET
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+#endif
+        public override void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            base.GetObjectData(info, context);
+            info.AddValue("LineNumber", LineNumber, typeof(long?));
+            info.AddValue("BytePositionInLine", BytePositionInLine, typeof(long?));
+            info.AddValue("Path", Path, typeof(string));
+            info.AddValue("ActualMessage", Message, typeof(string));
+        }
 
         /// <summary>
         /// The number of lines read so far before the exception (starting at 0).

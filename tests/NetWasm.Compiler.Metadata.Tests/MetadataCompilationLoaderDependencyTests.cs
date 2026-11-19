@@ -23,7 +23,8 @@ public sealed class MetadataCompilationLoaderDependencyTests
         var loader = new MetadataCompilationLoader(
             new ManagedAssemblyLoader(images, new ValueTypeDefinitionStackKindResolver(),
                 new NativeImportDeclarationReader(), new NativeCallbackDeclarationReader()),
-            new MetadataCompilationFactory(), new TypeForwarderReader(images));
+            new MetadataCompilationFactory(), new TypeForwarderReader(images),
+            new LoadedAssemblyNativeStructSourceFactory());
 
         using var lease = loader.Load("entry", ["runtime"], metadataReferencePaths: ["view"]);
 
@@ -43,7 +44,8 @@ public sealed class MetadataCompilationLoaderDependencyTests
         var loader = new MetadataCompilationLoader(
             new ManagedAssemblyLoader(images, new ValueTypeDefinitionStackKindResolver(),
                 new NativeImportDeclarationReader(), new NativeCallbackDeclarationReader()),
-            new MetadataCompilationFactory(), new TypeForwarderReader(images));
+            new MetadataCompilationFactory(), new TypeForwarderReader(images),
+            new LoadedAssemblyNativeStructSourceFactory());
 
         using var lease = loader.Load("entry", [], metadataReferencePaths: ["view"]);
 
@@ -58,7 +60,8 @@ public sealed class MetadataCompilationLoaderDependencyTests
         var loader = Assert.IsAssignableFrom<IMetadataCompilationLoader>(new MetadataCompilationLoader(
             new ManagedAssemblyLoader(images, new ValueTypeDefinitionStackKindResolver(),
                 new NativeImportDeclarationReader(), new NativeCallbackDeclarationReader()),
-            new MetadataCompilationFactory(), new TypeForwarderReader(images)));
+            new MetadataCompilationFactory(), new TypeForwarderReader(images),
+            new LoadedAssemblyNativeStructSourceFactory()));
 
         using var lease = loader.Load("entry", []);
 
@@ -73,7 +76,8 @@ public sealed class MetadataCompilationLoaderDependencyTests
         var loader = Assert.IsAssignableFrom<IMetadataCompilationLoader>(new MetadataCompilationLoader(
             new ManagedAssemblyLoader(images, new ValueTypeDefinitionStackKindResolver(),
                 new NativeImportDeclarationReader(), new NativeCallbackDeclarationReader()),
-            new MetadataCompilationFactory(), new TypeForwarderReader(images)));
+            new MetadataCompilationFactory(), new TypeForwarderReader(images),
+            new LoadedAssemblyNativeStructSourceFactory()));
 
         var error = Assert.Throws<CompilerException>(() => loader.Load("first", ["second"]));
 
@@ -90,7 +94,8 @@ public sealed class MetadataCompilationLoaderDependencyTests
         var loader = new MetadataCompilationLoader(
             new ManagedAssemblyLoader(images, new ValueTypeDefinitionStackKindResolver(),
                 new NativeImportDeclarationReader(), new NativeCallbackDeclarationReader()),
-            new MetadataCompilationFactory(), new TypeForwarderReader(forwarderImages));
+            new MetadataCompilationFactory(), new TypeForwarderReader(forwarderImages),
+            new LoadedAssemblyNativeStructSourceFactory());
 
         var error = Record.Exception(() => loader.Load("entry", ["broken"]));
 

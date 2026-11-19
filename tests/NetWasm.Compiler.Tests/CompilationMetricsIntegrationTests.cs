@@ -155,7 +155,9 @@ public sealed class CompilationMetricsIntegrationTests
             ImmutableDictionary<string, string>? aliases,
             IEnumerable<string>? metadataReferencePaths,
             IEnumerable<string>? originalContractReferencePaths,
-            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding) =>
+            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding,
+            NetWasm.Compiler.Core.NativeInterop.INativeVariadicCallPlanner? nativeVariadics,
+            NetWasm.Compiler.Core.GeneratedJavaScriptBinding? javaScriptBinding) =>
             throw new OperationCanceledException();
     }
 }

@@ -19,7 +19,7 @@ public sealed class UnmanagedCallingConventionsTests
     [InlineData("CallConvMemberFunction")]
     [InlineData("CallConvStdcall", "CallConvMemberFunction", "CallConvSuppressGCTransition")]
     [InlineData("CallConvUnknown", "CallConvCdecl")]
-    public void TheCAbiHonoursEachBaseConventionAndModifier(params string[] conventions) =>
+    public void TheCAbiHonorsEachBaseConventionAndModifier(params string[] conventions) =>
         Assert.Null(UnmanagedCallingConventions.Unsupported(conventions.Select(static name => Namespace + name)));
 
     // A type without a name, or outside the CallConv namespace, names no convention.

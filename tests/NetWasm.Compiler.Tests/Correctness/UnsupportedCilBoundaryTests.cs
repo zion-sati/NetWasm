@@ -10,10 +10,10 @@ public sealed class UnsupportedCilBoundaryTests(CorrectnessTestRunner runner) : 
 {
     public static TheoryData<string, byte[]> UnsupportedOpcodes => new()
     {
-        { "tail.", [0xfe, 0x14, 0x2a] },
         { "jmp", [0x27, 0x2a] },
         { "arglist", [0xfe, 0x00, 0x2a] },
-        // mkrefany, refanyval and refanytype lower to TypedReference's helpers (TypedReferenceCompilationTests).
+        // mkrefany, refanyval and refanytype lower to TypedReference's helpers (TypedReferenceCompilationTests);
+        // a tail.-prefixed call runs as an ordinary call (TailCallPrefixCompilationTests).
     };
 
     [Theory]

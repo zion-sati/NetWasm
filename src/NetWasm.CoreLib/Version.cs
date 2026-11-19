@@ -6,6 +6,7 @@
 // Culture, reflection metadata, and host dependencies are intentionally absent.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -472,6 +473,7 @@ public sealed class Version : ICloneable,
         Overflow
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(Version? v1, Version? v2) => v2 is null ? v1 is null : ReferenceEquals(v2, v1) || v2.Equals(v1);
     public static bool operator !=(Version? v1, Version? v2) => !(v1 == v2);
     public static bool operator <(Version? v1, Version? v2) => v1 is null ? v2 is not null : v1.CompareTo(v2) < 0;

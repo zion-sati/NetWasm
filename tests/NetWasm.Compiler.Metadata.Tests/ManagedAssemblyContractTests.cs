@@ -48,6 +48,33 @@ public sealed class ManagedAssemblyContractTests
         }
     }
 
+    [Theory]
+    // The JIT honors IntrinsicAttribute only in the core library, whose internal type it is.
+    [InlineData("NetWasm.CoreLib", true, true)]
+    [InlineData("NetWasm.CoreLib", false, false)]
+    [InlineData("Other", true, false)]
+    public void ParseReadsIntrinsicOnlyInTheCoreLibrary(string assemblyName, bool attributed, bool intrinsic)
+    {
+        var builder = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var module = builder.DefineDynamicModule(assemblyName);
+        var attribute = module.DefineType("System.Runtime.CompilerServices.IntrinsicAttribute",
+            TypeAttributes.NotPublic | TypeAttributes.Sealed, typeof(Attribute));
+        var constructor = attribute.DefineDefaultConstructor(MethodAttributes.Public);
+        _ = attribute.CreateType();
+        var owner = module.DefineType("Fixture.Vectors", TypeAttributes.Public);
+        var method = owner.DefineMethod("GetLower", MethodAttributes.Public | MethodAttributes.Static, typeof(void), []);
+        if (attributed)
+            method.SetCustomAttribute(new CustomAttributeBuilder(constructor, []));
+        method.GetILGenerator().Emit(OpCodes.Ret);
+        _ = owner.CreateType();
+        using var image = new MemoryStream();
+        builder.Save(image);
+        using var parsed = ManagedAssembly.Parse("memory/intrinsic.dll", image.ToArray(),
+            AssemblyIdentityAliases.Empty, new StackKinds(), new NativeFacts());
+
+        Assert.Equal(intrinsic, Assert.Single(parsed.Methods.Values, value => value.Name == "GetLower").IsIntrinsic);
+    }
+
     [Fact]
     public void ParsePreservesMembersLayoutsNamesInterfacesAndTheImageLifetime()
     {

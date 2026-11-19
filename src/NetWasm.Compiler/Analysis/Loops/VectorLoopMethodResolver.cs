@@ -28,6 +28,18 @@ internal abstract record VectorLoopMethod(string Type, string Name)
 
     public static VectorLoopMethod GetElement { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "GetElement", 2);
 
+    // Vector128.WithElement<T>(Vector128<T>, int, T): the vector with one lane replaced.
+    public static VectorLoopMethod WithElement { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "WithElement", 3);
+
+    // Vector128's view of a System.Numerics vector, the 16 bytes a Vector4 or Quaternion fills and the lanes a Vector2
+    // or Vector3 fills with the rest undefined (AsVector128Unsafe), and the vector back from such a view.
+    public static VectorLoopMethod ToVector128(string numerics) => new NumericsBridgeMethod(
+        numerics is "System.Numerics.Vector2" or "System.Numerics.Vector3" ? "AsVector128Unsafe" : "AsVector128",
+        numerics, ToVector: true);
+
+    public static VectorLoopMethod FromVector128(string numerics) =>
+        new NumericsBridgeMethod("As" + numerics[(numerics.LastIndexOf('.') + 1)..], numerics, ToVector: false);
+
     // Vector128.Create<T>(T): every lane the value.
     public static VectorLoopMethod Broadcast { get; } = new BroadcastMethod();
 
@@ -55,6 +67,18 @@ internal abstract record VectorLoopMethod(string Type, string Name)
             method.Signature.ParameterSignatureTypes is [{ Shape: CliTypeShape.GenericMethodParameter }];
 
         public override CliGenericContext Context(CliTypeIdentity lane) => new([], [lane]);
+    }
+
+    // A non-generic Vector128 extension that views Numerics as Vector128<float> (ToVector) or the reverse.
+    private sealed record NumericsBridgeMethod(string Bridge, string Numerics, bool ToVector)
+        : VectorLoopMethod("System.Runtime.Intrinsics.Vector128", Bridge)
+    {
+        public override bool Matches(MethodDefinitionModel method) =>
+            method.GenericArity == 0 &&
+            method.Signature.ParameterSignatureTypes is [var source] &&
+            (ToVector ? source : method.Signature.ReturnSignatureType).FullName == Numerics;
+
+        public override CliGenericContext Context(CliTypeIdentity lane) => new([], []);
     }
 
     private sealed record CreateInt32Method() : VectorLoopMethod("System.Runtime.Intrinsics.Vector128", "Create")

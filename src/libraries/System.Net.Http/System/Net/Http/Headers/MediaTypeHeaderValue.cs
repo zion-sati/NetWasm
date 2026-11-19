@@ -98,7 +98,7 @@ namespace System.Net.Http.Headers
         /// <summary>Initializes a new instance of the <see cref="MediaTypeHeaderValue"/> class.</summary>
         /// <param name="mediaType">The source represented as a string to initialize the new instance.</param>
         /// <param name="charSet">The value to use for the character set.</param>
-        internal MediaTypeHeaderValue(string mediaType, string? charSet)
+        public MediaTypeHeaderValue(string mediaType, string? charSet)
         {
             CheckMediaTypeFormat(mediaType);
             _mediaType = mediaType;

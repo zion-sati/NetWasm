@@ -74,8 +74,10 @@ public sealed class IndexedWorkExecutorTests
     public void HostPolicyCapsNativeWorkersAndKeepsBrowserSerial(
         bool browser, int processors, int expected)
     {
-        Assert.Equal(expected,
-            CompilerParallelism.ForHost(browser, processors).WorkerCount);
+        var parallelism = CompilerParallelism.ForHost(browser, processors);
+        Assert.Equal(expected, parallelism.WorkerCount);
+        // A browser cannot start threads; a single-core native host can.
+        Assert.Equal(!browser, parallelism.ThreadsAvailable);
     }
 
     // This test intentionally exercises the injected capability contract.

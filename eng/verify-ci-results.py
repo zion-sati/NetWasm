@@ -23,6 +23,7 @@ GATES = (
     "runtime-pack-hosts",
     "browser-hosts",
     "doomsharp",
+    "open-source-suts",
 )
 
 
@@ -43,6 +44,7 @@ def verify(scope: str, results: dict[str, str]) -> None:
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
             "doomsharp": "skipped",
+            "open-source-suts": "skipped",
         }
     elif scope == "ci":
         expected = {
@@ -58,6 +60,7 @@ def verify(scope: str, results: dict[str, str]) -> None:
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
             "doomsharp": "skipped",
+            "open-source-suts": "skipped",
         }
     elif scope == "full":
         expected = {
@@ -73,6 +76,7 @@ def verify(scope: str, results: dict[str, str]) -> None:
             "runtime-pack-hosts": "success",
             "browser-hosts": "success",
             "doomsharp": "success",
+            "open-source-suts": "success",
         }
     elif scope == "reuse":
         expected = {
@@ -88,6 +92,7 @@ def verify(scope: str, results: dict[str, str]) -> None:
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
             "doomsharp": "skipped",
+            "open-source-suts": "skipped",
         }
     else:
         raise ValueError(f"unsupported CI impact scope: {scope!r}")

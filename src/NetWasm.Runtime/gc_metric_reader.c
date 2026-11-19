@@ -47,6 +47,12 @@ static bool read_pinned_reference_count(uint64_t *value)
     return true;
 }
 
+static bool read_oldest_generation_collection_count(uint64_t *value)
+{
+    *value = collector_oldest_generation_collection_count();
+    return true;
+}
+
 static const gc_metric_reader readers[] = {
     read_collection_count,
     read_total_allocated_bytes,
@@ -54,6 +60,7 @@ static const gc_metric_reader readers[] = {
     read_live_heap_size,
     read_total_pause_milliseconds,
     read_pinned_reference_count,
+    read_oldest_generation_collection_count,
 };
 
 bool gc_metric_supports(uint32_t metric)

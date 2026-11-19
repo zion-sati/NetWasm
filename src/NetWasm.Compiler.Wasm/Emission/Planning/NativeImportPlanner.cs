@@ -49,7 +49,8 @@ internal sealed class NativeImportPlanner(INativeAbiPlanner abi) : INativeImport
             {
                 throw new CompilerException(new(DiagnosticCode.NativeInterop,
                     $"'{first.Method.CanonicalName}' and '{import.Method.CanonicalName}' declare the native " +
-                    $"function '{import.Import.Name}' with different C ABI signatures; one native function has one signature.",
+                    $"function '{import.Import.Name}' with different C ABI signatures; one native function has one signature, " +
+                    "unless it is a C variadic function whose type the library's linked archive gives.",
                     import.Method.CanonicalName));
             }
         }

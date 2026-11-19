@@ -9,7 +9,8 @@ internal sealed class NumericInstructionEmitter(
     NumericOperatorEmitter operators,
     NumericConversionInstructionEmitter conversions,
     NumericComparisonInstructionEmitter comparisons,
-    ExceptionalNumericInstructionEmitter exceptional) : InstructionCommandProvider
+    ExceptionalNumericInstructionEmitter exceptional,
+    ConditionalSelectEmitter selects) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -17,5 +18,6 @@ internal sealed class NumericInstructionEmitter(
         .. conversions.Commands,
         .. comparisons.Commands,
         .. exceptional.Commands,
+        .. selects.Commands,
     ];
 }

@@ -1,7 +1,7 @@
 # NetWasm.Ref
 
 `NetWasm.Ref` supplies the metadata-only compile-time contract for the current
-`netwasm0.1` profile. It contains the tested
+`net10.0-netwasm` target framework (and the deprecated `netwasm0.1`). It contains the tested
 `NetWasm,Version=v0.1` reference asset and no runtime implementation. It also
 supplies Microsoft's unmodified stock `LibraryImport` source generator and its
 support/resource assemblies as ordinary NuGet analyzer assets. The SDK discovers
@@ -11,7 +11,7 @@ paths. Unsupported marshalling remains outside the static-native scalar profile.
 `netstandard.dll`, which forwards each .NET Standard type to its owner, ships in `NetWasm.App.Ref`, with
 the reference assemblies of the framework libraries beyond CoreLib.
 
-The NetWasm SDK consumes this package privately for a `netwasm0.1` inner build.
+The NetWasm SDK consumes this package privately for a NetWasm inner build.
 The linker receives implementation assemblies from the selected NetWasm runtime
 pack.
 

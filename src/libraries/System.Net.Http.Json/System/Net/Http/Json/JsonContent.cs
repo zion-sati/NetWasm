@@ -48,12 +48,20 @@ public sealed class JsonContent : HttpContent
         return new JsonContent(inputValue, jsonTypeInfo, mediaType);
     }
 
-    // System.Net.Http has netstandard 2.1's HttpContent, whose one serialization override takes
-    // the transport context, as upstream's netstandard build of this type overrides it.
-    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+    // As upstream's JsonContent.netcoreapp.cs, for the UTF-8 content this profile writes.
+    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+        SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+    protected override void SerializeToStream(Stream stream, TransportContext? context, CancellationToken cancellationToken)
     {
         JsonHelpers.EnsureSupportedEncoding(this);
-        return JsonSerializer.SerializeAsync(stream, Value, _typeInfo);
+        JsonSerializer.Serialize(stream, Value, _typeInfo);
+    }
+
+    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+    {
+        JsonHelpers.EnsureSupportedEncoding(this);
+        return JsonSerializer.SerializeAsync(stream, Value, _typeInfo, cancellationToken);
     }
 
     protected override bool TryComputeLength(out long length)

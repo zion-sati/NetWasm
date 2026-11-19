@@ -7,14 +7,18 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
+// A managed calli calls the static method of its signature whose address the pointer holds, found by searching the
+// methods' addresses; a pointer to no such method throws InvalidCastException.
 internal sealed class CallIndirectEmitter(
     ITargetLayout layouts,
+    IKeyedDispatchEmitter keyedDispatch,
     IImplicitExceptionEmitter exceptions,
     IValueFrameAddressEmitter valueFrames,
     INativeAbiCallEmitter nativeCalls) : InstructionCommandProvider
@@ -62,20 +66,19 @@ internal sealed class CallIndirectEmitter(
         var compatible = request.Target.CallableMethods.Read().Values
             .Where(target => target.Definition.IsStatic &&
                 DelegateSignatureComparer.AreEqual(target.Signature, signature))
-            .OrderBy(target => target.CanonicalName, StringComparer.Ordinal)
+            .Select(target => (Address: functionIndices.Resolve(new FunctionAddress(target)), Target: target))
+            .DistinctBy(entry => entry.Address)
+            .OrderBy(entry => entry.Address)
             .ToArray();
-        foreach (var target in compatible)
+        keyedDispatch.Emit(code, new(
+            GetStackLocal(request.Context, functionSlot, CliValueKind.NativeInt),
+            layouts.Target.UsesMemory64,
+            [.. compatible.Select(entry => new KeyRange(entry.Address, entry.Address))],
+            index => EmitTargetCall(compatible[index].Target),
+            () => exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Context.ManagedThrowFunction)));
+
+        void EmitTargetCall(MethodInstanceModel target)
         {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-                request.Context,
-                functionSlot,
-                CliValueKind.NativeInt)))));
-            EmitAddressConstant(
-                code,
-                functionIndices.Resolve(new FunctionAddress(target)));
-            if (layouts.Target.UsesMemory64) code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Equal));
-            else code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
             if (returnsValue)
             {
                 valueFrames.Emit(code, request.Context, returnOffset);
@@ -95,12 +98,6 @@ internal sealed class CallIndirectEmitter(
                     argumentBase,
                     signature.ReturnType)))));
             }
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        }
-        exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Context.ManagedThrowFunction);
-        for (var index = 0; index < compatible.Length; index++)
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
         request.Stack.RemoveRange(argumentBase, signature.ParameterTypes.Length + 1);
         if (returnsValue)
@@ -116,12 +113,6 @@ internal sealed class CallIndirectEmitter(
         {
             request.Stack.Add(signature.ReturnType);
         }
-    }
-
-    private void EmitAddressConstant(IWasmInstructionWriter code, int value)
-    {
-        if (layouts.Target.UsesMemory64) code.Write(WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(value)));
-        else code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(value)));
     }
 
     private int GetStackLocal(

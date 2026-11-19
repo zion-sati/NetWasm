@@ -96,7 +96,9 @@ internal static class StaticArrayTestSupport
             intrinsic = default;
             return IsIntrinsic;
         }
-        internal IValueConstructorPurityClassifier Purity() => new ValueConstructorPurityClassifier(this, this, this, this, this);
-        internal IStaticArrayPopulationPlanner Planner() => new StaticArrayPopulationPlanner(this, this, this, Purity(), this, this);
+        internal IValueTypeInitializationClassifier Initialization() => new ValueTypeInitializationClassifier(this, this);
+        internal IValueConstructorPurityClassifier Purity() => new ValueConstructorPurityClassifier(this, this, this, Initialization());
+        internal IStaticArrayPopulationPlanner Planner() =>
+            new StaticArrayPopulationPlanner(this, this, this, Purity(), this, this, Initialization());
     }
 }

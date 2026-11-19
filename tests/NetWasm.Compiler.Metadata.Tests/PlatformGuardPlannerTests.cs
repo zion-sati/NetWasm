@@ -29,7 +29,7 @@ public sealed class PlatformGuardPlannerTests
         Assert.NotNull(result);
         var branch = throughLocal ? 7 : 5;
         Assert.Equal(branch + 2, result.BranchTargets[branch]);
-        Assert.Contains(0, result.FalseCalls);
+        Assert.Equal(0, result.FalseCalls[0]);
         Assert.DoesNotContain(branch + 5, result.LiveOffsets);
     }
 
@@ -96,13 +96,13 @@ public sealed class PlatformGuardPlannerTests
     }
 
     // A proof stops at what it cannot follow: a store or test with too little on the stack, an unknown local,
-    // a branch with nothing to test or nothing after it, the method's end, and any other instruction.
+    // a branch with nothing to test or nothing after it (back to the call), the method's end, and any other instruction.
     [Theory]
     [InlineData(new byte[] { 0x0a, 0x0b, 0x2a })]
     [InlineData(new byte[] { 0x0a, 0x07, 0x2a })]
     [InlineData(new byte[] { 0xfe, 0x01, 0x2a })]
-    [InlineData(new byte[] { 0x0a, 0x2d, 0 })]
-    [InlineData(new byte[] { 0x2d, 0xfe })]
+    [InlineData(new byte[] { 0x0a, 0x2d, 0, 0x2a })]
+    [InlineData(new byte[] { 0x2d, 0xf9 })]
     [InlineData(new byte[] { 0x00 })]
     public void AProofStopsAtWhatItCannotFollow(byte[] test)
     {
@@ -142,6 +142,191 @@ public sealed class PlatformGuardPlannerTests
         Assert.NotNull(plan);
         Assert.Contains(10, plan.LiveOffsets);
         Assert.Null(Planner().Plan(source, bytes, [Region(ExceptionRegionKind.Catch, 7, 2, 8, 2)]));
+    }
+
+    public static TheoryData<string, int> OtherOperatingSystems => new()
+    {
+        { "IsWindows", 0 }, { "IsWindowsVersionAtLeast", 4 }, { "IsLinux", 0 }, { "IsFreeBSD", 0 },
+        { "IsFreeBSDVersionAtLeast", 4 }, { "IsAndroid", 0 }, { "IsAndroidVersionAtLeast", 4 }, { "IsIOS", 0 },
+        { "IsIOSVersionAtLeast", 3 }, { "IsMacOS", 0 }, { "IsMacOSVersionAtLeast", 3 }, { "IsMacCatalyst", 0 },
+        { "IsMacCatalystVersionAtLeast", 3 }, { "IsTvOS", 0 }, { "IsTvOSVersionAtLeast", 3 }, { "IsWatchOS", 0 },
+        { "IsWatchOSVersionAtLeast", 3 },
+    };
+
+    // OperatingSystem's check for any operating system but the browser and WASI is false whatever its arguments,
+    // which the decoder pops: the true arm is gone.
+    [Theory]
+    [MemberData(nameof(OtherOperatingSystems))]
+    public void EveryOtherOperatingSystemIsFalse(string check, int arguments)
+    {
+        using var image = new PEReader(new MemoryStream(PlatformImage("NetWasm.CoreLib",
+            new PlatformMember("System", "OperatingSystem", check, Int32Parameters: arguments))));
+        byte[] bytes = [.. Enumerable.Repeat((byte)0x16, arguments), 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+
+        var plan = Planner().Plan(Snapshot(image.GetMetadataReader()), bytes, []);
+
+        Assert.NotNull(plan);
+        Assert.Equal(arguments, plan.FalseCalls[arguments]);
+        Assert.Equal(arguments + 7, plan.BranchTargets[arguments + 5]);
+        Assert.DoesNotContain(arguments + 10, plan.LiveOffsets);
+    }
+
+    // The browser and WASI are decided when the program runs; a check of another shape, or another assembly's
+    // OperatingSystem, proves nothing.
+    [Theory]
+    [InlineData("NetWasm.CoreLib", "IsBrowser", 0, true)]
+    [InlineData("NetWasm.CoreLib", "IsWasi", 0, true)]
+    [InlineData("NetWasm.CoreLib", "IsOSPlatformVersionAtLeast", 4, true)]
+    [InlineData("NetWasm.CoreLib", "IsWindows", 0, false)]
+    [InlineData("UserLibrary", "IsWindows", 0, true)]
+    public void RunTimePlatformsAndOtherShapesProveNothing(string owner, string check, int arguments, bool returnsBool)
+    {
+        using var image = new PEReader(new MemoryStream(PlatformImage(owner,
+            new PlatformMember("System", "OperatingSystem", check, Int32Parameters: arguments, ReturnsBool: returnsBool))));
+        byte[] bytes = [.. Enumerable.Repeat((byte)0x16, arguments), 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+
+        Assert.Null(Planner().Plan(Snapshot(image.GetMetadataReader()), bytes, []));
+    }
+
+    // OperatingSystem.IsOSPlatform of a literal name loaded just before it is false for any name but WASI's and the
+    // browser's, case-insensitively; the decoder pops the name.
+    [Theory]
+    [InlineData("windows", true)]
+    [InlineData("Linux", true)]
+    [InlineData("WASI", false)]
+    [InlineData("browser", false)]
+    public void PlatformNamesOtherThanWasiAndTheBrowserAreFalse(string platform, bool proven)
+    {
+        using var image = new PEReader(new MemoryStream(PlatformImageWithStrings("NetWasm.CoreLib",
+            [new("System", "OperatingSystem", "IsOSPlatform", StringParameter: true)], [platform])));
+        byte[] bytes = [0x72, 1, 0, 0, 0x70, 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+
+        var plan = Planner().Plan(Snapshot(image.GetMetadataReader()), bytes, []);
+
+        Assert.Equal(proven, plan is not null);
+        if (plan is not null) Assert.Equal(1, plan.FalseCalls[5]);
+    }
+
+    // A name the test does not load just before it, or one a branch can replace, proves nothing.
+    [Fact]
+    public void APlatformNameMustBeLoadedJustBeforeTheTest()
+    {
+        using var image = new PEReader(new MemoryStream(PlatformImageWithStrings("NetWasm.CoreLib",
+            [new("System", "OperatingSystem", "IsOSPlatform", StringParameter: true)], ["windows"])));
+        var source = Snapshot(image.GetMetadataReader());
+        byte[] separated = [0x72, 1, 0, 0, 0x70, 0x00, 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+        // A branch reaches the test with another name (here the same literal, which the proof cannot know).
+        byte[] entered = [0x72, 1, 0, 0, 0x70, 0x2b, 5, 0x72, 1, 0, 0, 0x70, 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42,
+            0x2a, 0x16, 0x2a];
+        byte[] first = [0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+        byte[] notString = [0x14, 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+        // An ldstr whose token names no user string, or a string past the heap, which the decoder rejects.
+        byte[] notUserString = [0x72, 1, 0, 0, 0x0a, 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+        byte[] pastTheHeap = [0x72, 0xf0, 0xff, 0xff, 0x70, 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+
+        Assert.Null(Planner().Plan(source, notUserString, []));
+        Assert.Null(Planner().Plan(source, pastTheHeap, []));
+        Assert.Null(Planner().Plan(source, separated, []));
+        Assert.Null(Planner().Plan(source, entered, []));
+        Assert.Null(Planner().Plan(source, first, []));
+        Assert.Null(Planner().Plan(source, notString, []));
+    }
+
+    // RuntimeInformation.IsOSPlatform of OSPlatform's Windows, Linux, OSX or FreeBSD property, read just before it, is
+    // false; another property, or one of another type, proves nothing.
+    [Theory]
+    [InlineData("get_Windows", "OSPlatform", true)]
+    [InlineData("get_Linux", "OSPlatform", true)]
+    [InlineData("get_OSX", "OSPlatform", true)]
+    [InlineData("get_FreeBSD", "OSPlatform", true)]
+    [InlineData("get_Browser", "OSPlatform", false)]
+    [InlineData("get_Windows", "OtherPlatform", false)]
+    public void OtherOSPlatformPropertiesAreFalse(string property, string type, bool proven)
+    {
+        using var image = new PEReader(new MemoryStream(PlatformImage("NetWasm.CoreLib",
+            new PlatformMember("System.Runtime.InteropServices", "RuntimeInformation", "IsOSPlatform", OSPlatformParameter: true),
+            new PlatformMember("System.Runtime.InteropServices", type, property, ReturnsOSPlatform: true))));
+        byte[] bytes = [0x28, 2, 0, 0, 0x0a, 0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+
+        var plan = Planner().Plan(Snapshot(image.GetMetadataReader()), bytes, []);
+
+        Assert.Equal(proven, plan is not null);
+        if (plan is not null) Assert.Equal(1, plan.FalseCalls[5]);
+    }
+
+    // Debug IL joins `IsWindows() || IsLinux()` before testing it: once the first check's true arm is proven dead, the
+    // join has only the second check's way in, so a later round proves the test and the body is gone.
+    [Fact]
+    public void ALaterRoundProvesATestAJoinOnlyTheProofReaches()
+    {
+        using var image = new PEReader(new MemoryStream(PlatformImage("NetWasm.CoreLib",
+            new PlatformMember("System", "OperatingSystem", "IsWindows"))));
+        byte[] bytes = [0x28, 1, 0, 0, 0x0a, 0x2d, 7, 0x28, 1, 0, 0, 0x0a, 0x2b, 1, 0x17, 0x2d, 3, 0x1f, 42, 0x2a, 0x16,
+            0x2a];
+
+        var plan = Planner().Plan(Snapshot(image.GetMetadataReader()), bytes, []);
+
+        Assert.NotNull(plan);
+        Assert.Equal(7, plan.BranchTargets[5]);
+        Assert.Equal(17, plan.BranchTargets[15]);
+        Assert.DoesNotContain(14, plan.LiveOffsets);
+        Assert.DoesNotContain(20, plan.LiveOffsets);
+    }
+
+    // A join another live path also reaches may bring a true value, so a proof stops there.
+    [Fact]
+    public void AJoinAnotherLivePathReachesProvesNothing()
+    {
+        using var image = new PEReader(new MemoryStream(PlatformImage("NetWasm.CoreLib",
+            new PlatformMember("System", "OperatingSystem", "IsWindows"))));
+        byte[] bytes = [0x02, 0x2d, 7, 0x28, 1, 0, 0, 0x0a, 0x2b, 1, 0x17, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a];
+
+        Assert.Null(Planner().Plan(Snapshot(image.GetMetadataReader()), bytes, []));
+    }
+
+    private sealed record PlatformMember(string Namespace, string Type, string Name, int Int32Parameters = 0,
+        bool StringParameter = false, bool OSPlatformParameter = false, bool ReturnsOSPlatform = false,
+        bool ReturnsBool = true);
+
+    private static byte[] PlatformImage(string owner, params PlatformMember[] members) =>
+        PlatformImageWithStrings(owner, members, []);
+
+    // Member references 0x0a000001 onwards, in order, and user strings in order from 0x70000001.
+    private static byte[] PlatformImageWithStrings(string owner, PlatformMember[] members, string[] strings)
+    {
+        var metadata = new MetadataBuilder();
+        metadata.AddModule(0, metadata.GetOrAddString("Consumer.dll"), metadata.GetOrAddGuid(Guid.Empty), default, default);
+        metadata.AddAssembly(metadata.GetOrAddString("Consumer"), new(1, 0), default, default, 0, 0);
+        metadata.AddTypeDefinition(TypeAttributes.NotPublic, default, metadata.GetOrAddString("<Module>"),
+            default, MetadataTokens.FieldDefinitionHandle(1), MetadataTokens.MethodDefinitionHandle(1));
+        var assembly = metadata.AddAssemblyReference(metadata.GetOrAddString(owner), new(1, 0), default, default, 0, default);
+        var platform = metadata.AddTypeReference(assembly, metadata.GetOrAddString("System.Runtime.InteropServices"),
+            metadata.GetOrAddString("OSPlatform"));
+        foreach (var member in members)
+        {
+            var type = metadata.AddTypeReference(assembly, metadata.GetOrAddString(member.Namespace),
+                metadata.GetOrAddString(member.Type));
+            var signature = new BlobBuilder();
+            new BlobEncoder(signature).MethodSignature()
+                .Parameters(member.Int32Parameters + (member.StringParameter || member.OSPlatformParameter ? 1 : 0),
+                    result =>
+                    {
+                        if (member.ReturnsOSPlatform) result.Type().Type(platform, isValueType: true);
+                        else if (member.ReturnsBool) result.Type().Boolean();
+                        else result.Type().Int32();
+                    },
+                    parameters =>
+                    {
+                        if (member.StringParameter) parameters.AddParameter().Type().String();
+                        if (member.OSPlatformParameter) parameters.AddParameter().Type().Type(platform, isValueType: true);
+                        for (var index = 0; index < member.Int32Parameters; index++) parameters.AddParameter().Type().Int32();
+                    });
+            metadata.AddMemberReference(type, metadata.GetOrAddString(member.Name), metadata.GetOrAddBlob(signature));
+        }
+        foreach (var value in strings) metadata.GetOrAddUserString(value);
+        var image = new BlobBuilder();
+        new ManagedPEBuilder(new(imageCharacteristics: Characteristics.Dll), new(metadata), new BlobBuilder()).Serialize(image);
+        return image.ToArray();
     }
 
     private static PlatformGuardPlanner Planner() => new(new RawCilInstructionReader());

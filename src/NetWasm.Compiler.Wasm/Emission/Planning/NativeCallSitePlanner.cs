@@ -22,12 +22,14 @@ internal sealed class NativeCallSitePlanner(INativeAbiSignaturePlanner signature
     {
         ArgumentNullException.ThrowIfNull(uses);
         ArgumentOutOfRangeException.ThrowIfNegative(firstImportIndex);
-        // The first use of each signature, in a stable order, names it in a diagnostic.
+        // The first use of each signature under each assembly's rules, in a stable order, names it in a
+        // diagnostic. A signature both rule sets accept lowers the same under either.
         var lowerings = uses
             .OrderBy(use => use.Method, StringComparer.Ordinal)
             .ThenBy(use => use.Offset)
-            .DistinctBy(use => NativeCallSitePlan.Key(use.Signature))
+            .DistinctBy(use => (NativeCallSitePlan.Key(use.Signature), use.Rules))
             .Select(use => (Key: NativeCallSitePlan.Key(use.Signature), Lowering: Lower(use)))
+            .DistinctBy(item => item.Key)
             .ToArray();
         if (lowerings.Length == 0)
             return NativeCallSitePlan.Empty;
@@ -52,7 +54,7 @@ internal sealed class NativeCallSitePlanner(INativeAbiSignaturePlanner signature
     {
         try
         {
-            return _signatures.Plan(use.Signature, NativeAbiSignatureKind.Import, use.Method);
+            return _signatures.Plan(use.Signature, NativeAbiSignatureKind.Import, use.Method, use.Rules);
         }
         catch (CompilerException exception) when (exception.Diagnostic.IlOffset is null)
         {

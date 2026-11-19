@@ -36,19 +36,20 @@ public sealed class UnsafeAccessorCompilationTests
             #line default
                 }
             }
+            // The accessors stay calls, so each is a method with its own frame.
             public static class Accessors
             {
-                [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
+                [UnsafeAccessor(UnsafeAccessorKind.Constructor), MethodImpl(MethodImplOptions.NoInlining)]
                 public static extern Owner Create(int value);
-                [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "Read")]
+                [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "Read"), MethodImpl(MethodImplOptions.NoInlining)]
                 public static extern int Read(Owner owner);
-                [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "Fail")]
+                [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "Fail"), MethodImpl(MethodImplOptions.NoInlining)]
                 public static extern void Fail(Owner owner);
-                [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "value")]
+                [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "value"), MethodImpl(MethodImplOptions.NoInlining)]
                 public static extern ref int Field(Owner owner);
 
                 // An annotation on physical IL must never replace that body.
-                [UnsafeAccessor((UnsafeAccessorKind)99)]
+                [UnsafeAccessor((UnsafeAccessorKind)99), MethodImpl(MethodImplOptions.NoInlining)]
                 public static int Physical(int value) => value;
                 [UnsafeAccessor((UnsafeAccessorKind)99)]
                 public static extern void UnusedInvalid();
@@ -120,6 +121,7 @@ public sealed class UnsafeAccessorCompilationTests
             namespace AttributeLibrary;
             public sealed class MarkerAttribute : Attribute;
             [Marker] public sealed class Marked;
+            public sealed class Unmarked;
             public sealed class Owner{{(generic ? "<T>" : "")}}
             {
                 private readonly Type selected = typeof({{(generic ? "T" : "Marked")}});
@@ -138,7 +140,12 @@ public sealed class UnsafeAccessorCompilationTests
             namespace AttributeApplication;
             public static class EntryPoint
             {
-                public static int Run(int value) => new {{ownerType}}().Read();
+                public static int Run(int value)
+                {
+                    var owner = new {{ownerType}}();
+                    {{(expose ? "Expose(owner) = typeof(Unmarked);" : "")}}
+                    return owner.Read();
+                }
                 {{(expose ? "[UnsafeAccessor(UnsafeAccessorKind.Field, Name = \"selected\")] private static extern ref Type Expose(" + ownerType + " owner);" : "")}}
             }
             """, library);
@@ -149,11 +156,11 @@ public sealed class UnsafeAccessorCompilationTests
         Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
             42, WasmTarget.Wasm32, result.StaticDataEnd));
 
-        // A writable accessor voids the readonly type proof, so the query keeps its
-        // managed fallback, whose GetCustomAttribute throws PlatformNotSupportedException.
+        // A writable accessor voids the readonly type proof: the accessor stores another type, and the query
+        // answers for the type the field holds at run time, as desktop .NET does.
         CompileEntry(true);
         result = NetWasmCompiler.Compile(options);
-        Assert.Equal(7, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
+        Assert.Equal(1, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
             42, WasmTarget.Wasm32, result.StaticDataEnd));
     }
 }

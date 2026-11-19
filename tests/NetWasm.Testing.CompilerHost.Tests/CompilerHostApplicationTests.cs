@@ -129,6 +129,37 @@ public sealed class CompilerHostApplicationTests
         Assert.Throws<ArgumentException>(() => application.Run(Request("module.wasm"), ""));
     }
 
+    // A request that names a collector compiles for it; one that names none compiles for the default.
+    [Theory]
+    [InlineData("NetWasmGen", true)]
+    [InlineData("Compact", false)]
+    [InlineData(null, false)]
+    public void CompilesForTheCollectorTheRequestNames(string? collector, bool records)
+    {
+        using var files = new HostTestFiles();
+        var compiler = new OptionRecordingCompiler();
+        var application = CreateApplication(compiler, new RecordingMetadataLoader());
+
+        Assert.Equal(0, application.Run(Request(files.ModulePath) with { GarbageCollector = collector }, files.ResponsePath));
+
+        Assert.Equal(collector, compiler.Options!.Collector?.Name);
+        Assert.Equal(records, compiler.Options.Collector?.HasGenerations ?? false);
+    }
+
+    [Fact]
+    public void ACollectorTheCompilerDoesNotKnowFailsTheRequestBeforeCompiling()
+    {
+        using var files = new HostTestFiles();
+        var compiler = new OptionRecordingCompiler();
+        var application = CreateApplication(compiler, new RecordingMetadataLoader());
+
+        Assert.Equal(1, application.Run(Request(files.ModulePath) with { GarbageCollector = "netwasmgen" }, files.ResponsePath));
+
+        Assert.Null(compiler.Options);
+        var response = JsonSerializer.Deserialize<FailedCompilationResponse>(File.ReadAllText(files.ResponsePath));
+        Assert.Equal(CompilerMetricsOutcome.Failed, response!.Outcome);
+    }
+
     [Fact]
     public void DelegatesTheExactRequestAndFormattedArtifacts()
     {
@@ -240,6 +271,17 @@ public sealed class CompilerHostApplicationTests
         }
     }
 
+    private sealed class OptionRecordingCompiler : INetWasmCompiler
+    {
+        public CompilerOptions? Options { get; private set; }
+
+        public CompilationResult Compile(CompilerOptions options)
+        {
+            Options = options;
+            return new SuccessfulCompiler().Compile(options);
+        }
+    }
+
     private sealed class DiagnosticCompiler : INetWasmCompiler
     {
         public CompilationResult Compile(CompilerOptions options)
@@ -275,7 +317,9 @@ public sealed class CompilerHostApplicationTests
             ImmutableDictionary<string, string>? aliases = null,
             IEnumerable<string>? metadataReferencePaths = null,
             IEnumerable<string>? originalContractReferencePaths = null,
-            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding = null)
+            NetWasm.Compiler.Core.NativeInterop.INativeImportBinder? nativeBinding = null,
+            NetWasm.Compiler.Core.NativeInterop.INativeVariadicCallPlanner? nativeVariadics = null,
+            NetWasm.Compiler.Core.GeneratedJavaScriptBinding? javaScriptBinding = null)
         {
             Calls++;
             ReceivedAliases = aliases;

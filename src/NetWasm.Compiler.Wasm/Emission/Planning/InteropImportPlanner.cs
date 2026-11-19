@@ -17,8 +17,6 @@ internal sealed record InteropImportPlan(
     OptionalFunctionIndex CopyStringUtf16,
     OptionalFunctionIndex ReleaseHandle,
     OptionalFunctionIndex ReleaseSubscription,
-    OptionalFunctionIndex ByteLength,
-    OptionalFunctionIndex CopyBytes,
     bool UseJavaScriptExportBoundary = false)
 {
     // The Wasm functions of CoreLib's conversions (JavaScriptConversion), by name,
@@ -66,16 +64,6 @@ internal sealed class InteropImportPlanner : IInteropImportPlanner
                     InteropTypeClassifier.IsString) ||
                 InteropTypeClassifier.IsString(
                     method.Signature.ReturnSignatureType));
-        var hasBytes = request.JSImportMethods.Any(method =>
-            InteropTypeClassifier.IsValueArray(ImportResult(method))) ||
-            request.HostCallbacks.Any(callback => callback.Invoke.Signature
-                .ParameterSignatureTypes.Any(InteropTypeClassifier.IsValueArray)) ||
-            useJavaScriptExportBoundary &&
-            requestedExports.Values.Any(method =>
-                method.Signature.ParameterSignatureTypes.Any(
-                    InteropTypeClassifier.IsValueArray) ||
-                InteropTypeClassifier.IsValueArray(
-                    method.Signature.ReturnSignatureType));
         // A handle value's import result handle is released once CoreLib converts it.
         var hasObjects = request.JSImportMethods.Any(method =>
             InteropTypeClassifier.IsHostObject(ImportResult(method)) ||
@@ -95,15 +83,9 @@ internal sealed class InteropImportPlanner : IInteropImportPlanner
             firstIndex,
             WasmRuntimeImports.CreateHostInteropStringResultImports(),
             out var copyString);
-        var byteLength = Append(
-            imports,
-            hasBytes,
-            firstIndex,
-            WasmRuntimeImports.CreateHostInteropByteResultImports(),
-            out var copyBytes);
         var releaseHandle = AppendSingle(
             imports,
-            hasStrings || hasBytes || hasObjects,
+            hasStrings || hasObjects,
             firstIndex,
             WasmRuntimeImports.CreateHostInteropHandleImports());
         var releaseSubscription = AppendSingle(
@@ -118,8 +100,6 @@ internal sealed class InteropImportPlanner : IInteropImportPlanner
             copyString,
             releaseHandle,
             releaseSubscription,
-            byteLength,
-            copyBytes,
             useJavaScriptExportBoundary);
     }
 

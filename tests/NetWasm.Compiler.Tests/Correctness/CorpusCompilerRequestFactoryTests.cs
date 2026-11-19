@@ -71,6 +71,26 @@ public sealed class CorpusCompilerRequestFactoryTests
         Assert.Empty(request.Exports);
     }
 
+    // A run that names a collector compiles every fixture for it, by the compiler's name for the collector;
+    // a run that names none, or one the compiler does not know, compiles for the default.
+    [Theory]
+    [InlineData("netwasmgen", "NetWasmGen")]
+    [InlineData("netwasm", "NetWasm")]
+    [InlineData("compact", "Compact")]
+    [InlineData("bump", "Bump")]
+    [InlineData("boehm", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void CreateCompilesForTheCollectorTheRunNames(string? collector, string? expected)
+    {
+        var factory = new CorpusCompilerRequestFactory(CreateEnvironment(), new StubRegistry(
+            ImmutableDictionary<string, string>.Empty), new LinkedCorpusToolEnvironment(null, null, null, collector));
+
+        var request = factory.Create(CreateCompilation(), WasmTarget.Wasm32, null, "module", null, []);
+
+        Assert.Equal(expected, request.GarbageCollector);
+    }
+
     [Fact]
     public void CreateMergesCompatibleAliasesWithoutMutatingPolicy()
     {

@@ -101,6 +101,23 @@ public sealed class FinalizationPlanBuilderTests
         Assert.Empty(plan.FinalizableTypeIds);
     }
 
+    // The schedulers run queued finalizers between work items in every program; that alone neither needs the
+    // finalization runtime nor counts as a program's own use of the finalization API.
+    [Fact]
+    public void RunningQueuedFinalizersNeedsNoRuntimeWhenNoFinalizableTypeExists()
+    {
+        var key = Key(0x06000079 + (int)RuntimeIntrinsic.GcRunQueuedFinalizers);
+        var plan = new FinalizationPlanBuilder(
+            new DescriptorSource(),
+            new IntrinsicRegistry([(key, RuntimeIntrinsic.GcRunQueuedFinalizers)])).Build([
+                Emission(I(0, CilOperation.Call, new CilOperand.Entity(key)))
+            ]);
+
+        Assert.False(plan.RequiresRuntime);
+        Assert.False(plan.UsesExplicitFinalizationApi);
+        Assert.Empty(plan.FinalizableTypeIds);
+    }
+
     [Fact]
     public void SuppressFinalizeNeedsNoRuntimeWhenNoFinalizableTypeExists()
     {

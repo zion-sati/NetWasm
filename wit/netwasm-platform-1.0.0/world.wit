@@ -17,4 +17,5 @@ world platform {
     import wasi:http/client@0.3.2;
     import wasi:sockets/types@0.3.2;
     import wasi:sockets/ip-name-lookup@0.3.2;
+    import wasi:tls/client@0.3.0-draft;
 }

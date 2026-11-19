@@ -22,7 +22,8 @@ internal sealed class ReachabilityQueueDrainer(
     IDispatchTargetResolver dispatchTargets,
     IManagedCallSiteLedgerWriter managedCallSites,
     ICompilerDiagnosticProvenanceBinder provenance,
-    IReachabilityClosureObserver closureObserver) : IReachabilityQueueDrainer
+    IReachabilityClosureObserver closureObserver,
+    IReachabilityProgressObserver progressObserver) : IReachabilityQueueDrainer
 {
     private readonly IReachableMethodApplier _methodApplier = methodApplier ??
         throw new ArgumentNullException(nameof(methodApplier));
@@ -36,6 +37,8 @@ internal sealed class ReachabilityQueueDrainer(
         throw new ArgumentNullException(nameof(provenance));
     private readonly IReachabilityClosureObserver _closureObserver = closureObserver ??
         throw new ArgumentNullException(nameof(closureObserver));
+    private readonly IReachabilityProgressObserver _progressObserver = progressObserver ??
+        throw new ArgumentNullException(nameof(progressObserver));
 
     public void Drain(ReachabilitySession session)
     {
@@ -82,6 +85,7 @@ internal sealed class ReachabilityQueueDrainer(
                 _managedCallSites.Write(session.State, analysis.Instructions.CallSites);
                 methodPublicationTicks +=
                     Stopwatch.GetTimestamp() - publicationStarted;
+                _progressObserver.Observe(session.State);
             }
 
             var dispatchStarted = Stopwatch.GetTimestamp();
