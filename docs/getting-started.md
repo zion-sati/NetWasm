@@ -54,7 +54,7 @@ wasmtime run publish/local/Hello.wasm
 
 A published run can reach only the directories you mount:
 `node publish/local/netwasm.host.mjs --dir ./data::/data` gives the program the
-`data` folder at `/data`. See [publish](sdk-quickstart.md#4-publish).
+`data` folder at `/data`. See [publishing and deployment](deployment.md).
 
 Release builds optimize for size at `Oz`. For speed, publish with
 `-p:NetWasmOptimization=O3`; see the [optimization reference](optimization.md).
@@ -111,7 +111,7 @@ how C# reads and draws on the page, and `--host worker` runs the module in a
 
 ## Next steps
 
-- [What a project can build](sdk-quickstart.md#choose-the-output-kind):
+- [What a project can build](project-kinds.md):
   programs, JavaScript modules, Web Workers, HTTP services and WIT components.
 - [Configuration reference](configuration.md): every setting and its default.
 - [Packages and libraries](netstandard-libraries.md): which NuGet packages work

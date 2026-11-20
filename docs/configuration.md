@@ -19,13 +19,13 @@ says so; anything not listed behaves as in any other .NET project.
 | Setting | Default | Values and meaning |
 | --- | --- | --- |
 | `TargetFramework` | set by the template | `net10.0-netwasm`. The older `netwasm0.1` still builds, with warning `NWSDK105`, and is removed in a later release. |
-| `OutputType` | `Exe` | `Exe` builds a program with `Main`; `JsModule` builds C# exports that JavaScript calls; `WitWebWorker` builds a worker described by WIT; `Component` builds a component that exports a WIT world (such as an HTTP service); `CoreModule` builds a plain core module for an engine without the Component Model. See [choose the output kind](sdk-quickstart.md#choose-the-output-kind). |
+| `OutputType` | `Exe` | `Exe` builds a program with `Main`; `JsModule` builds C# exports that JavaScript calls; `WitWebWorker` builds a worker described by WIT; `Component` builds a component that exports a WIT world (such as an HTTP service); `CoreModule` builds a plain core module for an engine without the Component Model. See [what a project can build](project-kinds.md). |
 | `NetWasmTarget` | `wasm32` | `wasm32` or `wasm64`, the address width. See [targets and output formats](targets-and-outputs.md). |
 | `NetWasmRawWasm` | `false`; `true` for a `JsModule` | `true` builds a raw core module run by NetWasm's JavaScript host instead of a component. An `Exe` needs it only when its code imports application JavaScript modules with `[JSImport]`. |
 | `NetWasmJavaScriptHosts` | `page` for a `JsModule` | Where a `JsModule` runs: `page`, `worker` or `node`, as a semicolon-separated list, each at most once. See [JavaScript interop](javascript-interop.md#choose-a-host). |
 | `NetWasmWorld` | `command` for an `Exe` | The WIT world a `Component` or `CoreModule` exports, such as `service` for an HTTP service. |
 | `NetWasmWitPath` | the toolchain's own package | The WIT package that holds `NetWasmWorld`, as an absolute path. |
-| `NetWasmHttpServiceNamespace` | `$(RootNamespace)` | The namespace of the generated HTTP service entry point. See [write an HTTP service](sdk-quickstart.md#write-an-http-service). |
+| `NetWasmHttpServiceNamespace` | `$(RootNamespace)` | The namespace of the generated HTTP service entry point. See [HTTP services](http-services.md). |
 | `NetWasmPublishTarget` | `portable` | `portable` publishes for Node and other WASI hosts; `browser` publishes a page deployment with a generated `run()` module. |
 
 ## Optimization
@@ -63,7 +63,7 @@ write passes its own.
 | --- | --- | --- |
 | `NetWasmGrantWorkingDirectory` | `true` | Mounts the working directory, read-write, at its own path. |
 | `NetWasmGrantTemporaryDirectory` | `true` | Mounts a private temporary directory at `/tmp`, deleted after the run. |
-| `NetWasmPreopen` item | none | Mounts another directory: `Include` is the host directory, `GuestPath` its absolute path inside the program, and `Access` is `readOnly` or `readWrite`. See [host capabilities](sdk-quickstart.md#host-capabilities). |
+| `NetWasmPreopen` item | none | Mounts another directory: `Include` is the host directory, `GuestPath` its absolute path inside the program, and `Access` is `readOnly` or `readWrite`. See [host capabilities](host-capabilities.md#files). |
 | `NetWasmNetworkPolicy` | `allowAll` | `allowAll` or `denyAll`, for sockets, DNS and `HttpClient`. |
 | `NetWasmTlsSupport` | `true` | TLS through `wasi:tls`, which `SslStream`, `HttpClient` over HTTPS and `ClientWebSocket` need. A host without `wasi:tls` needs `false`; `SslStream` then throws `PlatformNotSupportedException`. |
 | `NetWasmRandomness` | `true` | Grants the host's random number source. |

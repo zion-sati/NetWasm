@@ -591,40 +591,11 @@ reach every worker it creates, including workers started before the mount.
 ## Serve the published files
 
 During development, `dotnet run` publishes the project and serves it on
-localhost; see [Run a browser project](sdk-quickstart.md#run-a-browser-project).
-The publish directory is a static site: copy it to any static host. It needs
-no server code and no `Cross-Origin-Opener-Policy` or
-`Cross-Origin-Embedder-Policy` headers, and it works over plain HTTP as well
-as HTTPS, for example a development build opened from a phone on the local
-network. Startup checks each file it loads against its SHA-256 digest, with
-`crypto.subtle` in a secure context and in JavaScript elsewhere. Opening
-`index.html` from a `file://` URL does not work: browsers block module scripts
-and `fetch` there.
-
-The server must send `.mjs` files with a JavaScript MIME type such as
-`text/javascript`, because browsers refuse to run a module script served as
-anything else. Most static servers already do. Python's `http.server` on
-Windows sends `text/plain` when the Windows registry lists `.mjs` as
-`text/plain`, since registry entries override Python's own mapping. Set the
-type when starting it from the publish directory (`py` on Windows):
-
-```sh
-python -c "import http.server, mimetypes; mimetypes.add_type('text/javascript', '.mjs'); http.server.test(http.server.SimpleHTTPRequestHandler, port=8000)"
-```
-
-or change the `Content Type` value under `HKEY_CLASSES_ROOT\.mjs` to
-`text/javascript`.
-
-The `netwasm.runtime.*.mjs` files are named after their content, so a server
-can let browsers cache them for as long as it likes.
-
-Under a strict Content Security Policy, allow module loading from the site,
-from `blob:` URLs (startup imports each verified module from a `blob:` URL),
-and WebAssembly compilation:
-
-```text
-Content-Security-Policy: script-src 'self' blob: 'wasm-unsafe-eval'
-```
+localhost; see [run a browser project](sdk-quickstart.md#run-a-browser-project).
+The publish directory is a static site that any static host can serve, over
+HTTP or HTTPS, with no cross-origin isolation headers. [Publishing and deployment](deployment.md#serve-the-published-files) covers the
+files it holds, MIME types, caching and compression, and
+[security](security.md) the Content Security Policy it needs.
 
 ## Profile boundary
 

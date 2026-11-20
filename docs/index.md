@@ -12,6 +12,19 @@ repository.
 - [Guide](README.md): the task-oriented starting point for these pages.
 - [Getting started](getting-started.md): a console program and a web page, from
   install to publish.
+- [What a project can build](project-kinds.md): programs, JavaScript modules,
+  Web Workers, HTTP services, components and core modules, with their templates.
+- [Files, network and other host capabilities](host-capabilities.md): what each
+  host grants and how to grant more.
+- [HTTP services](http-services.md): a `wasi:http` component in C#, and how
+  Wasmtime, Spin and wasmCloud serve it.
+- [Publishing and deployment](deployment.md): what to deploy for each host,
+  serving, caching, compression and size.
+- [Security](security.md): what a program can reach, startup's integrity checks
+  and the Content Security Policy a page needs.
+- [Compatibility and versioning](compatibility.md): supported SDKs, build
+  machines, browsers and hosts, and what a new version may change.
+- [How NetWasm works](how-it-works.md): from C# to a `.wasm` file.
 - [Configuration reference](configuration.md): every MSBuild property and item,
   with its default.
 - [Optimization reference](optimization.md): the optimization levels and every
