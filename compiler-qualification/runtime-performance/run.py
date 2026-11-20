@@ -54,7 +54,7 @@ SCENARIOS = {
     'when-all': ('async', ['when-all', '10000']),
     'crc32': ('compute', ['crc32', '16']),
 }
-COLLECTORS = ['Compact', 'NetWasm', 'Bump']
+COLLECTORS = ['Compact', 'NetWasm', 'NetWasmGen', 'Bump']
 NAMES = {'transaction': 'Transaction', 'gc': 'GcWorkloads', 'net11': 'Net11Patterns', 'corelib': 'CoreLibPaths',
          'compute': 'ComputeKernels', 'async': 'AsyncPatterns'}
 
@@ -74,6 +74,12 @@ def isolated_environment(root):
     return env
 
 
+def target_framework(version):
+    """net10.0-netwasm from NetWasm 0.15 on; earlier releases have only netwasm0.1."""
+    major, minor = (int(part) for part in version.split('-')[0].split('.')[:2])
+    return 'net10.0-netwasm' if (major, minor) >= (0, 15) else 'netwasm0.1'
+
+
 def publish(side, feed, version, workload, optimization, root, sdk, environment=None, collector=None,
             properties=()):
     """Publishes one workload for one package set and preset, with the runtime
@@ -84,7 +90,7 @@ def publish(side, feed, version, workload, optimization, root, sdk, environment=
     shutil.copyfile(ROOT / 'workloads' / workload / 'Program.cs', cell / 'Program.cs')
     (cell / f'{name}.csproj').write_text(
         '<Project Sdk="NetWasm.Sdk"><PropertyGroup><OutputType>Exe</OutputType>'
-        '<TargetFramework>netwasm0.1</TargetFramework><Nullable>enable</Nullable>'
+        f'<TargetFramework>{target_framework(version)}</TargetFramework><Nullable>enable</Nullable>'
         '</PropertyGroup></Project>\n')
     (cell / 'global.json').write_text(json.dumps({
         'sdk': {'version': sdk, 'rollForward': 'disable'}, 'msbuild-sdks': {'NetWasm.Sdk': version}}))
