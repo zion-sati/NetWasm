@@ -1,7 +1,7 @@
 # NetWasm
 
 **Independent .NET for WebAssembly and WASI.**<br>
-Write C#. Deploy small, standalone Wasm.
+Write C#. Use your NuGet packages. Deploy small, standalone Wasm.
 
 NetWasm is an independent compiler, CoreLib, runtime and SDK that compiles C#
 and .NET CIL directly to WebAssembly. It does not carry the desktop CLR, Mono,
@@ -17,6 +17,28 @@ and .NET CIL directly to WebAssembly. It does not carry the desktop CLR, Mono,
 [Install and build](#try-it) ·
 [See supported APIs](docs/support-status.md) ·
 [Read the documentation](docs/README.md)
+
+## Your NuGet packages, native ones included
+
+A NetWasm project targets `net10.0-netwasm`, a .NET platform target framework
+like Blazor's `net10.0-browser`. NuGet restores each package's `net10.0`,
+`net9.0`, `net8.0` or .NET Standard build, newest first, as it does for any
+.NET 10 project, so a package needs no NetWasm build of its own. Of 100 of the
+most-downloaded nuget.org packages that ship a .NET Standard build, **56 run
+their README quick start unchanged**, printing exactly what desktop .NET
+prints: Azure.Core, the AWS SDK's core, MSAL, CsvHelper, MongoDB.Driver, gRPC's
+client, RabbitMQ.Client, Open XML SDK, BouncyCastle, SSH.NET and
+HtmlAgilityPack among them. Most of the rest stop on run-time reflection, which
+NetWasm leaves out to keep programs small, and several have a source-generated
+replacement that runs.
+
+Packages that carry native code come along too. The static archives SkiaSharp
+and HarfBuzzSharp ship for .NET's WebAssembly SDKs link into the program as
+they are, and **Avalonia 12's headless platform renders the same frame as on
+desktop .NET**, through Skia, with no change to Avalonia.
+
+[Every package's result and the replacements](docs/package-compatibility.md) ·
+[How packages restore, and what stops them](docs/netstandard-libraries.md)
 
 ## C# at less than half Rust's Wasm size
 
@@ -88,19 +110,6 @@ n-body kernel, and runs a CRC-32 kernel at the same speed. Desktop .NET is
 faster on the library work and the quicksort without allocation.
 
 [Versions, settings, desktop figures and reproduction](docs/performance.md)
-
-## Your NuGet packages
-
-A NetWasm project restores and compiles NuGet packages as a desktop .NET 10
-project does. Of 100 of the most-downloaded nuget.org packages that ship a .NET
-Standard build, **56 run their README quick start unchanged**, printing exactly
-what desktop .NET prints: Azure.Core, the AWS SDK's core, MSAL, CsvHelper,
-MongoDB.Driver, gRPC's client, RabbitMQ.Client, Open XML SDK, BouncyCastle,
-SSH.NET and HtmlAgilityPack among them. Most of the rest stop on run-time
-reflection, which NetWasm leaves out to keep programs small, and several have a
-source-generated replacement that runs.
-
-[Every package's result and the replacements](docs/package-compatibility.md)
 
 ## More than Hello World
 

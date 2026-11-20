@@ -144,6 +144,9 @@ file shared across different hosts must be regenerated for each host.
 
 ### Choose the output kind
 
+[What a project can build](project-kinds.md) introduces each kind with its
+template; this section covers raw output and its JavaScript modules in depth.
+
 An application's `Main` can be synchronous or asynchronous (`Task Main`,
 `Task<int> Main`) without any setting: the host waits for the returned task
 and uses its exit code. What a project builds is chosen by `OutputType` and,
@@ -258,102 +261,19 @@ unavailable, in which case `typeName` is null and the numeric type ID remains.
 
 ### Write an HTTP service
 
-An HTTP service is a component whose world is NetWasm's `service` world
-(`wasi:cli` imports plus `wasi:http/service`). `dotnet new netwasm-serverless`
-creates one, with a README showing how to serve it. By hand: select the
-`service` world and implement one method that takes an `HttpRequestMessage` and
-returns an `HttpResponseMessage`. `System.Net.Http` is part of NetWasm.App, so
-the project needs no package for it:
-
-```xml
-<Project Sdk="NetWasm.Sdk/<version>">
-  <PropertyGroup>
-    <OutputType>Component</OutputType>
-    <TargetFramework>net10.0-netwasm</TargetFramework>
-    <NetWasmWorld>service</NetWasmWorld>
-  </PropertyGroup>
-</Project>
-```
-
-```csharp
-using System.Net;
-using System.Net.Http;
-using System.Threading.Tasks;
-
-namespace Greeter;
-
-public static partial class ServiceExports
-{
-    public static async partial Task<HttpResponseMessage> Handle(HttpRequestMessage request)
-    {
-        var body = await request.Content!.ReadAsStringAsync();
-        return new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent($"{request.Method} {request.RequestUri!.PathAndQuery} [{body}]"),
-        };
-    }
-}
-```
-
-The class goes in the project's root namespace (set
-`NetWasmHttpServiceNamespace` to use another). The package generates the
-`wasi:http` handler that turns each request into an `HttpRequestMessage`,
-calls `Handle`, and streams the response back with its status, headers and
-content. An exception from `Handle` answers with `wasi:http`'s internal error,
-which hosts send as a 500. The service can use `HttpClient` and the other
-WASI-backed APIs while it handles a request.
-
-`dotnet run` does not serve a service; it says how to publish and host it.
-`dotnet publish` writes `Greeter.wasm`, which any `wasi:http` 0.3 host runs
-unchanged:
-
-```bash
-wasmtime serve -Sp3 -Scli --addr 127.0.0.1:8080 publish/Greeter.wasm
-```
-
-Spin runs it from a manifest whose component `source` is the published file
-(list the origins `HttpClient` calls in `allowed_outbound_hosts`), and
-wasmCloud's `wash dev` from a project configuration whose
-`build.component_path` names it. Node.js cannot serve WASI 0.3 HTTP components
-yet: jco and its preview3-shim do not serve them correctly.
+`dotnet new netwasm-serverless` creates an HTTP service: a component whose
+`ServiceExports.Handle` takes an `HttpRequestMessage` and returns an
+`HttpResponseMessage`. `dotnet run` does not serve it; publish it and run it in
+any `wasi:http` 0.3 host, such as `wasmtime serve`, Spin or wasmCloud.
+[HTTP services](http-services.md) covers the project, the handler and each host.
 
 ### Host capabilities
 
-Only reachable APIs retain managed code, Wasm imports and JavaScript providers.
-The local launcher supplies clocks, randomness and HTTP when needed; a custom
-host can restrict those capabilities.
-
-File access is capability-based: `File`, `FileStream`, `Directory` and the
-rest of `System.IO` work on the directories the host mounts into the
-application's filesystem sandbox (WASI calls them **preopens**), and nothing
-else on the host is reachable.
-
-`dotnet run` and `dotnet test` mount two directories, so ordinary code behaves
-as it does on desktop .NET:
-
-- the working directory (the project directory, unless `RunWorkingDirectory`
-  says otherwise), read-write, at its own absolute path. It is also the
-  program's current directory, so relative paths resolve as usual;
-- a private temporary directory, created for the run and deleted after it, at
-  `/tmp`, where `Path.GetTempPath()` and `Path.GetTempFileName()` point.
-
-Set `NetWasmGrantWorkingDirectory` or `NetWasmGrantTemporaryDirectory` to
-`false` to leave either out. Mount further directories with `NetWasmPreopen`;
-this maps the project's `data` directory to `/data`:
-
-```xml
-<ItemGroup>
-  <NetWasmPreopen Include="$(MSBuildProjectDirectory)/data"
-                  GuestPath="/data"
-                  Access="readOnly" />
-</ItemGroup>
-```
-
-`Include` is the host directory, `GuestPath` is its absolute sandbox path, and
-`Access` is either `readOnly` or `readWrite`. Guest paths must use canonical
-forward-slash syntax and must be unique within the project. `readOnly` blocks
-filesystem mutation through that mount; use `readWrite` only when the
-application genuinely needs to modify the mapped directory.
+A program reaches only the directories, network and other capabilities its host
+grants. `dotnet run` and `dotnet test` mount the working directory and a private
+`/tmp`; mount more with `NetWasmPreopen` items, or with `--dir` for a published
+program. [Host capabilities](host-capabilities.md) shows what each host grants
+and how to grant more.
 
 ### Feature switches
 

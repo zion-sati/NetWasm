@@ -59,7 +59,7 @@ the `TZ` environment variable and ship the zone's data, as
 **A file or directory is not found.** A program sees only the directories its
 host mounts. `dotnet run` mounts the working directory and a temporary
 directory; a published run mounts nothing unless you pass `--dir`. See
-[host capabilities](sdk-quickstart.md#host-capabilities).
+[host capabilities](host-capabilities.md).
 
 **"cannot block a synchronous task before returning".** A component's
 synchronous export waited for something, such as a file, a network call or a
