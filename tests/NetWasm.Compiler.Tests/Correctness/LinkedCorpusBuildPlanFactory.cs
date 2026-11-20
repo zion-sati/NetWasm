@@ -8,7 +8,8 @@ namespace NetWasm.Compiler.Tests.Correctness;
 
 internal enum LinkedCorpusBuildStage { NativeRuntime, Merge, ValidateMerged, Optimize, ValidateFinal }
 
-// Collector names the native runtime's collector: compact (the default), netwasm (NetWasmGC) or bump.
+// Collector names the native runtime's collector: compact (the default), netwasm (NetWasmGC), netwasmgen
+// (NetWasmGC with generations) or bump.
 // With GcStress, every linked run collects before each managed allocation.
 internal sealed record LinkedCorpusToolPaths(
     string EmsdkRoot, string Merge, string Optimize, string Validate, string Node,

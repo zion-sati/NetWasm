@@ -125,16 +125,6 @@ namespace System.Runtime.InteropServices
         public bool Value { get; }
     }
 
-    [Flags]
-    public enum CreateObjectFlags
-    {
-        None = 0,
-        TrackerObject = 1,
-        UniqueInstance = 2,
-        Aggregation = 4,
-        Unwrap = 8
-    }
-
     [AttributeUsage(AttributeTargets.Module, Inherited = false)]
     public sealed class DefaultCharSetAttribute : Attribute
     {
@@ -173,12 +163,6 @@ namespace System.Runtime.InteropServices
     {
         public DispIdAttribute(int dispId) => Value = dispId;
         public int Value { get; }
-    }
-
-    [AttributeUsage(AttributeTargets.Interface, AllowMultiple = false, Inherited = false)]
-    public sealed class DynamicInterfaceCastableImplementationAttribute : Attribute
-    {
-        public DynamicInterfaceCastableImplementationAttribute() { }
     }
 
     public enum ExtendedLayoutKind

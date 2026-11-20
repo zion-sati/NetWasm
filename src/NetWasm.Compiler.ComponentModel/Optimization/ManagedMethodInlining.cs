@@ -8,6 +8,6 @@ public enum ManagedMethodInlining
     Auto,
     Disabled,
     Enabled,
-    // Inlines inside loops and what the callee asks for (ManagedMethodInliningPolicy.Loops).
+    // Inlines inside loops, tiny callees and what the callee asks for (ManagedMethodInliningPolicy.Loops).
     Loops,
 }

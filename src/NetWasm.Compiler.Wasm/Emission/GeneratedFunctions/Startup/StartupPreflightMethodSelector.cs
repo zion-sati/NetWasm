@@ -10,11 +10,11 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions.Startup;
 
 // The CoreLib preflights a program runs before its own code, in order, each only when reachable: loading the
 // symbols sidecars (rooted by NetWasmTypeNames or NetWasmManagedStackTrace), so that names and frames are ready
-// for anything that follows, then local time. A module without a process entry runs them when it initializes,
-// in the task of the first export called, and a synchronous WIT export's task may never wait, while reading a
-// file waits on wasi:filesystem: a module with synchronous WIT exports skips the symbols files and reads type
-// and method IDs. A JavaScript host's raw module still loads them, as its host completes the read or answers
-// that it cannot.
+// for anything that follows, then local time. A process entry runs them; a module without one runs none and
+// reads both at first use, and only reports whether it reaches local time. A synchronous WIT export's task may
+// never wait, while reading a file waits on wasi:filesystem: a module with synchronous WIT exports skips the
+// symbols files and reads type and method IDs. A JavaScript host's raw module still loads them, as its host
+// completes the read or answers that it cannot.
 internal sealed class StartupPreflightMethodSelector(
     ITypeRepository types,
     IMethodRepository methods) : IStartupPreflightMethodSelector
@@ -36,9 +36,7 @@ internal sealed class StartupPreflightMethodSelector(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var loadsSymbols = StartupPreflightPlacement.RunsInProcessEntry(request) || request.UseJavaScriptExportBoundary ||
-            !request.ComponentContract.Exports.Any(static export =>
-                export.Kind is CanonicalAbiFunctionKind.Function or CanonicalAbiFunctionKind.ExportedResourceDestructor);
+        var loadsSymbols = StartupPreflightPlacement.LoadsSymbols(request);
         var found = new EntityKey?[Preflights.Length];
         foreach (var key in request.Methods.Keys)
         {

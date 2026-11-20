@@ -13,7 +13,7 @@ if (!packageRoot) {
 const toolchainPath = toolchainArgument ?? join(packageRoot, "..", "..", "eng", "toolchain.json");
 const runtimeRoot = join(packageRoot, "runtime");
 const policy = JSON.parse(await readFile(join(runtimeRoot, "runtime-policy.json"), "utf8"));
-if (!['Compact', 'NetWasm', 'Bump'].includes(policy.defaultGarbageCollector)) {
+if (!['Compact', 'NetWasm', 'NetWasmGen', 'Bump'].includes(policy.defaultGarbageCollector)) {
   throw new Error('The runtime policy default garbage collector is invalid.');
 }
 const toolchain = JSON.parse(await readFile(toolchainPath, "utf8"));
@@ -60,7 +60,12 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
   });
   const allowedUndefinedSymbols = await describeAsset(
     `${target}/allowed-undefined-symbols.txt`);
-  for (const garbageCollector of ['Compact', 'NetWasm', 'Bump']) {
+  // Support for archives Emscripten built: Wasm setjmp/longjmp, and stand-ins for its JavaScript functions.
+  const emscriptenArchives = {
+    support: await describeAsset(`${target}/libnetwasm-emscripten-support.a`),
+    standIns: await describeAsset(`${target}/libnetwasm-emscripten-stand-ins.a`),
+  };
+  for (const garbageCollector of ['Compact', 'NetWasm', 'NetWasmGen', 'Bump']) {
   const collectorDirectory = garbageCollector.toLowerCase();
   const measured = JSON.parse(await readFile(join(runtimeRoot, target, collectorDirectory, "layout.json"), "utf8"));
   const runtimeArchive = await describeAsset(`${target}/${collectorDirectory}/libnetwasm-runtime.a`);
@@ -93,6 +98,7 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
     platformArchives: await platformArchives(`${target}/${collectorDirectory}`),
     speed,
     allowedUndefinedSymbols,
+    emscriptenArchives,
     nativeValidation: {
       version: policy.staticNative.version,
       features: [...policy.staticNative.features, ...(target === 'wasm64' ? ['memory64'] : [])],
@@ -108,12 +114,17 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
       assets: await Promise.all(targetPolicy.systemLibraries.map((name) =>
         describeAsset(`${target}/system-libraries/${name}`))),
     },
+    exceptionSystemLibraries: {
+      names: targetPolicy.exceptionSystemLibraries,
+      assets: await Promise.all(targetPolicy.exceptionSystemLibraries.map((name) =>
+        describeAsset(`${target}/system-libraries/${name}`))),
+    },
   });
   }
 }
 
 const manifest = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   defaultGarbageCollector: policy.defaultGarbageCollector,
   runtimeAbi: toolchain.runtimeAbi,
   emscriptenVersion: toolchain.emscripten,

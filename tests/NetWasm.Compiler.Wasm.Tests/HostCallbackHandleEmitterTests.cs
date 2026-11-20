@@ -30,6 +30,24 @@ public sealed class HostCallbackHandleEmitterTests
         Assert.Equal(expected, code.ToArray());
     }
 
+    // A callback JavaScript owns: its new handle is the argument, and no local keeps it.
+    [Fact]
+    public void PassesATransferredCallbacksNewHandleAsTheArgument()
+    {
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var code = new RecordingInstructionWriter();
+        var emitter = new[] { new TransferredHostCallbackEmitter(imports) }.Cast<ITransferredHostCallbackEmitter>().Single();
+
+        emitter.Emit(code, 4);
+
+        byte[] expected =
+        [
+            WasmOpcodes.LocalGet, 4,
+            WasmOpcodes.Call, (byte)imports.Resolve(RuntimeImportSymbol.HandleNew),
+        ];
+        Assert.Equal(expected, code.ToArray());
+    }
+
     private static IHostCallbackHandleEmitter ThroughContract(
         HostCallbackHandleEmitter emitter) => new[]
         {

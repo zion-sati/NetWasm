@@ -769,13 +769,13 @@ public sealed class ManagedByRefEffectAnalyzerTests
     }
 }
 
-// While one method is analysed alone, its effects are its own as they stand, every other
+// While one method is analyzed alone, its effects are its own as they stand, every other
 // method's are as known, and a method of the program known for none has none; the view is
 // looked up by method.
 public sealed class KnownByRefEffectsTests
 {
     [Fact]
-    public void TheAnalysedMethodsEffectsAreItsOwnAndOthersAreAsKnown()
+    public void TheAnalyzedMethodsEffectsAreItsOwnAndOthersAreAsKnown()
     {
         var written = new ManagedByRefMethodEffects([0], [], []);
         var effects = new ManagedByRefEffectAnalyzer.KnownEffects("Self", new HashSet<string> { "Self", "Known", "Quiet" },

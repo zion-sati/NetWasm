@@ -12,6 +12,7 @@ void collector_store_reference(
 {
     (void)owner;
     *slot = value;
+    collector_record_reference_write((uintptr_t)slot);
 }
 
 void collector_move_value_range(
@@ -23,6 +24,7 @@ void collector_move_value_range(
 {
     (void)owner;
     memmove(destination, source, element_count * element_size);
+    collector_record_reference_writes((uintptr_t)destination, element_count * element_size);
 }
 
 void collector_clear_value_range(

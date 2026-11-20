@@ -243,6 +243,42 @@ public sealed class RootClearElisionPlannerTests
         Assert.Contains(0, plan[(2, false)]);
     }
 
+    // A frame the method zeroes on entry holds null in every slot at the first safepoint, so its dead slots need no
+    // store there; an unzeroed frame's must be cleared once. Authoritative arguments are written at entry, so their
+    // slots are not known null even in a zeroed frame.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AZeroedFrameStartsWithEveryUnwrittenSlotKnownNull(bool zeroed)
+    {
+        var argument = new RootSource(RootSourceKind.Argument, 0);
+        var context = Context([new(0, [], []), new(1, [], [])]);
+        context = context with
+        {
+            RootMap = context.RootMap with { Slots = context.RootMap.Slots.Add(argument, 1) },
+            AuthoritativeRootSlots = ImmutableDictionary<RootSource, int>.Empty.Add(argument, 1),
+            RootFrameStartsZeroed = zeroed,
+        };
+        var plan = _planner.Plan(Method([I(0, CilOperation.Call), I(1, CilOperation.Call)]), context);
+        Assert.Equal(zeroed ? [0] : [], plan[(0, false)].Order());
+        Assert.Equal([0, 1], plan[(1, false)].Order());
+    }
+
+    // The entry fact is the method entry block's only when no ordinary edge returns to it.
+    [Fact]
+    public void ALoopBackToTheEntryBlockKeepsItsEntryUnknown()
+    {
+        var instructions = ImmutableArray.Create(I(0, CilOperation.Call), I(1, CilOperation.LoadLocal, new CilOperand.Index(0)));
+        var definition = new MethodDefinitionModel(EntryKey, TypeKey, "Run", true, MethodSignatureModel.Create(CliValueKind.Void), 1);
+        var block = new StructuredBlockDefinition(new(0), 0, instructions, [], new StructuredBranchExit(1, new(0)))
+        { EndOffset = instructions.Length };
+        var method = new StructuredMethod(new(definition, null, 1, [], [], instructions), new(0),
+            ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty.Add(block.Id, block),
+            StructuredSequence.Empty, [], [], []);
+        var context = Context([new(0, [], [])]) with { RootFrameStartsZeroed = true };
+        Assert.Empty(_planner.Plan(method, context)[(0, false)]);
+    }
+
     private static MethodEmissionContext Context(IEnumerable<SafepointRootMap> points) =>
         CreateMethodEmissionContext() with
         {

@@ -35,7 +35,7 @@ public sealed class RuntimeTypeTableEncoderTests
 
         var reader = Read(entries, generic: true, declaring: true);
 
-        Assert.Equal(1u, reader.Header(0));
+        Assert.Equal((uint)RuntimeTypeTableEncoder.Format, reader.Header(0));
         Assert.Equal(6, reader.Capacity);
         Assert.Equal(0u, reader.FlagWord(0));
         Assert.Equal(ClassFlag | (18u << 24) | RuntimeTypeTableEncoder.FinalizerFlag | RuntimeTypeTableEncoder.RegisteredFlag,
@@ -116,6 +116,42 @@ public sealed class RuntimeTypeTableEncoderTests
         Assert.Equal(0u, reader.Header(19));
         Assert.True(Encode([entry], generic: true, declaring: true).Length >
             Encode([entry], generic: false, declaring: false).Length);
+    }
+
+    // The program assembly table follows the padded bit stream at a multiple of eight bytes, at header field 20's
+    // offset; without one the field is zero. Its indexes widen the assembly section even where no type has them.
+    [Fact]
+    public void TheProgramAssemblyTableFollowsTheBitStreamAtAnAlignedOffset()
+    {
+        var entry = Entry(1, ClassFlag, 8, [], 0, []) with { AssemblyIndex = 1 };
+        var encoder = new RuntimeTypeTableEncoder();
+        var request = new RuntimeTypeTableRequest([entry], 8, false, false, false) { IncludeAssemblies = true };
+        ImmutableArray<byte> assemblyTable = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+        var without = encoder.Encode(request);
+        var with = encoder.Encode(request with { AssemblyTable = assemblyTable, HighestAssemblyIndex = 6 });
+
+        Assert.Equal(0u, new RuntimeTypeTableReader([.. without]).Header(20));
+        var reader = new RuntimeTypeTableReader([.. with]);
+        var offset = (int)reader.Header(20);
+        Assert.Equal(0, offset % 8);
+        Assert.True(offset >= without.Length - RuntimeTypeTableEncoder.Padding);
+        Assert.Equal(assemblyTable, with[offset..]);
+        Assert.Equal(3, reader.AssemblyBits);
+        Assert.Equal(1, reader.Assembly(1));
+    }
+
+    // The native runtime registers types from the flag words just past the header the encoder writes.
+    [Fact]
+    public void TheRuntimeAndTestHostsReadFlagWordsPastTheEncodersHeader()
+    {
+        var root = NetWasm.TestInfrastructure.TestAssets.FindRepositoryRoot();
+        var runtime = File.ReadAllText(Path.Combine(root, "src/NetWasm.Runtime/native_runtime.c"));
+        var testHost = File.ReadAllText(Path.Combine(root, "tests/NetWasm.Compiler.Tests/Correctness/runtime-type-table.cjs"));
+
+        Assert.Contains($"#define TYPE_TABLE_HEADER_BITS ({RuntimeTypeTableEncoder.HeaderFields}u * 32u)", runtime,
+            StringComparison.Ordinal);
+        Assert.Contains($"const HEADER_BITS = {RuntimeTypeTableEncoder.HeaderFields} * 32;", testHost, StringComparison.Ordinal);
     }
 
     [Fact]

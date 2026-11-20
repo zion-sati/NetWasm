@@ -14,6 +14,7 @@ using NetWasm.Compiler.Wasm.Encoding;
 namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 public sealed class ValueObjectBlockMemoryEmitterTests
 {
@@ -117,6 +118,48 @@ public sealed class ValueObjectBlockMemoryEmitterTests
         instruction.Opcode == WasmOpcodes.Prefixed &&
         instruction.Operand == WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0);
 
+    public static TheoryData<CilOperation, string, bool> StoresThroughAnAddress() => new()
+    {
+        { CilOperation.StoreObject, "a reference", true },
+        { CilOperation.StoreObject, "a value that holds a reference", true },
+        { CilOperation.StoreObject, "a value without references", false },
+        { CilOperation.StoreObject, "a scalar", false },
+        { CilOperation.CopyObject, "a value that holds a reference", true },
+        { CilOperation.CopyObject, "a value without references", false },
+    };
+
+    // For a collector with generations, a store through an address of a reference, or of a value that holds
+    // one, is followed by its record at that address; no other store through an address is.
+    [Theory]
+    [MemberData(nameof(StoresThroughAnAddress))]
+    public void AStoredReferenceIsRecordedAtItsAddressForACollectorWithGenerations(
+        CilOperation operation, string stored, bool recorded)
+    {
+        var type = stored switch
+        {
+            "a reference" => CliTypeIdentity.Named(new("Tests"), "Tests", "Reference", isValueType: false),
+            "a scalar" => CliTypeIdentity.FromStackKind(CliValueKind.I4),
+            _ => ValueType(),
+        };
+        var emitter = (IInstructionCommandProvider)CreateEmitter(
+            valuesHoldReferences: stored == "a value that holds a reference");
+        var source = operation == CilOperation.CopyObject ? CliValueKind.ManagedAddress : type.StackKind;
+        InstructionEmissionRequest Store() => CreateRequest(
+            operation, [CliValueKind.ManagedAddress, source], new CilOperand.TypeIdentity(type), CreateMethodEmissionContext(4));
+        var request = RecordingReferenceWrites(Store());
+        var silent = Store();
+
+        Emit(emitter, request);
+        Emit(emitter, silent);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        var unrecorded = ((RecordingInstructionWriter)GetCodeWriter(silent)).ToInstructions();
+        Assert.Empty(request.Stack);
+        Assert.Equal(unrecorded.Length + (recorded ? 2 : 0), instructions.Length);
+        // The destination's local is the first the store reads.
+        Assert.Equal(recorded, EndsWithRecordAt(request, instructions, instructions[0].Operand.UnsignedValue));
+    }
+
     [Fact]
     public void InitializeAndCopyBlocksConsumeThreeOperands()
     {
@@ -182,6 +225,24 @@ public sealed class ValueObjectBlockMemoryEmitterTests
 
         Assert.Equal([CliValueKind.NativeInt], request.Stack);
         Assert.Contains(WasmOpcodes.I64ExtendI32Unsigned, GetCodeBytes(request));
+    }
+
+    // Under localsinit the block is zeroed with a fill of the requested size, widened like the allocation's.
+    [Theory]
+    [InlineData(CliValueKind.I4, true)]
+    [InlineData(CliValueKind.NativeInt, false)]
+    public void Memory64ZeroedLocalAllocationFillsTheRequestedSize(CliValueKind size, bool widens)
+    {
+        var allocation = CreateRequest(CilOperation.LocalAllocate, [size]);
+        var request = allocation with { Header = allocation.Header with { InitializesLocals = true } };
+        RegisterInstructionWriter(request, (RecordingInstructionWriter)GetCodeWriter(allocation));
+
+        Emit((IInstructionCommandProvider)CreateEmitter(WasmTargetLayout.Wasm64), request);
+
+        var code = GetCodeBytes(request);
+        Assert.Equal([CliValueKind.NativeInt], request.Stack);
+        Assert.Contains(WasmOpcodes.I64EqualZero, code);
+        Assert.Equal(widens ? 2 : 0, code.Count(value => value == WasmOpcodes.I64ExtendI32Unsigned));
     }
 
     [Fact]
@@ -507,13 +568,15 @@ public sealed class ValueObjectBlockMemoryEmitterTests
     private static ValueObjectBlockMemoryEmitter CreateEmitter(
         WasmTargetLayout? target = null,
         IAddressTakenAggregateProjectionEmitter? projections = null,
-        int valueSize = 4)
+        int valueSize = 4,
+        bool valuesHoldReferences = false)
     {
         var program = new FakeProgram();
-        var layouts = new RecordingLayoutProvider(target, valueSize);
+        var layouts = new RecordingLayoutProvider(target, valueSize, valuesHoldReferences);
         return new ValueObjectBlockMemoryEmitter(layouts, layouts, CreateTypeOperands(program),
             WasmRuntimeImports.CreateCatalog(),
-            projections ?? new AddressTakenAggregateProjectionEmitter(layouts));
+            projections ?? new AddressTakenAggregateProjectionEmitter(layouts),
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(layouts)));
     }
 
     private static InstructionEmissionRequest CreateRequest(

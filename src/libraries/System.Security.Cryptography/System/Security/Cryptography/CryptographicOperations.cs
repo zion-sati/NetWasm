@@ -1,15 +1,15 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
-// NetWasm adaptation: FixedTimeEquals, ZeroMemory and the synchronous HashData/TryHashData
-// one-shots (which the asymmetric algorithm bases use) are ported; the asynchronous hash and the
-// HMAC one-shots arrive with a later slice. The SHA3 types are not ported, so their names throw
+// NetWasm adaptation: the SHA3 types are not ported, so their names throw
 // PlatformNotSupportedException, as the browser hash provider reports them unavailable.
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Internal.Cryptography;
 
 namespace System.Security.Cryptography
@@ -310,6 +310,778 @@ namespace System.Security.Cryptography
             int written = LiteHashProvider.HashStream(hashAlgorithm.Name, source, destination);
             Debug.Assert(written == hashSizeInBytes);
             return written;
+        }
+
+        /// <summary>
+        /// Asynchronously computes the hash of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the hash.</param>
+        /// <param name="source">The stream to hash.</param>
+        /// <param name="destination">The buffer to receive the hash value.</param>
+        /// <param name="cancellationToken">
+        ///   The token to monitor for cancellation requests. The default value is <see cref="CancellationToken.None" />.
+        /// </param>
+        /// <returns>The total number of bytes written to <paramref name="destination" />.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para>The buffer in <paramref name="destination"/> is too small to hold the calculated hash size.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        ///   <paramref name="cancellationToken"/> has been canceled.
+        /// </exception>
+        public static ValueTask<int> HashDataAsync(
+            HashAlgorithmName hashAlgorithm,
+            Stream source,
+            Memory<byte> destination,
+            CancellationToken cancellationToken = default)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+            CheckDestinationSize(hashSizeInBytes, destination.Length);
+
+            return LiteHashProvider.HashStreamAsync(
+                hashAlgorithm.Name,
+                source,
+                destination,
+                cancellationToken);
+        }
+
+        /// <summary>
+        /// Asynchronously computes the hash of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the hash.</param>
+        /// <param name="source">The stream to hash.</param>
+        /// <param name="cancellationToken">
+        ///   The token to monitor for cancellation requests. The default value is <see cref="CancellationToken.None" />.
+        /// </param>
+        /// <returns>The hash of the data.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        ///   <paramref name="cancellationToken"/> has been canceled.
+        /// </exception>
+        public static ValueTask<byte[]> HashDataAsync(
+            HashAlgorithmName hashAlgorithm,
+            Stream source,
+            CancellationToken cancellationToken = default)
+        {
+            CheckHashAndGetLength(hashAlgorithm);
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+
+            return LiteHashProvider.HashStreamAsync(hashAlgorithm.Name, source, cancellationToken);
+        }
+
+        /// <summary>
+        /// Computes the HMAC of data.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to compute the HMAC over.</param>
+        /// <returns>The HMAC of the data.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="key" /> or <paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        public static byte[] HmacData(HashAlgorithmName hashAlgorithm, byte[] key, byte[] source)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(source);
+            return HmacData(hashAlgorithm, new ReadOnlySpan<byte>(key), new ReadOnlySpan<byte>(source));
+        }
+
+        /// <summary>
+        /// Computes the HMAC of data.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to compute the HMAC over.</param>
+        /// <returns>The HMAC of the data.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///   <see langword="null" />.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        public static byte[] HmacData(HashAlgorithmName hashAlgorithm, ReadOnlySpan<byte> key, ReadOnlySpan<byte> source)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+            Debug.Assert(hashAlgorithm.Name is not null);
+            byte[] buffer = new byte[hashSizeInBytes];
+
+            int written = HashProviderDispenser.OneShotHashProvider.MacData(hashAlgorithm.Name, key, source, buffer);
+            Debug.Assert(written == hashSizeInBytes);
+            return buffer;
+        }
+
+        /// <summary>
+        /// Computes the HMAC of data.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to compute the HMAC over.</param>
+        /// <param name="destination">The buffer to receive the HMAC value.</param>
+        /// <returns>The total number of bytes written to <paramref name="destination" />.</returns>
+        /// <exception cref="ArgumentException">
+        ///   <para>The buffer in <paramref name="destination"/> is too small to hold the calculated hash size.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        /// </exception>
+        /// <exception cref="ArgumentNullException">
+        ///   <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///   <see langword="null" />.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        public static int HmacData(
+            HashAlgorithmName hashAlgorithm,
+            ReadOnlySpan<byte> key,
+            ReadOnlySpan<byte> source,
+            Span<byte> destination)
+        {
+            if (!TryHmacData(hashAlgorithm, key, source, destination, out int bytesWritten))
+            {
+                throw new ArgumentException(SR.Argument_DestinationTooShort, nameof(destination));
+            }
+
+            return bytesWritten;
+        }
+
+        /// <summary>
+        /// Attempts to compute the HMAC of data.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to compute the HMAC over.</param>
+        /// <param name="destination">The buffer to receive the HMAC value.</param>
+        /// <param name="bytesWritten">
+        ///   When this method returns, the total number of bytes written into <paramref name="destination"/>.
+        /// </param>
+        /// <returns>
+        ///   <see langword="false"/> if <paramref name="destination"/> is too small to hold the
+        ///   calculated HMAC, <see langword="true"/> otherwise.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        ///   <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.
+        /// </exception>
+        /// <exception cref="ArgumentNullException">
+        ///   <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///   <see langword="null" />.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        public static bool TryHmacData(
+            HashAlgorithmName hashAlgorithm,
+            ReadOnlySpan<byte> key,
+            ReadOnlySpan<byte> source,
+            Span<byte> destination,
+            out int bytesWritten)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+            Debug.Assert(hashAlgorithm.Name is not null);
+
+            if (destination.Length < hashSizeInBytes)
+            {
+                bytesWritten = 0;
+                return false;
+            }
+
+            bytesWritten = HashProviderDispenser.OneShotHashProvider.MacData(hashAlgorithm.Name, key, source, destination);
+            Debug.Assert(bytesWritten == hashSizeInBytes);
+            return true;
+        }
+
+        /// <summary>
+        /// Computes the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to compute the HMAC over.</param>
+        /// <returns>The HMAC of the data.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="key" /> or <paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        public static byte[] HmacData(HashAlgorithmName hashAlgorithm, byte[] key, Stream source)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+            return HmacData(hashAlgorithm, new ReadOnlySpan<byte>(key), source);
+        }
+
+        /// <summary>
+        /// Computes the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to compute the HMAC over.</param>
+        /// <returns>The HMAC of the data.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        public static byte[] HmacData(HashAlgorithmName hashAlgorithm, ReadOnlySpan<byte> key, Stream source)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+
+            return LiteHashProvider.HmacStream(hashAlgorithm.Name, hashSizeInBytes, key, source);
+        }
+
+        /// <summary>
+        /// Computes the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to compute the HMAC over.</param>
+        /// <param name="destination">The buffer to receive the HMAC value.</param>
+        /// <returns>The total number of bytes written to <paramref name="destination" />.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        ///   <para>-or-</para>
+        ///   <para>The buffer in <paramref name="destination"/> is too small to hold the calculated HMAC size.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        public static int HmacData(HashAlgorithmName hashAlgorithm, ReadOnlySpan<byte> key, Stream source, Span<byte> destination)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+            CheckDestinationSize(hashSizeInBytes, destination.Length);
+
+            return LiteHashProvider.HmacStream(hashAlgorithm.Name, key, source, destination);
+        }
+
+        /// <summary>
+        /// Asynchronously computes the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The stream to compute the HMAC over.</param>
+        /// <param name="cancellationToken">
+        ///   The token to monitor for cancellation requests. The default value is <see cref="CancellationToken.None" />.
+        /// </param>
+        /// <returns>The HMAC of the data.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="key" /> or <paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        ///   <paramref name="cancellationToken"/> has been canceled.
+        /// </exception>
+        public static ValueTask<byte[]> HmacDataAsync(
+            HashAlgorithmName hashAlgorithm,
+            byte[] key,
+            Stream source,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+            return HmacDataAsync(hashAlgorithm, new ReadOnlyMemory<byte>(key), source, cancellationToken);
+        }
+
+        /// <summary>
+        /// Asynchronously computes the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The stream to compute the HMAC over.</param>
+        /// <param name="destination">The buffer to receive the HMAC value.</param>
+        /// <param name="cancellationToken">
+        ///   The token to monitor for cancellation requests. The default value is <see cref="CancellationToken.None" />.
+        /// </param>
+        /// <returns>The total number of bytes written to <paramref name="destination" />.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para>The buffer in <paramref name="destination"/> is too small to hold the calculated HMAC size.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        ///   <paramref name="cancellationToken"/> has been canceled.
+        /// </exception>
+        public static ValueTask<int> HmacDataAsync(
+            HashAlgorithmName hashAlgorithm,
+            ReadOnlyMemory<byte> key,
+            Stream source,
+            Memory<byte> destination,
+            CancellationToken cancellationToken = default)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+            CheckDestinationSize(hashSizeInBytes, destination.Length);
+
+            return LiteHashProvider.HmacStreamAsync(hashAlgorithm.Name, key.Span, source, destination, cancellationToken);
+        }
+
+        /// <summary>
+        /// Asynchronously computes the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The stream to compute the HMAC over.</param>
+        /// <param name="cancellationToken">
+        ///   The token to monitor for cancellation requests. The default value is <see cref="CancellationToken.None" />.
+        /// </param>
+        /// <returns>The HMAC of the data.</returns>
+        /// <exception cref="ArgumentNullException">
+        ///   <para><paramref name="source" /> is <see langword="null" />.</para>
+        ///   <para>-or-</para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para>-or-</para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        ///   <paramref name="cancellationToken"/> has been canceled.
+        /// </exception>
+        public static ValueTask<byte[]> HmacDataAsync(
+            HashAlgorithmName hashAlgorithm,
+            ReadOnlyMemory<byte> key,
+            Stream source,
+            CancellationToken cancellationToken = default)
+        {
+            CheckHashAndGetLength(hashAlgorithm);
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+
+            return LiteHashProvider.HmacStreamAsync(hashAlgorithm.Name, key.Span, source, cancellationToken);
+        }
+
+        /// <summary>
+        ///   Verifies the HMAC of data.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The data to HMAC.</param>
+        /// <param name="hash">The HMAC to compare against.</param>
+        /// <returns>
+        ///   <see langword="true" /> if the computed HMAC of <paramref name="source"/> is equal to
+        ///   <paramref name="hash" />; otherwise <see langword="false" />.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hash"/> has a length not equal to the size of the HMAC output.</para>
+        ///   <para> -or- </para>
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        /// </exception>
+        /// <exception cref="ArgumentNullException">
+        ///   <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///   <see langword="null" />.
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <remarks>
+        ///   This API performs a fixed-time comparison of the derived HMAC against a known HMAC to prevent leaking
+        ///   timing information.
+        /// </remarks>
+        public static unsafe bool VerifyHmac(
+            HashAlgorithmName hashAlgorithm,
+            ReadOnlySpan<byte> key,
+            ReadOnlySpan<byte> source,
+            ReadOnlySpan<byte> hash)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+
+            if (hash.Length != hashSizeInBytes)
+            {
+                throw new ArgumentException(SR.Format(SR.Argument_HashImprecise, hashSizeInBytes), nameof(hash));
+            }
+
+            Debug.Assert(hashAlgorithm.Name is not null);
+
+            const int MaxStackAlloc = 64; // SHA2-512 / SHA3-512
+            Span<byte> macBuffer = stackalloc byte[MaxStackAlloc];
+
+            if (hashSizeInBytes > MaxStackAlloc)
+            {
+                Debug.Fail($"Validated hash algorithm '{hashAlgorithm.Name}' size ({hashSizeInBytes}) exceeds stack alloc.");
+                throw new CryptographicException();
+            }
+
+            int written = HashProviderDispenser.OneShotHashProvider.MacData(hashAlgorithm.Name, key, source, macBuffer);
+            Debug.Assert(written == hashSizeInBytes);
+            Span<byte> mac = macBuffer.Slice(0, written);
+
+            bool result = FixedTimeEquals(mac, hash);
+            ZeroMemory(mac);
+            return result;
+        }
+
+        /// <exception cref="ArgumentNullException">
+        ///   <para>
+        ///     <paramref name="key" />, <paramref name="source" />, or <paramref name="hash" /> is <see langword="null" />.
+        ///   </para>
+        ///   <para> -or- </para>
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <inheritdoc cref="VerifyHmac(HashAlgorithmName, ReadOnlySpan{byte}, ReadOnlySpan{byte}, ReadOnlySpan{byte})" />
+        public static bool VerifyHmac(HashAlgorithmName hashAlgorithm, byte[] key, byte[] source, byte[] hash)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(hash);
+
+            return VerifyHmac(
+                hashAlgorithm,
+                new ReadOnlySpan<byte>(key),
+                new ReadOnlySpan<byte>(source),
+                new ReadOnlySpan<byte>(hash));
+        }
+
+        /// <summary>
+        ///   Verifies the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The stream to HMAC.</param>
+        /// <param name="hash">The HMAC to compare against.</param>
+        /// <returns>
+        ///   <see langword="true" /> if the computed HMAC of <paramref name="source"/> is equal to
+        ///   <paramref name="hash" />; otherwise <see langword="false" />.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hash"/> has a length not equal to the size of the HMAC output.</para>
+        ///   <para> -or- </para>
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para> -or- </para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="ArgumentNullException">
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        ///   <para> -or- </para>
+        ///   <para>
+        ///     <paramref name="source" /> is <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <remarks>
+        ///   This API performs a fixed-time comparison of the derived HMAC against a known HMAC to prevent leaking
+        ///   timing information.
+        /// </remarks>
+        public static unsafe bool VerifyHmac(HashAlgorithmName hashAlgorithm, ReadOnlySpan<byte> key, Stream source, ReadOnlySpan<byte> hash)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+
+            if (hash.Length != hashSizeInBytes)
+            {
+                throw new ArgumentException(SR.Format(SR.Argument_HashImprecise, hashSizeInBytes), nameof(hash));
+            }
+
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+
+            const int MaxStackAlloc = 64; // SHA2-512 / SHA3-512
+            Span<byte> macBuffer = stackalloc byte[MaxStackAlloc];
+
+            if (hashSizeInBytes > MaxStackAlloc)
+            {
+                Debug.Fail($"Validated hash algorithm '{hashAlgorithm.Name}' size ({hashSizeInBytes}) exceeds stack alloc.");
+                throw new CryptographicException();
+            }
+
+            int written = LiteHashProvider.HmacStream(hashAlgorithm.Name, key, source, macBuffer);
+            Debug.Assert(written == hashSizeInBytes);
+            Span<byte> mac = macBuffer.Slice(0, written);
+
+            bool result = FixedTimeEquals(mac, hash);
+            ZeroMemory(mac);
+            return result;
+        }
+
+        /// <exception cref="ArgumentNullException">
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        ///   <para> -or- </para>
+        ///   <para>
+        ///     <paramref name="key" />, <paramref name="source" />, or <paramref name="hash" /> is <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <inheritdoc cref="VerifyHmac(HashAlgorithmName, ReadOnlySpan{byte}, Stream, ReadOnlySpan{byte})" />
+        public static bool VerifyHmac(HashAlgorithmName hashAlgorithm, byte[] key, Stream source, byte[] hash)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(hash);
+            return VerifyHmac(hashAlgorithm, new ReadOnlySpan<byte>(key), source, new ReadOnlySpan<byte>(hash));
+        }
+
+        /// <summary>
+        ///   Asynchronously verifies the HMAC of a stream.
+        /// </summary>
+        /// <param name="hashAlgorithm">The algorithm used to compute the HMAC.</param>
+        /// <param name="key">The secret key. The key can be any length.</param>
+        /// <param name="source">The stream to HMAC.</param>
+        /// <param name="hash">The HMAC to compare against.</param>
+        /// <param name="cancellationToken">
+        ///   The token to monitor for cancellation requests.
+        ///   The default value is <see cref="System.Threading.CancellationToken.None" />.
+        /// </param>
+        /// <returns>
+        ///   A task that, when awaited, produces <see langword="true" /> if the computed HMAC of
+        ///   <paramref name="source"/> is equal to <paramref name="hash" />; otherwise <see langword="false" />.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        ///   <para><paramref name="hash"/> has a length not equal to the size of the HMAC output.</para>
+        ///   <para> -or- </para>
+        ///   <para><paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is empty.</para>
+        ///   <para> -or- </para>
+        ///   <para><paramref name="source" /> does not support reading.</para>
+        /// </exception>
+        /// <exception cref="ArgumentNullException">
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        ///   <para> -or- </para>
+        ///   <para>
+        ///     <paramref name="source" /> is <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <exception cref="CryptographicException">
+        ///   <paramref name="hashAlgorithm"/> specifies an unknown hash algorithm.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///   <paramref name="hashAlgorithm"/> specifies a hash algorithm not supported by the current platform.
+        /// </exception>
+        /// <remarks>
+        ///   This API performs a fixed-time comparison of the derived HMAC against a known HMAC to prevent leaking
+        ///   timing information.
+        /// </remarks>
+        public static ValueTask<bool> VerifyHmacAsync(
+            HashAlgorithmName hashAlgorithm,
+            ReadOnlyMemory<byte> key,
+            Stream source,
+            ReadOnlyMemory<byte> hash,
+            CancellationToken cancellationToken = default)
+        {
+            int hashSizeInBytes = CheckHashAndGetLength(hashAlgorithm);
+
+            if (hash.Length != hashSizeInBytes)
+            {
+                throw new ArgumentException(SR.Format(SR.Argument_HashImprecise, hashSizeInBytes), nameof(hash));
+            }
+
+            CheckStream(source);
+            Debug.Assert(hashAlgorithm.Name is not null);
+
+            return VerifyHmacAsyncInner(hashAlgorithm.Name, key, source, hash, cancellationToken);
+
+            static async ValueTask<bool> VerifyHmacAsyncInner(
+                string hashAlgorithm,
+                ReadOnlyMemory<byte> key,
+                Stream source,
+                ReadOnlyMemory<byte> hash,
+                CancellationToken cancellationToken)
+            {
+                byte[] mac = new byte[hash.Length];
+
+                using (PinAndClear.Track(mac))
+                {
+                    int written = await LiteHashProvider.HmacStreamAsync(
+                        hashAlgorithm,
+                        key.Span,
+                        source,
+                        mac,
+                        cancellationToken).ConfigureAwait(false);
+
+                    Debug.Assert(written == mac.Length);
+                    return CryptographicOperations.FixedTimeEquals(mac, hash.Span);
+                }
+            }
+        }
+
+        /// <exception cref="ArgumentNullException">
+        ///   <para>
+        ///     <paramref name="hashAlgorithm"/> has a <see cref="HashAlgorithmName.Name" /> that is
+        ///     <see langword="null" />.
+        ///   </para>
+        ///   <para> -or- </para>
+        ///   <para>
+        ///     <paramref name="key" />, <paramref name="source" />, or <paramref name="hash" /> is <see langword="null" />.
+        ///   </para>
+        /// </exception>
+        /// <inheritdoc cref="VerifyHmacAsync(HashAlgorithmName, ReadOnlyMemory{byte}, Stream, ReadOnlyMemory{byte}, CancellationToken)" />
+        public static ValueTask<bool> VerifyHmacAsync(
+            HashAlgorithmName hashAlgorithm,
+            byte[] key,
+            Stream source,
+            byte[] hash,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(hash);
+
+            return VerifyHmacAsync(
+                hashAlgorithm,
+                new ReadOnlyMemory<byte>(key),
+                source,
+                new ReadOnlyMemory<byte>(hash),
+                cancellationToken);
         }
 
         private static void CheckStream([NotNull] Stream source)

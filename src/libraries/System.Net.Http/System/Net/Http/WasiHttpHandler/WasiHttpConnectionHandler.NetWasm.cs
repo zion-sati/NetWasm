@@ -25,7 +25,7 @@ namespace System.Net.Http
         internal ICredentials? Credentials;
         // AuthenticationHelper's send, set with Credentials: only a handler given credentials reaches it (and Digest's
         // hashing), as only one given AutomaticDecompression reaches DecompressionHandler.
-        internal Func<HttpRequestMessage, bool, ICredentials, bool, HttpConnectionPool, CancellationToken, ValueTask<HttpResponseMessage>>? AuthenticatedSend;
+        internal Func<HttpRequestMessage, bool, ICredentials, bool, IHttpAuthenticationPool, CancellationToken, ValueTask<HttpResponseMessage>>? AuthenticatedSend;
         internal bool AllowAutoRedirect = HttpHandlerDefaults.DefaultAutomaticRedirection;
         internal int MaxAutomaticRedirections = HttpHandlerDefaults.DefaultMaxAutomaticRedirections;
         internal int MaxResponseHeadersLength = HttpHandlerDefaults.DefaultMaxResponseHeadersLength;
@@ -49,25 +49,25 @@ namespace System.Net.Http
     // when the handler has credentials.
     internal sealed class WasiHttpConnectionHandler(IHttpTransport transport, WasiHttpSettings settings) : HttpMessageHandlerStage
     {
-        private readonly Dictionary<string, HttpConnectionPool> _pools = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, WasiHttpConnectionPool> _pools = new(StringComparer.OrdinalIgnoreCase);
 
         internal override ValueTask<HttpResponseMessage> SendAsync(HttpRequestMessage request, bool async, CancellationToken cancellationToken)
         {
             Uri uri = request.RequestUri ?? throw new InvalidOperationException(SR.net_http_client_invalid_requesturi);
-            HttpConnectionPool pool = GetPool(uri);
+            WasiHttpConnectionPool pool = GetPool(uri);
             return settings.Credentials is { } credentials && settings.AuthenticatedSend is { } authenticatedSend
                 ? authenticatedSend(request, async, credentials, settings.PreAuthenticate, pool, cancellationToken)
                 : pool.SendWithVersionDetectionAndRetryAsync(request, async, doRequestAuth: false, cancellationToken);
         }
 
-        private HttpConnectionPool GetPool(Uri uri)
+        private WasiHttpConnectionPool GetPool(Uri uri)
         {
             string origin = uri.IsAbsoluteUri ? uri.GetLeftPart(UriPartial.Authority) : string.Empty;
             lock (_pools)
             {
-                if (!_pools.TryGetValue(origin, out HttpConnectionPool? pool))
+                if (!_pools.TryGetValue(origin, out WasiHttpConnectionPool? pool))
                 {
-                    pool = new HttpConnectionPool(transport, settings);
+                    pool = new WasiHttpConnectionPool(transport, settings);
                     _pools.Add(origin, pool);
                 }
                 return pool;
@@ -78,7 +78,7 @@ namespace System.Net.Http
     // The per-origin state AuthenticationHelper asks SocketsHttpHandler's pool for, and the pool's send: cookies from
     // the container go out with the request's own, as SocketsHttpHandler writes them, the response header limit is
     // checked, and received cookies are stored.
-    internal sealed class HttpConnectionPool(IHttpTransport transport, WasiHttpSettings settings)
+    internal sealed class WasiHttpConnectionPool(IHttpTransport transport, WasiHttpSettings settings) : IHttpAuthenticationPool
     {
         public PreAuthCredentialCache? PreAuthCredentials { get; } = settings.PreAuthenticate ? new PreAuthCredentialCache() : null;
 

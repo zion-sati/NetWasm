@@ -4,7 +4,6 @@
 import { createBrowserArtifactTransport } from "./browser-artifact-transport.mjs";
 import { createBrowserDeploymentManifestLoader } from "./browser-deployment-manifest-loader.mjs";
 import { createBrowserRawLoader } from "./browser-raw-loader.mjs";
-import { createBrowserSidecarMaterializer } from "./browser-sidecar-materializer.mjs";
 import { createBrowserVerifiedModuleImporter } from "./browser-verified-module-importer.mjs";
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { jsExportExecutionContract } from "./execution-contracts.mjs";
@@ -22,12 +21,15 @@ const optionKeys = [
   "configuration", "consumerModules", "manifestUrl", "platform", "platformProviderCatalog",
   "snapshotDeploymentManifest", "stderr", "stdout",
 ];
+// Optional: a host told of each import the program calls, as a page's idle collection is.
+const optionalOptionKeys = ["observeImportCall"];
 const configurationKeys = ["applicationImports", "arguments", "environment", "grants"];
 const platformKeys = [
   "compileCoreModule",
   "createFilesystemScope",
   "createImports",
   "createModuleUrl",
+  "createSidecarMaterializer",
   "digest",
   "fetch",
   "importModule",
@@ -36,19 +38,28 @@ const platformKeys = [
 const openKeys = ["startup"];
 const startupKeys = ["buildFingerprint", "manifestSha256"];
 const builtinInteropModule = "netwasm.host.v1";
+const filesystemActions = ["createFilesystemScope", "createSidecarMaterializer"];
 
 export function createBrowserRawExportSession(options) {
-  assertExactDataObject(options, optionKeys, "browser raw export-session options");
+  assertExactDataObject(options, optionKeys, "browser raw export-session options", optionalOptionKeys);
+  const { observeImportCall } = options;
+  if (observeImportCall !== undefined && typeof observeImportCall !== "function") {
+    throw new TypeError("browser raw export-session import observer must be a function");
+  }
   assertExactDataObject(options.configuration, configurationKeys,
     "browser raw export-session configuration");
   assertExactDataObject(options.platform, platformKeys, "browser raw export-session platform");
   for (const [name, value] of Object.entries(options.platform)) {
     // The generated entry passes no filesystem scope when the application
-    // links no filesystem interface, so the bundle carries no filesystem code.
-    if (name === "createFilesystemScope" && value === null) continue;
+    // links no filesystem interface, so the bundle carries no filesystem code,
+    // and no sidecar materializer, which mounts sidecars in that filesystem.
+    if (filesystemActions.includes(name) && value === null) continue;
     if (typeof value !== "function") {
       throw new TypeError(`browser raw export-session platform '${name}' action is required`);
     }
+  }
+  if ((options.platform.createFilesystemScope === null) !== (options.platform.createSidecarMaterializer === null)) {
+    throw new TypeError("browser raw export-session platform needs a sidecar materializer exactly with a filesystem scope");
   }
   const consumerModules = snapshotConsumerModules(options.consumerModules);
   const transport = createBrowserArtifactTransport({
@@ -140,7 +151,7 @@ export function createBrowserRawExportSession(options) {
         throw new TypeError("time zone data requires an application that links a filesystem interface");
       }
       if (selection !== null && filesystem !== null) {
-        const materializeSidecars = createBrowserSidecarMaterializer({
+        const materializeSidecars = options.platform.createSidecarMaterializer({
           manifestUrl: options.manifestUrl,
           platform: Object.freeze({
             digest: options.platform.digest,
@@ -177,6 +188,7 @@ export function createBrowserRawExportSession(options) {
           diagnosticArtifacts: loaded.diagnosticArtifacts,
           manifest: loaded.interopManifest,
           managedExceptionReporting: createManagedExceptionOutput(output.stderr),
+          observeImportCall,
           runtimeModules: Object.freeze(Object.create(null)),
           stackTraceSymbols: loaded.stackTraceSymbols,
         }),
@@ -209,7 +221,8 @@ function snapshotConsumerModules(value) {
     assertPlainDataObject(moduleValue, `worker JS import module '${moduleName}'`);
     const members = Object.create(null);
     for (const [name, member] of Object.entries(moduleValue)) {
-      if (name.length === 0 || typeof member !== "function") {
+      // A function, or an object a dotted import reaches into, as "Format.wrap" reaches Format.
+      if (name.length === 0 || typeof member !== "function" && (member === null || typeof member !== "object")) {
         throw new TypeError(`worker JS import module '${moduleName}' is invalid`);
       }
       members[name] = member;
@@ -253,9 +266,9 @@ function assertPlainDataObject(value, label) {
   }
 }
 
-function assertExactDataObject(value, keys, label) {
+function assertExactDataObject(value, keys, label, optionalKeys = []) {
   assertPlainDataObject(value, label);
-  const actualKeys = Object.keys(value).sort();
+  const actualKeys = Object.keys(value).filter(key => !optionalKeys.includes(key)).sort();
   if (actualKeys.length !== keys.length
       || actualKeys.some((key, index) => key !== keys[index])) {
     throw new TypeError(`${label} shape is invalid`);

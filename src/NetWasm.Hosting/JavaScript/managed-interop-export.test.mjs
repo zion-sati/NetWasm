@@ -10,6 +10,7 @@ import {
 } from "./managed-interop-export.mjs";
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { NetWasmHostError, NetWasmManagedError } from "./managed-errors.mjs";
+import { createValueArrayStaging } from "./value-array-staging.mjs";
 
 const minimalModule = new Uint8Array([
   0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
@@ -33,6 +34,23 @@ const targetLayout = {
   spanReferenceOffset: 0,
   spanLengthOffset: 4,
 };
+// The runtime's allocator over a memory, as the staging the session gives an export: blocks from a bump pointer,
+// with every freed block recorded.
+function stagingOver(stagingMemory, start = 4096) {
+  let next = start;
+  const freed = [];
+  const runtime = {
+    native_alloc(size) { const address = next; next += size; return address; },
+    native_free(address) { freed.push(address); },
+  };
+  const staging = createValueArrayStaging({
+    getInstance: () => ({ exports: runtime }), getMemory: () => stagingMemory,
+    runtimeModules: {}, target: "wasm32",
+  });
+  return { staging, freed, read: (address, constructor, length) =>
+    [...new constructor(stagingMemory.buffer.slice(address, address + length * constructor.BYTES_PER_ELEMENT))] };
+}
+
 const request = (overrides = {}) => ({
   descriptor: descriptor(),
   exceptionReporter: reporter(),
@@ -55,6 +73,31 @@ test("retains the low-level managed-export compatibility boundary", async () => 
   assert.throws(() => createManagedExports(instance, ["missing"]), /not a function/);
 });
 
+// An argument a caller leaves undefined crosses as null for a string, an object or an array.
+test("passes undefined reference arguments as null", () => {
+  for (const type of ["string", "object"]) {
+    const handles = createInteropHandleTable();
+    const invoke = createManagedInteropExport(request({
+      descriptor: descriptor({ parameters: [type], result: "i32" }),
+      handles,
+      instance: { exports: { run(handle) { assert.equal(handle, 0, type); return 5; } } },
+    }));
+    assert.equal(invoke(undefined), 5, type);
+    assert.equal(invoke(), 5, type);
+    assert.equal(handles.count, 0, type);
+  }
+  // A null number array is no block and length -1.
+  const { staging, freed } = stagingOver(new WebAssembly.Memory({ initial: 1 }));
+  const invoke = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["bytes"], result: "i32" }),
+    instance: { exports: { run(address, length) { assert.deepEqual([address, length], [0, -1]); return 5; } } },
+    staging,
+  }));
+  assert.equal(invoke(undefined), 5);
+  assert.equal(invoke(), 5);
+  assert.deepEqual(freed, []);
+});
+
 test("adapts synchronous scalar and void managed exports", () => {
   const scalar = createManagedInteropExport(request({
     descriptor: descriptor({ parameters: ["bool", "char"], result: "u32" }),
@@ -62,7 +105,10 @@ test("adapts synchronous scalar and void managed exports", () => {
   }));
   assert.equal(Object.isFrozen(scalar), true);
   assert.equal(scalar(true, "A"), 66);
-  assert.throws(() => scalar(true), /argument count/);
+  // An argument left out crosses as its parameter's default, as on .NET; one too many is an error.
+  assert.equal(scalar(true), 1);
+  assert.equal(scalar(), 0);
+  assert.throws(() => scalar(true, "A", 3), /argument count/);
 
   const voidExport = createManagedInteropExport(request({
     descriptor: descriptor({ result: "void" }),
@@ -112,18 +158,23 @@ test("copies synchronous strings after memory growth and releases argument handl
   assert.throws(() => invoke(42), /string or null/);
 });
 
-test("copies synchronous byte arrays in both directions and releases argument handles", () => {
+// A number array argument is staged in linear memory: the export receives the block's address and the array's
+// length, and the managed code it enters copies the block and frees it, so the host keeps no handle and frees
+// nothing once the call starts.
+test("stages synchronous byte arrays and copies byte array results out", () => {
   const exportMemory = new WebAssembly.Memory({ initial: 1 });
+  const { staging, freed, read } = stagingOver(exportMemory);
   const handles = createInteropHandleTable();
   const reference = 256;
   const dataAddress = 512;
+  const received = [];
   const invoke = createManagedInteropExport(request({
     descriptor: descriptor({ parameters: ["bytes"], result: "bytes" }),
     getMemory: () => exportMemory,
     handles,
     instance: { exports: {
-      run(handle) {
-        assert.deepEqual(handles.get(handle), Uint8Array.of(1, 2, 255));
+      run(address, length) {
+        received.push(read(address, Uint8Array, length));
         const view = new DataView(exportMemory.buffer);
         view.setInt32(reference + targetLayout.arrayLengthOffset, 3, true);
         view.setUint32(reference + targetLayout.arrayDataPointerOffset, dataAddress, true);
@@ -131,30 +182,35 @@ test("copies synchronous byte arrays in both directions and releases argument ha
         return reference;
       },
     } },
+    staging,
   }));
 
-  const input = Uint8Array.of(1, 2, 255);
-  const result = invoke(input);
+  const result = invoke(Uint8Array.of(1, 2, 255));
   assert.deepEqual(result, Uint8Array.of(9, 8, 7));
   assert.notEqual(result.buffer, exportMemory.buffer);
   new Uint8Array(exportMemory.buffer, dataAddress, 3).fill(0);
   assert.deepEqual(result, Uint8Array.of(9, 8, 7));
+  // A plain array is copied into the element type's typed array; an empty one needs no block.
+  assert.deepEqual(invoke([1, 2, 255]), Uint8Array.of(9, 8, 7));
+  assert.deepEqual(invoke([]), Uint8Array.of(9, 8, 7));
+  assert.deepEqual(received, [[1, 2, 255], [1, 2, 255], []]);
   assert.equal(handles.count, 0);
-  assert.throws(() => invoke([1, 2, 3]), /Uint8Array or null/);
+  assert.deepEqual(freed, []);
+  assert.throws(() => invoke("text"), /Uint8Array, an array, or null/);
 });
 
-test("copies typed arrays in both directions with their own element types", () => {
+test("stages typed arrays with their own element types and copies typed results out", () => {
   const exportMemory = new WebAssembly.Memory({ initial: 1 });
-  const handles = createInteropHandleTable();
+  const { staging, read } = stagingOver(exportMemory);
   const reference = 256;
   const dataAddress = 512;
+  const received = [];
   const invoke = createManagedInteropExport(request({
     descriptor: descriptor({ parameters: ["i32[]"], result: "f64[]" }),
     getMemory: () => exportMemory,
-    handles,
     instance: { exports: {
-      run(handle) {
-        assert.deepEqual(handles.get(handle), Int32Array.of(-1, 70_000));
+      run(address, length) {
+        received.push(read(address, Int32Array, length));
         const view = new DataView(exportMemory.buffer);
         view.setInt32(reference + targetLayout.arrayLengthOffset, 2, true);
         view.setUint32(reference + targetLayout.arrayDataPointerOffset, dataAddress, true);
@@ -162,26 +218,25 @@ test("copies typed arrays in both directions with their own element types", () =
         return reference;
       },
     } },
+    staging,
   }));
 
   const result = invoke(Int32Array.of(-1, 70_000));
   assert.ok(result instanceof Float64Array);
   assert.deepEqual([...result], [0.25, -8]);
-  assert.equal(handles.count, 0);
-  assert.throws(() => invoke(Uint32Array.of(1)), /i32\[\] value must be Int32Array or null/);
-  assert.throws(() => invoke([1]), /Int32Array or null/);
+  assert.throws(() => invoke(Uint32Array.of(1)), /i32\[\] value must be Int32Array, an array, or null/);
+  assert.deepEqual([...invoke([-1, 70_000])], [0.25, -8]);
+  assert.deepEqual(received, [[-1, 70_000], [-1, 70_000]]);
 });
 
-test("passes null buffers without acquiring handles and surfaces release failures", () => {
-  for (const type of ["string", "bytes"]) {
-    const handles = createInteropHandleTable();
-    const invoke = createManagedInteropExport(request({
-      descriptor: descriptor({ parameters: [type] }), handles,
-      instance: { exports: { run(handle) { assert.equal(handle, 0); return 42; } } },
-    }));
-    assert.equal(invoke(null), 42);
-    assert.equal(handles.count, 0);
-  }
+test("passes null strings without acquiring handles and surfaces release failures", () => {
+  const handles = createInteropHandleTable();
+  const nullString = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["string"] }), handles,
+    instance: { exports: { run(handle) { assert.equal(handle, 0); return 42; } } },
+  }));
+  assert.equal(nullString(null), 42);
+  assert.equal(handles.count, 0);
   const failure = new Error("handle release failed");
   let released = 0;
   const invoke = createManagedInteropExport(request({
@@ -192,6 +247,39 @@ test("passes null buffers without acquiring handles and surfaces release failure
   }));
   assert.throws(() => invoke("temporary"), error => error === failure);
   assert.equal(released, 1);
+});
+
+// A block staged for an argument the call never reaches managed code with is freed by the host.
+test("frees staged arrays when a later argument cannot cross", () => {
+  const { staging, freed } = stagingOver(new WebAssembly.Memory({ initial: 1 }));
+  let calls = 0;
+  const invoke = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["bytes", "f64[]", "string"] }),
+    instance: { exports: { run() { calls++; return 0; } } },
+    staging,
+  }));
+  assert.throws(() => invoke(Uint8Array.of(1, 2), [], 5), /string value must be a string or null/);
+  assert.equal(calls, 0);
+  // The byte array's block is freed; the empty array staged none.
+  assert.deepEqual(freed, [4096]);
+});
+
+// A host built without the runtime's allocator, such as one passing only scalars, refuses a number array.
+test("refuses a number array without staging", () => {
+  const invoke = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["bytes"] }),
+    instance: { exports: { run() { return 0; } } },
+  }));
+  for (const value of [Uint8Array.of(1), null]) assert.throws(() => invoke(value), /does not stage number arrays/);
+});
+
+// A staging must stage and discard, as callbacks and status services require too.
+test("refuses a staging that cannot stage and discard", () => {
+  const discardOnly = { discard() {} };
+  const stageOnly = { stage() { return [0, 0]; } };
+  for (const staging of [null, 1, discardOnly, stageOnly]) {
+    assert.throws(() => createManagedInteropExport(request({ staging })), /number-array staging is invalid/);
+  }
 });
 
 test("converts low-level WebAssembly exceptions and preserves unrelated failures", () => {
@@ -379,9 +467,11 @@ test("delegates async observation through the injected lifetime capability", asy
   assert.equal(completed, 1);
 });
 
-test("passes async string and typed array arguments as handles released with the start", async () => {
+test("passes async string arguments as handles released with the start and stages typed arrays", async () => {
   const handles = createInteropHandleTable();
   const values = Float32Array.of(0.5, 2);
+  const stagingMemory = new WebAssembly.Memory({ initial: 1 });
+  const { staging, read } = stagingOver(stagingMemory);
   const invoke = createManagedInteropExport(request({
     descriptor: descriptor({
       parameters: ["string", "f32[]", "bytes"], result: "void",
@@ -389,18 +479,19 @@ test("passes async string and typed array arguments as handles released with the
     }),
     handles,
     instance: { exports: {
-      run(name, array, empty) {
+      run(name, arrayAddress, arrayLength, emptyAddress, emptyLength) {
         assert.equal(handles.get(name), "title");
-        assert.strictEqual(handles.get(array), values);
-        assert.equal(empty, 0);
+        assert.deepEqual(read(arrayAddress, Float32Array, arrayLength), [0.5, 2]);
+        assert.deepEqual([emptyAddress, emptyLength], [0, -1]);
         return 9;
       },
       status: () => 1,
       complete: () => 0,
     } },
+    staging,
     observeAsyncExport(operation) {
-      // The start has already copied the arguments; their handles end with it.
-      assert.equal(handles.count, 2);
+      // The start has already copied the arguments; the string's handle ends with it.
+      assert.equal(handles.count, 1);
       assert.equal(operation.readResult(), undefined);
       return Promise.resolve();
     },

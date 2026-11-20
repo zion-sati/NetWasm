@@ -17,7 +17,10 @@ internal sealed class MetadataMethodBodyReader(
     IUnsafeAccessorBodyBuilder accessorBodies,
     IDelegateAsynchronousCallBodyBuilder delegateAsynchronousCalls,
     IUnsafeIntrinsicBodyBuilder unsafeIntrinsics,
-    IUnboundNativeImportBodyBuilder unboundNativeImports) : IMethodBodyReader
+    IUnboundNativeImportBodyBuilder unboundNativeImports,
+    INativeMarshallingStubBodyBuilder nativeMarshallingStubs,
+    IMissingMemberBodyBuilder missingMembers,
+    IMissingTypeFinder missingTypes) : IMethodBodyReader
 {
     private readonly Lazy<IUnsafeAccessorTargetResolver> _accessors = new(accessors.Create);
 
@@ -31,7 +34,35 @@ internal sealed class MetadataMethodBodyReader(
         { HasBody: false, UnsafeAccessor: not null } => accessorBodies.Build(method, _accessors.Value.Resolve(method)),
         { HasBody: false, IsDelegateAsynchronousCall: true } => delegateAsynchronousCalls.Build(method),
         { HasBody: false, UnboundNativeImport: not null } => unboundNativeImports.Build(method),
+        { HasBody: false, NativeMarshallingStub: not null } => nativeMarshallingStubs.Build(method),
         _ when unsafeIntrinsics.Build(method) is { } intrinsic => intrinsic,
-        _ => decoders.Create().Decode(assemblies.Resolve(method.Definition.Key.Assembly), method),
+        _ => Decode(method),
     };
+
+    // A method whose IL names a member its declaring type lacks, or a type its assembly lacks, compiles to a body
+    // that throws when called, as .NET fails such a method when it first compiles it; the compilation reports it
+    // (NW1016). A type a member reference resolves surfaces while decoding, and a type token after it.
+    private CilMethodBody Decode(MethodInstanceModel method)
+    {
+        CilMethodBody body;
+        try
+        {
+            body = decoders.Create().Decode(assemblies.Resolve(method.Definition.Key.Assembly), method);
+        }
+        catch (CompilerException error) when (error.Diagnostic is { Code: DiagnosticCode.MissingApi, MissingMember: { } missing })
+        {
+            return missingMembers.Build(method, missing);
+        }
+        catch (CompilerException error) when (error.Diagnostic.MissingMember is { Kind: MissingMemberKind.Type } type)
+        {
+            return missingMembers.Build(method, type with
+            {
+                Method = error.Diagnostic.Method ?? symbols.Format(method.Definition),
+                IlOffset = error.Diagnostic.IlOffset ?? 0,
+            });
+        }
+        return missingTypes.Find(body, symbols.Format(method.Definition)) is { } absent
+            ? missingMembers.Build(method, absent)
+            : body;
+    }
 }

@@ -40,8 +40,10 @@
     <!-- Warnings upstream's repository always disables (dotnet/runtime's Directory.Build.props). -->
     <NoWarn>$(NoWarn);CS8500;CS8969</NoWarn>
     <IsPackable>false</IsPackable>
-    <!-- The symbols upstream's shared sources and the NetWasm SDK's netwasm0.1 builds define. -->
-    <DefineConstants>$(DefineConstants);NET;NETWASM;NETWASM0_1</DefineConstants>
+    <!-- The symbols upstream's shared sources and the NetWasm SDK's netwasm0.1 builds define. The libraries are
+         .NET 11's, compiled against .NET 11's CoreLib, so .NET 11's version symbol is defined too, as upstream's
+         own build of them defines it (System.Text.Json's BFloat16 and IEEE decimal converters). -->
+    <DefineConstants>$(DefineConstants);NET;NETWASM;NETWASM0_1;NET11_0_OR_GREATER</DefineConstants>
     <NetWasmLibrariesRoot>$(MSBuildThisFileDirectory)</NetWasmLibrariesRoot>
     <NetWasmCoreLibProject>$(MSBuildThisFileDirectory)../NetWasm.CoreLib/NetWasm.CoreLib.csproj</NetWasmCoreLibProject>
   </PropertyGroup>

@@ -14,7 +14,6 @@ namespace System
         // The local zone's offset for a time: a UTC time's instant, or a local or unspecified time read as local.
         internal static TimeSpan GetLocalUtcOffset(DateTime dateTime, TimeZoneInfoOptions flags)
         {
-            PlatformServices.EnsureLocalTimeReady();
             var basis = dateTime.Kind == DateTimeKind.Utc
                 ? LocalTimeBasis.Utc
                 : dateTime.IsAmbiguousDaylightSavingTime()
@@ -27,7 +26,6 @@ namespace System
         // ambiguous hour.
         internal static TimeSpan GetLocalUtcOffsetFromUtc(DateTime utcDateTime, out bool isAmbiguousLocalDst)
         {
-            PlatformServices.EnsureLocalTimeReady();
             var offset = PlatformServices.LocalTimeOffsets.Resolve(utcDateTime.Ticks, LocalTimeBasis.Utc);
             isAmbiguousLocalDst = offset.IsAmbiguousDaylightSavingTime;
             return new TimeSpan(offset.Ticks);

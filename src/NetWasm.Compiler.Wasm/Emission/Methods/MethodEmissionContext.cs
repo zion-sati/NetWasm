@@ -53,6 +53,8 @@ internal sealed record MethodEmissionContext(
 
     public ArrayMetadataCachingLayout ArrayMetadata { get; init; } = ArrayMetadataCachingLayout.Empty;
 
+    public ArrayLengthRunLayout ArrayLengthRuns { get; init; } = ArrayLengthRunLayout.Empty;
+
     // Reference stores whose array has an exact element type need no covariant store check.
     public ImmutableHashSet<int> ExactArrayStores { get; init; } = [];
 
@@ -94,6 +96,9 @@ internal sealed record MethodEmissionContext(
     public ImmutableDictionary<(int Offset, bool ConstructorCall), ImmutableHashSet<int>> RootClearElisions
     { get; init; } = [];
     public ImmutableDictionary<int, ImmutableHashSet<int>> RootValueElisions { get; init; } = [];
+
+    // Whether the method zeroes its root frame on entry, so every slot holds null until written.
+    public bool RootFrameStartsZeroed { get; init; }
 
     public IReadOnlyDictionary<StructuredExceptionGroupId, int> ExceptionRootSlots { get; init; } =
         ImmutableDictionary<StructuredExceptionGroupId, int>.Empty;

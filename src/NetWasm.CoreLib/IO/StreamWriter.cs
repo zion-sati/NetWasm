@@ -6,6 +6,7 @@
 // PlatformNotSupportedException until filesystem capabilities are available; async members use
 // TextWriter's scheduler-backed surface.
 
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -343,6 +344,7 @@ namespace System.IO
             WriteSpan(buffer, appendNewLine: true);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteSpan(ReadOnlySpan<char> buffer, bool appendNewLine)
         {
             CheckAsyncTaskInProgress();

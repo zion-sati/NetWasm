@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateCoverage } from './audit-cil-coverage.mjs';
+import { parseDecoder, parseOperations, validateCoverage } from './audit-cil-coverage.mjs';
 
 const source = JSON.parse(readFileSync(
   new URL('./cil-coverage-inventory.json', import.meta.url), 'utf8'));
@@ -56,3 +56,31 @@ staleMethod.semanticFamilies[0].existingEvidence[0] =
 assert.throws(() => validateCoverage(staleMethod), /coverage evidence method is missing/);
 
 process.stdout.write('CIL coverage audit tests PASS 10/10\n');
+
+// Every outcome of an opcode counts: calli decodes to a stub call or to an indirect call.
+assert.deepEqual(parseDecoder(`
+            case "calli":
+                if (stub is { } callStub)
+                {
+                    operation = CilOperation.Call;
+                    operand = new CilOperand.MethodInstance(callStub);
+                    break;
+                }
+                operation = CilOperation.CallIndirect;
+                operand = _callSiteSignatures.Resolve(metadata, token);
+                break;
+            case "ret": operation = CilOperation.Return; operand = new CilOperand.None(); break;
+            default:`), [
+  { opcode: 'calli', operation: 'Call', operand: 'MethodInstance' },
+  { opcode: 'calli', operation: 'CallIndirect', operand: 'CallSite' },
+  { opcode: 'ret', operation: 'Return', operand: 'None' },
+]);
+
+// Comments in the operation enum, line or block, are not operations.
+assert.deepEqual(parseOperations(`public enum CilOperation
+{
+    Nop,
+    // value-if-true, value-if-false, condition -> one of the values, as Wasm's
+    // select, without branching.
+    Select, /* trailing, note */
+}`), ['Nop', 'Select']);

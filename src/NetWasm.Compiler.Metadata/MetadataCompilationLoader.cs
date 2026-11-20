@@ -13,7 +13,8 @@ namespace NetWasm.Compiler.Metadata;
 public sealed class MetadataCompilationLoader(
     IManagedAssemblyLoader assemblies,
     IMetadataCompilationFactory compilations,
-    ITypeForwarderReader forwarders) : IMetadataCompilationLoader
+    ITypeForwarderReader forwarders,
+    ILoadedAssemblyNativeStructSourceFactory nativeStructs) : IMetadataCompilationLoader
 {
     public IMetadataCompilationLease Load(
         string entryAssemblyPath,
@@ -21,7 +22,9 @@ public sealed class MetadataCompilationLoader(
         ImmutableDictionary<string, string>? referenceAssemblyAliases = null,
         IEnumerable<string>? metadataReferencePaths = null,
         IEnumerable<string>? originalContractReferencePaths = null,
-        INativeImportBinder? nativeBinding = null)
+        INativeImportBinder? nativeBinding = null,
+        INativeVariadicCallPlanner? nativeVariadics = null,
+        GeneratedJavaScriptBinding? javaScriptBinding = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(entryAssemblyPath);
         ArgumentNullException.ThrowIfNull(referencePaths);
@@ -46,7 +49,8 @@ public sealed class MetadataCompilationLoader(
             {
                 try
                 {
-                    parsed[index] = assemblies.Load(inputs[index], referenceAssemblyAliases, typeForwarders, nativeBinding);
+                    parsed[index] = assemblies.Load(inputs[index], referenceAssemblyAliases, typeForwarders, nativeBinding,
+                        nativeVariadics, javaScriptBinding);
                 }
 #pragma warning disable CA1031 // Rethrown below, in path order.
                 catch (Exception exception)
@@ -75,6 +79,11 @@ public sealed class MetadataCompilationLoader(
                 }
             }
 
+            var assembliesByName = byName.ToImmutable();
+            // A struct a P/Invoke or function pointer names may come from another assembly, as on desktop .NET.
+            var structs = nativeStructs.Create(assembliesByName);
+            foreach (var assembly in loaded)
+                assembly.LayCrossAssemblyStructStubs(structs);
             var contractNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var contractPath in originalContractReferencePaths ?? [])
             {
@@ -90,7 +99,7 @@ public sealed class MetadataCompilationLoader(
             // metadata loading still validates image shape and duplicate inputs.
             return compilations.Create(
                 entry,
-                byName.ToImmutable(),
+                assembliesByName,
                 referenceAssemblyAliases,
                 contracts.ToImmutableArray());
         }

@@ -31,6 +31,7 @@ class CiResultTests(unittest.TestCase):
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
             "doomsharp": "skipped",
+            "open-source-suts": "skipped",
         })
 
     def test_ci_scope_accepts_only_ci_infrastructure_gate(self):
@@ -48,6 +49,7 @@ class CiResultTests(unittest.TestCase):
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
             "doomsharp": "skipped",
+            "open-source-suts": "skipped",
         })
 
     def test_full_scope_accepts_every_heavy_gate(self):
@@ -65,6 +67,7 @@ class CiResultTests(unittest.TestCase):
             "runtime-pack-hosts": "success",
             "browser-hosts": "success",
             "doomsharp": "success",
+            "open-source-suts": "success",
         })
 
     def test_reuse_scope_accepts_only_the_qualification_gate(self):
@@ -82,6 +85,7 @@ class CiResultTests(unittest.TestCase):
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
             "doomsharp": "skipped",
+            "open-source-suts": "skipped",
         })
 
     def test_failed_impact_unknown_scope_and_missing_gate_fail(self):
@@ -104,6 +108,7 @@ class CiResultTests(unittest.TestCase):
                 "runtime-pack-hosts": "failure",
                 "browser-hosts": "skipped",
                 "doomsharp": "skipped",
+                "open-source-suts": "skipped",
             })
 
     def test_failed_compiler_shards_fail_a_full_run(self):
@@ -122,6 +127,26 @@ class CiResultTests(unittest.TestCase):
                 "runtime-pack-hosts": "success",
                 "browser-hosts": "success",
                 "doomsharp": "success",
+                "open-source-suts": "success",
+            })
+
+    def test_failed_open_source_systems_fail_a_full_run(self):
+        with self.assertRaisesRegex(ValueError, "open-source-suts"):
+            RESULTS.verify("full", {
+                "impact": "success",
+                "docs": "skipped",
+                "ci-infrastructure": "skipped",
+                "test": "success",
+                "compiler": "success",
+                "javascript-contracts": "success",
+                "timings": "success",
+                "package": "success",
+                "host-tools": "success",
+                "verify-packages": "success",
+                "runtime-pack-hosts": "success",
+                "browser-hosts": "success",
+                "doomsharp": "success",
+                "open-source-suts": "failure",
             })
 
 

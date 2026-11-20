@@ -15,7 +15,7 @@ public sealed class IntrinsicMethodGroupCompilationTests
     [InlineData(true, WasmTarget.Wasm32)]
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm64)]
-    public void DelegatesToIntrinsicMethodsInvokeTheirIntrinsicBehaviour(bool optimize, WasmTarget target)
+    public void DelegatesToIntrinsicMethodsInvokeTheirIntrinsicBehavior(bool optimize, WasmTarget target)
     {
         using var assets = TestAssets.Create();
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);

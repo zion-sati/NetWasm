@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace NetWasm.Compiler.Diagnostics;
 
@@ -20,8 +21,7 @@ internal sealed class CompilerDiagnosticFileLogger(
             ? scopePusher.Push(scope)
             : NullScope.Instance;
 
-    public bool IsEnabled(LogLevel logLevel) =>
-        logLevel is not LogLevel.None && scopeReader.Read() is { IsEnabled: true };
+    public bool IsEnabled(LogLevel logLevel) => Keeps(scopeReader.Read(), logLevel);
 
     public void Log<TState>(
         LogLevel logLevel,
@@ -33,7 +33,7 @@ internal sealed class CompilerDiagnosticFileLogger(
         ArgumentNullException.ThrowIfNull(formatter);
 
         var scope = scopeReader.Read();
-        if (logLevel is LogLevel.None || scope is not { IsEnabled: true })
+        if (!Keeps(scope, logLevel))
         {
             return;
         }
@@ -49,6 +49,9 @@ internal sealed class CompilerDiagnosticFileLogger(
                 exception?.Message,
             exception?.StackTrace)));
     }
+
+    private static bool Keeps([NotNullWhen(true)] CompilerDiagnosticScope? scope, LogLevel logLevel) =>
+        logLevel is not LogLevel.None && scope is { IsEnabled: true } && logLevel >= scope.MinimumLevel;
 
     private sealed class NullScope : IDisposable
     {

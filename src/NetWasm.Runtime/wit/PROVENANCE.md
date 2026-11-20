@@ -17,6 +17,9 @@ complete implementation of those packages. The upstream source is
 | `wasi:cli/types.error-code`, `stdout.write-via-stream`, `stderr.write-via-stream` | `cli/stdio.wit` |
 | `wasi:cli/exit.exit` | `cli/exit.wit` |
 | `wasi:random/random.get-random-u64` | `random/random.wit` |
+| `wasi:clocks/types.duration` | `clocks/types.wit` |
+| `wasi:clocks/system-clock.instant`, `now`, `get-resolution` | `clocks/system-clock.wit` |
+| `wasi:clocks/monotonic-clock.mark`, `now`, `get-resolution` | `clocks/monotonic-clock.wit` |
 
 The adaptation retains the required package versions, function signatures and
 the error-code case order. It omits unused functions, documentation and

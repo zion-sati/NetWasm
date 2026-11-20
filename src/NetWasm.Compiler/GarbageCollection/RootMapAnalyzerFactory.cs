@@ -47,6 +47,7 @@ public sealed class RootMapAnalyzerFactory(
             _rootDecisions.Create(types, fields, methods, dispatchCallSites, typeClassifier),
             _calleeArguments.Create(types, methods, dispatchCallSites, typeClassifier),
             _rootSlots,
+            new YoungObjectStoreFinder(),
             new MemberExecutionAllocationCallClassifier(types, methods));
     }
 }

@@ -7,7 +7,7 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Wasm.Emission;
 
 // A SIMD vector's slot is aligned as RyuJIT aligns a SIMD local's stack home
-// (getSIMDTypeAlignment): an 8-byte Vector2 on 8, and the 12- and 16-byte
+// (getSIMDTypeAlignment): an 8-byte Vector64 or Vector2 on 8, and the 12- and 16-byte
 // vectors on 16. Frames start on 16 bytes, so no access to a vector's slot
 // straddles a cache line; on x64 a store across a line followed by a load of
 // the same bytes waits for the store to reach the cache. Every other slot keeps
@@ -24,8 +24,7 @@ internal sealed class SimdValueFrameSlotAlignmentResolver : IValueFrameSlotAlign
 
     private static int Preferred(CliTypeIdentity type) => type switch
     {
-        { FullName: "System.Numerics.Vector2" } => sizeof(long),
-        { StackKind: CliValueKind.V128 } => 16,
+        { StackKind: CliValueKind.V128 } => SimdVectorStorage.Width(type) == sizeof(long) ? sizeof(long) : 16,
         _ => 1,
     };
 }

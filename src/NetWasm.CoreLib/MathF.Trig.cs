@@ -62,6 +62,7 @@ public static partial class MathF
     private const double Pio2_1 = 1.57079631090164184570e+00; /* 0x3FF921FB, 0x50000000 */
     private const double Pio2_1t = 1.58932547735281966916e-08; /* 0x3E5110b4, 0x611A6263 */
 
+    [Intrinsic]
     public static float Sin(float x)
     {
         double y;
@@ -123,6 +124,7 @@ public static partial class MathF
         }
     }
 
+    [Intrinsic]
     public static float Cos(float x)
     {
         double y;
@@ -189,6 +191,7 @@ public static partial class MathF
     // musl's sincosf: one argument reduction for both results, each exactly
     // what Sin and Cos return. NetWasm: the pair comes back as one v128 value,
     // so neither the call nor the tuple needs a value frame.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static (float Sin, float Cos) SinCos(float x)
     {
         var both = SinCosPair(x);
@@ -275,6 +278,7 @@ public static partial class MathF
     private static Vector128<float> Pair(double sin, double cos) =>
         Vector128.Create((float)sin, (float)cos, 0f, 0f);
 
+    [Intrinsic]
     public static float Tan(float x)
     {
         double y;

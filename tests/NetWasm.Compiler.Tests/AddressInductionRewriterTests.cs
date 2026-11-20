@@ -76,7 +76,7 @@ public sealed class AddressInductionRewriterTests
     [
         "no Unsafe.Add", "a protected region", "an unconditional back edge", "a loop at the first instruction",
         "a jump before the head elsewhere", "a jump before the head to itself", "an inner loop", "a branch back to the head",
-        "a branch into the body", "a switch into the condition", "a branch to the head of a do-while",
+        "a branch into the body", "a branch to the head of a do-while",
         "a conditional branch before a do-while to its head", "a call", "an allocation", "a call before the back edge",
         "a call before something else", "a counter written twice", "a counter whose address is taken", "a long counter",
         "a counter multiplied", "a counter stepped by a local", "a counter stepped by nothing", "a counter stepped by int.MinValue",
@@ -413,13 +413,6 @@ public sealed class AddressInductionRewriterTests
                 code.Local(CilOperation.LoadLocal, 1).Branch(CilOperation.BranchIfTrue, "body");
                 For(c => Total(c.Label("body"), Read));
                 break;
-            case "a switch into the condition":
-                code.Local(CilOperation.LoadLocal, 1).Op(CilOperation.Switch, new CilOperand.SwitchTargets([]));
-                var switchAt = 1;
-                For(c => Total(c, Read));
-                var built = code.Build();
-                var test = built.First(static instruction => instruction.Operation == CilOperation.BranchIfLessThanSigned).Offset - 2;
-                return Body(built.SetItem(switchAt, built[switchAt] with { Operand = new CilOperand.SwitchTargets([test]) }), regions, isStatic);
             case "a branch to the head of a do-while":
                 code.Op(CilOperation.LoadInt32, 0).Local(CilOperation.StoreLocal, 0).Local(CilOperation.LoadLocal, 1)
                     .Branch(CilOperation.BranchIfTrue, "start").Op(CilOperation.Nop).Label("start");

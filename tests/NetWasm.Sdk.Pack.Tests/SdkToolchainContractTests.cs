@@ -8,9 +8,6 @@ namespace NetWasm.Sdk.Pack.Tests;
 public sealed partial class SdkToolchainContractTests
 {
     private static readonly string[] RuntimeTargets = ["wasm32", "wasm64"];
-    private static readonly string[] RuntimeCollectors = ["compact", "netwasm", "bump"];
-    private static readonly string[] RuntimeVariantFiles =
-        ["libnetwasm-runtime.a", "libgc.a", "libnetwasm-runtime-wasi.a", "libnetwasm-runtime-nowasi.a", "layout.json"];
 
     [Fact]
     public void CompilerTaskCarriesPathMapIntoStackTraceIdentity()
@@ -319,10 +316,11 @@ public sealed partial class SdkToolchainContractTests
         XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
         var props = LoadSdkTarget("NetWasm.Sdk.Tfm.props");
         var group = Assert.Single(props.Root!.Elements(ns + "PropertyGroup"),
-            element => (string?)element.Attribute("Condition") == "'$(TargetFramework)' == 'netwasm0.1'");
+            element => (string?)element.Attribute("Condition") == "'$(NetWasmGuestFramework)' == 'true'");
         var projectDocument = new XDocument(new XElement(ns + "Project",
             new XElement(ns + "PropertyGroup",
                 new XElement(ns + "TargetFramework", "netwasm0.1"),
+                new XElement(ns + "NetWasmGuestFramework", "true"),
                 new XElement(ns + "OutputType", "Exe"),
                 new XElement(ns + "RestorePackagesWithLockFile", "true"),
                 new XElement(ns + "NETCoreSdkRuntimeIdentifier", sdkRid),
@@ -357,7 +355,7 @@ public sealed partial class SdkToolchainContractTests
         XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
         var props = LoadSdkTarget("NetWasm.Sdk.Tfm.props");
         var group = Assert.Single(props.Root!.Elements(ns + "PropertyGroup"),
-            element => (string?)element.Attribute("Condition") == "'$(TargetFramework)' == 'netwasm0.1'");
+            element => (string?)element.Attribute("Condition") == "'$(NetWasmGuestFramework)' == 'true'");
         var validation = Assert.Single(LoadSdkTarget("NetWasm.Toolchain.targets").Descendants(ns + "Target"),
             target => (string?)target.Attribute("Name") == "NetWasmSdkValidateSdkVersion");
         var projectDocument = new XDocument(new XElement(ns + "Project",
@@ -365,6 +363,7 @@ public sealed partial class SdkToolchainContractTests
                 new XAttribute("AssemblyFile", typeof(Microsoft.Build.Tasks.Error).Assembly.Location)),
             new XElement(ns + "PropertyGroup",
                 new XElement(ns + "TargetFramework", "netwasm0.1"),
+                new XElement(ns + "NetWasmGuestFramework", "true"),
                 new XElement(ns + "NETCoreSdkVersion", sdkVersion),
                 new XElement(ns + "NETCoreSdkRuntimeIdentifier", sdkRid),
                 new XElement(ns + "NETCoreSdkPortableRuntimeIdentifier", portableRid)),
@@ -950,8 +949,10 @@ public sealed partial class SdkToolchainContractTests
     }
 
     [Fact]
-    public void RuntimePackageContainsTheExactRuntimeAndSystemArchivePaths()
+    public void RuntimePackagePacksEachTargetsRegeneratedTreeWhole()
     {
+        // One item per target over the regenerated tree, so a collector the regeneration builds (NetWasmGen, a speed
+        // profile) is packed without a project edit; eng/tests/test_runtime_pack_project.py evaluates what it packs.
         var repositoryRoot = FindRepositoryRoot();
         var project = XDocument.Load(Path.Combine(
             repositoryRoot,
@@ -959,19 +960,19 @@ public sealed partial class SdkToolchainContractTests
         var assets = project.Descendants("None").ToArray();
         foreach (var target in RuntimeTargets)
         {
-            foreach (var collector in RuntimeCollectors)
-            {
-                var destination = $"runtime/{target}/{collector}/";
-                var item = Assert.Single(assets, item => (string?)item.Attribute("PackagePath") == destination);
-                Assert.Equal("true", (string?)item.Attribute("Pack"));
-                Assert.Equal(RuntimeVariantFiles
-                    .Select(name => $"$(NetWasmRuntimePackAssetRoot)/{target}/{collector}/{name}"),
-                    ((string)item.Attribute("Include")!).Split(';'));
-            }
-            var system = Assert.Single(assets, item => (string?)item.Attribute("PackagePath") == $"runtime/{target}/system-libraries/");
-            Assert.Equal($"$(NetWasmRuntimePackAssetRoot)/{target}/system-libraries/*.a", (string?)system.Attribute("Include"));
+            var item = Assert.Single(assets, item => (string?)item.Attribute("PackagePath") == $"runtime/{target}/");
+            Assert.Equal("true", (string?)item.Attribute("Pack"));
+            Assert.Equal(
+                [
+                    $"$(NetWasmRuntimePackAssetRoot)/{target}/**/*.a",
+                    $"$(NetWasmRuntimePackAssetRoot)/{target}/**/layout.json",
+                    $"$(NetWasmRuntimePackAssetRoot)/{target}/allowed-undefined-symbols.txt",
+                ],
+                ((string)item.Attribute("Include")!).Split(';'));
+            // Nothing else packs into the target's runtime folder.
+            Assert.DoesNotContain(assets, other => other != item &&
+                ((string?)other.Attribute("PackagePath"))?.StartsWith($"runtime/{target}/", StringComparison.Ordinal) == true);
         }
-        Assert.DoesNotContain(assets, item => ((string?)item.Attribute("Include"))?.Contains("**", StringComparison.Ordinal) == true);
     }
 
     [Fact]
@@ -999,8 +1000,10 @@ public sealed partial class SdkToolchainContractTests
     [Theory]
     [InlineData("", "", null)]
     [InlineData("NetWasm", "", null)]
+    [InlineData("NetWasmGen", "", null)]
     [InlineData("Compact", "", null)]
     [InlineData("Bump", "", null)]
+    [InlineData("netwasmgen", "", "NWPACK007")]
     [InlineData("Boehm", "", "NWPACK007")]
     [InlineData("", "property", "NWPACK006")]
     [InlineData("NetWasm", "property", "NWPACK006")]
@@ -1018,6 +1021,7 @@ public sealed partial class SdkToolchainContractTests
                 new XAttribute("AssemblyFile", typeof(Microsoft.Build.Tasks.Error).Assembly.Location)),
             new XElement(ns + "PropertyGroup",
                 new XElement(ns + "TargetFramework", "netwasm0.1"),
+                new XElement(ns + "NetWasmGuestFramework", "true"),
                 new XElement(ns + "OutputType", "Exe"),
                 new XElement(ns + "_NetWasmBuildsModule", "true"),
                 new XElement(ns + "NetWasmGarbageCollector", collector),

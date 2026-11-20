@@ -33,8 +33,9 @@ public sealed class SynchronousJSExportFunctionTypeResolverTests
 
         var result = resolver.Resolve(method);
 
+        // A string crosses as a handle; a byte array as its staged block's address and its length.
         Assert.Equal(
-            [CliValueKind.I4, CliValueKind.I4, CliValueKind.ManagedAddress, CliValueKind.I8],
+            [CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4, CliValueKind.ManagedAddress, CliValueKind.I8],
             result.Parameters.ToArray());
         Assert.Equal(CliValueKind.I8, result.Result);
     }

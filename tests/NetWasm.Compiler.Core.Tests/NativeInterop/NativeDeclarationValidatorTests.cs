@@ -30,19 +30,14 @@ public sealed class NativeDeclarationValidatorTests
             method.Definition with { NativeImport = import with { EntryPoint = "x\0y" } },
             method.Definition with { NativeImport = import with { IsVarArg = true } },
             method.Definition with { NativeImport = import with { HasMarshalling = true } },
+            method.Definition with { NativeImport = import with { TranslatesHResult = true } },
+            method.Definition with { DisablesRuntimeMarshalling = true, NativeImport = import with { TranslatesHResult = true } },
             method.Definition with { NativeImport = import with { UnsupportedCallingConvention = "calling convention 'x' is not supported" } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.SetLastError } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | unchecked((MethodImportAttributes)0x8000) } },
             method.Definition with { NativeImport = import with { Attributes = 0 } },
-            method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.CharSetUnicode } },
-            method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.BestFitMappingEnable } },
-            method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.ThrowOnUnmappableCharEnable } },
-            method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.CharSetAnsi } },
-            method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.CharSetAuto } },
             method.Definition with { NativeImport = import with { Attributes = MethodImportAttributes.CallingConventionFastCall } },
             method.Definition with { NativeImport = import with { Attributes = MethodImportAttributes.CallingConventionMask } },
-            method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.BestFitMappingDisable } },
-            method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.ThrowOnUnmappableCharDisable } },
             method.Definition with { NativeImport = import with { Attributes = import.Attributes | MethodImportAttributes.ExactSpelling },JSImport = new("host", null) },
             method.Definition with { JSExport = new("host") },
             method.Definition with { WitImport = new("world", "entry") },
@@ -62,6 +57,21 @@ public sealed class NativeDeclarationValidatorTests
         Assert.Throws<ArgumentNullException>(() => Validator().Validate(null!));
     }
 
+    // An assembly with [DisableRuntimeMarshalling] ignores [MarshalAs], as desktop .NET does; varargs stay
+    // unsupported under either rule set.
+    [Fact]
+    public void DisabledRuntimeMarshallingIgnoresMarshalAs()
+    {
+        var method = Method(CliTypeIdentity.FromStackKind(CliValueKind.Void));
+        var import = method.Definition.NativeImport!;
+        var disabled = method.Definition with { DisablesRuntimeMarshalling = true };
+
+        Validator().Validate(method with { Definition = disabled with { NativeImport = import with { HasMarshalling = true } } });
+        Reject(method with { Definition = disabled with { NativeImport = import with { IsVarArg = true } } });
+        Assert.Equal(NativeMarshallingRules.Disabled, disabled.NativeMarshalling);
+        Assert.Equal(NativeMarshallingRules.Runtime, method.Definition.NativeMarshalling);
+    }
+
     // Each convention desktop .NET's 64-bit platforms call as their C convention.
     [Theory]
     [InlineData(MethodImportAttributes.CallingConventionWinApi)]
@@ -69,6 +79,15 @@ public sealed class NativeDeclarationValidatorTests
     [InlineData(MethodImportAttributes.CallingConventionStdCall)]
     [InlineData(MethodImportAttributes.CallingConventionThisCall)]
     [InlineData(MethodImportAttributes.CallingConventionCDecl | MethodImportAttributes.ExactSpelling)]
+    // CharSet, BestFitMapping and ThrowOnUnmappableChar shape only char and string marshalling, which no signature
+    // NetWasm accepts has, so desktop .NET calls such an import unchanged.
+    [InlineData(MethodImportAttributes.CallingConventionWinApi | MethodImportAttributes.CharSetUnicode)]
+    [InlineData(MethodImportAttributes.CallingConventionWinApi | MethodImportAttributes.CharSetAnsi)]
+    [InlineData(MethodImportAttributes.CallingConventionWinApi | MethodImportAttributes.CharSetAuto)]
+    [InlineData(MethodImportAttributes.CallingConventionCDecl | MethodImportAttributes.BestFitMappingEnable |
+        MethodImportAttributes.ThrowOnUnmappableCharEnable)]
+    [InlineData(MethodImportAttributes.CallingConventionCDecl | MethodImportAttributes.BestFitMappingDisable |
+        MethodImportAttributes.ThrowOnUnmappableCharDisable)]
     public void AcceptsOnlyExplicitQualifiedImportSemantics(MethodImportAttributes attributes)
     {
         var method = Method(CliTypeIdentity.FromStackKind(CliValueKind.Void));
@@ -87,7 +106,7 @@ public sealed class NativeDeclarationValidatorTests
     [Theory]
     [InlineData(MethodImportAttributes.CallingConventionFastCall, null, "calling convention 'CallingConventionFastCall' is not supported")]
     [InlineData(MethodImportAttributes.CallingConventionWinApi, "calling convention 'S.CallConvSwift' is not supported", "'S.CallConvSwift'")]
-    public void NamesTheConventionItCannotHonour(MethodImportAttributes attributes, string? reason, string named)
+    public void NamesTheConventionItCannotHonor(MethodImportAttributes attributes, string? reason, string named)
     {
         var method = Method(CliTypeIdentity.FromStackKind(CliValueKind.Void));
         var import = method.Definition.NativeImport! with { Attributes = attributes, UnsupportedCallingConvention = reason };

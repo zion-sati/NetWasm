@@ -40,8 +40,7 @@ public sealed class ComponentBoundaryEmitterTests
             initialization: TestRuntimeInitialization.Create(4096),
             importedFunctionCount: 31,
             definedFunctionCount: 7,
-            ImmutableDictionary<string, int>.Empty.Add(exportName, 37),
-            EmitterTestSupport.CreateFunctionIndexResolver());
+            ImmutableDictionary<string, int>.Empty.Add(exportName, 37));
 
         Assert.Equal(3, result.Functions.Length);
         Assert.Equal(
@@ -66,8 +65,12 @@ public sealed class ComponentBoundaryEmitterTests
                 WasmOpcodes.LocalGet, 2, WasmOpcodes.LocalGet, 3,
                 WasmOpcodes.Call, (byte)reallocateIndex, WasmOpcodes.End],
             result.Functions[0].Body);
+        // Instantiation readies the runtime state only: the module initializers, which may wait,
+        // run in the first entry, since the Component Model traps a wait during instantiation.
         Assert.True(result.Functions[1].Body.AsSpan().IndexOf(
-            [WasmOpcodes.Call, (byte)TestRuntimeInitialization.InitializerFunctionIndex]) >= 0);
+            [WasmOpcodes.Call, (byte)TestRuntimeInitialization.StateInitializerFunctionIndex]) >= 0);
+        Assert.True(result.Functions[1].Body.AsSpan().IndexOf(
+            [WasmOpcodes.Call, (byte)TestRuntimeInitialization.InitializerFunctionIndex]) < 0);
         Assert.Equal([CliValueKind.I4], result.Functions[2].Type.Parameters.ToArray());
         Assert.Empty(result.RuntimeFeatures);
     }
@@ -89,8 +92,7 @@ public sealed class ComponentBoundaryEmitterTests
             TestRuntimeInitialization.Create(4096),
             31,
             7,
-            ImmutableDictionary<string, int>.Empty,
-            EmitterTestSupport.CreateFunctionIndexResolver());
+            ImmutableDictionary<string, int>.Empty);
 
         Assert.Empty(result.Functions);
         Assert.Empty(result.Exports);
@@ -158,8 +160,7 @@ public sealed class ComponentBoundaryEmitterTests
             initialization: TestRuntimeInitialization.Create(100),
             importedFunctionCount: 3,
             definedFunctionCount: 4,
-            managedExportIndices.ToImmutable(),
-            EmitterTestSupport.CreateFunctionIndexResolver());
+            managedExportIndices.ToImmutable());
 
         Assert.Equal(
             ["cm32p2_memory", "cm32p2_realloc", "cm32p2_initialize",
@@ -186,8 +187,7 @@ public sealed class ComponentBoundaryEmitterTests
             initialization: TestRuntimeInitialization.Create(0),
             importedFunctionCount: 0,
             definedFunctionCount: 0,
-            ImmutableDictionary<string, int>.Empty,
-            EmitterTestSupport.CreateFunctionIndexResolver()));
+            ImmutableDictionary<string, int>.Empty));
 
         Assert.Contains("no managed wrapper", exception.Message);
     }
@@ -203,8 +203,7 @@ public sealed class ComponentBoundaryEmitterTests
             initialization: TestRuntimeInitialization.Create(0),
             importedFunctionCount: 0,
             definedFunctionCount: 0,
-            ImmutableDictionary<string, int>.Empty,
-            EmitterTestSupport.CreateFunctionIndexResolver()));
+            ImmutableDictionary<string, int>.Empty));
     }
 
     [Fact]
@@ -219,58 +218,29 @@ public sealed class ComponentBoundaryEmitterTests
             initialization: TestRuntimeInitialization.Create(0),
             importedFunctionCount: 0,
             definedFunctionCount: 0,
-            null!,
-            EmitterTestSupport.CreateFunctionIndexResolver()));
+            null!));
     }
 
-    [Fact]
-    public void InitializeRunsTheReachableStartupPreflights()
-    {
-        var methods = new Repository();
-        var preflight = new RecordingStartupPreflightCallEmitter();
-        var (emitter, _) = CreateEmitter(WasmTarget.Wasm32, preflight, new([methods.Export.Key], UsesLocalTime: true));
-        var request = CreateRequest(methods, WasmTarget.Wasm32) with
-        {
-            EntryPoint = null,
-            EntryPointProfile = WasmEntryPointProfile.None,
-        };
-        var indices = EmitterTestSupport.CreateFunctionIndexResolver();
-        var exportName = CanonicalAbiNames.Export(
-            methods.Export.WitExport!.InterfaceName,
-            methods.Export.WitExport.FunctionName,
-            WasmTarget.Wasm32);
-
-        var result = emitter.Emit(
-            request,
-            WasmTarget.Wasm32,
-            TestRuntimeInitialization.Create(4096),
-            31,
-            7,
-            ImmutableDictionary<string, int>.Empty.Add(exportName, 37),
-            indices);
-
-        Assert.Equal([methods.Export.Key], preflight.Preflights);
-        Assert.Same(indices, preflight.FunctionIndices);
-        Assert.Equal([NetWasmRuntimeFeatureIds.LocalTime], result.RuntimeFeatures.ToArray());
-    }
-
-    // A process entry may block where initialization may not, so it runs the
-    // preflight itself; initialization only reports the local-time feature.
+    // jco calls the initialize export while it instantiates the component, where the Component Model
+    // traps any wait, so it readies the runtime state and runs no startup preflight, with a process
+    // entry (which runs them itself) or without one (which reads local time and symbols at first
+    // use, as a raw module does). A TZ naming a zone made a component without a process entry
+    // fail every export, even one that never reads local time. The feature is still reported.
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void InitializeLeavesTheProcessEntrysPreflightToTheEntry(bool usesLocalTime)
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void InitializeReadiesTheRuntimeStateAndRunsNoStartupPreflight(bool processEntry, bool usesLocalTime)
     {
         var methods = new Repository();
-        var preflight = new RecordingStartupPreflightCallEmitter();
         var (emitter, _) = CreateEmitter(
             WasmTarget.Wasm32,
-            preflight,
             usesLocalTime ? new([methods.Export.Key], UsesLocalTime: true) : StartupPreflights.None);
         var request = CreateRequest(methods, WasmTarget.Wasm32) with
         {
-            EntryPoint = methods.Export,
-            EntryPointProfile = WasmEntryPointProfile.Process,
+            EntryPoint = processEntry ? methods.Export : null,
+            EntryPointProfile = processEntry ? WasmEntryPointProfile.Process : WasmEntryPointProfile.None,
         };
         var exportName = CanonicalAbiNames.Export(
             methods.Export.WitExport!.InterfaceName,
@@ -283,27 +253,13 @@ public sealed class ComponentBoundaryEmitterTests
             TestRuntimeInitialization.Create(4096),
             31,
             7,
-            ImmutableDictionary<string, int>.Empty.Add(exportName, 37),
-            EmitterTestSupport.CreateFunctionIndexResolver());
+            ImmutableDictionary<string, int>.Empty.Add(exportName, 37));
 
-        Assert.Null(preflight.Preflights);
+        var initialize = result.Functions.Single(function => function.Name == "component.initialize");
+        Assert.Equal<byte>(
+            [0, WasmOpcodes.Call, (byte)TestRuntimeInitialization.StateInitializerFunctionIndex, WasmOpcodes.End],
+            initialize.Body);
         Assert.Equal(usesLocalTime ? [NetWasmRuntimeFeatureIds.LocalTime] : [], result.RuntimeFeatures.ToArray());
-    }
-
-    [Fact]
-    public void RejectsNullFunctionIndicesThroughBoundaryContract()
-    {
-        var methods = new Repository();
-        var (emitter, _) = CreateEmitter(WasmTarget.Wasm32);
-
-        Assert.Throws<ArgumentNullException>(() => emitter.Emit(
-            CreateRequest(methods, WasmTarget.Wasm32),
-            WasmTarget.Wasm32,
-            TestRuntimeInitialization.Create(0),
-            0,
-            0,
-            ImmutableDictionary<string, int>.Empty,
-            null!));
     }
 
     private static WasmEmissionRequest CreateRequest(
@@ -346,16 +302,14 @@ public sealed class ComponentBoundaryEmitterTests
 
     private static (IComponentBoundaryEmitter Emitter, RuntimeImportCatalog Imports) CreateEmitter(
         WasmTarget target,
-        IStartupPreflightCallEmitter? startupPreflight = null,
         StartupPreflights? preflights = null)
     {
         var imports = WasmRuntimeImports.CreateCatalog();
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var emitter = new ComponentBoundaryEmitter(
             imports,
-            EmitterTestSupport.CreateRuntimeStateInitializer(),
+            new InstantiationStateInitializer(),
             CreateCanonicalAbiFunctionTypePlanner(),
-            startupPreflight ?? new RecordingStartupPreflightCallEmitter(),
             new FixedStartupPreflightMethodSelector(preflights ?? StartupPreflights.None),
             new GeneratedFunctionWriterFactory());
         return (new[] { emitter }.Cast<IComponentBoundaryEmitter>().Single(), imports);
@@ -381,21 +335,6 @@ public sealed class ComponentBoundaryEmitterTests
     private sealed class FixedStartupPreflightMethodSelector(StartupPreflights preflights) : IStartupPreflightMethodSelector
     {
         public StartupPreflights Select(WasmEmissionRequest request) => preflights;
-    }
-
-    private sealed class RecordingStartupPreflightCallEmitter : IStartupPreflightCallEmitter
-    {
-        public ImmutableArray<EntityKey>? Preflights { get; private set; }
-        public IFunctionIndexResolver? FunctionIndices { get; private set; }
-
-        public void Emit(
-            GeneratedFunctionWriterLease code,
-            ImmutableArray<EntityKey> preflights,
-            IFunctionIndexResolver functionIndices)
-        {
-            Preflights = preflights;
-            FunctionIndices = functionIndices;
-        }
     }
 
     private sealed class Repository : IMethodRepository

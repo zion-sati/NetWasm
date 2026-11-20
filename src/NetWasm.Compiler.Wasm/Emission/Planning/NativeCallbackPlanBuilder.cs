@@ -57,7 +57,8 @@ internal sealed class NativeCallbackPlanBuilder(
             var abi = signatures.Plan(
                 method.Signature,
                 NativeAbiSignatureKind.Callback,
-                method.CanonicalName);
+                method.CanonicalName,
+                method.Definition.NativeMarshalling);
             var entryPoint = method.Definition.NativeCallback!.EntryPoint;
             var isAddressTaken = addressedCallbacks.Contains(method.CanonicalName);
             var currentGetterOrdinal = isAddressTaken ? getterOrdinal++ : -1;

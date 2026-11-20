@@ -110,22 +110,92 @@ public sealed class MetadataMethodBodyReaderTests
         Assert.Equal(0, fixture.DecoderCreations);
     }
 
+    // A P/Invoke that takes runtime marshalling has no physical body; its stub builder makes one.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BodylessMarshallingStubsUseTheStubBody(bool instance)
+    {
+        using var fixture = new Fixture(physical: false, annotated: false, marshallingStub: true);
+
+        var reader = fixture.CreateReader();
+        var result = instance ? reader.ReadMethodBody(fixture.Method) : reader.ReadMethodBody(fixture.Method.Definition);
+
+        Assert.Same(fixture.Body, result);
+        Assert.Equal(1, fixture.MarshallingStubBuilds);
+        Assert.Equal(0, fixture.UnboundNativeImportBuilds);
+        Assert.Equal(0, fixture.DecoderCreations);
+        Assert.Equal(0, fixture.DelegateCallBuilds);
+    }
+
+    // A body naming a member its declaring type lacks becomes the missing-member body; any other failure to decode,
+    // an ambiguous reference among them, still fails the compile.
+    [Fact]
+    public void AMissingMemberDecodesToTheMissingMemberBodyAndOtherFailuresPropagate()
+    {
+        using var fixture = new Fixture(physical: true, annotated: false);
+        var missing = new MissingMemberReference(MissingMemberKind.Field, "System.Int32 Owner.Gone", "formatted accessor", 4,
+            "missing");
+        fixture.DecodeError = new CompilerException(new(DiagnosticCode.MissingApi, "missing", "formatted accessor", 4)
+        {
+            MissingMember = missing,
+        });
+
+        Assert.Same(fixture.Body, fixture.CreateReader().ReadMethodBody(fixture.Method));
+        Assert.Same(missing, fixture.BuiltMissingMember);
+
+        var ambiguous = new CompilerException(new(DiagnosticCode.AssemblyResolution, "ambiguous"));
+        fixture.DecodeError = ambiguous;
+        Assert.Same(ambiguous, Assert.Throws<CompilerException>(() => fixture.CreateReader().ReadMethodBody(fixture.Method)));
+        var unexplained = new CompilerException(new(DiagnosticCode.MissingApi, "missing without its member"));
+        fixture.DecodeError = unexplained;
+        Assert.Same(unexplained, Assert.Throws<CompilerException>(() => fixture.CreateReader().ReadMethodBody(fixture.Method)));
+    }
+
+    // A type its assembly lacks, met while decoding (a member reference's type) or named by a type token after it,
+    // makes the body the missing-member body too, placed in the method decoding it.
+    [Fact]
+    public void AMissingTypeDecodesToTheMissingMemberBodyWhereverItSurfaces()
+    {
+        using var fixture = new Fixture(physical: true, annotated: false);
+        var type = new MissingMemberReference(MissingMemberKind.Type, "Gone.Type", "", 0, "not found") { Assembly = "Gone" };
+        fixture.DecodeError = new CompilerException(new(DiagnosticCode.AssemblyResolution, "not found", "formatted accessor", 6)
+        {
+            MissingMember = type,
+        });
+
+        Assert.Same(fixture.Body, fixture.CreateReader().ReadMethodBody(fixture.Method));
+        Assert.Equal(type with { Method = "formatted accessor", IlOffset = 6 }, fixture.BuiltMissingMember);
+        Assert.Equal("Could not load type 'Gone.Type' from assembly 'Gone'.", fixture.BuiltMissingMember!.ExceptionMessage);
+        Assert.Equal("System.TypeLoadException", fixture.BuiltMissingMember.ExceptionType);
+
+        fixture.DecodeError = null;
+        fixture.MissingType = type with { Method = "formatted", IlOffset = 2 };
+        Assert.Same(fixture.Body, fixture.CreateReader().ReadMethodBody(fixture.Method));
+        Assert.Same(fixture.MissingType, fixture.BuiltMissingMember);
+    }
+
     private sealed class Fixture : IDisposable, ICilDecoderFactory, ICilDecoder,
         IManagedAssemblyResolver, IMetadataMethodReferenceResolver, ISymbolFormatter,
         IUnsafeAccessorTargetResolverFactory, IUnsafeAccessorTargetResolver, IUnsafeAccessorBodyBuilder,
-        IDelegateAsynchronousCallBodyBuilder, IUnsafeIntrinsicBodyBuilder, IUnboundNativeImportBodyBuilder
+        IDelegateAsynchronousCallBodyBuilder, IUnsafeIntrinsicBodyBuilder, IUnboundNativeImportBodyBuilder,
+        INativeMarshallingStubBodyBuilder, IMissingMemberBodyBuilder, IMissingTypeFinder
     {
         private readonly ManagedAssembly _assembly;
         private readonly UnsafeAccessorBinding _binding;
         internal MethodInstanceModel Method { get; }
         internal CilMethodBody Body { get; }
         internal int AssemblyReads, DecoderCreations, InstanceDecodes,
-            MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds, IntrinsicBuilds, UnboundNativeImportBuilds;
+            MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds, IntrinsicBuilds, UnboundNativeImportBuilds,
+            MarshallingStubBuilds;
         internal Exception? BindingError { get; set; }
+        internal Exception? DecodeError { get; set; }
+        internal MissingMemberReference? BuiltMissingMember { get; private set; }
+        internal MissingMemberReference? MissingType { get; set; }
         // Whether the method is an Unsafe intrinsic, whose body the compiler builds.
         internal bool IntrinsicBody { get; init; }
 
-        internal Fixture(bool physical, bool annotated, bool delegateCall = false)
+        internal Fixture(bool physical, bool annotated, bool delegateCall = false, bool marshallingStub = false)
         {
             var imageBuilder = new PersistedAssemblyBuilder(new AssemblyName("Accessors"), typeof(object).Assembly);
             _ = imageBuilder.DefineDynamicModule("Accessors").DefineType("Owner").CreateType();
@@ -139,6 +209,9 @@ public sealed class MetadataMethodBodyReaderTests
             {
                 UnsafeAccessor = annotated ? new UnsafeAccessorDeclaration(1, "Target", true, false) : null,
                 IsDelegateAsynchronousCall = delegateCall,
+                NativeMarshallingStub = marshallingStub
+                    ? new(new(_assembly.Identity, unchecked((int)0x86000001)))
+                    : null,
             };
             Method = new(definition, CliTypeIdentity.Named(_assembly.Identity, "", "Owner", false), [], signature);
             Body = new(definition, 1, [], []) { MethodInstance = Method };
@@ -146,7 +219,7 @@ public sealed class MetadataMethodBodyReaderTests
         }
 
         internal IMethodBodyReader CreateReader() => Assert.IsAssignableFrom<IMethodBodyReader>(
-            new MetadataMethodBodyReader(this, this, this, this, this, this, this, this, this));
+            new MetadataMethodBodyReader(this, this, this, this, this, this, this, this, this, this, this, this));
         public void Dispose() => _assembly.Dispose();
 
         ICilDecoder ICilDecoderFactory.Create() { DecoderCreations++; return this; }
@@ -155,6 +228,7 @@ public sealed class MetadataMethodBodyReaderTests
             Assert.Same(_assembly, source);
             Assert.Same(Method, method);
             InstanceDecodes++;
+            if (DecodeError is not null) throw DecodeError;
             return Body;
         }
         public ManagedAssembly Resolve(AssemblyIdentity identity)
@@ -213,5 +287,18 @@ public sealed class MetadataMethodBodyReaderTests
             UnboundNativeImportBuilds++;
             return Body;
         }
+        CilMethodBody INativeMarshallingStubBodyBuilder.Build(MethodInstanceModel method)
+        {
+            Assert.Same(Method, method);
+            MarshallingStubBuilds++;
+            return Body;
+        }
+        CilMethodBody IMissingMemberBodyBuilder.Build(MethodInstanceModel method, MissingMemberReference missing)
+        {
+            Assert.Same(Method, method);
+            BuiltMissingMember = missing;
+            return Body;
+        }
+        MissingMemberReference? IMissingTypeFinder.Find(CilMethodBody body, string method) => MissingType;
     }
 }

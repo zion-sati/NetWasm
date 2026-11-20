@@ -105,6 +105,8 @@ public sealed class ComponentCoreModuleMergeRunner(
         arguments.Add("--enable-exception-handling");
         // catch_all_ref cleanup carries an exnref block result across the root release.
         arguments.Add("--enable-reference-types");
+        // Static native code may use multi-value blocks, as exception handling's exnref encoding does.
+        arguments.Add("--enable-multivalue");
         arguments.Add("--enable-bulk-memory");
         arguments.Add("--enable-nontrapping-float-to-int");
         arguments.Add("--enable-simd");
@@ -117,10 +119,7 @@ public sealed class ComponentCoreModuleMergeRunner(
         {
             return;
         }
-        var error = result.StandardError.Replace('\r', ' ')
-            .Replace('\n', ' ').Trim();
         throw ComponentException.Tool(
-            "wasm-merge failed to link the NetWasm runtime: " +
-            (error.Length == 0 ? "unknown error" : error));
+            "wasm-merge failed to link the NetWasm runtime: " + result.FailureDescription);
     }
 }

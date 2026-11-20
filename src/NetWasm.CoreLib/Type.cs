@@ -28,11 +28,16 @@ namespace System
 
         // The compiler lowers every call, this one included, to the handle's type; the body is
         // what a delegate or function pointer to the method runs.
+        [Intrinsic]
         public static Type? GetTypeFromHandle(RuntimeTypeHandle handle) => GetTypeFromHandle(handle);
 
         // RuntimeTypeHandle uses the compiler's 32-bit semantic type identity on
         // both Wasm targets, matching ldtoken and GetTypeFromHandle.
-        public RuntimeTypeHandle TypeHandle => Unsafe.As<int, RuntimeTypeHandle>(ref SemanticTypeId);
+        public RuntimeTypeHandle TypeHandle
+        {
+            [Intrinsic]
+            get => Unsafe.As<int, RuntimeTypeHandle>(ref SemanticTypeId);
+        }
 
 
         public static RuntimeTypeHandle GetTypeHandle(object o)
@@ -43,8 +48,16 @@ namespace System
 
         // Lowered like GetTypeFromHandle.
         internal static Type GetTypeFromSemanticId(int semanticTypeId) => GetTypeFromSemanticId(semanticTypeId);
-        public bool IsValueType => IsValueTypeImpl();
-        public bool IsEnum => HasFlag(RuntimeTypeFactsFlags.Enum);
+        public bool IsValueType
+        {
+            [Intrinsic]
+            get => IsValueTypeImpl();
+        }
+        public bool IsEnum
+        {
+            [Intrinsic]
+            get => HasFlag(RuntimeTypeFactsFlags.Enum);
+        }
         public bool IsInterface => HasFlag(RuntimeTypeFactsFlags.Interface);
         public bool IsByRef => IsByRefImpl();
         public bool IsPointer => IsPointerImpl();
@@ -52,7 +65,11 @@ namespace System
             HasFlag(RuntimeTypeFactsFlags.ContainsGenericParameters);
         public bool IsGenericTypeDefinition =>
             HasFlag(RuntimeTypeFactsFlags.GenericTypeDefinition);
-        public bool IsGenericType => HasFlag(RuntimeTypeFactsFlags.GenericType);
+        public bool IsGenericType
+        {
+            [Intrinsic]
+            get => HasFlag(RuntimeTypeFactsFlags.GenericType);
+        }
         public bool IsArray => IsArrayImpl();
         public bool IsSZArray => HasFlag(RuntimeTypeFactsFlags.SzArray);
         public bool IsClass => HasFlag(RuntimeTypeFactsFlags.Class);
@@ -86,13 +103,16 @@ namespace System
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static TypeCode GetTypeCode(Type? type) =>
             type is null ? TypeCode.Empty : type.GetTypeCodeImpl();
 
+        [Intrinsic]
         public bool IsAssignableTo([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] Type? targetType) =>
             targetType?.IsAssignableFrom(this) ?? false;
 
-        public bool IsAssignableFrom(Type? candidate)
+        [Intrinsic]
+        public bool IsAssignableFrom([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] Type? candidate)
         {
             if (candidate is null)
             {
@@ -140,8 +160,10 @@ namespace System
                 attributeType,
                 inherit);
 
+        [Intrinsic]
         public static bool operator ==(Type? left, Type? right) =>
             object.ReferenceEquals(left, right);
+        [Intrinsic]
         public static bool operator !=(Type? left, Type? right) =>
             !object.ReferenceEquals(left, right);
         public override bool Equals(object? value) =>
@@ -181,6 +203,9 @@ namespace System
         internal const int GenericMethodParameter = 1 << 15;
         internal const int ByRefLike = 1 << 16;
         internal const int TypeDefinition = 1 << 23;
+        // No type is both a pointer and a by-reference type: the two together mark a function pointer type, whose
+        // rank field is 1 when its calling convention is unmanaged.
+        internal const int FunctionPointer = ByReference | Pointer;
         internal const int ArrayRankShift = 17;
         internal const int ArrayRankMask = 0x3f;
     }

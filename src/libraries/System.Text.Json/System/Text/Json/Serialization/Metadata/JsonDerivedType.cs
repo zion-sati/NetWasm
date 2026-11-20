@@ -59,5 +59,10 @@ namespace System.Text.Json.Serialization.Metadata
         /// </summary>
         public object? TypeDiscriminator { get; }
 
+        internal void Deconstruct(out Type derivedType, out object? typeDiscriminator)
+        {
+            derivedType = DerivedType;
+            typeDiscriminator = TypeDiscriminator;
+        }
     }
 }

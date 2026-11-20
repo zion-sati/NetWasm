@@ -133,6 +133,7 @@ do not isolate the native symbol namespace.
 | Counted arrays | Qualified byte, integer and aggregate-element input, output and in-out arrays with explicit count/capacity; storage is caller-owned and call-scoped |
 | UTF-8 strings | Stock source-generated input marshalling, including null, empty, non-ASCII and embedded-NUL behavior; native code must not retain the buffer |
 | `SafeHandle` inputs | Borrowed for the call with lifetime protection; ownership, repeated/reentrant disposal and finalization preserve exact release behavior |
+| Raw `DllImport` handles and arrays | Desktop .NET's runtime marshalling: `SafeHandle` and `CriticalHandle` arguments, results, `out` and `ref` parameters, `HandleRef` arguments, and pinned arrays of blittable elements |
 | Static callbacks | Address-taken or named `UnmanagedCallersOnly` methods with the supported scalar/pointer signatures, any supported calling convention, explicit registration lifetime and `nint` user tokens |
 | Unmanaged function pointers | Calls through `delegate* unmanaged`, with any supported calling convention, to native functions or `UnmanagedCallersOnly` methods, with the argument and result shapes a raw `DllImport` supports |
 
@@ -151,10 +152,31 @@ The aggregate profile does not introduce a raised-alignment attribute:
 `StructLayout.Pack` can lower alignment but cannot express an over-aligned C
 type. Embedded empty aggregates are rejected; a qualified empty root value uses
 the documented logical-to-physical adaptation. Only defined fields and bits are
-portable across a union boundary. SafeHandle `ref`, `out` and return construction
-remain unsupported because the stock helper requires reflection-based generic
-activation. Native-owned arrays and retained array/string pointers are outside
-the profile.
+portable across a union boundary. Native-owned arrays and retained array/string
+pointers are outside the profile.
+
+A raw `DllImport` without `[DisableRuntimeMarshalling]` gets desktop .NET's
+runtime marshalling for handles and arrays. The compiler gives it a stub, as
+desktop .NET's IL stub, that calls the native function with the handle value or
+the array's address:
+
+- A `SafeHandle` argument is borrowed for the call. A null handle throws
+  `ArgumentNullException` and a closed one `ObjectDisposedException`, before
+  native code runs; the handle is released after the call, also when a later
+  argument fails.
+- A `SafeHandle` or `CriticalHandle` result, `out` or `ref` parameter is made
+  through the handle type's parameterless constructor, of any accessibility,
+  before the call. A `ref` handle is replaced only when native code changes its
+  value. The handle type must not be abstract.
+- A `CriticalHandle` argument passes its handle and is kept alive for the call;
+  a `HandleRef` passes its handle and keeps its wrapper alive.
+- An array of blittable elements is pinned: null passes a null pointer, an empty
+  array an address, and native writes are visible whatever `[In]` and `[Out]`
+  say. Arrays that need their elements converted (`bool`, `char`, elements
+  holding references) and multidimensional arrays are rejected.
+
+Strings, delegates and other classes that runtime marshalling would convert are
+rejected where a program reaches them.
 
 Callback signatures remain scalar/pointer only. Callback aggregates, arrays,
 byrefs, SafeHandle values and callback-valued parameters/results are rejected.
@@ -165,9 +187,12 @@ trampolines, worker-thread callbacks and constructor-time managed entry remain
 unsupported. A named callback requires normal managed application startup
 before native entry.
 
-Broad runtime marshalling, raw bool/char/string leaves, byref returns,
-varargs, custom marshallers and `SetLastError` remain outside the profile.
-Dynamic libraries, thin archives and direct consumer `.o` inputs are rejected. Object
+Broad runtime marshalling (the HRESULT translation of `PreserveSig = false`
+among it), raw string leaves, bool and char outside an assembly with
+`[DisableRuntimeMarshalling]`, byref returns, varargs, custom marshallers and
+`SetLastError` remain outside the profile. Under `[DisableRuntimeMarshalling]`
+bool is C's one-byte `bool`, char is `char16_t`, `[MarshalAs]` has no effect
+and scalar `ref`/`out` is rejected, as on desktop .NET. Dynamic libraries, thin archives and direct consumer `.o` inputs are rejected. Object
 and compatible LTO archive members must match guest width and the qualified
 Wasm feature set. Native threads, direct C++ ABI and native C++ exceptions
 crossing managed frames remain outside the profile.

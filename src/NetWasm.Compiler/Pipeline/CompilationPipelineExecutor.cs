@@ -47,11 +47,14 @@ internal sealed class CompilationPipelineExecutor(
     ICompiledUnitStateFactory unitStates,
     IEarlyCutoffEmitter earlyCutoff,
     IUnitKeptCompileCommitter keptCompiles,
-    INativeImportBinderFactory nativeBinders) :
+    INativeImportBinderFactory nativeBinders,
+    INativeVariadicCallPlannerFactory nativeVariadics) :
     ICompilationPipelineExecutor
 {
     private readonly INativeImportBinderFactory _nativeBinders = nativeBinders ??
         throw new ArgumentNullException(nameof(nativeBinders));
+    private readonly INativeVariadicCallPlannerFactory _nativeVariadics = nativeVariadics ??
+        throw new ArgumentNullException(nameof(nativeVariadics));
     private readonly IUnitKeptCompileCommitter _keptCompiles = keptCompiles ??
         throw new ArgumentNullException(nameof(keptCompiles));
     private readonly IEarlyCutoffEmitter _earlyCutoff = earlyCutoff ??
@@ -164,7 +167,13 @@ internal sealed class CompilationPipelineExecutor(
                 options.ReferenceAssemblyAliases is { Count: > 0 } ? options.ReferenceAssemblyAliases : null,
                 options.MetadataReferencePaths.IsDefault ? [] : options.MetadataReferencePaths,
                 options.OriginalContractReferencePaths.IsDefault ? [] : options.OriginalContractReferencePaths,
-                _nativeBinders.Create(options.LinkedNativeLibraries)))
+                _nativeBinders.Create(options.LinkedNativeLibraries),
+                _nativeVariadics.Create(options),
+                // A library's generated JavaScript bindings are NetWasm interop where a JavaScript host runs the
+                // program, as PlatformWorldCapabilities.JavaScriptHost decides.
+                options.UseJavaScriptExportBoundary || options.WitPath is null
+                    ? GeneratedJavaScriptBinding.HostInterop
+                    : GeneratedJavaScriptBinding.OrdinaryCode))
             {
                 var metadata = lease.Snapshot;
                 if (!options.ReferenceOrigins.IsDefaultOrEmpty)
@@ -330,7 +339,8 @@ internal sealed class CompilationPipelineExecutor(
                     emitted.TypeSymbols,
                     emitted.Result.BuildId,
                     emitted.Result.StackTraceSymbols,
-                    options);
+                    emitted.ReadsTypeNames,
+                    options.EmitStackTrace);
                 metrics?.Counters.Count("functionImports", result.FunctionImports.Length);
                 metrics?.Counters.Count("runtimeFeatures", result.RuntimeFeatures.Length);
                 _inputRecorder.Record(cutoff is null || inputs is null ? inputs : inputs with

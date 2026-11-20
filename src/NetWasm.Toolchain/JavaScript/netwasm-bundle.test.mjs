@@ -75,7 +75,7 @@ test("bundles the runtime facades into the same files from any directory", async
     const files = outputs[0];
     const runtime = JSON.parse(files["runtime.json"]);
     assert.deepEqual(Object.keys(runtime.modules), ["page", "worker"]);
-    assert.equal(runtime.schemaVersion, 1);
+    assert.equal(runtime.schemaVersion, 2);
     const shared = runtime.modules.page.files.filter(file => file !== runtime.modules.page.file);
     assert.equal(shared.length, 1);
     assert.match(shared[0], /^netwasm\.runtime\.[\w-]+\.mjs$/u);
@@ -85,6 +85,46 @@ test("bundles the runtime facades into the same files from any directory", async
     assert.ok(!files[runtime.modules.page.file].includes("worker-only"));
     for (const text of Object.values(files)) assert.ok(!text.includes(directory));
     assert.ok(files[shared[0]].includes("shared:"));
+    // Every runtime file, minified or not, opens with V8's compile hint as its first line.
+    for (const output of outputs.slice(0, 2)) {
+      for (const [name, text] of Object.entries(output)) {
+        if (name.endsWith(".mjs")) assert.ok(text.startsWith("//# allFunctionsCalledOnLoad\n"), name);
+      }
+    }
+  });
+});
+
+// A runtime module's files are what it loads when it loads: a chunk its code imports only when it first needs it
+// (failure handling, a fallback) is not preloaded, but is listed as a lazy file, which a deployment publishes.
+test("lists a runtime module's static files and its lazily loaded chunks apart", async () => {
+  await withDirectory(async directory => {
+    const sources = path.join(directory, "package");
+    await writeSources(sources);
+    // The lazy chunk imports the shared chunk the page already loads, which stays one of the page's files.
+    await writeFile(path.join(sources, "lazy.mjs"),
+      "import { shared } from \"./shared.mjs\";\nexport function lazy() { return shared(\"loaded on demand\"); }\n");
+    await writeFile(path.join(sources, "page-only.mjs"),
+      "import { shared } from \"./shared.mjs\";\n"
+      + "export function page() { return shared(\"page\"); }\n"
+      + "export async function failed() { return (await import(\"./lazy.mjs\")).lazy(); }\n");
+    const facades = path.join(directory, "facades");
+    await writeFacades(facades, sources);
+    await writeFile(path.join(facades, "page.mjs"),
+      `export { page, failed } from ${JSON.stringify(path.join(sources, "page-only.mjs"))};\n`);
+    const output = path.join(directory, "out");
+
+    const result = run("bundle-runtime", facades, "--output", output, "--minify", "false");
+
+    assert.equal(result.status, 0, result.stderr);
+    const files = await readOutput(output);
+    const runtime = JSON.parse(files["runtime.json"]);
+    const lazy = Object.keys(files).filter(name => files[name].includes("loaded on demand"));
+    assert.equal(lazy.length, 1);
+    assert.equal(runtime.schemaVersion, 2);
+    assert.ok(!runtime.modules.page.files.includes(lazy[0]));
+    assert.deepEqual(runtime.modules.page.lazyFiles, [lazy[0]]);
+    assert.ok(!runtime.modules.worker.files.includes(lazy[0]));
+    assert.deepEqual(runtime.modules.worker.lazyFiles, []);
   });
 });
 
@@ -108,6 +148,8 @@ test("leaves runtime imports external to an entry and reaches them by URL", asyn
     assert.match(text, /from "\.\.\/\.\.\/netwasm\.page\.abc\.mjs"/u);
     assert.ok(!text.includes("netwasm:runtime"));
     assert.ok(text.includes("42"));
+    // An app's own code is not NetWasm's runtime: the engine compiles it as it would anywhere else.
+    assert.ok(!text.includes("allFunctionsCalledOnLoad"));
 
     // A runtime import without a map is not bundled from anywhere.
     assert.equal(run("bundle", entry, "--output", output, "--platform", "browser", "--minify", "false").status, 1);

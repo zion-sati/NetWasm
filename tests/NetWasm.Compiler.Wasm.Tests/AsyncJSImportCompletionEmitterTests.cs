@@ -90,10 +90,10 @@ public sealed class AsyncJSImportCompletionEmitterTests
             CreateFunctionIndices(),
             EmptyInteropImports());
 
-        // The value handle is the second parameter; the managed value lands in the
-        // local after the task.
+        // The value handle is the second parameter (an array's staged block the second and third); the managed
+        // value lands in the local after the task.
         Assert.Equal(kind == "string" ? [(1, 3)] : [], strings.Calls);
-        Assert.Equal(kind == "f64[]" ? [(result, 1, 3)] : [], arrays.Calls);
+        Assert.Equal(kind == "f64[]" ? [(result, 1, 4)] : [], arrays.Calls);
         Assert.Equal(kind == "JSObject" ? [(result, 1, 3)] : [], objects.Calls);
         Assert.Contains(Call(imports.Resolve(RuntimeImportSymbol.HandleRelease)), Calls(body));
     }
@@ -102,7 +102,7 @@ public sealed class AsyncJSImportCompletionEmitterTests
     [InlineData("string")]
     [InlineData("f64[]")]
     [InlineData("JSObject")]
-    public void ResolvesReferenceResultsAsHandles(string kind)
+    public void ResolvesReferenceResultsAsHandlesAndArraysAsStagedBlocks(string kind)
     {
         var binding = CreateBinding(CliValueKind.ManagedReference) with
         {
@@ -112,7 +112,8 @@ public sealed class AsyncJSImportCompletionEmitterTests
         var type = ((IAsyncJSImportResolveTypeResolver)new AsyncJSImportResolveTypeResolver(
             new RecordingLayoutProvider())).Resolve(binding);
 
-        Assert.Equal([CliValueKind.I4, CliValueKind.I4], type.Parameters.ToArray());
+        Assert.Equal(kind == "f64[]" ? [CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4]
+            : [CliValueKind.I4, CliValueKind.I4], type.Parameters.ToArray());
     }
 
     // A rejection faults the task through SetExceptionForJavaScriptInterop, which
@@ -269,7 +270,7 @@ public sealed class AsyncJSImportCompletionEmitterTests
         new JavaScriptNullableEmitter(layouts, layouts, new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(layouts)));
 
     private static InteropImportPlan EmptyInteropImports() =>
-        new InteropImportPlan([], default, default, default, default, default, default);
+        new InteropImportPlan([], default, default, default, default);
 
     private static CliTypeIdentity ReferenceResult(string kind) => kind switch
     {
@@ -289,12 +290,17 @@ public sealed class AsyncJSImportCompletionEmitterTests
             Calls.Add((handleParameter, destination));
     }
 
-    private sealed class RecordingArrayResults : IHostCallbackByteArrayArgumentMarshaller
+    private sealed class RecordingArrayResults : IStagedValueArrayEmitter
     {
         public List<(CliTypeIdentity Type, int Handle, int Destination)> Calls { get; } = [];
 
-        public void Emit(IWasmInstructionWriter code, CliTypeIdentity arrayType, int handleParameter,
-            int destination, int temporaryI4, int objectTemporary, InteropMarshallingTarget target,
+        public void Emit(
+            IWasmInstructionWriter code,
+            CliTypeIdentity arrayType,
+            int handleParameter,
+            int lengthLocal,
+            int destination,
+            int objectTemporary,
             OptionalFunctionIndex throwFunction) =>
             Calls.Add((arrayType, handleParameter, destination));
     }

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace System.Reflection;
 
@@ -33,6 +34,7 @@ public abstract partial class PropertyInfo
         Binder? binder, object?[]? index, CultureInfo? culture) => throw UnsupportedPropertyAccess();
     public override bool Equals(object? obj) => base.Equals(obj);
     public override int GetHashCode() => base.GetHashCode();
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(PropertyInfo? left, PropertyInfo? right)
     {
         if (right is null) return left is null;

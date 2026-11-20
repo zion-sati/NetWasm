@@ -181,6 +181,8 @@ namespace System
         internal const string Cryptography_X509_ChainBuildingFailed = "An unknown chain building error occurred.";
         internal const string Cryptography_X509_ExportFailed = "The certificate export operation failed.";
         internal const string Cryptography_X509_ExtensionMismatch = "The parameter should be an X509Extension.";
+        internal const string Cryptography_X509_NoOrMismatchedPemKey = "The key contents do not contain a PEM, the content is malformed, or the key does not match the certificate.";
+        internal const string Cryptography_X509_NoPemCertificate = "The certificate contents do not contain a PEM with a CERTIFICATE label, or the content is malformed.";
         internal const string Cryptography_X509_InvalidContentType = "Invalid content type.";
         internal const string Cryptography_X509_InvalidFindType = "Invalid find type.";
         internal const string Cryptography_X509_InvalidFindValue = "Invalid find value.";

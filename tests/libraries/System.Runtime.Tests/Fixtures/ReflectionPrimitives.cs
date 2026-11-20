@@ -19,7 +19,7 @@ public static class EntryPoint
 
     public static int Run(int input)
     {
-        // One-byte instructions across operand kinds, flow control and stack behaviour.
+        // One-byte instructions across operand kinds, flow control and stack behavior.
         if (!Is(OpCodes.Nop, 0x00, 1, "nop", OperandType.InlineNone, FlowControl.Next, OpCodeType.Primitive, StackBehaviour.Pop0, StackBehaviour.Push0, 0)) return 1;
         if (!Is(OpCodes.Ldarg_0, 0x02, 1, "ldarg.0", OperandType.InlineNone, FlowControl.Next, OpCodeType.Macro, StackBehaviour.Pop0, StackBehaviour.Push1, 1)) return 2;
         if (!Is(OpCodes.Ldc_I4_M1, 0x15, 1, "ldc.i4.m1", OperandType.InlineNone, FlowControl.Next, OpCodeType.Macro, StackBehaviour.Pop0, StackBehaviour.Pushi, 1)) return 3;

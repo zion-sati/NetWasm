@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -18,7 +20,8 @@ internal sealed class EnumToStringEmitter(
     IValueLayoutProvider values,
     ITargetLayout layouts,
     IAddressInstructionEmitter addresses,
-    IEnumTypeArgumentValidator typeArguments) : IEnumToStringEmitter
+    IEnumTypeArgumentValidator typeArguments,
+    IKeyedDispatchEmitter keyedDispatch) : IEnumToStringEmitter
 {
     private readonly Lazy<EntityKey> _managedFormat = new(
         () => ResolveManagedFormat(descriptors, types, methods));
@@ -54,19 +57,21 @@ internal sealed class EnumToStringEmitter(
         typeArguments.Validate(code, enumType, typeId, request.Instruction.Context.ManagedThrowFunction);
         addresses.Emit(code, 0);
         Set(code, result);
+        // The enum type's id picks its metadata, searched among the enums the program describes.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var entry in metadata.EnumMetadata)
         {
             var underlying = entry.UnderlyingType;
             var layout = values.GetValueLayout(underlying);
             var payload = WasmTargetLayout.Align(
                 layouts.Target.ObjectHeaderSize, layout.Alignment);
-            EmitTypeMatch(code, typeId, entry.TypeId);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitManagedFormat(request, code, entry, value, payload, format, result);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            cases.Add((entry.TypeId, () =>
+            {
+                EmitManagedFormat(request, code, entry, value, payload, format, result);
+            }
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(typeId, false, cases, () => { }));
 
         Get(code, result);
         Set(code, request.Local(0, CliValueKind.ManagedReference));
@@ -88,19 +93,21 @@ internal sealed class EnumToStringEmitter(
         Set(code, typeId);
         addresses.Emit(code, 0);
         Set(code, result);
+        // The enum type's id picks its metadata, searched among the enums the program describes.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var entry in metadata.EnumMetadata)
         {
             var underlying = entry.UnderlyingType;
             var layout = values.GetValueLayout(underlying);
             var payload = WasmTargetLayout.Align(
                 layouts.Target.ObjectHeaderSize, layout.Alignment);
-            EmitTypeMatch(code, typeId, entry.TypeId);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitManagedFormat(request, code, entry, value, payload, format, result);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            cases.Add((entry.TypeId, () =>
+            {
+                EmitManagedFormat(request, code, entry, value, payload, format, result);
+            }
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(typeId, false, cases, () => { }));
 
         Get(code, result);
         Set(code, request.Local(0, CliValueKind.ManagedReference));
@@ -183,16 +190,6 @@ internal sealed class EnumToStringEmitter(
             .Key;
     }
 
-    private static void EmitTypeMatch(
-        IWasmInstructionWriter code,
-        int typeId,
-        int expectedTypeId)
-    {
-        Get(code, typeId);
-        WriteI32(code, expectedTypeId);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-    }
-
     private static int? GetFormatLocal(RuntimeIntrinsicEmissionRequest request)
     {
         if (request.Method.Definition.Name == "InternalToString")
@@ -216,9 +213,4 @@ internal sealed class EnumToStringEmitter(
         WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)local)));
-
-    private static void WriteI32(IWasmInstructionWriter code, int value) => code.Write(
-        WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(value)));
 }

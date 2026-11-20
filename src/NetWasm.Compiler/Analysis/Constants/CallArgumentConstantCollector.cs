@@ -20,18 +20,18 @@ internal sealed class CallArgumentConstantCollector(ICalledMethodResolver calls)
         foreach (var block in method.ControlFlow.Graph.Blocks)
         {
             var stack = new List<ScalarConstant?>();
-            var unmodelled = false;
+            var unmodeled = false;
             foreach (var instruction in block.Instructions)
             {
                 if (!method.ControlFlow.InstructionEntryStacks.TryGetValue(instruction.Offset, out var entry)) continue;
-                if (unmodelled)
+                if (unmodeled)
                 {
-                    // An unmodelled instruction pops from the top and pushes at most one value (dup is modelled), so
+                    // An unmodeled instruction pops from the top and pushes at most one value (dup is modeled), so
                     // the entries below what it touched keep their facts and the top is unknown.
                     var kept = entry.Length == 0 ? 0 : Math.Min(stack.Count, entry.Length - 1);
                     stack.RemoveRange(kept, stack.Count - kept);
                     while (stack.Count < entry.Length) stack.Add(null);
-                    unmodelled = false;
+                    unmodeled = false;
                 }
                 else if (stack.Count != entry.Length)
                 {
@@ -75,7 +75,7 @@ internal sealed class CallArgumentConstantCollector(ICalledMethodResolver calls)
                         break;
                     default:
                         // The next validated entry fixes the height: see above.
-                        unmodelled = true;
+                        unmodeled = true;
                         break;
                 }
             }

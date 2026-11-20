@@ -43,6 +43,7 @@
   <ItemGroup>
     <Compile Include="ComponentModel/SR.cs" />
     <Compile Include="RuntimeArgumentHandle.cs" />
+    <Compile Include="SkipLocalsInit.cs" />
     <Compile Include="TimeZone.cs" />
     <Compile Include="CurrentSystemTimeZone.cs" />
     <Compile Include="TimeZoneInfo.TransitionTimeToDateTime.cs" />
@@ -76,6 +77,7 @@
     <Compile Include="Runtime/CompilerServices/ConditionalWeakTableRuntime.cs" />
     <Compile Include="Runtime/CompilerServices/ConditionalWeakTable.cs" />
     <Compile Include="Reflection/CustomAttributeFormatException.cs" />
+    <Compile Include="Reflection/InvokeUtils.cs" />
     <Compile Include="Reflection/TargetInvocationException.cs" />
     <Compile Include="Reflection/TargetParameterCountException.cs" />
     <Compile Include="Runtime/CompilerServices/CallingConventions.cs" />
@@ -115,6 +117,7 @@
     <Compile Include="Resources/IResourceGroveler.cs" />
     <Compile Include="Resources/IResourceReader.cs" />
     <Compile Include="Resources/ResourceFallbackManager.cs" />
+    <Compile Include="Resources/ManifestBasedResourceGroveler.cs" />
     <Compile Include="Resources/ResourceManager.cs" />
     <Compile Include="Resources/ResourceManager.NetWasm.cs" />
     <Compile Include="Resources/ResourceReader.cs" />
@@ -149,6 +152,9 @@
     <Compile Include="Reflection/InterfaceMapping.cs" />
     <Compile Include="Reflection/Missing.cs" />
     <Compile Include="Reflection/ParameterModifier.cs" />
+    <Compile Include="Reflection/Metadata/AssemblyExtensions.cs" />
+    <Compile Include="Reflection/Metadata/MetadataUpdateHandlerAttribute.cs" />
+    <Compile Include="Reflection/Metadata/MetadataUpdater.cs" />
     <Compile Include="Obsoletions.cs" />
     <Compile Include="MarshalByRefObject.cs" />
     <Compile Include="Threading/Tasks/ConcurrentExclusiveSchedulerPair.cs" />
@@ -527,6 +533,7 @@
     <Compile Include="Buffers/Text/Utf8Formatter/Utf8Formatter.TimeSpan.cs" />
     <Compile Include="HostInterop.cs" />
     <Compile Include="JSMarshal.cs" />
+    <Compile Include="JSBindings.cs" />
     <Compile Include="ComponentInterop.cs" />
     <Compile Include="PlatformServiceContracts.cs" />
     <Compile Include="PlatformServiceContracts.FileSystem.cs" />
@@ -629,6 +636,8 @@
     <Compile Include="Runtime/InteropServices/Concurrency/IWasiSubtaskCancelInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/WasiSubtaskCancelInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/IWasiMonotonicWaitInvoker.cs" />
+    <Compile Include="Runtime/InteropServices/Concurrency/IEventLoopCollection.cs" />
+    <Compile Include="Runtime/InteropServices/Concurrency/EventLoopCollection.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/WasiMonotonicWaitInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/IComponentBackpressure.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/ComponentBackpressure.cs" />
@@ -697,11 +706,13 @@
     <Compile Include="GCHandle.cs" />
     <Compile Include="GCHandleRuntime.cs" />
     <Compile Include="GCMetricRuntime.cs" />
+    <Compile Include="GCGenerationRuntime.cs" />
     <Compile Include="GCMetricSupportRuntime.cs" />
     <Compile Include="GCFinalizerRuntime.cs" />
     <Compile Include="GCCollectionRuntime.cs" />
     <Compile Include="ObjectIdentityRuntime.cs" />
     <Compile Include="GC.cs" />
+    <Compile Include="StubHelpers.cs" />
     <Compile Include="GCMemoryInfo.cs" />
     <Compile Include="Gen2GcCallback.cs" />
     <Compile Include="GCSettings.cs" />
@@ -724,6 +735,7 @@
     <Compile Include="IO/FileSystemInfo.cs" />
     <Compile Include="IO/FileInfo.cs" />
     <Compile Include="Net/IPAddress.cs" />
+    <Compile Include="Net/IPNetwork.cs" />
     <Compile Include="Net/IPEndPoint.cs" />
     <Compile Include="Net/IPAddressParser.cs" />
     <Compile Include="Net/IPAddressParserStatics.cs" />
@@ -1380,7 +1392,6 @@
     <Compile Include="Runtime/InteropServices/SR.cs" />
     <Compile Include="Security/Cryptography/SR.cs" />
     <Compile Include="Security/SR.cs" />
-    <Compile Include="PlatformNotSupported/Members.System.Runtime.InteropServices.Marshal.cs" />
     <Compile Include="Runtime/InteropServices/Marshal.NoCom.cs" />
     <Compile Include="Runtime/InteropServices/Marshal.Shared.cs" />
     <Compile Include="Runtime/InteropServices/Marshal.Strings.cs" />
@@ -1435,7 +1446,28 @@
     <Compile Include="Runtime/InteropServices/ICustomMarshaler.cs" />
     <Compile Include="Runtime/InteropServices/ICustomQueryInterface.cs" />
     <Compile Include="Runtime/InteropServices/OSPlatform.cs" />
+    <Compile Include="Runtime/InteropServices/NFloat.cs" />
+    <Compile Include="Runtime/InteropServices/CLong.cs" />
+    <Compile Include="Runtime/InteropServices/ComWrappers.PlatformNotSupported.cs" />
+    <Compile Include="Runtime/InteropServices/CreateComInterfaceFlags.cs" />
+    <Compile Include="Runtime/InteropServices/CreateObjectFlags.cs" />
+    <Compile Include="Runtime/InteropServices/CreatedWrapperFlags.cs" />
+    <Compile Include="Runtime/InteropServices/Java/ComponentCrossReference.cs" />
+    <Compile Include="Runtime/InteropServices/Java/JavaMarshal.Unsupported.cs" />
+    <Compile Include="Runtime/InteropServices/Java/MarkCrossReferencesArgs.cs" />
+    <Compile Include="Runtime/InteropServices/Java/StronglyConnectedComponent.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/ComVariant.cs" />
+    <Compile Include="Runtime/InteropServices/DynamicInterfaceCastableHelpers.NetWasm.cs" />
+    <Compile Include="Runtime/InteropServices/IDynamicInterfaceCastable.cs" />
+    <Compile Include="Runtime/InteropServices/NativeLibrary.NetWasm.cs" />
+    <Compile Include="Runtime/InteropServices/ObjectiveC/ObjectiveCMarshal.PlatformNotSupported.cs" />
+    <Compile Include="Runtime/InteropServices/ObjectiveC/ObjectiveCTrackedTypeAttribute.cs" />
+    <Compile Include="Runtime/InteropServices/StandardOleMarshalObject.Unix.cs" />
+    <Compile Include="Runtime/InteropServices/TypeMapping.cs" />
+    <Compile Include="Runtime/InteropServices/CULong.cs" />
     <Compile Include="Runtime/InteropServices/RuntimeInformation.cs" />
+    <Compile Include="Runtime/Loader/AssemblyDependencyResolver.cs" />
+    <Compile Include="Runtime/Loader/AssemblyLoadContext.cs" />
     <Compile Include="Runtime/InteropServices/SEHException.cs" />
     <Compile Include="Runtime/InteropServices/UnknownWrapper.cs" />
     <Compile Include="Runtime/InteropServices/UnmanagedFunctionPointerAttribute.cs" />
@@ -1497,6 +1529,10 @@
     <Compile Include="Runtime/InteropServices/Marshalling/ArrayMarshaller.cs" />
     <Compile Include="Runtime/InteropServices/Marshalling/Utf8StringMarshaller.cs" />
     <Compile Include="Runtime/InteropServices/Marshalling/SafeHandleMarshaller.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/AnsiStringMarshaller.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/BStrStringMarshaller.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/PointerArrayMarshaller.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/Utf16StringMarshaller.cs" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Security/Cryptography/RandomNumberGenerator.cs" />

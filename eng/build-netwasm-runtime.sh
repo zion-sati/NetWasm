@@ -40,8 +40,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ "$collector" = compact || "$collector" = netwasm || "$collector" = bump ]] || {
-    echo "collector must be 'compact', 'netwasm' or 'bump'" >&2
+[[ "$collector" = compact || "$collector" = netwasm || "$collector" = netwasmgen || "$collector" = bump ]] || {
+    echo "collector must be 'compact', 'netwasm', 'netwasmgen' or 'bump'" >&2
     exit 2
 }
 
@@ -170,8 +170,10 @@ const includeRandomSeed = layout.runtimeFeatures === undefined ||
   layout.runtimeFeatures.includes("random-seed");
 const includeObjectClone = layout.runtimeFeatures === undefined ||
   layout.runtimeFeatures.includes("object-clone");
+const includeUninitializedArrays = layout.runtimeFeatures === undefined ||
+  layout.runtimeFeatures.includes("uninitialized-arrays");
 process.stdout.write(
-  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}\n${includeRandomSeed ? 1 : 0}\n${includeObjectClone ? 1 : 0}`);
+  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}\n${includeRandomSeed ? 1 : 0}\n${includeObjectClone ? 1 : 0}\n${includeUninitializedArrays ? 1 : 0}`);
 NODE
 )"
 runtime_target="${runtime_layout_values%%$'\n'*}"
@@ -187,14 +189,17 @@ runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_array_set_value="${runtime_layout_values%%$'\n'*}"
 runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_random_seed="${runtime_layout_values%%$'\n'*}"
-include_object_clone="${runtime_layout_values#*$'\n'}"
+runtime_layout_values="${runtime_layout_values#*$'\n'}"
+include_object_clone="${runtime_layout_values%%$'\n'*}"
+include_uninitialized_arrays="${runtime_layout_values#*$'\n'}"
 [[ "$runtime_target" = "$target" && "$runtime_global_base" =~ ^[0-9]+$ &&
    "$include_ephemerons" =~ ^[01]$ &&
    "$include_structured_command_diagnostics" =~ ^[01]$ &&
    "$include_finalization" =~ ^[01]$ &&
    "$include_array_set_value" =~ ^[01]$ &&
    "$include_random_seed" =~ ^[01]$ &&
-   "$include_object_clone" =~ ^[01]$ ]] || {
+   "$include_object_clone" =~ ^[01]$ &&
+   "$include_uninitialized_arrays" =~ ^[01]$ ]] || {
     echo "runtime layout contract validation failed" >&2
     exit 1
 }
@@ -231,7 +236,7 @@ actual_emscripten="$(emcc --version | sed -nE \
 
 defines=()
 collector_defines=()
-if [[ "$collector" = compact || "$collector" = netwasm ]]; then
+if [[ "$collector" = compact || "$collector" = netwasm || "$collector" = netwasmgen ]]; then
     # Internal collector invariants stay checked in debug builds. Shipping
     # assertion messages also retains libc's diagnostic formatting machinery.
     # Public argument, overflow and allocation checks are ordinary code.
@@ -243,8 +248,8 @@ if [[ "$gc_stress" = 1 ]]; then
     # Collects before every managed allocation, for qualification: a missing
     # root then frees what it should keep at the first chance. Bump never
     # collects.
-    [[ "$collector" = compact || "$collector" = netwasm ]] || {
-        echo "--gc-stress requires the compact or netwasm collector" >&2
+    [[ "$collector" = compact || "$collector" = netwasm || "$collector" = netwasmgen ]] || {
+        echo "--gc-stress requires the compact, netwasm or netwasmgen collector" >&2
         exit 2
     }
     collector_defines+=(-DNETWASM_GC_STRESS)
@@ -252,6 +257,10 @@ fi
 if [[ "$collector" = compact ]]; then
     # Compact shares NetWasmGC's adapters and lifetime layer around its own core.
     collector_defines+=(-DNETWASM_GC_COMPACT)
+fi
+if [[ "$collector" = netwasmgen ]]; then
+    # The runtime's own stores of references record themselves for a collector with generations.
+    collector_defines+=(-DNETWASM_GC_GENERATIONAL)
 fi
 if [[ "$force_component_collection" = 1 ]]; then
     defines+=(-DNETWASM_FORCE_COMPONENT_COLLECTION)
@@ -272,6 +281,9 @@ fi
 if [[ "$include_object_clone" = 0 ]]; then
     defines+=(-DNETWASM_NO_OBJECT_CLONE)
 fi
+if [[ "$include_uninitialized_arrays" = 0 ]]; then
+    defines+=(-DNETWASM_NO_UNINITIALIZED_ARRAYS)
+fi
 
 optimization=("$native_optimization" -flto)
 configuration_defines=()
@@ -288,9 +300,10 @@ debug_information=(-g0)
 mkdir -p "$(dirname "$output")"
 runtime_work="$(mktemp -d "${TMPDIR:-/tmp}/netwasm-runtime.XXXXXX")"
 trap 'rm -rf "$runtime_work"' EXIT
-target_args=()
+# Wasm SIMD, which every NetWasm program already requires, so clang can vectorize the runtime's C.
+target_args=(-msimd128)
 if [[ "$target" = wasm64 ]]; then
-    target_args=(-sMEMORY64=1 -sWASM_BIGINT=1)
+    target_args+=(-sMEMORY64=1 -sWASM_BIGINT=1)
 fi
 
 # Keep native interface metadata in an ordinary relocatable object. Both final
@@ -318,6 +331,7 @@ runtime_sources=(
   "$repo_root/src/NetWasm.Runtime/runtime_posix_exit.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_posix_unavailable.c" \
   "$repo_root/src/NetWasm.Runtime/runtime_abort.c" \
+  "$repo_root/src/NetWasm.Runtime/runtime_posix_host.c" \
   "$repo_root/src/NetWasm.Runtime/object_data_address_resolver.c" \
   "$repo_root/src/NetWasm.Runtime/gc_metric_reader.c" \
   "$repo_root/src/NetWasm.Runtime/collector/weak_handle_table.c" \
@@ -348,6 +362,12 @@ else
     collector_core="$gc_work/netwasm_gc.c"
     if [[ "$collector" = compact ]]; then collector_core="$gc_work/compact_gc.c"; fi
     collector_sources=("$collector_core" "$gc_work/lifetime.c" "$gc_work/address_index.c")
+    if [[ "$collector" = netwasmgen ]]; then
+        # NetWasmGC with generations is its own core, which includes NetWasmGC's, and what reports a store
+        # that qualification finds without its write barrier.
+        collector_sources=("$gc_work/generational_gc.c" "$gc_work/lifetime.c" "$gc_work/address_index.c"
+            "$gc_work/missed_reference_write.c")
+    fi
 fi
 # The runtime's WASI uses. A runtime pack keeps them in their own archive, with
 # runtime_platform_nowasi.c's replacements for a plain core module in another.
@@ -356,6 +376,7 @@ platform_sources=(
   "$repo_root/src/NetWasm.Runtime/runtime_standard_output.c"
   "$repo_root/src/NetWasm.Runtime/runtime_process_exit.c"
   "$repo_root/src/NetWasm.Runtime/runtime_random_seed.c"
+  "$repo_root/src/NetWasm.Runtime/runtime_clock_reader.c"
 )
 if [[ "$output_kind" = module ]]; then
     runtime_sources+=("${platform_sources[@]}")

@@ -67,6 +67,36 @@ public sealed class UnitAnswerCodecEdgeTests
                 new NoMethods(), new NoFields()));
     }
 
+    // A structure layout reads back with its constructor, when it has one, and its boxed payload's offset.
+    [Fact]
+    public void StructureLayoutsReadBackWithTheirConstructors()
+    {
+        var assembly = new AssemblyIdentity("Program");
+        var point = CliTypeIdentity.Named(assembly, "Fixtures", "Point", isValueType: true);
+        var signature = MethodSignatureModel.Create(CliValueKind.Void);
+        var definition = new MethodDefinitionModel(new(assembly, 0x06000009), new(assembly, 0x02000002), ".ctor", false,
+            signature, 0);
+        ImmutableArray<StructMarshallingLayout> layouts =
+        [
+            new(point, 7, 160) { Constructor = new(definition, point, [], signature), PayloadOffset = 8 },
+            new(point, 8, 200),
+        ];
+
+        var bytes = UnitAnswerCodec.Encode(UnitQueryKind.StructMarshalling, "", layouts)!;
+        var decoded = (ImmutableArray<StructMarshallingLayout>)UnitAnswerCodec.Decode(
+            UnitQueryKind.StructMarshalling, "", bytes, new OneMethod(definition), new NoFields())!;
+
+        Assert.Equal(
+            layouts.Select(layout => (layout.TypeId, layout.Address, layout.Constructor?.CanonicalName, layout.PayloadOffset)),
+            decoded.Select(layout => (layout.TypeId, layout.Address, layout.Constructor?.CanonicalName, layout.PayloadOffset)));
+        Assert.All(decoded, layout => Assert.Equal(point, layout.Type));
+    }
+
+    private sealed class OneMethod(MethodDefinitionModel method) : IMethodRepository
+    {
+        public MethodDefinitionModel GetMethod(EntityKey key) => key == method.Key ? method : throw new NotSupportedException();
+    }
+
     private sealed class NoMethods : IMethodRepository
     {
         public MethodDefinitionModel GetMethod(EntityKey key) => throw new NotSupportedException();

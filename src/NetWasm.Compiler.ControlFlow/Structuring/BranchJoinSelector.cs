@@ -184,24 +184,31 @@ internal sealed class BranchJoinSelector(
             request.Second,
             request.Stop,
             analysisBlocks);
-        return firstDistances.Keys
-            .Intersect(secondDistances.Keys)
-            .Select(candidate => CreateCandidate(
-                request,
-                candidate,
-                analysisBlocks,
-                terminalTransfers))
-            .Where(candidate => candidate is not null)
-            .Select(candidate => candidate!)
-            .OrderBy(candidate => candidate.DuplicatedPrefixBlocks.Count)
-            .ThenBy(candidate =>
-                firstDistances[candidate.Join!.Value] +
-                secondDistances[candidate.Join.Value])
-            .ThenBy(candidate => Math.Max(
-                firstDistances[candidate.Join!.Value],
-                secondDistances[candidate.Join.Value]))
-            .ThenBy(candidate => candidate.Join)
-            .FirstOrDefault();
+        // The best candidate has the fewest duplicated blocks, then the shortest combined and longest single distance,
+        // then the lowest block. Candidates are built in distance order, so the first without duplicated blocks is the
+        // best of all and ends the search; otherwise the earliest with the fewest duplicated blocks is.
+        BranchJoinSelection? best = null;
+        foreach (var join in firstDistances.Keys
+            .Where(secondDistances.ContainsKey)
+            .OrderBy(join => firstDistances[join] + secondDistances[join])
+            .ThenBy(join => Math.Max(firstDistances[join], secondDistances[join]))
+            .ThenBy(join => join))
+        {
+            var candidate = CreateCandidate(request, join, analysisBlocks, terminalTransfers);
+            if (candidate is null)
+            {
+                continue;
+            }
+            if (candidate.DuplicatedPrefixBlocks.IsEmpty)
+            {
+                return candidate;
+            }
+            if (best is null || candidate.DuplicatedPrefixBlocks.Count < best.DuplicatedPrefixBlocks.Count)
+            {
+                best = candidate;
+            }
+        }
+        return best;
     }
 
     private BranchJoinSelection? CreateCandidate(
@@ -210,20 +217,23 @@ internal sealed class BranchJoinSelector(
         ImmutableHashSet<int> analysisBlocks,
         ImmutableHashSet<int> terminalTransfers)
     {
+        // Candidate-bounded walks must not absorb the caller's continuation.
+        // The enclosing sequence still owns and emits everything from its stop.
         var firstPrefix = _reachableBlocks.Find(
             request.State,
             request.First,
             candidate,
             analysisBlocks);
+        if (request.Stop is int stop && firstPrefix.Contains(stop))
+        {
+            return null;
+        }
         var secondPrefix = _reachableBlocks.Find(
             request.State,
             request.Second,
             candidate,
             analysisBlocks);
-        // Candidate-bounded walks must not absorb the caller's continuation.
-        // The enclosing sequence still owns and emits everything from its stop.
-        if (request.Stop is int stop &&
-            (firstPrefix.Contains(stop) || secondPrefix.Contains(stop)))
+        if (request.Stop is int secondStop && secondPrefix.Contains(secondStop))
         {
             return null;
         }

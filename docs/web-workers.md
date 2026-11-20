@@ -19,7 +19,7 @@ dotnet run
 
 `dotnet run` publishes the worker and its page and serves them on
 `http://localhost:5080/`; open the address it prints. `dotnet publish -c
-Release` writes the same site to `bin/Release/netwasm0.1/publish` for any
+Release` writes the same site to `bin/Release/net10.0-netwasm/publish` for any
 static HTTP server. Both templates include a working page, progress
 notifications, a generated worker client, and orderly disposal.
 
@@ -105,7 +105,7 @@ export world:
 ```xml
 <PropertyGroup>
   <OutputType>WitWebWorker</OutputType>
-  <TargetFramework>netwasm0.1</TargetFramework>
+  <TargetFramework>net10.0-netwasm</TargetFramework>
   <NetWasmWitPath>$(MSBuildProjectDirectory)/wit</NetWasmWitPath>
   <NetWasmWorld>example:reports@1.0.0/worker</NetWasmWorld>
   <NetWasmApplicationWorld>example:reports@1.0.0/application</NetWasmApplicationWorld>

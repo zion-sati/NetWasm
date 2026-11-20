@@ -14,11 +14,11 @@ public sealed class ValueConstructorPurityClassifierTests
     public void RejectsMissingDependenciesAndMethod()
     {
         var facts = new Facts();
-        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(null!, facts, facts, facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(facts, null!, facts, facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(facts, facts, null!, facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(facts, facts, facts, null!, facts));
-        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(facts, facts, facts, facts, null!));
+        var initialization = facts.Initialization();
+        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(null!, facts, facts, initialization));
+        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(facts, null!, facts, initialization));
+        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(facts, facts, null!, initialization));
+        Assert.Throws<ArgumentNullException>(() => new ValueConstructorPurityClassifier(facts, facts, facts, null!));
         Assert.Throws<ArgumentNullException>(() => facts.Purity().IsPure(null!));
     }
 

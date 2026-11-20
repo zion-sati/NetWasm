@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 # SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
-"""Iterate quickly on compiler output and engine behaviour.
+"""Iterate quickly on compiler output and engine behavior.
 
 Each iteration rebuilds only the compiler tasks from a source tree, overlays
 them on a disposable copy of a base package set's restored cache, republishes

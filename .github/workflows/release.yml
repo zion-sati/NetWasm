@@ -292,14 +292,16 @@ jobs:
 
   # Every class that runs differential fixtures, on the linked runtime with a
   # collection before every allocation, under each collector: a reference the
-  # compiler leaves unrooted is freed at once instead of now and then.
+  # compiler leaves unrooted is freed at once instead of now and then. Under
+  # NetWasmGen each minor collection also checks that every reference stored
+  # into old memory went through the write barrier.
   gc-stress:
     name: GC stress (${{ matrix.collector }})
     if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
     strategy:
       fail-fast: false
       matrix:
-        collector: [compact, netwasm]
+        collector: [compact, netwasm, netwasmgen]
     uses: ./.github/workflows/compiler-tests.yml
     with:
       ref: ${{ github.event.release.tag_name || inputs.tag }}
@@ -312,12 +314,17 @@ jobs:
       timeout-minutes: 120
       artifact-prefix: gc-stress-${{ matrix.collector }}-timings
 
-  # The same differential classes on the linked runtime with NetWasmGC, every
-  # fixture that names no preset compiled at O3, so the speed preset's whole
-  # optimization pipeline meets the corpus and .NET 11's results.
+  # The same differential classes on the linked runtime with NetWasmGC and with
+  # NetWasmGen, every fixture that names no preset compiled at O3, so the speed
+  # preset's whole optimization pipeline, write barriers included, meets the
+  # corpus and .NET 11's results.
   speed-preset:
-    name: Corpus at O3 (netwasm)
+    name: Corpus at O3 (${{ matrix.collector }})
     if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
+    strategy:
+      fail-fast: false
+      matrix:
+        collector: [netwasm, netwasmgen]
     uses: ./.github/workflows/compiler-tests.yml
     with:
       ref: ${{ github.event.release.tag_name || inputs.tag }}
@@ -325,10 +332,10 @@ jobs:
       timings: eng/compiler-test-full-durations.json
       classes: eng/compiler-gc-stress-classes.txt
       corpus-backend: linked
-      collector: netwasm
+      collector: ${{ matrix.collector }}
       optimization: O3
       timeout-minutes: 120
-      artifact-prefix: speed-preset-timings
+      artifact-prefix: speed-preset-${{ matrix.collector }}-timings
 
   # The same differential classes with every corpus request also compiled at its own level with
   # compiled units under verification, in stores the shard's requests share: units

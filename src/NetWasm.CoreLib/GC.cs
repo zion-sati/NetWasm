@@ -5,6 +5,7 @@
 // commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // The upstream implementation is licensed under the MIT license.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace System;
@@ -35,7 +36,7 @@ public static partial class GC
     public static void Collect(int generation)
     {
         ValidateGeneration(generation);
-        GCCollectionRuntime.Collect();
+        CollectGeneration(generation);
     }
 
     public static void Collect(int generation, GCCollectionMode mode) =>
@@ -63,7 +64,16 @@ public static partial class GC
             throw new PlatformNotSupportedException("Compacting collection is not supported.");
         }
 
-        GCCollectionRuntime.Collect();
+        CollectGeneration(generation);
+    }
+
+    // Generation 0 alone is the young objects under a collector with generations, and every object otherwise.
+    // Inlined, so that without generations a caller holds the call to collect and nothing more.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CollectGeneration(int generation)
+    {
+        if (HasGenerations && generation == 0) GCCollectionRuntime.CollectYoung();
+        else GCCollectionRuntime.Collect();
     }
 
     private const int CollectionCountMetric = 0;
@@ -72,15 +82,32 @@ public static partial class GC
     private const int LiveHeapSizeMetric = 3;
     private const int TotalPauseMillisecondsMetric = 4;
     private const int PinnedReferenceCountMetric = 5;
+    private const int OldestGenerationCollectionCountMetric = 6;
 
-    /// <summary>Gets the highest generation supported by the collector.</summary>
-    public static int MaxGeneration => 0;
+    // Whether the program's collector has generations (NetWasmGen), which the compiler folds from the collector it
+    // compiles for: a program for any other collector asks the runtime nothing about generations.
+    internal const string GenerationsSwitch = "NetWasm.Runtime.Generations";
 
-    /// <summary>Returns the number of collections; every collection covers every generation.</summary>
+    [FeatureSwitchDefinition(GenerationsSwitch)]
+    private static bool HasGenerations => AppContext.TryGetSwitch(GenerationsSwitch, out var enabled) && enabled;
+
+    /// <summary>Gets the highest generation the collector has: 1 with generations, 0 without.</summary>
+    public static int MaxGeneration => HasGenerations ? 1 : 0;
+
+    /// <summary>
+    /// Returns how many times the generation has been collected. Every collection collects generation 0. An
+    /// older generation is collected only by a collection of every object, which without generations is every
+    /// collection.
+    /// </summary>
     public static int CollectionCount(int generation)
     {
         ValidateGeneration(generation);
-        return (int)GCMetricRuntime.Read(CollectionCountMetric);
+        if (!HasGenerations || generation == 0)
+        {
+            return (int)GCMetricRuntime.Read(CollectionCountMetric);
+        }
+
+        return (int)GCMetricRuntime.Read(OldestGenerationCollectionCountMetric);
     }
 
     /// <summary>Gets the total bytes currently used by live managed objects.</summary>
@@ -117,14 +144,21 @@ public static partial class GC
     public static T[] AllocateArray<T>(int length, bool pinned = false) => new T[length];
 
     /// <summary>Allocates an array while skipping zero-initialization when possible.</summary>
+    // Upstream's policy (GC.CoreCLR.cs): an element type with references, or an array under
+    // 2048 bytes, is allocated zeroed; a larger one of an element type without references
+    // skips the collector's clear. No collector moves objects, so every array is already pinned.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe T[] AllocateUninitializedArray<T>(int length, bool pinned = false)
     {
-        // No collector moves objects, so every array is already pinned. The
-        // compiler/runtime currently provide ordinary zero-initialized newarr storage.
-        // That is a permitted implementation of the uninitialized-array contract.
-        return new T[length];
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>() || length < 2048 / Unsafe.SizeOf<T>())
+        {
+            return new T[length];
+        }
+        return InternalAllocateUninitializedArray<T>(length);
     }
+
+    // The compiler allocates the array through the runtime's uninitialized allocation.
+    private static T[] InternalAllocateUninitializedArray<T>(int length) => new T[length];
 
     /// <summary>Gets the cumulative time spent in collector pauses.</summary>
     public static TimeSpan GetTotalPauseDuration()
@@ -138,7 +172,10 @@ public static partial class GC
         return TimeSpan.FromMilliseconds(GCMetricRuntime.Read(TotalPauseMillisecondsMetric));
     }
 
-    /// <summary>Returns the generation of an object in the single-generation collector.</summary>
+    /// <summary>
+    /// Returns the generation of an object: the oldest once it has survived a collection, for a collector with
+    /// generations, and 0 otherwise.
+    /// </summary>
     public static int GetGeneration(object? value)
     {
         if (value is null)
@@ -146,7 +183,7 @@ public static partial class GC
             throw new ArgumentNullException(nameof(value));
         }
 
-        return 0;
+        return HasGenerations ? GCGenerationRuntime.Of(value) : 0;
     }
 
     /// <summary>Returns the generation of a weak-reference wrapper.</summary>
@@ -165,6 +202,7 @@ public static partial class GC
 
     /// <summary>Preserves an object reference through the call site.</summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [Intrinsic]
     public static void KeepAlive(object? value)
     {
         // The call itself is the liveness boundary. There is no additional
@@ -329,7 +367,7 @@ public static partial class GC
             "Refreshing the collector memory limit is not available in the NetWasm runtime.");
 
     // Full-GC notifications and no-GC regions are Mono's (GC.Mono.cs at dotnet/runtime deae2e32): the arguments are
-    // checked, then NotImplementedException, as Mono's collector has neither (owner, 2026-11-13: throw like Mono).
+    // checked, then NotImplementedException, as Mono's collector has neither.
     private static bool _RegisterForFullGCNotification(int maxGenerationPercentage, int largeObjectHeapPercentage)
     {
         throw new NotImplementedException();

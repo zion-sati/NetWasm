@@ -18,6 +18,5 @@ internal interface IComponentFunctionAppender
         WasmTarget target,
         RuntimeInitializationPlan initialization,
         int importCount,
-        IReadOnlyDictionary<string, int> requestedExportIndices,
-        IFunctionIndexResolver functionIndices);
+        IReadOnlyDictionary<string, int> requestedExportIndices);
 }

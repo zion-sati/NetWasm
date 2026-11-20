@@ -21,10 +21,16 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? StaticInitializationHoistingPolicy.Disabled
             : StaticInitializationHoistingPolicy.MethodEntry;
 
-    // The speed presets dispatch calls on object inline; the rest share CoreLib's bodies.
+    // Every optimizing preset turns a branch whose arms only compute a number into a select.
+    private static ConditionalSelectPolicy ConditionalSelects(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? ConditionalSelectPolicy.Disabled
+            : ConditionalSelectPolicy.Enabled;
+
+    // The speed presets share CoreLib's bodies for calls on object only at large sites; the rest at 32 targets.
     private static ObjectDispatchPolicy ObjectDispatch(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
-            ? ObjectDispatchPolicy.Inline
+            ? ObjectDispatchPolicy.SharedAtLargeSites
             : ObjectDispatchPolicy.Shared;
 
     private static SmallBlockOperationPolicy SmallBlockOperations(FinalWasmOptimization preset) =>
@@ -159,6 +165,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ? ManagedConstantCallFolding.Enabled : ManagedConstantCallFolding.Disabled));
             var bitTests = resolver.Resolve(preset, new(SwitchBitTests: enabled
                 ? ManagedSwitchBitTests.Enabled : ManagedSwitchBitTests.Disabled));
+            var selects = resolver.Resolve(preset, new(ConditionalSelects: enabled
+                ? ManagedConditionalSelects.Enabled : ManagedConditionalSelects.Disabled));
             var devirtualization = resolver.Resolve(preset, new(Devirtualization: enabled
                 ? ManagedDevirtualization.Enabled : ManagedDevirtualization.Disabled));
             var allocations = resolver.Resolve(preset, new(AllocationElimination: enabled
@@ -223,6 +231,10 @@ public sealed class WasmOptimizationSettingsResolverTests
             {
                 SwitchBitTests = enabled ? SwitchBitTestPolicy.Conservative : SwitchBitTestPolicy.Disabled,
             }, bitTests);
+            Assert.Equal(baseline with
+            {
+                ConditionalSelects = enabled ? ConditionalSelectPolicy.Enabled : ConditionalSelectPolicy.Disabled,
+            }, selects);
             Assert.Equal(baseline with
             {
                 Devirtualization = enabled ? DevirtualizationPolicy.ExactType : DevirtualizationPolicy.Disabled,
@@ -353,6 +365,8 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(ConstantCallFolding: (ManagedConstantCallFolding)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(SwitchBitTests: (ManagedSwitchBitTests)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(ConditionalSelects: (ManagedConditionalSelects)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(Devirtualization: (ManagedDevirtualization)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
@@ -578,7 +592,8 @@ public sealed class WasmOptimizationSettingsResolverTests
             LoopStrengthReduction: LoopStrengthReduction(preset),
             RangeBranchFolding: RangeBranchFolding(preset),
             UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset),
-            ObjectDispatch: ObjectDispatch(preset));
+            ObjectDispatch: ObjectDispatch(preset),
+            ConditionalSelects: ConditionalSelects(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
@@ -710,7 +725,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                     LoopStrengthReduction: LoopStrengthReduction(preset),
                     RangeBranchFolding: RangeBranchFolding(preset),
                     UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset),
-                    ObjectDispatch: ObjectDispatch(preset)),
+                    ObjectDispatch: ObjectDispatch(preset),
+                    ConditionalSelects: ConditionalSelects(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }

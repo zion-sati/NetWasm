@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace System.Reflection;
 
@@ -14,6 +15,7 @@ public abstract partial class ConstructorInfo
         throw new PlatformNotSupportedException("Runtime reflection constructor invocation is unavailable on NetWasm.");
     public override bool Equals(object? obj) => base.Equals(obj);
     public override int GetHashCode() => base.GetHashCode();
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(ConstructorInfo? left, ConstructorInfo? right)
     {
         if (right is null) return left is null;

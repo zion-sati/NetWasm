@@ -1,4 +1,10 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- A NetWasm guest build targets the netwasm platform: a .NET platform target framework such as
+       net10.0-netwasm, or the deprecated netwasm0.1. Its other target frameworks build for the desktop. -->
+  <PropertyGroup>
+    <_NetWasmPlatformFramework Condition="$(TargetFramework.ToLowerInvariant().Contains('-netwasm'))">true</_NetWasmPlatformFramework>
+    <NetWasmGuestFramework Condition="'$(TargetFramework)' == 'netwasm0.1' OR '$(_NetWasmPlatformFramework)' == 'true'">true</NetWasmGuestFramework>
+  </PropertyGroup>
   <!-- JsModule and worker projects compile as ordinary libraries. Normalize
        before stock SDK evaluation derives executable metadata from OutputType.
        The removed JsWebWorker name is normalized too, so its diagnostic can
@@ -42,7 +48,13 @@
     <_NetWasmBuildsModule Condition="'$(_NetWasmBuildsModule)' == ''">false</_NetWasmBuildsModule>
     <NetWasmRawWasm Condition="'$(NetWasmRawWasm)' == '' AND '$(_NetWasmWorkerKind)' == 'jsexport'">true</NetWasmRawWasm>
   </PropertyGroup>
-  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+  <!-- A module that compiles as a library links its packages' assemblies as an executable does: the compiler reads
+       them from ReferenceCopyLocalPaths, which the stock SDK fills only when it copies lock-file assemblies, and it
+       leaves that off for a library. -->
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(_NetWasmBuildsModule)' == 'true' AND '$(_NetWasmCompileAsLibrary)' == 'true'">
+    <CopyLocalLockFileAssemblies Condition="'$(CopyLocalLockFileAssemblies)' == ''">true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
     <_NetWasmWorkerReference Include="@(ProjectReference->WithMetadataValue('NetWasmWorker', 'true'))" />
     <ProjectReference Update="@(_NetWasmWorkerReference)">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
@@ -76,7 +88,7 @@
     -->
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmStructuredDiagnostics>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == ''">false</NetWasmStructuredDiagnostics>
@@ -85,7 +97,8 @@
     <NetWasmRawWasm Condition="'$(NetWasmRawWasm)' == ''">false</NetWasmRawWasm>
     <!-- Feature switch defaults, no more than Blazor WebAssembly's: Microsoft.NET.Sdk turns each into a Trim="true"
          RuntimeHostConfigurationOption, which the compiler folds and AppContext reads. A project sets any of them
-         as it would for Blazor. NetWasm deploys no manifest resources, so libraries answer with resource keys. -->
+         as it would for Blazor. Libraries built to answer with resource keys do, so their string tables stay out of
+         the program. -->
     <UseSystemResourceKeys Condition="'$(UseSystemResourceKeys)' == ''">true</UseSystemResourceKeys>
     <!-- LINQ's size-optimized mode trades speed for code size, so it follows the optimization preset: the speed
          presets (O1, O2 and O3) take the speed-optimized iterators, as desktop .NET does, and the size presets and
@@ -101,7 +114,17 @@
     <MetricsSupport Condition="'$(MetricsSupport)' == ''">false</MetricsSupport>
     <HttpActivityPropagationSupport Condition="'$(HttpActivityPropagationSupport)' == ''">false</HttpActivityPropagationSupport>
     <EventSourceSupport Condition="'$(EventSourceSupport)' == ''">false</EventSourceSupport>
+    <!-- TLS over wasi:tls, which a host must provide for a program that can reach SslStream (HttpClient over
+         SocketsHttpHandler and ClientWebSocket included). A project for a host without wasi:tls sets it to false:
+         the program then imports no wasi:tls, and SslStream throws PlatformNotSupportedException. -->
+    <NetWasmTlsSupport Condition="'$(NetWasmTlsSupport)' == ''">true</NetWasmTlsSupport>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
+    <RuntimeHostConfigurationOption Include="NetWasm.Net.Security.TlsSupport"
+                                    Value="$(NetWasmTlsSupport)"
+                                    Trim="true" />
+  </ItemGroup>
 
   <!-- Cross-targeting builds intentionally skip the inner TFM inference
        targets, so their outer Pack target would otherwise never see the
@@ -116,10 +139,18 @@
   <!-- The SDK deliberately admits standard assets and validates their reached
        requirements during compilation. Suppress only the fallback warning for
        this exact policy. Custom fallback lists and desktop inner builds retain
-       stock NuGet warnings; all other warning codes remain untouched. -->
+       stock NuGet warnings; all other warning codes remain untouched.
+       NuGet reads the NoWarn property from the evaluation it restores from, the
+       outer one when a project targets several frameworks, but each package
+       reference (with its NoWarn) from that framework's own evaluation. The
+       references therefore carry the suppression too, so a library that also
+       targets netwasm0.1 restores as a netwasm0.1-only one does. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(AssetTargetFallback)' == 'netstandard2.1' AND '$(PackageTargetFallback)' == ''">
     <NoWarn>$(NoWarn);NU1701</NoWarn>
   </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(AssetTargetFallback)' == 'netstandard2.1' AND '$(PackageTargetFallback)' == ''">
+    <PackageReference Update="@(PackageReference)" NoWarn="%(PackageReference.NoWarn);NU1701" />
+  </ItemGroup>
 
   <!-- NuGet takes the netstandard2.1 fallback only for a package with no asset for netwasm0.1 itself, and a
        package-wide build/ or buildTransitive/ file counts as one: such a package (Serilog, Humanizer) would restore
@@ -139,16 +170,25 @@
 
   <!-- System.Linq and System.Net.Http are ordinary implicit usings, as Microsoft.NET.Sdk's: NetWasm.App provides
        both. A project compiling against CoreLib alone (DisableImplicitNetWasmAppReference) has neither. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DisableImplicitNetWasmAppReference)' == 'true'">
+  <ItemGroup Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(DisableImplicitNetWasmAppReference)' == 'true'">
     <Using Remove="System.Linq;System.Net.Http" />
   </ItemGroup>
 
+  <!-- netwasm0.1 builds until a later release removes it, 1.0 at the latest. Its replacement, the platform
+       target framework, takes packages' .NET 8 and later builds, which NuGet cannot give netwasm0.1. -->
+  <Target Name="NetWasmSdkWarnDeprecatedTargetFramework"
+          BeforeTargets="CoreCompile"
+          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <Warning Code="NWSDK105"
+             Text="The netwasm0.1 target framework is deprecated; target net10.0-netwasm instead, under which NuGet takes packages' .NET 8 and later builds. netwasm0.1 will be removed in a later release." />
+  </Target>
+
   <Target Name="NetWasmSdkValidateGarbageCollectorSelection"
           BeforeTargets="NetWasmCompileCoreModule;NetWasmRuntimePackMaterialize"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmBuildsModule)' == 'true'">
+          Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(_NetWasmBuildsModule)' == 'true'">
     <Error Code="NWPACK007"
-           Condition="'$(NetWasmGarbageCollector)' != '' AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Compact')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'NetWasm')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Bump'))"
-           Text="NetWasmGarbageCollector must be exactly Compact, NetWasm or Bump, or unset to use the runtime pack default." />
+           Condition="'$(NetWasmGarbageCollector)' != '' AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Compact')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'NetWasm')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'NetWasmGen')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Bump'))"
+           Text="NetWasmGarbageCollector must be exactly Compact, NetWasm, NetWasmGen or Bump, or unset to use the runtime pack default." />
     <Error Code="NWPACK006"
            Condition="'$(NetWasmRuntimeModulePath)' != '' OR '@(NetWasmComponentRuntime)' != ''"
            Text="Runtime-file overrides are unsupported. Remove NetWasmRuntimeModulePath and caller-added NetWasmComponentRuntime items. To test a modified runtime, restore a uniquely versioned NetWasm.Runtime.Pack package from a local NuGet feed." />
@@ -162,7 +202,7 @@
   <Import Project="$(MSBuildThisFileDirectory)NetWasm.Toolchain.targets"
           Condition="Exists('$(MSBuildThisFileDirectory)NetWasm.Toolchain.targets')" />
   <Import Project="$(MSBuildThisFileDirectory)NetWasm.HttpService.targets"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DisableImplicitNetWasmAppReference)' != 'true'" />
+          Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(DisableImplicitNetWasmAppReference)' != 'true'" />
 
   <UsingTask TaskName="NetWasm.Sdk.Pack.Restore.CanonicalRestoreGraphMsBuildTask"
              AssemblyFile="$(NetWasmSdkPackTaskAssemblyFile)"
@@ -189,7 +229,7 @@
 
   <Target Name="NetWasmSdkValidateTarget"
           BeforeTargets="Restore;CoreCompile"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmTarget)' != 'wasm32' AND '$(NetWasmTarget)' != 'wasm64'">
+          Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(NetWasmTarget)' != 'wasm32' AND '$(NetWasmTarget)' != 'wasm64'">
     <Error Code="NWSDK003"
            Text="NetWasmTarget must be 'wasm32' or 'wasm64'." />
   </Target>
@@ -208,8 +248,8 @@
            Condition="'$(OutputType)' != 'Library'"
            Text="Declare CoreModule in the project file. A global OutputType override cannot be normalized for library compilation." />
     <Error Code="NWSDK098"
-           Condition="'$(TargetFramework)' != '' AND '$(TargetFramework)' != 'netwasm0.1'"
-           Text="CoreModule output is supported only for netwasm0.1. Use Library for a desktop target." />
+           Condition="'$(TargetFramework)' != '' AND '$(NetWasmGuestFramework)' != 'true'"
+           Text="CoreModule output is supported only for a NetWasm target framework (net10.0-netwasm). Use Library for a desktop target." />
     <Error Code="NWSDK099"
            Condition="'$(NetWasmRawWasm)' == 'true'"
            Text="A plain core module is built from its WIT world, not as raw WebAssembly. Remove NetWasmRawWasm." />
@@ -222,8 +262,8 @@
            Condition="'$(OutputType)' != 'Library'"
            Text="Declare Component in the project file. A global OutputType override cannot be normalized for library compilation." />
     <Error Code="NWSDK101"
-           Condition="'$(TargetFramework)' != '' AND '$(TargetFramework)' != 'netwasm0.1'"
-           Text="Component output is supported only for netwasm0.1. Use Library for a desktop target." />
+           Condition="'$(TargetFramework)' != '' AND '$(NetWasmGuestFramework)' != 'true'"
+           Text="Component output is supported only for a NetWasm target framework (net10.0-netwasm). Use Library for a desktop target." />
     <Error Code="NWSDK102"
            Condition="'$(NetWasmRawWasm)' == 'true' OR '$(NetWasmWorld)' == ''"
            Text="A component is built from the WIT world NetWasmWorld selects, not as raw WebAssembly. Set NetWasmWorld (with NetWasmWitPath for your own WIT) and remove NetWasmRawWasm." />
@@ -236,8 +276,8 @@
            Condition="'$(OutputType)' != 'Library'"
            Text="Declare JsModule or WitWebWorker in the project file. A global OutputType override cannot be normalized for library compilation." />
     <Error Code="NWSDK054"
-           Condition="'$(TargetFramework)' != '' AND '$(TargetFramework)' != 'netwasm0.1'"
-           Text="JsModule and WitWebWorker output are supported only for netwasm0.1. Use Library for a desktop target." />
+           Condition="'$(TargetFramework)' != '' AND '$(NetWasmGuestFramework)' != 'true'"
+           Text="JsModule and WitWebWorker output are supported only for a NetWasm target framework (net10.0-netwasm). Use Library for a desktop target." />
     <Error Code="NWSDK055"
            Condition="('$(_NetWasmWorkerKind)' == 'wit' AND '$(NetWasmRawWasm)' == 'true') OR ('$(_NetWasmWorkerKind)' == 'jsexport' AND '$(NetWasmRawWasm)' != 'true')"
            Text="WitWebWorker requires component output; JsModule requires raw WebAssembly output. Remove the conflicting NetWasmRawWasm setting." />
@@ -246,10 +286,10 @@
   <Target Name="NetWasmSdkRequireReferenceContract"
           BeforeTargets="CoreCompile"
           DependsOnTargets="ResolvePackageAssets"
-          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+          Condition="'$(NetWasmGuestFramework)' == 'true'">
     <ItemGroup>
       <_NetWasmSdkResolvedReferenceContract Include="@(ResolvedCompileFileDefinitions)"
-        Condition="'%(ResolvedCompileFileDefinitions.NuGetPackageId)' == '$(NetWasmRefPackageId)' AND '%(ResolvedCompileFileDefinitions.Identity)' != '' AND $([System.String]::Copy('%(ResolvedCompileFileDefinitions.Identity)').Replace('\', '/').EndsWith('/ref/NetWasm,Version=v0.1/NetWasm.CoreLib.dll'))" />
+        Condition="'%(ResolvedCompileFileDefinitions.NuGetPackageId)' == '$(NetWasmRefPackageId)' AND '%(ResolvedCompileFileDefinitions.Identity)' != '' AND $([System.String]::Copy('%(ResolvedCompileFileDefinitions.Identity)').Replace('\', '/').EndsWith('/NetWasm.CoreLib.dll')) AND $([System.String]::Copy('%(ResolvedCompileFileDefinitions.Identity)').Replace('\', '/').Contains('/ref/'))" />
     </ItemGroup>
     <Error Code="NWSDK001"
            Condition="'@(_NetWasmSdkResolvedReferenceContract)' == ''"

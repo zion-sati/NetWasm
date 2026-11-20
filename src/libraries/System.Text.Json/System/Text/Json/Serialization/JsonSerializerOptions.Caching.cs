@@ -184,8 +184,18 @@ namespace System.Text.Json
             return jsonTypeInfo;
         }
 
+#if NETWASM
+        // NetWasm: set by the two callers that resolve a runtime type with fallback to its nearest ancestor (a root
+        // object value, and an object value written by its runtime type), so the fallback, which walks base types
+        // and interfaces, compiles away in programs that have neither.
+        internal static object? s_nearestAncestorFallbackReachable;
+#endif
+
         internal bool TryGetPolymorphicTypeInfoForRootType(object rootValue, [NotNullWhen(true)] out JsonTypeInfo? polymorphicTypeInfo)
         {
+#if NETWASM
+            s_nearestAncestorFallbackReachable = nameof(TryGetPolymorphicTypeInfoForRootType);
+#endif
             Debug.Assert(rootValue is not null);
 
             Type runtimeType = rootValue.GetType();
@@ -244,7 +254,12 @@ namespace System.Text.Json
             public JsonTypeInfo? GetOrAddTypeInfo(Type type, bool fallBackToNearestAncestorType = false)
             {
                 CacheEntry entry = GetOrAddCacheEntry(type);
+#if NETWASM
+                // The flag is set only where an object value is written by its runtime type, which sets the marker.
+                return fallBackToNearestAncestorType && s_nearestAncestorFallbackReachable is not null && !entry.HasResult
+#else
                 return fallBackToNearestAncestorType && !entry.HasResult
+#endif
                     ? FallBackToNearestAncestor(type, entry)
                     : entry.GetResult();
             }
@@ -301,11 +316,6 @@ namespace System.Text.Json
                 Justification = "We only need to examine the interface types that are supported by the underlying resolver.")]
             private CacheEntry? DetermineNearestAncestor(Type type, CacheEntry entry)
             {
-#if NETWASM
-                entry.NearestAncestor = null;
-                entry.IsNearestAncestorResolved = true;
-                return null;
-#else
                 // In cases where the underlying TypeInfoResolver returns `null` for a given type,
                 // this method traverses the hierarchy above the type to determine potential
                 // ancestors for which the resolver does provide metadata. This can be useful in
@@ -376,7 +386,6 @@ namespace System.Text.Json
                 entry.NearestAncestor = candidate;
                 entry.IsNearestAncestorResolved = true;
                 return candidate;
-#endif
             }
 
             private sealed class CacheEntry
@@ -611,9 +620,6 @@ namespace System.Text.Json
 
                 static void AddHashCode<TValue>(ref HashCode hc, TValue? value)
                 {
-#if NETWASM
-                    hc.Add(value);
-#else
                     if (typeof(TValue).IsSealed)
                     {
                         hc.Add(value);
@@ -623,7 +629,6 @@ namespace System.Text.Json
                         // Use the built-in hashcode for types that could be overriding GetHashCode().
                         hc.Add(RuntimeHelpers.GetHashCode(value));
                     }
-#endif
                 }
             }
 

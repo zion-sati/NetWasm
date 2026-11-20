@@ -30,12 +30,16 @@ internal static class GeneratedFunctionServiceCollectionExtensions
         services.AddSingleton<IDelegateInvocationTargetSelector,
             DelegateInvocationTargetSelector>();
         services.AddSingleton<IDelegateFunctionAppender, DelegateFunctionAppender>();
+        services.AddSingleton<ISharedVirtualDispatchFunctionEmitter, SharedVirtualDispatchFunctionEmitter>();
+        services.AddSingleton<ISharedVirtualDispatchFunctionAppender, SharedVirtualDispatchFunctionAppender>();
         services.AddSingleton<IJSImportForwarderFunctionEmitter, JSImportForwarderFunctionEmitter>();
         services.AddSingleton<IJSImportForwarderFunctionAppender, JSImportForwarderFunctionAppender>();
         services.AddSingleton<IRuntimeCoreInitializer, RuntimeCoreInitializer>();
-        services.AddSingleton<IRuntimeStateInitializer, RuntimeStateInitializer>();
+        services.AddSingleton<IEntryRuntimeInitializer, EntryRuntimeInitializer>();
         services.AddSingleton<IRuntimeInitializerFunctionEmitter, RuntimeInitializerFunctionEmitter>();
         services.AddSingleton<IRuntimeInitializerFunctionAppender, RuntimeInitializerFunctionAppender>();
+        services.AddSingleton<IEntryInitializerFunctionEmitter, EntryInitializerFunctionEmitter>();
+        services.AddSingleton<IInstantiationStateInitializer, InstantiationStateInitializer>();
         services.AddSingleton<IFilterFuncletEmitter, FilterFuncletEmitter>();
         services.AddSingleton<IFilterSequenceEmitterFactory,
             FilterSequenceEmitterFactory>();

@@ -51,13 +51,17 @@ internal sealed class ClosedTypeIsValueTypeCallRewriter(
             instructions[index] = call with
             {
                 Operation = CilOperation.LoadInt32,
-                Operand = new CilOperand.ConstantI4(type.IsValueType ? 1 : 0),
+                Operand = new CilOperand.ConstantI4(IsRuntimeValueType(type) ? 1 : 0),
             };
             changed = true;
         }
 
         return changed ? body with { Instructions = [.. instructions] } : body;
     }
+
+    // A pointer, function pointer or by-reference type holds a value but is no value type, as .NET reports it.
+    private static bool IsRuntimeValueType(CliTypeIdentity type) => type.IsValueType &&
+        type.Shape is not (CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer or CliTypeShape.ManagedByReference);
 
     private bool IsValueTypeGetter(CilInstruction call)
     {

@@ -50,6 +50,25 @@ test("creates one import set per execution request and releases it once", async 
   assert.deepEqual(created, [first, second, first]);
 });
 
+// A program that can reach TLS imports wasi:tls's client and types; the Node.js host supplies them with its network
+// modules, and the catalog admits them.
+test("resolves wasi:tls's modules from the platform's network imports", () => {
+  const client = "wasi:tls/client@0.3.0-draft";
+  const types = "wasi:tls/types@0.3.0-draft";
+  const modules = Object.freeze({
+    [client]: Object.freeze({ connector() {} }),
+    [types]: Object.freeze({ error() {} }),
+  });
+  const subject = registry(() => Object.freeze({ imports: modules, release: async () => {} }));
+  const request = Object.freeze({ id: 1 });
+  for (const module of [client, types]) {
+    const resolved = subject.resolve({ module });
+    assert.equal(resolved.provider.module, module);
+    assert.equal(resolved.provider.capability, "network");
+    assert.equal(resolved.createSource(request), modules[module]);
+  }
+});
+
 test("reports a catalog module the platform does not supply", () => {
   const subject = registry(() => Object.freeze({ imports: Object.freeze({}), release: async () => {} }));
   assert.throws(() => subject.resolve({ module: "wasi:http/client@0.3.2" }).createSource({}),

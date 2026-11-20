@@ -37,7 +37,7 @@ internal sealed class RuntimePackManifestParser : IRuntimePackManifestParser
 
     private static void Validate(RuntimePackManifest? manifest)
     {
-        if (manifest is null || manifest.SchemaVersion != 6 || manifest.WasmPageSize != 65_536)
+        if (manifest is null || manifest.SchemaVersion != 7 || manifest.WasmPageSize != 65_536)
         {
             throw new InvalidOperationException("The NetWasm runtime pack manifest schema is unsupported.");
         }
@@ -130,6 +130,7 @@ internal sealed class RuntimePackManifestParser : IRuntimePackManifestParser
             throw new InvalidOperationException("The NetWasm runtime target asset path is invalid.");
         }
         ValidatePlatformArchives(target.PlatformArchives, $"{target.Target}/{target.GarbageCollector.ToLowerInvariant()}/");
+        ValidateEmscriptenArchives(target);
         ValidateSpeedAssets(target);
         if (target.SystemLibraries is null ||
             target.SystemLibraries.Names.IsDefaultOrEmpty ||
@@ -141,17 +142,39 @@ internal sealed class RuntimePackManifestParser : IRuntimePackManifestParser
             throw new InvalidOperationException("The NetWasm runtime link closure is empty.");
         }
 
-        for (var index = 0; index < target.SystemLibraries.Assets.Length; index++)
+        ValidateSystemLibraryAssets(target.Target, target.SystemLibraries);
+        ValidateExceptionSystemLibraries(target);
+    }
+
+    private static void ValidateSystemLibraryAssets(string target, RuntimePackSystemLibraries libraries)
+    {
+        for (var index = 0; index < libraries.Assets.Length; index++)
         {
-            var asset = target.SystemLibraries.Assets[index];
+            var asset = libraries.Assets[index];
             ValidateAsset(asset);
             if (!string.Equals(asset.Path,
-                $"{target.Target}/system-libraries/{target.SystemLibraries.Names[index]}",
+                $"{target}/system-libraries/{libraries.Names[index]}",
                 StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("The NetWasm runtime system-library path is invalid.");
             }
         }
+    }
+
+    // The closure a program with C++ exceptions links in place of the ordinary one.
+    private static void ValidateExceptionSystemLibraries(RuntimePackTarget target)
+    {
+        var libraries = target.ExceptionSystemLibraries ??
+            throw new InvalidOperationException("The NetWasm runtime C++ exception libraries are missing.");
+        if (libraries.Names.IsDefaultOrEmpty ||
+            libraries.Names.Any(name => string.IsNullOrWhiteSpace(name) || Path.GetFileName(name) != name) ||
+            libraries.Names.SequenceEqual(target.SystemLibraries.Names, StringComparer.Ordinal) ||
+            libraries.Names.Distinct(StringComparer.Ordinal).Count() != libraries.Names.Length ||
+            libraries.Assets.IsDefaultOrEmpty || libraries.Assets.Length != libraries.Names.Length)
+        {
+            throw new InvalidOperationException("The NetWasm runtime C++ exception libraries are invalid.");
+        }
+        ValidateSystemLibraryAssets(target.Target, libraries);
     }
 
     private static void ValidateSpeedAssets(RuntimePackTarget target)
@@ -171,6 +194,19 @@ internal sealed class RuntimePackManifestParser : IRuntimePackManifestParser
             throw new InvalidOperationException("The NetWasm runtime speed asset path is invalid.");
         }
         ValidatePlatformArchives(speed.PlatformArchives, prefix);
+    }
+
+    private static void ValidateEmscriptenArchives(RuntimePackTarget target)
+    {
+        var archives = target.EmscriptenArchives ??
+            throw new InvalidOperationException("The NetWasm runtime Emscripten support archives are missing.");
+        ValidateAsset(archives.Support);
+        ValidateAsset(archives.StandIns);
+        if (!string.Equals(archives.Support.Path, $"{target.Target}/libnetwasm-emscripten-support.a", StringComparison.Ordinal) ||
+            !string.Equals(archives.StandIns.Path, $"{target.Target}/libnetwasm-emscripten-stand-ins.a", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The NetWasm runtime Emscripten support archive path is invalid.");
+        }
     }
 
     private static void ValidatePlatformArchives(RuntimePackPlatformArchives? archives, string prefix)

@@ -8,8 +8,9 @@ using NetWasm.Compiler.Wasm.Emission.Support;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
-// The body of the module's one runtime initializer, which every entry calls. Its
-// registrations scale with the program's types, so no entry carries its own copy.
+// The body of the module's runtime state initializer, which every entry reaches. Its
+// registrations scale with the program's types, so no entry carries its own copy. It runs no
+// managed code, so a component's instantiation, which may not wait, may call it.
 internal sealed class RuntimeInitializerFunctionEmitter(
     ITargetLayout layouts,
     IStaticDataLayout staticData,
@@ -83,10 +84,6 @@ internal sealed class RuntimeInitializerFunctionEmitter(
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.I32Store,
                 WasmInstructionOperand.Memory(2, 0)));
-        }
-        foreach (var initializer in plan.ModuleInitializers)
-        {
-            InitializeModule(code, initializer);
         }
     }
 
@@ -163,14 +160,5 @@ internal sealed class RuntimeInitializerFunctionEmitter(
                 0,
                 layouts.Target.ObjectReferenceSize);
         }
-    }
-
-    private static void InitializeModule(
-        GeneratedFunctionWriterLease code,
-        ModuleInitializerCall initializer)
-    {
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)initializer.FunctionIndex)));
     }
 }

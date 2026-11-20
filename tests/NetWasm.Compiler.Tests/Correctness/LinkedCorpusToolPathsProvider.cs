@@ -40,10 +40,10 @@ internal sealed class LinkedCorpusToolPathsProvider(
             environment.WasmToolsPath, "NETWASM_WASM_TOOLS_PATH");
         // Compact unless a run asks for another collector.
         var collector = string.IsNullOrEmpty(environment.Collector) ? "compact" : environment.Collector;
-        if (collector is not ("compact" or "netwasm" or "bump"))
+        if (collector is not ("compact" or "netwasm" or "netwasmgen" or "bump"))
         {
             throw new InvalidOperationException(
-                "NETWASM_CORPUS_COLLECTOR must be compact, netwasm or bump");
+                "NETWASM_CORPUS_COLLECTOR must be compact, netwasm, netwasmgen or bump");
         }
         // NETWASM_CORPUS_GC_STRESS=1 runs every linked fixture under GC stress,
         // to qualify roots across the corpus.

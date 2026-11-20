@@ -113,12 +113,16 @@ public sealed class PlatformServiceBindingCompilationTests
             }
             """);
         var library = assets.CompileSource("TaggedPackage", """
+            using System.Runtime.CompilerServices;
+
             [assembly: AbsentAttributes.Tag]
 
             namespace TaggedPackage;
 
             public static class Values
             {
+                // Kept a call, so the package's code is a method of the program.
+                [MethodImpl(MethodImplOptions.NoInlining)]
                 public static int Next(int input) => input + 1;
             }
             """, attributes);

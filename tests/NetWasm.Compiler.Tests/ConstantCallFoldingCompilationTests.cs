@@ -81,9 +81,10 @@ public sealed class ConstantCallFoldingCompilationTests
 
         // None keeps every call; the whole-program presets fold the constant ones away.
         Assert.Equal(preset == FinalWasmOptimization.None ? Folded : [], Folded.Where(methods.Contains));
-        // O3 inlines the helpers that do not fold; NoInlining keeps its call everywhere.
-        Assert.Equal(preset != FinalWasmOptimization.O3, methods.Contains("EntryPoint::IsAdmin"));
-        Assert.Equal(preset != FinalWasmOptimization.O3, methods.Contains("EntryPoint::SameObject"));
+        // O3 and Oz inline the helpers that do not fold (Oz as callees of at most 16 IL bytes); NoInlining keeps its
+        // call everywhere.
+        Assert.Equal(preset == FinalWasmOptimization.None, methods.Contains("EntryPoint::IsAdmin"));
+        Assert.Equal(preset == FinalWasmOptimization.None, methods.Contains("EntryPoint::SameObject"));
         Assert.Contains("EntryPoint::KeptAdmin", methods);
         // A precise static constructor must still run, so that call is neither folded nor inlined.
         Assert.Contains("Initialized::IsAdmin", methods);
@@ -105,7 +106,9 @@ public sealed class ConstantCallFoldingCompilationTests
         var assembly = optimize ? assets.CompileOptimizedSource("ConstantComparisonsKept", Source) : assets.CompileSource("ConstantComparisonsKept", Source);
         var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
             Target: target, Optimization: FinalWasmOptimization.Oz,
-            OptimizationOverrides: new(ConstantCallFolding: ManagedConstantCallFolding.Disabled)));
+            // Inlining off too, so only folding could remove the calls.
+            OptimizationOverrides: new(ConstantCallFolding: ManagedConstantCallFolding.Disabled,
+                ManagedMethodInlining: ManagedMethodInlining.Disabled)));
         var methods = Names(result);
 
         Assert.All(Folded, name => Assert.Contains(name, methods));

@@ -39,10 +39,13 @@
 
 
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Acos(double value)
     {
         const double one = 1.00000000000000000000e+00; /* 0x3FF00000, 0x00000000 */

@@ -4,6 +4,8 @@
 // The pi-scaled trigonometric functions from System.Private.CoreLib
 // Double.cs at runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 
+using System.Runtime.CompilerServices;
+
 namespace System
 {
     public readonly partial struct Double
@@ -386,6 +388,7 @@ namespace System
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static double CosForIntervalPiBy4(double x, double xTail)
         {
             // This code is based on `cos_piby4` from amd/aocl-libm-ose
@@ -434,6 +437,7 @@ namespace System
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static double SinForIntervalPiBy4(double x, double xTail)
         {
             // This code is based on `sin_piby4` from amd/aocl-libm-ose
@@ -486,6 +490,7 @@ namespace System
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static double TanForIntervalPiBy4(double x, double xTail, bool isReciprocal)
         {
             // This code is based on `tan_piby4` from amd/aocl-libm-ose

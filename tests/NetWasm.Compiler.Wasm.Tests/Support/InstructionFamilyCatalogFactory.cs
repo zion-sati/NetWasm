@@ -51,6 +51,7 @@ internal static class InstructionFamilyCatalogFactory
                     CilOperation.ShiftRightUnsigned,
                     CilOperation.Negate,
                     CilOperation.OnesComplement,
+                    CilOperation.Select,
                     CilOperation.AddChecked,
                     CilOperation.AddCheckedUnsigned,
                     CilOperation.SubtractChecked,

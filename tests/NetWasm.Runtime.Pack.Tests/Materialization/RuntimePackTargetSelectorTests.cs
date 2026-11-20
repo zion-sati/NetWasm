@@ -14,7 +14,7 @@ public sealed class RuntimePackTargetSelectorTests
     public static IEnumerable<object[]> ProfileCases()
     {
         foreach (var target in new[] { "wasm32", "wasm64" })
-            foreach (var collector in new[] { "Compact", "NetWasm", "Bump" })
+            foreach (var collector in new[] { "Compact", "NetWasm", "NetWasmGen", "Bump" })
                 foreach (var mode in Enum.GetValues<RuntimeWasmOptimization>())
                     yield return [target, collector, mode];
     }
@@ -162,10 +162,11 @@ public sealed class RuntimePackTargetSelectorTests
 
     private static RuntimePackManifest SourceManifest() => RuntimePackTestData.Manifest() with
     {
-        SchemaVersion = 6,
+        SchemaVersion = 7,
         DefaultGarbageCollector = "Compact",
-        Targets = [Variant("wasm32", "Compact"), Variant("wasm32", "NetWasm"), Variant("wasm32", "Bump"),
-            Variant("wasm64", "Compact"), Variant("wasm64", "NetWasm"), Variant("wasm64", "Bump")],
+        Targets = [Variant("wasm32", "Compact"), Variant("wasm32", "NetWasm"), Variant("wasm32", "NetWasmGen"),
+            Variant("wasm32", "Bump"), Variant("wasm64", "Compact"), Variant("wasm64", "NetWasm"),
+            Variant("wasm64", "NetWasmGen"), Variant("wasm64", "Bump")],
     };
 
     private static RuntimePackTarget Variant(string target, string collector) => RuntimePackTestData.Target(target, collector);

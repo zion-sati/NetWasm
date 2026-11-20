@@ -6,6 +6,7 @@ using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 
 namespace System.Text.Json
 {
@@ -17,10 +18,6 @@ namespace System.Text.Json
     ///   impact in high-usage scenarios. Failure to properly Dispose this object will result in
     ///   the memory not being returned to the pool, which will cause an increase in GC impact across
     ///   various parts of the framework.
-    ///
-    ///   NetWasm's J01A profile retains the synchronous, memory-backed document
-    ///   path. The upstream pipe-backed and async streaming path is owned by
-    ///   J01C and is intentionally not part of this assembly slice.
     /// </remarks>
     public sealed partial class JsonDocument : IDisposable
     {
@@ -28,6 +25,7 @@ namespace System.Text.Json
         private MetadataDb _parsedData;
 
         private byte[]? _extraRentedArrayPoolBytes;
+        private PooledByteBufferWriter? _extraPooledByteBufferWriter;
 
         internal bool IsDisposable { get; }
 
@@ -40,16 +38,22 @@ namespace System.Text.Json
             ReadOnlyMemory<byte> utf8Json,
             MetadataDb parsedData,
             byte[]? extraRentedArrayPoolBytes = null,
+            PooledByteBufferWriter? extraPooledByteBufferWriter = null,
             bool isDisposable = true)
         {
             Debug.Assert(!utf8Json.IsEmpty);
 
             // Both rented values better be null if we're not disposable.
-            Debug.Assert(isDisposable || extraRentedArrayPoolBytes is null);
+            Debug.Assert(isDisposable ||
+                (extraRentedArrayPoolBytes is null && extraPooledByteBufferWriter is null));
+
+            // Both rented values can't be specified.
+            Debug.Assert(extraRentedArrayPoolBytes is null || extraPooledByteBufferWriter is null);
 
             _utf8Json = utf8Json;
             _parsedData = parsedData;
             _extraRentedArrayPoolBytes = extraRentedArrayPoolBytes;
+            _extraPooledByteBufferWriter = extraPooledByteBufferWriter;
             IsDisposable = isDisposable;
         }
 
@@ -65,12 +69,9 @@ namespace System.Text.Json
             _parsedData.Dispose();
             _utf8Json = ReadOnlyMemory<byte>.Empty;
 
-            // J01A has no managed-threading contract; disposal is intentionally
-            // a direct single-reactor release of the owned rented payload.
             if (_extraRentedArrayPoolBytes is not null)
             {
-                byte[]? extraRentedBytes = _extraRentedArrayPoolBytes;
-                _extraRentedArrayPoolBytes = null;
+                byte[]? extraRentedBytes = Interlocked.Exchange<byte[]?>(ref _extraRentedArrayPoolBytes, null);
 
                 if (extraRentedBytes is not null)
                 {
@@ -79,6 +80,11 @@ namespace System.Text.Json
                     extraRentedBytes.AsSpan(0, length).Clear();
                     ArrayPool<byte>.Shared.Return(extraRentedBytes);
                 }
+            }
+            else if (_extraPooledByteBufferWriter is not null)
+            {
+                PooledByteBufferWriter? extraBufferWriter = Interlocked.Exchange<PooledByteBufferWriter?>(ref _extraPooledByteBufferWriter, null);
+                extraBufferWriter?.Dispose();
             }
         }
 
@@ -209,6 +215,11 @@ namespace System.Text.Json
             }
 
             return endIndex;
+        }
+
+        internal ReadOnlyMemory<byte> GetRootRawValue()
+        {
+            return GetRawValue(0, includeQuotes: true);
         }
 
         internal ReadOnlyMemory<byte> GetRawValue(int index, bool includeQuotes)
@@ -709,6 +720,7 @@ namespace System.Text.Json
                     segmentCopy,
                     newDb,
                     extraRentedArrayPoolBytes: null,
+                    extraPooledByteBufferWriter: null,
                     isDisposable: false);
 
             return newDocument.RootElement;

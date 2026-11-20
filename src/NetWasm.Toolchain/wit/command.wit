@@ -1,11 +1,13 @@
 package netwasm:command@1.0.0;
 
 /// The world a .NET command builds against: wasi:cli's command, with wasi:http's client, which
-/// HttpClient sends through. A component imports only what its program uses, so one that never
-/// sends a request is a plain wasi:cli command.
+/// HttpClient sends through, and wasi:tls's client (Wasmtime 50's Preview 3 draft), which SslStream
+/// encrypts through. A component imports only what its program uses, so one that never sends a
+/// request is a plain wasi:cli command.
 world command {
   include wasi:cli/command@0.3.2;
   import wasi:http/client@0.3.2;
+  import wasi:tls/client@0.3.0-draft;
 }
 
 /// The world a .NET HTTP service builds against: wasi:http's service, with the rest of the WASI
@@ -14,4 +16,5 @@ world command {
 world service {
   include wasi:cli/imports@0.3.2;
   include wasi:http/service@0.3.2;
+  import wasi:tls/client@0.3.0-draft;
 }

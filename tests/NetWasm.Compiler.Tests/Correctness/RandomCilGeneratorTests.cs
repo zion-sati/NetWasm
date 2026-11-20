@@ -551,6 +551,7 @@ public sealed class RandomCilGeneratorTests
             CilOperation.LoadRectangularArrayElement,
             CilOperation.StoreRectangularArrayElement,
             CilOperation.LoadRectangularArrayElementAddress,
+            CilOperation.Select,
         ];
         var missing = SupportedCil.Operations
             .Except(internalLowered)

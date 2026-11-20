@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
+using System.Reflection.Metadata;
 using System.Security.Cryptography;
 using NetWasm.Compiler.Core;
 
@@ -30,17 +31,21 @@ public sealed class AssemblyIdentityFormatterFactory : IAssemblyIdentityFormatte
 public sealed class AssemblyIdentityFormatter(
     ImmutableArray<ManagedAssembly> assemblies) : IAssemblyIdentityFormatter
 {
-    public string Format(AssemblyIdentity identity)
+    public string Format(AssemblyIdentity identity) =>
+        DisplayName(identity, assemblies.Single(candidate => candidate.Identity == identity).Reader);
+
+    // The assembly's display name, as AssemblyName.FullName gives it: Name, Version=..., Culture=..., PublicKeyToken=....
+    public static string DisplayName(AssemblyIdentity identity, MetadataReader reader)
     {
-        var assembly = assemblies.Single(candidate => candidate.Identity == identity);
-        var definition = assembly.Reader.GetAssemblyDefinition();
+        ArgumentNullException.ThrowIfNull(reader);
+        var definition = reader.GetAssemblyDefinition();
         var culture = definition.Culture.IsNil
             ? "neutral"
-            : assembly.Reader.GetString(definition.Culture);
+            : reader.GetString(definition.Culture);
         var token = definition.PublicKey.IsNil
             ? "null"
             : CalculatePublicKeyToken(
-                assembly.Reader.GetBlobBytes(definition.PublicKey));
+                reader.GetBlobBytes(definition.PublicKey));
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{identity.Name}, Version={definition.Version}, Culture={culture}, " +

@@ -29,16 +29,3 @@ internal interface IHostCallbackHostObjectArgumentMarshaller
         int destination,
         OptionalFunctionIndex throwFunction);
 }
-
-internal interface IHostCallbackByteArrayArgumentMarshaller
-{
-    void Emit(
-        IWasmInstructionWriter code,
-        CliTypeIdentity arrayType,
-        int handleParameter,
-        int destination,
-        int temporaryI4,
-        int objectTemporary,
-        InteropMarshallingTarget target,
-        OptionalFunctionIndex throwFunction);
-}

@@ -38,8 +38,9 @@ public sealed class AssemblyNameContractCompilationTests
                 if (Portable(input) != 42) return 30;
                 var name = new AssemblyName("Example"); var rejected = 0;
                 try { AssemblyName.GetAssemblyName("missing.dll"); } catch (PlatformNotSupportedException) { rejected++; }
-                try { Assembly.Load(name); } catch (PlatformNotSupportedException) { rejected++; }
-                try { AppDomain.CurrentDomain.Load(name); } catch (PlatformNotSupportedException) { rejected++; }
+                // Loading resolves the program's own assemblies; another name is not found, as on .NET.
+                try { Assembly.Load(name); } catch (FileNotFoundException) { rejected++; }
+                try { AppDomain.CurrentDomain.Load(name); } catch (FileNotFoundException) { rejected++; }
                 try { AppDomain.CurrentDomain.ExecuteAssemblyByName(name, "arg"); } catch (PlatformNotSupportedException) { rejected++; }
                 try { _ = name.KeyPair; } catch (PlatformNotSupportedException) { rejected++; }
                 try { name.KeyPair = null; } catch (PlatformNotSupportedException) { rejected++; }

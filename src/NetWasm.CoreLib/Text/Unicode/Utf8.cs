@@ -78,6 +78,7 @@ public static class Utf8
         internal bool Success => _success;
 
         // As in .NET, a literal is written as it is: a provider's custom formatter formats holes only.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool AppendLiteral(string value) => AppendAligned(value, 0);
         public bool AppendFormatted<T>(T value) => AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, _provider), 0);
         public bool AppendFormatted<T>(T value, string? format) =>

@@ -2,7 +2,7 @@
 
 This package contains the `dotnet new` templates for a
 NetWasm application, a dual-target library and an HTTP service. The templates use the
-`NetWasm.Sdk` project SDK and the `netwasm0.1` profile.
+`NetWasm.Sdk` project SDK and the `net10.0-netwasm` target framework.
 
 Application templates do not copy reusable JavaScript host files. The SDK
 generates the application-specific descriptors and bootstrap and stages the

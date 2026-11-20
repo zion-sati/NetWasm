@@ -49,8 +49,8 @@ public sealed partial class CilOpcodeUniverseTests
         Assert.Empty(runtimeDefined.Except(decoded.Concat(unsupported)));
         Assert.Empty(decoded.Concat(unsupported).Except(runtimeDefined));
         Assert.Equal(226, runtimeDefined.Count);
-        Assert.Equal(215, decoded.Count);
-        Assert.Equal(11, unsupported.Count);
+        Assert.Equal(216, decoded.Count);
+        Assert.Equal(10, unsupported.Count);
     }
 
     private static string RepositoryRoot()

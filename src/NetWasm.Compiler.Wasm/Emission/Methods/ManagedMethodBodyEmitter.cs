@@ -13,6 +13,7 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Values;
+using NetWasm.Compiler.ComponentModel.Optimization;
 
 namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
@@ -127,7 +128,7 @@ internal sealed class ManagedMethodBodyEmitter(
             aggregatePromotions,
             managedByRefPromotions,
             managedValuePlan.Aggregates,
-            target.EnableBranchValueFramePlacement,
+            target.BranchPrefixDuplication,
             target.EnableArrayMetadataCaching,
             target.EnableScalarCallPreservation,
             target.HoistArrayNullChecks,

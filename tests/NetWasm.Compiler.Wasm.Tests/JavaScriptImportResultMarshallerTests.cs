@@ -199,48 +199,48 @@ public sealed class JavaScriptImportResultMarshallerTests
             exceptions.Kinds);
     }
 
-    [Fact]
-    public void ByteArrayEmitterCoordinatesEveryFocusedResultAction()
+    // A number array result is read as its staged block: the length 8 bytes after the address, both read from the
+    // descriptor before the call's value frame is left, and the array built from the block (StagedValueArrayEmitter).
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, 25, WasmOpcodes.I32Load)]
+    [InlineData(WasmTarget.Wasm64, 27, WasmOpcodes.I64Load)]
+    public void ByteArrayEmitterBuildsTheResultFromItsStagedBlock(WasmTarget target, int addressLocal, byte addressLoad)
     {
         var type = CliTypeIdentity.SzArray(
             CliTypeIdentity.Primitive("u1", CliValueKind.I4));
         var stack = new List<CliValueKind> { CliValueKind.I8 };
-        var handles = new RecordingInteropHandleReleaser();
-        var allocations = new RecordingAllocationResultValidator();
-        var captures = new RecordingJavaScriptResultHandleCapturer();
-        var addresses = new RecordingAddressInstructionEmitter();
-        var functionIndices = new RecordingOptionalFunctionIndexValidator();
-        var lengths = new RecordingJavaScriptResultLengthValidator();
-        var exceptions = new RecordingImplicitExceptionEmitter();
-        var layouts = new RecordingLayoutProvider();
+        var staged = new RecordingStagedArrays();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         IJavaScriptImportResultEmitter emitter = new[]
         {
             new ByteArrayJavaScriptImportResultMarshaller(
-                layouts,
-                layouts,
-                new FixedRuntimeImportResolver(23),
-                exceptions,
-                functionIndices,
-                captures,
-                new FixedStackLocalResolver(19),
-                lengths,
-                handles,
-                allocations,
-                addresses),
+                layouts, new FixedRuntimeImportResolver(23), new FixedStackLocalResolver(19), staged),
         }.Cast<IJavaScriptImportResultEmitter>().Single();
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
 
-        emitter.Emit(
-            CreateRequest(type, stack, consumed: 1, null, CreateInteropTarget()),
-            new EmitterTestSupport.RecordingInstructionWriter());
+        emitter.Emit(CreateRequest(type, stack, consumed: 1, null, CreateInteropTarget()), code);
 
         Assert.Equal([CliValueKind.ManagedReference], stack);
-        Assert.Equal(3, functionIndices.Requests.Count);
-        Assert.Equal(1, captures.Count);
-        Assert.Equal(1, lengths.Count);
-        Assert.Equal(2, handles.TargetReleaseCount);
-        Assert.Equal(1, allocations.Count);
-        Assert.Equal(1, addresses.Count);
-        Assert.Equal([ManagedExceptionKind.JSException], exceptions.Kinds);
+        // Context locals: descriptor 23, result 24, handle 25, i64 temporary 27, object temporary 18.
+        Assert.Equal([(type, addressLocal, 24, 19, 18)], staged.Calls);
+        var instructions = code.ToInstructions();
+        Assert.Equal(
+            [WasmOpcodes.LocalGet, WasmOpcodes.I32Load, WasmOpcodes.LocalSet,
+                WasmOpcodes.LocalGet, addressLoad, WasmOpcodes.LocalSet, WasmOpcodes.LocalGet, WasmOpcodes.Call],
+            instructions.Select(instruction => instruction.Opcode));
+        Assert.Equal(ByteArrayJavaScriptImportResultMarshaller.LengthOffset, (int)instructions[1].Operand.Offset);
+        Assert.Equal(0u, instructions[4].Operand.Offset);
+        Assert.Equal((uint)addressLocal, instructions[5].Operand.UnsignedValue);
+        Assert.Equal(23u, instructions[7].Operand.UnsignedValue);
+    }
+
+    private sealed class RecordingStagedArrays : IStagedValueArrayEmitter
+    {
+        public List<(CliTypeIdentity, int, int, int, int)> Calls { get; } = [];
+
+        public void Emit(IWasmInstructionWriter code, CliTypeIdentity arrayType, int addressLocal, int lengthLocal,
+            int destination, int objectTemporary, OptionalFunctionIndex throwFunction) =>
+            Calls.Add((arrayType, addressLocal, lengthLocal, destination, objectTemporary));
     }
 
     [Fact]
@@ -349,7 +349,7 @@ public sealed class JavaScriptImportResultMarshallerTests
         consumed,
         null,
         new InteropMarshallingTarget(new InteropImportPlan(
-            [], default, default, default, default, default, default)),
+            [], default, default, default, default)),
         0);
 
     private static JavaScriptImportResultRequest CreateRequest(
@@ -373,9 +373,7 @@ public sealed class JavaScriptImportResultMarshallerTests
             OptionalFunctionIndex.At(30),
             OptionalFunctionIndex.At(31),
             OptionalFunctionIndex.At(32),
-            OptionalFunctionIndex.At(33),
-            OptionalFunctionIndex.At(34),
-            OptionalFunctionIndex.At(35)));
+            OptionalFunctionIndex.At(33)));
 
     private static HostCallbackDeclaration CreateCallback()
     {

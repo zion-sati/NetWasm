@@ -59,6 +59,75 @@ public sealed class AttributeQueryPlannerTests
         Assert.Empty(fixture.InheritanceRequests);
     }
 
+    // An assembly has no base: both results are its own attributes of the filter type, read by name.
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 0)]
+    public void AssemblyQueriesReadTheAssemblysOwnAttributes(bool existence, int constructions)
+    {
+        var operation = existence ? AttributeQueryOperation.IsDefined : AttributeQueryOperation.GetMany;
+        var fixture = new Fixture();
+        var attributes = new AssemblyAttributes();
+        var query = new ResolvedAttributeQuery(new(operation, 2, null, Filter, 1), null, Filter, null) { TargetAssembly = new("Test") };
+
+        var result = ((IAttributeQueryPlanner)new AttributeQueryPlanner(fixture, fixture, attributes)).Plan(query);
+
+        Assert.Null(result.TargetType);
+        Assert.Equal(new AssemblyIdentity("Test"), result.TargetAssembly);
+        if (existence)
+        {
+            Assert.True(Assert.IsType<AttributeExistenceResult>(result.Direct).IsDefined);
+            Assert.True(Assert.IsType<AttributeExistenceResult>(result.Inherited).IsDefined);
+        }
+        else
+        {
+            Assert.Single(Assert.IsType<AttributeRetrievalResult>(result.Direct).Attributes);
+            Assert.Single(Assert.IsType<AttributeRetrievalResult>(result.Inherited).Attributes);
+        }
+        Assert.Equal([(new AssemblyIdentity("Test"), "Test.MarkerAttribute"), (new AssemblyIdentity("Test"), "Test.MarkerAttribute")], attributes.Requests);
+        Assert.Empty(fixture.InheritanceRequests);
+        Assert.Equal(constructions * 2, fixture.ConstructionRequests.Count);
+        var withoutReader = new AttributeQueryPlanner(fixture, fixture);
+        Assert.Throws<InvalidOperationException>(() => ((IAttributeQueryPlanner)withoutReader).Plan(query));
+    }
+
+    // The reader returns a generic attribute whatever its type (its constructor belongs to a type specification), so the
+    // planner keeps only the attributes the filter matches.
+    [Fact]
+    public void AssemblyAttributesAreCheckedAgainstTheFilter()
+    {
+        var fixture = new Fixture();
+        var other = CliTypeIdentity.Named(new("Test"), "Test", "OtherAttribute", false);
+        var attributes = new AssemblyAttributes(other);
+        var query = new ResolvedAttributeQuery(new(AttributeQueryOperation.GetMany, 2, null, Filter, 1), null, Filter, null)
+        {
+            TargetAssembly = new("Test"),
+        };
+
+        var result = ((IAttributeQueryPlanner)new AttributeQueryPlanner(fixture, fixture, attributes, new Types())).Plan(query);
+
+        Assert.Single(Assert.IsType<AttributeRetrievalResult>(result.Direct).Attributes);
+        Assert.Equal([Filter, Filter], fixture.ConstructionRequests.Select(request => request.AttributeType));
+    }
+
+    private sealed class Types : IAttributeTypeFilter
+    {
+        public bool Matches(CliTypeIdentity attributeType, CliTypeIdentity filter) => attributeType.Equals(filter);
+    }
+
+    private sealed class AssemblyAttributes(CliTypeIdentity? alsoFound = null) : IAssemblyAttributeDescriptorReader
+    {
+        internal List<(AssemblyIdentity Assembly, string Name)> Requests { get; } = [];
+
+        public ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly, string attributeFullName)
+        {
+            Requests.Add((assembly, attributeFullName));
+            return alsoFound is null
+                ? [new(assembly, 1, 2, Filter, CliGenericContext.Empty)]
+                : [new(assembly, 1, 2, Filter, CliGenericContext.Empty), new(assembly, 3, 4, alsoFound, CliGenericContext.Empty)];
+        }
+    }
+
     private static ResolvedAttributeQuery Query(AttributeQueryOperation operation, bool? inherit) =>
         new(new(operation, 2, null, Filter, 1), Target, Filter, inherit);
 

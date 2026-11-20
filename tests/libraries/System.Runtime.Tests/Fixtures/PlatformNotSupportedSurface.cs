@@ -44,7 +44,7 @@ public static class EntryPoint
         if ((int)ParallelMergeOptions.FullyBuffered != 3 || (int)PipeDirection.InOut != 3 || (int)PipeTransmissionMode.Message != 1) return 2;
         if ((int)MemoryMappedFileAccess.ReadWriteExecute != 5 || (int)CompressionLevel.SmallestSize != 3 || (int)ZipArchiveMode.Update != 2) return 3;
 
-        // Delegates keep their ordinary behaviour alongside the reflective members.
+        // Delegates keep their ordinary behavior alongside the reflective members.
         Func<int, int> twice = Twice;
         Func<int, int> combined = (Func<int, int>)Delegate.Combine(twice, (Func<int, int>)(v => v + 1));
         if (twice(4) != 8 || combined(4) != 5 || combined.GetInvocationList().Length != 2) return 5;

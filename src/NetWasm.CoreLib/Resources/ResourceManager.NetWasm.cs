@@ -1,10 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// NetWasm part of ResourceManager. Upstream's default groveler reads an assembly's manifest
-// resources or satellite assemblies; NetWasm cannot load resources that way, so lookup that
-// reaches the default groveler throws PlatformNotSupportedException. Subclasses that supply
-// their sets through InternalGetResourceSet never reach it. The culture-name helpers are
-// upstream CultureInfo internals (HasInvariantCultureName, VerifyCultureName at
+// NetWasm part of ResourceManager. The culture-name helpers are upstream CultureInfo internals (HasInvariantCultureName, VerifyCultureName at
 // dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce) that NetWasm's CultureInfo
 // does not declare.
 
@@ -31,13 +27,6 @@ namespace System.Resources
 
                 throw new ArgumentException(SR.Format(SR.Argument_InvalidResourceCultureName, cultureName));
             }
-        }
-
-        private sealed class UnavailableResourceGroveler : IResourceGroveler
-        {
-            public ResourceSet? GrovelForResourceSet(CultureInfo culture, Dictionary<string, ResourceSet> localResourceSets,
-                bool tryParents, bool createIfNotExists) =>
-                throw new PlatformNotSupportedException(SR.PlatformNotSupported_ResourceManagerAssembly);
         }
     }
 }

@@ -5,7 +5,6 @@ namespace System.Runtime.InteropServices.TimeZones
 {
     using System.Runtime.InteropServices.FileSystem;
     using System.Runtime.InteropServices.WebAssembly;
-    using System.Text;
 
     internal sealed class WasiReadOnlyFileOpener(
         IWasiDescriptorOpenInvoker invoker) : IReadOnlyFileOpener
@@ -19,7 +18,7 @@ namespace System.Runtime.InteropServices.TimeZones
             {
                 throw new ArgumentNullException();
             }
-            using var path = LowerString(relativePath);
+            using var path = CanonicalAbi.LowerString(relativePath);
             // result<descriptor, error-code>: a discriminant byte, then at the pointer size the
             // descriptor or the error-code variant, whose other(option<string>) case makes the
             // whole result five pointers.
@@ -40,17 +39,6 @@ namespace System.Runtime.InteropServices.TimeZones
             {
                 CanonicalAbi.Free(result);
             }
-        }
-
-        private static CanonicalBuffer LowerString(string value)
-        {
-            var bytes = Encoding.UTF8.GetBytes(value);
-            var address = CanonicalAbi.Allocate(unchecked((nuint)bytes.Length), 1);
-            for (var index = 0; index < bytes.Length; index++)
-            {
-                CanonicalAbi.WriteByte(address, unchecked((nuint)index), bytes[index]);
-            }
-            return new CanonicalBuffer(address, unchecked((nuint)bytes.Length));
         }
 
         private static PlatformNotSupportedException Failure(string operation, int code) =>

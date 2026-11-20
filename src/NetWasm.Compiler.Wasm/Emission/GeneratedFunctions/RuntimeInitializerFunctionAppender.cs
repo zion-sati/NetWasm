@@ -8,19 +8,31 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class RuntimeInitializerFunctionAppender(
-    IRuntimeInitializerFunctionEmitter initializer) : IRuntimeInitializerFunctionAppender
+    IRuntimeInitializerFunctionEmitter initializer,
+    IEntryInitializerFunctionEmitter entries) : IRuntimeInitializerFunctionAppender
 {
-    public int Append(IList<WasmFunctionDefinition> functions, int importCount, RuntimeInitializationPlan plan)
+    public RuntimeInitializationPlan Append(IList<WasmFunctionDefinition> functions, int importCount, RuntimeInitializationPlan plan)
     {
         ArgumentNullException.ThrowIfNull(functions);
         ArgumentOutOfRangeException.ThrowIfNegative(importCount);
         ArgumentNullException.ThrowIfNull(plan);
-        var index = importCount + functions.Count;
         // Initialization runs once per entry and is cold; inlining would copy it into every entry.
-        functions.Add(new("runtime.initialize", WasmFunctionType.Create(CliValueKind.Void), initializer.Emit(plan))
+        var state = Add("runtime.initialize", initializer.Emit(plan));
+        // Without module initializers an entry needs only the state, so one function serves both.
+        var entry = plan.ModuleInitializers.IsEmpty
+            ? state
+            : Add("runtime.initialize-entry", entries.Emit(state, plan.ModuleInitializers));
+        return plan with
         {
-            IsNoInlining = true,
-        });
-        return index;
+            InitializerFunctionIndex = entry,
+            StateInitializerFunctionIndex = state,
+        };
+
+        int Add(string name, byte[] body)
+        {
+            var index = importCount + functions.Count;
+            functions.Add(new(name, WasmFunctionType.Create(CliValueKind.Void), body) { IsNoInlining = true });
+            return index;
+        }
     }
 }

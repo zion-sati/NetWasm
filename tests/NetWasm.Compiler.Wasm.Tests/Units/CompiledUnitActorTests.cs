@@ -136,11 +136,11 @@ internal static class UnitActorFixture
     };
 }
 
-// A unit's input is its method's analysed body, the structuring policy and its root map.
+// A unit's input is its method's analyzed body, the structuring policy and its root map.
 public sealed class CompiledUnitStateTests
 {
     [Fact]
-    public void AMethodWithoutAnAnalysedBodyHasNoInput()
+    public void AMethodWithoutAnAnalyzedBodyHasNoInput()
     {
         var method = UnitActorFixture.Method();
 
@@ -645,9 +645,9 @@ public sealed class CompiledUnitRestorerTests
     }
 }
 
-// A method whose unit kept its root map takes that map instead of analysing, when the unit's
+// A method whose unit kept its root map takes that map instead of analyzing, when the unit's
 // input matches and every fact the analysis read still holds; under verification it is
-// analysed too and must match. Otherwise the analysis runs with what it reads recorded.
+// analyzed too and must match. Otherwise the analysis runs with what it reads recorded.
 public sealed class UnitRootMapRecorderTests
 {
     private static readonly EntityKey Callee = new(UnitActorFixture.Assembly, 0x06000002);
@@ -661,7 +661,7 @@ public sealed class UnitRootMapRecorderTests
     // What a root-map analysis reads: a layout, a dispatch site and which callees allocate.
     private static Func<MethodRootMap> Analysis(UnitRootMapRecorder recorder, MethodRootMap map, List<string>? ran = null) => () =>
     {
-        ran?.Add("analysed");
+        ran?.Add("analyzed");
         _ = recorder.Values.GetValueLayout(UnitActorFixture.Program);
         _ = recorder.DispatchCallSites.TryGetValue("site", out _);
         _ = recorder.AllocatingMethods.Contains(Callee);
@@ -669,7 +669,7 @@ public sealed class UnitRootMapRecorderTests
         return map;
     };
 
-    // The last compile: the method analysed, and its unit kept with the map and its facts.
+    // The last compile: the method analyzed, and its unit kept with the map and its facts.
     private static UnitStore Kept(ManagedMethodBody method, MethodRootMap map,
         Func<ImmutableArray<UnitDependency>, ImmutableArray<UnitDependency>>? facts = null, bool keepMap = true)
     {
@@ -685,7 +685,7 @@ public sealed class UnitRootMapRecorderTests
     }
 
     [Fact]
-    public void AMethodWithoutAUnitIsAnalysedWithWhatItReadsRecorded()
+    public void AMethodWithoutAUnitIsAnalyzedWithWhatItReadsRecorded()
     {
         var method = UnitActorFixture.Method();
         using var state = UnitActorFixture.State(method);
@@ -718,7 +718,7 @@ public sealed class UnitRootMapRecorderTests
         Assert.Equal(state.Store.Find(UnitActorFixture.Name(method)), state.RootMapSources[UnitActorFixture.Name(method)]);
     }
 
-    // Each way a kept map cannot be taken: the method is analysed instead.
+    // Each way a kept map cannot be taken: the method is analyzed instead.
     [Theory]
     [InlineData("no map")]
     [InlineData("anchor type")]
@@ -730,7 +730,7 @@ public sealed class UnitRootMapRecorderTests
     [InlineData("other kind")]
     [InlineData("unrecorded key")]
     [InlineData("corrupt")]
-    public void AKeptMapThatCannotBeTakenIsAnalysedAgain(string reason)
+    public void AKeptMapThatCannotBeTakenIsAnalyzedAgain(string reason)
     {
         var method = UnitActorFixture.Method();
         var other = CliTypeIdentity.Named(UnitActorFixture.Assembly, "Tests", "Other", isValueType: false);
@@ -760,10 +760,10 @@ public sealed class UnitRootMapRecorderTests
         var recorder = Recorder(state, world);
 
         recorder.Map(method, reason.EndsWith("fails", StringComparison.Ordinal)
-            ? () => { ran.Add("analysed"); return map; }
+            ? () => { ran.Add("analyzed"); return map; }
         : Analysis(recorder, map, ran));
 
-        Assert.Equal(["analysed"], ran);
+        Assert.Equal(["analyzed"], ran);
         Assert.Equal(0, state.RestoredRootMaps);
     }
 
@@ -771,7 +771,7 @@ public sealed class UnitRootMapRecorderTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void UnderVerificationATakenMapMustBeTheAnalysedOne(bool same)
+    public void UnderVerificationATakenMapMustBeTheAnalyzedOne(bool same)
     {
         var method = UnitActorFixture.Method();
         var map = UnitActorFixture.RootMap(method);
@@ -783,15 +783,15 @@ public sealed class UnitRootMapRecorderTests
         };
         state.Store = Kept(method, map);
         var recorder = Recorder(state, new());
-        var analysed = same ? map : UnitActorFixture.RootMap(method, safepoint: 2);
+        var analyzed = same ? map : UnitActorFixture.RootMap(method, safepoint: 2);
 
         if (same)
         {
-            Assert.Equal(UnitFingerprintOf(map), UnitFingerprintOf(recorder.Map(method, Analysis(recorder, analysed))));
+            Assert.Equal(UnitFingerprintOf(map), UnitFingerprintOf(recorder.Map(method, Analysis(recorder, analyzed))));
         }
         else
         {
-            var failure = Assert.Throws<InvalidOperationException>(() => recorder.Map(method, Analysis(recorder, analysed)));
+            var failure = Assert.Throws<InvalidOperationException>(() => recorder.Map(method, Analysis(recorder, analyzed)));
             Assert.Equal($"The compiled unit of {UnitActorFixture.Name(method)} restored a root map that differs from analysis.",
                 failure.Message);
         }

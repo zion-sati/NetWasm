@@ -39,14 +39,14 @@ public sealed class ConstantCallEvaluatorTests
     }
 
     [Fact]
-    public void UnmodelledConstantKindsCannotBecomeEvaluationProofs()
+    public void UnmodeledConstantKindsCannotBecomeEvaluationProofs()
     {
         var facts = new MethodFacts();
         Assert.Null(AsEvaluator(Evaluator(facts))
-            .Evaluate(new(Predicate(), [new UnmodelledConstant()])));
+            .Evaluate(new(Predicate(), [new UnmodeledConstant()])));
     }
 
-    private sealed record UnmodelledConstant : ScalarConstant;
+    private sealed record UnmodeledConstant : ScalarConstant;
 
     [Fact]
     public void RejectsMissingDependencies()

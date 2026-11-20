@@ -9,7 +9,9 @@ namespace NetWasm.Compiler.Tests;
 
 // A method that reads a BeforeFieldInit type's static fields on every path
 // checks the type once, at its entry: one check covers every field of the type,
-// and a body that already checks at its entry stays as it is.
+// and a body that already checks at its entry stays as it is. A static method or
+// constructor of a precise type checks its own type at its entry whatever its
+// paths, since invoking it initializes that type.
 public sealed class BeforeFieldInitEntryInitializerTests
 {
     private static readonly AssemblyIdentity Assembly = new("fixture");
@@ -36,9 +38,44 @@ public sealed class BeforeFieldInitEntryInitializerTests
         Assert.Same(rewritten, Initializer().Rewrite(rewritten));
     }
 
-    private static BeforeFieldInitEntryInitializer Initializer()
+    // if (input) return First; return 0; in a method of the fields' precise type, or of another type, or as an instance
+    // method of their type.
+    [Theory]
+    [InlineData("own static", true)]
+    [InlineData("own constructor", true)]
+    [InlineData("own instance", false)]
+    [InlineData("other type", false)]
+    public void APreciseTypesOwnStaticMethodChecksItAtEntry(string method, bool checkedAtEntry)
     {
-        var program = new Program();
+        var declaring = method == "other type" ? new EntityKey(Assembly, 0x02000002) : OwnerKey;
+        var body = new CilMethodBody(
+            new MethodDefinitionModel(new(Assembly, 0x06000003), declaring,
+                method == "own constructor" ? ".ctor" : "Run", method is "own static" or "other type",
+                MethodSignatureModel.Create(CliValueKind.I4, [CliValueKind.I4]), 1),
+            1, [],
+            [
+                I(0, CilOperation.LoadArgument, new CilOperand.Index(0)), I(1, CilOperation.BranchIfFalse, new CilOperand.BranchTarget(4)),
+                I(2, CilOperation.LoadStaticField, new CilOperand.Entity(FirstKey)), I(3, CilOperation.Return),
+                I(4, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(5, CilOperation.Return),
+            ]);
+
+        var rewritten = Initializer(beforeFieldInit: false).Rewrite(body);
+
+        Assert.Equal(checkedAtEntry, rewritten.Instructions[0].Operation == CilOperation.LoadStaticFieldAddress);
+        if (checkedAtEntry)
+        {
+            Assert.Equal(CilOperation.Pop, rewritten.Instructions[1].Operation);
+            Assert.Equal(6, ((CilOperand.BranchTarget)rewritten.Instructions[3].Operand).Offset);
+        }
+        else
+        {
+            Assert.Same(body, rewritten);
+        }
+    }
+
+    private static BeforeFieldInitEntryInitializer Initializer(bool beforeFieldInit = true)
+    {
+        var program = new Program(beforeFieldInit);
         return new(new ControlFlowGraphBuilderFactory().Create(), new ControlFlowDominanceAnalyzer(),
             program, program, program, enabled: true);
     }
@@ -50,10 +87,10 @@ public sealed class BeforeFieldInitEntryInitializerTests
         new(new MethodDefinitionModel(new(Assembly, 0x06000002), new(Assembly, 0x02000002), "Run", true,
             MethodSignatureModel.Create(CliValueKind.Void), 1), 1, [], [.. instructions]);
 
-    private sealed class Program : ITypeRepository, IMethodRepository, IFieldRepository
+    private sealed class Program(bool beforeFieldInit = true) : ITypeRepository, IMethodRepository, IFieldRepository
     {
         public TypeDefinitionModel GetTypeDefinition(EntityKey key) =>
-            new(OwnerKey, "Fixture", "Cache", false, [FirstKey, SecondKey], [InitializerKey]) { IsBeforeFieldInit = true };
+            new(OwnerKey, "Fixture", "Cache", false, [FirstKey, SecondKey], [InitializerKey]) { IsBeforeFieldInit = beforeFieldInit };
 
         public MethodDefinitionModel GetMethod(EntityKey key) =>
             new(InitializerKey, OwnerKey, ".cctor", true, MethodSignatureModel.Create(CliValueKind.Void), 1);

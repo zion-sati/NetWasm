@@ -38,6 +38,7 @@ internal sealed class StructLocalScalarReplacer(
     IControlFlowNaturalLoopAnalyzer loops,
     ITypeDefinitionResolver typeDefinitions,
     IFieldRepository fields,
+    IVectorLaneFields lanes,
     bool enabled) : IStructLocalScalarReplacer
 {
     // More fields than this are more locals than registers to keep them in.
@@ -49,6 +50,7 @@ internal sealed class StructLocalScalarReplacer(
     private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ??
         throw new ArgumentNullException(nameof(typeDefinitions));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
+    private readonly IVectorLaneFields _lanes = lanes ?? throw new ArgumentNullException(nameof(lanes));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -213,6 +215,16 @@ internal sealed class StructLocalScalarReplacer(
                 if (AccessesField(instruction, fieldAddress.Field.Type))
                 {
                     consumed[producer] = consumed.GetValueOrDefault(producer) + 1;
+                }
+                else if (VectorLane(instruction, fieldAddress.Field.Type) is { } lane)
+                {
+                    // A vector field's lane read or written by value stays within the field, and so does a lane's
+                    // address that only its own reads and writes take.
+                    consumed[producer] = consumed.GetValueOrDefault(producer) + 1;
+                    if (instruction.Operation == CilOperation.LoadFieldAddress)
+                    {
+                        fieldAddresses[index] = new FieldAddress(fieldAddress.Local, lane);
+                    }
                 }
                 continue;
             }
@@ -442,6 +454,8 @@ internal sealed class StructLocalScalarReplacer(
         {
             return null;
         }
+        // A v128 value holds Vector4, Quaternion and Plane whole.
+        if (type.StackKind == CliValueKind.V128) return null;
         var definition = _typeDefinitions.ResolveTypeIdentity(type);
         declaredSize = definition.DeclaredSize != 0;
         // Vector types lower to SIMD values.
@@ -471,7 +485,7 @@ internal sealed class StructLocalScalarReplacer(
     // unknown, and a modified field keeps its memory semantics.
     private static bool IsScalar(CliTypeIdentity type) =>
         type.StackKind is CliValueKind.I4 or CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8 or
-            CliValueKind.NativeInt or CliValueKind.ManagedReference or CliValueKind.ManagedAddress &&
+            CliValueKind.NativeInt or CliValueKind.ManagedReference or CliValueKind.ManagedAddress or CliValueKind.V128 &&
         type.Shape != CliTypeShape.Modified;
 
     private static Field? FieldOf(ImmutableArray<Field> fields, CilOperand operand)
@@ -505,10 +519,27 @@ internal sealed class StructLocalScalarReplacer(
     private static bool AccessesField(CilInstruction instruction, CliTypeIdentity field) =>
         instruction.Operation is CilOperation.LoadObject or CilOperation.StoreObject or CilOperation.InitializeObject &&
         CilOperands.Type(instruction.Operand) is var type &&
-        (field.StackKind == CliValueKind.ManagedReference
-            ? type.StackKind == CliValueKind.ManagedReference
-            : LocalAddressDereferenceFolder.Width(type) is { } width &&
-                width == LocalAddressDereferenceFolder.Width(field));
+        field.StackKind switch
+        {
+            CliValueKind.ManagedReference => type.StackKind == CliValueKind.ManagedReference,
+            // A vector field is read or written whole as any vector of its width.
+            CliValueKind.V128 => type.StackKind == CliValueKind.V128 && SimdVectorStorage.Width(type) == SimdVectorStorage.Width(field),
+            _ => LocalAddressDereferenceFolder.Width(type) is { } width && width == LocalAddressDereferenceFolder.Width(field),
+        };
+
+    // The lane of a System.Numerics vector field that an ldfld, stfld or ldflda through the field's address takes.
+    private Field? VectorLane(CilInstruction instruction, CliTypeIdentity vector)
+    {
+        if (instruction.Operation is not (CilOperation.LoadField or CilOperation.StoreField or CilOperation.LoadFieldAddress) ||
+            _lanes.Lane(instruction.Operand, vector) is null)
+        {
+            return null;
+        }
+        var definition = instruction.Operand is CilOperand.FieldInstance { Value: var field }
+            ? field.Definition
+            : _fields.GetField(CilOperands.FieldKey(instruction.Operand));
+        return new(new(definition, vector, CliTypeIdentity.Primitive("f4", CliValueKind.F4)));
+    }
 
     // What a store to the field does to its value beyond a store to a local of
     // the field's type: truncate it to the field's width. The typed stack holds
@@ -740,6 +771,7 @@ internal sealed class StructLocalScalarReplacer(
             Synthetic(CilOperation.ConvertNativeInt, new CilOperand.None()),
         ],
         CliValueKind.ManagedReference => [Synthetic(CilOperation.LoadNull, new CilOperand.None())],
+        CliValueKind.V128 => [Synthetic(CilOperation.DefaultValue, new CilOperand.TypeIdentity(type))],
         _ => [Synthetic(CilOperation.LoadInt32, new CilOperand.ConstantI4(0))],
     };
 

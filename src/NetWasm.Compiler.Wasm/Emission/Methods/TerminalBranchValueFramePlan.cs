@@ -15,4 +15,8 @@ internal sealed record TerminalBranchValueFramePlan(
 {
     // The framed arm also enters the root frame: no safepoint outside it holds a root.
     public bool DefersRootFrame { get; init; }
+
+    // The regions after the if, when neither arm carries them: the framed arm leaves the root frame
+    // where it ends, and these run without one.
+    public StructuredSequence? UnframedTail { get; init; }
 }

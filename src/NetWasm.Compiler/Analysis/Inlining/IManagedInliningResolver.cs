@@ -23,6 +23,11 @@ internal sealed record ManagedInliningRequest(
 
     // A backward branch of the caller spans the call, so it runs repeatedly.
     public bool InLoop { get; init; }
+
+    // The positions, among the callee's parameters, of the arguments that are the address of one of the caller's
+    // locals or arguments, which the caller keeps in memory while the callee is a call, and in registers once it is
+    // inlined.
+    public ImmutableHashSet<int> LocalAddressArguments { get; init; } = [];
 }
 
 internal sealed record ManagedInliningPlan(

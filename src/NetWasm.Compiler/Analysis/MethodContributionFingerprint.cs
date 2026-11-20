@@ -17,8 +17,9 @@ internal readonly record struct MethodContribution(EntityKey Definition, InputFi
 /// <summary>
 /// Fingerprints what a method's analysis adds to the whole program: the types, strings,
 /// methods, fields and entities it names and how, its dispatches by declaration, its
-/// callable methods and descriptors, its exception needs and catch types, whether it
-/// allocates by itself, the shape of its exception regions and its requirement flags. Each list is taken as a sorted set, and
+/// callable methods and descriptors, its exception needs and catch types, the constructors
+/// it chains to before it can collect, whether it allocates by itself, the shape of its
+/// exception regions and its requirement flags. Each list is taken as a sorted set, and
 /// nothing keyed by the method's own IL offsets is included, since those reach no other
 /// method: an edit that only moves code keeps its contribution.
 /// </summary>
@@ -83,11 +84,18 @@ internal static class MethodContributionFingerprint
         Set(16);
         foreach (var type in analysis.RequiredTypes) names.Add(type.CanonicalName);
         Set(17);
+        // The constructors it chains to with its own this before anything in it can collect: whether their this is
+        // young when they start, and so which of their stores a collector with generations is told of, depends on it.
+        foreach (var (_, target) in Generations.YoungConstructorChains.Of(analysis.Body.Method, analysis.Body.Body))
+            names.Add(target.CanonicalName);
+        Set(18);
         Int(hash, (facts.RequiresTypeFacts ? 1 : 0) |
             (facts.RequiresGenericArguments ? 4 : 0) | (facts.RequiresMemberNames ? 8 : 0) |
             (facts.RequiresDeclaringTypes ? 16 : 0) | (facts.RequiresGenericDefinitions ? 32 : 0) |
             (facts.RequiresAssemblies ? 64 : 0) | (facts.RequiresElementTypes ? 128 : 0) |
-            (facts.RequiresTypeAttributes ? 256 : 0) | (facts.RequiresInterfaces ? 512 : 0));
+            (facts.RequiresTypeAttributes ? 256 : 0) | (facts.RequiresInterfaces ? 512 : 0) |
+            (facts.RequiresManifestResources ? 1024 : 0) | (facts.RequiresAssemblyNames ? 2048 : 0) |
+            (facts.RequiresAssemblyEnumeration ? 4096 : 0));
         // Whether the body allocates by itself: with the methods it calls, that decides which
         // methods allocate, and so every caller's safepoints.
         var allocates = false;

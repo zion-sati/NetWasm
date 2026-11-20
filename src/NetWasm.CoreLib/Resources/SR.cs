@@ -67,12 +67,26 @@ namespace System.Resources
             "ResourceReader is closed.";
         internal const string Resources_StreamNotValid =
             "Stream is not a valid resource file.";
+        internal const string Argument_MustBeRuntimeAssembly =
+            "Assembly must be a runtime Assembly object.";
+        internal const string InvalidOperation_ResMgrBadResSet_Type =
+            "'{0}': ResourceSet derived classes must provide a constructor that takes a String file name and a constructor that takes a Stream.";
+        internal const string MissingManifestResource_MultipleBlobs =
+            "A case-insensitive lookup for resource file \"{0}\" in assembly \"{1}\" found multiple entries. Remove the duplicates or specify the exact case.";
+        internal const string MissingManifestResource_NoNeutralAsm =
+            "Could not find the resource \"{0}\" among the resources {2} embedded in the assembly \"{1}\", nor among the resources in any satellite assemblies for the specified culture. Perhaps the resources were embedded with an incorrect name.";
+        internal const string MissingSatelliteAssembly_Culture_Name =
+            "The satellite assembly named \"{1}\" for fallback culture \"{0}\" either could not be found or could not be loaded. This is generally a setup problem. Please consider reinstalling or repairing the application.";
+        internal const string NotSupported_ObsoleteResourcesFile =
+            "Found an obsolete .resources file in assembly '{0}'. Rebuild that .resources file then rebuild that assembly.";
         internal const string Arg_InvalidNeutralResourcesLanguage_FallbackLoc =
             "The NeutralResourcesLanguageAttribute specifies an invalid or unrecognized ultimate resource fallback location: \"{0}\".";
 
         // NetWasm strings for its resource boundaries.
-        internal const string PlatformNotSupported_ResourceManagerAssembly =
-            "NetWasm cannot load resources from an assembly's manifest or satellite assemblies; supply resource sets by overriding InternalGetResourceSet.";
+        internal const string PlatformNotSupported_ResourceManagerType =
+            "NetWasm's types have no names at run time, so ResourceManager(Type) can name the resources only for a type the program names as typeof(T); use ResourceManager(string, Assembly).";
+        internal const string PlatformNotSupported_ResourceAttributes =
+            "NetWasm reads no attributes at run time, so it cannot read an assembly's SatelliteContractVersionAttribute.";
         internal const string PlatformNotSupported_ResourceManagerFiles =
             "NetWasm does not create file-based resource managers; supply resource sets by overriding InternalGetResourceSet.";
         internal const string PlatformNotSupported_ResourceFiles =

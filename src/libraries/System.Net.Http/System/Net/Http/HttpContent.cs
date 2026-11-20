@@ -206,12 +206,35 @@ namespace System.Net.Http
             return _bufferedContent.CreateCopy();
         }
 
-        // NetWasm: upstream reads through the synchronous CreateContentReadStream, which this netstandard-shaped HttpContent
-        // does not have; the asynchronous read runs synchronously instead (CanonicalAbi.RunSynchronously).
-        public Stream ReadAsStream() => ReadAsStream(CancellationToken.None);
+        public Stream ReadAsStream() =>
+            ReadAsStream(CancellationToken.None);
 
-        public Stream ReadAsStream(CancellationToken cancellationToken) =>
-            System.Runtime.InteropServices.WebAssembly.CanonicalAbi.RunSynchronously(() => ReadAsStreamAsync(cancellationToken));
+        public Stream ReadAsStream(CancellationToken cancellationToken)
+        {
+            CheckDisposed();
+
+            // _contentReadStream will be either null (nothing yet initialized), a Stream (it was previously
+            // initialized in TryReadAsStream/ReadAsStream), or a Task<Stream> (it was previously initialized
+            // in ReadAsStreamAsync).
+
+            if (_contentReadStream == null) // don't yet have a Stream
+            {
+                Stream s = IsBuffered ?
+                    CreateMemoryStreamFromBufferedContent() :
+                    CreateContentReadStream(cancellationToken);
+                _contentReadStream = s;
+                return s;
+            }
+            else if (_contentReadStream is Stream stream) // have a Stream
+            {
+                return stream;
+            }
+            else // have a Task<Stream>
+            {
+                // Throw if ReadAsStreamAsync has been called previously since _contentReadStream contains a cached task.
+                throw new HttpRequestException(SR.net_http_content_read_as_stream_has_task);
+            }
+        }
 
         public Task<Stream> ReadAsStreamAsync() =>
             ReadAsStreamAsync(CancellationToken.None);
@@ -275,9 +298,15 @@ namespace System.Net.Http
 
         protected abstract Task SerializeToStreamAsync(Stream stream, TransportContext? context);
 
-        // NetWasm: internal because this overload is newer than the netstandard contract; the built-in content types
-        // still override it to honor the token, falling back to the protected two-argument overload for derived types.
-        internal virtual Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) =>
+        // We cannot add abstract member to a public class in order to not to break already established contract of this class.
+        // So we add virtual method, override it everywhere internally and provide proper implementation.
+        // Unfortunately we cannot force everyone to implement so in such case we throw NSE.
+        protected virtual void SerializeToStream(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException(SR.Format(SR.net_http_missing_sync_implementation, GetType(), nameof(HttpContent), nameof(SerializeToStream)));
+        }
+
+        protected virtual Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) =>
             SerializeToStreamAsync(stream, context);
 
         // TODO https://github.com/dotnet/runtime/issues/31316: Expose something to enable this publicly.  For very specific
@@ -288,6 +317,27 @@ namespace System.Net.Http
         // on all known HttpContent types, waiting for the request content to complete before completing the SendAsync task.
         internal virtual bool AllowDuplex => true;
 
+        public void CopyTo(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+        {
+            CheckDisposed();
+            ArgumentNullException.ThrowIfNull(stream);
+            try
+            {
+                if (IsBuffered)
+                {
+                    stream.Write(_bufferedContent.GetSingleBuffer(), 0, (int)_bufferedContent.Length);
+                }
+                else
+                {
+                    SerializeToStream(stream, context, cancellationToken);
+                }
+            }
+            catch (Exception e) when (StreamCopyExceptionNeedsWrapping(e))
+            {
+                throw GetStreamCopyException(e);
+            }
+        }
+
         public Task CopyToAsync(Stream stream) =>
             CopyToAsync(stream, CancellationToken.None);
 
@@ -297,7 +347,7 @@ namespace System.Net.Http
         public Task CopyToAsync(Stream stream, TransportContext? context) =>
             CopyToAsync(stream, context, CancellationToken.None);
 
-        internal Task CopyToAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+        public Task CopyToAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
         {
             CheckDisposed();
             ArgumentNullException.ThrowIfNull(stream);
@@ -335,6 +385,59 @@ namespace System.Net.Http
             return new ValueTask(task);
         }
 
+        internal void LoadIntoBuffer(long maxBufferSize, CancellationToken cancellationToken)
+        {
+            CheckDisposed();
+
+            if (!CreateTemporaryBuffer(maxBufferSize, out LimitArrayPoolWriteStream? tempBuffer, out Exception? error))
+            {
+                // If we already buffered the content, just return.
+                return;
+            }
+
+            if (tempBuffer == null)
+            {
+                throw error!;
+            }
+
+            // Register for cancellation and tear down the underlying stream in case of cancellation/timeout.
+            // We're only comfortable disposing of the HttpContent instance like this because LoadIntoBuffer is internal and
+            // we're only using it on content instances we get back from a handler's Send call that haven't been given out to the user yet.
+            // If we were to ever make LoadIntoBuffer public, we'd need to rethink this.
+            CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(static s => ((HttpContent)s!).Dispose(), this);
+
+            try
+            {
+                SerializeToStream(tempBuffer, null, cancellationToken);
+            }
+            catch (Exception e)
+            {
+                tempBuffer.ReturnAllPooledBuffers();
+
+                if (NetEventSource.Log.IsEnabled()) NetEventSource.Error(this, e);
+
+                if (CancellationHelper.ShouldWrapInOperationCanceledException(e, cancellationToken))
+                {
+                    throw CancellationHelper.CreateOperationCanceledException(e, cancellationToken);
+                }
+
+                if (StreamCopyExceptionNeedsWrapping(e))
+                {
+                    throw GetStreamCopyException(e);
+                }
+
+                throw;
+            }
+            finally
+            {
+                // Clean up the cancellation registration.
+                cancellationRegistration.Dispose();
+            }
+
+            tempBuffer.ReallocateIfPooled();
+            _bufferedContent = tempBuffer;
+        }
+
         public Task LoadIntoBufferAsync() =>
             LoadIntoBufferAsync(MaxBufferSize);
 
@@ -370,17 +473,7 @@ namespace System.Net.Http
         /// </remarks>
         /// <exception cref="OperationCanceledException">The cancellation token was canceled. This exception is stored into the returned task.</exception>
         /// <exception cref="ObjectDisposedException">The object has already been disposed.</exception>
-        // NetWasm: upstream buffers through the synchronous SerializeToStream family, which this netstandard-shaped
-        // HttpContent does not have; the asynchronous buffering runs synchronously instead (CanonicalAbi.RunSynchronously),
-        // blocking on the platform's I/O as HttpClient.Send does.
-        internal void LoadIntoBuffer(long maxBufferSize, CancellationToken cancellationToken) =>
-            System.Runtime.InteropServices.WebAssembly.CanonicalAbi.RunSynchronously(async () =>
-            {
-                await LoadIntoBufferAsync(maxBufferSize, cancellationToken).ConfigureAwait(false);
-                return true;
-            });
-
-        internal Task LoadIntoBufferAsync(long maxBufferSize, CancellationToken cancellationToken)
+        public Task LoadIntoBufferAsync(long maxBufferSize, CancellationToken cancellationToken)
         {
             CheckDisposed();
 
@@ -434,6 +527,23 @@ namespace System.Net.Http
 
             tempBuffer.ReallocateIfPooled();
             _bufferedContent = tempBuffer;
+        }
+
+        /// <summary>
+        /// Serializes the HTTP content to a memory stream.
+        /// </summary>
+        /// <param name="cancellationToken">The cancellation token to cancel the operation.</param>
+        /// <returns>The output memory stream which contains the serialized HTTP content.</returns>
+        /// <remarks>
+        /// Once the operation completes, the returned memory stream represents the HTTP content. The returned stream can then be used to read the content using various stream APIs.
+        /// The <see cref="CreateContentReadStream(CancellationToken)"/> method buffers the content to a memory stream.
+        /// Derived classes can override this behavior if there is a better way to retrieve the content as stream.
+        /// For example, a byte array or a string could use a more efficient method way such as wrapping a read-only MemoryStream around the bytes or string.
+        /// </remarks>
+        protected virtual Stream CreateContentReadStream(CancellationToken cancellationToken)
+        {
+            LoadIntoBuffer(MaxBufferSize, cancellationToken);
+            return CreateMemoryStreamFromBufferedContent();
         }
 
         protected virtual Task<Stream> CreateContentReadStreamAsync()
@@ -594,9 +704,8 @@ namespace System.Net.Http
         internal static Exception WrapStreamCopyException(Exception e)
         {
             Debug.Assert(StreamCopyExceptionNeedsWrapping(e));
-            // NetWasm: upstream also stamps the current stack trace (ExceptionDispatchInfo.SetCurrentStackTrace, newer than
-            // the netstandard contract and absent from NetWasm's CoreLib); the exception is otherwise identical.
-            return new HttpRequestException(HttpRequestError.Unknown, SR.net_http_content_stream_copy_error, e);
+            HttpRequestError error = e is HttpIOException ioEx ? ioEx.HttpRequestError : HttpRequestError.Unknown;
+            return ExceptionDispatchInfo.SetCurrentStackTrace(new HttpRequestException(error, SR.net_http_content_stream_copy_error, e));
         }
 
         private static int GetPreambleLength(ReadOnlySpan<byte> data, Encoding encoding)
@@ -668,8 +777,7 @@ namespace System.Net.Http
 
         private static HttpRequestException CreateOverCapacityException(long maxBufferSize)
         {
-            // NetWasm: without the upstream stack-trace stamp, as in WrapStreamCopyException.
-            return new HttpRequestException(HttpRequestError.ConfigurationLimitExceeded, SR.Format(CultureInfo.InvariantCulture, SR.net_http_content_buffersize_exceeded, maxBufferSize));
+            return (HttpRequestException)ExceptionDispatchInfo.SetCurrentStackTrace(new HttpRequestException(HttpRequestError.ConfigurationLimitExceeded, SR.Format(CultureInfo.InvariantCulture, SR.net_http_content_buffersize_exceeded, maxBufferSize)));
         }
 
         /// <summary>

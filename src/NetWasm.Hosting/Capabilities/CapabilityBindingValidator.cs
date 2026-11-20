@@ -294,8 +294,7 @@ public sealed class CapabilityBindingValidator : ICapabilityBindingValidator
             }
         }
 
-        var versionParts = value[(separator + 1)..].Split('.');
-        if (versionParts.Length != 3 || versionParts.Any(part => part.Length == 0 || !part.All(char.IsAsciiDigit)))
+        if (!ExactSemanticVersion.IsValid(value[(separator + 1)..]))
         {
             throw new ArgumentException("Provider modules require an exact numeric version.", nameof(value));
         }

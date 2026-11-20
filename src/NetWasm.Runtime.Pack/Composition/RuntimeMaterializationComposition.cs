@@ -65,6 +65,9 @@ internal static class RuntimeMaterializationComposition
             new RuntimeNativeArchiveFeatureValidator(
                 new RuntimeNativeModuleValidator(new RuntimeNativeValidationArgumentBuilder(new RuntimeNativeValidationProfileValidator()), new CommandInvoker(new ToolOutputExcerptFormatter())),
                 new RuntimeArtifactReader()),
-            new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())));
+            new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())),
+            new RuntimeExceptionHandlingTranslator(new CommandInvoker(new ToolOutputExcerptFormatter())),
+            new RuntimeEnvImportRelocator(),
+            new RuntimeUndefinedSymbolReporter());
     }
 }

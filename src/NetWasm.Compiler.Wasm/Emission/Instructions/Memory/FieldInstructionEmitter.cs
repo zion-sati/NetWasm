@@ -7,6 +7,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.SimdVectors;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -21,7 +22,8 @@ internal sealed class FieldInstructionEmitter(
     IValueLayoutProvider values,
     IImplicitExceptionEmitter exceptions,
     IAddressInstructionEmitter addresses,
-    IAddressTakenAggregateProjectionEmitter aggregateProjections) :
+    IAddressTakenAggregateProjectionEmitter aggregateProjections,
+    IReferenceWriteBarrierEmitter writeBarrier) :
     InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
@@ -113,11 +115,12 @@ internal sealed class FieldInstructionEmitter(
         request.Stack[slot] = fieldType.StackKind;
     }
 
-    // A field of a vector value, such as Vector128<T>'s Vector64 halves or
-    // Vector<T>'s ulongs, is a lane of the v128 value. A value-type field goes to
-    // the load's temporary, whose address the stack then holds. A vector field
-    // at the start, as Plane's Normal, is the value itself: its own lanes are
-    // the vector's low lanes, and the lanes above them are undefined.
+    // A field of a vector value, such as Vector<T>'s ulongs, is a lane of the
+    // v128 value. A value-type field goes to the load's temporary, whose address
+    // the stack then holds. A vector field at the start, as Plane's Normal or
+    // Vector128<T>'s lower Vector64, is the value itself: its own lanes are the
+    // vector's low lanes, and the lanes above them are undefined. The upper
+    // Vector64 moves down into the low lanes.
     private void EmitVectorFieldLoad(
         InstructionEmissionRequest request,
         IWasmInstructionWriter code,
@@ -125,16 +128,23 @@ internal sealed class FieldInstructionEmitter(
         FieldLayout layout,
         CliTypeIdentity fieldType)
     {
+        var vector = GetStackLocal(request.Context, slot, CliValueKind.V128);
         if (fieldType.StackKind == CliValueKind.V128)
         {
-            if (layout.Offset != 0)
+            if (layout.Offset == sizeof(long) && SimdVectorStorage.Width(fieldType) == sizeof(long))
+            {
+                SimdVectorCode.Get(code, vector);
+                SimdVectorCode.Get(code, vector);
+                SimdVectorCode.Shuffle(code, SimdByteShuffles.UpperWords);
+                SimdVectorCode.Set(code, vector);
+            }
+            else if (layout.Offset != 0)
             {
                 throw new CompilerException(new CompilerDiagnostic(
                     DiagnosticCode.UnsupportedCil, "a vector's vector field does not start the vector"));
             }
             return;
         }
-        var vector = GetStackLocal(request.Context, slot, CliValueKind.V128);
         var storage = fieldType.StackStorageType ?? fieldType;
         var floating = storage.StackKind is CliValueKind.F4 or CliValueKind.F8;
         var signed = storage.CanonicalName is "primitive:i1" or "primitive:i2";
@@ -175,21 +185,25 @@ internal sealed class FieldInstructionEmitter(
             addresses.Emit(code, AddressOperation.Add);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
-        // A struct within the vector, as Plane's Normal, copies out a 32-bit
-        // lane at a time.
+        // A struct within the vector copies out in the widest lanes its offset
+        // and size allow: a Vector64 half as one 64-bit lane, Plane's Normal as
+        // three 32-bit lanes.
         if (layout.Offset % sizeof(int) != 0 || layout.Size % sizeof(int) != 0)
         {
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.UnsupportedCil, "a vector's struct field is not made of 32-bit lanes"));
         }
-        for (var word = 0; word < layout.Size / sizeof(int); word++)
+        var lane = layout.Offset % sizeof(long) == 0 && layout.Size % sizeof(long) == 0 ? sizeof(long) : sizeof(int);
+        for (var word = 0; word < layout.Size / lane; word++)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)vector)));
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.SimdPrefixed,
-                WasmInstructionOperand.PrefixedPair(WasmSimdOpcodes.I32x4ExtractLane, (uint)(layout.Offset / sizeof(int) + word))));
-            ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, word * sizeof(int), sizeof(int));
+                WasmInstructionOperand.PrefixedPair(
+                    lane == sizeof(long) ? WasmSimdOpcodes.I64x2ExtractLane : WasmSimdOpcodes.I32x4ExtractLane,
+                    (uint)(layout.Offset / lane + word))));
+            ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, word * lane, lane);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)GetStackLocal(
@@ -245,6 +259,7 @@ internal sealed class FieldInstructionEmitter(
             SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
                 SmallBlockEmitter.WidestChunk(values.GetValueLayout(fieldType)),
                 writer => addresses.Emit(writer, layout.Size));
+            writeBarrier.Emit(request, code, objectLocal, fieldType);
             request.Stack.RemoveRange(objectSlot, 2);
             return;
         }
@@ -256,6 +271,7 @@ internal sealed class FieldInstructionEmitter(
             layout.Offset,
             fieldType,
             layout.Size, scratch: request.Context.VectorScratch);
+        writeBarrier.Emit(request, code, objectLocal, fieldType);
         request.Stack.RemoveRange(objectSlot, 2);
     }
 

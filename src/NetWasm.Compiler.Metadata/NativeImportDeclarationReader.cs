@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
+using System.Runtime.InteropServices;
 using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Metadata;
@@ -24,10 +25,42 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
         }
         var import = method.GetImport();
         var hasMarshalling = false;
+        var signature = metadata.GetBlobReader(method.Signature);
+        var header = signature.ReadSignatureHeader();
+        if (header.IsGeneric)
+        {
+            signature.ReadCompressedInteger();
+        }
+        var flows = new NativeParameterFlow[signature.ReadCompressedInteger()];
+        var marshalAs = new UnmanagedType?[flows.Length];
+        UnmanagedType? resultMarshalAs = null;
         foreach (var parameterHandle in method.GetParameters())
         {
             var parameter = metadata.GetParameter(parameterHandle);
-            hasMarshalling |= !parameter.GetMarshallingDescriptor().IsNil;
+            var descriptor = parameter.GetMarshallingDescriptor();
+            UnmanagedType? native = null;
+            if (!descriptor.IsNil)
+            {
+                // A descriptor of one native type the stubs know is recorded; anything longer (an array's size, a
+                // custom marshaler) or unknown is runtime marshalling NetWasm does not have.
+                var blob = metadata.GetBlobReader(descriptor);
+                if (blob.Length == 1 && (UnmanagedType)blob.ReadByte() is var type && NativeMarshalAsTypes.IsExpressible(type))
+                    native = type;
+                else
+                    hasMarshalling = true;
+            }
+            if (parameter.SequenceNumber == 0)
+            {
+                resultMarshalAs = native;
+            }
+            // Sequence 0 is the result; parameters count from 1.
+            if (parameter.SequenceNumber > 0 && parameter.SequenceNumber <= flows.Length)
+            {
+                marshalAs[parameter.SequenceNumber - 1] = native;
+                flows[parameter.SequenceNumber - 1] =
+                    ((parameter.Attributes & ParameterAttributes.In) != 0 ? NativeParameterFlow.In : NativeParameterFlow.None) |
+                    ((parameter.Attributes & ParameterAttributes.Out) != 0 ? NativeParameterFlow.Out : NativeParameterFlow.None);
+            }
         }
         var hasWasmImportLinkage = false;
         string? unsupportedCallingConvention = null;
@@ -45,21 +78,25 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
                 unsupportedCallingConvention = ReadUnsupportedCallingConvention(attribute);
             }
         }
-        var signature = metadata.GetBlobReader(method.Signature).ReadSignatureHeader();
         return new(
             import.Module.IsNil ? string.Empty :
                 metadata.GetString(metadata.GetModuleReference(import.Module).Name),
             metadata.GetString(import.Name),
             import.Attributes,
-            signature.CallingConvention == SignatureCallingConvention.VarArgs,
+            header.CallingConvention == SignatureCallingConvention.VarArgs,
             hasMarshalling,
             unsupportedCallingConvention)
         {
             HasWasmImportLinkage = hasWasmImportLinkage,
+            TranslatesHResult = (method.ImplAttributes & MethodImplAttributes.PreserveSig) == 0,
+            ParameterFlows = new([.. flows]),
+            MarshalAs = resultMarshalAs is null && marshalAs.All(type => type is null)
+                ? NativeMarshalAsTypes.None
+                : new(resultMarshalAs, [.. marshalAs]),
         };
     }
 
-    // Why the C ABI cannot honour the conventions an [UnmanagedCallConv] names, or null when it can.
+    // Why the C ABI cannot honor the conventions an [UnmanagedCallConv] names, or null when it can.
     private static string? ReadUnsupportedCallingConvention(CustomAttribute attribute)
     {
         const string Malformed = "[UnmanagedCallConv] sets more than its CallConvs";

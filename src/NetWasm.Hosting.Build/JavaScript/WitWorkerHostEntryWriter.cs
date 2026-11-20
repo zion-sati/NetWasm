@@ -64,6 +64,7 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
         source.AppendLine("  files: fileMounts,");
         source.AppendLine("  openSession: open,");
         source.AppendLine("  post: (message, transfer = []) => globalThis.postMessage(message, transfer),");
+        source.AppendLine("  scope: globalThis,");
         source.AppendLine("  terminate: cause => cause === null ? globalThis.close() : fatal(cause),");
         source.AppendLine("});");
         source.AppendLine("globalThis.addEventListener(\"message\", event => { host.receive(event.data).catch(fatal); });");

@@ -1,9 +1,12 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System;
+using System.Collections.Generic;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
@@ -13,7 +16,8 @@ internal sealed class EnumGetUnderlyingTypeEmitter(
     ITypeLayoutProvider typeLayouts,
     IRuntimeImportResolver runtimeImports,
     IAddressInstructionEmitter addresses,
-    IEnumTypeArgumentValidator typeArguments) : IEnumGetUnderlyingTypeEmitter
+    IEnumTypeArgumentValidator typeArguments,
+    IKeyedDispatchEmitter keyedDispatch) : IEnumGetUnderlyingTypeEmitter
 {
     public void EmitGetUnderlyingType(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -23,21 +27,23 @@ internal sealed class EnumGetUnderlyingTypeEmitter(
         typeArguments.Validate(code, input, typeId, request.Instruction.Context.ManagedThrowFunction);
         addresses.Emit(code, 0);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)result)));
+        // The enum type's id picks its metadata, searched among the enums the program describes.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var entry in metadata.EnumMetadata)
         {
             var underlying = types.GetTypeDefinition(entry.Type).EnumUnderlyingType;
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)typeId)));
-            WriteI32(code, entry.TypeId);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            WriteI32(code, typeLayouts.GetObjectLayout(underlying).TypeId);
-            WriteI32(code, typeLayouts.TypeTypeId);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.GetTypeObject))));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)result)));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            cases.Add((entry.TypeId, () =>
+            {
+                WriteI32(code, typeLayouts.GetObjectLayout(underlying).TypeId);
+                WriteI32(code, typeLayouts.TypeTypeId);
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.GetTypeObject))));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)result)));
+            }
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(typeId, false, cases, () => { }));
     }
 
     private static void WriteI32(IWasmInstructionWriter code, int value) => code.Write(

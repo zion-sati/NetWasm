@@ -7,6 +7,7 @@ using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -23,7 +24,9 @@ internal sealed class MemberExecutionIntrinsicEmitter(
     IRootPublicationEmitter roots,
     IMemberMethodCaseEmitter methods,
     IMemberFieldReadCaseEmitter fieldReads,
-    IMemberFieldWriteCaseEmitter fieldWrites) : IRuntimeIntrinsicEmitter
+    IMemberFieldWriteCaseEmitter fieldWrites,
+    IKeyedDispatchEmitter keyedDispatch,
+    ITargetLayout layouts) : IRuntimeIntrinsicEmitter
 {
     private readonly IMemberExecutionPlanValidator _validator = validator ??
         throw new ArgumentNullException(nameof(validator));
@@ -35,6 +38,10 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         throw new ArgumentNullException(nameof(fieldReads));
     private readonly IMemberFieldWriteCaseEmitter _fieldWrites = fieldWrites ??
         throw new ArgumentNullException(nameof(fieldWrites));
+    private readonly IKeyedDispatchEmitter _keyedDispatch = keyedDispatch ??
+        throw new ArgumentNullException(nameof(keyedDispatch));
+    private readonly ITargetLayout _layouts = layouts ??
+        throw new ArgumentNullException(nameof(layouts));
 
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -43,23 +50,30 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         _validator.Validate(request);
         MemberExecutionPlan plan = request.Instruction.Target.MemberExecution;
         _roots.Emit(request.Instruction, code);
-        var caseCount = request.Intrinsic switch
+        var cases = request.Intrinsic switch
         {
-            RuntimeIntrinsic.MemberExecuteMethod => _methods.EmitCases(request, code, plan),
-            RuntimeIntrinsic.MemberReadField => _fieldReads.EmitCases(request, code, plan),
-            _ => _fieldWrites.EmitCases(request, code, plan),
+            RuntimeIntrinsic.MemberExecuteMethod => _methods.Cases(request, code, plan),
+            RuntimeIntrinsic.MemberReadField => _fieldReads.Cases(request, code, plan),
+            _ => _fieldWrites.Cases(request, code, plan),
         };
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned(
-                (uint)request.FunctionIndices.Resolve(plan.UnsupportedTarget!))));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalSet,
-            WasmInstructionOperand.Unsigned(
-                (uint)request.Local(0, CliValueKind.ManagedReference))));
-        for (var index = 0; index < caseCount; index++)
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        }
+        // The descriptor names the member: its address picks the case, searched among the members' descriptors, and
+        // a member the program does not plan for goes to the unsupported target.
+        var ordered = cases.OrderBy(memberCase => memberCase.DescriptorAddress).ToArray();
+        var descriptorLocal = request.Local(0, CliValueKind.ManagedReference);
+        _keyedDispatch.Emit(code, new(
+            descriptorLocal,
+            _layouts.Target.UsesMemory64,
+            [.. ordered.Select(memberCase => new KeyRange(memberCase.DescriptorAddress, memberCase.DescriptorAddress))],
+            index => ordered[index].Emit(),
+            () =>
+            {
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned(
+                        (uint)request.FunctionIndices.Resolve(plan.UnsupportedTarget!))));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.LocalSet,
+                    WasmInstructionOperand.Unsigned((uint)descriptorLocal)));
+            }));
     }
 }

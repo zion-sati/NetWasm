@@ -10,6 +10,8 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 
+using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
+
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
 internal sealed record WasmModulePlan(
@@ -27,6 +29,8 @@ internal sealed record WasmModulePlan(
     public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
     public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
     public ImmutableArray<MethodInstanceModel> JSImportForwarders { get; init; } = [];
+    // The shared virtual dispatch functions, which follow the delegate helpers.
+    public ImmutableArray<SharedVirtualDispatchPlan> SharedVirtualDispatches { get; init; } = [];
 }
 
 internal sealed class WasmModulePlanner(
@@ -83,7 +87,12 @@ internal sealed class WasmModulePlanner(
             calledIntrinsics.Contains(RuntimeIntrinsic.ArraySetValue),
             // A process that reports no exceptions traps on an unhandled one after the hint.
             request.EntryPointProfile == WasmEntryPointProfile.Process && !includeTerminalExceptionReporter,
-            calledIntrinsics.Contains(RuntimeIntrinsic.ObjectClone));
+            calledIntrinsics.Contains(RuntimeIntrinsic.ObjectClone),
+            calledIntrinsics.Contains(RuntimeIntrinsic.AllocateUninitializedArray),
+            request.ReferenceWriteBarrier,
+            calledIntrinsics.Contains(RuntimeIntrinsic.GcObjectGeneration),
+            calledIntrinsics.Overlaps(EventLoopCollectionIntrinsics),
+            calledIntrinsics.Contains(RuntimeIntrinsic.GcCollectYoung));
         var selectedRuntimeImports = runtimeImports.Resolve(runtimeImportSelection);
         var runtimeImportCount = selectedRuntimeImports.Length;
         var interopImports = interopImportPlanner.Build(request, runtimeImportCount);
@@ -230,7 +239,13 @@ internal sealed class WasmModulePlanner(
                 item => item.CanonicalName,
                 item => item.Index,
                 StringComparer.Ordinal);
-        var helperBase = managedThrowFunction + throwFunctionCount + delegateInvokes.Length * 2;
+        var sharedVirtualDispatches = SharedVirtualDispatch.Plan(request.DispatchCallSites.Values, intrinsics);
+        var sharedVirtualDispatchBase = managedThrowFunction + throwFunctionCount + delegateInvokes.Length * 2;
+        var sharedVirtualDispatchIndices = sharedVirtualDispatches
+            .Select((dispatch, index) => (dispatch.Declaration.CanonicalName,
+                Index: new WasmFunctionIndex(sharedVirtualDispatchBase + index)))
+            .ToImmutableDictionary(item => item.CanonicalName, item => item.Index, StringComparer.Ordinal);
+        var helperBase = sharedVirtualDispatchBase + sharedVirtualDispatches.Length;
         if (!request.JavaScriptConversions.IsEmpty)
         {
             interopImports = interopImports with
@@ -260,6 +275,7 @@ internal sealed class WasmModulePlanner(
                     ? OptionalFunctionIndex.At(managedThrowFunction + 1)
                     : OptionalFunctionIndex.Missing,
                 DelegateMulticastHelpers = delegateMulticastHelperIndices,
+                SharedVirtualDispatches = sharedVirtualDispatchIndices,
                 DelegateInvokeMethods = delegateInvokes
                     .Where(method => !method.IsConstructed)
                     .ToImmutableDictionary(
@@ -275,6 +291,7 @@ internal sealed class WasmModulePlanner(
             interopImports)
         {
             StaticInitializerFunctionBase = helperBase,
+            SharedVirtualDispatches = sharedVirtualDispatches,
             NativeImports = nativeImportPlan,
             NativeCallbacks = callbackPlan,
         };
@@ -290,7 +307,8 @@ internal sealed class WasmModulePlanner(
                 .Select(instruction => new NativeCallSiteUse(
                     ((CilOperand.CallSite)instruction.Operand).Signature,
                     method.Header.MethodInstance?.CanonicalName ?? method.Header.Method.Name,
-                    instruction.Offset)));
+                    instruction.Offset,
+                    method.Header.Method.NativeMarshalling)));
 
     private static bool RequiresEphemeronHandles(HashSet<RuntimeIntrinsic> called) =>
         called.Any(static intrinsic => intrinsic is RuntimeIntrinsic.EphemeronHandleCreate or
@@ -299,6 +317,10 @@ internal sealed class WasmModulePlanner(
                 RuntimeIntrinsic.EphemeronHandleSetTargetToNull or
                 RuntimeIntrinsic.EphemeronHandleSetValue or
                 RuntimeIntrinsic.EphemeronHandleRelease);
+
+    // The WASI event loop's collection asks the runtime for both.
+    private static readonly RuntimeIntrinsic[] EventLoopCollectionIntrinsics =
+        [RuntimeIntrinsic.GcCollectWhenIdle, RuntimeIntrinsic.GcCollectWhenQuiet];
 
     private static bool RequiresWeakHandles(HashSet<RuntimeIntrinsic> called) =>
         called.Any(static intrinsic => intrinsic is RuntimeIntrinsic.WeakHandleCreate or

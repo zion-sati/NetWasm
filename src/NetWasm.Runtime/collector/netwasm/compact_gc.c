@@ -77,6 +77,8 @@ struct NetWasmGc {
     size_t backing_bytes;
     size_t minimum_collection_budget;
     size_t next_collection;
+    /* What the heap occupied after the last collection. */
+    size_t survived_bytes;
     uint64_t collections;
     uint64_t allocated_bytes;
     bool collecting;
@@ -179,7 +181,10 @@ static bool insert_area(NetWasmGc *gc, Area *area)
     return true;
 }
 
-static unsigned char *allocate_small(NetWasmGc *gc, size_t size)
+/* Inlined into each allocation entry with a constant zero, so the zeroing entry is
+ * compiled as it is without the uninitialized one. */
+static inline __attribute__((always_inline)) unsigned char *allocate_small(
+    NetWasmGc *gc, size_t size, bool zero)
 {
     unsigned char **free = &gc->free[size / ALIGNMENT - 1];
     unsigned char *object = *free;
@@ -207,11 +212,12 @@ static unsigned char *allocate_small(NetWasmGc *gc, size_t size)
         chunk->cursor += size;
     }
     set_start(chunk, object, true);
-    memset(object, 0, size - HEADER);
+    if (zero) memset(object, 0, size - HEADER);
     return object;
 }
 
-static unsigned char *allocate_large(NetWasmGc *gc, size_t bytes, size_t *size)
+static inline __attribute__((always_inline)) unsigned char *allocate_large(
+    NetWasmGc *gc, size_t bytes, size_t *size, bool zero)
 {
     size_t allocation_bytes = (sizeof(Large) + ALIGNMENT + bytes + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
     Large *large = gc->allocate(allocation_bytes, ALIGNMENT);
@@ -225,14 +231,15 @@ static unsigned char *allocate_large(NetWasmGc *gc, size_t bytes, size_t *size)
     }
     gc->backing_bytes += allocation_bytes;
     *size = allocation_bytes;
-    memset(object, 0, bytes);
+    if (zero) memset(object, 0, bytes);
     return object;
 }
 
-NetWasmGcResult netwasm_gc_allocate(
+static inline __attribute__((always_inline)) NetWasmGcResult allocate_object(
     NetWasmGc *gc,
     size_t bytes,
     bool contains_references,
+    bool zero,
     void **result)
 {
     if (gc == NULL || result == NULL || gc->collecting) return NETWASM_GC_INVALID_ARGUMENT;
@@ -247,7 +254,7 @@ NetWasmGcResult netwasm_gc_allocate(
         gc->object_count != 0) netwasm_gc_collect(gc);
 #endif
     unsigned char *object = size <= SMALL_LIMIT
-        ? allocate_small(gc, size) : allocate_large(gc, bytes, &size);
+        ? allocate_small(gc, size, zero) : allocate_large(gc, bytes, &size, zero);
     if (object == NULL) return NETWASM_GC_OUT_OF_MEMORY;
     *header(object) = size | (contains_references ? TRACED : 0);
     gc->object_count++;
@@ -255,6 +262,23 @@ NetWasmGcResult netwasm_gc_allocate(
     gc->allocated_bytes += bytes;
     *result = object;
     return NETWASM_GC_OK;
+}
+
+NetWasmGcResult netwasm_gc_allocate(
+    NetWasmGc *gc,
+    size_t bytes,
+    bool contains_references,
+    void **result)
+{
+    return allocate_object(gc, bytes, contains_references, true, result);
+}
+
+NetWasmGcResult netwasm_gc_allocate_uninitialized(
+    NetWasmGc *gc,
+    size_t bytes,
+    void **result)
+{
+    return allocate_object(gc, bytes, false, false, result);
 }
 
 static void push(NetWasmGc *gc, unsigned char *object)
@@ -383,6 +407,7 @@ static void sweep(NetWasmGc *gc)
     gc->area_count = kept;
     gc->next_collection = gc->occupied_bytes > (SIZE_MAX - gc->minimum_collection_budget) / 2
         ? SIZE_MAX : gc->occupied_bytes * 2 + gc->minimum_collection_budget;
+    gc->survived_bytes = gc->occupied_bytes;
 }
 
 void netwasm_gc_collect(NetWasmGc *gc)
@@ -396,6 +421,24 @@ void netwasm_gc_collect(NetWasmGc *gc)
     sweep(gc);
     gc->collections++;
     gc->collecting = false;
+}
+
+bool netwasm_gc_collect_when_idle(NetWasmGc *gc)
+{
+    if (gc == NULL || gc->collecting || gc->occupied_bytes < gc->survived_bytes) return false;
+    size_t grown = gc->occupied_bytes - gc->survived_bytes;
+    if (grown < gc->minimum_collection_budget / 4 || grown < gc->survived_bytes / 2) return false;
+    netwasm_gc_collect(gc);
+    return true;
+}
+
+unsigned netwasm_gc_collect_when_quiet(NetWasmGc *gc)
+{
+    if (gc == NULL || gc->collecting || gc->occupied_bytes == 0) return 0;
+    size_t before = gc->occupied_bytes;
+    netwasm_gc_collect(gc);
+    size_t freed = before > gc->occupied_bytes ? before - gc->occupied_bytes : 0;
+    return 1u + (unsigned)((uint64_t)freed * 255u / before);
 }
 
 NetWasmGcResult netwasm_gc_create(
@@ -448,6 +491,10 @@ bool netwasm_gc_contains(const NetWasmGc *gc, uintptr_t address)
 
 bool netwasm_gc_is_collecting(const NetWasmGc *gc) { return gc != NULL && gc->collecting; }
 uint64_t netwasm_gc_collection_count(const NetWasmGc *gc) { return gc == NULL ? 0 : gc->collections; }
+/* Compact has one generation, which every collection collects. */
+void netwasm_gc_collect_young(NetWasmGc *gc) { netwasm_gc_collect(gc); }
+uint64_t netwasm_gc_oldest_generation_collection_count(const NetWasmGc *gc) { return netwasm_gc_collection_count(gc); }
+unsigned netwasm_gc_object_generation(const NetWasmGc *gc, uintptr_t address) { (void)gc; (void)address; return 0; }
 uint64_t netwasm_gc_total_allocated_bytes(const NetWasmGc *gc) { return gc == NULL ? 0 : gc->allocated_bytes; }
 /* Compact allocates from free lists, so code outside it always calls in. */
 NetWasmGcRun *netwasm_gc_allocation_runs(NetWasmGc *gc) { (void)gc; return NULL; }

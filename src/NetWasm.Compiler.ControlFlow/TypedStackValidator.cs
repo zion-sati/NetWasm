@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
 
@@ -68,7 +69,7 @@ public sealed class TypedStackValidator(
             var stack = new List<CliValueKind>(entryStacks[blockIndex]);
             foreach (var instruction in block.Instructions)
             {
-                instructionEntryStacks.Add(instruction.Offset, [.. stack]);
+                instructionEntryStacks[instruction.Offset] = [.. stack];
                 Apply(graph.MethodBody, instruction, stack, coercions);
                 maximumDepth = Math.Max(maximumDepth, stack.Count);
                 if (stack.Count > graph.MethodBody.MaxStack)
@@ -87,10 +88,15 @@ public sealed class TypedStackValidator(
                 }
                 else if (!existing.AsSpan().SequenceEqual(outgoing.AsSpan()))
                 {
-                    throw Invalid(
+                    var merged = Merge(existing, outgoing) ?? throw Invalid(
                         graph.MethodBody,
                         block.Terminator,
                         $"incompatible evaluation stack at merge into IL_{graph.GetBlock(successor).StartOffset:x4}");
+                    if (!merged.AsSpan().SequenceEqual(existing.AsSpan()))
+                    {
+                        entryStacks[successor] = merged;
+                        pending.Enqueue(successor);
+                    }
                 }
             }
         }
@@ -101,7 +107,7 @@ public sealed class TypedStackValidator(
             instructionEntryStacks.ToImmutableDictionary())
         {
             MaximumStackDepth = maximumDepth,
-            ImplicitCoercions = [.. coercions],
+            ImplicitCoercions = [.. coercions.Distinct()],
         };
 
         void Seed(int offset, ImmutableArray<CliValueKind> stack)
@@ -126,6 +132,36 @@ public sealed class TypedStackValidator(
             entryStacks.Add(block, stack);
             pending.Enqueue(block);
         }
+    }
+
+    // Stacks that meet at a join must agree, except that a native int and a managed pointer may meet at one depth, as
+    // C# emits for `ref *(T*)null` against a real reference; desktop .NET's importer takes the pair as a managed
+    // pointer. Both are pointer-sized and share their slot's local, and a managed pointer outside the heap is no root.
+    private static ImmutableArray<CliValueKind>? Merge(ImmutableArray<CliValueKind> existing, ImmutableArray<CliValueKind> incoming)
+    {
+        if (existing.Length != incoming.Length)
+        {
+            return null;
+        }
+        var merged = ImmutableArray.CreateBuilder<CliValueKind>(existing.Length);
+        for (var index = 0; index < existing.Length; index++)
+        {
+            var (left, right) = (existing[index], incoming[index]);
+            if (left == right)
+            {
+                merged.Add(left);
+            }
+            else if (left is CliValueKind.NativeInt or CliValueKind.ManagedAddress &&
+                     right is CliValueKind.NativeInt or CliValueKind.ManagedAddress)
+            {
+                merged.Add(CliValueKind.ManagedAddress);
+            }
+            else
+            {
+                return null;
+            }
+        }
+        return merged.MoveToImmutable();
     }
 
     private void Apply(
@@ -350,6 +386,9 @@ public sealed class TypedStackValidator(
                 return;
             case CilOperation.OnesComplement:
                 stack.Add(PopInteger(body, instruction, stack));
+                return;
+            case CilOperation.Select:
+                stack.Add(PopSelect(body, instruction, stack));
                 return;
             case CilOperation.BitwiseAnd:
             case CilOperation.BitwiseOr:
@@ -952,6 +991,23 @@ public sealed class TypedStackValidator(
                 instruction,
                 $"numeric operands are incompatible: {left} and {right}"),
         };
+    }
+
+    // An int32 condition beneath it, two numbers of one kind: the result has that kind.
+    private static CliValueKind PopSelect(
+        CilMethodBody body,
+        CilInstruction instruction,
+        List<CliValueKind> stack)
+    {
+        var condition = Pop(body, instruction, stack);
+        var whenFalse = PopNumeric(body, instruction, stack);
+        var whenTrue = PopNumeric(body, instruction, stack);
+        if (condition != CliValueKind.I4 || whenTrue != whenFalse)
+        {
+            throw Invalid(body, instruction,
+                $"select takes two numbers of one kind and an int32 condition: {whenTrue}, {whenFalse}, {condition}");
+        }
+        return whenTrue;
     }
 
     private static CliValueKind PopAddPair(

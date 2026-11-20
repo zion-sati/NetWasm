@@ -164,12 +164,22 @@ public sealed class VSTestPackageContractTests
     {
         var document = XDocument.Parse(text, LoadOptions.None);
         var propertyGroup = Assert.Single(document.Root!.Elements("PropertyGroup"));
-        Assert.Equal(
-            "'$(TargetFrameworkIdentifier)' == 'NetWasm' AND '$(TargetFrameworkVersion)' == 'v0.1'",
-            propertyGroup.Attribute("Condition")!.Value);
+        Assert.Equal("'$(NetWasmGuestFramework)' == 'true'", propertyGroup.Attribute("Condition")!.Value);
         Assert.Equal(
             "RunConfiguration.TestAdapterLoadingStrategy=Explicit,DefaultRuntimeProviders,ExtensionsDirectory",
             propertyGroup.Element("_NetWasmVSTestLoadingStrategy")!.Value);
+        // A platform target framework (VSTest sees .NETCoreApp) also names its alias for the runtime provider.
+        var runSettings = propertyGroup.Elements("_NetWasmVSTestRunSettings").ToArray();
+        Assert.Equal(2, runSettings.Length);
+        Assert.Null(runSettings[0].Attribute("Condition"));
+        Assert.Equal("$(_NetWasmVSTestLoadingStrategy)", runSettings[0].Value);
+        Assert.Equal("'$(TargetFrameworkIdentifier)' != 'NetWasm'", runSettings[1].Attribute("Condition")!.Value);
+        Assert.Equal(
+            "$(_NetWasmVSTestRunSettings);TestRunParameters.Parameter(name=\"NetWasm.TargetFramework\",value=\"$(TargetFramework)\")",
+            runSettings[1].Value);
+        Assert.All(
+            propertyGroup.Elements("VSTestCLIRunSettings"),
+            setting => Assert.EndsWith("$(_NetWasmVSTestRunSettings)", setting.Value, StringComparison.Ordinal));
         Assert.Equal(
             "$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any'))",
             propertyGroup.Element("_NetWasmVSTestExtensionPath")!.Value);

@@ -7,6 +7,9 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal interface IRuntimeInitializerFunctionAppender
 {
-    /// <summary>Appends the module's runtime initializer and returns its function index.</summary>
-    int Append(IList<WasmFunctionDefinition> functions, int importCount, RuntimeInitializationPlan plan);
+    /// <summary>
+    /// Appends the module's initializer functions and returns the plan with the function every
+    /// entry calls and the state initializer that instantiation calls.
+    /// </summary>
+    RuntimeInitializationPlan Append(IList<WasmFunctionDefinition> functions, int importCount, RuntimeInitializationPlan plan);
 }

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
-/* Behaviour particular to Compact's core (compact_gc.c): the mark stack's
+/* Behavior particular to Compact's core (compact_gc.c): the mark stack's
  * rescan fallback, free-list reuse, and resolution through chunk bitmaps. */
 #include "../../src/NetWasm.Runtime/collector/netwasm/netwasm_gc.h"
 #include "netwasm_gc_test_layouts.h"
@@ -71,6 +71,10 @@ static void deep_chain_with_and_without_a_stack(void)
     }
     (void)allocate(gc, 1, &reference);
     netwasm_gc_collect(gc);
+    assert(netwasm_gc_object_count(gc) == 5000);
+    /* Compact has one generation, so GC.Collect(0) collects every object. */
+    (void)allocate(gc, 1, &reference);
+    netwasm_gc_collect_young(gc);
     assert(netwasm_gc_object_count(gc) == 5000);
     /* Compact allocates from free lists: nothing outside it bumps a run. */
     assert(netwasm_gc_allocation_runs(gc) == NULL);
@@ -183,12 +187,67 @@ static void seeded_reachability(void)
     }
 }
 
+/* An idle embedder's collection is worth its while once the heap has grown by a quarter of the minimum
+ * budget and by half of what survived the last collection. */
+static void idle_collects_once_the_heap_has_grown_enough(void)
+{
+    NetWasmGc *gc = NULL;
+    assert(netwasm_gc_create(allocate_memory, release_memory, 1024 * 1024, &gc) == NETWASM_GC_OK);
+    assert(!netwasm_gc_collect_when_idle(gc));
+    for (size_t index = 0; index < 50; index++) {
+        void *object = NULL;
+        assert(test_allocate(gc, 3000, 1, NULL, &object) == NETWASM_GC_OK);
+    }
+    assert(!netwasm_gc_collect_when_idle(gc));
+    for (size_t index = 0; index < 50; index++) {
+        void *object = NULL;
+        assert(test_allocate(gc, 3000, 1, NULL, &object) == NETWASM_GC_OK);
+    }
+    assert(netwasm_gc_collect_when_idle(gc));
+    assert(netwasm_gc_collection_count(gc) == 1);
+    assert(!netwasm_gc_collect_when_idle(gc));
+    assert(!netwasm_gc_collect_when_idle(NULL));
+    netwasm_gc_destroy(gc);
+}
+
+/* A quiet embedder's collection runs whatever the growth and reports the share of the heap it freed. */
+static void quiet_collects_whatever_the_growth_and_reports_what_it_freed(void)
+{
+    uintptr_t kept[8];
+    Roots roots = {kept, 0};
+    NetWasmGc *gc = create(&roots);
+    assert(netwasm_gc_collect_when_quiet(gc) == 0);
+    for (size_t index = 0; index < 8; index++) kept[index] = (uintptr_t)allocate(gc, 16, NULL);
+    for (size_t index = 0; index < 8; index++) (void)allocate(gc, 16, NULL);
+    /* Eight objects are rooted and eight are not: about half is freed. */
+    roots.count = 8;
+    unsigned half = netwasm_gc_collect_when_quiet(gc);
+    assert(half > 1 + 255 / 2 - 16 && half < 1 + 255 / 2 + 16);
+    /* What stays is traced and nothing is freed. */
+    assert(netwasm_gc_collect_when_quiet(gc) == 1);
+    /* Dropped without allocating: the next quiet collection frees all of it, and then there is nothing. */
+    roots.count = 0;
+    assert(netwasm_gc_collect_when_quiet(gc) == 256);
+    assert(netwasm_gc_collect_when_quiet(gc) == 0);
+    assert(netwasm_gc_collection_count(gc) == 3);
+    assert(netwasm_gc_collect_when_quiet(NULL) == 0);
+    /* One generation, which every collection collects. */
+    assert(netwasm_gc_oldest_generation_collection_count(gc) == 3);
+    kept[0] = (uintptr_t)allocate(gc, 16, NULL);
+    roots.count = 1;
+    netwasm_gc_collect(gc);
+    assert(netwasm_gc_object_generation(gc, kept[0]) == 0);
+    netwasm_gc_destroy(gc);
+}
+
 int main(void)
 {
     deep_chain_with_and_without_a_stack();
     freed_slots_are_reused_zeroed();
     interior_and_endpoint_roots();
     seeded_reachability();
+    idle_collects_once_the_heap_has_grown_enough();
+    quiet_collects_whatever_the_growth_and_reports_what_it_freed();
     assert(allocations == releases);
     return 0;
 }

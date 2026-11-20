@@ -27,6 +27,15 @@ internal sealed record ValueFrameReferenceMap(
     // safepoint, so the frame's entry zeroes them.
     public ImmutableArray<(int Offset, int Size)> EntryClears { get; init; } = [];
 
+    // Whether the map covers every filter capture that holds a reference, so a collection reads
+    // them all where they live and no filter root frame needs copies.
+    public bool CoversCaptures(FilterEnvironmentLayout filters)
+    {
+        ArgumentNullException.ThrowIfNull(filters);
+        return filters.Captures.Values.All(capture =>
+            capture.Roots.IsEmpty || Storages.Contains((capture.Slot.IsArgument, capture.Slot.Index)));
+    }
+
     // A local's or an argument's own storage, as against what a byref it holds
     // addresses.
     public bool Covers(RootSource source) => source.Kind switch
@@ -67,12 +76,13 @@ internal interface IValueFrameReferenceMapPlanner
 
 // Maps every frame storage a byref can address, since a callee publishes only
 // the byref, not what it addresses: locals, arguments, filter captures and the
-// temporaries newobj constructs value types in. An aggregate split into lane
-// locals and a slot a filter captures keep their own publication as well,
-// since their current value can be elsewhere; their frame words hold their own
-// type or zero, so a stale word keeps an object alive no longer than the frame,
-// as an untracked local does on CoreCLR. A local promoted to a Wasm local holds
-// no references.
+// temporaries newobj constructs value types in. A slot a filter captures lives
+// in its capture, which every load and store of it uses, so the map covers it
+// there and no safepoint publishes it. An aggregate split into lane locals keeps
+// its own publication as well, since its current value can be in the lanes; its
+// frame words hold its own type or zero, so a stale word keeps an object alive
+// no longer than the frame, as an untracked local does on CoreCLR. A local
+// promoted to a Wasm local holds no references.
 internal sealed class ValueFrameReferenceMapPlanner(
     ITargetLayout layouts,
     IValueLayoutProvider values,
@@ -100,7 +110,11 @@ internal sealed class ValueFrameReferenceMapPlanner(
             AddStorage(true, index, offset, argumentTypes.Resolve(header, index));
         // A captured slot is its local's or argument's storage from the frame's
         // entry, which zeroes or copies it.
-        foreach (var capture in filters.Captures.Values) Add(capture.Offset, capture.Type, clear: false);
+        foreach (var capture in filters.Captures.Values)
+        {
+            if (Add(capture.Offset, capture.Type, clear: false) && !IsAggregate(capture.Slot.IsArgument, capture.Slot.Index))
+                storages.Add((capture.Slot.IsArgument, capture.Slot.Index));
+        }
         // newobj zeroes its temporary only when it runs, after earlier safepoints.
         foreach (var (instruction, type) in layout.ConstructedValueTypes)
             Add(layout.TemporaryOffsets[instruction], type, clear: true);
@@ -111,15 +125,18 @@ internal sealed class ValueFrameReferenceMapPlanner(
 
         void AddStorage(bool isArgument, int index, int offset, CliTypeIdentity type)
         {
-            var aggregate = aggregates?.Storages.ContainsKey(new(
-                isArgument ? ManagedAggregateStorageKind.Argument : ManagedAggregateStorageKind.Local, index)) == true;
+            var aggregate = IsAggregate(isArgument, index);
             // An aggregate argument split into lanes is read from the caller's
-            // copy; its own storage is written first at a materialization.
+            // copy; its own storage is written first at a materialization. A
+            // captured argument lives in its capture, which the map covers.
             if (!Add(offset, type, clear: aggregate && isArgument) || aggregate ||
-                filters.Captures.ContainsKey(new(isArgument, index)))
+                isArgument && filters.Captures.ContainsKey(new(isArgument, index)))
                 return;
             storages.Add((isArgument, index));
         }
+
+        bool IsAggregate(bool isArgument, int index) => aggregates?.Storages.ContainsKey(new(
+            isArgument ? ManagedAggregateStorageKind.Argument : ManagedAggregateStorageKind.Local, index)) == true;
 
         bool Add(int offset, CliTypeIdentity type, bool clear)
         {

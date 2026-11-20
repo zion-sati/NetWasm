@@ -28,11 +28,17 @@ public enum DiagnosticCode
     HostFailure = 1014,
     // A program's NetWasmPlatformAttribute declaration is invalid.
     PlatformService = 1015,
-    // A resolved type has no member matching a reference's name, signature or shape.
+    // A resolved type has no member matching a reference's name, signature or shape. A warning where the method
+    // naming it compiles to a body that throws MissingMethodException or MissingFieldException instead, unless the
+    // project makes it an error.
     MissingApi = 1016,
     // A warning: a reached P/Invoke names a native library the application does not link, so it throws
     // DllNotFoundException when called.
     UnlinkedNativeLibrary = 1017,
+    // A warning: a library's JavaScript binding that .NET's browser binding generator wrote has a shape NetWasm's
+    // JavaScript interop does not take, so the method stays ordinary code: JavaScript cannot call the export, and
+    // calling the import throws PlatformNotSupportedException.
+    DeclinedJavaScriptBinding = 1018,
     GenericExpansion = 2001,
 }
 
@@ -60,6 +66,9 @@ public sealed record CompilerDiagnostic(
     // For a function over an engine limit (FunctionLimit), the methods whose functions are over it and could
     // compile smaller with less inlining into them; empty when no recompile can help.
     public ImmutableArray<EntityKey> LimitExceedingMethods { get; init; } = [];
+
+    // For a member a method's IL names that its declaring type lacks (MissingApi), that member.
+    public MissingMemberReference? MissingMember { get; init; }
 
     public string Id => Code == DiagnosticCode.GenericExpansion
         ? "NWA2001"

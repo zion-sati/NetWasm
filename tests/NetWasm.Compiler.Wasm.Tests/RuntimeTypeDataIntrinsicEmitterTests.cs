@@ -9,6 +9,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -43,7 +44,7 @@ public sealed class RuntimeTypeDataIntrinsicEmitterTests
             },
         };
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(new AllocateUninitializedObjectIntrinsicEmitter(
-            new Source([plain, finalizable], []), layouts, imports, roots, addresses, exceptions));
+            new Source([plain, finalizable], []), layouts, imports, roots, addresses, exceptions, new KeyedDispatchEmitter()));
         var writer = new RecordingInstructionWriter();
 
         emitter.Emit(request, writer);
@@ -72,7 +73,7 @@ public sealed class RuntimeTypeDataIntrinsicEmitterTests
         var addresses = new RecordingAddresses();
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.StructMarshallingData, [CliValueKind.I4]);
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(new StructMarshallingDataIntrinsicEmitter(
-            new Source([], [new(point, 41, 1000), new(mixed, 42, 2000)]), addresses));
+            new Source([], [new(point, 41, 1000), new(mixed, 42, 2000)]), addresses, new KeyedDispatchEmitter()));
         var writer = new RecordingInstructionWriter();
 
         emitter.Emit(request, writer);
@@ -83,6 +84,62 @@ public sealed class RuntimeTypeDataIntrinsicEmitterTests
         Assert.Equal(3, code.Count(i => i.Opcode == WasmOpcodes.LocalSet &&
             i.Operand.UnsignedValue == (uint)request.Local(0, CliValueKind.NativeInt)));
         Assert.Equal(2, code.Count(i => i.Opcode == WasmOpcodes.If));
+    }
+
+    // PtrToStructure runs the parameterless constructor of the type whose ID it is: a value type's with its boxed
+    // payload, a class's with the object; a type without one is left as allocated.
+    [Fact]
+    public void StructureConstructorsResolveByTypeIdAndTakeTheBoxedPayloadOfAValue()
+    {
+        var assembly = new AssemblyIdentity("fixtures");
+        var point = CliTypeIdentity.Named(assembly, "Fixtures", "Point", isValueType: true);
+        var formatted = CliTypeIdentity.Named(assembly, "Fixtures", "Formatted", isValueType: false);
+        var bare = CliTypeIdentity.Named(assembly, "Fixtures", "Bare", isValueType: false);
+        var addresses = new RecordingAddresses();
+        var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.StructMarshallingConstruct,
+            [CliValueKind.I4, CliValueKind.ManagedReference]);
+        var indices = new ConstructorIndices();
+        request = request with { FunctionIndices = indices };
+        var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(new StructMarshallingConstructIntrinsicEmitter(
+            new Source([], [
+                new(point, 41, 1000) { Constructor = Constructor(point), PayloadOffset = 8 },
+                new(formatted, 42, 2000) { Constructor = Constructor(formatted) },
+                new(bare, 43, 3000),
+            ]), addresses, new KeyedDispatchEmitter()));
+        var writer = new RecordingInstructionWriter();
+
+        emitter.Emit(request, writer);
+
+        var code = writer.ToInstructions();
+        Assert.Equal([41, 42], code.Where(i => i.Opcode == WasmOpcodes.I32Constant).Select(i => i.Operand.SignedValue));
+        Assert.Equal([8], addresses.Constants);
+        Assert.Equal([AddressOperation.Add], addresses.Operations);
+        Assert.Equal([100 + 41, 100 + 42], code.Where(i => i.Opcode == WasmOpcodes.Call).Select(i => (int)i.Operand.UnsignedValue));
+        Assert.Equal(2, code.Count(i => i.Opcode == WasmOpcodes.LocalGet &&
+            i.Operand.UnsignedValue == (uint)request.Local(1, CliValueKind.ManagedReference)));
+        Assert.Throws<ArgumentNullException>(() => new StructMarshallingConstructIntrinsicEmitter(null!, addresses, new KeyedDispatchEmitter()));
+        Assert.Throws<ArgumentNullException>(() => new StructMarshallingConstructIntrinsicEmitter(new Source([], []), null!, new KeyedDispatchEmitter()));
+        Assert.Throws<ArgumentNullException>(() => new StructMarshallingConstructIntrinsicEmitter(new Source([], []), addresses, null!));
+        Assert.Throws<ArgumentNullException>(() => emitter.Emit(null!, writer));
+        Assert.Throws<ArgumentNullException>(() => emitter.Emit(request, null!));
+
+        static MethodInstanceModel Constructor(CliTypeIdentity owner)
+        {
+            var signature = MethodSignatureModel.Create(CliValueKind.Void);
+            var fixtures = new AssemblyIdentity("fixtures");
+            return new(new MethodDefinitionModel(new EntityKey(fixtures, 0x06000001), new EntityKey(fixtures, 2),
+                ".ctor", false, signature, 0), owner, [], signature);
+        }
+    }
+
+    // A constructor's function index: 100 plus the type ID its owner has in the test.
+    private sealed class ConstructorIndices : IFunctionIndexResolver
+    {
+        public OptionalFunctionIndex ManagedThrowFunction => OptionalFunctionIndex.At(7);
+        public int Resolve(EntityKey method) => 0;
+        public int Resolve(string method) => 0;
+        public int Resolve(InteropImportKey import) => 0;
+        public int Resolve(MethodInstanceModel method) => method.DeclaringType.FullName == "Fixtures.Point" ? 141 : 142;
     }
 
     private sealed class Source(

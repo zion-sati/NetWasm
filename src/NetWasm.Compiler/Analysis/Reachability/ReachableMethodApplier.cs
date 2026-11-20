@@ -73,6 +73,9 @@ internal sealed class ReachableMethodApplier(
         session.State.RequiresTypeAttributes |= analysis.RequiresTypeAttributes;
         session.State.RequiresInterfaces |= analysis.RequiresInterfaces;
         session.State.RequiresMemberNames |= analysis.RequiresMemberNames;
+        session.State.RequiresManifestResources |= analysis.RequiresManifestResources;
+        session.State.RequiresAssemblyNames |= analysis.RequiresAssemblyNames;
+        session.State.RequiresAssemblyEnumeration |= analysis.RequiresAssemblyEnumeration;
         foreach (var type in analysis.RuntimeTypes)
         {
             session.AddRuntimeType(type);

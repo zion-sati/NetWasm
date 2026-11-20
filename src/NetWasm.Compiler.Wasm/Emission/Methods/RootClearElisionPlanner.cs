@@ -30,11 +30,16 @@ internal sealed class RootClearElisionPlanner(IStructuredBlockPredecessorReader 
         if (roots.SlotCount == 0) return result.ToImmutable();
         var all = Enumerable.Range(0, roots.SlotCount).ToImmutableHashSet();
         // A slot zero at the end of every ordinary predecessor is zero at a block's entry. A root
-        // frame starts with whatever earlier frames left, so nothing is known at the method's entry,
-        // at an opaque block's, or anywhere when the frame is entered inside a terminal arm.
+        // frame starts with whatever earlier frames left unless the method zeroes it on entry, so
+        // nothing is known at the method's entry otherwise, at an opaque block's, or anywhere when
+        // the frame is entered inside a terminal arm. A zeroed frame's entry still writes each
+        // authoritative argument into its slot.
+        var zeroedEntry = all.Except(context.AuthoritativeRootSlots
+            .Where(pair => pair.Key.Kind != RootSourceKind.Local).Select(pair => pair.Value));
         var entries = context.TerminalBranchValueFramePlacement is { Plan.DefersRootFrame: true }
             ? null
             : RootFactFlow.Solve(method, _predecessors.Read(method), ImmutableHashSet<int>.Empty,
+                context.RootFrameStartsZeroed ? zeroedEntry : ImmutableHashSet<int>.Empty,
                 (left, right) => left.Intersect(right), (left, right) => left.SetEquals(right),
                 (block, zero) => Transfer(block, zero, record: false));
         foreach (var (id, block) in method.Blocks)

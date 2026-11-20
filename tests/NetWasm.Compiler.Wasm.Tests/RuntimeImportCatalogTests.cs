@@ -108,6 +108,13 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeAllocationRunsEnabled,
             RuntimeAbi.RuntimeAllocateObjectFallback,
             RuntimeAbi.RuntimeTypeIsAssignable,
+            RuntimeAbi.RuntimeAllocateUninitializedValueArray,
+            RuntimeAbi.RuntimeRecordReferenceWrite,
+            RuntimeAbi.RuntimeRecordReferenceWrites,
+            RuntimeAbi.RuntimeGcObjectGeneration,
+            RuntimeAbi.RuntimeCollectWhenIdle,
+            RuntimeAbi.RuntimeCollectWhenQuiet,
+            RuntimeAbi.RuntimeGcCollectYoung,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));

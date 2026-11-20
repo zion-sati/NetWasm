@@ -14,6 +14,7 @@
     { "export": "allocation_slot", "preference": "Aggressive" },
     { "export": "gc_handle_new", "preference": "Aggressive" },
     { "export": "gc_handle_release", "preference": "Aggressive" },
+    { "export": "record_reference_write", "preference": "Aggressive" },
     { "export": "root_frame_enter", "preference": "Aggressive" },
     { "export": "root_frame_leave", "preference": "Aggressive" },
     { "export": "value_frame_enter", "preference": "Aggressive" },
@@ -23,7 +24,7 @@
   ],
   "staticNative": {
     "version": 1,
-    "features": ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory", "simd"],
+    "features": ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory", "simd", "exceptions"],
     "imports": [
       { "module": "netwasm.application.v1", "name": "netwasm.filter", "parameters": ["i32", "ptr", "ptr"], "results": ["i32"], "required": true },
       { "module": "netwasm.application.v1", "name": "netwasm.finalize", "parameters": ["ptr", "i32"], "results": ["i32"], "required": false },
@@ -47,7 +48,11 @@
       { "module": "$root", "name": "[thread-yield]", "parameters": [], "results": ["i32"], "required": false },
       { "module": "{prefix}|wasi:cli/exit@0.3", "name": "exit", "parameters": ["i32"], "results": [], "required": false },
       { "module": "{prefix}|wasi:cli/exit@0.3", "name": "exit-with-code", "parameters": ["i32"], "results": [], "required": false },
-      { "module": "{prefix}|wasi:random/random@0.3", "name": "get-random-u64", "parameters": [], "results": ["i64"], "required": false }
+      { "module": "{prefix}|wasi:random/random@0.3", "name": "get-random-u64", "parameters": [], "results": ["i64"], "required": false },
+      { "module": "{prefix}|wasi:clocks/system-clock@0.3", "name": "now", "parameters": ["ptr"], "results": [], "required": false },
+      { "module": "{prefix}|wasi:clocks/system-clock@0.3", "name": "get-resolution", "parameters": [], "results": ["i64"], "required": false },
+      { "module": "{prefix}|wasi:clocks/monotonic-clock@0.3", "name": "now", "parameters": [], "results": ["i64"], "required": false },
+      { "module": "{prefix}|wasi:clocks/monotonic-clock@0.3", "name": "get-resolution", "parameters": [], "results": ["i64"], "required": false }
     ]
   },
   "targets": {
@@ -60,7 +65,19 @@
         "libstandalonewasm-nocatch-memgrow.a",
         "libc.a",
         "libemmalloc.a",
-        "libclang_rt.builtins.a"
+        "libclang_rt.builtins.a",
+        "libc++-noexcept.a",
+        "libc++abi-noexcept.a"
+      ],
+      "exceptionSystemLibraries": [
+        "libc_optz.a",
+        "libstandalonewasm-memgrow.a",
+        "libc.a",
+        "libemmalloc.a",
+        "libclang_rt.builtins.a",
+        "libc++-wasmexcept.a",
+        "libc++abi-wasmexcept.a",
+        "libunwind-wasmexcept.a"
       ]
     },
     "wasm64": {
@@ -72,7 +89,19 @@
         "libstandalonewasm-nocatch-memgrow.a",
         "libc.a",
         "libemmalloc.a",
-        "libclang_rt.builtins.a"
+        "libclang_rt.builtins.a",
+        "libc++-noexcept.a",
+        "libc++abi-noexcept.a"
+      ],
+      "exceptionSystemLibraries": [
+        "libc_optz.a",
+        "libstandalonewasm-memgrow.a",
+        "libc.a",
+        "libemmalloc.a",
+        "libclang_rt.builtins.a",
+        "libc++-wasmexcept.a",
+        "libc++abi-wasmexcept.a",
+        "libunwind-wasmexcept.a"
       ]
     }
   }

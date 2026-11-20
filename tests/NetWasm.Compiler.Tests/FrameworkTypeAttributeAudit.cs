@@ -10,7 +10,7 @@ namespace NetWasm.Compiler.Tests;
 
 // Type-level metadata of NetWasm's implementation assemblies against .NET's, for every public type both define: the
 // TypeAttributes a program can read (serializable, sealed, abstract, layout, kind, BeforeFieldInit), the custom
-// attributes on the type, and the arguments of those whose values change behaviour or diagnostics. Compiler-written
+// attributes on the type, and the arguments of those whose values change behavior or diagnostics. Compiler-written
 // markers (nullability, ref safety and the like) are left out, and debugger and IntelliSense attributes are reported
 // as their own kind. One row per difference, sorted, so a recorded audit shows any change as a diff.
 internal static class FrameworkTypeAttributeAudit

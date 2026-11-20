@@ -18,6 +18,7 @@ NetWasmGC and CompactGC are Apache-2.0.
 | src/NetWasm.Sdk/** | LicenseRef-NetWasm-Community-1.0 |
 | src/NetWasm.Sdk.Pack/** | LicenseRef-NetWasm-Community-1.0 |
 | src/NetWasm.Toolchain/timezones/zoneinfo/** | public domain (IANA Time Zone Database) |
+| src/NetWasm.Toolchain/wit/deps/wasi-tls/** | Apache-2.0 WITH LLVM-exception (Wasmtime's wasi:tls draft WIT) |
 | src/NetWasm.Toolchain/** | LicenseRef-NetWasm-Community-1.0 |
 | src/NetWasm.Hosting.Build/** | LicenseRef-NetWasm-Community-1.0 |
 | tools/NetWasm.TimeZones/** | MIT |
@@ -55,6 +56,7 @@ NetWasmGC and CompactGC are Apache-2.0.
 | src/NetWasm.Runtime.Pack/** | MIT |
 | src/NetWasm.Runtime.Wasm32/** | MIT |
 | src/NetWasm.Runtime.Wasm64/** | MIT |
+| wit/netwasm-platform-1.0.0/deps/wasi-tls/** | Apache-2.0 WITH LLVM-exception (Wasmtime's wasi:tls draft WIT) |
 | wit/netwasm-*/** | MIT |
 | docs/** | MIT |
 | public documentation and distribution metadata | MIT |

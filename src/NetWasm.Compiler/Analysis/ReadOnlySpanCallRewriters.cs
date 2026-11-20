@@ -140,7 +140,7 @@ internal sealed class RvaPointerSpanRewriter(
             elementType.ContainsGenericParameters ||
             constructor.Signature.ParameterSignatureTypes is not
                 [{ Shape: CliTypeShape.UnmanagedPointer }, { StackKind: CliValueKind.I4 }] ||
-            !ReadOnlySpanDataResolver.TryGetPrimitiveSize(elementType, out var elementSize) ||
+            !ReadOnlySpanDataResolver.TryGetElementSize(elementType, out var elementSize) ||
             !field.Definition.IsStatic ||
             !field.Definition.IsInitOnly ||
             field.Definition.InitialData.IsDefaultOrEmpty ||

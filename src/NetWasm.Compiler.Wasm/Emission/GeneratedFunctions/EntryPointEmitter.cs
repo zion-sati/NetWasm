@@ -11,7 +11,7 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 internal sealed class EntryPointEmitter(
     ITargetLayout layouts,
     IRuntimeImportResolver runtimeImports,
-    IRuntimeStateInitializer runtimeInitialization,
+    IEntryRuntimeInitializer runtimeInitialization,
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
     IManagedTerminalTrapBoundaryEmitter terminalTraps,
     IGeneratedFunctionWriterFactory writers) : IEntryPointEmitter

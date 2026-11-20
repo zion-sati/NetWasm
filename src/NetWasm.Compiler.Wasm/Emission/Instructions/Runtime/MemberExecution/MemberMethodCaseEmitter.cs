@@ -2,16 +2,20 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Immutable;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 
@@ -19,7 +23,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 // receiver (a virtual one on the receiver's type), and the result becomes the call's.
 internal sealed class MemberMethodCaseEmitter(
     IMemberDescriptorLayout descriptors,
-    IMemberDescriptorCaseEmitter descriptorCases,
     IMemberArgumentCountCheckEmitter argumentCounts,
     IMemberArgumentEmitter arguments,
     IMemberReferenceCheckEmitter referenceChecks,
@@ -31,14 +34,16 @@ internal sealed class MemberMethodCaseEmitter(
     IStaticInitializationEmitter initialization,
     IMethodInitializationTriggerClassifier initializationTriggers,
     INullableTypeResolver nullableTypes,
-    ITypeLayoutProvider types,
+    IVirtualDispatchCasePlanner cases,
+    IKeyedDispatchEmitter keyedDispatch,
     IImplicitExceptionEmitter exceptions,
-    IAddressInstructionEmitter addresses) : IMemberMethodCaseEmitter
+    IAddressInstructionEmitter addresses,
+    IReferenceWriteBarrierEmitter writeBarrier) : IMemberMethodCaseEmitter
 {
+    private readonly IReferenceWriteBarrierEmitter _writeBarrier = writeBarrier ??
+        throw new ArgumentNullException(nameof(writeBarrier));
     private readonly IMemberDescriptorLayout _descriptors = descriptors ??
         throw new ArgumentNullException(nameof(descriptors));
-    private readonly IMemberDescriptorCaseEmitter _descriptorCases = descriptorCases ??
-        throw new ArgumentNullException(nameof(descriptorCases));
     private readonly IMemberArgumentCountCheckEmitter _argumentCounts = argumentCounts ??
         throw new ArgumentNullException(nameof(argumentCounts));
     private readonly IMemberArgumentEmitter _arguments = arguments ??
@@ -61,31 +66,30 @@ internal sealed class MemberMethodCaseEmitter(
         throw new ArgumentNullException(nameof(initializationTriggers));
     private readonly INullableTypeResolver _nullableTypes = nullableTypes ??
         throw new ArgumentNullException(nameof(nullableTypes));
-    private readonly ITypeLayoutProvider _types = types ??
-        throw new ArgumentNullException(nameof(types));
+    private readonly IVirtualDispatchCasePlanner _cases = cases ??
+        throw new ArgumentNullException(nameof(cases));
+    private readonly IKeyedDispatchEmitter _keyedDispatch = keyedDispatch ??
+        throw new ArgumentNullException(nameof(keyedDispatch));
     private readonly IImplicitExceptionEmitter _exceptions = exceptions ??
         throw new ArgumentNullException(nameof(exceptions));
     private readonly IAddressInstructionEmitter _addresses = addresses ??
         throw new ArgumentNullException(nameof(addresses));
 
-    public int EmitCases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan)
+    public ImmutableArray<MemberCase> Cases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(plan);
-        int descriptorLocal = request.Local(0, CliValueKind.ManagedReference);
         int receiverLocal = request.Local(1, CliValueKind.ManagedReference);
         int argumentsLocal = request.Local(2, CliValueKind.ManagedReference);
         var cases = plan.Methods.Values
             .OrderBy(entry => entry.Descriptor.CanonicalName, StringComparer.Ordinal)
             .ToArray();
-        foreach (var execution in cases)
+        return [.. cases.Select(execution => new MemberCase(_descriptors.GetDescriptorAddress(execution.Descriptor), () => EmitCase(execution)))];
+
+        void EmitCase(MemberMethodExecutionPlan execution)
         {
             MethodInstanceModel method = execution.Descriptor;
-            _descriptorCases.Open(
-                code,
-                descriptorLocal,
-                _descriptors.GetDescriptorAddress(method));
             _argumentCounts.Check(
                 code,
                 argumentsLocal,
@@ -93,8 +97,7 @@ internal sealed class MemberMethodCaseEmitter(
             if (IsConstructor(method))
             {
                 EmitConstructorCall(request, code, argumentsLocal, method);
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-                continue;
+                return;
             }
             if (!method.Definition.IsStatic)
             {
@@ -123,9 +126,7 @@ internal sealed class MemberMethodCaseEmitter(
                     execution,
                     method.Signature.ReturnSignatureType);
             }
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
         }
-        return cases.Length;
     }
 
     private static bool IsConstructor(MethodInstanceModel method) =>
@@ -175,37 +176,31 @@ internal sealed class MemberMethodCaseEmitter(
         MemberMethodExecutionPlan execution,
         CliTypeIdentity resultType)
     {
-        foreach (var target in execution.Targets)
-        {
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)receiverLocal)));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Load,
-                WasmInstructionOperand.Memory(2, 0)));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(
-                    _types.GetObjectLayout(target.ReceiverType).TypeId)));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitMethodCall(
+        // The receiver's type id picks the target, through the runs of type ids that share one, as a virtual call does.
+        var dispatchCases = _cases.Plan(execution.Targets, execution.Targets);
+        var typeIdLocal = request.Instruction.Context.NumericTemporaryI4;
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)receiverLocal)));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Load,
+            WasmInstructionOperand.Memory(2, 0)));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)typeIdLocal)));
+        _keyedDispatch.Emit(code, new(
+            typeIdLocal,
+            wide: false,
+            [.. dispatchCases.Select(dispatchCase => new KeyRange(dispatchCase.LowTypeId, dispatchCase.HighTypeId))],
+            index => EmitMethodCall(
                 request,
                 code,
                 receiverLocal,
                 argumentsLocal,
-                target.Method,
+                dispatchCases[index].Target.Method,
                 resultType,
-                target.ReceiverType);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        }
-        _exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Instruction.Context.ManagedThrowFunction);
-        for (var index = 0; index < execution.Targets.Length; index++)
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        }
+                dispatchCases[index].Target.ReceiverType),
+            () => _exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Instruction.Context.ManagedThrowFunction)));
     }
 
     private void EmitMethodCall(
@@ -267,6 +262,8 @@ internal sealed class MemberMethodCaseEmitter(
         }
         if (boxedResult)
         {
+            // The callee wrote its result into the box, which a collection during the call may have made old.
+            _writeBarrier.Emit(request.Instruction, code, resultLocal, resultType);
             return;
         }
         if (resultType.StackKind == CliValueKind.Void)

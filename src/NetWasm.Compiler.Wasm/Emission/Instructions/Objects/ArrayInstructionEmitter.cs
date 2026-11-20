@@ -6,6 +6,7 @@ using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Emission.Arrays;
@@ -25,9 +26,14 @@ internal sealed class ArrayInstructionEmitter(
     IArrayLengthAdapter lengths,
     IArrayIndexAdapter indexes,
     IArrayElementAddressEmitter elementAddresses,
-    IStaticFieldLayoutProvider staticFields) :
+    IStaticFieldLayoutProvider staticFields,
+    IReferenceWriteBarrierEmitter writeBarrier,
+    IReferenceWriteAddressRememberer addressRememberer) :
     InstructionCommandProvider
 {
+    // What stelem.ref stores: a reference, whatever the array's element type.
+    private static readonly CliTypeIdentity ObjectReference = CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference);
+
     // An initializer up to this size is stored as constants, eight bytes at a time. A larger one is
     // one memory.copy from its field's static data: Wasmtime runs memory.copy out of line, which a
     // few stores beat.
@@ -138,7 +144,10 @@ internal sealed class ArrayInstructionEmitter(
             request.Context,
             arraySlot,
             CliValueKind.ManagedReference);
-        if (!request.Context.ArrayMetadata.Plan.CheckedAccesses.Contains(request.Instruction.Offset))
+        // A length its run already read needs neither the load nor the null check the run's first access made.
+        var runs = request.Context.ArrayLengthRuns;
+        var reused = runs.Plan.Reuses.TryGetValue(request.Instruction.Offset, out var reusedSlot);
+        if (!request.Context.ArrayMetadata.Plan.CheckedAccesses.Contains(request.Instruction.Offset) && !reused)
         {
             EmitNullCheck(code, arrayLocal, request.Context.ManagedThrowFunction);
         }
@@ -147,10 +156,20 @@ internal sealed class ArrayInstructionEmitter(
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                 WasmInstructionOperand.Unsigned((uint)request.Context.ArrayMetadata.Slots[slot].Length)));
         }
+        else if (reused)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)runs.Locals[reusedSlot])));
+        }
         else
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(objects.ArrayLengthOffset))));
+            if (runs.Plan.Loads.TryGetValue(request.Instruction.Offset, out var runSlot))
+            {
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
+                    WasmInstructionOperand.Unsigned((uint)runs.Locals[runSlot])));
+            }
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,
@@ -213,12 +232,14 @@ internal sealed class ArrayInstructionEmitter(
             arrayLocal,
             indexLocal,
             layouts.Target.ObjectReferenceSize);
+        addressRememberer.Remember(request, code, ObjectReference);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
         ManagedMemoryEmitter.EmitStoreBySize(
             code,
             layouts.Target,
             0,
             layouts.Target.ObjectReferenceSize);
+        writeBarrier.Emit(request, code, ObjectReference);
         request.Stack.RemoveRange(arraySlot, 3);
     }
 
@@ -419,6 +440,7 @@ internal sealed class ArrayInstructionEmitter(
             arrayLocal,
             indexLocal,
             elementSize);
+        addressRememberer.Remember(request, code, elementType);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
         if (elementType.StackKind == CliValueKind.ValueType)
         {
@@ -435,6 +457,7 @@ internal sealed class ArrayInstructionEmitter(
                 elementType,
                 elementSize, scratch: request.Context.VectorScratch);
         }
+        writeBarrier.Emit(request, code, elementType);
         request.Stack.RemoveRange(arraySlot, 3);
     }
 

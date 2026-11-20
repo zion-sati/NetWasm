@@ -11,7 +11,6 @@ internal interface IStackTraceReachabilityRootProvider
 {
     ReachabilityRoots Provide(
         bool stackTraces,
-        bool typeNames,
         ITypeFinder types,
         IFieldRepository fields,
         IMethodRepository methods);

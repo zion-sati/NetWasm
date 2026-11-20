@@ -15,8 +15,8 @@ that can terminate parallel compilation with `SIGSEGV`; Microsoft shipped the
 [fix](https://github.com/dotnet/runtime/pull/127843) in runtime 10.0.11.
 
 Linux distributions package only the 10.0.1xx SDK (for example `pacman -S
-dotnet-sdk` on Arch, `dnf install dotnet-sdk-10.0` on Fedora and RHEL), and
-its NuGet cannot restore a `netwasm0.1` project. On those distributions,
+dotnet-sdk` on Arch, `dnf install dotnet-sdk-10.0` on Fedora and RHEL), which
+NetWasm does not support. On those distributions,
 install Microsoft's SDK with the
 [install script](https://learn.microsoft.com/dotnet/core/install/linux-scripted-manual)
 instead. A NetWasm project built with an older SDK stops with `NWSDK086`.
@@ -35,7 +35,18 @@ NetWasm accepts SDK 10.0.303 or newer, including .NET 11; to compile C# 15
 source, use the .NET 11 SDK version recorded in
 [`eng/csharp15-toolchain.json`](../eng/csharp15-toolchain.json). An isolated
 .NET 11 SDK installation is sufficient; NetWasm does not also require the
-.NET 10 SDK. The target framework remains `netwasm0.1`.
+.NET 10 SDK. The target framework is `net10.0-netwasm` with either SDK.
+
+`net10.0-netwasm` is .NET's own target framework on the `netwasm` platform, as
+`net10.0-browser` is for Blazor, so NuGet takes a package's `net10.0`, `net9.0`,
+`net8.0` or .NET Standard build, newest first. The project still compiles
+against NetWasm's framework, NetWasm.App, not Microsoft.NETCore.App. The
+platform version, 1.0, changes only when NetWasm's platform contract breaks.
+Older projects target `netwasm0.1`; it still builds, with warning
+`NWSDK105`, and is removed in a later release. A `net10.0-netwasm` project
+cannot use a package that ships only `netwasm0.1` assets, because NuGet cannot
+read that framework back from its assets file; such a package needs a
+`net10.0-netwasm` or `net8.0` and later build.
 
 SDK selection does not change NetWasm's `float`/`double` to `decimal`
 rounding rule. Even with the .NET 10 SDK and C# 14 or earlier, NetWasm selects
@@ -78,9 +89,11 @@ dotnet run
 
 The template prints `42`. Debug builds include managed stack traces by default.
 Release omits their instrumentation and method-symbols sidecar unless
-`NetWasmManagedStackTrace=true`, and reads type names as `type#<id>` unless
-`NetWasmTypeNames=true`, which looking a type up by name, as `Type.GetType(string)`
-does, needs (see [type names](support-status.md#type-names)).
+`NetWasmManagedStackTrace=true`. Type names are on in every configuration: a
+program that reads one loads the names from its type-symbols sidecar, and a
+program that reads none pays nothing for them. `NetWasmTypeNames=false` opts
+out; names then read `type#<id>` and looking a type up by name, as
+`Type.GetType(string)` does, throws (see [type names](support-status.md#type-names)).
 Structured rich failure reporting also defaults on in Debug and off in Release,
 with the independent `NetWasmStructuredDiagnostics` switch. See
 [exception profiles and their non-desktop boundaries](diagnostics.md#managed-exceptions-and-diagnostic-profiles).
@@ -104,10 +117,11 @@ calls to `NoInlining` methods that an earlier round found empty, which makes som
 micro-benchmarks up to three times faster. The published benchmarks build with
 it, as a CI release build can afford to.
 
-NetWasm places nothing in the first KiB of memory, so at every level that runs
-`wasm-opt` it lets Binaryen assume that memory is unused, as Emscripten's optimized
-builds do. Binaryen then folds a constant added to an address into the load or
-store that uses it. Set `NetWasmOptimizerLowMemoryUnused=false` to turn that off.
+NetWasm places nothing in the first KiB of memory, so it can let Binaryen assume
+that memory is unused, as Emscripten's optimized builds do. Binaryen then folds a
+constant added to an address into the load or store that uses it. It is off by
+default, as it measured no faster overall; set
+`NetWasmOptimizerLowMemoryUnused=true` to turn it on.
 
 An application or runnable test project restores one host-tools package. A
 plain or dual-target library does not; its consumer selects the host package.
@@ -255,7 +269,7 @@ the project needs no package for it:
 <Project Sdk="NetWasm.Sdk/<version>">
   <PropertyGroup>
     <OutputType>Component</OutputType>
-    <TargetFramework>netwasm0.1</TargetFramework>
+    <TargetFramework>net10.0-netwasm</TargetFramework>
     <NetWasmWorld>service</NetWasmWorld>
   </PropertyGroup>
 </Project>
@@ -355,8 +369,8 @@ trimming removes it, and so do the code paths that an assembly's embedded
 logging leaves the program).
 
 NetWasm's defaults include no more than Blazor WebAssembly's:
-`UseSystemResourceKeys` is true (NetWasm deploys no manifest resources, so
-libraries report resource keys), `Http3Support` and `EnableUnsafeUTF7Encoding`
+`UseSystemResourceKeys` is true (libraries report resource keys; set it to
+false for their full messages), `Http3Support` and `EnableUnsafeUTF7Encoding`
 are false, and `DebuggerSupport` is false outside Debug builds.
 `UseSizeOptimizedLinq` follows the optimization preset: false at `O1`, `O2` and
 `O3`, which take LINQ's speed-optimized iterators, and true otherwise, including
@@ -454,7 +468,14 @@ installed. A command component also runs in any WASI 0.3 host, such as
 wasmtime run --dir . publish/local/HelloNetWasm.wasm first second
 ```
 
-Add `-Shttp -Sinherit-network` for a program that uses `HttpClient`.
+Add `-Shttp -Sinherit-network` for a program that uses `HttpClient`, and
+`-Sinherit-network -Sallow-ip-name-lookup -Stls` for one that uses sockets
+with TLS: `SslStream`, `SocketsHttpHandler`, `ClientWebSocket`, `SmtpClient` or
+`WebRequest`, which can reach TLS and so import `wasi:tls` even when a run uses
+none. Wasmtime's `wasi:tls` trusts only its bundled public roots. For a host
+without `wasi:tls`, set `<NetWasmTlsSupport>false</NetWasmTlsSupport>`: the
+program then imports no `wasi:tls`, and `SslStream` throws
+`PlatformNotSupportedException`.
 
 Publish the browser-selected deployment instead:
 
@@ -487,7 +508,7 @@ dotnet build
 dotnet pack -c Release
 ```
 
-The library targets `netwasm0.1` and `net10.0`. The consuming application
+The library targets `net10.0-netwasm` and `net10.0`. The consuming application
 selects its host and capabilities.
 
 ## 6. Generate C# bindings from WIT when needed

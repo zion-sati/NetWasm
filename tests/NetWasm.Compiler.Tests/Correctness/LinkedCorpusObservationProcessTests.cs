@@ -33,6 +33,35 @@ public sealed class LinkedCorpusObservationProcessTests
         Assert.Same(typeNames, dependencies.TypeNames);
     }
 
+    // What the program wrote to standard error before it trapped becomes the detail of each trap that has none;
+    // values, exceptions and traps that say what they are keep theirs. A long report keeps its end.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AProgramsStandardErrorExplainsItsTraps(bool longReport)
+    {
+        var report = longReport ? new string('x', 5000) + "end" : "NetWasmGC: a reference was stored without its write barrier";
+        var explained = new OracleObservation(OracleObservationKind.Trap, null, null, 0) { Detail = "out of bounds" };
+        var dependencies = new Dependencies
+        {
+            ProcessResult = new(QualifiedProcessCompletion.Exited, 0, "", "\n" + report + "\n", TimeSpan.Zero),
+            Response = new(ImmutableDictionary<int, OracleObservation>.Empty
+                .Add(0, new(OracleObservationKind.Trap, null, null, 0))
+                .Add(1, new(OracleObservationKind.Value, 42, null, 0))
+                .Add(2, explained), "module", "manifest"),
+        };
+
+        var result = CreateProcess(dependencies).Observe(
+            LinkedCorpusObservationResponseParserTests.CreateRequest(), ImmutableDictionary<int, string>.Empty,
+            Environment, TestContext.Current.CancellationToken);
+
+        var expected = longReport ? "..." + report[^4000..] : report;
+        Assert.Equal(expected, result.Observations[0].Detail);
+        Assert.Same(dependencies.Response.Observations[1], result.Observations[1]);
+        Assert.Same(explained, result.Observations[2]);
+        Assert.Equal(("module", "manifest"), (result.ModuleSha256, result.ManifestSha256));
+    }
+
     [Theory]
     [InlineData(1, 0, 1)]
     [InlineData(2, 1, null)]
@@ -110,7 +139,7 @@ public sealed class LinkedCorpusObservationProcessTests
         public List<string> Calls { get; } = [];
         public string? FailureStage { get; init; }
         public InvalidOperationException Failure { get; } = new("sentinel");
-        public LinkedCorpusObservationResult Response { get; } = new(
+        public LinkedCorpusObservationResult Response { get; init; } = new(
             ImmutableDictionary<int, OracleObservation>.Empty, "module", "manifest");
         public QualifiedProcessResult ProcessResult { get; init; } =
             new(QualifiedProcessCompletion.Exited, 0, "", "", TimeSpan.Zero);

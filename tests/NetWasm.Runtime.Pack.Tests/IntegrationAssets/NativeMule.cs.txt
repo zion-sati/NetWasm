@@ -5,6 +5,11 @@ namespace NativeMule;
 
 public static unsafe class EntryPoint
 {
+    // A library registers a resolver as it starts, as libraries that probe for their native library do. The
+    // P/Invokes below still reach the linked archive.
+    static EntryPoint() =>
+        NativeLibrary.SetDllImportResolver(typeof(EntryPoint).Assembly, static (name, assembly, path) => IntPtr.Zero);
+
     [DllImport("mule", EntryPoint = "native_mule_probe", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
     private static extern int Probe();
     [DllImport("mule", EntryPoint = "native_mule_data_end", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
@@ -68,6 +73,17 @@ public static unsafe class EntryPoint
             if (Pointer(grown) != grown || Buffer(grown, 4) != 40 || grown[6 * 1024 * 1024 - 1] != 71) return -15;
         }
         finally { NativeMemory.Free(grown); }
+        // A library that is not there, as .NET answers for one.
+        if (NativeLibrary.TryLoad("netwasm-absent-library", out var handle) || handle != IntPtr.Zero) return -16;
+        try { NativeLibrary.Load("netwasm-absent-library"); return -17; } catch (DllNotFoundException) { }
+        try
+        {
+            NativeLibrary.SetDllImportResolver(typeof(EntryPoint).Assembly, static (name, assembly, path) => IntPtr.Zero);
+            return -18;
+        }
+        catch (InvalidOperationException) { }
+        try { NativeLibrary.SetDllImportResolver(null!, static (name, assembly, path) => IntPtr.Zero); return -19; }
+        catch (ArgumentNullException) { }
         return 42;
     }
 }

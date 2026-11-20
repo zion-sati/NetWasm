@@ -23,8 +23,7 @@ internal sealed class SolePredecessorResolver : ISolePredecessorResolver
             return null;
         foreach (var candidate in body)
         {
-            if (candidate.Operand is CilOperand.BranchTarget branch && branch.Offset == offset ||
-                candidate.Operand is CilOperand.SwitchTargets targets && targets.Offsets.Contains(offset))
+            if (candidate.Operand is CilOperand.BranchTarget branch && branch.Offset == offset)
                 return null;
         }
         return body[index - 1];

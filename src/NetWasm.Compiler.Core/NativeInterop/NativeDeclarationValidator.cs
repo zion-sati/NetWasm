@@ -38,7 +38,9 @@ public sealed class NativeDeclarationValidator : INativeDeclarationValidator
         {
             throw Unsupported(method, "A native declaration cannot also be a host or component boundary.");
         }
-        if (import.IsVarArg || import.HasMarshalling)
+        // Under disabled runtime marshalling [MarshalAs] has no effect, as on desktop .NET.
+        if (import.IsVarArg || import.TranslatesHResult ||
+            import.HasMarshalling && definition.NativeMarshalling == NativeMarshallingRules.Runtime)
         {
             throw Unsupported(method, "Native varargs and runtime marshalling are unsupported.");
         }
@@ -60,8 +62,11 @@ public sealed class NativeDeclarationValidator : INativeDeclarationValidator
                 $"The native import's {unsupported}; a native import is called with the C ABI: " +
                 "Winapi, Cdecl, StdCall or ThisCall, with SuppressGCTransition or MemberFunction.");
         }
+        // CharSet, BestFitMapping and ThrowOnUnmappableChar shape only the char and string marshalling
+        // NetWasm does not have, so a signature it accepts is the same with them, as on desktop .NET.
         if ((import.Attributes & ~(MethodImportAttributes.CallingConventionMask |
-            MethodImportAttributes.ExactSpelling)) != 0)
+            MethodImportAttributes.ExactSpelling | MethodImportAttributes.CharSetMask |
+            MethodImportAttributes.BestFitMappingMask | MethodImportAttributes.ThrowOnUnmappableCharMask)) != 0)
         {
             throw Unsupported(method,
                 "Only the C ABI with no additional native import semantics is supported.");

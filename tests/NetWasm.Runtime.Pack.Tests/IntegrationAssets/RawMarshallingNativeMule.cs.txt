@@ -1,0 +1,764 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+internal sealed class MuleSafeHandle : SafeHandle
+{
+    // Runtime marshalling makes returned and out handles through this constructor, whatever its accessibility.
+    private MuleSafeHandle() : base(IntPtr.Zero, ownsHandle: true)
+    {
+    }
+
+    internal MuleSafeHandle(nint value, bool ownsHandle)
+        : base(IntPtr.Zero, ownsHandle)
+    {
+        SetHandle(value);
+    }
+
+    public override bool IsInvalid => handle == IntPtr.Zero;
+
+    protected override bool ReleaseHandle() => Native.ReleaseHandle(handle) == 42;
+}
+
+internal sealed class MuleCriticalHandle : CriticalHandle
+{
+    private MuleCriticalHandle() : base(IntPtr.Zero)
+    {
+    }
+
+    public override bool IsInvalid => handle == IntPtr.Zero;
+
+    internal nint Value => handle;
+
+    protected override bool ReleaseHandle() => Native.ReleaseHandle(handle) == 42;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct MulePoint
+{
+    public int X;
+    public short Y;
+}
+
+// Structs that hold a bool or char, which runtime marshalling passes as their native layout.
+internal struct LayoutFlagged
+{
+    public int A;
+    public bool B;
+    public int C;
+}
+
+internal struct LayoutFlag
+{
+    public bool B;
+}
+
+internal struct LayoutAnsiPair
+{
+    public byte X;
+    public char C;
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct LayoutWidePair
+{
+    public byte X;
+    public char C;
+}
+
+internal struct LayoutByteFlag
+{
+    public int A;
+    [MarshalAs(UnmanagedType.U1)]
+    public bool B;
+}
+
+internal struct LayoutOuter
+{
+    public LayoutFlagged Inner;
+    public bool Flag;
+}
+
+// Only native code writes these fields: a struct result.
+#pragma warning disable CS0649
+internal struct LayoutMeasure
+{
+    public double D;
+    public bool B;
+}
+#pragma warning restore CS0649
+
+internal struct LayoutPointerFlag
+{
+    public nint P;
+    public bool B;
+}
+
+// A fixed buffer of UTF-16 chars, which desktop .NET copies whole into the native copy and back.
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal unsafe struct LayoutWideBuffer
+{
+    public int A;
+    public fixed char Text[3];
+}
+
+internal enum MuleKind
+{
+    None,
+    First,
+}
+
+// Raw P/Invokes, which desktop .NET's runtime marshalling passes: handles, HandleRefs and pinned arrays.
+internal static class Native
+{
+    [DllImport("mule", EntryPoint = "native_mule_layout_flagged_sum")]
+    internal static extern int FlaggedSum(LayoutFlagged value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_flag_value")]
+    internal static extern int FlagValue(LayoutFlag value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_ansi_pair_sum")]
+    internal static extern int AnsiPairSum(LayoutAnsiPair value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_wide_pair_sum")]
+    internal static extern int WidePairSum(LayoutWidePair value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_byte_flag_sum")]
+    internal static extern int ByteFlagSum(LayoutByteFlag value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_outer_sum")]
+    internal static extern int OuterSum(LayoutOuter value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_flagged_make")]
+    internal static extern LayoutFlagged MakeFlagged(int a, int b);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_flag_make")]
+    internal static extern LayoutFlag MakeFlag(int b);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_measure_make")]
+    internal static extern LayoutMeasure MakeMeasure(double d, int b);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_flagged_bump")]
+    internal static extern void BumpFlagged(ref LayoutFlagged value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_ansi_pair_set")]
+    internal static extern void SetAnsiPair(ref LayoutAnsiPair value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_ansi_pair_fill")]
+    internal static extern void FillAnsiPair(out LayoutAnsiPair value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_pointer_flag_sum")]
+    internal static extern int PointerFlagSum(LayoutPointerFlag value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_wide_buffer_sum")]
+    internal static extern int WideBufferSum(LayoutWideBuffer value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_wide_buffer_bump")]
+    internal static extern void BumpWideBuffer(ref LayoutWideBuffer value);
+
+    [DllImport("mule", EntryPoint = "native_mule_layout_pointer_flag_make")]
+    internal static extern LayoutPointerFlag MakePointerFlag(nint p, int b);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_reset")]
+    internal static extern void ResetHandles();
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_borrow")]
+    internal static extern int Borrow(MuleSafeHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_borrow")]
+    internal static extern int BorrowCritical(MuleCriticalHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_borrow")]
+    internal static extern int BorrowReference(HandleRef handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_pair")]
+    internal static extern int Pair(MuleSafeHandle first, MuleSafeHandle second);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_release")]
+    internal static extern int ReleaseHandle(nint handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_borrow_count")]
+    internal static extern int BorrowCount();
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_release_count")]
+    internal static extern int ReleaseCount();
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_replacement_release_count")]
+    internal static extern int ReplacementReleaseCount();
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_create")]
+    internal static extern MuleSafeHandle Create();
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_create")]
+    internal static extern MuleCriticalHandle CreateCritical();
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_open")]
+    internal static extern int Open(out MuleSafeHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_open_failed")]
+    internal static extern int OpenFailed(out MuleSafeHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_open")]
+    internal static extern int OpenCritical(out MuleCriticalHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_replace")]
+    internal static extern int Replace(ref MuleSafeHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_keep")]
+    internal static extern int Keep(ref MuleSafeHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_handle_replace")]
+    internal static extern int ReplaceCritical(ref MuleCriticalHandle handle);
+
+    [DllImport("mule", EntryPoint = "native_mule_buffer")]
+    internal static extern int Buffer(byte[]? bytes, nuint count);
+
+    [DllImport("mule", EntryPoint = "native_mule_array_is_null")]
+    internal static extern int IsNull(int[]? values);
+
+    [DllImport("mule", EntryPoint = "native_mule_array_fill")]
+    internal static extern void Fill(int[] values, int count);
+
+    [DllImport("mule", EntryPoint = "native_mule_array_fill")]
+    internal static extern void FillKinds(MuleKind[] values, int count);
+
+    [DllImport("mule", EntryPoint = "native_mule_array_points")]
+    internal static extern int Points(MulePoint[] points, int count);
+
+    [DllImport("mule", EntryPoint = "native_mule_pointer_advance")]
+    internal static extern unsafe int Advance(ref byte* cursor);
+
+    [DllImport("mule", EntryPoint = "native_mule_raw_function")]
+    internal static extern unsafe void* Function(int which);
+
+    [DllImport("mule", EntryPoint = "native_mule_int_echo")]
+    internal static extern int BoolIn(bool value);
+
+    [DllImport("mule", EntryPoint = "native_mule_int_echo")]
+    internal static extern bool BoolResult(int value);
+
+    [DllImport("mule", EntryPoint = "native_mule_byte_in")]
+    internal static extern int ByteBoolIn([MarshalAs(UnmanagedType.U1)] bool value);
+
+    [DllImport("mule", EntryPoint = "native_mule_byte_echo")]
+    [return: MarshalAs(UnmanagedType.U1)]
+    internal static extern bool ByteBoolResult(int value);
+
+    [DllImport("mule", EntryPoint = "native_mule_byte_in")]
+    internal static extern int AnsiCharIn(char value);
+
+    [DllImport("mule", EntryPoint = "native_mule_byte_echo")]
+    internal static extern char AnsiCharResult(int value);
+
+    [DllImport("mule", EntryPoint = "native_mule_byte_in", CharSet = CharSet.Auto)]
+    internal static extern int AutoCharIn(char value);
+
+    [DllImport("mule", EntryPoint = "native_mule_short_in", CharSet = CharSet.Unicode)]
+    internal static extern int WideCharIn(char value);
+
+    [DllImport("mule", EntryPoint = "native_mule_short_echo", CharSet = CharSet.Unicode)]
+    internal static extern char WideCharResult(int value);
+
+    [DllImport("mule", EntryPoint = "native_mule_short_in")]
+    internal static extern int U2CharIn([MarshalAs(UnmanagedType.U2)] char value);
+
+    [DllImport("mule", EntryPoint = "native_mule_int_bump")]
+    internal static extern void BumpBool(ref bool value);
+
+    [DllImport("mule", EntryPoint = "native_mule_int_read")]
+    internal static extern int ReadOutBool(out bool value);
+
+    [DllImport("mule", EntryPoint = "native_mule_byte_bump")]
+    internal static extern void BumpAnsiChar(ref char value);
+
+    [DllImport("mule", EntryPoint = "native_mule_short_bump", CharSet = CharSet.Unicode)]
+    internal static extern void BumpWideChar(ref char value);
+
+    [DllImport("mule", EntryPoint = "native_mule_int_echo")]
+    internal static extern int SameInt([MarshalAs(UnmanagedType.I4)] int value);
+
+    [DllImport("mule", EntryPoint = "native_mule_text_sum")]
+    internal static extern int TextSum(string text);
+
+    [DllImport("mule", EntryPoint = "native_mule_text_sum", CharSet = CharSet.Auto)]
+    internal static extern int AutoTextSum(string text);
+
+    [DllImport("mule", EntryPoint = "native_mule_text_sum")]
+    internal static extern int Utf8TextSum([MarshalAs(UnmanagedType.LPUTF8Str)] string text);
+
+    [DllImport("mule", EntryPoint = "native_mule_wide_sum", CharSet = CharSet.Unicode)]
+    internal static extern int WideSum(string text);
+
+    [DllImport("mule", EntryPoint = "native_mule_wide_sum")]
+    internal static extern int LPWStrSum([MarshalAs(UnmanagedType.LPWStr)] string text);
+
+    [DllImport("mule", EntryPoint = "native_mule_text_poke")]
+    internal static extern void PokeText(string text);
+
+    [DllImport("mule", EntryPoint = "native_mule_wide_poke", CharSet = CharSet.Unicode)]
+    internal static extern void PokeWide(string text);
+
+    [DllImport("mule", EntryPoint = "native_mule_wide_sum")]
+    internal static extern unsafe int WideSumPointer(char* text);
+
+    [DllImport("mule", EntryPoint = "native_mule_text_name")]
+    internal static extern string? TextName(int variant);
+
+    [DllImport("mule", EntryPoint = "native_mule_text_name")]
+    [return: MarshalAs(UnmanagedType.LPUTF8Str)]
+    internal static extern string? Utf8Name(int variant);
+
+    [DllImport("mule", EntryPoint = "native_mule_wide_name", CharSet = CharSet.Unicode)]
+    internal static extern string? WideName(int variant);
+
+    [DllImport("mule", EntryPoint = "native_mule_allocate")]
+    internal static extern IntPtr Allocate(int size);
+
+    [DllImport("mule", EntryPoint = "native_mule_release")]
+    internal static extern int Release(IntPtr block, int size);
+
+    [DllImport("mule", EntryPoint = "native_mule_point_scale")]
+    internal static extern void Scale(ref MulePoint point, int factor);
+}
+
+public static class EntryPoint
+{
+    private const nint HandleValue = 0x1234;
+    private const nint ReplacementValue = 0x5678;
+
+    [DllImport("mule", EntryPoint = "native_mule_probe")]
+    private static extern int Probe();
+
+    public static int Run(int input)
+    {
+        if (Probe() != 180)
+        {
+            return -1;
+        }
+
+        return BorrowAndRelease() ? NullAndClosedRejectBeforeTheCall() ? FailedSecondArgumentReleasesTheFirst() ?
+            ReturnedHandles() ? OutHandles() ? ReplacedHandle() ? KeptHandle() ? CriticalHandles() ?
+            HandleReferences() ? PinnedArrays() ? ByReferenceValues() ? BooleansAndCharacters() ? Strings() ?
+            NativeLayoutStructs() ? FunctionPointerCalls() ? StringResultsAndNativeMemory() ? 42 : -17 : -16 : -15 :
+            -14 : -13 : -12 : -11 : -10 : -9 : -8 : -7 : -6 : -5 : -4 : -3 : -2;
+    }
+
+    private static bool BorrowAndRelease()
+    {
+        Native.ResetHandles();
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        if (Native.Borrow(handle) != 42 || Native.BorrowCount() != 1 || Native.ReleaseCount() != 0)
+        {
+            return false;
+        }
+
+        handle.Dispose();
+        return Native.ReleaseCount() == 1;
+    }
+
+    // Runtime marshalling rejects a null SafeHandle with ArgumentNullException, where LibraryImport's generated code
+    // throws NullReferenceException.
+    private static bool NullAndClosedRejectBeforeTheCall()
+    {
+        Native.ResetHandles();
+        var rejectedNull = false;
+        try
+        {
+            Native.Borrow(null!);
+        }
+        catch (ArgumentNullException error) when (error.ParamName == "pHandle")
+        {
+            rejectedNull = true;
+        }
+
+        var closed = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        closed.Dispose();
+        var rejectedClosed = false;
+        try
+        {
+            Native.Borrow(closed);
+        }
+        catch (ObjectDisposedException)
+        {
+            rejectedClosed = true;
+        }
+
+        return rejectedNull && rejectedClosed && Native.BorrowCount() == 0 && Native.ReleaseCount() == 1;
+    }
+
+    // The first handle was borrowed when the second failed, so the stub releases it: disposing it then releases the
+    // native handle at once.
+    private static bool FailedSecondArgumentReleasesTheFirst()
+    {
+        Native.ResetHandles();
+        var first = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        var closed = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        closed.Dispose();
+        try
+        {
+            Native.Pair(first, closed);
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        first.Dispose();
+        return Native.BorrowCount() == 0 && Native.ReleaseCount() == 2;
+    }
+
+    private static bool ReturnedHandles()
+    {
+        Native.ResetHandles();
+        var handle = Native.Create();
+        if (handle.IsInvalid || handle.IsClosed || handle.DangerousGetHandle() != HandleValue || Native.Borrow(handle) != 42)
+        {
+            return false;
+        }
+
+        handle.Dispose();
+        return Native.ReleaseCount() == 1;
+    }
+
+    // An out handle is made before the call and takes the value the native function writes, or keeps its own invalid
+    // value when the function writes none.
+    private static bool OutHandles()
+    {
+        Native.ResetHandles();
+        if (Native.Open(out var handle) != 42 || handle.DangerousGetHandle() != HandleValue)
+        {
+            return false;
+        }
+
+        if (Native.OpenFailed(out var failed) != -1 || failed is null || !failed.IsInvalid)
+        {
+            return false;
+        }
+
+        failed.Dispose();
+        handle.Dispose();
+        return Native.ReleaseCount() == 1;
+    }
+
+    // A changed value gives the caller a new handle; the one it passed still owns the old value.
+    private static bool ReplacedHandle()
+    {
+        Native.ResetHandles();
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        var original = handle;
+        if (Native.Replace(ref handle) != 42 || ReferenceEquals(handle, original) ||
+            handle.DangerousGetHandle() != ReplacementValue || original.IsClosed ||
+            original.DangerousGetHandle() != HandleValue)
+        {
+            return false;
+        }
+
+        original.Dispose();
+        handle.Dispose();
+        return Native.ReleaseCount() == 1 && Native.ReplacementReleaseCount() == 1;
+    }
+
+    // An unchanged value leaves the caller's handle in place, so two handles never own one value.
+    private static bool KeptHandle()
+    {
+        Native.ResetHandles();
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        var original = handle;
+        if (Native.Keep(ref handle) != 42 || !ReferenceEquals(handle, original))
+        {
+            return false;
+        }
+
+        handle.Dispose();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        return Native.ReleaseCount() == 1;
+    }
+
+    private static bool CriticalHandles()
+    {
+        Native.ResetHandles();
+        var created = Native.CreateCritical();
+        if (created.Value != HandleValue || Native.BorrowCritical(created) != 42)
+        {
+            return false;
+        }
+
+        var rejectedNull = false;
+        try
+        {
+            Native.BorrowCritical(null!);
+        }
+        catch (NullReferenceException)
+        {
+            rejectedNull = true;
+        }
+
+        if (!rejectedNull || Native.OpenCritical(out var opened) != 42 || opened.Value != HandleValue)
+        {
+            return false;
+        }
+
+        var replaced = opened;
+        if (Native.ReplaceCritical(ref replaced) != 42 || ReferenceEquals(replaced, opened) || replaced.Value != ReplacementValue)
+        {
+            return false;
+        }
+
+        created.Dispose();
+        opened.Dispose();
+        replaced.Dispose();
+        return Native.ReleaseCount() == 2 && Native.ReplacementReleaseCount() == 1;
+    }
+
+    private static bool HandleReferences()
+    {
+        Native.ResetHandles();
+        var wrapper = new object();
+        return Native.BorrowReference(new HandleRef(wrapper, HandleValue)) == 42 &&
+            Native.BorrowReference(new HandleRef(null, 7)) == -7 && Native.BorrowCount() == 2;
+    }
+
+    // A pointer and a struct passed by reference pass their storage's address, which native code writes through.
+    private static unsafe bool ByReferenceValues()
+    {
+        byte* bytes = stackalloc byte[] { 5, 9 };
+        var cursor = bytes;
+        if (Native.Advance(ref cursor) != 5 || cursor != bytes + 1 || Native.Advance(ref cursor) != 9 || cursor != bytes + 2)
+        {
+            return false;
+        }
+
+        var point = new MulePoint { X = 3, Y = -2 };
+        Native.Scale(ref point, 4);
+        return point.X == 12 && point.Y == -8;
+    }
+
+    // bool and char as desktop .NET's runtime marshalling converts them on Unix: true as 1 and a native value true when
+    // it is not zero; an ANSI char as the first byte of its UTF-8 encoding, and back past ASCII as U+FFFD; a UTF-16
+    // char as its code unit; by reference through a local copied in and out, out only starting at zero.
+    private static bool BooleansAndCharacters()
+    {
+        byte two = 2;
+        var raw = Unsafe.As<byte, bool>(ref two);
+        if (Native.BoolIn(true) != 1 || Native.BoolIn(false) != 0 || Native.BoolIn(raw) != 1 ||
+            Native.BoolResult(0) || !Native.BoolResult(2) || !Native.BoolResult(-1) ||
+            Native.ByteBoolIn(true) != 1 || Native.ByteBoolIn(raw) != 1 ||
+            Native.ByteBoolResult(256) || !Native.ByteBoolResult(255))
+        {
+            return false;
+        }
+
+        if (Native.AnsiCharIn('A') != 0x41 || Native.AnsiCharIn('\u00e9') != 0xC3 || Native.AnsiCharIn('\u20ac') != 0xE2 ||
+            Native.AnsiCharIn('\ud800') != 0xEF || Native.AutoCharIn('\u00e9') != 0xC3 ||
+            Native.AnsiCharResult(0x41) != 'A' || Native.AnsiCharResult(0x80) != '\ufffd' ||
+            Native.AnsiCharResult(0x141) != 'A' || Native.WideCharIn('\u20ac') != 0x20AC ||
+            Native.WideCharResult(0x1FFFF) != '\uffff' || Native.U2CharIn('\u00e9') != 0xE9)
+        {
+            return false;
+        }
+
+        var flag = false;
+        Native.BumpBool(ref flag);
+        var seen = true;
+        var read = Native.ReadOutBool(out seen);
+        var ansi = 'A';
+        Native.BumpAnsiChar(ref ansi);
+        var high = '\u007f';
+        Native.BumpAnsiChar(ref high);
+        var wide = '\uffff';
+        Native.BumpWideChar(ref wide);
+        return flag && read == 0 && !seen && ansi == 'B' && high == '\ufffd' && wide == '\0' && Native.SameInt(42) == 42;
+    }
+
+    // Strings as desktop .NET's runtime marshalling passes them on Unix: a NUL-terminated UTF-8 copy (ANSI is UTF-8
+    // there, so a lone surrogate becomes EF BF BD), or the string's UTF-16 characters, NUL-terminated, with native
+    // writes showing in the string as desktop .NET's pinning shows them; a null string passes a null pointer.
+    private static bool Strings()
+    {
+        int[] utf8 = [-1, 0, 96354, 113412011, 96891094, 120];
+        int[] utf16 = [-1, 0, 96354, -1099022178, 1807491, 120];
+        string?[] texts = [null, "", "abc", "h\u00e9llo\u20ac", "a\ud800b", "x\0y"];
+        for (var index = 0; index < texts.Length; index++)
+        {
+            var text = texts[index]!;
+            if (Native.TextSum(text) != utf8[index] || Native.AutoTextSum(text) != utf8[index] ||
+                Native.Utf8TextSum(text) != utf8[index] || Native.WideSum(text) != utf16[index] ||
+                Native.LPWStrSum(text) != utf16[index])
+            {
+                return false;
+            }
+        }
+
+        var copied = new string('a', 3);
+        Native.PokeText(copied);
+        var pinned = new string('a', 3);
+        Native.PokeWide(pinned);
+        return copied == "aaa" && pinned == "Zaa";
+    }
+
+    // Structs that hold a bool or char pass as desktop .NET's runtime marshalling lays them out on Unix: a BOOL or, with
+    // [MarshalAs(U1)], a byte for bool; one ANSI byte for char, or under CharSet.Unicode its UTF-16 code unit; nested
+    // structs in their native layout; by value only in, by reference in and out, out only from zero, and as results
+    // through the C ABI's single scalar or result pointer. A pointer-sized field lays out by the target's pointer size,
+    // and a fixed buffer of UTF-16 chars copies whole.
+    private static unsafe bool NativeLayoutStructs()
+    {
+        if (Native.FlaggedSum(new() { A = 3, B = true, C = 4 }) != 314 || Native.FlagValue(new() { B = true }) != 1 ||
+            Native.FlagValue(new() { B = false }) != 0 || Native.AnsiPairSum(new() { X = 2, C = 'A' }) != 2065 ||
+            Native.AnsiPairSum(new() { X = 2, C = '\u00e9' }) != 2195 ||
+            Native.WidePairSum(new() { X = 2, C = '\u00e9' }) != 200233 ||
+            Native.ByteFlagSum(new() { A = 5, B = true }) != 51 ||
+            Native.OuterSum(new() { Inner = new() { A = 1, B = true, C = 2 }, Flag = true }) != 1121 ||
+            Native.PointerFlagSum(new() { P = 5, B = true }) != 1005)
+        {
+            return false;
+        }
+
+        var made = Native.MakeFlagged(5, 7);
+        var zero = Native.MakeFlagged(5, 0);
+        var measure = Native.MakeMeasure(1.5, 3);
+        var pointer = Native.MakePointerFlag(9, 2);
+        if (made.A != 5 || !made.B || made.C != 12 || zero.B || zero.C != 5 || !Native.MakeFlag(256).B ||
+            Native.MakeFlag(0).B || measure.D != 1.5 || !measure.B || pointer.P != 9 || !pointer.B)
+        {
+            return false;
+        }
+
+        var wide = new LayoutWideBuffer { A = 4 };
+        wide.Text[0] = (char)1;
+        wide.Text[1] = (char)2;
+        wide.Text[2] = (char)3;
+        if (Native.WideBufferSum(wide) != 4123)
+        {
+            return false;
+        }
+        Native.BumpWideBuffer(ref wide);
+        if (wide.A != 5 || wide.Text[0] != 2 || wide.Text[1] != 4 || wide.Text[2] != 6)
+        {
+            return false;
+        }
+
+        var bumped = new LayoutFlagged { A = 1, B = false, C = 3 };
+        Native.BumpFlagged(ref bumped);
+        var pair = new LayoutAnsiPair { X = 1, C = 'q' };
+        Native.SetAnsiPair(ref pair);
+        Native.FillAnsiPair(out var filled);
+        return bumped.A == 2 && bumped.B && bumped.C == 6 && pair.X == 114 && pair.C == 'Z' && filled.X == 7 &&
+            filled.C == 'Y';
+    }
+
+    // An unmanaged function pointer in an assembly that keeps runtime marshalling marshals its call as a DllImport
+    // without attributes does: bool as BOOL, char and string as ANSI (UTF-8), a struct that holds a bool as its native
+    // copy, by value and as a result.
+    private static unsafe bool FunctionPointerCalls()
+    {
+        var boolIn = (delegate* unmanaged<bool, int>)Native.Function(0);
+        var boolResult = (delegate* unmanaged<int, bool>)Native.Function(0);
+        var ansiCharIn = (delegate* unmanaged<char, int>)Native.Function(1);
+        var ansiCharResult = (delegate* unmanaged<int, char>)Native.Function(2);
+        var textSum = (delegate* unmanaged<string, int>)Native.Function(3);
+        var flaggedSum = (delegate* unmanaged<LayoutFlagged, int>)Native.Function(4);
+        var makeFlagged = (delegate* unmanaged<int, int, LayoutFlagged>)Native.Function(5);
+        byte two = 2;
+        var raw = Unsafe.As<byte, bool>(ref two);
+        if (boolIn(true) != 1 || boolIn(raw) != 1 || boolIn(false) != 0 || boolResult(0) || !boolResult(256) ||
+            ansiCharIn('\u00e9') != 0xC3 || ansiCharIn('A') != 0x41 || ansiCharResult(0x80) != '\ufffd' ||
+            ansiCharResult(0x42) != 'B' || textSum("h\u00e9llo\u20ac") != 113412011 || textSum(null!) != -1)
+        {
+            return false;
+        }
+
+        var made = makeFlagged(5, 7);
+        return flaggedSum(new() { A = 3, B = true, C = 4 }) == 314 && made.A == 5 && made.B && made.C == 12;
+    }
+
+    // String results as desktop .NET's runtime marshalling returns them on Unix: decoded, then the native buffer freed
+    // with the C library's free; a null pointer is a null string. Memory crosses both ways, as on .NET for Unix: a block
+    // native code allocates is grown and freed through Marshal, and one Marshal allocates is freed by native code,
+    // round after round, so a mismatched allocator would corrupt the heap. A string's characters are followed by a NUL
+    // that native code reads through a pointer to them.
+    private static unsafe bool StringResultsAndNativeMemory()
+    {
+        if (Native.TextName(-1) is not null || Native.TextName(0) != "" || Native.TextName(1) != "mule" ||
+            Native.TextName(2) != "h\u00e9llo\u20ac" || Native.Utf8Name(2) != "h\u00e9llo\u20ac" ||
+            Native.WideName(-1) is not null || Native.WideName(0) != "" || Native.WideName(1) != "mule" ||
+            Native.WideName(2) != "\u00e9\u20ac")
+        {
+            return false;
+        }
+
+        for (var round = 0; round < 64; round++)
+        {
+            var native = Native.Allocate(32);
+            if (Marshal.ReadByte(native, 31) != 32)
+            {
+                return false;
+            }
+            native = Marshal.ReAllocCoTaskMem(native, 64);
+            if (Marshal.ReadByte(native, 31) != 32)
+            {
+                return false;
+            }
+            Marshal.FreeCoTaskMem(native);
+            var managed = Marshal.AllocCoTaskMem(16);
+            var global = Marshal.AllocHGlobal(8);
+            for (var index = 0; index < 16; index++)
+            {
+                Marshal.WriteByte(managed, index, (byte)index);
+                Marshal.WriteByte(global, index % 8, (byte)(index % 8 == 7 ? 9 : 0));
+            }
+            if (Native.Release(managed, 16) != 120 || Native.Release(global, 8) != 9)
+            {
+                return false;
+            }
+        }
+
+        var text = string.Concat("ab", new string('c', 1), "d");
+        fixed (char* characters = text)
+        {
+            return Native.WideSumPointer(characters) == Native.WideSum("abcd") && characters[text.Length] == '\0';
+        }
+    }
+
+    // A pinned array passes its elements' address, null only for a null array, and sees what native code writes.
+    private static bool PinnedArrays()
+    {
+        if (Native.Buffer([1, 2, 3, 250], 4) != 256 || Native.Buffer(null, 0) != 0)
+        {
+            return false;
+        }
+
+        if (Native.IsNull(null) != 1 || Native.IsNull([]) != 0 || Native.IsNull([5]) != 0)
+        {
+            return false;
+        }
+
+        var values = new int[4];
+        Native.Fill(values, values.Length);
+        if (values[0] != 1 || values[1] != 4 || values[2] != 7 || values[3] != 10)
+        {
+            return false;
+        }
+
+        var kinds = new MuleKind[2];
+        Native.FillKinds(kinds, kinds.Length);
+        if (kinds[0] != MuleKind.First || (int)kinds[1] != 4)
+        {
+            return false;
+        }
+
+        if (Native.Points([new() { X = 1, Y = 2 }, new() { X = 3, Y = -4 }], 2) != 38)
+        {
+            return false;
+        }
+
+        // An array that grows memory passes an address past the memory the module started with.
+        var large = new byte[6 * 1024 * 1024];
+        large[0] = 3;
+        large[^1] = 71;
+        return Native.Buffer(large, (nuint)large.Length) == 74;
+    }
+}

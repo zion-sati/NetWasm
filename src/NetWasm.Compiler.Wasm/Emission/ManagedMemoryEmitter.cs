@@ -224,7 +224,7 @@ internal static class ManagedMemoryEmitter
         }
     }
 
-    private static void EmitAddressMultiply(
+    internal static void EmitAddressMultiply(
         IWasmInstructionWriter code,
         WasmTargetLayout target)
     {

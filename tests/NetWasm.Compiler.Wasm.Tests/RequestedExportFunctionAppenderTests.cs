@@ -193,8 +193,6 @@ public sealed class RequestedExportFunctionAppenderTests
         OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing,
-        OptionalFunctionIndex.Missing,
-        OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing);
 
     private static MethodInstanceModel CreateInstance(MethodDefinitionModel method) =>

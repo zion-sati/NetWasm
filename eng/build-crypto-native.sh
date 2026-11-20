@@ -67,7 +67,7 @@ if [[ "$target" = wasm64 ]]; then
     target_flags=(-sMEMORY64=1)
     openssl_target=linux-generic64
 fi
-common_flags=(-O2 -DNDEBUG -g0 "-ffile-prefix-map=$repo_root=." "-ffile-prefix-map=$work=." "${target_flags[@]}")
+common_flags=(-O3 -msimd128 -DNDEBUG -g0 "-ffile-prefix-map=$repo_root=." "-ffile-prefix-map=$work=." "${target_flags[@]}")
 
 # One thread, no engines, no dynamic loading, no sockets (TLS is the host's), and no seed source of OpenSSL's own:
 # the shim installs NetWasm's (netwasm/pal_netwasm_seed.c). Providers are built in (no-module); the legacy one stays,

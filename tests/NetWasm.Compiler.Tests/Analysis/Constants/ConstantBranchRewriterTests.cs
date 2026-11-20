@@ -147,6 +147,31 @@ public sealed class ConstantBranchRewriterTests
         Assert.Equal(CilOperation.LoadLocal, rewritten.Instructions[4].Operation);
     }
 
+    // A null pushed in one block and stored to a local in another decides the branch on the local's load, as an
+    // inlined callee's guard reads an argument pushed before the bounds checks of the arguments after it.
+    [Fact]
+    public void FoldsABranchOnANullStoredInALaterBlock()
+    {
+        var body = new CilMethodBody(Method().Definition, 4, [CliValueKind.ManagedReference], [
+            Instruction(0, CilOperation.LoadNull),
+            Instruction(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(4)),
+            Instruction(3, CilOperation.Nop),
+            Instruction(4, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            Instruction(5, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            Instruction(6, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(9)),
+            Instruction(7, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            Instruction(8, CilOperation.Return),
+            Instruction(9, CilOperation.LoadInt32, new CilOperand.ConstantI4(2)),
+            Instruction(10, CilOperation.Return)]);
+
+        var rewritten = Rule(body).Rewrite(body);
+
+        Assert.Equal(CilOperation.StoreLocal, rewritten.Instructions[4].Operation);
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[5].Operation);
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[6].Operation);
+    }
+
     // A null never compares with an integer constant, which verifiable IL does not do.
     [Fact]
     public void DoesNotCompareANullWithAnInteger()
@@ -163,8 +188,9 @@ public sealed class ConstantBranchRewriterTests
     [Fact]
     public void RejectsMissingGraphBuilderAndBody()
     {
-        Assert.Throws<ArgumentNullException>(() => new ConstantBranchRewriter(null!));
         var body = Body(Instruction(0, CilOperation.Return));
+        Assert.Throws<ArgumentNullException>(() => new ConstantBranchRewriter(null!, Flow()));
+        Assert.Throws<ArgumentNullException>(() => new ConstantBranchRewriter(Graph(body), null!));
         Assert.Throws<ArgumentNullException>(() => Rule(body).Rewrite(null!));
     }
 
@@ -220,7 +246,7 @@ public sealed class ConstantBranchRewriterTests
             Instruction(2, operation),
             Instruction(3, CilOperation.Return));
 
-        var rewritten = new ConstantBranchRewriter(Graph(body)).Rewrite(body);
+        var rewritten = new ConstantBranchRewriter(Graph(body), Flow()).Rewrite(body);
 
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[1].Operation);
@@ -244,7 +270,7 @@ public sealed class ConstantBranchRewriterTests
             Instruction(2, operation),
             Instruction(3, CilOperation.Return));
 
-        Assert.Same(body, new ConstantBranchRewriter(Graph(body)).Rewrite(body));
+        Assert.Same(body, new ConstantBranchRewriter(Graph(body), Flow()).Rewrite(body));
     }
 
     [Theory]
@@ -258,7 +284,7 @@ public sealed class ConstantBranchRewriterTests
             Instruction(1, operation),
             Instruction(2, CilOperation.Return));
 
-        var rewritten = new ConstantBranchRewriter(Graph(body)).Rewrite(body);
+        var rewritten = new ConstantBranchRewriter(Graph(body), Flow()).Rewrite(body);
 
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(new CilOperand.ConstantI4(expected), rewritten.Instructions[1].Operand);
@@ -284,7 +310,7 @@ public sealed class ConstantBranchRewriterTests
             Instruction(3, CilOperation.Return),
             Instruction(4, CilOperation.Return));
 
-        var rewritten = new ConstantBranchRewriter(Graph(body)).Rewrite(body);
+        var rewritten = new ConstantBranchRewriter(Graph(body), Flow()).Rewrite(body);
 
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[1].Operation);
@@ -302,28 +328,35 @@ public sealed class ConstantBranchRewriterTests
             Instruction(2, CilOperation.CompareEqual),
             Instruction(3, CilOperation.Return));
 
-        var rewritten = new ConstantBranchRewriter(Graph(body)).Rewrite(body);
+        var rewritten = new ConstantBranchRewriter(Graph(body), Flow()).Rewrite(body);
 
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[1].Operation);
         Assert.Equal(new CilOperand.ConstantI4(expected), rewritten.Instructions[2].Operand);
     }
 
+    // Only a store or the local's address writes it: a call or a store through another address leaves the constant,
+    // and a local whose address is taken is never followed.
     [Theory]
-    [InlineData(CilOperation.Call)]
-    [InlineData(CilOperation.LoadLocalAddress)]
-    [InlineData(CilOperation.StoreObject)]
-    public void ForgetsLocalFactsAcrossPossibleEffects(CilOperation effect)
+    [InlineData(CilOperation.Call, true)]
+    [InlineData(CilOperation.StoreObject, true)]
+    [InlineData(CilOperation.LoadLocalAddress, false)]
+    public void KeepsLocalFactsAcrossEffectsThatCannotWriteTheLocal(CilOperation effect, bool folds)
     {
         var body = Body(
             Instruction(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
             Instruction(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
-            Instruction(2, effect),
+            effect == CilOperation.LoadLocalAddress
+                ? Instruction(2, effect, new CilOperand.Index(0))
+                : Instruction(2, effect),
             Instruction(3, CilOperation.LoadLocal, new CilOperand.Index(0)),
             Instruction(4, CilOperation.Return));
 
-        Assert.Same(body, new ConstantBranchRewriter(Graph(body)).Rewrite(body));
+        var rewritten = new ConstantBranchRewriter(Graph(body), Flow()).Rewrite(body);
+
+        if (folds) Assert.Equal(CilOperation.LoadInt32, rewritten.Instructions[3].Operation);
+        else Assert.Same(body, rewritten);
     }
 
-    internal static IMethodRewriteRule Rule(CilMethodBody body) => new ConstantBranchRewriter(Graph(body));
+    internal static IMethodRewriteRule Rule(CilMethodBody body) => new ConstantBranchRewriter(Graph(body), Flow());
 }

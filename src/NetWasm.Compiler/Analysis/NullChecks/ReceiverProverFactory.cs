@@ -1,0 +1,51 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
+using System;
+using NetWasm.Compiler.ControlFlow;
+using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Metadata;
+
+namespace NetWasm.Compiler.Analysis.NullChecks;
+
+internal interface IReceiverProverFactory
+{
+    IReceiverProver Create(
+        ITypeRepository types,
+        IFieldRepository fields,
+        IMethodRepository methods,
+        IMethodInstanceResolver methodInstances,
+        ISymbolFormatter symbols,
+        bool enabled);
+}
+
+internal sealed class ReceiverProverFactory(
+    ITypedStackValidatorFactory stackValidators,
+    IControlFlowGraphBuilderFactory graphBuilders,
+    ICalledMethodResolverFactory calledMethods) : IReceiverProverFactory
+{
+    private readonly ITypedStackValidatorFactory _stackValidators = stackValidators ??
+        throw new ArgumentNullException(nameof(stackValidators));
+    private readonly IControlFlowGraphBuilderFactory _graphBuilders = graphBuilders ??
+        throw new ArgumentNullException(nameof(graphBuilders));
+    private readonly ICalledMethodResolverFactory _calledMethods = calledMethods ??
+        throw new ArgumentNullException(nameof(calledMethods));
+
+    public IReceiverProver Create(
+        ITypeRepository types,
+        IFieldRepository fields,
+        IMethodRepository methods,
+        IMethodInstanceResolver methodInstances,
+        ISymbolFormatter symbols,
+        bool enabled)
+    {
+        var called = _calledMethods.Create(methods, methodInstances, symbols);
+        return new ReceiverProver(
+            new ConstructedReceiverPlanner(new ControlFlowDominanceAnalyzer(), new StackEffectResolver(called), called),
+            called,
+            _graphBuilders.Create(),
+            _stackValidators.Create(types, fields, methods),
+            enabled);
+    }
+}

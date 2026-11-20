@@ -17,6 +17,7 @@
     <Compile Include="System/Net/Cache/RequestCachePolicy.cs" />
     <Compile Include="System/Net/CredentialCache.cs" />
     <Compile Include="System/Net/DecompressionMethods.cs" />
+    <Compile Include="System/Net/HttpStatusCode.cs" />
     <Compile Include="System/Net/NetworkInformation/IPAddressCollection.cs" />
     <Compile Include="System/Net/SecureProtocols/NegotiateEnumTypes.cs" />
     <Compile Include="System/Net/Security/SslPolicyErrors.cs" />

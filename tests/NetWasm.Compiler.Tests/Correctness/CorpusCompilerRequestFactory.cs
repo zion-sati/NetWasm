@@ -27,7 +27,9 @@ internal sealed record CorpusCompilerRequest(
     string? InteropManifestPath,
     bool StructuredDiagnostics = false,
     FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
-    CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction);
+    CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
+    // The collector the fixture is compiled for, by the compiler's name for it; null for the default.
+    string? GarbageCollector = null);
 
 internal interface ICorpusCompilerRequestFactory
 {
@@ -40,8 +42,16 @@ internal interface ICorpusCompilerRequestFactory
 
 internal sealed class CorpusCompilerRequestFactory(
     CompilerCorrectnessEnvironment environment,
-    IOracleModePolicyRegistry oracleModes) : ICorpusCompilerRequestFactory
+    IOracleModePolicyRegistry oracleModes,
+    LinkedCorpusToolEnvironment? tools = null) : ICorpusCompilerRequestFactory
 {
+    // A run that names a collector (NETWASM_CORPUS_COLLECTOR) compiles every fixture for it, as a project that
+    // sets NetWasmGarbageCollector does: a program for a collector with generations records its reference stores.
+    private readonly string? _garbageCollector = string.IsNullOrEmpty(tools?.Collector)
+        ? null
+        : RuntimeCollector.All.FirstOrDefault(collector =>
+            string.Equals(collector.Name, tools.Collector, StringComparison.OrdinalIgnoreCase))?.Name;
+
     public CorpusCompilerRequest Create(
         CorpusCompilation compilation, WasmTarget target, string? tracePath,
         string modulePath, string? methodSymbolsPath,
@@ -87,6 +97,7 @@ internal sealed class CorpusCompilerRequestFactory(
             Optimization: compilation.Fixture.Optimization,
             EntryPointKind: compilation.Fixture.CallbackEntry
                 ? CompilerEntryPointKind.ManagedExecutable
-                : CompilerEntryPointKind.RawFunction);
+                : CompilerEntryPointKind.RawFunction,
+            GarbageCollector: _garbageCollector);
     }
 }

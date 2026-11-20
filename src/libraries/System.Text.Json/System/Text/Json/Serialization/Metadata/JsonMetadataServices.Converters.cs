@@ -48,7 +48,7 @@ namespace System.Text.Json.Serialization.Metadata
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
         public static JsonConverter<DateTimeOffset> DateTimeOffsetConverter => field ??= new DateTimeOffsetConverter();
 
-#if NET && !NETWASM
+#if NET
         /// <summary>
         /// Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="DateOnly"/> values.
         /// </summary>
@@ -98,7 +98,7 @@ namespace System.Text.Json.Serialization.Metadata
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
         public static JsonConverter<long> Int64Converter => field ??= new Int64Converter();
 
-#if NET && !NETWASM
+#if NET
         /// <summary>
         /// Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="Int128"/> values.
         /// </summary>
@@ -143,15 +143,12 @@ namespace System.Text.Json.Serialization.Metadata
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
         public static JsonConverter<JsonValue?> JsonValueConverter => field ??= new JsonValueConverter();
 
-#if !NETWASM
         /// <summary>
         /// Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="JsonDocument"/> values.
         /// </summary>
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
         public static JsonConverter<JsonDocument?> JsonDocumentConverter => field ??= new JsonDocumentConverter();
-#endif
 
-#if !NETWASM
         /// <summary>
         /// Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="Memory{Byte}"/> values.
         /// </summary>
@@ -163,7 +160,6 @@ namespace System.Text.Json.Serialization.Metadata
         /// </summary>
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
         public static JsonConverter<ReadOnlyMemory<byte>> ReadOnlyMemoryByteConverter => field ??= new ReadOnlyMemoryByteConverter();
-#endif
 
         /// <summary>
         /// Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="object"/> values.
@@ -171,7 +167,7 @@ namespace System.Text.Json.Serialization.Metadata
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
         public static JsonConverter<object?> ObjectConverter => field ??= new DefaultObjectConverter();
 
-#if NET && !NETWASM
+#if NET
         /// <summary>
         /// Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="Half"/> values.
         /// </summary>

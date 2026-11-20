@@ -13,11 +13,11 @@ namespace System.Text.Json.Serialization
         /// </summary>
         internal JsonConverter? ResolvePolymorphicConverter(JsonTypeInfo jsonTypeInfo, ref ReadStack state)
         {
-#if NETWASM
-            _ = jsonTypeInfo;
-            _ = state;
-            return null;
-#else
+            if (s_polymorphicTypesReachable is null)
+            {
+                return null;
+            }
+
             Debug.Assert(!IsValueType);
             Debug.Assert(CanHaveMetadata);
             Debug.Assert((state.Current.MetadataPropertyNames & MetadataPropertyName.Type) != 0 || state.PolymorphicResolvedType is not null);
@@ -80,7 +80,6 @@ namespace System.Text.Json.Serialization
             }
 
             return polymorphicConverter;
-#endif
         }
 
         /// <summary>
@@ -88,13 +87,6 @@ namespace System.Text.Json.Serialization
         /// </summary>
         internal JsonConverter? ResolvePolymorphicConverter(object value, JsonTypeInfo jsonTypeInfo, JsonSerializerOptions options, ref WriteStack state)
         {
-#if NETWASM
-            _ = value;
-            _ = jsonTypeInfo;
-            _ = options;
-            _ = state;
-            return null;
-#else
             Debug.Assert(!IsValueType);
             Debug.Assert(value is not null && Type!.IsAssignableFrom(value.GetType()));
             Debug.Assert(CanBePolymorphic || jsonTypeInfo.PolymorphicTypeResolver is not null);
@@ -116,7 +108,7 @@ namespace System.Text.Json.Serialization
                         polymorphicConverter = jsonTypeInfo.Converter;
                     }
 
-                    if (jsonTypeInfo.PolymorphicTypeResolver is PolymorphicTypeResolver resolver)
+                    if (s_polymorphicTypesReachable is not null && jsonTypeInfo.PolymorphicTypeResolver is PolymorphicTypeResolver resolver)
                     {
                         Debug.Assert(jsonTypeInfo.Converter.CanHaveMetadata);
 
@@ -160,7 +152,6 @@ namespace System.Text.Json.Serialization
             }
 
             return polymorphicConverter;
-#endif
         }
 
         internal bool TryHandleSerializedObjectReference(Utf8JsonWriter writer, object value, JsonSerializerOptions options, JsonConverter? polymorphicConverter, ref WriteStack state)

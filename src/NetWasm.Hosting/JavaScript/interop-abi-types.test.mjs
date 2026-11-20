@@ -18,6 +18,7 @@ import {
   isValueArrayAbiType,
   memoryViewConstructor,
   valueArrayConstructor,
+  toValueArray,
 } from "./interop-abi-types.mjs";
 
 const valueArrays = Object.freeze({
@@ -99,8 +100,21 @@ test("maps every value-array ABI type to its typed array", () => {
   for (const value of [null, [], new DataView(new ArrayBuffer(1)), new Uint8ClampedArray(1)]) {
     assert.equal(isValueArray(value), false);
   }
-  assert.equal(describeValueArray("bytes"), "byte-array value must be Uint8Array or null");
-  assert.equal(describeValueArray("f64[]"), "f64[] value must be Float64Array or null");
+  assert.equal(describeValueArray("bytes"), "byte-array value must be Uint8Array, an array, or null");
+  assert.equal(describeValueArray("f64[]"), "f64[] value must be Float64Array, an array, or null");
+});
+
+// As .NET's browser runtime takes them: the element type's typed array as it is, a plain array copied into one.
+test("takes a value array as its typed array or a plain array of numbers", () => {
+  const ints = Int32Array.of(1, 2);
+  assert.strictEqual(toValueArray("i32[]", ints), ints);
+  assert.deepEqual(toValueArray("i32[]", [0, 0, 70_000]), Int32Array.of(0, 0, 70_000));
+  assert.deepEqual(toValueArray("bytes", [1, 255]), Uint8Array.of(1, 255));
+  assert.deepEqual(toValueArray("i64[]", [1, -2]), BigInt64Array.of(1n, -2n));
+  assert.deepEqual(toValueArray("u64[]", [3]), BigUint64Array.of(3n));
+  for (const value of [Uint32Array.of(1), "text", { length: 1 }, 7]) {
+    assert.equal(toValueArray("i32[]", value), null);
+  }
 });
 
 test("isHostObject accepts objects and functions only", () => {

@@ -3,7 +3,7 @@
 
 // NetWasm: dotnet/runtime deae2e32's (.NET 11.0.0) WasiHttpHandler surface, sending through NetWasm's IHttpTransport
 // rather than upstream's own WASI bindings. The default transport sends through wasi:http 0.3; HttpClientHandler's
-// transport constructor supplies another. Unlike upstream's, a synchronous Send works (owner decision): it blocks as
+// transport constructor supplies another. Unlike upstream's, a synchronous Send works: it blocks as
 // NetWasm's synchronous file and socket I/O does.
 //
 // Upstream's WASI handler throws PlatformNotSupportedException from every policy control. NetWasm implements the ones

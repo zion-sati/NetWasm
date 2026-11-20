@@ -52,6 +52,8 @@ internal sealed class WasiCapabilityClassifier : IWasiCapabilityClassifier
             ["wasi:random/random@0.3.2"] = NetWasmPlatformCapability.Randomness,
             ["wasi:sockets/ip-name-lookup@0.3.2"] = NetWasmPlatformCapability.Network,
             ["wasi:sockets/types@0.3.2"] = NetWasmPlatformCapability.Network,
+            ["wasi:tls/client@0.3.0-draft"] = NetWasmPlatformCapability.Network,
+            ["wasi:tls/types@0.3.0-draft"] = NetWasmPlatformCapability.Network,
         };
         return entries.ToImmutableDictionary(StringComparer.Ordinal);
     }

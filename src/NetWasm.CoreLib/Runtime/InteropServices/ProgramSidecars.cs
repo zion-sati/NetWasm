@@ -3,6 +3,7 @@
 
 namespace System.Runtime.InteropServices
 {
+    using System.Diagnostics.CodeAnalysis;
     using System.Runtime.CompilerServices;
     using System.Runtime.InteropServices.Sidecars;
 
@@ -16,6 +17,15 @@ namespace System.Runtime.InteropServices
         internal static nint s_descriptor;
 #pragma warning restore CS0649
 
+        private static bool s_typeSymbolsLoaded;
+
+        // NetWasmTypeNames, which the compiler folds: a program built without names carries no loader, even one
+        // that reads names, which then read type#<id>.
+        internal const string TypeNamesSwitch = "NetWasm.Runtime.TypeNames";
+
+        [FeatureSwitchDefinition(TypeNamesSwitch)]
+        private static bool TypeNamesSupported => AppContext.TryGetSwitch(TypeNamesSwitch, out var supported) && supported;
+
         internal static SidecarDescriptor? Descriptor =>
             s_descriptor == 0 ? null : SidecarDescriptor.Read((byte*)s_descriptor);
 
@@ -28,8 +38,19 @@ namespace System.Runtime.InteropServices
         // fails the program. Reading a file waits on wasi:filesystem through the Component Model's event loop, so
         // only a program whose world has one loads them; the host of any other registers method symbols with the
         // runtime itself.
+        //
+        // Type names are read through TypeSymbols, which calls LoadTypeSymbols first: the loader is in a program,
+        // and its preflight placed, only when something reads a name. The preflight has already run by then, so
+        // that call returns at once. It stays a method of its own, never inlined into a reader, because the compiler
+        // places the preflight, and decides whether the program reads names, by finding it.
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal static void LoadTypeSymbols()
         {
+            if (!TypeNamesSupported || s_typeSymbolsLoaded)
+            {
+                return;
+            }
+            s_typeSymbolsLoaded = true;
             if (!PlatformWorld.ProvidesWasi() || !PlatformWorld.ImportsEventLoop())
             {
                 return;

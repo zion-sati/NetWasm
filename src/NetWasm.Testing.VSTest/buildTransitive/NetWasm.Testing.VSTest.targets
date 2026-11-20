@@ -1,13 +1,18 @@
 <Project>
-  <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == 'NetWasm' AND '$(TargetFrameworkVersion)' == 'v0.1'">
+  <!-- Every NetWasm guest framework. VSTest receives net10.0-netwasm as .NETCoreApp,Version=v10.0, the same as a
+       desktop project, so its run also carries a NetWasm.TargetFramework test run parameter for the runtime
+       provider, which reads run settings only through VSTest's own parser. -->
+  <PropertyGroup Condition="'$(NetWasmGuestFramework)' == 'true'">
     <_NetWasmVSTestExtensionPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any'))</_NetWasmVSTestExtensionPath>
     <_NetWasmVSTestConsolePath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any/vstest/vstest.console.dll'))</_NetWasmVSTestConsolePath>
     <_NetWasmSdkVSTestConsolePath>$([System.IO.Path]::Combine('$(MSBuildToolsPath)', 'vstest.console.dll'))</_NetWasmSdkVSTestConsolePath>
     <_NetWasmVSTestLoadingStrategy>RunConfiguration.TestAdapterLoadingStrategy=Explicit,DefaultRuntimeProviders,ExtensionsDirectory</_NetWasmVSTestLoadingStrategy>
+    <_NetWasmVSTestRunSettings>$(_NetWasmVSTestLoadingStrategy)</_NetWasmVSTestRunSettings>
+    <_NetWasmVSTestRunSettings Condition="'$(TargetFrameworkIdentifier)' != 'NetWasm'">$(_NetWasmVSTestRunSettings);TestRunParameters.Parameter(name=&quot;NetWasm.TargetFramework&quot;,value=&quot;$(TargetFramework)&quot;)</_NetWasmVSTestRunSettings>
     <VSTestConsolePath Condition="'$(VSTestConsolePath)' == '' OR '$(VSTestConsolePath)' == '$(_NetWasmSdkVSTestConsolePath)'">$(_NetWasmVSTestConsolePath)</VSTestConsolePath>
     <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' != ''">$(VSTestTestAdapterPath);$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
     <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' == ''">$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
-    <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' != ''">$(VSTestCLIRunSettings);$(_NetWasmVSTestLoadingStrategy)</VSTestCLIRunSettings>
-    <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' == ''">$(_NetWasmVSTestLoadingStrategy)</VSTestCLIRunSettings>
+    <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' != ''">$(VSTestCLIRunSettings);$(_NetWasmVSTestRunSettings)</VSTestCLIRunSettings>
+    <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' == ''">$(_NetWasmVSTestRunSettings)</VSTestCLIRunSettings>
   </PropertyGroup>
 </Project>

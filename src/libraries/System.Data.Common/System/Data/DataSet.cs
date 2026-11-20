@@ -117,7 +117,7 @@ namespace System.Data
                         break;
 
                     case SerializationFormat.Binary:
-                        // NetWasm: no binary formatter, so the unsafe-binary-serialization switch is not honoured.
+                        // NetWasm: no binary formatter, so the unsafe-binary-serialization switch is not honored.
                         throw ExceptionBuilder.SerializationFormatBinaryNotSupported();
 
                     default:

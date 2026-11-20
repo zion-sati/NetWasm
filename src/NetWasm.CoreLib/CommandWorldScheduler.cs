@@ -11,8 +11,9 @@ namespace System.Runtime.InteropServices
     // start and each callback run the ready work, then report EXIT once Main's task has completed
     // or WAIT on the loop's waitable set, and the host delivers that set's events. A delay is an
     // async-lowered wasi:clocks/monotonic-clock wait-for subtask; its work becomes ready when the
-    // subtask returns.
-    internal sealed class CommandWorldScheduler : IPlatformScheduler
+    // subtask returns. The loop's own timers (its collection's) wait beside the program's work but
+    // never keep the loop waiting.
+    internal sealed class CommandWorldScheduler : IPlatformScheduler, IEventLoopTimers
     {
         private const int Returned = 2;
         private const int EventNone = 0;
@@ -20,16 +21,24 @@ namespace System.Runtime.InteropServices
         private const int CallbackWait = 2;
         private const int SubtaskEvent = 1;
         private const int LastCopyEvent = 5;
+        // Queued finalizers run every this many work items: soon after a collection queues them, as on .NET's
+        // finalizer thread, without a call into the runtime after every item. The host's call into the program ends
+        // with them too.
+        private const int WorkBetweenFinalizers = 64;
 
         private readonly Queue<CommandWorldWork> _ready = new();
         // Pending work by its waitable, so an event finds its work however much is pending.
         private readonly Dictionary<int, CommandWorldWork> _waiting = new();
+        // The loop's own pending timers, which the loop does not wait for.
+        private readonly Dictionary<int, CommandWorldWork> _background = new();
+        private IEventLoopCollection _collection = NoEventLoopCollection.Instance;
         private readonly IWasiMonotonicWaitInvoker _clock;
         private readonly IWasiWaitableSetCreateInvoker _createSet;
         private readonly IWasiWaitableJoinInvoker _join;
         private readonly IWasiSubtaskCancelInvoker _cancel;
         private readonly IWasiSubtaskDropInvoker _drop;
         private int _set;
+        private int _workSinceFinalizers;
 
         internal CommandWorldScheduler(
             IWasiMonotonicWaitInvoker clock,
@@ -43,6 +52,12 @@ namespace System.Runtime.InteropServices
             _join = join ?? throw new ArgumentNullException();
             _cancel = cancel ?? throw new ArgumentNullException();
             _drop = drop ?? throw new ArgumentNullException();
+        }
+
+        // What the loop does for its program's collector once it runs callbacks; until then, nothing.
+        internal void CollectWith(IEventLoopCollection collection)
+        {
+            _collection = collection ?? throw new ArgumentNullException();
         }
 
         internal int PendingCount => _ready.Count + _waiting.Count;
@@ -61,6 +76,35 @@ namespace System.Runtime.InteropServices
             return delayNanoseconds == 0
                 ? Track(continuation, Returned)
                 : Track(continuation, _clock.WaitFor(delayNanoseconds));
+        }
+
+        // A timer of the loop's own: like a delay, but the loop ends without waiting for it, and
+        // running it is not the program running. One that has run out already runs at the loop's
+        // next turn.
+        public IPlatformSchedule ScheduleBackground(Action continuation, ulong delayNanoseconds)
+        {
+            if (continuation == null)
+            {
+                throw new ArgumentNullException();
+            }
+
+            var status = _clock.WaitFor(delayNanoseconds);
+            if ((status & 0xF) == Returned)
+            {
+                var ready = new CommandWorldWork(this, continuation, CommandWorldWork.NoWaitable, background: true);
+                _ready.Enqueue(ready);
+                return ready;
+            }
+
+            var waiting = new CommandWorldWork(this, continuation, status >> 4, background: true);
+            if (_set == 0)
+            {
+                _set = _createSet.Create();
+            }
+
+            _join.Join(waiting.Waitable, _set);
+            _background.Add(waiting.Waitable, waiting);
+            return waiting;
         }
 
         // An async-lowered call's status: its work is ready once the subtask has returned; a
@@ -126,6 +170,8 @@ namespace System.Runtime.InteropServices
                 throw new ArgumentNullException();
             }
 
+            // The program ran up to its first await.
+            _collection.ProgramRan();
             RunReady();
             return Report(task);
         }
@@ -175,6 +221,7 @@ namespace System.Runtime.InteropServices
         {
             if (task.IsCompleted)
             {
+                _collection.LoopEnded();
                 return CallbackExit;
             }
 
@@ -192,6 +239,7 @@ namespace System.Runtime.InteropServices
                 }
             }
 
+            _collection.LoopWaiting();
             return CallbackWait | (_set << 4);
         }
 
@@ -204,7 +252,18 @@ namespace System.Runtime.InteropServices
                 var work = _ready.Dequeue();
                 if (work.TryStart())
                 {
+                    if (!work.IsBackground)
+                    {
+                        _collection.ProgramRan();
+                    }
+
                     work.Continuation();
+                }
+
+                if (++_workSinceFinalizers == WorkBetweenFinalizers)
+                {
+                    _workSinceFinalizers = 0;
+                    GCFinalizerRuntime.RunQueuedBetweenWork();
                 }
             }
         }
@@ -214,10 +273,11 @@ namespace System.Runtime.InteropServices
         internal void Cancel(CommandWorldWork work)
         {
             // Work that became ready no longer waits, and its waitable may name newer work.
+            var pending = work.IsBackground ? _background : _waiting;
             if (work.Waitable != CommandWorldWork.NoWaitable &&
-                _waiting.TryGetValue(work.Waitable, out var waiting) && waiting == work)
+                pending.TryGetValue(work.Waitable, out var waiting) && waiting == work)
             {
-                _waiting.Remove(work.Waitable);
+                pending.Remove(work.Waitable);
                 _join.Join(work.Waitable, 0);
                 if (!work.IsCopy)
                 {
@@ -231,8 +291,9 @@ namespace System.Runtime.InteropServices
         // or whose stream or future copy ended, with the copy's result as its payload.
         private void Ready(int eventCode, int waitable, uint payload)
         {
-            if (!_waiting.TryGetValue(waitable, out var work) || eventCode < SubtaskEvent ||
-                eventCode > LastCopyEvent || work.IsCopy != (eventCode != SubtaskEvent))
+            if (!_waiting.TryGetValue(waitable, out var work) && !_background.TryGetValue(waitable, out work) ||
+                eventCode < SubtaskEvent || eventCode > LastCopyEvent ||
+                work.IsCopy != (eventCode != SubtaskEvent))
             {
                 throw new InvalidOperationException(
                     "The event loop received an event for no scheduled work.");
@@ -243,7 +304,7 @@ namespace System.Runtime.InteropServices
                 return;
             }
 
-            _waiting.Remove(waitable);
+            (work.IsBackground ? _background : _waiting).Remove(waitable);
             _join.Join(work.Waitable, 0);
             if (work.IsCopy)
             {
@@ -285,12 +346,14 @@ namespace System.Runtime.InteropServices
             CommandWorldScheduler scheduler,
             Action continuation,
             int waitable,
-            bool copy = false)
+            bool copy = false,
+            bool background = false)
         {
             _scheduler = scheduler ?? throw new ArgumentNullException();
             Continuation = continuation ?? throw new ArgumentNullException();
             Waitable = waitable;
             IsCopy = copy;
+            IsBackground = background;
         }
 
         internal Action Continuation { get; }
@@ -299,6 +362,9 @@ namespace System.Runtime.InteropServices
 
         // A stream or future end's copy, whose event carries the copy's result.
         internal bool IsCopy { get; }
+
+        // A timer of the loop's own, which the loop does not wait for.
+        internal bool IsBackground { get; }
 
         internal uint Payload { get; set; }
 

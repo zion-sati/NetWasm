@@ -6,7 +6,7 @@ import test from 'node:test';
 import { createRuntimeContractImports } from './runtime-contract-imports.mjs';
 
 for (const target of ['wasm32', 'wasm64']) {
-  test(`Native contract imports preserve the empty environment ABI: ${target}`, () => {
+  test(`Native contract imports preserve the empty environment, arguments and working directory ABI: ${target}`, () => {
     const memory = new WebAssembly.Memory({ initial: 1 });
     const bytes = new Uint8Array(memory.buffer);
     bytes.fill(0xa5);
@@ -24,6 +24,15 @@ for (const target of ['wasm32', 'wasm64']) {
     assert.deepEqual([...bytes.slice(32, 32 + width * 2)], Array(width * 2).fill(0));
     assert.equal(bytes[31], 0xa5);
     assert.equal(bytes[32 + width * 2], 0xa5);
+    bytes.fill(0xa5, 32, 32 + width * 2);
+    imports[`${prefix}|wasi:cli/environment@0.3`]['get-arguments'](target === 'wasm64' ? 32n : 32);
+    assert.deepEqual([...bytes.slice(32, 32 + width * 2)], Array(width * 2).fill(0));
+    assert.equal(bytes[32 + width * 2], 0xa5);
+    // option<string> none: only the discriminant is written.
+    imports[`${prefix}|wasi:cli/environment@0.3`]['get-initial-cwd'](target === 'wasm64' ? 128n : 128);
+    assert.equal(bytes[128], 0);
+    assert.equal(bytes[127], 0xa5);
+    assert.equal(bytes[129], 0xa5);
     assert.equal(imports.env.emscripten_notify_memory_growth(), undefined);
     assert.equal(imports[`${prefix}|wasi:random/random@0.3`]['get-random-u64'](),
       0x0123456789abcdefn);
@@ -44,7 +53,7 @@ for (const target of ['wasm32', 'wasm64']) {
     assert.equal(imports.$root['[subtask-drop]'](7), undefined);
     assert.equal(imports.$root['[subtask-cancel]'](7), 4);
     for (const call of guarded) assert.throws(call, /Unexpected runtime service call/);
-    assert.equal(reads, 1);
+    assert.equal(reads, 3);
     assert.equal(Object.hasOwn(imports, 'wasi_snapshot_preview1'), false);
     assert.equal(Object.hasOwn(imports, 'wasi_unstable'), false);
   });

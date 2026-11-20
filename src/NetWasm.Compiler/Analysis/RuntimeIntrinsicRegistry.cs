@@ -40,6 +40,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Array", "GetLength") => RuntimeIntrinsic.ArrayGetLength,
                 ("System.Array", "GetLowerBound") => RuntimeIntrinsic.ArrayGetLowerBound,
                 ("System.Array", "InternalElementType") => RuntimeIntrinsic.ArrayElementType,
+                ("System.Array", "InternalPrimitiveElementType") => RuntimeIntrinsic.ArrayPrimitiveElementType,
+                ("System.GC", "InternalAllocateUninitializedArray") => RuntimeIntrinsic.AllocateUninitializedArray,
                 ("System.Array", "InternalSetValue") => RuntimeIntrinsic.ArraySetValue,
                 ("System.Array", "InternalCreateInstance") when method.IsStatic &&
                     method.GenericArity == 0 && method.Signature.ReturnType == CliValueKind.ManagedReference &&
@@ -93,6 +95,7 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.GCMetricSupportRuntime", "IsSupported") =>
                     RuntimeIntrinsic.GcMetricIsSupported,
                 ("System.GCFinalizerRuntime", "WaitForPending") => RuntimeIntrinsic.GcWaitForPendingFinalizers,
+                ("System.GCFinalizerRuntime", "RunQueued") => RuntimeIntrinsic.GcRunQueuedFinalizers,
                 ("System.ObjectIdentityRuntime", "GetHashCode") => RuntimeIntrinsic.ObjectIdentityHash,
                 ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "CloneBoxedValue") =>
                     RuntimeIntrinsic.BoxedValueClone,
@@ -110,6 +113,13 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AreEqual") =>
                     RuntimeIntrinsic.RuntimeHelpersEquals,
                 ("System.MarvinSeedRuntime", "Get") => RuntimeIntrinsic.RandomSeed,
+                ("System.Buffer", "RecordReferenceWrites") => RuntimeIntrinsic.RecordReferenceWrites,
+                ("System.GCGenerationRuntime", "Of") => RuntimeIntrinsic.GcObjectGeneration,
+                ("System.GCCollectionRuntime", "CollectYoung") => RuntimeIntrinsic.GcCollectYoung,
+                ("System.GCCollectionRuntime", "CollectWhenIdle") => RuntimeIntrinsic.GcCollectWhenIdle,
+                ("System.GCCollectionRuntime", "CollectWhenQuiet") => RuntimeIntrinsic.GcCollectWhenQuiet,
+                ("System.Runtime.InteropServices.StructureMarshallingRuntime", "Construct") =>
+                    RuntimeIntrinsic.StructMarshallingConstruct,
                 ("System.ValueType", "Equals") => RuntimeIntrinsic.ValueTypeEquals,
                 ("System.ValueType", "GetHashCode") =>
                     RuntimeIntrinsic.ValueTypeGetHashCode,

@@ -154,6 +154,18 @@ public sealed class LocalAddressDereferenceFolderTests
         Assert.Same(body, Folder().Rewrite(body));
     }
 
+    // A lane named by its token is only read, as by a field instance: a store stays a store through the address.
+    [Fact]
+    public void AStoreToAVectorsLaneByItsTokenStays()
+    {
+        // The fixture's fields by token are int32s.
+        var body = Body([Vector4], code => code.Local(CilOperation.LoadLocalAddress, 0)
+            .Op(CilOperation.LoadInt32, 1)
+            .Op(CilOperation.StoreField, new CilOperand.Entity(new EntityKey(Assembly, 0x04000020))).Return());
+
+        Assert.Same(body, Folder().Rewrite(body));
+    }
+
     [Fact]
     public void AnotherTypesFieldReadThroughAVectorsAddressStays()
     {
@@ -280,7 +292,7 @@ public sealed class LocalAddressDereferenceFolderTests
         var program = new Program();
         return new(new ControlFlowGraphBuilderFactory().Create(),
             new TypedStackValidatorFactory(new StackTypeCompatibilityValidator()).Create(program, program, program),
-            enabled: true);
+            new VectorLaneFields(program, program), enabled: true);
     }
 
     private static CilMethodBody Body(CliTypeIdentity[] locals, Func<CilBuilder, CilBuilder> write)

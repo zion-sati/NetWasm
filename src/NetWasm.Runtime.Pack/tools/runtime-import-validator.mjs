@@ -7,7 +7,7 @@ export function validateRuntimeImports(imports, target, collector) {
   if (target !== 'wasm32' && target !== 'wasm64') {
     throw new Error('Unsupported runtime target');
   }
-  if (collector !== undefined && !['compact', 'netwasm', 'bump'].includes(collector)) {
+  if (collector !== undefined && !['compact', 'netwasm', 'netwasmgen', 'bump'].includes(collector)) {
     throw new Error('Unsupported runtime collector');
   }
   const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';

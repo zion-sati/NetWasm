@@ -11,6 +11,7 @@ namespace System.Runtime.InteropServices
 {
     public static class CollectionsMarshal
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Span<T> AsSpan<T>(List<T>? list)
         {
             Span<T> span = default;
@@ -31,6 +32,7 @@ namespace System.Runtime.InteropServices
             return span;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Span<byte> AsBytes(System.Collections.BitArray? array)
         {
             if (array == null)

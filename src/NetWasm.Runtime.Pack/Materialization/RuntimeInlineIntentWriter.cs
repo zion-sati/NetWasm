@@ -61,7 +61,14 @@ internal sealed class RuntimeInlineIntentWriter : IRuntimeInlineIntentWriter
                 return module.ToArray();
             if (exports is null)
                 throw Invalid();
-            var functions = ReadFunctionExports(source[exports.Value.PayloadStart..exports.Value.End]);
+            var (functions, exported) = ReadExports(source[exports.Value.PayloadStart..exports.Value.End]);
+            // An intent names a runtime export, which the manifest checks. The link leaves out the optional runtime
+            // functions a program does not use (the write barrier, for one, outside NetWasmGen), so an intent whose
+            // export this module lacks has nothing to annotate; one that names an export other than a function is
+            // wrong.
+            requested = [.. requested.Where(intent => exported.Contains(intent.Export))];
+            if (requested.Count == 0)
+                return module.ToArray();
             var entries = inline is null
                 ? []
                 : ReadAnnotations(source[inline.Value.PayloadStart..inline.Value.End]);
@@ -133,21 +140,23 @@ internal sealed class RuntimeInlineIntentWriter : IRuntimeInlineIntentWriter
         return result;
     }
 
-    private static Dictionary<string, uint> ReadFunctionExports(ReadOnlySpan<byte> payload)
+    private static (Dictionary<string, uint> Functions, HashSet<string> Exported) ReadExports(ReadOnlySpan<byte> payload)
     {
         var reader = new BinaryReader(payload);
         var count = reader.Unsigned();
         var functions = new Dictionary<string, uint>(StringComparer.Ordinal);
+        var exported = new HashSet<string>(StringComparer.Ordinal);
         for (var index = 0u; index < count; index++)
         {
             var name = reader.Name();
             var kind = reader.Byte();
             var itemIndex = reader.Unsigned();
+            exported.Add(name);
             if (kind == 0 && !functions.TryAdd(name, itemIndex))
                 throw Invalid();
         }
         reader.RequireEnd();
-        return functions;
+        return (functions, exported);
     }
 
     private static List<AnnotationEntry> ReadAnnotations(ReadOnlySpan<byte> payload)

@@ -8,6 +8,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -48,7 +49,7 @@ public sealed class RunClassConstructorIntrinsicEmitterTests
         };
         var addresses = new RecordingAddresses();
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(
-            new RunClassConstructorIntrinsicEmitter(program, program, program, program, program, addresses));
+            new RunClassConstructorIntrinsicEmitter(program, program, program, program, program, addresses, new KeyedDispatchEmitter()));
         var writer = new RecordingInstructionWriter();
 
         emitter.Emit(request, writer);

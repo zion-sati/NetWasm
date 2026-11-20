@@ -12,17 +12,23 @@ internal enum AttributeValueKind
     Type,
     Null,
     Int32,
+    // An assembly the compile knows: Assembly.GetExecutingAssembly() or typeof(T).Assembly.
+    Assembly,
+    // A System.Type (or null) the analysis cannot name: a parameter, local, field or return typed Type, a GetType()
+    // result, or different types meeting at a join.
+    RuntimeType,
 }
 
 internal readonly record struct AttributeValueProof(
     AttributeValueKind Kind,
     CliTypeIdentity? Type = null,
-    int Integer = 0)
+    int Integer = 0,
+    AssemblyIdentity? Assembly = null)
 {
     public bool? Condition => Kind switch
     {
         AttributeValueKind.Null => false,
-        AttributeValueKind.Type => true,
+        AttributeValueKind.Type or AttributeValueKind.Assembly => true,
         AttributeValueKind.Int32 => Integer != 0,
         _ => null,
     };

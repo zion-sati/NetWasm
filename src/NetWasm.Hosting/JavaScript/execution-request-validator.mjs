@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
+import { exactSemanticVersion } from "./exact-semantic-version.mjs";
+
 const validatorKeys = ["hostDirectories", "isAbsoluteHostPath", "selectProviderKind"];
 const requestKeys = [
   "applicationImports",
@@ -21,7 +23,7 @@ const networkPolicies = new Set(["allowAll", "denyAll"]);
 const preopenAccesses = new Set(["readOnly", "readWrite"]);
 const supportedClocks = new Set(["monotonic", "wall"]);
 const digestPattern = /^[0-9a-f]{64}$/u;
-const versionedIdentifierPattern = /^[a-z0-9][a-z0-9.\-:/]*@[0-9]+\.[0-9]+\.[0-9]+$/u;
+const versionedIdentifierPattern = new RegExp(`^[a-z0-9][a-z0-9.\\-:/]*@${exactSemanticVersion}$`, "u");
 
 export function createExecutionRequestValidator(options) {
   assertExactDataObject(options, validatorKeys, "execution request validator options");

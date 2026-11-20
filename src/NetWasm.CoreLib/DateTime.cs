@@ -8,6 +8,7 @@ namespace System
     using System.Globalization;
     using Runtime.InteropServices;
     using Runtime.InteropServices.TimeZones;
+    using System.Runtime.CompilerServices;
 
     [Serializable]
     [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
@@ -278,19 +279,22 @@ namespace System
             long ticks,
             LocalTimeBasis basis)
         {
-            PlatformServices.EnsureLocalTimeReady();
             return PlatformServices.LocalTimeOffsets.Resolve(ticks, basis);
         }
         private ulong InternalKind => _dateData & FlagsMask;
         internal bool IsAmbiguousDaylightSavingTime() =>
             _dateData >= KindLocalAmbiguousDst;
         public long Ticks { get { return (long)(_dateData & TicksMask); } }
-        public DateTimeKind Kind => InternalKind switch
+        public DateTimeKind Kind
         {
-            0 => DateTimeKind.Unspecified,
-            KindUtc => DateTimeKind.Utc,
-            _ => DateTimeKind.Local,
-        };
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => InternalKind switch
+            {
+                0 => DateTimeKind.Unspecified,
+                KindUtc => DateTimeKind.Utc,
+                _ => DateTimeKind.Local,
+            };
+        }
         public DateTime Date => new((ulong)(Ticks - Ticks % TimeSpan.TicksPerDay) | InternalKind);
         public TimeSpan TimeOfDay { get { return new(Ticks % TimeSpan.TicksPerDay); } }
         public int Year { get { GetDateParts(out var year, out _, out _); return year; } }
@@ -360,6 +364,7 @@ namespace System
             }
             return new DateTime(ticks | InternalKind);
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsLeapYear(int year) => GregorianDateMath.IsLeapYear(year);
         public static int DaysInMonth(int year, int month) => DateOnly.DaysInMonth(year, month);
 
@@ -741,6 +746,7 @@ namespace System
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void GetTime(out int hour, out int minute, out int second)
         {
             ulong seconds = (ulong)Ticks / TimeSpan.TicksPerSecond;
@@ -751,6 +757,7 @@ namespace System
             hour = (int)((uint)hours % 24);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void GetTimePrecise(out int hour, out int minute, out int second, out int tick)
         {
             ulong ticks = (ulong)Ticks;
@@ -819,6 +826,7 @@ namespace System
             GregorianDateMath.GetDateParts(
                 (int)(Ticks / TimeSpan.TicksPerDay), out year, out month, out day);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private DateTime AddUnits(double value, long maxUnitCount, long ticksPerUnit)
         {
             if (double.IsNaN(value) || Math.Abs(value) > maxUnitCount)

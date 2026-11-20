@@ -53,7 +53,9 @@ world.
 with code 1. `nwc -help` lists every option.
 
 `-diagnosticlog:<path>` enables the structured compiler `ILogger` stream
-and writes JSON Lines to that file. `-diagnostictrace:<path>` enables the
+and writes JSON Lines to that file. `-diagnosticloglevel:<level>` sets the
+least severe entries it keeps: `Trace`, `Debug` (the default), `Information`,
+`Warning`, `Error` or `Critical`. `-diagnostictrace:<path>` enables the
 full compiler support trace and automatically writes the same log to
 `<path>.passes/compiler.log.jsonl` unless an explicit diagnostic-log path is
 also supplied. Both facilities are disabled by default. See
@@ -70,6 +72,13 @@ the exception types' names, which hosts read for crash reports, and
 `/netwasm-sidecars/` under its assembly's name with `.wasm`: one compiled from
 `App.dll` opens `App.wasm.type-symbols` and `App.wasm.method-symbols`, so name
 the files to match. See [program sidecars](diagnostics.md#program-sidecars).
+
+`-gc:<collector>` names the collector the program will run with: `Compact`,
+`NetWasm`, `NetWasmGen` or `Bump`, as `NetWasmGarbageCollector` spells them,
+which the SDK passes. A program compiled for `NetWasmGen` records its stores
+of references, and its runtime must be the `NetWasmGen` one; for any other
+collector, or without the option, the program is the same. See
+[choosing a garbage collector](runtime-garbage-collection.md).
 
 The separate `NetWasm.Wit.Bindings.Tool` package writes reflection-free C#
 bindings; the compiler CLI does not generate C# source, and a `NetWasmWit` item
@@ -112,6 +121,12 @@ eng/build-netwasm-runtime.sh \
   --target wasm32 --configuration release \
   --output build/netwasm/runtime.wasm
 ```
+
+The runtime exports `collect_when_idle` and `collect_when_quiet`. A host that
+embeds the linked core module itself calls the first when it is idle between
+calls into the module and the second once it has stayed quiet; NetWasm's
+JavaScript hosts and a component's own event loop already do. See
+[collection policy](runtime-garbage-collection.md#collection-policy).
 
 Raw core output runs through the generated JavaScript adapter in Node or a
 browser served over HTTP, with explicit `consumerModules`. Components run in

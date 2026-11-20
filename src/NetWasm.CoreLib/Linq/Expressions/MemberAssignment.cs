@@ -3,7 +3,7 @@
 // Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptation: Bind(MethodInfo, Expression) finds the accessor's property through the
 // compiler's accessor descriptor, where upstream searches the declaring type's properties by
-// reflection (owner decision 2026-10-21). The not-an-accessor message names the method object,
+// reflection. The not-an-accessor message names the method object,
 // not its declaring type and name, so the factory does not make names reachable.
 
 using System.Diagnostics.CodeAnalysis;

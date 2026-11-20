@@ -75,7 +75,7 @@ internal sealed class DecliningEarlyCutoffEmitter(IEarlyCutoffEmitter inner) : I
 /// <summary>
 /// The early cutoff: when only bodies changed and every edited method adds to the program
 /// what it added before, the program's whole-program state is the last compile's, so only
-/// the edited methods' code can differ. Each edited method is analysed alone, its own facts
+/// the edited methods' code can differ. Each edited method is analyzed alone, its own facts
 /// (sites, by-ref effects, exception groups, root map) derived from the last compile's, and
 /// it is emitted against the last compile's answers into the last compile's module. Any
 /// fact that might differ from what a full compile would derive fails the cutoff.
@@ -138,11 +138,11 @@ internal sealed class EarlyCutoffEmitter(
         var functions = UnitFunctionIndices.Read(kept.FunctionIndices);
         if (functions.Functions.Count == 0) return Declined("the last compile kept no function indices");
 
-        // Each edited method, analysed alone, adds to the program what it added before.
-        var analysed = editedMethods.Analyze(metadata, preparation, edited, plans.Program.AllocatedTypes);
-        if (!analysed.Unanalysed.IsEmpty)
-            return Declined($"{analysed.Unanalysed[0]} has no instance of its own to analyse alone");
-        var contributions = analysed.Methods.ToDictionary(method => method.Method.CanonicalName, method => new MethodContributionRecord(
+        // Each edited method, analyzed alone, adds to the program what it added before.
+        var analyzed = editedMethods.Analyze(metadata, preparation, edited, plans.Program.AllocatedTypes);
+        if (!analyzed.Unanalyzed.IsEmpty)
+            return Declined($"{analyzed.Unanalyzed[0]} has no instance of its own to analyze alone");
+        var contributions = analyzed.Methods.ToDictionary(method => method.Method.CanonicalName, method => new MethodContributionRecord(
             method.Method.Definition.Key.Assembly.Name, method.Method.Definition.Key.MetadataToken, method.Contribution),
             StringComparer.Ordinal);
         if (EditedContributions.Compare(EditedContributions.Bodies(inputs.Changes), inputs.Previous.Contributions, contributions)
@@ -152,9 +152,9 @@ internal sealed class EarlyCutoffEmitter(
         }
 
         // Its own facts: call, dispatch and type-test sites, and by-ref effects as before.
-        var owners = analysed.Methods.Select(method => method.Method.CanonicalName).ToHashSet(StringComparer.Ordinal);
+        var owners = analyzed.Methods.Select(method => method.Method.CanonicalName).ToHashSet(StringComparer.Ordinal);
         var overlay = new Dictionary<(UnitQueryKind Kind, string Key), object>();
-        foreach (var method in analysed.Methods)
+        foreach (var method in analyzed.Methods)
         {
             foreach (var site in method.Instructions.CallSites)
             {
@@ -162,12 +162,12 @@ internal sealed class EarlyCutoffEmitter(
                     new UnitLookup<Core.IntermediateRepresentation.Calls.ManagedCallSite>(true, site);
             }
         }
-        foreach (var (key, site) in analysed.Sites.DispatchCallSites)
+        foreach (var (key, site) in analyzed.Sites.DispatchCallSites)
             overlay[(UnitQueryKind.DispatchCallSite, key)] = new UnitLookup<DispatchCallSiteModel>(true, site);
-        foreach (var (key, site) in analysed.Sites.TypeTestSites)
+        foreach (var (key, site) in analyzed.Sites.TypeTestSites)
             overlay[(UnitQueryKind.TypeTestSite, key)] = new UnitLookup<TypeTestSiteModel>(true, site);
         var intrinsics = intrinsicRegistries.Create(symbols, metadata.Methods);
-        if (ByRefEffects(methods, intrinsics, plans.Program, analysed, overlay) is { } byRefChange)
+        if (ByRefEffects(methods, intrinsics, plans.Program, analyzed, overlay) is { } byRefChange)
             return Declined(byRefChange);
         foreach (var (id, locations) in stackTraces?.EditedLocations ?? [])
             overlay[(UnitQueryKind.StackTraceLocationSymbols, id.ToString(CultureInfo.InvariantCulture))] = locations;
@@ -178,11 +178,11 @@ internal sealed class EarlyCutoffEmitter(
         var typeDefinitions = typeDefinitionResolvers.Create(metadata);
 
         // Structured as a full compile structures them, with their exception groups as before.
-        var bodies = analysed.Methods.ToDictionary(method => method.Method.Definition.Key, method => method.Body);
+        var bodies = analyzed.Methods.ToDictionary(method => method.Method.Definition.Key, method => method.Body);
         var lowering = methodProgram.Build(bodies, ImmutableDictionary<string, ControlFlow.ManagedMethodBody>.Empty,
             preparation.OptimizationSettings.BranchPrefixDuplication, preparation.OptimizationSettings.DispatcherElimination);
         structuredInvariants.Validate(symbols, lowering);
-        foreach (var method in analysed.Methods)
+        foreach (var method in analyzed.Methods)
         {
             var name = method.Method.CanonicalName;
             var groups = UnitExceptionGroups.Of(lowering.Methods[method.Method.Definition.Key],
@@ -204,7 +204,7 @@ internal sealed class EarlyCutoffEmitter(
         var allocatingConstructed = new ReplayMembership<string>(answers, UnitQueryKind.AllocatingConstructedMethod,
             static key => key);
         var rootMaps = new Dictionary<string, MethodRootMap>(StringComparer.Ordinal);
-        foreach (var method in analysed.Methods)
+        foreach (var method in analyzed.Methods)
         {
             var map = rootMapAnalyzer.Analyze(new RootMapAnalysisRequest(method.Body, allocating, allocatingConstructed));
             rootMaps[method.Method.CanonicalName] = map;
@@ -216,8 +216,8 @@ internal sealed class EarlyCutoffEmitter(
         using var emitter = replayEmitters.Create(replay, types, typeDefinitions, fields, methods, symbols, typeClassifier,
             intrinsics, options.Target);
         var patched = new Dictionary<int, byte[]>();
-        var emitted = new List<WasmFunctionDefinition>(analysed.Methods.Length);
-        foreach (var method in analysed.Methods)
+        var emitted = new List<WasmFunctionDefinition>(analyzed.Methods.Length);
+        foreach (var method in analyzed.Methods)
         {
             var name = method.Method.CanonicalName;
             if (!functions.Functions.TryGetValue(name, out var index))
@@ -244,12 +244,12 @@ internal sealed class EarlyCutoffEmitter(
     // Why an edited method's by-ref effects may differ from the last compile's: they read
     // their own through a cycle, or come out other than before; null when they are the same.
     private string? ByRefEffects(IMethodRepository methods, IRuntimeIntrinsicRegistry intrinsics, UnitProgramFacts program,
-        EditedMethods analysed, Dictionary<(UnitQueryKind Kind, string Key), object> overlay)
+        EditedMethods analyzed, Dictionary<(UnitQueryKind Kind, string Key), object> overlay)
     {
         var summarizer = byRefSummarizers.Create(methods, intrinsics);
         var identities = program.DirectMethods.Values.Concat(program.ConstructedMethods).ToHashSet(StringComparer.Ordinal);
-        var sites = analysed.Sites.DispatchCallSites;
-        foreach (var method in analysed.Methods)
+        var sites = analyzed.Sites.DispatchCallSites;
+        foreach (var method in analyzed.Methods)
         {
             var name = method.Method.CanonicalName;
             var summary = summarizer.Summarize(new(name, method.Body, identities, program.DirectMethods,

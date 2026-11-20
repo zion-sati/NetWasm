@@ -27,7 +27,19 @@ internal sealed class RuntimeOptimizationArgumentBuilder(IRuntimeOptimizationPol
         ["bulk-memory"] = ["--enable-bulk-memory", "--enable-bulk-memory-opt"],
         ["simd"] = ["--enable-simd"],
         ["memory64"] = ["--enable-memory64"],
+        ["exceptions"] = ["--enable-exception-handling"],
+        ["legacy-exceptions"] = ["--enable-exception-handling"],
     }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    // Binaryen's flags for a static-native profile's features (wasm-tools' names, "mvp" first): the MVP, then each
+    // feature's flags once, in order.
+    internal static ImmutableArray<string> FeatureArguments(ImmutableArray<string> features)
+    {
+        if (features.IsDefaultOrEmpty || features[0] != "mvp" || features.Any(feature => !FeatureFlags.ContainsKey(feature)))
+            throw new InvalidOperationException("Runtime optimization requires the pack's static-native profile with known features.");
+        return ["--mvp-features", .. features.SelectMany(feature => FeatureFlags[feature])
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+    }
 
     public ImmutableArray<string> Build(RuntimeOptimizationRequest request)
     {
@@ -38,9 +50,7 @@ internal sealed class RuntimeOptimizationArgumentBuilder(IRuntimeOptimizationPol
             return [];
         }
         // The runtime and any static native code may use the features of the pack's static-native profile.
-        var features = request.Target.NativeValidation?.Features ?? default;
-        if (features.IsDefaultOrEmpty || features[0] != "mvp" || features.Any(feature => !FeatureFlags.ContainsKey(feature)))
-            throw new InvalidOperationException("Runtime optimization requires the pack's static-native profile with known features.");
+        var features = FeatureArguments(request.Target.NativeValidation?.Features ?? default);
         var outputPath = Path.GetFullPath(request.OutputPath);
         var arguments = ImmutableArray.CreateBuilder<string>();
         arguments.Add("--strip-target-features");
@@ -61,8 +71,7 @@ internal sealed class RuntimeOptimizationArgumentBuilder(IRuntimeOptimizationPol
         arguments.Add(outputPath);
         arguments.Add("-o");
         arguments.Add(outputPath);
-        arguments.Add("--mvp-features");
-        arguments.AddRange(features.SelectMany(feature => FeatureFlags[feature]).Order(StringComparer.Ordinal));
+        arguments.AddRange(features);
         return arguments.ToImmutable();
     }
 }

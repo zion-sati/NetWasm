@@ -276,6 +276,128 @@ public sealed class IntegerRangeTests
         Assert.True(NonZero(proof, 8));
     }
 
+    // if (divisor > 0) as cgt and brfalse: the comparison's result carries what it compared into the branch.
+    [Fact]
+    public void ABranchOnAComparisonsResultNarrowsWhatItCompared()
+    {
+        var proof = Prove([Int32, Int32], [],
+            Argument(1), I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(CilOperation.CompareGreaterThanSigned),
+            I(CilOperation.BranchIfFalse, new CilOperand.BranchTarget(8)),
+            Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+            Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return));
+        Assert.True(NonZero(proof, 6));
+        Assert.False(NonZero(proof, 10));
+    }
+
+    // 0 | (divisor > 0) and 1 & (divisor > 0), as a folded platform check leaves a test it was joined to, and the
+    // test's opposite, (divisor < 1) == 0.
+    [Theory]
+    [InlineData("0 | test")]
+    [InlineData("test | 0")]
+    [InlineData("1 & test")]
+    [InlineData("test & 3")]
+    [InlineData("opposite")]
+    public void AResultJoinedToAConstantThatKeepsItOrTestedAgainstZeroStillNarrows(string shape)
+    {
+        Code zero = I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0));
+        Code[] positive = [Argument(1), zero, I(CilOperation.CompareGreaterThanSigned)];
+        Code[] test = shape switch
+        {
+            "0 | test" => [zero, .. positive, I(CilOperation.BitwiseOr), I(CilOperation.Nop)],
+            "test | 0" => [.. positive, zero, I(CilOperation.BitwiseOr), I(CilOperation.Nop)],
+            "1 & test" => [I(CilOperation.LoadInt32, new CilOperand.ConstantI4(1)), .. positive, I(CilOperation.BitwiseAnd),
+                I(CilOperation.Nop)],
+            "test & 3" => [.. positive, I(CilOperation.LoadInt32, new CilOperand.ConstantI4(3)), I(CilOperation.BitwiseAnd),
+                I(CilOperation.Nop)],
+            _ => [Argument(1), I(CilOperation.LoadInt32, new CilOperand.ConstantI4(1)), I(CilOperation.CompareLessThanSigned),
+                zero, I(CilOperation.CompareEqual), I(CilOperation.Nop)],
+        };
+        var proof = Prove([Int32, Int32], [],
+            [
+                .. test, I(CilOperation.BranchIfTrue, new CilOperand.BranchTarget(11)),
+                Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+                Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+            ]);
+        Assert.False(NonZero(proof, 9));
+        Assert.True(NonZero(proof, 13));
+    }
+
+    // (divisor > 0) == 0 is divisor <= 0, so only the edge not taken divides by a non-zero divisor; compared with one,
+    // the result says nothing of the divisor.
+    [Theory]
+    [InlineData("zero", true)]
+    [InlineData("one", false)]
+    public void AGreaterThansResultComparedWithAConstant(string constant, bool fallthroughNonZero)
+    {
+        Code zero = I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0));
+        Code[] other = constant switch
+        {
+            "zero" => [zero, I(CilOperation.Nop)],
+            _ => [I(CilOperation.LoadInt32, new CilOperand.ConstantI4(1)), I(CilOperation.Nop)],
+        };
+        var proof = Prove([Int32, Int32], [],
+            [
+                Argument(1), zero, I(CilOperation.CompareGreaterThanSigned), .. other,
+                I(CilOperation.CompareEqual), I(CilOperation.BranchIfTrue, new CilOperand.BranchTarget(11)),
+                Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+                Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+            ]);
+
+        Assert.Equal(fallthroughNonZero, NonZero(proof, 9));
+        Assert.False(NonZero(proof, 13));
+    }
+
+    // divisor == 0 as ceq, of a divisor known not to be negative: the edge not taken holds one or more, the edge
+    // taken zero, so divisor + 1 is one.
+    [Fact]
+    public void AnEqualitysResultNarrowsBothWays()
+    {
+        var proof = Prove([Int32, Int32], [],
+            Argument(1), I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(CilOperation.BranchIfLessThanSigned, new CilOperand.BranchTarget(17)),
+            Argument(1), I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(CilOperation.CompareEqual),
+            I(CilOperation.BranchIfTrue, new CilOperand.BranchTarget(11)),
+            Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+            Argument(0), Argument(1), I(CilOperation.LoadInt32, new CilOperand.ConstantI4(1)), I(CilOperation.Add),
+            I(CilOperation.Divide), I(CilOperation.Return),
+            I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(CilOperation.Return));
+        Assert.True(NonZero(proof, 9));
+        Assert.True(NonZero(proof, 15));
+    }
+
+    // A result masked with an even constant, or joined to a value that may be one, says nothing of what it compared.
+    [Theory]
+    [InlineData(CilOperation.BitwiseAnd, 2)]
+    [InlineData(CilOperation.BitwiseOr, 1)]
+    public void AResultAConstantChangesNarrowsNothing(CilOperation join, int constant)
+    {
+        var proof = Prove([Int32, Int32], [],
+            Argument(1), I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(CilOperation.CompareGreaterThanSigned),
+            I(CilOperation.LoadInt32, new CilOperand.ConstantI4(constant)), I(join),
+            I(CilOperation.BranchIfTrue, new CilOperand.BranchTarget(10)),
+            Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+            Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return));
+        Assert.False(NonZero(proof, 8));
+        Assert.False(NonZero(proof, 12));
+    }
+
+    // The compared slot is stored between the comparison and the branch, or the comparison is unsigned: nothing is
+    // narrowed.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AComparisonOfAStoredSlotOrAnUnsignedOneNarrowsNothing(bool stored)
+    {
+        var proof = Prove([Int32, Int32, Int32], [],
+            Argument(1), I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(stored ? CilOperation.CompareGreaterThanSigned : CilOperation.CompareGreaterThanUnsigned),
+            Argument(2), stored ? (CilOperation.StoreArgument, new CilOperand.Index(1)) : I(CilOperation.Pop),
+            I(CilOperation.BranchIfFalse, new CilOperand.BranchTarget(10)),
+            Argument(0), Argument(1), I(CilOperation.Divide), I(CilOperation.Return),
+            I(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(CilOperation.Return));
+        Assert.False(NonZero(proof, 8));
+    }
+
     // A branch on a reference narrows nothing.
     [Fact]
     public void ABranchOnAReferenceNarrowsNothing()

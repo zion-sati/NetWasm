@@ -85,6 +85,9 @@ namespace System.Text.Json.Serialization.Converters
             // JsonElement/JsonNode parsing is synchronous and needs the complete
             // value. Force read-ahead for streaming reader entry points.
             RequiresReadAhead = true;
+#if NETWASM
+            s_objectValuesReachable = nameof(DefaultObjectConverter);
+#endif
         }
 
         public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

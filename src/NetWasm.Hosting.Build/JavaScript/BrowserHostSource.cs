@@ -97,7 +97,7 @@ internal static class BrowserHostSource
             .Append(JavaScriptRuntime.Quoted(host)).AppendLine(";");
         if (capabilities.LinksFilesystem)
         {
-            source.Append("import { createBrowserFileMounts, createWasiFilesystem } from ")
+            source.Append("import { createBrowserFileMounts, createBrowserSidecarMaterializer, createWasiFilesystem } from ")
                 .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.Filesystem)).AppendLine(";");
         }
         if (capabilities.LinksHttp)
@@ -126,6 +126,7 @@ internal static class BrowserHostSource
         {
             Import("createWasiFilesystem", "wasi-filesystem.mjs");
             Import("createBrowserFileMounts", "browser-file-mounts.mjs");
+            Import("createBrowserSidecarMaterializer", "browser-sidecar-materializer.mjs");
         }
         if (capabilities.LinksHttp) Import("createWasiHttpFetch", "wasi-http-fetch.mjs");
         if (validate) Import("validateDeploymentManifest", "deployment-manifest-validator.mjs");
@@ -172,6 +173,10 @@ internal static class BrowserHostSource
             capabilities.LinksFilesystem
                 ? $"createFilesystemScope: preopens => {MemoryFilesystem},"
                 : "createFilesystemScope: null,",
+            // The program's sidecars (type and method names, time zones) mount in that filesystem scope.
+            capabilities.LinksFilesystem
+                ? "createSidecarMaterializer: createBrowserSidecarMaterializer,"
+                : "createSidecarMaterializer: null,",
             $"createImports: createWasiPlatform(Object.freeze({{ initialDirectory: null, network: {(capabilities.LinksHttp ? FetchNetwork : "null")} }})),",
         ]);
         AppendWebMembers(source, indent);

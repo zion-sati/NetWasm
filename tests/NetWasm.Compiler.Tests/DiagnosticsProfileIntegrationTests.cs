@@ -281,8 +281,8 @@ public sealed class DiagnosticsProfileIntegrationTests
             .ToArray();
         Assert.Contains(diagnostics, instance => instance.DeclaringType.CanonicalName.Contains(
             "System.Diagnostics.Activity", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, instance => instance.DeclaringType.CanonicalName.Contains(
-            "System.Diagnostics.DistributedContextPropagator", StringComparison.Ordinal));
+        // DistributedContextPropagator's own members are accessors and forwarders, which may be inlined; the
+        // propagator it hands out is CoreLib's W3CPropagator.
         Assert.Contains(diagnostics, instance => instance.DeclaringType.CanonicalName.Contains(
             "System.Diagnostics.W3CPropagator", StringComparison.Ordinal));
         var coreLibAssembly = Path.GetFileNameWithoutExtension(assets.CoreLib);

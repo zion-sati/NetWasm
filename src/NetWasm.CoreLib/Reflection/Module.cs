@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Partial upstream base contract; native metadata discovery is unavailable.
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 namespace System.Reflection;
 
@@ -23,6 +24,7 @@ public abstract partial class Module : ICustomAttributeProvider, ISerializable
     public virtual void GetObjectData(SerializationInfo info, StreamingContext context) => throw Unavailable();
     public override bool Equals(object? value) => base.Equals(value);
     public override int GetHashCode() => base.GetHashCode();
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(Module? left, Module? right)
     {
         if (right is null) return left is null;

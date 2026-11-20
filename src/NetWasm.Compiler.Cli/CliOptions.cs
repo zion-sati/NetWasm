@@ -5,6 +5,7 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
@@ -46,6 +47,14 @@ internal sealed record CompileCliOptions(
         return [.. properties.Select(pair => (pair.Key, pair.Value))];
     }
 
+    private static ImmutableArray<(string Library, string Path)> ParseNativeArchives(ImmutableArray<string> values) =>
+    [
+        .. values.Select(value => value.IndexOf('=') is var separator && separator > 0 && separator < value.Length - 1 &&
+            !value.Contains('\0')
+                ? (value[..separator], value[(separator + 1)..])
+                : throw CliOptionException.Create($"-nativearchive '{value}' must be library=path")),
+    ];
+
     private static ImmutableDictionary<string, bool> ParseFeatureSwitches(ImmutableArray<string> values)
     {
         var switches = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.Ordinal);
@@ -62,9 +71,9 @@ internal sealed record CompileCliOptions(
     public static readonly FrozenSet<string> Names = new[]
     {
         "out", "reference", "r", "metadatareference", "originalcontract", "referenceorigin", "target", "entry", "export", "platform", "optimize", "pathmap", "source", "interopmanifest", "runtimelayout", "compilermetadata",
-        "typesymbols", "methodsymbols", "typenames", "callbackobject", "wit", "world", "importmodule",
-        "nativelibrary", "linkednativeonly", "featureswitch", "runtimeproperty",
-        "diagnostictrace", "diagnosticlog", "jsexportboundary", "structureddiagnostics",
+        "typesymbols", "methodsymbols", "typenames", "gc", "callbackobject", "wit", "world", "importmodule",
+        "nativelibrary", "nativearchive", "linkednativeonly", "missingapierror", "featureswitch", "runtimeproperty",
+        "diagnostictrace", "diagnosticlog", "diagnosticloglevel", "jsexportboundary", "structureddiagnostics",
         "compiledunits", "verifycompiledunits",
         "projectdirectory", "intermediatedirectory", "wasmtools", "wasmtoolsnode", "wasmtoolscommand",
         "wasmtoolsmodule", "managedloopinvariantfieldhoisting", "managedstaticdataviewelimination",
@@ -79,7 +88,7 @@ internal sealed record CompileCliOptions(
         "managedquotientreuse", "managedintegercheckelimination", "managedloopinvariantexpressionhoisting",
         "managedmulticastinlinedispatch",
         "managednewobjectnullcheckelimination", "managedloopstrengthreduction", "managedrangebranchfolding",
-        "managedunwrittenstaticfieldfolding",
+        "managedunwrittenstaticfieldfolding", "managedconditionalselects",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
@@ -97,6 +106,8 @@ internal sealed record CompileCliOptions(
     public string? TypeSymbols { get; init; }
     public string? MethodSymbols { get; init; }
     public bool TypeNames { get; init; }
+    // The collector the program is compiled for; none when -gc is absent.
+    public RuntimeCollector? Collector { get; init; }
     public string? CallbackObject { get; init; }
     public string? Wit { get; init; }
     public string? World { get; init; }
@@ -106,12 +117,17 @@ internal sealed record CompileCliOptions(
     // other library compiles to a body that throws DllNotFoundException.
     public ImmutableArray<string> NativeLibraries { get; init; } = [];
     public bool LinkedNativeOnly { get; init; }
+    // A reached method naming a member its declaring type lacks fails the compile, rather than throwing when called.
+    public bool MissingApiError { get; init; }
+    // -nativearchive:library=path: a native archive the program links, for its library.
+    public ImmutableArray<(string Library, string Path)> NativeArchives { get; init; } = [];
     // -featureswitch:name=true|false: a feature switch the compiler folds.
     public ImmutableDictionary<string, bool> FeatureSwitches { get; init; } = ImmutableDictionary<string, bool>.Empty;
     // -runtimeproperty:name=value: a host property AppContext reads, as from runtimeconfig.json.
     public ImmutableArray<(string Name, string Value)> RuntimeProperties { get; init; } = [];
     public string? DiagnosticTrace { get; init; }
     public string? DiagnosticLog { get; init; }
+    public LogLevel? DiagnosticLogLevel { get; init; }
     public bool UseJavaScriptExportBoundary { get; init; }
     public bool StructuredDiagnostics { get; init; }
     // Keep and reuse compiled units in the intermediate directory; on by default.
@@ -157,6 +173,8 @@ internal sealed record CompileCliOptions(
     public string? ManagedLoopStrengthReduction { get; init; }
     public string? ManagedRangeBranchFolding { get; init; }
     public string? ManagedUnwrittenStaticFieldFolding { get; init; }
+
+    public string? ManagedConditionalSelects { get; init; }
 
     public static CompileCliOptions Parse(NwcArguments arguments)
     {
@@ -207,16 +225,20 @@ internal sealed record CompileCliOptions(
             TypeSymbols = options.Single("typesymbols"),
             MethodSymbols = options.Single("methodsymbols"),
             TypeNames = options.Toggle("typenames"),
+            Collector = ParseCollector(options.Single("gc")),
             CallbackObject = options.Single("callbackobject"),
             Wit = options.Single("wit"),
             World = options.Single("world"),
             ImportModules = options.Many("importmodule"),
             NativeLibraries = options.Many("nativelibrary"),
             LinkedNativeOnly = options.Toggle("linkednativeonly"),
+            MissingApiError = options.Toggle("missingapierror"),
+            NativeArchives = ParseNativeArchives(options.Many("nativearchive")),
             FeatureSwitches = ParseFeatureSwitches(options.Many("featureswitch")),
             RuntimeProperties = ParseRuntimeProperties(options.Many("runtimeproperty")),
             DiagnosticTrace = options.Single("diagnostictrace"),
             DiagnosticLog = options.Single("diagnosticlog"),
+            DiagnosticLogLevel = ParseLogLevel(options.Single("diagnosticloglevel")),
             UseJavaScriptExportBoundary = options.Toggle("jsexportboundary"),
             StructuredDiagnostics = options.Toggle("structureddiagnostics"),
             CompiledUnits = options.Toggle("compiledunits", absent: null),
@@ -264,6 +286,7 @@ internal sealed record CompileCliOptions(
             ManagedLoopStrengthReduction = options.Single("managedloopstrengthreduction"),
             ManagedRangeBranchFolding = options.Single("managedrangebranchfolding"),
             ManagedUnwrittenStaticFieldFolding = options.Single("managedunwrittenstaticfieldfolding"),
+            ManagedConditionalSelects = options.Single("managedconditionalselects"),
         };
     }
 
@@ -339,6 +362,31 @@ internal sealed record CompileCliOptions(
         "wasm64" => WasmTarget.Wasm64,
         _ => throw CliOptionException.Create("-platform must be 'wasm32' or 'wasm64'"),
     };
+
+    // The levels by Microsoft.Extensions.Logging's names, exactly as spelled there.
+    private static readonly ImmutableArray<LogLevel> LogLevels =
+        [LogLevel.Trace, LogLevel.Debug, LogLevel.Information, LogLevel.Warning, LogLevel.Error, LogLevel.Critical];
+
+    internal static LogLevel? ParseLogLevel(string? value)
+    {
+        if (value is null) return null;
+        foreach (var level in LogLevels)
+        {
+            if (string.Equals(level.ToString(), value, StringComparison.Ordinal)) return level;
+        }
+        throw CliOptionException.Create(
+            "-diagnosticloglevel must be " + string.Join(", ", LogLevels.Take(LogLevels.Length - 1).Select(Quoted)) +
+            " or " + Quoted(LogLevels[^1]));
+    }
+
+    private static string Quoted(LogLevel level) => $"'{level}'";
+
+    // The names are the runtime's, exactly as NetWasmGarbageCollector spells them.
+    internal static RuntimeCollector? ParseCollector(string? value) => value is null
+        ? null
+        : RuntimeCollector.Named(value) ?? throw CliOptionException.Create(
+            "-gc must be " + string.Join(", ", RuntimeCollector.All.Take(RuntimeCollector.All.Length - 1)
+                .Select(collector => $"'{collector.Name}'")) + $" or '{RuntimeCollector.All[^1].Name}'");
 
     internal static FinalWasmOptimization ParseOptimization(string? value) => value switch
     {

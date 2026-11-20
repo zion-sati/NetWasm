@@ -217,6 +217,12 @@ public sealed class DiagnosticsProcessCompilationTests
                 var frames = trace.GetFrames();
                 if (frames.Length != 1 || frames[0] != null || ReferenceEquals(frames, trace.GetFrames())) return 61;
                 if (trace.ToString() != Environment.NewLine) return 87;
+                // The frames constructor copies the frames it is given, null ones included.
+                var supplied = new System.Collections.Generic.List<StackFrame> { null!, null! };
+                var copied = new StackTrace(supplied);
+                supplied.Clear();
+                if (copied.FrameCount != 2 || copied.GetFrame(1) != null || copied.GetFrames().Length != 2) return 100;
+                if (!Throws<ArgumentNullException>(() => new StackTrace((System.Collections.Generic.IEnumerable<StackFrame>)null!))) return 101;
                 if (StackFrame.OFFSET_UNKNOWN != -1 || StackTrace.METHODS_TO_SKIP != 0) return 62;
                 if (!Throws<ArgumentOutOfRangeException>(() => new StackTrace(-1))) return 63;
                 if (!Throws<ArgumentNullException>(() => new StackTrace((Exception)null!))) return 64;

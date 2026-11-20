@@ -81,6 +81,21 @@ namespace System.Text.Json.Serialization
         /// </summary>
         internal bool CanBePolymorphic { get; init; }
 
+        // NetWasm: set only where polymorphism options are configured (derived types, discriminators, unknown-type
+        // handling), by generated or user code. Reading by discriminator and writing derived types test it, so a
+        // program that never declares a polymorphic type carries neither. Writing an object-typed value by its
+        // runtime type needs no marker: only object converters (JsonConverter<object>) do it, and the tests for
+        // typeof(T) == typeof(object) fold in every other instantiation.
+        internal static object? s_polymorphicTypesReachable;
+
+        // NetWasm: set where an object-typed value can reach an object converter's TryWrite, which then writes it by
+        // its runtime type: generated object metadata, object-typed property metadata, and collections and
+        // dictionaries of object. Each site is in an instantiation for object, or in a type only generated object
+        // metadata creates, so a program without object-typed values never sets it. The converter that object
+        // lookups fall back to (SlimObjectConverter) does not set it: every program has one, and a root object value
+        // is written by its runtime type before it reaches TryWrite.
+        internal static object? s_objectValuesReachable;
+
         /// <summary>
         /// The converter can read/write multiple JSON value shapes (e.g. both strings and objects).
         /// Relaxes debug validation that non-value converters must always read StartObject/StartArray tokens.

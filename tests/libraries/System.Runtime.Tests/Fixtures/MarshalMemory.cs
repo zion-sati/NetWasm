@@ -6,7 +6,9 @@
 #nullable disable
 #pragma warning disable
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Security;
 namespace MarshalFixture;
 public static class EntryPoint
@@ -129,6 +131,12 @@ public static class EntryPoint
         if (!Throws<PlatformNotSupportedException>(() => Marshal.GetIDispatchForObject(new object())) || !Throws<PlatformNotSupportedException>(() => Marshal.ReleaseComObject(new object()))) return 31;
         if (!Throws<PlatformNotSupportedException>(() => Marshal.GetIUnknownForObject(new object())) || !Throws<PlatformNotSupportedException>(() => Marshal.BindToMoniker("m"))) return 32;
         if (!Throws<ArgumentNullException>(() => Marshal.GetHINSTANCE(null!)) || !Throws<ArgumentNullException>(() => Marshal.Prelink(null!))) return 33;
+        // The last system error is errno, and a P/Invoke error's message is the C library's text for it.
+        Marshal.SetLastSystemError(2);
+        if (Marshal.GetLastSystemError() != 2) return 50;
+        Marshal.SetLastPInvokeError(13);
+        if (Marshal.GetLastPInvokeErrorMessage() != "Permission denied" || Marshal.GetPInvokeErrorMessage(2) != "No such file or directory") return 51;
+        if (Marshallers() is var marshallers and not 0) return marshallers;
 #if !DESKTOP_ORACLE
         // NetWasm boundaries: no COM vtables, no last-error state, no trampolines or type reflection.
         if (!Throws<PlatformNotSupportedException>(() => Marshal.AddRef((IntPtr)8)) || !Throws<PlatformNotSupportedException>(() => Marshal.Release((IntPtr)8))) return 34;
@@ -144,5 +152,41 @@ public static class EntryPoint
         if (!Throws<PlatformNotSupportedException>(() => Marshal.UnsafeAddrOfPinnedArrayElement((Array)new object[1], 0))) return 41;
 #endif
         return input + 1;
+    }
+
+    // The string and pointer-array marshallers LibraryImport's generated code calls, each way and with a caller's
+    // buffer.
+    static unsafe int Marshallers()
+    {
+        byte* ansi = AnsiStringMarshaller.ConvertToUnmanaged("ansi");
+        if (AnsiStringMarshaller.ConvertToManaged(ansi) != "ansi" || AnsiStringMarshaller.ConvertToManaged(null) != null) return 52;
+        AnsiStringMarshaller.Free(ansi);
+        ushort* utf16 = Utf16StringMarshaller.ConvertToUnmanaged("h\u00e9");
+        if (Utf16StringMarshaller.ConvertToManaged(utf16) != "h\u00e9" || !Unsafe.IsNullRef(in Utf16StringMarshaller.GetPinnableReference(null))) return 53;
+        Utf16StringMarshaller.Free(utf16);
+        ushort* bstr = BStrStringMarshaller.ConvertToUnmanaged("bstr");
+        if (BStrStringMarshaller.ConvertToManaged(bstr) != "bstr" || BStrStringMarshaller.ConvertToManaged(null) != null) return 54;
+        BStrStringMarshaller.Free(bstr);
+
+        var ansiIn = new AnsiStringMarshaller.ManagedToUnmanagedIn();
+        ansiIn.FromManaged("in", stackalloc byte[AnsiStringMarshaller.ManagedToUnmanagedIn.BufferSize]);
+        if (Marshal.PtrToStringAnsi((nint)ansiIn.ToUnmanaged()) != "in") return 55;
+        ansiIn.Free();
+        var bstrIn = new BStrStringMarshaller.ManagedToUnmanagedIn();
+        bstrIn.FromManaged("in", stackalloc byte[BStrStringMarshaller.ManagedToUnmanagedIn.BufferSize]);
+        if (Marshal.PtrToStringBSTR((nint)bstrIn.ToUnmanaged()) != "in") return 56;
+        bstrIn.Free();
+
+        int first = 1, second = 2;
+        int*[] pointers = [&first, &second];
+        nint* native = PointerArrayMarshaller<int, nint>.AllocateContainerForUnmanagedElements(pointers, out int count);
+        PointerArrayMarshaller<int, nint>.GetManagedValuesSource(pointers)
+            .CopyTo(PointerArrayMarshaller<int, nint>.GetUnmanagedValuesDestination(native, count));
+        int*[] back = PointerArrayMarshaller<int, nint>.AllocateContainerForManagedElements(native, count)!;
+        PointerArrayMarshaller<int, nint>.GetUnmanagedValuesSource(native, count)
+            .CopyTo(PointerArrayMarshaller<int, nint>.GetManagedValuesDestination(back));
+        if (count != 2 || *back[0] != 1 || *back[1] != 2) return 57;
+        PointerArrayMarshaller<int, nint>.Free(native);
+        return 0;
     }
 }

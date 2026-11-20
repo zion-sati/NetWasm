@@ -3,11 +3,11 @@
 // Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // NetWasm adaptation: the capture and exception constructors keep upstream's argument checks;
 // StackTrace.NetWasm.cs reads their frames from NetWasm's opt-in managed stack trace and throws
-// PlatformNotSupportedException without it, and supplies ToString. StackTrace(StackFrame) and
-// the frame accessors are upstream's. The IEnumerable<StackFrame> constructor (outside .NET
-// Standard 2.1), the feature switches and upstream's MethodBase-based trace formatter are
-// omitted.
+// PlatformNotSupportedException without it, and supplies ToString. StackTrace(StackFrame),
+// StackTrace(IEnumerable<StackFrame>) and the frame accessors are upstream's. The feature
+// switches and upstream's MethodBase-based trace formatter are omitted.
 
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
 namespace System.Diagnostics
@@ -124,6 +124,20 @@ namespace System.Diagnostics
         {
             _stackFrames = [frame];
             _numOfFrames = 1;
+        }
+
+        /// <summary>
+        /// Constructs a stack trace from a set of <see cref="StackFrame"/> objects
+        /// </summary>
+        /// <param name="frames">The set of stack frames that should be present in the stack trace</param>
+        public StackTrace(IEnumerable<StackFrame> frames)
+        {
+            ArgumentNullException.ThrowIfNull(frames);
+
+            List<StackFrame> frameList = new List<StackFrame>(frames);
+
+            _stackFrames = frameList.ToArray();
+            _numOfFrames = frameList.Count;
         }
 
         /// <summary>

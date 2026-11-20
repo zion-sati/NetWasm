@@ -31,7 +31,7 @@ internal static class UnitTargetFingerprint
     {
         var answer = new UnitFingerprintBuilder();
         // Emission policy.
-        answer.Add(target.EnableBranchValueFramePlacement);
+        answer.Add(target.BranchPrefixDuplication.ToString());
         answer.Add(target.EnableAggregateReferenceLanes);
         answer.Add(target.EnableArrayMetadataCaching);
         answer.Add(target.HoistArrayNullChecks);
@@ -57,6 +57,11 @@ internal static class UnitTargetFingerprint
         answer.Add(runtime.IncludeArraySetValue);
         answer.Add(runtime.IncludeObjectClone);
         answer.Add(runtime.IncludeUnhandledExceptionHint);
+        answer.Add(runtime.IncludeUninitializedArrays);
+        answer.Add(runtime.IncludeReferenceWriteBarrier);
+        answer.Add(runtime.IncludeObjectGeneration);
+        answer.Add(runtime.IncludeEventLoopCollection);
+        answer.Add(runtime.IncludeYoungCollection);
         answer.Add(target.FunctionIndices.ManagedThrowFunctionIndex.IsPresent);
         answer.Add(target.FunctionIndices.ManagedRethrowFunctionIndex.IsPresent);
         // Interop.
@@ -67,8 +72,6 @@ internal static class UnitTargetFingerprint
         answer.Add(interop.CopyStringUtf16.IsPresent);
         answer.Add(interop.ReleaseHandle.IsPresent);
         answer.Add(interop.ReleaseSubscription.IsPresent);
-        answer.Add(interop.ByteLength.IsPresent);
-        answer.Add(interop.CopyBytes.IsPresent);
         answer.Add(interop.UseJavaScriptExportBoundary);
         answer.Add(interop.Conversions.Count);
         foreach (var (name, value) in interop.Conversions.OrderBy(pair => pair.Key, StringComparer.Ordinal))

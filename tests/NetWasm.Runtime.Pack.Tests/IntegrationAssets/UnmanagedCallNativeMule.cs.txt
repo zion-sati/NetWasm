@@ -16,6 +16,20 @@ public struct CalliWrapped
     public double Value;
 }
 
+// Callbacks a struct carries to C by value, as SkiaSharp passes its stream callbacks.
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct CallbackProcs
+{
+    public delegate* unmanaged[Cdecl]<int, int, int> Add;
+    public delegate* unmanaged[Cdecl]<int, void> Store;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct CallbackProc
+{
+    public delegate* unmanaged<int, int> Apply;
+}
+
 // Issue 226: calls through unmanaged function pointers reach native functions and
 // [UnmanagedCallersOnly] methods, with scalar, mixed and aggregate C ABI signatures, and its
 // siblings: float, narrow integers, a pointer argument and a struct of one scalar. Each calling
@@ -51,6 +65,13 @@ public static unsafe class EntryPoint
     private static extern void* SuppressedTwiceAddress();
     [DllImport("mule", EntryPoint = "native_mule_narrow_import", ExactSpelling = true)]
     private static extern short NarrowImport(sbyte signedValue, ushort unsignedValue);
+    // CharSet, BestFitMapping and ThrowOnUnmappableChar have no effect on a signature without chars or strings.
+    [DllImport("mule", EntryPoint = "native_mule_narrow_import", CharSet = CharSet.Unicode, BestFitMapping = false, ThrowOnUnmappableChar = true)]
+    private static extern short NarrowImportUnicode(sbyte signedValue, ushort unsignedValue);
+    [DllImport("mule", EntryPoint = "native_mule_call_procs", ExactSpelling = true)]
+    private static extern int CallProcs(CallbackProcs procs, int value);
+    [DllImport("mule", EntryPoint = "native_mule_call_proc", ExactSpelling = true)]
+    private static extern int CallProc(CallbackProc proc, int value);
 
     public static int Run(int input)
     {
@@ -99,10 +120,37 @@ public static unsafe class EntryPoint
         if (sextuple(input) != input * 6) return -19;
         // Narrow integers are blittable, as on desktop .NET: an import's and a callback's own.
         if (NarrowImport((sbyte)-(input + 3), 65000) != (short)(-(input + 3) * 2 - 65000)) return -20;
+        if (NarrowImportUnicode((sbyte)-(input + 3), 65000) != (short)(-(input + 3) * 2 - 65000)) return -24;
         delegate* unmanaged<byte, short, ushort> narrowCallback = &NarrowCallback;
         if (narrowCallback(250, (short)-(input + 300)) != (ushort)(250 - (input + 300))) return -21;
+        // Function pointers in structs C receives by value: two travel by address, one as its scalar.
+        if (CallProcs(new CallbackProcs { Add = &Add, Store = &Mark }, input) != input + 1 || s_marked != input + 100) return -22;
+        if (CallProc(new CallbackProc { Apply = &Triple }, input) != input * 3) return -23;
+        // Callbacks that take and return structs by value, as the C ABI passes them: a pair through its address and a
+        // pair result through the caller's buffer; a one-double struct, as an argument and a result, as that double.
+        delegate* unmanaged<CalliPair, int> pairSum = &PairSum;
+        if (pairSum(new CalliPair { First = input, Second = 3 }) != input * 10 + 3) return -25;
+        delegate* unmanaged<int, int, CalliPair> pairOf = &PairOf;
+        var made = pairOf(input, 4);
+        if (made.First != input || made.Second != 4) return -26;
+        delegate* unmanaged<CalliWrapped, int, double> unwrap = &Unwrap;
+        if (unwrap(new CalliWrapped { Value = input + 0.5 }, 2) != (input + 0.5) * 2) return -27;
+        delegate* unmanaged<CalliWrapped, CalliWrapped> rewrap = &Rewrap;
+        if (rewrap(new CalliWrapped { Value = input }).Value != input + 1) return -28;
         return 42;
     }
+
+    [UnmanagedCallersOnly]
+    private static int PairSum(CalliPair pair) => pair.First * 10 + pair.Second;
+
+    [UnmanagedCallersOnly]
+    private static CalliPair PairOf(int first, int second) => new() { First = first, Second = second };
+
+    [UnmanagedCallersOnly]
+    private static double Unwrap(CalliWrapped wrapped, int scale) => wrapped.Value * scale;
+
+    [UnmanagedCallersOnly]
+    private static CalliWrapped Rewrap(CalliWrapped wrapped) => new() { Value = wrapped.Value + 1 };
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
     private static int Quadruple(int value) => value * 4;
@@ -121,6 +169,9 @@ public static unsafe class EntryPoint
 
     [UnmanagedCallersOnly]
     private static int Triple(int value) => value * 3;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int Add(int left, int right) => left + right;
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static void Mark(int value) => s_marked = value;

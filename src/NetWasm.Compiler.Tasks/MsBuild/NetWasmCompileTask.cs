@@ -69,6 +69,9 @@ public sealed class NetWasmCompileTask : ToolTask
     public string? MethodSymbolsPath { get; set; }
     public string? DiagnosticTracePath { get; set; }
     public string? DiagnosticLogPath { get; set; }
+
+    // The least severe entries the diagnostic log keeps; nwc keeps Debug and up unless this says otherwise.
+    public string? DiagnosticLogLevel { get; set; }
     public string? WitPath { get; set; }
     public string? WitWorld { get; set; }
     // Modules the project's native archives import from (<NetWasmImportModule>).
@@ -78,6 +81,9 @@ public sealed class NetWasmCompileTask : ToolTask
     // build fails calls into modules it does not link.
     public ITaskItem[] NativeLibraries { get; set; } = [];
     public bool LinkedNativeOnly { get; set; }
+    // NetWasmMissingApiAsError: a reached method naming a member its declaring type lacks fails the compile, rather
+    // than compiling to a body that throws MissingMethodException or MissingFieldException.
+    public bool MissingApiAsError { get; set; }
     // The project's RuntimeHostConfigurationOption items; those marked Trim="true" with a Boolean value are folded,
     // as ILLink folds them.
     public ITaskItem[] RuntimeHostConfigurationOptions { get; set; } = [];
@@ -85,6 +91,8 @@ public sealed class NetWasmCompileTask : ToolTask
     public string? PathMap { get; set; }
     public bool EmitStackTrace { get; set; }
     public bool EmitTypeNames { get; set; }
+    // The collector the program will run with (NetWasmGarbageCollector); empty for the runtime pack's default.
+    public string? GarbageCollector { get; set; }
     public bool StructuredDiagnostics { get; set; }
     // Keep and reuse compiled units (NetWasmCompiledUnits: on by default at O0), and verify reused ones.
     // "true" or "false"; empty leaves nwc's default (on at O0).
@@ -133,6 +141,8 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedRangeBranchFolding { get; set; } = "Auto";
     public string ManagedUnwrittenStaticFieldFolding { get; set; } = "Auto";
 
+    public string ManagedConditionalSelects { get; set; } = "Auto";
+
     protected override string ToolName => "nwc";
 
     protected override MessageImportance StandardOutputLoggingImportance => MessageImportance.High;
@@ -146,37 +156,12 @@ public sealed class NetWasmCompileTask : ToolTask
             "NetWasm: Compiling {0} for {1}...",
             Path.GetFileName(InputAssemblyPath),
             Target);
-        EnvironmentVariables = ToolEnvironment();
         if (!base.Execute())
         {
             return false;
         }
         Log.LogMessage(MessageImportance.High, "NetWasm: Wrote {0}.", Path.GetFullPath(CoreModulePath));
         return true;
-    }
-
-    // A compile allocates about a gigabyte and exits: gen0 budgets of 256 MB per heap, with
-    // large arrays allocated there too, let it finish without collecting at all. The runtime
-    // reads these only from the environment, in hex; a build or shell that sets either keeps
-    // its own.
-    private static readonly (string Name, string Value)[] GarbageCollection =
-    [
-        ("DOTNET_GCgen0size", "10000000"),
-        ("DOTNET_GCLOHThreshold", "8000000"),
-    ];
-
-    internal string[] ToolEnvironment()
-    {
-        var variables = new List<string>(EnvironmentVariables ?? []);
-        foreach (var (name, value) in GarbageCollection)
-        {
-            if (Environment.GetEnvironmentVariable(name) is null &&
-                !variables.Exists(variable => variable.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase)))
-            {
-                variables.Add($"{name}={value}");
-            }
-        }
-        return [.. variables];
     }
 
     internal string FullPathToTool => GenerateFullPathToTool();
@@ -200,13 +185,17 @@ public sealed class NetWasmCompileTask : ToolTask
         .OrderBy(pair => pair.Key, StringComparer.Ordinal);
 
     // The libraries a <NativeLibrary> item provides for this target, each once.
-    private IEnumerable<string> LinkedLibraryNames() => NativeLibraries
-        .Where(item => item.GetMetadata("WasmTarget") is var target &&
-            (string.IsNullOrEmpty(target) || string.Equals(target, Target, StringComparison.OrdinalIgnoreCase)))
-        .Select(item => item.GetMetadata("NetWasmLibraryName"))
-        .Where(name => !string.IsNullOrWhiteSpace(name))
+    private IEnumerable<string> LinkedLibraryNames() => LinkedArchives()
+        .Select(archive => archive.Library)
         .Distinct(StringComparer.Ordinal)
         .Order(StringComparer.Ordinal);
+
+    // Each <NativeLibrary> archive for this target with its library's name, in item order.
+    private IEnumerable<(string Library, string Archive)> LinkedArchives() => NativeLibraries
+        .Where(item => item.GetMetadata("WasmTarget") is var target &&
+            (string.IsNullOrEmpty(target) || string.Equals(target, Target, StringComparison.OrdinalIgnoreCase)))
+        .Select(item => (Library: item.GetMetadata("NetWasmLibraryName"), Archive: item.ItemSpec))
+        .Where(archive => !string.IsNullOrWhiteSpace(archive.Library));
 
     protected override string GenerateFullPathToTool() => RunsOnTheDotNetHost ? "dotnet" : CompilerPath;
 
@@ -282,6 +271,7 @@ public sealed class NetWasmCompileTask : ToolTask
         {
             builder.AppendSwitch("-typenames+");
         }
+        AppendIfNotEmpty(builder, "-gc:", GarbageCollector);
         AppendIfNotEmpty(builder, "-wit:", WitPath);
         AppendIfNotEmpty(builder, "-world:", WitWorld);
         foreach (var module in ImportModules)
@@ -296,6 +286,14 @@ public sealed class NetWasmCompileTask : ToolTask
         {
             builder.AppendSwitchIfNotNull("-runtimeproperty:", $"{name}={value}");
         }
+        foreach (var (library, archive) in LinkedArchives())
+        {
+            builder.AppendSwitchIfNotNull("-nativearchive:", $"{library}={archive}");
+        }
+        if (MissingApiAsError)
+        {
+            builder.AppendSwitch("-missingapierror+");
+        }
         if (LinkedNativeOnly)
         {
             builder.AppendSwitch("-linkednativeonly+");
@@ -306,6 +304,7 @@ public sealed class NetWasmCompileTask : ToolTask
         }
         AppendIfNotEmpty(builder, "-diagnostictrace:", DiagnosticTracePath);
         AppendIfNotEmpty(builder, "-diagnosticlog:", DiagnosticLogPath);
+        AppendIfNotEmpty(builder, "-diagnosticloglevel:", DiagnosticLogLevel);
         if (UseJavaScriptExportBoundary)
         {
             builder.AppendSwitch("-jsexportboundary+");
@@ -368,6 +367,7 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("loopstrengthreduction", ManagedLoopStrengthReduction),
                      ("rangebranchfolding", ManagedRangeBranchFolding),
                      ("unwrittenstaticfieldfolding", ManagedUnwrittenStaticFieldFolding),
+                     ("conditionalselects", ManagedConditionalSelects),
                  })
         {
             if (value is not ("" or "Auto"))

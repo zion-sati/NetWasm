@@ -26,6 +26,10 @@ public sealed class LinkedCorpusToolPathsProviderTests
         Assert.Equal("compact", tools.Collector);
         Assert.Equal("netwasm", new LinkedCorpusToolPathsProvider(
             environment with { Collector = "netwasm" }).Get().Collector);
+        Assert.Equal("netwasmgen", new LinkedCorpusToolPathsProvider(
+            environment with { Collector = "netwasmgen" }).Get().Collector);
+        Assert.True(new LinkedCorpusToolPathsProvider(
+            environment with { Collector = "netwasmgen", GcStress = "1" }).Get().GcStress);
         Assert.Equal("bump", new LinkedCorpusToolPathsProvider(
             environment with { Collector = "bump" }).Get().Collector);
         Assert.Throws<InvalidOperationException>(() => new LinkedCorpusToolPathsProvider(

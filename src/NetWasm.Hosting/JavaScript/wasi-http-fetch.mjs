@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
+import { fieldValueBytes, fieldValueText } from "./field-value-text.mjs";
+import { isForbiddenFieldName } from "./forbidden-header-filter.mjs";
 import { createGuestByteReader } from "./output-sink-stream.mjs";
 
 // wasi:http 0.3 for hosts that reach the network through fetch, such as browsers: the types
@@ -9,18 +11,6 @@ import { createGuestByteReader } from "./output-sink-stream.mjs";
 // interface has them. fetch sends no request trailers and reports no response trailers, so a
 // request's trailers must be empty and a response's resolve to none.
 
-// The names preview3-shim's Node.js host also forbids, so a request behaves alike in both.
-const forbiddenNames = new Set([
-  "connection",
-  "http2-settings",
-  "host",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "proxy-connection",
-  "transfer-encoding",
-  "upgrade",
-]);
 const tokenPattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 const schemePattern = /^[A-Za-z][A-Za-z0-9+.-]*$/u;
 const pathPattern = /^[^\s\u0000-\u001f\u007f]*$/u;
@@ -61,7 +51,7 @@ function validValue(bytes) {
 
 function checkName(name) {
   if (typeof name !== "string" || !tokenPattern.test(name)) return variantCase("invalid-syntax");
-  return forbiddenNames.has(name.toLowerCase()) ? variantCase("forbidden") : null;
+  return isForbiddenFieldName(name) ? variantCase("forbidden") : null;
 }
 
 function createFields(entries, immutable) {
@@ -352,9 +342,6 @@ function createResponse(status, headers, body, trailers) {
   return response;
 }
 
-// Text in field values crosses fetch as Latin-1, byte for byte.
-const latin1 = bytes => String.fromCharCode(...bytes);
-const latin1Bytes = text => Uint8Array.from(text, character => character.charCodeAt(0) & 0xff);
 
 function milliseconds(duration) {
   return duration === undefined ? undefined
@@ -429,7 +416,7 @@ export function createWasiHttpFetch(services) {
     if (trailersFailed !== null) return fail(trailersFailed);
 
     const headers = new Headers();
-    for (const [name, value] of outgoing.headers) headers.append(name, latin1(value));
+    for (const [name, value] of outgoing.headers) headers.append(name, fieldValueText(value));
     const options = outgoing.options === undefined ? {} : state(optionsState, outgoing.options, "request-options");
     const controller = new AbortController();
     let timedOut = false;
@@ -455,7 +442,7 @@ export function createWasiHttpFetch(services) {
     }
     outgoing.settle(ok(undefined));
     const entries = [];
-    response.headers.forEach((value, name) => entries.push([name, latin1Bytes(value)]));
+    response.headers.forEach((value, name) => entries.push([name, fieldValueBytes(value)]));
     return ok(receive(response, entries, milliseconds(options.betweenBytes), controller));
   }
 

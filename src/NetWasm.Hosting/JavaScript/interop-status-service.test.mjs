@@ -6,10 +6,8 @@ import test from "node:test";
 
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { createInteropStatusService } from "./interop-status-service.mjs";
-import {
-  writeManagedInteropBytes,
-  writeManagedInteropString,
-} from "./managed-interop-memory-codec.mjs";
+import { writeManagedInteropString } from "./managed-interop-memory-codec.mjs";
+import { createValueArrayStaging } from "./value-array-staging.mjs";
 
 const layout = Object.freeze({
   stringLengthOffset: 4,
@@ -35,9 +33,37 @@ function descriptor(overrides = {}) {
   return { ...baseDescriptor, ...overrides };
 }
 
+// The runtime's allocator over a request's memory: blocks from a bump pointer, every freed block recorded.
+function stagingFor(getMemory, start = 4096) {
+  let next = start;
+  const freed = [];
+  const runtime = {
+    native_alloc(size) { const address = next; next += size; return address; },
+    native_free(address) { freed.push(address); },
+  };
+  const staging = createValueArrayStaging({
+    getInstance: () => ({ exports: runtime }), getMemory, runtimeModules: {}, target: "wasm32",
+  });
+  return { staging, freed };
+}
+
+// A staged number array: its block's address and length, the elements as the given typed array.
+function stagedArray(memory, address, length, constructor) {
+  return length < 0 ? null
+    : [...new constructor(memory.buffer.slice(address, address + length * constructor.BYTES_PER_ELEMENT))];
+}
+
+// A number array result written to the result descriptor: the block's address, then the length 8 bytes after it.
+function stagedResult(memory, constructor) {
+  const view = new DataView(memory.buffer);
+  return stagedArray(memory, view.getUint32(0, true), view.getInt32(8, true), constructor);
+}
+
 function request(overrides = {}) {
   const memory = new WebAssembly.Memory({ initial: 1 });
+  const getMemory = overrides.getMemory ?? (() => memory);
   return {
+    staging: stagingFor(getMemory).staging,
     assertAsyncDeliveryAvailable() {},
     callbacks: [],
     descriptor: descriptor(),
@@ -69,9 +95,9 @@ test("notifies process observation after an externally invoked subscription call
     }],
     descriptor: descriptor({ parameters: ["callback"], result: "subscription" }),
     getInstance: () => ({ exports: {
-      callback(handle, bytes) {
+      callback(handle, address, length) {
         assert.equal(handle, 7);
-        assert.deepEqual([...handles.get(bytes)], [21]);
+        assert.deepEqual(stagedArray(state.getMemory(), address, length, Uint8Array), [21]);
         return 42;
       },
     } }),
@@ -84,6 +110,78 @@ test("notifies process observation after an externally invoked subscription call
   assert.deepEqual(observations, []);
   await tick();
   assert.deepEqual(observations, [{ error: undefined, handles: 1 }]);
+});
+
+// A callback passed to an import that returns no JSSubscription belongs to JavaScript: the host keeps its handle until
+// JavaScript collects the function, and releases every callback handle of a failed import, read or not.
+test("keeps the callbacks of a successful import and releases those of a failed one", async () => {
+  const original = globalThis.FinalizationRegistry;
+  const registered = [];
+  globalThis.FinalizationRegistry = class {
+    register(target, held) { registered.push({ target, held }); }
+  };
+  try {
+    const callbacks = [0, 2].map(parameterIndex => ({
+      module: baseDescriptor.module, importName: baseDescriptor.name,
+      parameterIndex, exportName: "callback", parameters: [], result: "i32",
+    }));
+    for (const asyncReturn of [null, "task"]) {
+      const released = [];
+      let kept;
+      let fail = false;
+      const asyncDescriptor = asyncReturn === null ? {} : {
+        asyncReturn, resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel",
+      };
+      const invoke = createInteropStatusService(request({
+        callbacks,
+        descriptor: descriptor({ parameters: ["callback", "i32?", "callback"], result: "i32", ...asyncDescriptor }),
+        getInstance: () => ({ exports: {
+          callback: handle => handle * 10,
+          handle_release: handle => released.push(handle),
+          resolve() {}, reject() {}, cancel() {},
+        } }),
+        service(first, value, second) {
+          kept = [first, second];
+          if (fail) throw new Error("refused");
+          return 1;
+        },
+      }));
+      const call = (...values) => asyncReturn === null ? invoke(...values, 0) : invoke(...values, 5, 0);
+
+      registered.length = 0;
+      assert.equal(call(7, 1, 3, 8), 0);
+      assert.deepEqual(registered.map(entry => entry.held), [7, 8]);
+      assert.deepEqual(kept.map(callback => callback()), [70, 80]);
+      assert.deepEqual(registered.map(entry => entry.target), kept);
+      assert.deepEqual(released, []);
+
+      // A null delegate crosses as handle 0 and has nothing to release.
+      registered.length = 0;
+      assert.equal(call(0, 0, 0, 9), 0);
+      assert.equal(kept[0], null);
+      assert.deepEqual(registered.map(entry => entry.held), [9]);
+
+      fail = true;
+      registered.length = 0;
+      assert.equal(call(7, 1, 3, 8), 1);
+      assert.deepEqual(released, [7, 8]);
+      assert.deepEqual(registered, []);
+      assert.throws(() => kept[0](), /released when the import that passed it failed/);
+    }
+
+    // An argument that fails to convert before the second callback is read still releases both.
+    const released = [];
+    const invoke = createInteropStatusService(request({
+      callbacks,
+      descriptor: descriptor({ parameters: ["callback", "string", "callback"], result: "i32" }),
+      getInstance: () => ({ exports: { callback() {}, handle_release: handle => released.push(handle) } }),
+      service() { return 1; },
+    }));
+    assert.equal(invoke(7, 0x7fff_fff0, 8, 0), 1);
+    assert.deepEqual(released, [7, 8]);
+  } finally {
+    globalThis.FinalizationRegistry = original;
+  }
 });
 
 test("defers reentrant callback observation until the host service returns", async () => {
@@ -160,10 +258,7 @@ test("lifts every host-service argument family and writes a scalar result", () =
   });
   view.setInt32(64 + layout.arrayLengthOffset, 3, true);
   view.setUint32(64 + layout.arrayDataPointerOffset, 128, true);
-  writeManagedInteropBytes({
-    memory, reference: 64, target: "wasm32", targetLayout: layout,
-    value: new Uint8Array([1, 2, 3]),
-  });
+  new Uint8Array(memory.buffer, 128, 3).set([1, 2, 3]);
   const handles = createInteropHandleTable();
   const object = {};
   const subscription = { dispose() {} };
@@ -243,12 +338,16 @@ test("writes every reference-shaped host-service result", () => {
     const state = request({ descriptor: descriptor({ result }), service: () => value });
     const invoke = createInteropStatusService(state);
     assert.equal(invoke(0), 0);
+    if (result === "bytes" || result === "i64[]" || result === "f32[]") {
+      // A number array is staged: the block's address at the result, its length (-1 for null) 8 bytes after.
+      const constructor = { bytes: Uint8Array, "i64[]": BigInt64Array, "f32[]": Float32Array }[result];
+      assertValue(stagedResult(state.getMemory(), constructor));
+      assert.equal(state.handles.count, 0);
+      continue;
+    }
     const handle = new DataView(state.getMemory().buffer).getInt32(0, true);
     if (value === null) assert.equal(handle, 0);
-    else {
-      assertValue(state.handles.get(handle));
-      if (result === "bytes" || result === "i64[]") assert.notStrictEqual(state.handles.get(handle), value);
-    }
+    else assertValue(state.handles.get(handle));
   }
 
   const calls = [];
@@ -266,7 +365,7 @@ test("writes every reference-shaped host-service result", () => {
 
 test("maps invalid synchronous service values and invocations to host failure", () => {
   const cases = [
-    ["i32", "not an integer"], ["string", 1], ["bytes", []], ["u16[]", Int16Array.of(1)],
+    ["i32", "not an integer"], ["string", 1], ["bytes", "text"], ["u16[]", Int16Array.of(1)],
     ["object", 1],
     ["subscription", {}], ["promise", {}], ["unknown", null],
   ];
@@ -424,14 +523,57 @@ test("settles and cancels task-style asynchronous services", async () => {
   }
 });
 
+// As .NET's browser runtime reads them: undefined is null, and a plain array of numbers is copied into the result's
+// typed array, synchronously and when a task settles.
+test("reads undefined as null and copies plain arrays into array results", async () => {
+  for (const result of ["string", "object", "bytes", "i32[]"]) {
+    const state = request({ descriptor: descriptor({ result }), service: () => undefined });
+    assert.equal(createInteropStatusService(state)(0), 0, result);
+    assert.equal(new DataView(state.getMemory().buffer).getUint32(0, true), 0, result);
+    if (result === "bytes" || result === "i32[]") {
+      assert.equal(new DataView(state.getMemory().buffer).getInt32(8, true), -1, result);
+    }
+    assert.equal(state.handles.count, 0, result);
+  }
+  const copied = request({ descriptor: descriptor({ result: "i32[]" }), service: () => [3, -4] });
+  assert.equal(createInteropStatusService(copied)(0), 0);
+  assert.deepEqual(stagedResult(copied.getMemory(), Int32Array), [3, -4]);
+
+  for (const [result, value, expected] of [["string", undefined, null], ["f64[]", [1.5, 2], [1.5, 2]]]) {
+    const settled = createInteropHandleTable();
+    const calls = [];
+    const state = request({
+      descriptor: descriptor({
+        asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel", result,
+      }),
+      handles: settled,
+      getInstance: () => ({ exports: {
+        // A string resolves through a handle; a number array as its staged block and length.
+        resolve(asyncHandle, ...value) {
+          calls.push(result === "string"
+            ? (value[0] === 0 ? null : settled.get(value[0]))
+            : stagedArray(state.getMemory(), value[0], value[1], Float64Array));
+        },
+        reject: () => calls.push("reject"),
+        cancel() {},
+      } }),
+      service: () => Promise.resolve(value),
+    });
+    assert.equal(createInteropStatusService(state)(5, 0), 0);
+    await tick();
+    assert.deepEqual(calls, [expected]);
+  }
+});
+
 test("settles task-style services with string, typed array, and object values", async () => {
   const host = { title: "host" };
   for (const [result, value, verify] of [
     ["string", "text", resolved => assert.equal(resolved, "text")],
-    ["f64[]", Float64Array.of(1.5), resolved => assert.deepEqual([...resolved], [1.5])],
+    ["f64[]", Float64Array.of(1.5), resolved => assert.deepEqual(resolved, [1.5])],
     ["bytes", null, resolved => assert.equal(resolved, null)],
     ["object", host, resolved => assert.strictEqual(resolved, host)],
   ]) {
+    const arrays = { "f64[]": Float64Array, bytes: Uint8Array };
     const handles = createInteropHandleTable();
     const calls = [];
     const state = request({
@@ -441,9 +583,11 @@ test("settles task-style services with string, typed array, and object values", 
       }),
       handles,
       getInstance: () => ({ exports: {
-        resolve(asyncHandle, valueHandle) {
+        resolve(asyncHandle, ...value) {
           calls.push(asyncHandle);
-          verify(valueHandle === 0 ? null : handles.get(valueHandle));
+          verify(arrays[result] !== undefined
+            ? stagedArray(state.getMemory(), value[0], value[1], arrays[result])
+            : value[0] === 0 ? null : handles.get(value[0]));
         },
         reject: () => calls.push("reject"),
         cancel() {},
@@ -460,7 +604,7 @@ test("settles task-style services with string, typed array, and object values", 
 
 test("rejects mistyped reference settlements and releases handles a failed resolve kept", async () => {
   for (const [result, value] of [
-    ["string", 1], ["u16[]", Int16Array.of(1)], ["bytes", []], ["object", 1],
+    ["string", 1], ["u16[]", Int16Array.of(1)], ["bytes", "text"], ["object", 1],
   ]) {
     const calls = [];
     const state = request({
@@ -561,6 +705,7 @@ test("rejects malformed status-service composition", () => {
     { assertAsyncDeliveryAvailable: null },
     { observeAsyncFailure: null },
     { pendingAsyncOperations: {} },
+    { staging: null }, { staging: 1 }, { staging: {} }, { staging: { stage() {} } },
   ]) assert.throws(() => createInteropStatusService({ ...valid, ...value }), TypeError);
 });
 

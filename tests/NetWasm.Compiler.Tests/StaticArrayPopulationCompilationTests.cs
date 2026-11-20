@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
@@ -11,11 +12,14 @@ using static CompilerTestSupport;
 public sealed class StaticArrayPopulationCompilationTests
 {
     [Theory]
-    [InlineData(false, WasmTarget.Wasm32)]
-    [InlineData(false, WasmTarget.Wasm64)]
-    [InlineData(true, WasmTarget.Wasm32)]
-    [InlineData(true, WasmTarget.Wasm64)]
-    public void RemovesUnobservedPopulationWithoutRemovingAllocationsOrObservedValues(bool optimize, WasmTarget target)
+    [InlineData(false, WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(false, WasmTarget.Wasm64, FinalWasmOptimization.Oz)]
+    [InlineData(true, WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(true, WasmTarget.Wasm64, FinalWasmOptimization.Oz)]
+    [InlineData(false, WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    [InlineData(true, WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void RemovesUnobservedPopulationWithoutRemovingAllocationsOrObservedValues(bool optimize, WasmTarget target,
+        FinalWasmOptimization preset)
     {
         const string source = """
             public readonly struct Pair
@@ -36,13 +40,25 @@ public sealed class StaticArrayPopulationCompilationTests
             """;
         using var assets = TestAssets.Create();
         var assembly = optimize ? assets.CompileOptimizedSource("StaticPopulation", source) : assets.CompileSource("StaticPopulation", source);
-        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target));
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Target: target, Optimization: preset));
         var initializer = Assert.Single(result.Program.Methods.Values, body =>
             body.Method.DeclaringType.FullName == "Data" && body.Method.Definition.Name == ".cctor");
 
         Assert.Equal(2, initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewArray));
         Assert.Equal(3, initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.StoreStaticField));
-        Assert.Single(initializer.Body.Instructions, instruction => instruction.Operation == CilOperation.NewObject);
+        // Unused's elements (1, 2) and (3, 4) are gone, whether Pair's constructor stays a call or is inlined; Used's
+        // (5, 6) stay. Only Unused's second element writes 3 or 4.
+        var constants = initializer.Body.Instructions.Select(instruction => instruction.Operand switch
+        {
+            CilOperand.ConstantI4 { Value: var value } => (long?)value,
+            CilOperand.ConstantI8 { Value: var value } => value,
+            _ => null,
+        }).OfType<long>().ToArray();
+        Assert.DoesNotContain(3, constants);
+        Assert.DoesNotContain(4, constants);
+        Assert.Contains(5, constants);
+        Assert.Contains(6, constants);
         Assert.Equal(18, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0, target, result.StaticDataEnd));
     }
 

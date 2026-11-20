@@ -15,7 +15,7 @@ namespace System.Text.RegularExpressions.Symbolic
     internal sealed class CharSetSolver : ISolver<BDD>
     {
         /// <summary>BDD for each ASCII character that returns true for that one character.</summary>
-        /// <remarks>This cache is shared amongst all CharSetSolver instances.</remarks>
+        /// <remarks>This cache is shared among all CharSetSolver instances.</remarks>
         private static readonly BDD?[] s_asciiCache = new BDD[128];
 
         /// <summary>Cache of BDD instances created by this solver.</summary>

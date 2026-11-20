@@ -6,6 +6,7 @@ namespace System
 {
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
+    using System.Runtime.CompilerServices;
 
     [Serializable]
     public readonly struct TimeSpan : IComparable, IComparable<TimeSpan>, IEquatable<TimeSpan>,
@@ -360,6 +361,7 @@ namespace System
         public static bool operator >(TimeSpan left, TimeSpan right) => left._ticks > right._ticks;
         public static bool operator >=(TimeSpan left, TimeSpan right) => left._ticks >= right._ticks;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static TimeSpan FromMicroseconds(Int128 value)
         {
             if (value > (Int128)MaxMicroseconds || value < (Int128)MinMicroseconds)
@@ -369,6 +371,7 @@ namespace System
             return new((long)value * TicksPerMicrosecond);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static TimeSpan FromUnits(long value, long ticksPerUnit, long minUnits, long maxUnits) =>
             value > maxUnits || value < minUnits
                 ? throw new ArgumentOutOfRangeException()
@@ -389,6 +392,7 @@ namespace System
             return ticks == MaxTicks ? MaxValue : new((long)ticks);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long TimeToTicks(int hour, int minute, int second)
         {
             var totalSeconds = (long)hour * SecondsPerHour + (long)minute * SecondsPerMinute + second;

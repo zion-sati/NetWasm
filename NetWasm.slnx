@@ -33,6 +33,7 @@
     <Project Path="src/libraries/System.Collections.NonGeneric/System.Collections.NonGeneric.csproj" />
     <Project Path="src/libraries/System.Collections.Specialized/System.Collections.Specialized.csproj" />
     <Project Path="src/libraries/System.Collections/System.Collections.csproj" />
+    <Project Path="src/libraries/System.ComponentModel.Annotations/System.ComponentModel.Annotations.csproj" />
     <Project Path="src/libraries/System.ComponentModel.EventBasedAsync/System.ComponentModel.EventBasedAsync.csproj" />
     <Project Path="src/libraries/System.ComponentModel.Primitives/System.ComponentModel.Primitives.csproj" />
     <Project Path="src/libraries/System.ComponentModel.TypeConverter/System.ComponentModel.TypeConverter.csproj" />
@@ -82,6 +83,7 @@
     <Project Path="src/libraries/System.Runtime.Serialization.Xml/System.Runtime.Serialization.Xml.csproj" />
     <Project Path="src/libraries/System.Security.Claims/System.Security.Claims.csproj" />
     <Project Path="src/libraries/System.Security.Cryptography/System.Security.Cryptography.csproj" />
+    <Project Path="src/libraries/System.Text.Encoding.CodePages/System.Text.Encoding.CodePages.csproj" />
     <Project Path="src/libraries/System.Text.Encodings.Web/System.Text.Encodings.Web.csproj" />
     <Project Path="src/libraries/System.Text.Json/System.Text.Json.csproj" />
     <Project Path="src/libraries/System.Text.RegularExpressions/System.Text.RegularExpressions.csproj" />

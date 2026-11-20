@@ -22,6 +22,9 @@ internal sealed record ArrayLoopInduction(
     public int Lookahead { get; init; }
 
     public int LengthLocal { get; init; } = -1;
+
+    // c, the index's value on every entry to the loop.
+    public int Initial { get; init; }
 }
 
 internal interface IArrayLoopInductionAnalyzer

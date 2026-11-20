@@ -53,6 +53,55 @@ public sealed class TypedStackValidatorTests
         }
     }
 
+    // At a join each slot merges alone: an equal kind stays, a native int and a managed address become a managed address,
+    // whichever arrives first (the branch target is processed before the fall-through).
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AJoinMergesEachStackSlot(bool nativeIntFirst)
+    {
+        CilInstruction NativeInt(int offset) => I(offset, CilOperation.ConvertNativeInt);
+        var body = Body(CliValueKind.Void, 2, [CliValueKind.I4],
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(7)),
+            I(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(6)),
+            nativeIntFirst ? I(3, CilOperation.LoadLocalAddress, new CilOperand.Index(0)) : I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            nativeIntFirst ? I(4, CilOperation.Nop) : NativeInt(4),
+            I(5, CilOperation.Branch, new CilOperand.BranchTarget(8)),
+            nativeIntFirst ? I(6, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)) : I(6, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            nativeIntFirst ? NativeInt(7) : I(7, CilOperation.Nop),
+            I(8, CilOperation.Pop),
+            I(9, CilOperation.Pop),
+            I(10, CilOperation.Return));
+
+        var validated = CreateValidator(new FakeProgram()).Validate(CreateGraphBuilder().Build(body));
+
+        Assert.Equal([CliValueKind.I4, CliValueKind.ManagedAddress], validated.InstructionEntryStacks[8]);
+    }
+
+    // Kinds that do not merge make the join invalid: an int32 and an int64, or a native int and an int32.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AJoinOfKindsThatDoNotMergeIsInvalid(bool nativeInt)
+    {
+        var body = Body(CliValueKind.Void, 2, [],
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(7)),
+            I(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(6)),
+            I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(4, CilOperation.Nop),
+            I(5, CilOperation.Branch, new CilOperand.BranchTarget(8)),
+            nativeInt ? I(6, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)) : I(6, CilOperation.LoadInt64, new CilOperand.ConstantI8(0)),
+            nativeInt ? I(7, CilOperation.ConvertNativeInt) : I(7, CilOperation.Nop),
+            I(8, CilOperation.Pop),
+            I(9, CilOperation.Pop),
+            I(10, CilOperation.Return));
+
+        var exception = Assert.ThrowsAny<Exception>(() => CreateValidator(new FakeProgram()).Validate(CreateGraphBuilder().Build(body)));
+        Assert.Contains("incompatible evaluation stack at merge", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void StaticDataElementConsumesInt32AndProducesItsScalarType()
     {
@@ -1256,6 +1305,45 @@ public sealed class TypedStackValidatorTests
 
         _ = Validate(body);
     }
+
+    // The compiler's select: two numbers of one kind above an int32 condition leave that kind.
+    [Theory]
+    [InlineData(CliValueKind.I4)]
+    [InlineData(CliValueKind.I8)]
+    [InlineData(CliValueKind.F4)]
+    [InlineData(CliValueKind.F8)]
+    public void ValidatorTypesASelectAsItsValues(CliValueKind kind)
+    {
+        var body = Body(
+            kind,
+            3,
+            [kind, CliValueKind.I4],
+            I(0, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(1, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(2, CilOperation.LoadLocal, new CilOperand.Index(1)),
+            I(3, CilOperation.Select),
+            I(4, CilOperation.Return));
+
+        Assert.Equal([kind], Validate(body).InstructionEntryStacks[4]);
+    }
+
+    [Theory]
+    [InlineData(CliValueKind.I4, CliValueKind.I8, CliValueKind.I4)]
+    [InlineData(CliValueKind.F4, CliValueKind.F8, CliValueKind.I4)]
+    [InlineData(CliValueKind.I4, CliValueKind.I4, CliValueKind.I8)]
+    public void ValidatorRejectsASelectOfMixedKindsOrAWideCondition(
+        CliValueKind whenTrue, CliValueKind whenFalse, CliValueKind condition) =>
+        AssertDiagnostic(
+            () => Validate(Body(
+                whenTrue,
+                3,
+                [whenTrue, whenFalse, condition],
+                I(0, CilOperation.LoadLocal, new CilOperand.Index(0)),
+                I(1, CilOperation.LoadLocal, new CilOperand.Index(1)),
+                I(2, CilOperation.LoadLocal, new CilOperand.Index(2)),
+                I(3, CilOperation.Select),
+                I(4, CilOperation.Return))),
+            "select takes two numbers of one kind and an int32 condition");
 
     [Theory]
     [InlineData(CilOperation.BitwiseAnd)]

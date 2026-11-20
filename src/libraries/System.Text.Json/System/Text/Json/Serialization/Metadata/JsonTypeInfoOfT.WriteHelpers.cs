@@ -37,11 +37,11 @@ namespace System.Text.Json.Serialization.Metadata
                 writer.Flush();
             }
             else if (
-#if NETWASM
-                false &&
-#elif NET
+#if NET
                 !typeof(T).IsValueType &&
 #endif
+                // NetWasm: only object metadata writes a root by its runtime type; the test folds elsewhere.
+                typeof(T) == typeof(object) &&
                 Converter.CanBePolymorphic &&
                 rootValue is not null &&
                 Options.TryGetPolymorphicTypeInfoForRootType(rootValue, out JsonTypeInfo? derivedTypeInfo))
@@ -145,11 +145,11 @@ namespace System.Text.Json.Serialization.Metadata
                 }
             }
             else if (
-#if NETWASM
-                false &&
-#elif NET
+#if NET
                 !typeof(T).IsValueType &&
 #endif
+                // NetWasm: only object metadata writes a root by its runtime type; the test folds elsewhere.
+                typeof(T) == typeof(object) &&
                 Converter.CanBePolymorphic &&
                 rootValue is not null &&
                 Options.TryGetPolymorphicTypeInfoForRootType(rootValue, out JsonTypeInfo? derivedTypeInfo))
@@ -315,11 +315,11 @@ namespace System.Text.Json.Serialization.Metadata
                 }
             }
             else if (
-#if NETWASM
-                false &&
-#elif NET
+#if NET
                 !typeof(T).IsValueType &&
 #endif
+                // NetWasm: only object metadata writes a root by its runtime type; the test folds elsewhere.
+                typeof(T) == typeof(object) &&
                 Converter.CanBePolymorphic &&
                 rootValue is not null &&
                 Options.TryGetPolymorphicTypeInfoForRootType(rootValue, out JsonTypeInfo? polymorphicTypeInfo))

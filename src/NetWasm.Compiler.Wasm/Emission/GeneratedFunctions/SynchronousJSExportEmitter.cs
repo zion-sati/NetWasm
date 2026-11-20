@@ -14,7 +14,7 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 internal sealed class SynchronousJSExportEmitter(
     ITargetLayout layouts,
     IRuntimeImportResolver runtimeImports,
-    IRuntimeStateInitializer runtimeInitialization,
+    IEntryRuntimeInitializer runtimeInitialization,
     IJavaScriptReferenceArgumentEmitter referenceArguments,
     IJavaScriptValueFramePlanner valueFramePlanner,
     IJavaScriptValueFrameEmitter valueFrames,

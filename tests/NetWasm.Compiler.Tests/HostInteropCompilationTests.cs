@@ -313,6 +313,101 @@ public sealed class HostInteropCompilationTests
         }
     }
 
+    // .NET's JSObject property API reaches the runtime's own module, one import per typed getter or setter, and a
+    // program imports only those it calls.
+    [Fact]
+    public void CompilerImportsTheJSObjectPropertyAccessAProgramCalls()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "JSObjectPropertyFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("touch")]
+                public static int Touch(JSObject target)
+                {
+                    target.SetProperty("label", "seen");
+                    target.SetProperty("bytes", new byte[] { 1 });
+                    return target.HasProperty("count") && !target.IsDisposed ? target.GetPropertyAsInt32("count") : -1;
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+                assets,
+                assembly,
+                "EntryPoint",
+                "Run",
+                target) with
+            { UseJavaScriptExportBoundary = true });
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var properties = result.InteropManifest.Imports
+                .Where(import => import.Module == RuntimeAbi.HostModule && import.Name.StartsWith("object_", StringComparison.Ordinal))
+                .ToDictionary(import => import.Name);
+            Assert.Equal(
+                ["object_get_int32", "object_has_property", "object_set_bytes", "object_set_string"],
+                properties.Keys.Order(StringComparer.Ordinal).ToArray());
+            Assert.Equal(["object", "string"], properties["object_has_property"].Parameters.ToArray());
+            Assert.Equal("bool", properties["object_has_property"].Result);
+            Assert.Equal("i32", properties["object_get_int32"].Result);
+            Assert.Equal(["object", "string", "string"], properties["object_set_string"].Parameters.ToArray());
+            Assert.Equal(["object", "string", "bytes"], properties["object_set_bytes"].Parameters.ToArray());
+            Assert.Equal("void", properties["object_set_bytes"].Result);
+        }
+    }
+
+    // JSHost.GlobalThis and JSHost.ImportAsync read the global object and the modules the host bound from the
+    // runtime's own module.
+    [Fact]
+    public void CompilerImportsTheHostModulesJSHostReads()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "JSHostFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("kinds")]
+                public static async Task<string> Kinds()
+                {
+                    using var module = await JSHost.ImportAsync("app.module", "./module.mjs");
+                    using var global = JSHost.GlobalThis;
+                    return module.GetTypeOfProperty("run") + global.GetTypeOfProperty("document");
+                }
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+            assets,
+            assembly,
+            "EntryPoint",
+            "Run",
+            WasmTarget.Wasm32) with
+        { UseJavaScriptExportBoundary = true });
+
+        CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+        var host = result.InteropManifest.Imports
+            .Where(import => import.Module == RuntimeAbi.HostModule && import.Name.StartsWith("host_", StringComparison.Ordinal))
+            .ToDictionary(import => import.Name);
+        Assert.Equal(["host_global_this", "host_module"], host.Keys.Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal("object", host["host_global_this"].Result);
+        Assert.Equal(["string"], host["host_module"].Parameters.ToArray());
+        Assert.Equal("object", host["host_module"].Result);
+    }
+
     // CoreLib's conversions stay out of a program whose boundaries pass only what
     // crosses as it is, including one whose failed import throws JSException.
     [Fact]
@@ -332,8 +427,8 @@ public sealed class HostInteropCompilationTests
 
                 public static int Run(int input) => input;
 
-                [JSExport("labelled")]
-                public static string Labelled(int value)
+                [JSExport("labeled")]
+                public static string Labeled(int value)
                 {
                     try
                     {
@@ -361,7 +456,7 @@ public sealed class HostInteropCompilationTests
     // Mono's [JSMarshalAs<T>] markers are optional: a long marked JSType.Number
     // crosses as Int52, and every other marker is checked against its type.
     [Fact]
-    public void CompilerHonoursJSMarshalAsMarkers()
+    public void CompilerHonorsJSMarshalAsMarkers()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource(
@@ -1070,6 +1165,69 @@ public sealed class HostInteropCompilationTests
         Assert.Equal("i32", export.Result);
     }
 
+    // .NET's JSImport generator gives a JSImport a body that binds it through JSFunctionBinding and marks it
+    // [DebuggerNonUserCode], as Microsoft.Testing.Platform's browser console has: NetWasm compiles it as ordinary code,
+    // and the binding throws PlatformNotSupportedException, as on .NET's platforms without a browser.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void GeneratedJSImportBodiesCompileAndTheirBindingIsUnsupported(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileUnsafeSource(
+            "GeneratedJSImportFixture",
+            """
+            using System;
+            using System.Diagnostics;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class BrowserConsole
+            {
+                private static JSFunctionBinding? s_log;
+
+                // What .NET's JSImport generator writes for [JSImport("globalThis.console.log")] static partial void Log(string).
+                [JSImport("globalThis.console.log")]
+                [DebuggerNonUserCode]
+                public static void Log(string message)
+                {
+                    s_log ??= JSFunctionBinding.BindJSFunction("globalThis.console.log", null!,
+                        [JSMarshalerType.Discard, JSMarshalerType.String]);
+                    Span<JSMarshalerArgument> arguments = stackalloc JSMarshalerArgument[3];
+                    ref var exception = ref arguments[0];
+                    exception.Initialize();
+                    ref var result = ref arguments[1];
+                    result.Initialize();
+                    arguments[2].ToJS(message);
+                    JSFunctionBinding.InvokeJS(s_log, arguments);
+                }
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    try
+                    {
+                        BrowserConsole.Log("hello");
+                        return -1;
+                    }
+                    catch (PlatformNotSupportedException)
+                    {
+                        return input + 1;
+                    }
+                }
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run",
+            [new("run", "EntryPoint", "Run")], Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0"));
+
+        Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 41, target, result.StaticDataEnd));
+    }
+
     [Fact]
     public void CompilerRejectsJSImportWithManagedBody()
     {
@@ -1205,12 +1363,12 @@ public sealed class HostInteropCompilationTests
                 candidate => candidate.Name == "echo_bytes");
             Assert.Equal(["bytes"], export.Parameters.ToArray());
             Assert.Equal("bytes", export.Result);
+            // A number array enters managed code staged in linear memory: no host service reads it, and the
+            // export frees the staged block through the runtime.
+            Assert.DoesNotContain(result.FunctionImports,
+                import => import.Module == "netwasm.host.v1" && import.Name.StartsWith("interop_byte", StringComparison.Ordinal));
             Assert.Contains(result.FunctionImports,
-                import => import.Module == "netwasm.host.v1" &&
-                    import.Name == "interop_byte_length");
-            Assert.Contains(result.FunctionImports,
-                import => import.Module == "netwasm.host.v1" &&
-                    import.Name == "interop_copy_bytes");
+                import => import.Module == "netwasm.runtime.v1" && import.Name == "native_free");
         }
     }
 
@@ -1306,10 +1464,12 @@ public sealed class HostInteropCompilationTests
             Assert.Equal(["f32[]"], scale.Parameters.ToArray());
             Assert.Equal("i64[]", scale.Result);
             Assert.Equal(["u16[]"], Assert.Single(result.InteropManifest.Callbacks).Parameters.ToArray());
+            // A number array enters managed code staged in linear memory: no host service reads it, and the
+            // export frees the staged block through the runtime.
+            Assert.DoesNotContain(result.FunctionImports,
+                import => import.Module == "netwasm.host.v1" && import.Name.StartsWith("interop_byte", StringComparison.Ordinal));
             Assert.Contains(result.FunctionImports,
-                import => import.Module == "netwasm.host.v1" && import.Name == "interop_byte_length");
-            Assert.Contains(result.FunctionImports,
-                import => import.Module == "netwasm.host.v1" && import.Name == "interop_copy_bytes");
+                import => import.Module == "netwasm.runtime.v1" && import.Name == "native_free");
         }
     }
 
@@ -1418,34 +1578,183 @@ public sealed class HostInteropCompilationTests
         Assert.Contains("JSExport currently supports", exception.Message);
     }
 
+    // .NET's MemoryView of an ArraySegment: CoreLib gives JavaScript a view that keeps the array alive until
+    // JavaScript disposes or collects it, so an asynchronous import can take one, with or without the marker.
     [Fact]
-    public void CompilerRejectsCallbackWithoutSubscriptionResult()
+    public void CompilerPassesArraySegmentsAsMemoryViews()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource(
-            "InvalidCallbackResultFixture",
+            "ArraySegmentFixture",
             """
+            using System;
             using System.Runtime.InteropServices.JavaScript;
-
-            public delegate int Transform(int value);
+            using System.Threading.Tasks;
 
             public static class Host
             {
-                [JSImport("bad", "consumer.callback")]
-                public static extern int Bad(Transform callback);
+                [JSImport("write", "consumer.stream")]
+                public static extern Task WriteAsync(JSObject stream, [JSMarshalAs<JSType.MemoryView>] ArraySegment<byte> data);
+
+                [JSImport("sum", "consumer.stream")]
+                public static extern double Sum(ArraySegment<double> values);
             }
 
             public static class EntryPoint
             {
-                public static int Run(int input) => Host.Bad(Double);
-                private static int Double(int input) => input * 2;
+                public static int Run(int input) => input;
+
+                [JSExport("save")]
+                public static async Task<double> Save(JSObject stream)
+                {
+                    var bytes = new byte[] { 1, 2, 3, 4 };
+                    await Host.WriteAsync(stream, new ArraySegment<byte>(bytes, 1, 2));
+                    return Host.Sum(new ArraySegment<double>([0.5, 1.5]));
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+                assets,
+                assembly,
+                "EntryPoint",
+                "Run",
+                target) with
+            { UseJavaScriptExportBoundary = true });
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+            Assert.Equal(["object", "memory-view"], imports["write"].Parameters.ToArray());
+            Assert.Equal(["memory-view"], imports["sum"].Parameters.ToArray());
+            Assert.Contains(result.InteropManifest.Imports,
+                import => import.Module == RuntimeAbi.HostModule && import.Name == "value_from_memory_view");
+        }
+    }
+
+    // The view only goes to JavaScript: no result, export or callback takes an ArraySegment.
+    [Theory]
+    [InlineData("[JSImport(\"made\", \"consumer.stream\")] public static extern ArraySegment<byte> Made();", "JSImport currently supports")]
+    [InlineData("[JSExport(\"take\")] public static int Take(ArraySegment<byte> data) => data.Count;", "JSExport currently supports")]
+    [InlineData("[JSImport(\"each\", \"consumer.stream\")] public static extern void Each(Action<ArraySegment<byte>> visit);", "JSImport callbacks support")]
+    public void CompilerKeepsArraySegmentsToImportParameters(string member, string message)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "ArraySegmentRejectionFixture",
+            $$"""
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                {{member}}
+
+                public static int Run(int input) => input;
             }
             """);
 
         var exception = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
             new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [])));
 
-        Assert.Contains("callbacks require exactly one delegate parameter", exception.Message);
+        Assert.Contains(message, exception.Message);
+    }
+
+    // A JSSubscription releases the one callback it owns, so it cannot own two.
+    [Fact]
+    public void CompilerRejectsASubscriptionOwningTwoCallbacks()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "InvalidCallbackResultFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class Host
+            {
+                [JSImport("bad", "consumer.callback")]
+                public static extern JSSubscription Bad(Func<int, int> first, Action second);
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    using (Host.Bad(value => value * 2, () => { })) { }
+                    return input;
+                }
+            }
+            """);
+
+        var exception = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
+            new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [])));
+
+        Assert.Contains("JSSubscription takes exactly one delegate parameter", exception.Message);
+    }
+
+    // As on .NET, an import with any other result takes callbacks, which belong to JavaScript.
+    [Fact]
+    public void CompilerPassesCallbacksToImportsWithAnyResult()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "CallbackResultFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class Host
+            {
+                [JSImport("onBack", "consumer.callback")]
+                public static extern void OnBack(Func<bool> handler);
+
+                [JSImport("both", "consumer.callback")]
+                public static extern int Both(Func<int, int> transform, string label, Action done);
+
+                [JSImport("later", "consumer.callback")]
+                public static extern Task<int> Later(Func<int, int> transform);
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("wire")]
+                public static async Task<int> Wire(int input)
+                {
+                    Host.OnBack(() => input > 0);
+                    var both = Host.Both(value => value + input, "x", () => { });
+                    return both + await Host.Later(value => value * input);
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+                assets,
+                assembly,
+                "EntryPoint",
+                "Run",
+                target) with
+            { UseJavaScriptExportBoundary = true });
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+            Assert.Equal(["callback"], imports["onBack"].Parameters.ToArray());
+            Assert.Equal("void", imports["onBack"].Result);
+            Assert.Equal(["callback", "string", "callback"], imports["both"].Parameters.ToArray());
+            Assert.Equal(["callback"], imports["later"].Parameters.ToArray());
+            Assert.Equal(
+                ["both:0", "both:2", "later:0", "onBack:0"],
+                result.InteropManifest.Callbacks
+                    .Select(callback => callback.ImportName + ":" + callback.ParameterIndex)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray());
+        }
     }
 
     [Fact]
@@ -1475,7 +1784,63 @@ public sealed class HostInteropCompilationTests
                 [])));
 
         Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
-        Assert.Contains("requires an explicit consumer module name", exception.Message);
+        Assert.Contains("must name a global function, as \"globalThis.<path>\"", exception.Message);
+    }
+
+    // As on .NET's browser runtime, an import without a module calls the global function its name gives; the host
+    // resolves the name from globalThis, and the module is NetWasm's own.
+    [Fact]
+    public void CompilerBuildsGlobalFunctionImportsWithoutAModule()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "GlobalFunctionHostInteropFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                [JSImport("globalThis.Math.max")]
+                public static extern double Max(double left, double right);
+
+                public static int Run(int input) => (int)Max(input, 7);
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+            assets,
+            assembly,
+            "EntryPoint",
+            "Run"));
+
+        var import = Assert.Single(result.InteropManifest.Imports);
+        Assert.Equal(("netwasm.host.v1", "globalThis.Math.max"), (import.Module, import.Name));
+    }
+
+    [Theory]
+    [InlineData("globalThis.")]
+    [InlineData("Math.max")]
+    public void CompilerRejectsAModuleLessImportOfNoGlobalFunction(string name)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "ModuleLessHostInteropFixture",
+            $$"""
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                [JSImport("{{name}}")]
+                public static extern double Max(double left, double right);
+
+                public static int Run(int input) => (int)Max(input, 7);
+            }
+            """);
+
+        var exception = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
+            CompilerTestSupport.CreateReactorOptions(assets, assembly, "EntryPoint", "Run")));
+
+        Assert.Contains("must name a global function", exception.Message);
     }
 
     [Fact]

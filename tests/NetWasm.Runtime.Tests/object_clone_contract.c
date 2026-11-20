@@ -107,6 +107,14 @@ int main(void)
     assert(*(u32 *)(roots[2] + NETWASM_STRING_LENGTH_OFFSET) == 3);
     assert(memcmp((void *)(roots[0] + NETWASM_STRING_DATA_OFFSET),
         (void *)(roots[2] + NETWASM_STRING_DATA_OFFSET), 6) == 0);
+    /* A string's characters are followed by a NUL, in the original, its clone and across a collection. */
+    assert(((uint16_t *)(roots[0] + NETWASM_STRING_DATA_OFFSET))[3] == 0);
+    assert(((uint16_t *)(roots[2] + NETWASM_STRING_DATA_OFFSET))[3] == 0);
+    roots[1] = allocate_string(0, 0, 5);
+    assert(((uint16_t *)(roots[1] + NETWASM_STRING_DATA_OFFSET))[0] == 0);
+    collector_collect();
+    assert(((uint16_t *)(roots[2] + NETWASM_STRING_DATA_OFFSET))[3] == 0);
+    roots[1] = 0;
 
     roots[0] = allocate_finalizable(3 * sizeof(uintptr_t), 3);
     suppress_finalize(roots[0]);

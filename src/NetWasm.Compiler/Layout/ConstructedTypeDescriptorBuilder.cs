@@ -61,8 +61,9 @@ internal sealed class ConstructedTypeDescriptorBuilder(
         foreach (var (type, layout) in _types.ConstructedObjects
                      .OrderBy(pair => pair.Value.TypeId))
         {
+            // A pointer, by-reference or function pointer type has no definition of its own and no base type.
             var isElementModifier = type.Shape is
-                CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer;
+                CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer;
             var definition = type.Shape is CliTypeShape.SzArray or CliTypeShape.Array
                 ? _typeFinder.FindType("System.Array")
                 : isElementModifier

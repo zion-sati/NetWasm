@@ -30,6 +30,7 @@ internal sealed class WasmModuleEmitter(
     IConstructedMethodSetAppender constructedMethods,
     IManagedThrowFunctionAppender managedThrowFunctions,
     IDelegateFunctionAppender delegateFunctions,
+    ISharedVirtualDispatchFunctionAppender sharedVirtualDispatches,
     IJSImportForwarderFunctionAppender jsImportForwarders,
     INativeCallbackFunctionAppender nativeCallbacks,
     IHostCallbackSetAppender hostCallbacks,
@@ -155,6 +156,11 @@ internal sealed class WasmModuleEmitter(
             delegateInvokeTarget,
             plan.FunctionIndices,
             functionIndices);
+        sharedVirtualDispatches.Append(
+            functions,
+            plan.SharedVirtualDispatches,
+            delegateInvokeTarget.StaticInitializerGuards,
+            functionIndices);
         jsImportForwarders.Append(
             functions,
             imports.Length,
@@ -196,10 +202,7 @@ internal sealed class WasmModuleEmitter(
                 })
             ],
         };
-        initialization = initialization with
-        {
-            InitializerFunctionIndex = runtimeInitializer.Append(functions, imports.Length, initialization),
-        };
+        initialization = runtimeInitializer.Append(functions, imports.Length, initialization);
 
         var callbackIndices = ImmutableDictionary.CreateBuilder<string, int>(StringComparer.Ordinal);
         _hostCallbacks.Append(functions, imports.Length, callbackIndices,
@@ -266,8 +269,7 @@ internal sealed class WasmModuleEmitter(
             _layouts.Target.Target,
             initialization,
             imports.Length,
-            requestedExportIndices,
-            functionIndices);
+            requestedExportIndices);
         var runtimeFeatures = componentRuntimeFeatures;
         if (plan.RuntimeImportSelection.IncludeEphemeronHandles)
         {
@@ -314,6 +316,34 @@ internal sealed class WasmModuleEmitter(
         {
             runtimeFeatures = [.. runtimeFeatures
                 .Append(NetWasmRuntimeFeatureIds.ObjectClone)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (plan.RuntimeImportSelection.IncludeUninitializedArrays)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.UninitializedArrays)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (plan.RuntimeImportSelection.IncludeReferenceWriteBarrier)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.ReferenceWriteBarrier)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (plan.RuntimeImportSelection.IncludeObjectGeneration)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.ObjectGeneration)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (plan.RuntimeImportSelection.IncludeYoungCollection)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.YoungCollection)
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)];
         }

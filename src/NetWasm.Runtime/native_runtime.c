@@ -572,6 +572,71 @@ void collect(void)
     collect_internal();
 }
 
+/* GC.Collect(0): a collection of the youngest generation alone, which is every object without generations. Only a
+ * program for a collector with generations that asks imports it. */
+NETWASM_EXPORT("gc_collect_young")
+void gc_collect_young(void)
+{
+    collector_collect_young();
+#ifndef NETWASM_RUNTIME_PACK
+    collection_count++;
+#endif
+}
+
+/* An embedder calls this when it is idle, between calls into the module: the collector collects when the
+ * heap has grown enough since the last collection for one to be worth its while, so the collection the
+ * program is heading for need not happen during its next call. Finalizers it queues run at the next
+ * safepoint. Returns whether it collected. */
+NETWASM_EXPORT("collect_when_idle")
+u32 collect_when_idle(void)
+{
+    if (!collector_collect_when_idle()) return 0;
+#ifndef NETWASM_RUNTIME_PACK
+    collection_count++;
+#endif
+    return 1;
+}
+
+/* An embedder calls this once it has stayed quiet for a while after the module last ran: the collector
+ * collects whatever the heap has grown by, since what the program dropped without allocating, as when it
+ * clears a table, would otherwise wait for its next burst of allocation. The embedder owns the timer: the
+ * runtime has no clock. Returns 0 when it did not collect, and otherwise 1 plus the share of the heap the
+ * collection freed, in 255ths, by which the embedder paces the next one. */
+NETWASM_EXPORT("collect_when_quiet")
+u32 collect_when_quiet(void)
+{
+    u32 collected = collector_collect_when_quiet();
+#ifndef NETWASM_RUNTIME_PACK
+    if (collected != 0) collection_count++;
+#endif
+    return collected;
+}
+
+/* The write barrier of a collector with generations, which compiled code calls after it stores a reference into
+ * memory that may be an object's: with the address it stored through, or the start of the object or value it
+ * stored into. The link inlines it. Only a program compiled for such a collector calls it; elsewhere it is
+ * empty and the link drops it. */
+NETWASM_EXPORT("record_reference_write")
+void record_reference_write(netwasm_address_t address)
+{
+    collector_record_reference_write((uintptr_t)address);
+}
+
+/* The same for a range of memory that received references at once, as a block copy does. */
+NETWASM_EXPORT("record_reference_writes")
+void record_reference_writes(netwasm_address_t address, netwasm_address_t bytes)
+{
+    collector_record_reference_writes((uintptr_t)address, (size_t)bytes);
+}
+
+/* GC.GetGeneration: the oldest generation once the object has survived a collection, for a collector with
+ * generations, and 0 otherwise. Only a program that asks imports it. */
+NETWASM_EXPORT("gc_object_generation")
+u32 gc_object_generation(netwasm_reference_t object)
+{
+    return collector_object_generation((uintptr_t)object);
+}
+
 static inline __attribute__((always_inline))
 void collect_for_allocation_test(void)
 {
@@ -1008,10 +1073,11 @@ void collector_object_layout(const void *object, NetWasmCollectorLayout *layout)
     *layout = (NetWasmCollectorLayout){0};
     switch (type_data_kinds[type_id]) {
     case NETWASM_OBJECT_DATA_STRING:
+        /* The characters and the NUL that follows them, as CoreCLR lays a string out. */
         layout->fixed_bytes = NETWASM_STRING_DATA_OFFSET;
         layout->element_size = sizeof(uint16_t);
         layout->element_count =
-            *(const u32 *)(uintptr_t)(reference + NETWASM_STRING_LENGTH_OFFSET);
+            (size_t)*(const u32 *)(uintptr_t)(reference + NETWASM_STRING_LENGTH_OFFSET) + 1;
         return;
     case NETWASM_OBJECT_DATA_ARRAY: {
         const TypeDescriptor *element = &type_descriptors[
@@ -1135,6 +1201,9 @@ static u32 type_table_read(netwasm_address_t table, uint64_t offset, u32 width)
     return width == 32 ? (u32)word : (u32)(word & ((UINT64_C(1) << width) - 1));
 }
 
+/* The runtime type table's header: RuntimeTypeTableEncoder.HeaderFields 32-bit fields, then its flag words. */
+#define TYPE_TABLE_HEADER_BITS (21u * 32u)
+
 static u32 type_table_header(netwasm_address_t table, u32 field)
 {
     return type_table_read(table, (uint64_t)field * 32, 32);
@@ -1228,7 +1297,7 @@ void register_types(netwasm_address_t table)
             }
         }
         if (flag_index != 0) {
-            u32 flags = type_table_read(table, 640 + (uint64_t)flag_index * 32, 32);
+            u32 flags = type_table_read(table, TYPE_TABLE_HEADER_BITS + (uint64_t)flag_index * 32, 32);
             uint64_t layout = type_table_header(table, 10) +
                 (uint64_t)type_table_read(table, shape + flag_index_bits, layout_index_bits) *
                 (2 * size_bits + 2 * bitmap_index_bits + payload_bits);
@@ -2091,10 +2160,16 @@ netwasm_address_t component_realloc(
     return aligned_address;
 }
 
+/* NativeMemory, and Marshal's HGlobal and CoTaskMem memory over it, are libc's
+   malloc, realloc and free, as on .NET for Unix: a block a native library
+   allocates can be freed from managed code, and the other way round. The aligned
+   forms follow upstream's System.Native (posix_memalign, and a realloc that
+   copies the usable size). component_realloc keeps the canonical ABI's own
+   header-carrying blocks. */
 NETWASM_EXPORT("native_alloc")
 netwasm_address_t native_alloc(netwasm_address_t size)
 {
-    return component_realloc(0, 0, sizeof(void *), size == 0 ? 1 : size);
+    return (netwasm_address_t)(uintptr_t)netwasm_unmanaged_allocate((size_t)(size == 0 ? 1 : size));
 }
 
 NETWASM_EXPORT("native_realloc")
@@ -2102,23 +2177,15 @@ netwasm_address_t native_realloc(
     netwasm_address_t address,
     netwasm_address_t size)
 {
-    ComponentAllocationHeader *header;
-    netwasm_address_t old_size = 0;
-    if (address != 0) {
-        header = (ComponentAllocationHeader *)(uintptr_t)address - 1;
-        old_size = header->size;
-    }
-    return component_realloc(
-        address,
-        old_size,
-        sizeof(void *),
-        size == 0 ? 1 : size);
+    return (netwasm_address_t)(uintptr_t)netwasm_unmanaged_reallocate(
+        (void *)(uintptr_t)address,
+        (size_t)(size == 0 ? 1 : size));
 }
 
 NETWASM_EXPORT("native_free")
 void native_free(netwasm_address_t address)
 {
-    component_free(address);
+    netwasm_unmanaged_free((void *)(uintptr_t)address);
 }
 
 NETWASM_EXPORT("native_aligned_alloc")
@@ -2126,7 +2193,15 @@ netwasm_address_t native_aligned_alloc(
     netwasm_address_t size,
     netwasm_address_t alignment)
 {
-    return component_realloc(0, 0, alignment, size == 0 ? 1 : size);
+    if (!is_power_of_two(alignment)) {
+        __builtin_trap();
+    }
+    if (alignment < sizeof(void *)) {
+        alignment = sizeof(void *);
+    }
+    return (netwasm_address_t)(uintptr_t)netwasm_unmanaged_allocate_aligned(
+        (size_t)alignment,
+        (size_t)(size == 0 ? 1 : size));
 }
 
 NETWASM_EXPORT("native_aligned_realloc")
@@ -2135,19 +2210,22 @@ netwasm_address_t native_aligned_realloc(
     netwasm_address_t size,
     netwasm_address_t alignment)
 {
-    ComponentAllocationHeader *header;
-    netwasm_address_t old_size = 0;
-    if (address != 0) {
-        header = (ComponentAllocationHeader *)(uintptr_t)address - 1;
-        old_size = header->size;
+    netwasm_address_t result = native_aligned_alloc(size, alignment);
+    if (result != 0 && address != 0) {
+        size_t old_size = netwasm_unmanaged_usable_size((void *)(uintptr_t)address);
+        size_t new_size = (size_t)(size == 0 ? 1 : size);
+        memcpy((void *)(uintptr_t)result,
+               (const void *)(uintptr_t)address,
+               old_size < new_size ? old_size : new_size);
+        netwasm_unmanaged_free((void *)(uintptr_t)address);
     }
-    return component_realloc(address, old_size, alignment, size == 0 ? 1 : size);
+    return result;
 }
 
 NETWASM_EXPORT("native_aligned_free")
 void native_aligned_free(netwasm_address_t address)
 {
-    component_free(address);
+    netwasm_unmanaged_free((void *)(uintptr_t)address);
 }
 
 #ifndef NETWASM_RUNTIME_PACK
@@ -2364,6 +2442,63 @@ netwasm_reference_t allocate_value_array(
     return allocate_inline_array(type_id, element_type_id, length,
         element_size, element->value_contains_references != 0);
 }
+
+#ifndef NETWASM_NO_UNINITIALIZED_ARRAYS
+/* GC.AllocateUninitializedArray for an element type without references: the array's
+   fields are written and its elements keep what the collector's memory held, except
+   where the collector zeroes in bulk (NetWasmGC's runs). */
+NETWASM_EXPORT("allocate_uninitialized_value_array")
+netwasm_reference_t allocate_uninitialized_value_array(
+    u32 length,
+    u32 type_id,
+    u32 element_type_id,
+    u32 element_size)
+{
+    size_t bytes;
+    netwasm_reference_t array;
+#ifndef NETWASM_RUNTIME_PACK
+    /* The compiler passes registered types, the element's registered size, and only
+       elements without references. */
+    if (type_id >= type_capacity || !type_descriptors[type_id].registered ||
+        type_descriptors[type_id].size != NETWASM_ARRAY_OBJECT_SIZE ||
+        element_type_id >= type_capacity ||
+        !type_descriptors[element_type_id].registered ||
+        !type_descriptors[element_type_id].value_registered ||
+        type_descriptors[element_type_id].value_size != element_size ||
+        type_descriptors[element_type_id].value_contains_references) {
+        __builtin_trap();
+    }
+#endif
+    if (element_size != 0 &&
+        (size_t)length > (SIZE_MAX - NETWASM_ARRAY_INLINE_DATA_OFFSET -
+            NETWASM_OBJECT_REFERENCE_SIZE) / element_size) {
+        return 0;
+    }
+    collect_for_allocation_test();
+    bytes = NETWASM_ARRAY_INLINE_DATA_OFFSET + (size_t)length * element_size;
+    if (length == 0) {
+        bytes += NETWASM_OBJECT_REFERENCE_SIZE;
+    }
+    type_data_kinds[type_id] = NETWASM_OBJECT_DATA_ARRAY;
+    array = (netwasm_reference_t)(uintptr_t)collector_allocate_uninitialized_object(bytes);
+    if (array == 0) {
+        return 0;
+    }
+    *(u32 *)(uintptr_t)array = type_id;
+    *(u32 *)(uintptr_t)(array + NETWASM_ARRAY_LENGTH_OFFSET) = length;
+    *(netwasm_reference_t *)(uintptr_t)(array + NETWASM_ARRAY_DATA_POINTER_OFFSET) =
+        array + NETWASM_ARRAY_INLINE_DATA_OFFSET;
+    *(u32 *)(uintptr_t)(array + NETWASM_ARRAY_ELEMENT_TYPE_ID_OFFSET) =
+        element_type_id;
+#ifndef NETWASM_RUNTIME_PACK
+    allocation_count++;
+#endif
+    allocation_root = array;
+    track((void *)(uintptr_t)array);
+    allocation_root = 0;
+    return array;
+}
+#endif
 
 NETWASM_EXPORT("allocate_rectangular_array")
 netwasm_reference_t allocate_rectangular_array(
@@ -3058,7 +3193,7 @@ static NETWASM_ALLOCATION_SLOW_PATH netwasm_reference_t allocate_string_slow(
             NETWASM_OBJECT_REFERENCE_SIZE)) {
         __builtin_trap();
     }
-    if ((netwasm_address_t)length >
+    if ((netwasm_address_t)length >=
         (UINTPTR_MAX - NETWASM_STRING_DATA_OFFSET) / sizeof(uint16_t)) {
         return 0;
     }
@@ -3069,7 +3204,7 @@ static NETWASM_ALLOCATION_SLOW_PATH netwasm_reference_t allocate_string_slow(
         return 0;
     }
 #endif
-    byte_count = NETWASM_STRING_DATA_OFFSET + length * sizeof(uint16_t);
+    byte_count = NETWASM_STRING_DATA_OFFSET + ((netwasm_address_t)length + 1) * sizeof(uint16_t);
     type_data_kinds[type_id] = NETWASM_OBJECT_DATA_STRING;
     string = (netwasm_reference_t)(uintptr_t)allocate_untraced(byte_count);
     if (string == 0) {
@@ -3083,6 +3218,7 @@ static NETWASM_ALLOCATION_SLOW_PATH netwasm_reference_t allocate_string_slow(
             characters[index] = (uint16_t)value;
         }
     }
+    characters[length] = 0;
     allocation_root = string;
 #ifndef NETWASM_RUNTIME_PACK
     allocation_count++;
@@ -3093,12 +3229,14 @@ static NETWASM_ALLOCATION_SLOW_PATH netwasm_reference_t allocate_string_slow(
 }
 
 /* A short string takes its slot from a run; the runtime inlines this at O1 to
-   O3, so CoreLib's string allocation bumps the run without a call. */
+   O3, so CoreLib's string allocation bumps the run without a call. A string's
+   characters are followed by a NUL, as CoreCLR guarantees: native code given a
+   pinned string reads up to it. */
 NETWASM_EXPORT("allocate_string")
 netwasm_reference_t allocate_string(u32 value, u32 length, u32 type_id)
 {
 #if NETWASM_ALLOCATION_RUNS
-    if (length < (NETWASM_ALLOCATION_RUN_LIMIT - NETWASM_STRING_DATA_OFFSET) / sizeof(uint16_t)) {
+    if (length < (NETWASM_ALLOCATION_RUN_LIMIT - NETWASM_STRING_DATA_OFFSET) / sizeof(uint16_t) - 1) {
 #ifndef NETWASM_RUNTIME_PACK
         if (type_id >= type_capacity || !type_descriptors[type_id].registered ||
             type_descriptors[type_id].size != netwasm_align_address(
@@ -3112,16 +3250,17 @@ netwasm_reference_t allocate_string(u32 value, u32 length, u32 type_id)
 #endif
         uintptr_t string;
         if (allocate_from_run(
-                NETWASM_STRING_DATA_OFFSET + (size_t)length * sizeof(uint16_t), false, &string)) {
+                NETWASM_STRING_DATA_OFFSET + ((size_t)length + 1) * sizeof(uint16_t), false, &string)) {
             type_data_kinds[type_id] = NETWASM_OBJECT_DATA_STRING;
             *(u32 *)string = type_id;
             *(u32 *)(string + NETWASM_STRING_LENGTH_OFFSET) = length;
+            uint16_t *characters = (uint16_t *)(string + NETWASM_STRING_DATA_OFFSET);
             if (value != 0) {
-                uint16_t *characters = (uint16_t *)(string + NETWASM_STRING_DATA_OFFSET);
                 for (u32 index = 0; index < length; index++) {
                     characters[index] = (uint16_t)value;
                 }
             }
+            characters[length] = 0;
             return (netwasm_reference_t)string;
         }
     }

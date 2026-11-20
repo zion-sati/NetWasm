@@ -38,6 +38,10 @@ public sealed record MethodRootMap(
 {
     public StackStorageAnchorPlan AnchorPlan { get; init; } = StackStorageAnchorPlan.Empty;
 
+    // The stores, by IL offset, that a collector with generations need not be told of: each into an object the
+    // method allocated with no safepoint since, which is young until the next collection.
+    public ImmutableHashSet<int> UnrecordedStores { get; init; } = [];
+
     public int SlotCount => Slots.Count == 0
         ? 0
         : checked(Slots.Values.Max() + 1);

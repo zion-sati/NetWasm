@@ -148,7 +148,7 @@ public static class JavaScriptMarshalAsRules
         "primitive:object" => ["Any"],
         _ when JavaScriptDirectImport.IsScalar(type) => ["Number"],
         _ when JavaScriptConversion.IsDate(type) => ["Date"],
-        _ when JavaScriptMemoryView.IsSupported(type) => ["MemoryView"],
+        _ when JavaScriptMemoryView.IsSupported(type) || JavaScriptArraySegment.IsSupported(type) => ["MemoryView"],
         _ when type.FullName == "System.Exception" => ["Error"],
         _ when type.FullName == "System.Runtime.InteropServices.JavaScript.JSObject" => ["Object"],
         _ => [],
@@ -326,6 +326,7 @@ public static class JavaScriptConversion
     public static string? HandleAbiType(CliTypeIdentity type) => type switch
     {
         _ when IsObject(type) => "any",
+        _ when JavaScriptArraySegment.IsSupported(type) => JavaScriptArraySegment.AbiType,
         _ when type.FullName == "System.Exception" => "error",
         { Shape: CliTypeShape.SzArray, ElementType: { } element } => element switch
         {
@@ -344,6 +345,7 @@ public static class JavaScriptConversion
     private static string? Suffix(CliTypeIdentity type) => type switch
     {
         _ when IsDate(type) => type.FullName == DateTimeType ? "DateTime" : "DateTimeOffset",
+        _ when JavaScriptArraySegment.IsSupported(type) => JavaScriptArraySegment.ConversionSuffix(type),
         _ => HandleAbiType(type) switch
         {
             "any" => "Object",
@@ -635,3 +637,22 @@ public static class JavaScriptDirectImport
                 IsScalar(method.Signature.ReturnSignatureType));
     }
 }
+
+// How a library's JavaScript binding that .NET's browser binding generator wrote compiles. Such a [JSImport] has a body
+// that binds the import through JSFunctionBinding: with a JavaScript host it is NetWasm's own import and the body is
+// set aside, as the generator's binding would call the same function; without one the body stays, and its binding throws
+// PlatformNotSupportedException, as on .NET's platforms without a browser.
+public sealed class GeneratedJavaScriptBinding
+{
+    private GeneratedJavaScriptBinding(bool bindsToHost) => BindsToHost = bindsToHost;
+
+    public static GeneratedJavaScriptBinding OrdinaryCode { get; } = new(false);
+
+    public static GeneratedJavaScriptBinding HostInterop { get; } = new(true);
+
+    public bool BindsToHost { get; }
+}
+
+// A [JSImport] or [JSExport] that .NET's browser binding generator wrote for a library, with a shape NetWasm's
+// JavaScript interop does not take: the method stays ordinary code, as the reason says.
+public sealed record DeclinedJavaScriptBinding(string Attribute, string Reason);

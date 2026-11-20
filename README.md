@@ -16,7 +16,7 @@ and .NET CIL directly to WebAssembly. It does not carry the desktop CLR, Mono,
 [Try it in the browser](https://playground.netwasm.com/) ·
 [Install and build](#try-it) ·
 [See supported APIs](docs/support-status.md) ·
-[Read the documentation](docs/index.md)
+[Read the documentation](docs/README.md)
 
 ## C# at less than half Rust's Wasm size
 
@@ -91,13 +91,14 @@ faster on the library work and the quicksort without allocation.
 
 ## Your NuGet packages
 
-A NetWasm project restores and compiles NuGet packages built for .NET Standard.
-Of the 100 most-downloaded nuget.org packages whose best build is .NET Standard
-2.x, **53 run their README quick start unchanged**, printing exactly what
-desktop .NET prints: Azure.Core, the AWS SDK's core, MSAL, CsvHelper,
-MongoDB.Driver, BouncyCastle, SSH.NET and HtmlAgilityPack among them. Most of
-the rest stop on run-time reflection, which NetWasm leaves out to keep programs
-small, and several have a source-generated replacement that runs.
+A NetWasm project restores and compiles NuGet packages as a desktop .NET 10
+project does. Of 100 of the most-downloaded nuget.org packages that ship a .NET
+Standard build, **56 run their README quick start unchanged**, printing exactly
+what desktop .NET prints: Azure.Core, the AWS SDK's core, MSAL, CsvHelper,
+MongoDB.Driver, gRPC's client, RabbitMQ.Client, Open XML SDK, BouncyCastle,
+SSH.NET and HtmlAgilityPack among them. Most of the rest stop on run-time
+reflection, which NetWasm leaves out to keep programs small, and several have a
+source-generated replacement that runs.
 
 [Every package's result and the replacements](docs/package-compatibility.md)
 
@@ -122,9 +123,9 @@ Today NetWasm can:
 - construct and inspect expression trees without general runtime reflection;
 - use LINQ, HTTP, JSON, XML and regular expressions from the framework, and
   hashing and dependency injection from separate NetWasm packages;
-- reference NuGet packages built for .NET Standard: 53 of the 100
-  most-downloaded [run unchanged](docs/package-compatibility.md);
-- dual-target libraries for `netwasm0.1` and desktop .NET.
+- reference NuGet packages built for .NET 10 and earlier or .NET Standard: 56
+  of 100 popular packages [run unchanged](docs/package-compatibility.md);
+- dual-target libraries for `net10.0-netwasm` and desktop .NET.
 
 The profile is deliberately smaller than desktop .NET. It already supports
 complete applications, portable libraries, test projects and browser modules.
@@ -180,8 +181,10 @@ host is still required. **Build with .NET; run without .NET.**
 Projects using C# 15 select the .NET 11 SDK; earlier language versions can stay
 on .NET 10. The SDK restores its pinned Node, LLD and Binaryen tools through
 NuGet, so an ordinary app does not require a separate Emscripten, Git or Python
-installation. See the [complete quickstart](docs/sdk-quickstart.md) for host,
-restore, Windows, browser and dual-targeting details.
+installation. [Getting started](docs/getting-started.md) walks through a
+console program and a web page, the [configuration reference](docs/configuration.md)
+lists every setting, and the [complete quickstart](docs/sdk-quickstart.md) covers
+host, restore, Windows, browser and dual-targeting details.
 
 ## How it stays small
 
@@ -228,8 +231,10 @@ Select a strategy in the executable project's `.csproj`:
 </PropertyGroup>
 ```
 
-Leaving the property unset selects Compact. Libraries remain collector-neutral;
-all four backends are packaged for wasm32 and wasm64. See
+Leaving the property unset selects Compact. `NetWasmGen`, NetWasmGC with
+generations, is opt-in for programs that keep a large set of objects alive and
+allocate short-lived ones on top. Libraries remain collector-neutral; all four
+backends are packaged for wasm32 and wasm64. See
 [Choosing a garbage collector](docs/runtime-garbage-collection.md) for the
 tradeoffs and diagnostics.
 
@@ -242,14 +247,15 @@ desktop .NET, rather than trapped in a Wasm-only ecosystem.
 dotnet new netwasm-lib -n MyLibrary
 ```
 
-The template targets `netwasm0.1` and `net10.0`, producing NuGet assets for
+The template targets `net10.0-netwasm` and `net10.0`, producing NuGet assets for
 both platforms. This is explicit multi-targeting, not a promise that arbitrary
 desktop packages work in reverse.
 
 [NetWasm.Libraries](https://github.com/zion-sati/NetWasm.Libraries) provides the
 ported framework and extensions packages.
 [TUnit-NetWasm](https://github.com/zion-sati/TUnit-NetWasm) provides ordinary
-`dotnet test` integration through the generic VSTest bridge.
+`dotnet test` integration through the generic VSTest bridge, for test projects
+that target `net10.0-netwasm`.
 
 ## How does this compare to conventional .NET Wasm?
 
@@ -300,7 +306,7 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - expression-tree completion;
 - runtime async, for faster and smaller async programs;
 - ✅ a faster incremental development loop (NetWasm 0.11.0);
-- a stable `netwasm1.0` platform and runtime contract;
+- a stable platform and runtime contract;
 - production diagnostics and broader host qualification.
 
 **Done in NetWasm 0.14.0:** libraries built for .NET Standard restore from
@@ -321,6 +327,7 @@ run.
 
 | Version | What's new |
 | --- | --- |
+| [0.15.0](docs/releases/0.15.0.md) | Projects target `net10.0-netwasm`, so NuGet takes a package's newest .NET build. Static archives built by Emscripten link as they are, a program can read manifest resources and name its assemblies, and Avalonia 12's headless platform renders through Skia. |
 | [0.14.2](docs/releases/0.14.2.md) | A program built with the Bump collector can use `ArrayPool<T>.Shared` again, along with finalizers, weak references and `ConditionalWeakTable`: finalizers never run and weak references never clear, since Bump never reclaims an object. |
 | [0.14.1](docs/releases/0.14.1.md) | A method builds at `O3` when inlining into it would make its WebAssembly function larger than browsers and Node accept, instead of failing with `NW1013`. |
 | [0.14.0](docs/releases/0.14.0.md) | A `netwasm0.1` project references the whole framework, so NuGet packages built for .NET Standard restore and compile against it. Date and time text, floating-point formatting and cookies are upstream .NET's, expression trees run nested lambdas and closures, and .NET's feature switches fold at compile time, so event logging costs nothing while it is off. |

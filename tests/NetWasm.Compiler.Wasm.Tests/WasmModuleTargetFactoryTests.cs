@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
@@ -121,6 +123,64 @@ public sealed class WasmModuleTargetFactoryTests
             "constructed",
             Assert.Single(target.Plan.OrderedConstructedMethods).CanonicalName);
     }
+    // A program also reads type names lazily, so the descriptor's type-symbols flag says whether it may wait to load
+    // them: a process entry may, and so may a raw module, whose JavaScript host completes the read; a module whose
+    // initialization runs in a synchronous WIT export's task may not.
+    [Theory]
+    [InlineData(WasmEntryPointProfile.Process, false, true)]
+    [InlineData(WasmEntryPointProfile.None, false, false)]
+    [InlineData(WasmEntryPointProfile.None, true, true)]
+    public void TheTypeSymbolsFlagFollowsWhetherTheProgramMayWait(
+        WasmEntryPointProfile profile, bool rawModule, bool flagged)
+    {
+        var program = new FakeProgram();
+        var request = WithEntryPointCallable(CreateEmissionRequest(program)) with
+        {
+            EntryPointProfile = profile,
+            UseJavaScriptExportBoundary = rawModule,
+            ComponentContract = new("example:component@1", "component", [],
+                [new("example:component/api@1.0.0", "run", EntryKey, [],
+                    new(CanonicalAbiTypeKind.S32, CliTypeIdentity.FromStackKind(CliValueKind.I4)))
+                    { Kind = CanonicalAbiFunctionKind.Function }]),
+            Sidecars = new WasmSidecarRequest("App.wasm", true, [], 4096),
+        };
+
+        var target = CreateFactory(program).Create(request);
+
+        var descriptor = target.ModuleData.DataSegments.Single(segment =>
+            segment.Address == target.ModuleData.SidecarDescriptorAddress);
+        Assert.Equal(flagged ? SidecarDescriptor.TypeSymbolsFlag : 0,
+            BinaryPrimitives.ReadInt32LittleEndian(descriptor.Data.AsSpan()) & SidecarDescriptor.TypeSymbolsFlag);
+    }
+
+    private static WasmModuleTargetFactory CreateFactory(FakeProgram program)
+    {
+        var layouts = new RecordingLayoutProvider();
+        return new WasmModuleTargetFactory(
+            new WasmModulePlanner(
+                program,
+                program,
+                program,
+                new FakeIntrinsics(),
+                new InteropImportPlanner(),
+                WasmRuntimeImports.CreateCatalog(),
+                new DisabledStackTraceMethodPlanBuilder(),
+                new WasmModulePlanInvariantValidator(),
+                new NativeImportPlanner(NativeAbiTestSupport.ScalarPlanner()),
+                NativeAbiTestSupport.CallbackPlanner(),
+                NativeAbiTestSupport.CallSitePlanner(),
+                new FinalizationPlanBuilder(layouts, new FakeIntrinsics())),
+            new ModuleDataPlanner(
+                layouts,
+                layouts,
+                new ExceptionGroupEnumerator(),
+                new StructuredExceptionGroupKeyFactory()),
+            new SymbolBuildIdCalculator(),
+            new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()),
+            new StaticInitializerFunctionPlanner(layouts, program),
+            new JSImportForwarderPlanner(program));
+    }
+
     private static WasmEmissionRequest WithEntryPointCallable(WasmEmissionRequest request)
     {
         var method = request.EntryPoint!;

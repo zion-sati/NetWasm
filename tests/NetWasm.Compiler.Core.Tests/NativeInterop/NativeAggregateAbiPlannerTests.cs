@@ -29,6 +29,8 @@ public sealed class NativeAggregateAbiPlannerTests
             CliTypeIdentity.Primitive("f4", CliValueKind.F4),
             CliTypeIdentity.Primitive("f8", CliValueKind.F8),
             CliTypeIdentity.UnmanagedPointer(CliTypeIdentity.FromStackKind(CliValueKind.Void)),
+            CallbackPointer(0x01),
+            CallbackPointer(0x09),
         })
         {
             var storage = fixture.GetValueLayout(scalar);
@@ -42,7 +44,7 @@ public sealed class NativeAggregateAbiPlannerTests
 
                 Assert.Equal(NativeAbiValueKind.ScalarizedAggregate, plan.Kind);
                 Assert.Equal(type, plan.LogicalType);
-                Assert.Equal(scalar.Shape == CliTypeShape.UnmanagedPointer
+                Assert.Equal(scalar.Shape is CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer
                     ? CliTypeIdentity.FromStackKind(CliValueKind.NativeInt) : scalar, plan.PhysicalType);
                 Assert.Equal(plan.PhysicalType, plan.ScalarStorageType);
                 Assert.Equal(storage.Size, plan.Size);
@@ -50,6 +52,33 @@ public sealed class NativeAggregateAbiPlannerTests
                 Assert.Equal(0, plan.ScalarOffset);
             }
         }
+    }
+
+    // Under disabled runtime marshalling an unmanaged struct is blittable with bool and char fields, which C holds
+    // as its one-byte bool and char16_t; elsewhere both need marshalling.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void BoolAndCharFieldsAreBlittableOnlyUnderDisabledRuntimeMarshalling(WasmTarget target)
+    {
+        var fixture = new Fixture(target);
+        var boolean = CliTypeIdentity.Primitive("bool", CliValueKind.I4);
+        var character = CliTypeIdentity.Primitive("char", CliValueKind.I4);
+        // Managed storage, as the compiler's layouts give it: one byte and two.
+        fixture.Values[boolean] = new(boolean, 1, 1, []);
+        fixture.Values[character] = new(character, 2, 2, []);
+        var flag = fixture.Add(1, 1, [(boolean, 0)]);
+        var pair = fixture.Add(4, 2, [(boolean, 0), (character, 2)]);
+
+        var singleton = fixture.Planner().Plan(flag, "native-call", NativeMarshallingRules.Disabled);
+        Assert.Equal(NativeAbiValueKind.ScalarizedAggregate, singleton.Kind);
+        Assert.Equal(boolean, singleton.ScalarStorageType);
+        Assert.Equal(1, singleton.Size);
+        var indirect = fixture.Planner().Plan(pair, "native-call", NativeMarshallingRules.Disabled);
+        Assert.Equal(NativeAbiValueKind.IndirectAggregate, indirect.Kind);
+        Assert.Equal(4, indirect.Size);
+        Reject(fixture, flag);
+        Reject(fixture, pair);
     }
 
     [Theory]
@@ -192,6 +221,9 @@ public sealed class NativeAggregateAbiPlannerTests
             fixture.Add(4, 4, [(CliTypeIdentity.Primitive("bool", CliValueKind.I4), 0)]),
             fixture.Add(4, 4, [(CliTypeIdentity.Primitive("char", CliValueKind.I4), 0)]),
             fixture.Add(8, 8, [(CliTypeIdentity.ManagedByReference(integer), 0)]),
+            // A managed function pointer, and one with Fastcall, which the C ABI does not call.
+            fixture.Add(8, 8, [(CallbackPointer(0x00), 0)]),
+            fixture.Add(8, 8, [(CallbackPointer(0x04), 0)]),
             fixture.Add(8, 8, [(CliTypeIdentity.UnmanagedPointer(CliTypeIdentity.GenericParameter(false, 0)), 0)]),
             fixture.Add(4, 4, [(CliTypeIdentity.GenericParameter(false, 0), 0)]),
             fixture.Add(4, 4, [(fixture.Add(1, 1, []), 0)]),
@@ -237,6 +269,10 @@ public sealed class NativeAggregateAbiPlannerTests
         Assert.Equal(DiagnosticCode.NativeInterop, error.Diagnostic.Code);
         Assert.Equal("native-call", error.Diagnostic.Method);
     }
+
+    // A function pointer with the given calling-convention header, to void (int).
+    private static CliTypeIdentity CallbackPointer(byte header) => CliTypeIdentity.FunctionPointer(new(header, 0, 1,
+        MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void), CliTypeIdentity.FromStackKind(CliValueKind.I4))));
 
     private sealed class Fixture(WasmTarget target) : ITypeDefinitionResolver, IFieldRepository,
         IValueLayoutProvider, IInstanceFieldLayoutProvider

@@ -165,6 +165,7 @@ public static partial class Math
         0x3C5305C14160CC89, 0x3FEFF3C22B8F71F1,
     ];
 
+    [Intrinsic]
     public static double Exp(double value)
     {
 

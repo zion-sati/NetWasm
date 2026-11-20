@@ -959,6 +959,7 @@ namespace System.Threading
         private struct SpinLock
         {
             private bool _isLocked;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void Enter(EnterSpinLockReason reason)
             {
                 if (_isLocked)

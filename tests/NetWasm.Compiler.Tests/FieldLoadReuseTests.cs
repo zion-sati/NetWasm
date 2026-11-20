@@ -13,13 +13,25 @@ namespace NetWasm.Compiler.Tests;
 // A field read again before anything could change it reads the first read's
 // value, on every path that reaches it; a store to the field of any object, a
 // call, a ref to the slot or the field, or a path without the first read keeps
-// the read. Both arms of an if that store one field compute their values and
-// store once where they meet.
+// the read. A store through a slot, or to a static, is as good as a read when
+// the field holds what was stored: not a byte, and not when the slot changed
+// before the store took its object. Both arms of an if that store one field
+// compute their values and store once where they meet.
 public sealed class FieldLoadReuseTests
 {
     [Theory]
     [InlineData("return a.X + a.X;", 1)]
-    [InlineData("var r = a.X; a.X = 5; return r + a.X;", 2)]
+    [InlineData("var r = a.X; a.X = 5; return r + a.X;", 1)]
+    [InlineData("a.X = 5; return a.X;", 0)]
+    [InlineData("a.X = 5; b.X = 6; return a.X;", 1)]
+    [InlineData("a.X = 5; Touch(); return a.X;", 1)]
+    [InlineData("a.X++; return a.X + a.X;", 1)]
+    [InlineData("a.X = 5; a = b; return a.X;", 1)]
+    [InlineData("if (c) a.X = 1; return a.X;", 1)]
+    [InlineData("a.X = Id(a = b); return a.X;", 1)]
+    [InlineData("n.B = 7; return n.B;", 1)]
+    [InlineData("n.Next = a; return n.Next.X;", 1)]
+    [InlineData("Holder.S = 4; return Holder.S;", 0)]
     [InlineData("var r = a.X; b.X = 3; return r + a.X;", 2)]
     [InlineData("var r = a.X; b.Y = 3; return r + a.X;", 1)]
     [InlineData("var r = a.X; Touch(); return r + a.X;", 2)]
@@ -29,14 +41,14 @@ public sealed class FieldLoadReuseTests
     [InlineData("var r = a.X; Swap(ref a); return r + a.X;", 2)]
     [InlineData("ref var p = ref a.X; p = 3; return a.X + a.X;", 2)]
     [InlineData("return Holder.S + Holder.S;", 1)]
-    [InlineData("var r = Holder.S; Holder.S = 4; return r + Holder.S;", 2)]
+    [InlineData("var r = Holder.S; Holder.S = 4; return r + Holder.S;", 1)]
     public void ReadsReuseOnlyUnchangedValues(string statement, int reads)
     {
         var body = Probe(statement, new());
 
         Assert.Equal(reads, body.Instructions.Count(static instruction =>
             instruction.Operation is CilOperation.LoadField or CilOperation.LoadStaticField &&
-            instruction.Operand is CilOperand.Entity { Key.MetadataToken: 0x04000001 or 0x04000003 }));
+            instruction.Operand is CilOperand.Entity { Key.MetadataToken: 0x04000001 or 0x04000003 or 0x04000004 or 0x04000005 }));
     }
 
     [Theory]
@@ -82,7 +94,8 @@ public sealed class FieldLoadReuseTests
                 "Twice", true, MethodSignatureModel.Create(CliValueKind.I4), 1),
             2, [], [.. code.Select((instruction, offset) => new CilInstruction(offset, offset + 1, instruction.Item1, instruction.Item2))]);
 
-        var result = new FieldLoadReuser(new ControlFlowGraphBuilderFactory().Create(), new NoCalls(), new OneField(field), true)
+        var result = new FieldLoadReuser(new ControlFlowGraphBuilderFactory().Create(), new NoCalls(), new OneField(field),
+                new FieldStoreOwnerFinder(new StackValueConsumerFinder(new StackEffectResolver(new NoCalls()))), true)
             .Rewrite(body);
 
         Assert.Equal(prefixed ? 2 : 1, result.Instructions.Count(static instruction => instruction.Operation == CilOperation.LoadStaticField));
@@ -120,17 +133,23 @@ public sealed class FieldLoadReuseTests
                 public static int S;
             }
 
+            public sealed class Narrow
+            {
+                public byte B;
+                public Node Next;
+            }
+
             public static class EntryPoint
             {
                 // Holder.S is written, so its reads are field reads, not the default an unwritten field folds to.
                 public static int Run(int count)
                 {
                     Holder.S = count;
-                    return Probe(new Node { X = count }, new Node(), count > 2);
+                    return Probe(new Node { X = count }, new Node(), count > 2, new Narrow());
                 }
 
                 [MethodImpl(MethodImplOptions.NoInlining)]
-                private static int Probe(Node a, Node b, bool c)
+                private static int Probe(Node a, Node b, bool c, Narrow n)
                 {
                     {{statement}}
                 }
@@ -140,6 +159,9 @@ public sealed class FieldLoadReuseTests
 
                 [MethodImpl(MethodImplOptions.NoInlining)]
                 private static int Next() => 7;
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static int Id(Node node) => 5;
 
                 [MethodImpl(MethodImplOptions.NoInlining)]
                 private static void Swap(ref Node node) => node = new Node { X = 9 };

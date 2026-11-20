@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Delegates;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
@@ -15,6 +16,8 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class ReachableProgramBuilderTests
 {
+    private static readonly ObjectDispatchSharing SizeSharing = new(ObjectDispatchPolicy.Shared);
+
     [Fact]
     public void BuilderMaterializesAnEmptyReachabilitySnapshot()
     {
@@ -31,7 +34,8 @@ public sealed class ReachableProgramBuilderTests
         var builder = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
-            new EmptyDelegateBindingPlanner());
+            new EmptyDelegateBindingPlanner(),
+            SizeSharing);
 
         var program = builder.Build(
             entry,
@@ -71,7 +75,7 @@ public sealed class ReachableProgramBuilderTests
         var only = Finalizer(separate);
         ledger.Finalizers[separate] = only;
         var builder = new ReachableProgramBuilder(
-            new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), new EmptyDelegateBindingPlanner());
+            new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), new EmptyDelegateBindingPlanner(), SizeSharing);
 
         var program = builder.Build(entry, [], ReachabilityLedgerSnapshot.From(ledger), new NoDelegateTypeRecognizer(),
             new EmptyTypeTestPlanner());
@@ -99,7 +103,8 @@ public sealed class ReachableProgramBuilderTests
         var builder = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             analyzer,
-            new EmptyDelegateBindingPlanner());
+            new EmptyDelegateBindingPlanner(),
+            SizeSharing);
 
         var program = builder.Build(
             entry,
@@ -153,7 +158,8 @@ public sealed class ReachableProgramBuilderTests
         var program = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
-            new EmptyDelegateBindingPlanner()).Build(
+            new EmptyDelegateBindingPlanner(),
+            SizeSharing).Build(
                 entry,
                 [],
                 snapshot,
@@ -186,7 +192,8 @@ public sealed class ReachableProgramBuilderTests
         var builder = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
-            new EmptyDelegateBindingPlanner());
+            new EmptyDelegateBindingPlanner(),
+            SizeSharing);
 
         var program = builder.Build(entry, [], snapshot,
             new NoDelegateTypeRecognizer(), new EmptyTypeTestPlanner());
@@ -228,7 +235,8 @@ public sealed class ReachableProgramBuilderTests
         var builder = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
-            new EmptyDelegateBindingPlanner());
+            new EmptyDelegateBindingPlanner(),
+            SizeSharing);
 
         var program = builder.Build(
             entry,
@@ -315,7 +323,8 @@ public sealed class ReachableProgramBuilderTests
         var builder = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
-            planner);
+            planner,
+            SizeSharing);
 
         var program = builder.Build(
             targetDefinition,
@@ -358,7 +367,7 @@ public sealed class ReachableProgramBuilderTests
         }
         var planner = new RecordingDelegateBindingPlanner([]);
 
-        _ = new ReachableProgramBuilder(new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), planner).Build(
+        _ = new ReachableProgramBuilder(new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), planner, SizeSharing).Build(
             invokeDefinition, [], ReachabilityLedgerSnapshot.From(ledger), new RecognizingDelegateType(delegateType),
             new EmptyTypeTestPlanner());
 
@@ -438,7 +447,8 @@ public sealed class ReachableProgramBuilderTests
         var program = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
-            new EmptyDelegateBindingPlanner()).Build(
+            new EmptyDelegateBindingPlanner(),
+            SizeSharing).Build(
                 entry,
                 [],
                 ReachabilityLedgerSnapshot.From(ledger),

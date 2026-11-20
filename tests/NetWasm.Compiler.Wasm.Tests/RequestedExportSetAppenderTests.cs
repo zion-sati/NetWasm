@@ -92,8 +92,6 @@ public sealed class RequestedExportSetAppenderTests
         OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing,
-        OptionalFunctionIndex.Missing,
-        OptionalFunctionIndex.Missing,
         OptionalFunctionIndex.Missing);
 
     private static MethodInstanceModel CreateInstance(EntityKey key)

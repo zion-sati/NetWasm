@@ -71,6 +71,7 @@ public sealed class AttributeRetentionCompilationTests
     private const string Source = """
         using System;
         using System.Reflection;
+        using System.Runtime.CompilerServices;
         namespace AttributeDependencyRetention;
 
         public abstract class MarkerAttribute : Attribute { public int Value; }
@@ -93,12 +94,24 @@ public sealed class AttributeRetentionCompilationTests
                 _ = typeof(Derived).GetCustomAttributes<Attribute>();
             }
         }
-        // Each dependency reads state, so constant call folding cannot replace the
-        // call that proves its attribute was materialized.
-        public static class DirectDependency { public static int Value = 3; public static int Read() => Value; }
-        public static class SetterDependency { public static int Offset; public static int Read(int value) => value + Offset; }
-        public static class InheritedDependency { public static int Value = 7; public static int Read() => Value; }
-        public static class UnrelatedDependency { public static int Read() => 100; }
+        // Each dependency reads state and stays a call, so neither constant call folding nor inlining
+        // can remove the call that proves its attribute was materialized.
+        public static class DirectDependency
+        {
+            public static int Value = 3;
+            [MethodImpl(MethodImplOptions.NoInlining)] public static int Read() => Value;
+        }
+        public static class SetterDependency
+        {
+            public static int Offset;
+            [MethodImpl(MethodImplOptions.NoInlining)] public static int Read(int value) => value + Offset;
+        }
+        public static class InheritedDependency
+        {
+            public static int Value = 7;
+            [MethodImpl(MethodImplOptions.NoInlining)] public static int Read() => Value;
+        }
+        public static class UnrelatedDependency { [MethodImpl(MethodImplOptions.NoInlining)] public static int Read() => 100; }
         [Inherited] public class Base;
         [Direct(Label = 5)] public class Derived : Base;
         [Unrelated("unrelated-payload")] public class Unrelated;

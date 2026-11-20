@@ -80,12 +80,13 @@ public sealed class WasmModuleEmitterContractTests
         var initialization = Assert.IsType<RuntimeInitializationPlan>(runtime[5]);
         Assert.Equal(96, initialization.StaticDataEnd);
         Assert.Equal(initializes ? [new ModuleInitializerCall(80, 91)] : [], initialization.ModuleInitializers.ToArray());
-        // Every entry gets the plan that names the one runtime initializer function.
+        // Every entry and the component boundary get the plan that names the appended initializers.
         var initializer = fixture.Arguments("runtimeInitializer");
         Assert.Equal(fixture.Imports.Length, Assert.IsType<int>(initializer[1]));
-        Assert.Equal(initialization with { InitializerFunctionIndex = null },
+        Assert.Equal(initialization with { InitializerFunctionIndex = null, StateInitializerFunctionIndex = null },
             Assert.IsType<RuntimeInitializationPlan>(initializer[2]));
         Assert.Equal(30, initialization.InitializerFunctionIndex);
+        Assert.Equal(29, initialization.StateInitializerFunctionIndex);
         Assert.Same(initialization, fixture.Arguments("callbacks")[5]);
         Assert.Same(initialization, fixture.Arguments("requested")[6]);
         Assert.Same(initialization, fixture.Arguments("component")[5]);
@@ -167,7 +168,7 @@ public sealed class WasmModuleEmitterContractTests
         public static readonly string[] SuccessOrder =
         [
             "entry", "indices", "imports", "managed", "constructed", "managedThrow",
-            "delegates", "jsImportForwarders", "static",
+            "delegates", "sharedDispatches", "jsImportForwarders", "static",
             "nativeCallbacks", "runtimeInitializer", "callbacks", "async", "filters", "runtime", "requested", "exports", "component", "exportValidation", "boundary", "result",
         ];
 
@@ -213,6 +214,7 @@ public sealed class WasmModuleEmitterContractTests
                 Capability<IConstructedMethodSetAppender>("constructed"),
                 Capability<IManagedThrowFunctionAppender>("managedThrow"),
                 Capability<IDelegateFunctionAppender>("delegates"),
+                Capability<ISharedVirtualDispatchFunctionAppender>("sharedDispatches"),
                 Capability<IJSImportForwarderFunctionAppender>("jsImportForwarders"),
                 Capability<INativeCallbackFunctionAppender>("nativeCallbacks"),
                 Capability<IHostCallbackSetAppender>("callbacks"),
@@ -230,7 +232,7 @@ public sealed class WasmModuleEmitterContractTests
                 Capability<IManagedBoundaryPlanValidator>("boundary"),
                 Capability<IWasmModuleEmissionResultBuilder>("result", Result),
                 Capability<IStaticInitializerFunctionAppender>("static"),
-                Capability<IRuntimeInitializerFunctionAppender>("runtimeInitializer", 30),
+                Capability<IRuntimeInitializerFunctionAppender>("runtimeInitializer", AppendedInitializers),
                 new NetWasm.Compiler.Wasm.Units.CompiledUnitSymbolBinder(
                     new NetWasm.Compiler.Wasm.Units.CompiledUnitState(null),
                     new NetWasm.Compiler.Wasm.Units.WasmFunctionSymbolBuilder()),
@@ -252,6 +254,9 @@ public sealed class WasmModuleEmitterContractTests
 
         public object?[] Arguments(string capability) =>
             Assert.Single(Calls, call => call.Capability == capability).Arguments;
+
+        // The runtime initializer appender returns the plan it was given, with its functions named.
+        private static readonly object AppendedInitializers = new();
 
         private T Capability<T>(string name, object? result = null) where T : class
         {
@@ -284,6 +289,14 @@ public sealed class WasmModuleEmitterContractTests
                             arguments[0]),
                         Assert.IsAssignableFrom<IReadOnlyDictionary<string, int>>(
                             arguments[1]));
+                }
+                if (result == AppendedInitializers)
+                {
+                    return Assert.IsType<RuntimeInitializationPlan>(arguments[2]) with
+                    {
+                        InitializerFunctionIndex = 30,
+                        StateInitializerFunctionIndex = 29,
+                    };
                 }
                 if (method.ReturnType != typeof(void) && result is null)
                     throw new InvalidOperationException("unexpected capability result");

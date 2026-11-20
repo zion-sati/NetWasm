@@ -12,7 +12,7 @@ function deepFreeze(value) {
 export const platformProviderCatalog = deepFreeze({
   "schema": 2,
   "world": "netwasm:hosting-platform/wasi@1.0.0",
-  "witSha256": "4f122e65638086e633ab12a4b1248c3263ff26385bedf1ff1ef1d23f76a34f16",
+  "witSha256": "0b139b5b7ad38279e8316b36985ff8be7fc3c8b050b69e942090b092530d2a81",
   "providers": [
     {
       "module": "wasi:cli/environment@0.3.2",
@@ -1429,6 +1429,69 @@ export const platformProviderCatalog = deepFreeze({
           ],
           "results": [
             "result\u003Cown\u003Cwasi:sockets/types@0.3.2#udp-socket\u003E,wasi:sockets/types@0.3.2#error-code\u003E"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "wasi:tls/client@0.3.0-draft",
+      "capability": "network",
+      "functions": [
+        {
+          "interface": "wasi:tls/client@0.3.0-draft",
+          "name": "[constructor]connector",
+          "parameters": [],
+          "results": [
+            "own\u003Cwasi:tls/client@0.3.0-draft#connector\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:tls/client@0.3.0-draft",
+          "name": "[method]connector.receive",
+          "parameters": [
+            "borrow\u003Cwasi:tls/client@0.3.0-draft#connector\u003E",
+            "stream\u003Cu8\u003E"
+          ],
+          "results": [
+            "tuple\u003Cstream\u003Cu8\u003E,future\u003Cresult\u003Cunit,own\u003Cwasi:tls/types@0.3.0-draft#error\u003E\u003E\u003E\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:tls/client@0.3.0-draft",
+          "name": "[method]connector.send",
+          "parameters": [
+            "borrow\u003Cwasi:tls/client@0.3.0-draft#connector\u003E",
+            "stream\u003Cu8\u003E"
+          ],
+          "results": [
+            "tuple\u003Cstream\u003Cu8\u003E,future\u003Cresult\u003Cunit,own\u003Cwasi:tls/types@0.3.0-draft#error\u003E\u003E\u003E\u003E"
+          ]
+        },
+        {
+          "interface": "wasi:tls/client@0.3.0-draft",
+          "name": "[static]connector.connect",
+          "parameters": [
+            "own\u003Cwasi:tls/client@0.3.0-draft#connector\u003E",
+            "string"
+          ],
+          "results": [
+            "result\u003Cunit,own\u003Cwasi:tls/types@0.3.0-draft#error\u003E\u003E"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "wasi:tls/types@0.3.0-draft",
+      "capability": "network",
+      "functions": [
+        {
+          "interface": "wasi:tls/types@0.3.0-draft",
+          "name": "[method]error.to-debug-string",
+          "parameters": [
+            "borrow\u003Cwasi:tls/types@0.3.0-draft#error\u003E"
+          ],
+          "results": [
+            "string"
           ]
         }
       ]

@@ -18,6 +18,7 @@ public sealed class RootMapAnalyzer(
     IRootDecisionClassifier rootDecisions,
     ICalleeArgumentRootingClassifier calleeArguments,
     IRootSlotAllocator rootSlots,
+    IYoungObjectStoreFinder youngObjectStores,
     IAllocationTemporaryCallClassifier? allocationCalls = null) :
     IRootMapAnalyzer
 {
@@ -36,6 +37,8 @@ public sealed class RootMapAnalyzer(
     private readonly IRootSlotAllocator _rootSlots =
         rootSlots ?? throw new ArgumentNullException(nameof(rootSlots));
     private readonly IAllocationTemporaryCallClassifier? _allocationCalls = allocationCalls;
+    private readonly IYoungObjectStoreFinder _youngObjectStores =
+        youngObjectStores ?? throw new ArgumentNullException(nameof(youngObjectStores));
 
     public MethodRootMap Analyze(RootMapAnalysisRequest request)
     {
@@ -157,12 +160,14 @@ public sealed class RootMapAnalyzer(
                 constructorRoots));
         }
 
+        var byOffset = safepoints.ToImmutableDictionary(safepoint => safepoint.IlOffset);
         return new MethodRootMap(
             method.Method.Definition.Key,
             _rootSlots.Allocate(safepoints),
-            safepoints.ToImmutableDictionary(safepoint => safepoint.IlOffset))
+            byOffset)
         {
             AnchorPlan = anchorPlan,
+            UnrecordedStores = _youngObjectStores.Find(method, byOffset),
         };
     }
 

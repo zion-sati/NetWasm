@@ -79,7 +79,7 @@ internal sealed record CompilerCorrectnessEnvironment(
                 "test build configuration could not be discovered");
     }
 
-    // Behaviour follows .NET 11, so the oracle host, compiled against .NET 10's references,
+    // Behavior follows .NET 11, so the oracle host, compiled against .NET 10's references,
     // runs on the pinned .NET 11 runtime the C# 15 toolchain installs.
     private static string ReadDesktopOracleFrameworkVersion(string repositoryRoot)
     {

@@ -91,7 +91,7 @@ internal sealed class ReachableMethodAnalyzerFactory(
         var dominance = new ControlFlowDominanceAnalyzer();
         return new(
             _arrayBounds.Create(graphBuilder, stackValidator, dominance, settings),
-            _repeatedAccesses.Create(graphBuilder, stackValidator, dominance, settings),
+            _repeatedAccesses.Create(graphBuilder, stackValidator, dominance, calledMethods, settings),
             _constructedObjects.Create(graphBuilder, stackValidator, dominance, calledMethods, settings),
             _integerChecks.Create(graphBuilder, stackValidator, calledMethods, settings));
     }

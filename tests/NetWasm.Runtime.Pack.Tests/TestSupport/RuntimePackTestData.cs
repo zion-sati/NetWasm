@@ -14,9 +14,10 @@ internal static class RuntimePackTestData
     {
         var targets = ImmutableArray.Create(Target("wasm32"), Target("wasm64"),
             Target("wasm32", "NetWasm"), Target("wasm64", "NetWasm"),
+            Target("wasm32", "NetWasmGen"), Target("wasm64", "NetWasmGen"),
             Target("wasm32", "Bump"), Target("wasm64", "Bump"));
         return new(
-        6,
+        7,
         "netwasm.runtime.v1",
         "6.0.7",
         65_536,
@@ -55,6 +56,8 @@ internal static class RuntimePackTestData
             NativeValidation = NativeProfile(target),
             Speed = SpeedAssets(target, collector, 114_352),
             PlatformArchives = PlatformArchives($"{target}/{collector.ToLowerInvariant()}"),
+            EmscriptenArchives = EmscriptenArchives(target),
+            ExceptionSystemLibraries = ExceptionSystemLibraries(target),
         }
         : new(
             target,
@@ -74,7 +77,17 @@ internal static class RuntimePackTestData
             NativeValidation = NativeProfile(target),
             Speed = SpeedAssets(target, collector, 91_968),
             PlatformArchives = PlatformArchives($"{target}/{collector.ToLowerInvariant()}"),
+            EmscriptenArchives = EmscriptenArchives(target),
+            ExceptionSystemLibraries = ExceptionSystemLibraries(target),
         };
+
+    public static RuntimePackSystemLibraries ExceptionSystemLibraries(string target) => new(
+        ["libc++-wasmexcept.a", "libunwind-wasmexcept.a"],
+        [Asset($"{target}/system-libraries/libc++-wasmexcept.a"), Asset($"{target}/system-libraries/libunwind-wasmexcept.a")]);
+
+    public static RuntimePackEmscriptenArchives EmscriptenArchives(string target) => new(
+        Asset($"{target}/libnetwasm-emscripten-support.a"),
+        Asset($"{target}/libnetwasm-emscripten-stand-ins.a"));
 
     public static RuntimePackSpeedAssets SpeedAssets(string target, string collector, long footprint) => new(
         footprint,

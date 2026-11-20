@@ -169,25 +169,25 @@
       "id": "wit.package-manifest",
       "version": "1",
       "relativePath": "tools/wit-packages/wit-package-manifest.json",
-      "sha256": "eb6f4836846e1b660cfc836fccbfb5fa04ebb9afc6bca73ed00e1d9142971108"
+      "sha256": "b1469edbad39d55a42a16eea48ce173754380509b41ad8ec224ad88341e0a1f9"
     },
     {
       "id": "wit.command-package",
       "version": "1.0.0",
       "relativePath": "tools/wit-packages/command.wit.wasm",
-      "sha256": "967991ea81470f7c6f574974667f63d45b08933978af2bdd11a7810f446f424c"
+      "sha256": "21e9855de6784790deac28aaea763a76a95d4c1f2c377a7e6ad46656d11b8f47"
     },
     {
       "id": "wit.diagnostic-command-package",
       "version": "1.0.0",
       "relativePath": "tools/wit-packages/diagnostic-command.wit.wasm",
-      "sha256": "befd947ee6361cc16c4c0fc99fa9e09e6470913c2263b994c0b57090baf5553f"
+      "sha256": "3f3ba66708f310e977b83b7fc7ff1616fcaed2794bd8c92fb94772521d697afe"
     },
     {
       "id": "wit.compiler-package",
       "version": "1.0.0",
       "relativePath": "tools/wit-packages/compiler.wit.wasm",
-      "sha256": "3c728b414eac4a8ca45671e15c8a690e4be5b8362c3dce3bdf83c1680bd0b23f"
+      "sha256": "d7affe2d5ca2d031649ff2f44851e01d60ca958bd6dc3e90bc4a756a92f207d3"
     },
     {
       "id": "jco.package",
@@ -361,7 +361,7 @@
       "id": "hosting-bundle.command",
       "version": "3",
       "relativePath": "tools/bundler/netwasm-bundle.mjs",
-      "sha256": "42925c014b994809e50796a58642b6a50d167b5886deeb7377e1dac8f98112dd"
+      "sha256": "e93a3045e43e5c0d20bfd0439d075c9f786d8bad984839d3a98cd25e8ce0337c"
     },
     {
       "id": "rolldown.package",

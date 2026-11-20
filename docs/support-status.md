@@ -48,7 +48,7 @@ including synchronous and asynchronous LINQ, selected immutable/frozen and
 ordered collections, regular expressions, and reflection-free,
 source-generated `System.Text.Json`. These are selected contracts, not a claim
 that every member in the corresponding desktop namespace is present. There is
-not yet a generated member-by-member compatibility catalogue.
+not yet a generated member-by-member compatibility catalog.
 
 ### Target and host boundary
 
@@ -98,8 +98,8 @@ need no host service. `Guid.NewGuid()` is Conditional: it requires the declared
 WASI random capability. There is no weak pseudo-random or JavaScript fallback
 when that capability is absent.
 
-UTC `System.TimeZoneInfo` behaviour is complete/supported. Local
-`System.TimeZoneInfo` and timezone-asset behaviour are Conditional: the host
+UTC `System.TimeZoneInfo` behavior is complete/supported. Local
+`System.TimeZoneInfo` and timezone-asset behavior are Conditional: the host
 must provide a deployment-selected, versioned asset through standard WASI
 environment (`TZ`) and filesystem capabilities. Absent, corrupt, incompatible,
 or incomplete assets fail loudly instead of falling back to host-local time;
@@ -133,7 +133,7 @@ component), which an application can replace with its own.
 | Area | Available | Not available |
 | --- | --- | --- |
 | Files and directories | `System.IO.File`, `FileStream`, `Directory`, `DirectoryInfo`, `FileInfo`, `Path` and their readers and writers over WASI 0.3's filesystem, within the directories the host grants (`dotnet run` grants the working directory and a private temporary directory; a published command takes `--dir` in the Node.js launcher or Wasmtime). A browser page or worker mounts files with NetWasm's mount API. | Permissions, ownership, locking, watching, and paths outside the granted directories. |
-| Networking | `System.Net.Sockets` (`Socket`, `TcpClient`, `TcpListener`, `UdpClient`, `NetworkStream`) and `Dns` over WASI 0.3's sockets, blocking and asynchronous, wherever the host supplies them (NetWasm's Node.js launcher, as `dotnet run` uses, and Wasmtime do; a browser has none); `ws://` WebSockets (`ClientWebSocket`, `WebSocket.CreateFromStream`); `HttpClient` over `wasi:http`, blocking (`HttpClient.Send`, `HttpWebRequest.GetResponse`, `WebClient`'s synchronous methods) and asynchronous, and HTTP services that answer it. | Non-blocking connect, accept and datagrams (a non-blocking stream socket sends and receives what is ready, as on Linux), socket timeouts, `Poll`/`Select`, Unix domain sockets, multicast and broadcast, binding a dual-mode socket to the IPv6 wildcard, reverse DNS, `wss://` (no TLS yet), and WebSocket compression. |
+| Networking | `System.Net.Sockets` (`Socket`, `TcpClient`, `TcpListener`, `UdpClient`, `NetworkStream`) and `Dns` over WASI 0.3's sockets, blocking and asynchronous, wherever the host supplies them (NetWasm's Node.js launcher, as `dotnet run` uses, and Wasmtime do; a browser has none); WebSockets (`ClientWebSocket`, `WebSocket.CreateFromStream`), `wss://` included; TLS clients through `SslStream` over the host's `wasi:tls` (NetWasm's Node.js launcher, and Wasmtime with `-S tls`), which `SocketsHttpHandler` (HTTP/1.1, HTTP/2, proxies, authentication), `wss://` and `SmtpClient`'s `EnableSsl` use (for a host without `wasi:tls`, `NetWasmTlsSupport` set to false leaves the import out); `HttpClient` over `wasi:http`, blocking (`HttpClient.Send`, `HttpWebRequest.GetResponse`, `WebClient`'s synchronous methods) and asynchronous, and HTTP services that answer it. | Non-blocking connect, accept and datagrams (a non-blocking stream socket sends and receives what is ready, as on Linux), socket timeouts, `Poll`/`Select`, Unix domain sockets, multicast and broadcast, binding a dual-mode socket to the IPv6 wildcard, reverse DNS, WebSocket compression, HTTP/3 (no QUIC), and what `wasi:tls` lacks: TLS server mode, client certificates, ALPN (HTTP/2 over TLS falls back to HTTP/1.1), reporting the negotiated protocol or the server's certificate, and accepting a certificate the host rejects. A program that can reach TLS imports `wasi:tls`, so it needs a host that has it. |
 | CLI and processes | Command-line arguments, environment variables, standard input, output and error, the exit code (`Environment.ExitCode` or `Main`'s result), `Environment.Exit` and `Environment.FailFast`. | `System.Diagnostics.Process`, child-process creation, shell execution, process enumeration and ambient machine/user/process discovery. |
 | Concurrency | Single-reactor `Task`, `ValueTask`, cancellation, timers and readiness-driven continuations; synchronous I/O APIs over WASI's asynchronous operations inside a command or an async export. | Managed threads, workers sharing the managed heap, a managed thread pool, `Task.Run` parallelism, blocking waits on a task, and shared-memory/atomic threading semantics. Source-compatibility shims do not provide concurrency. |
 | Host and browser services | Explicit application WIT imports and explicit JavaScript imports in the applicable output mode. | Implicit DOM, fetch, storage, registry, proxy, certificate-store or other ambient OS/browser services. |
@@ -172,26 +172,27 @@ source-level debugging or DWARF; see
 
 ### Type names
 
-A program carries no type names. `Type.Name`, `Type.FullName` and
-`Type.ToString()` return `type#<id>`, the type's runtime type ID in decimal
-(`type#37`), whether the `Type` came from `typeof` or `GetType()`.
-`Type.Namespace` returns `null`, and `Type.AssemblyQualifiedName` returns
-`type#37, <Assembly name unavailable>`. The default `Object.ToString()` returns
-the same text, and `Exception.ToString()` and framework messages that name a
-type use it. Each type has its own text, the same however code reaches the type,
-so a dictionary keyed by type name keeps working. Code that needs a readable
-name should use a string it already has, such as a constant or `nameof`.
-
-`NetWasmTypeNames`, on in Debug and off in Release, writes every type's names,
-and the names of the assemblies `Type.Assembly` can return, to
-`<program>.wasm.type-symbols` beside the program, and the program reads them at
-startup (see [program sidecars](diagnostics.md#program-sidecars)). Names then
-form as .NET forms them: `typeof(List<int>).FullName` is
+A program carries no type names itself. `NetWasmTypeNames`, on in every
+configuration, writes every type's names, and the names of the assemblies
+`Type.Assembly` can return, to `<program>.wasm.type-symbols` beside the program
+when the program reads a name, and the program loads them at startup (see
+[program sidecars](diagnostics.md#program-sidecars)). A program that never reads
+a name carries neither the names nor the code that loads them. Names form as
+.NET forms them: `typeof(List<int>).FullName` is
 ``System.Collections.Generic.List`1[[System.Int32, NetWasm.CoreLib, Version=…, Culture=neutral, PublicKeyToken=null]]``,
 its `ToString()` is ``System.Collections.Generic.List`1[System.Int32]``, and
 `Assembly.FullName` and `GetName()` read the assembly's display name. CoreLib's
-assembly is `NetWasm.CoreLib`, where .NET's is `System.Private.CoreLib`. Without
-the sidecar an assembly's name reads `<Assembly name unavailable>`.
+assembly is `NetWasm.CoreLib`, where .NET's is `System.Private.CoreLib`.
+
+Built with `NetWasmTypeNames=false`, or run where its host mounts no sidecars, a
+program has no type names. `Type.Name`, `Type.FullName` and `Type.ToString()`
+return `type#<id>`, the type's runtime type ID in decimal (`type#37`), whether
+the `Type` came from `typeof` or `GetType()`. `Type.Namespace` returns `null`,
+and `Type.AssemblyQualifiedName` returns `type#37, <Assembly name unavailable>`.
+The default `Object.ToString()` returns the same text, and `Exception.ToString()`
+and framework messages that name a type use it. Each type has its own text, the
+same however code reaches the type, so a dictionary keyed by type name keeps
+working.
 
 Looking a type up by name needs those names. With them,
 `Type.GetType(string)`, `Assembly.GetType(string)` and `Module.GetType(string)`
@@ -214,7 +215,9 @@ what .NET 11 answers for its kind (`IsValueType`, `IsEnum`, `IsInterface`,
 it (`IsPublic`, `IsNotPublic`, the `IsNested*` visibilities, `IsVisible`,
 `IsSerializable`, `IsAutoLayout`, `IsLayoutSequential`, `IsExplicitLayout`,
 `IsAnsiClass`, `IsImport`, `IsSpecialName`) read the type's metadata as .NET
-reports it. `IsFunctionPointer` reads `false` for every type. As on .NET, a
+reports it. `IsFunctionPointer` holds for a function pointer type, such as an
+array of them has for its element, and `IsUnmanagedFunctionPointer` for one
+with an unmanaged calling convention; their signatures are not readable. As on .NET, a
 type's `Type` object is also its `TypeInfo`: `GetTypeInfo()` returns the type
 itself, and `TypeInfo`'s members answer as the `Type` members they forward to.
 
@@ -248,9 +251,14 @@ visible ones. An assembly answers as a
 NativeAOT one does: its `Location` is empty, and its one module, which
 `Type.Module`, `ManifestModule` and `GetModules()` return, has the name
 `<Unknown>` and the assembly's file name as its `ScopeName` (`<Unknown>` without
-the sidecar). `GetCallingAssembly()`, `Assembly.Load`, manifest resources,
-assembly attributes, referenced assemblies, `ModuleVersionId` and metadata
-tokens are outside the profile.
+the sidecar). `AppDomain.GetAssemblies()` and `Assembly.Load(name)` answer for
+the assemblies compiled into the program. `GetManifestResourceNames()`,
+`GetManifestResourceStream` and `ResourceManager(string, Assembly)` read an
+assembly's embedded resources, which a program carries only when it reaches a
+resource API. An assembly's own attributes can be read for a sealed attribute
+type, such as `AssemblyInformationalVersionAttribute`, from an assembly the
+compiler can see. `GetCallingAssembly()`, referenced assemblies,
+`ModuleVersionId` and metadata tokens are outside the profile.
 
 The lists and lookups (`GetInterfaces`, `GetNestedTypes`, `GetTypes`, the
 `Make*` methods and the name lookups) see the types the program uses: the
@@ -275,18 +283,13 @@ lambda expression works, and of any other delegate-typed expression throws
 
 ## Complete / supported package profiles
 
-### `System.IO.Hashing` scalar profile
+### `System.IO.Hashing` and `System.Formats.Cbor`
 
-The reflection-free scalar `System.IO.Hashing` profile is implemented for
-`Adler32`, `Crc32`, `Crc64`, their parameter sets, `XxHash32`, `XxHash64`,
-`XxHash3`, `XxHash128`, and the selected synchronous/asynchronous stream forms.
-It deliberately contains no Wasm SIMD, hardware intrinsic, browser JavaScript,
-or host-hashing fallback.
-
-The selected scalar profile is qualified and published as
-`NetWasm.System.IO.Hashing`. wasm64 Component packaging remains an
-[external toolchain blocker](#external-toolchain-blocker), not an unpublished
-library profile.
+Microsoft's System.IO.Hashing and System.Formats.Cbor 11.0.0 run on NetWasm as
+published, on wasm32 and wasm64: every hash with its streaming and stream
+APIs, and CBOR writing and reading in every conformance mode, match desktop
+.NET 11. Under the default `UseSystemResourceKeys=true`, CBOR's error messages
+read as resource keys; set it to `false` for the full messages.
 
 ### SDK/templates package acceptance
 
@@ -294,10 +297,11 @@ The immutable `NetWasm.Ref`, SDK, runtime-pack, and template package graph
 passes the package-only developer-loop gate for `dotnet new`, restore,
 dual-target library builds, `dotnet build`, `dotnet run`, portable publish,
 pinned `jco` browser translation, and clean. The generic VSTest bridge and
-TUnit package also pass `dotnet test -f netwasm0.1` integration.
+TUnit package also pass `dotnet test` integration for `net10.0-netwasm` test
+projects.
 
-The SDK, runtime packs and templates are released for the current `netwasm0.1`
-profile. Every `netwasm0.1` project references NetWasm.App, the framework's
+The SDK, runtime packs and templates are released for the `net10.0-netwasm`
+target framework (and the deprecated `netwasm0.1`). Every NetWasm project references NetWasm.App, the framework's
 in-box assemblies, as a .NET project references Microsoft.NETCore.App; the
 library and test packages below that are not part of it are published
 separately.
@@ -306,7 +310,7 @@ separately.
 | --- | --- |
 | Reflection-free dependency injection | `NetWasm.Microsoft.Extensions.DependencyInjection` and its Abstractions package provide generated activation, keyed/sequence services, scopes and package-owned open-generic closure. Runtime reflection, dynamic activation and runtime generic construction remain outside the profile. |
 | `System.Xml` | NetWasm.App's `System.Xml` provides the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, interpreted transforms and primitive serialization. Its `System.Xml.Schema` types are a minimal object model that checks only the document element's name against the schema's top-level elements; they do not perform XSD validation. A port of the .NET schema compiler and validator is in progress. Nonprimitive runtime serializer discovery and ambient network/filesystem resolution remain excluded. |
-| WASI-only HTTP (`System.Net.Http`) | NetWasm.App's `System.Net.Http` provides upstream's `HttpClient` over a `wasi:http` 0.3 client transport for wasm32 components and NetWasm's Node.js and browser hosts, with no framework `[JSImport]`, and binds an `<OutputType>Component</OutputType>` HTTP service's `Handle(HttpRequestMessage)` to `wasi:http/handler`. wasm64 Component packaging remains externally blocked. |
+| WASI-only HTTP (`System.Net.Http`) | NetWasm.App's `System.Net.Http` provides upstream's `HttpClient` over a `wasi:http` 0.3 client transport for wasm32 components and NetWasm's Node.js and browser hosts, with no framework `[JSImport]`, and binds an `<OutputType>Component</OutputType>` HTTP service's `Handle(HttpRequestMessage)` to `wasi:http/handler`. Its public surface is .NET 11's: synchronous content serialization, the version policy, non-validated headers and the compressed contents; `SocketsHttpHandler` is upstream's, over `wasi:sockets` and `wasi:tls` without HTTP/3 (`IsSupported` is false only in a browser), while `HttpClientHandler`, and so a plain `HttpClient`, stays on `wasi:http`; Zstandard content is not supported. wasm64 Component packaging remains externally blocked. |
 | TUnit | The `NetWasm.TUnit.*` packages provide the generated catalog, sequential runner and `dotnet test` integration. A later upstream contribution is a separate decision. |
 
 ### Compiler and SDK capability acceptance
@@ -314,7 +318,7 @@ separately.
 | Area | Supported boundary |
 | --- | --- |
 | Bounded custom attribute queries | Type-targeted queries, `DescriptionAttribute`, and user-defined attributes, including closed generics, are available on raw wasm32/wasm64 and component wasm32. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [query profile](custom-attributes.md). |
-| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs (and, with `LibraryImport`, results, `out` and `ref` parameters), static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction by a raw `DllImport`, the `Fastcall` and `Swift` calling conventions, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
+| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs (and, with `LibraryImport`, results, `out` and `ref` parameters), raw `DllImport` handle, `HandleRef` and pinned blittable-array marshalling as desktop .NET's runtime marshalling does it, static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling (strings, delegates, element conversion), the `Fastcall` and `Swift` calling conventions, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
 | Compression (`System.IO.Compression`) | `DeflateStream`, `ZLibStream`, `GZipStream` and `BrotliStream`, the Deflate, ZLib, GZip and Brotli encoders and decoders, `ZLibCompressionOptions`, and ZIP's Deflate and Deflate64 entries run .NET's own code over zlib-ng 2.2.5 and Brotli 1.1.0, the releases .NET 11 uses, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 byte for byte at every level. A program links the native codec code only when it uses a codec, and only the codec it uses. Zstandard throws `PlatformNotSupportedException`, as in .NET's WebAssembly builds. |
 | Cryptography (`System.Security.Cryptography`) | Ciphers (AES, TripleDES, DES, RC2, AES-GCM, AES-CCM, ChaCha20-Poly1305), RSA, DSA, ECDsa, ECDiffieHellman and X.509 (certificates, PKCS#12 and PKCS#7, chain building with custom trust) run .NET's Linux implementation over OpenSSL 3.5, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 on Linux. Hashing (MD5 included), HMAC, PBKDF2 and random numbers are .NET's managed WebAssembly implementation, so a program that uses only those links no OpenSSL. `CryptoConfig.CreateFromName` creates those managed algorithms by name, matching names as desktop does, and returns null for the others. OpenSSL's random generator draws from the platform's random source and its clock from the program's clock grants. Certificate files and the system trust store are read through the host's file system; the store defaults to `/etc/ssl/certs` and `/etc/ssl/cert.pem`, which the host must make visible, and `SSL_CERT_DIR` and `SSL_CERT_FILE` choose another place. OID friendly names come from .NET's own table. AIA, CRL and OCSP downloads are not made, so revocation checking works offline. `SslStream` waits for wasi-tls. |
 | Portable diagnostics | `DiagnosticSource`, `Activity`, context propagation and Metrics run in process under the single-reactor contract. `Debug` exposes the ten documented assertion, failure and `WriteLine` overloads: retained calls are conditional on `DEBUG`, failures throw catchable `InvalidOperationException`, and output uses standard error. Debugger attributes retain ordinary metadata and string-valued contracts, but resolving a `Type` to an assembly-qualified debugger name fails with `PlatformNotSupportedException`. OS tracing, attached-debugger/provider behavior, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
@@ -366,7 +370,9 @@ Select it with `NetWasmGarbageCollector=Bump`. Memory grows until the applicatio
 ends or the Wasm memory limit is reached. No object becomes unreachable to
 Bump, so finalizers never run and weak references never clear; programs that
 use them build and run as with any collector. Compact remains the default
-precise tracing collector, and NetWasmGC the throughput-oriented one.
+precise tracing collector, NetWasmGC the throughput-oriented one, and
+NetWasmGen, NetWasmGC with generations, the opt-in one for programs that keep a
+large set of objects alive.
 
 ## External toolchain blocker
 
@@ -413,7 +419,7 @@ The following are outside the closed-world, single-reactor platform profile:
   application JavaScript imports for browser-specific services, WIT for a
   declared portable service, or WASI for a standardized capability;
 - ambient desktop filesystem, process, registry, sockets, proxy, certificate,
-  and OS-discovery behaviour. A selected capability may be added only through a
+  and OS-discovery behavior. A selected capability may be added only through a
   documented WASI/WIT contract; and
 - implicit culture/ICU data, culture-sensitive collation, and host timezone
   databases. The base text profile is ordinal and timezone data is an explicit

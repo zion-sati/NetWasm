@@ -141,6 +141,47 @@ namespace System.Net.Http
 
         #region Serialization
 
+        /// <summary>
+        /// Gets or sets a callback that returns the <see cref="Encoding"/> to decode the value for the specified response header name,
+        /// or <see langword="null"/> to use the default behavior.
+        /// </summary>
+        public HeaderEncodingSelector<HttpContent>? HeaderEncodingSelector { get; set; }
+
+        // for-each content
+        //   write "--" + boundary
+        //   for-each content header
+        //     write header: header-value
+        //   write content.CopyTo[Async]
+        // write "--" + boundary + "--"
+        // Can't be canceled directly by the user.  If the overall request is canceled
+        // then the stream will be closed an exception thrown.
+        protected override void SerializeToStream(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+        {
+            Debug.Assert(stream != null);
+            try
+            {
+                // Write start boundary.
+                stream.Write(_startBoundaryBytes);
+
+                // Write each nested content.
+                for (int contentIndex = 0; contentIndex < _nestedContent.Count; contentIndex++)
+                {
+                    // Write divider, headers, and content.
+                    HttpContent content = _nestedContent[contentIndex];
+                    SerializeHeadersToStream(stream, content, writeDivider: contentIndex != 0);
+                    content.CopyTo(stream, context, cancellationToken);
+                }
+
+                // Write footer boundary.
+                stream.Write(_endBoundaryBytes);
+            }
+            catch (Exception ex)
+            {
+                if (NetEventSource.Log.IsEnabled()) NetEventSource.Error(this, ex);
+                throw;
+            }
+        }
+
         // for-each content
         //   write "--" + boundary
         //   for-each content header
@@ -152,7 +193,7 @@ namespace System.Net.Http
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
             SerializeToStreamAsyncCore(stream, context, default);
 
-        internal override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) =>
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) =>
             // Only skip the original protected virtual SerializeToStreamAsync if this
             // isn't a derived type that may have overridden the behavior.
             GetType() == typeof(MultipartContent) ? SerializeToStreamAsyncCore(stream, context, cancellationToken) :
@@ -191,16 +232,23 @@ namespace System.Net.Http
             }
         }
 
+        protected override Stream CreateContentReadStream(CancellationToken cancellationToken)
+        {
+            ValueTask<Stream> task = CreateContentReadStreamAsyncCore(async: false, cancellationToken);
+            Debug.Assert(task.IsCompleted);
+            return task.GetAwaiter().GetResult();
+        }
+
         protected override Task<Stream> CreateContentReadStreamAsync() =>
-            CreateContentReadStreamAsyncCore(CancellationToken.None);
+            CreateContentReadStreamAsyncCore(async: true, CancellationToken.None).AsTask();
 
         protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken) =>
             // Only skip the original protected virtual CreateContentReadStreamAsync if this
             // isn't a derived type that may have overridden the behavior.
-            GetType() == typeof(MultipartContent) ? CreateContentReadStreamAsyncCore(cancellationToken) :
+            GetType() == typeof(MultipartContent) ? CreateContentReadStreamAsyncCore(async: true, cancellationToken).AsTask() :
             base.CreateContentReadStreamAsync(cancellationToken);
 
-        private async Task<Stream> CreateContentReadStreamAsyncCore(CancellationToken cancellationToken)
+        private async ValueTask<Stream> CreateContentReadStreamAsyncCore(bool async, CancellationToken cancellationToken)
         {
             try
             {
@@ -218,7 +266,15 @@ namespace System.Net.Http
                     HttpContent nestedContent = _nestedContent[contentIndex];
                     streams[streamIndex++] = EncodeHeadersToNewStream(nestedContent, writeDivider: contentIndex != 0);
 
-                    Stream readStream = nestedContent.TryReadAsStream() ?? await nestedContent.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    Stream readStream;
+                    if (async)
+                    {
+                        readStream = nestedContent.TryReadAsStream() ?? await nestedContent.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        readStream = nestedContent.ReadAsStream(cancellationToken);
+                    }
                     // Cannot be null, at least an empty stream is necessary.
                     readStream ??= new MemoryStream();
 
@@ -231,7 +287,7 @@ namespace System.Net.Http
 
 #pragma warning disable CA2016
                         // Do not pass a cancellationToken to base.CreateContentReadStreamAsync() as it would trigger an infinite loop => StackOverflow
-                        return await base.CreateContentReadStreamAsync().ConfigureAwait(false);
+                        return async ? await base.CreateContentReadStreamAsync().ConfigureAwait(false) : base.CreateContentReadStream(cancellationToken);
 #pragma warning restore CA2016
                     }
                     streams[streamIndex++] = readStream;
@@ -261,7 +317,7 @@ namespace System.Net.Http
             // Add headers.
             foreach (KeyValuePair<string, HeaderStringValues> headerPair in content.Headers.NonValidated)
             {
-                Encoding headerValueEncoding = HttpRuleParser.DefaultHttpEncoding;
+                Encoding headerValueEncoding = HeaderEncodingSelector?.Invoke(headerPair.Key, content) ?? HttpRuleParser.DefaultHttpEncoding;
 
                 WriteToStream(stream, headerPair.Key);
                 WriteToStream(stream, ": ");
@@ -307,7 +363,7 @@ namespace System.Net.Http
                 {
                     currentLength += headerPair.Key.Length + ColonSpaceLength;
 
-                    Encoding headerValueEncoding = HttpRuleParser.DefaultHttpEncoding;
+                    Encoding headerValueEncoding = HeaderEncodingSelector?.Invoke(headerPair.Key, content) ?? HttpRuleParser.DefaultHttpEncoding;
 
                     int valueCount = 0;
                     foreach (string value in headerPair.Value)

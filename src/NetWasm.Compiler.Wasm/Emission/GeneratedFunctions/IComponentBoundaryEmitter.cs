@@ -15,6 +15,5 @@ internal interface IComponentBoundaryEmitter
         RuntimeInitializationPlan initialization,
         int importedFunctionCount,
         int definedFunctionCount,
-        IReadOnlyDictionary<string, int> managedExportIndices,
-        IFunctionIndexResolver functionIndices);
+        IReadOnlyDictionary<string, int> managedExportIndices);
 }

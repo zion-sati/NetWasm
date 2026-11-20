@@ -10,7 +10,7 @@ namespace NetWasm.Compiler.Tests.Layout;
 // place, so the encoder's tests check the format through its readers' arithmetic.
 internal sealed class RuntimeTypeTableReader(byte[] table)
 {
-    private const long HeaderBits = 20 * 32;
+    private const long HeaderBits = NetWasm.Compiler.Layout.RuntimeTypeTableEncoder.HeaderFields * 32L;
 
     internal uint Header(int field) => Read(field * 32L, 32);
 

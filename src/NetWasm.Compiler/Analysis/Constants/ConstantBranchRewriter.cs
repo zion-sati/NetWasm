@@ -12,15 +12,18 @@ namespace NetWasm.Compiler.Analysis.Constants;
 // A null reference is a constant too: the load an unwritten reference-typed static field folds to (see
 // UnwrittenStaticFieldProgramReducer), a dup of it, and a load of a local it was stored to decide brtrue and brfalse
 // and compare with another null. A null local's loads stay loads (an int32 local's become int32 constants), and a
-// null feeds no arithmetic.
-internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : IMethodRewriteRule
+// null feeds no arithmetic. A local load is a constant too when every path into it stored the same one, as the flow
+// across blocks finds (ConstantValueFlow).
+internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs, IConstantValueFlow flow) : IMethodRewriteRule
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
+    private readonly IConstantValueFlow _flow = flow ?? throw new ArgumentNullException(nameof(flow));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
         ArgumentNullException.ThrowIfNull(body);
         var graph = _graphs.Build(body);
+        var facts = _flow.Solve(graph);
         var rewritten = body.Instructions.ToDictionary(instruction => instruction.Offset);
         var changed = false;
         foreach (var block in graph.Blocks)
@@ -49,7 +52,7 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
                 var instruction = original;
                 if (instruction.Operation == CilOperation.Nop) continue;
                 if (instruction is { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index local } &&
-                    locals.TryGetValue(local.Value, out var constant))
+                    Int32Load(locals, facts, instruction, local.Value) is { } constant)
                 {
                     instruction = instruction with { Operation = CilOperation.LoadInt32, Operand = new CilOperand.ConstantI4(constant) };
                     rewritten[instruction.Offset] = instruction;
@@ -63,7 +66,7 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
                 }
 
                 if (instruction is { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index nullLocal } &&
-                    nullLocals.Contains(nullLocal.Value))
+                    (nullLocals.Contains(nullLocal.Value) || (facts.TryGetValue(instruction.Offset, out var known) && known.IsNull)))
                 {
                     producers.Add(instruction);
                     nulls.Add(instruction.Offset);
@@ -196,6 +199,12 @@ internal sealed class ConstantBranchRewriter(IControlFlowGraphBuilder graphs) : 
 
         return changed ? body with { Instructions = [.. body.Instructions.Select(instruction => rewritten[instruction.Offset])] } : body;
     }
+
+    // The int32 a local load reads: one stored earlier in this block, or one every path into the load stored.
+    private static int? Int32Load(Dictionary<int, int> locals, ConstantValueFacts facts, CilInstruction load, int local) =>
+        locals.TryGetValue(local, out var value) ? value
+            : facts.TryGetValue(load.Offset, out var known) && !known.IsNull ? known.Value
+            : null;
 
     // A producer's value: its int32 constant, or 0 for a null reference.
     private static int Value(CilInstruction producer, HashSet<int> nulls) =>

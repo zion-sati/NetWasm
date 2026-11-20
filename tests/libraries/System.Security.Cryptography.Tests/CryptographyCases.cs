@@ -601,6 +601,43 @@ internal static class CryptographyCases
             yield return "legacy " + X509Certificate.CreateFromCertFile(der).GetCertHashString();
             yield return "missing " + Failure(() => new X509Certificate2(Path.Combine(directory, "missing.cer")));
             yield return "wrong password " + Failure(() => new X509Certificate2(pfx, "wrong"));
+
+            // PEM: a certificate alone, with its key in the same file or another, with an encrypted key, and with a
+            // key that is not its own.
+            string certificatePem = leaf.ExportCertificatePem();
+            string keyPem = leafKey.ExportPkcs8PrivateKeyPem();
+            string combined = Path.Combine(directory, "leaf-and-key.pem");
+            File.WriteAllText(combined, certificatePem + "\n" + keyPem);
+            string keyFile = Path.Combine(directory, "leaf.key");
+            File.WriteAllText(keyFile, leafKey.ExportRSAPrivateKeyPem());
+            using (X509Certificate2 fromPem = X509Certificate2.CreateFromPem(certificatePem))
+            {
+                yield return "from pem " + fromPem.Thumbprint + " " + fromPem.HasPrivateKey;
+            }
+
+            using (X509Certificate2 fromFile = X509Certificate2.CreateFromPemFile(combined))
+            using (RSA? key = fromFile.GetRSAPrivateKey())
+            {
+                yield return "from pem file " + fromFile.Thumbprint + " " + fromFile.HasPrivateKey + " " +
+                    Print(key!.SignData(Message, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
+            }
+
+            using (X509Certificate2 fromFiles = X509Certificate2.CreateFromPemFile(pem, keyFile))
+            {
+                yield return "from pem files " + fromFiles.Thumbprint + " " + fromFiles.HasPrivateKey;
+            }
+
+            string encryptedKey = leafKey.ExportEncryptedPkcs8PrivateKeyPem("pw",
+                new PbeParameters(PbeEncryptionAlgorithm.Aes128Cbc, HashAlgorithmName.SHA256, 1000));
+            using (X509Certificate2 fromEncrypted = X509Certificate2.CreateFromEncryptedPem(certificatePem, encryptedKey, "pw"))
+            {
+                yield return "from encrypted pem " + fromEncrypted.Thumbprint + " " + fromEncrypted.HasPrivateKey;
+            }
+
+            yield return "pem without key " + Failure(() => X509Certificate2.CreateFromPemFile(pem));
+            yield return "pem other key " + Failure(() => X509Certificate2.CreateFromPem(certificatePem, rootKey.ExportPkcs8PrivateKeyPem()));
+            yield return "pem wrong password " + Failure(() => X509Certificate2.CreateFromEncryptedPem(certificatePem, encryptedKey, "nope"));
+            yield return "pem garbage " + Failure(() => X509Certificate2.CreateFromPem("-----BEGIN NOTHING-----\nAA==\n-----END NOTHING-----"));
         }
         finally
         {

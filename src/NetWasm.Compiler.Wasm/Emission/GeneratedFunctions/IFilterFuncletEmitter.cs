@@ -16,5 +16,6 @@ internal interface IFilterFuncletEmitter
         MethodRootMap rootMap,
         IFilterSequenceEmitter emitSequence,
         MemberExecutionPlan? memberExecution = null,
-        OptionalFunctionIndex managedThrowFunction = default);
+        OptionalFunctionIndex managedThrowFunction = default,
+        NativeImportPlan? nativeImports = null);
 }

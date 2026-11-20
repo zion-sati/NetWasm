@@ -34,6 +34,45 @@ public sealed class AtomicInstructionEmitterTests
         }
     }
 
+    // For a collector with generations, an exchange that stored a reference records it at the address, inside
+    // the branch that stores; an exchange of a number records nothing.
+    [Theory]
+    [InlineData(CliValueKind.ManagedReference, true)]
+    [InlineData(CliValueKind.I4, false)]
+    [InlineData(CliValueKind.NativeInt, false)]
+    public void AnExchangedReferenceIsRecordedForACollectorWithGenerations(CliValueKind kind, bool recorded)
+    {
+        var layout = WasmTargetLayout.Wasm32;
+        var emitter = ThroughContract(new AtomicInstructionEmitter(
+            new RecordingLayoutProvider(layout),
+            CreateTypeOperands(new FakeProgram()),
+            new RecordingExceptions(),
+            new RecordingAddresses(layout),
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(new RecordingLayoutProvider(layout)))));
+        var identity = kind == CliValueKind.ManagedReference
+            ? CliTypeIdentity.Named(new("Tests"), "Tests", "Reference", isValueType: false)
+            : CliTypeIdentity.FromStackKind(kind);
+        var request = RecordingReferenceWrites(CreateInstructionRequest(
+            CilOperation.CompareExchange,
+            [CliValueKind.ManagedAddress, kind, kind],
+            new CilOperand.TypeIdentity(identity),
+            maxStack: 4));
+
+        Assert.Single(emitter.Commands).Emit(request, GetCodeWriter(request), CreateFunctionIndexResolver());
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        var store = Array.FindIndex(instructions.ToArray(), instruction => instruction.Opcode == WasmOpcodes.I32Store);
+        Assert.True(store > 0);
+        if (!recorded)
+        {
+            Assert.Equal(WasmOpcodes.End, instructions[store + 1].Opcode);
+            return;
+        }
+        // The address the exchange stored through, the call, then the end of the storing branch.
+        Assert.True(EndsWithRecordAt(request, [.. instructions.Take(store + 3)], instructions[0].Operand.UnsignedValue));
+        Assert.Equal(WasmOpcodes.End, instructions[store + 3].Opcode);
+    }
+
     [Theory]
     [MemberData(nameof(SupportedValues))]
     public void CompareExchangeChecksTheAddressBeforeLoadingAndPreservesLowerStackValues(
@@ -47,7 +86,8 @@ public sealed class AtomicInstructionEmitterTests
             new RecordingLayoutProvider(layout),
             CreateTypeOperands(new FakeProgram()),
             exceptions,
-            addresses));
+            addresses,
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(new RecordingLayoutProvider(layout)))));
         var identity = kind == CliValueKind.ManagedReference
             ? CliTypeIdentity.Named(new("Tests"), "Tests", "Reference", isValueType: false)
             : CliTypeIdentity.FromStackKind(kind);
@@ -110,7 +150,8 @@ public sealed class AtomicInstructionEmitterTests
             new RecordingLayoutProvider(),
             CreateTypeOperands(new FakeProgram()),
             exceptions,
-            addresses));
+            addresses,
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(new RecordingLayoutProvider()))));
         var request = CreateInstructionRequest(
             CilOperation.CompareExchange,
             [CliValueKind.ManagedAddress, kind, kind],

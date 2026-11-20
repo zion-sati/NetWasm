@@ -37,13 +37,13 @@ public sealed class ProofPassFactoryTests
         var calls = new MethodFacts();
 
         Assert.IsType<ArrayBoundsCheckEliminator>(new ArrayBoundsCheckEliminatorFactory().Create(graphs, stacks, dominance, Enabled));
-        Assert.IsType<RepeatedArrayAccessEliminator>(new RepeatedArrayAccessEliminatorFactory().Create(graphs, stacks, dominance, Enabled));
+        Assert.IsType<RepeatedArrayAccessEliminator>(new RepeatedArrayAccessEliminatorFactory().Create(graphs, stacks, dominance, calls, Enabled));
         Assert.IsType<ConstructedObjectNullCheckEliminator>(
             new ConstructedObjectNullCheckEliminatorFactory().Create(graphs, stacks, dominance, calls, Enabled));
         Assert.IsType<IntegerCheckEliminator>(new IntegerCheckEliminatorFactory().Create(graphs, stacks, calls, Enabled));
 
         Assert.Throws<ArgumentNullException>(() => new ArrayBoundsCheckEliminatorFactory().Create(graphs, stacks, dominance, null!));
-        Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessEliminatorFactory().Create(graphs, stacks, dominance, null!));
+        Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessEliminatorFactory().Create(graphs, stacks, dominance, calls, null!));
         Assert.Throws<ArgumentNullException>(() => new ConstructedObjectNullCheckEliminatorFactory().Create(graphs, stacks, dominance, calls, null!));
         Assert.Throws<ArgumentNullException>(() => new IntegerCheckEliminatorFactory().Create(graphs, stacks, calls, null!));
     }

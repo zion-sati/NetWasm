@@ -45,13 +45,19 @@ internal sealed class RuntimeModuleMaterializer(
         }
 
         var target = targets.Select(manifest, request.Target, request.GarbageCollector, request.Optimization);
+        RuntimeGarbageCollectors.RequireProgramFor(target.GarbageCollector, sourceLayout.RuntimeFeatures);
         var systemLibraryPaths = target.SystemLibraries.Assets
             .Select(asset => ResolveAsset(request.AssetRoot, asset.Path))
             .ToImmutableArray();
         VerifyAssets(request.AssetRoot, target);
         if (!sourceLayout.NativeImports.IsEmpty ||
             sourceLayout.NativeCallbackSupport is not null)
-            return nativeModules.Materialize(new(request, manifest, target, sourceLayout, systemLibraryPaths));
+            return nativeModules.Materialize(new(request, manifest, target, sourceLayout, systemLibraryPaths)
+            {
+                ExceptionSystemLibraryPaths = target.ExceptionSystemLibraries is { } exceptionLibraries
+                    ? [.. exceptionLibraries.Assets.Select(asset => ResolveAsset(request.AssetRoot, asset.Path))]
+                    : [],
+            });
         var memoryLayout = memoryLayouts.Calculate(new(
             target,
             manifest.WasmPageSize,
@@ -238,6 +244,16 @@ internal sealed class RuntimeModuleMaterializer(
         {
             var asset = target.SystemLibraries.Assets[index];
             assetDigests.Verify(ResolveAsset(assetRoot, asset.Path), asset.Sha256);
+        }
+        if (target.ExceptionSystemLibraries is { } exceptionLibraries)
+        {
+            foreach (var asset in exceptionLibraries.Assets)
+                assetDigests.Verify(ResolveAsset(assetRoot, asset.Path), asset.Sha256);
+        }
+        if (target.EmscriptenArchives is { } emscripten)
+        {
+            assetDigests.Verify(ResolveAsset(assetRoot, emscripten.Support.Path), emscripten.Support.Sha256);
+            assetDigests.Verify(ResolveAsset(assetRoot, emscripten.StandIns.Path), emscripten.StandIns.Sha256);
         }
     }
 

@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Xml.Linq;
 
 namespace NetWasm.Toolchain.Tests;
 
@@ -33,6 +34,54 @@ public sealed class ToolchainSourcePinTests
         var actual = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(root, source))));
 
         Assert.Equal(pinned, actual);
+    }
+
+    // Every file the package takes as it is from a repository source (a None item with its own PackagePath) and the
+    // manifest pins. A notice added to such sources once left seven pins stale that the cases above do not name.
+    [Fact]
+    public void EveryPinnedFilePackedFromASourceMatchesIt()
+    {
+        var root = RepositoryRoot();
+        var project = Path.Combine(root, "src", "NetWasm.Toolchain", "NetWasm.Toolchain.csproj");
+        var sources = XDocument.Load(project).Descendants("None")
+            .Select(item => (Include: (string?)item.Attribute("Include"), PackagePath: (string?)item.Attribute("PackagePath")))
+            .Where(item => item.Include is { } include && item.PackagePath is { } packagePath &&
+                include.IndexOfAny(['$', '*', ';']) < 0 && !packagePath.EndsWith('/'))
+            .ToDictionary(item => item.PackagePath!, item => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(project)!, item.Include!)));
+        using var manifest = JsonDocument.Parse(File.ReadAllBytes(
+            Path.Combine(root, "src", "NetWasm.Toolchain", "toolchain-manifest.json")));
+
+        var pins = PinnedFiles(manifest.RootElement)
+            .Where(pin => sources.ContainsKey(pin.RelativePath))
+            .Select(pin => (pin.RelativePath, pin.Sha256,
+                Actual: Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(sources[pin.RelativePath])))))
+            .ToArray();
+
+        Assert.NotEmpty(pins);
+        Assert.All(pins, pin => Assert.True(pin.Sha256 == pin.Actual,
+            $"{pin.RelativePath} is pinned at {pin.Sha256}; its source hashes to {pin.Actual}."));
+    }
+
+    private static IEnumerable<(string RelativePath, string Sha256)> PinnedFiles(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("relativePath", out var path) && element.TryGetProperty("sha256", out var digest))
+            {
+                yield return (path.GetString()!, digest.GetString()!);
+            }
+            foreach (var property in element.EnumerateObject())
+            {
+                foreach (var pin in PinnedFiles(property.Value)) yield return pin;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                foreach (var pin in PinnedFiles(item)) yield return pin;
+            }
+        }
     }
 
     private static JsonElement FindAsset(JsonElement element, string assetId)

@@ -15,7 +15,16 @@ internal readonly record struct RuntimeImportSelection(
     bool IncludeRandomSeed = false,
     bool IncludeArraySetValue = false,
     bool IncludeUnhandledExceptionHint = false,
-    bool IncludeObjectClone = false)
+    bool IncludeObjectClone = false,
+    bool IncludeUninitializedArrays = false,
+    // The program's collector has generations and is told of each reference stored into memory.
+    bool IncludeReferenceWriteBarrier = false,
+    // The program asks an object's generation (GC.GetGeneration).
+    bool IncludeObjectGeneration = false,
+    // The program's event loop asks for idle and quiet collections.
+    bool IncludeEventLoopCollection = false,
+    // The program collects its collector's youngest generation alone (GC.Collect(0)).
+    bool IncludeYoungCollection = false)
 {
     // Whether a module with this selection imports the runtime function.
     public bool Includes(RuntimeImportSymbol symbol) =>
@@ -43,6 +52,13 @@ internal readonly record struct RuntimeImportSelection(
         (IncludeRandomSeed || symbol != RuntimeImportSymbol.RandomSeed) &&
         (IncludeArraySetValue || symbol != RuntimeImportSymbol.ArraySetValue) &&
         (IncludeObjectClone || symbol != RuntimeImportSymbol.ObjectClone) &&
+        (IncludeUninitializedArrays || symbol != RuntimeImportSymbol.AllocateUninitializedValueArray) &&
+        (IncludeReferenceWriteBarrier || symbol is not
+            (RuntimeImportSymbol.RecordReferenceWrite or RuntimeImportSymbol.RecordReferenceWrites)) &&
+        (IncludeObjectGeneration || symbol != RuntimeImportSymbol.GcObjectGeneration) &&
+        (IncludeYoungCollection || symbol != RuntimeImportSymbol.GcCollectYoung) &&
+        (IncludeEventLoopCollection || symbol is not
+            (RuntimeImportSymbol.CollectWhenIdle or RuntimeImportSymbol.CollectWhenQuiet)) &&
         (IncludeUnhandledExceptionHint || symbol != RuntimeImportSymbol.ReportUnhandledException) &&
         (IncludeTerminalExceptionRaise ||
             symbol != RuntimeImportSymbol.ManagedTerminalExceptionRaise) &&

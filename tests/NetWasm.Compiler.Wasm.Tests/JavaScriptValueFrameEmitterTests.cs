@@ -188,7 +188,7 @@ public sealed class JavaScriptValueFrameEmitterTests
     }
 
     private static InteropImportPlan Interop(ImmutableDictionary<string, int> conversions) =>
-        new([], default, default, default, default, default, default) { Conversions = conversions };
+        new([], default, default, default, default) { Conversions = conversions };
 
     // DateTime is one 8-byte word; DateTimeOffset adds its offset in minutes;
     // Nullable<int> holds its presence in its first byte and the int at 4.

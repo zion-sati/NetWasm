@@ -4,6 +4,7 @@
 // Retain owner-bit, acquisition, exit and validation behavior on one reactor.
 // Contention cannot be resolved by another managed thread, so do not spin/block.
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 namespace System.Threading
 {
     public struct SpinLock
@@ -14,6 +15,7 @@ namespace System.Threading
         private const int LOCK_ANONYMOUS_OWNED = 1;
         private const int ID_DISABLED_AND_ANONYMOUS_OWNED = LOCK_ID_DISABLE_MASK | LOCK_ANONYMOUS_OWNED;
         public bool IsThreadOwnerTrackingEnabled => (_owner & LOCK_ID_DISABLE_MASK) == 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int CompareExchange(ref int location, int value, int comparand, ref bool success)
         {
             var result = Interlocked.CompareExchange(ref location, value, comparand);

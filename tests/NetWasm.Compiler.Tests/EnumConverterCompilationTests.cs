@@ -27,7 +27,7 @@ public sealed class EnumConverterCompilationTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void EnumAttributeMetadataBoundariesAreExplicit(WasmTarget target)
+    public void EnumFlagsQueriesAnswerAndReflectionStaysABoundary(WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource("EnumFixture", Source);
@@ -59,12 +59,14 @@ public sealed class EnumConverterCompilationTests
         {
             public static int RunBoundary(int input)
             {
-                var plain=new EnumConverter(typeof(Plain)); var bits=new EnumConverter(typeof(Bits)); var boundaries=0;
-                try{plain.ConvertTo(null,null,Plain.One,typeof(string));}catch(PlatformNotSupportedException){boundaries++;}
-                try{bits.ConvertTo(null,null,Bits.A|Bits.B,typeof(Enum[]));}catch(PlatformNotSupportedException){boundaries++;}
-                try{plain.GetStandardValuesExclusive(null);}catch(PlatformNotSupportedException){boundaries++;}
-                try{plain.ConvertTo(null,null,Plain.One,typeof(System.ComponentModel.Design.Serialization.InstanceDescriptor));}catch(PlatformNotSupportedException){boundaries++;}
-                return boundaries==4?42:100+boundaries;
+                var plain=new EnumConverter(typeof(Plain)); var bits=new EnumConverter(typeof(Bits)); var checks=0;
+                // Whether the enum is [Flags] answers at run time, as on desktop .NET.
+                if((string)plain.ConvertTo(null,null,Plain.One,typeof(string))=="One")checks++;
+                if(bits.ConvertTo(null,null,Bits.A|Bits.B,typeof(Enum[])) is Enum[] { Length: 2 } flags && (Bits)flags[0]==Bits.A && (Bits)flags[1]==Bits.B)checks++;
+                if(plain.GetStandardValuesExclusive(null) && !bits.GetStandardValuesExclusive(null))checks++;
+                // An InstanceDescriptor names the enum's ToObject method, which needs reflection.
+                try{plain.ConvertTo(null,null,Plain.One,typeof(System.ComponentModel.Design.Serialization.InstanceDescriptor));}catch(PlatformNotSupportedException){checks++;}
+                return checks==4?42:100+checks;
             }
             public static int Run(int input)
             {

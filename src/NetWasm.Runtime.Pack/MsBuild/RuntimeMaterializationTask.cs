@@ -3,6 +3,7 @@
 
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -81,6 +82,13 @@ public sealed class RuntimeMaterializationTask : Task
     // A plain core module's runtime, whose platform functions use no WASI.
     public bool PlainCoreModule { get; set; }
 
+    // Raw WebAssembly output (JsModule, or NetWasmRawWasm), whose JavaScript host supplies its imports.
+    public bool RawWasmOutput { get; set; }
+
+    // <NetWasmEnvImport> items: Emscripten JavaScript functions (Include) raw output's JavaScript supplies through an
+    // import module of the project's (Module).
+    public ITaskItem[] EnvImports { get; set; } = [];
+
     [Required]
     public string SdkVersion { get; set; } = string.Empty;
 
@@ -155,6 +163,8 @@ public sealed class RuntimeMaterializationTask : Task
                 NativeCallbackObjectPath = NativeCallbackObjectPath,
                 NativeWasmToolsPath = NativeWasmToolsPath.Length == 0 ? null : NativeWasmToolsPath,
                 PlainCoreModule = PlainCoreModule,
+                RawWasmOutput = RawWasmOutput,
+                EnvImports = [.. EnvImports.Select(item => new RuntimeEnvImport(item.ItemSpec, item.GetMetadata("Module")))],
             });
             RuntimeModules = [CreateRuntimeModule(materialization)];
             LogCacheMetrics(materialization.CacheMetrics);

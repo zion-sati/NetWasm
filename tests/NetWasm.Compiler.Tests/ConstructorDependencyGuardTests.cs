@@ -13,6 +13,7 @@ public sealed class ConstructorDependencyGuardTests
 {
     private static readonly string[] Actors =
     [
+        "NetWasm.Compiler.Analysis.AddressTakenValues.LaneStoringLocalAddressDereferenceFolder",
         "NetWasm.Compiler.Analysis.AddressTakenValues.LocalAddressDereferenceFolder",
         "NetWasm.Compiler.Analysis.AddressTakenValues.StructLocalScalarReplacer",
         "NetWasm.Compiler.Analysis.AddressTakenValues.WholeLocalBlockCopyFolder",
@@ -31,8 +32,12 @@ public sealed class ConstructorDependencyGuardTests
         "NetWasm.Compiler.Analysis.DefaultComparerCallRewriter",
         "NetWasm.Compiler.Analysis.DelegateMethodRewriter",
         "NetWasm.Compiler.Analysis.Devirtualization.ExactReceiverDevirtualizer",
+        "NetWasm.Compiler.Analysis.DynamicCasts.DynamicCastHelperResolver",
+        "NetWasm.Compiler.Analysis.DynamicCasts.DynamicInterfaceCastableProgramReducer",
         "NetWasm.Compiler.Analysis.EnumEqualsCallRewriter",
         "NetWasm.Compiler.Analysis.FieldLoadReuser",
+        "NetWasm.Compiler.Analysis.FieldStoreOwnerFinder",
+        "NetWasm.Compiler.Analysis.Generations.YoungConstructorProverFactory",
         "NetWasm.Compiler.Analysis.IntegerCheckEliminator",
         "NetWasm.Compiler.Analysis.IntegerRangeAnalysis",
         "NetWasm.Compiler.Analysis.Loops.ArrayLoopIdiomRewriter",
@@ -51,6 +56,7 @@ public sealed class ConstructorDependencyGuardTests
         "NetWasm.Compiler.Analysis.PureCallReuser",
         "NetWasm.Compiler.Analysis.QuotientReuser",
         "NetWasm.Compiler.Analysis.ReachableMethodAnalysisSession",
+        "NetWasm.Compiler.Analysis.ReachableProgramBuilder",
         "NetWasm.Compiler.Analysis.RvaSpanLocalEliminator",
         "NetWasm.Compiler.Analysis.StackValueConsumerFinder",
         "NetWasm.Compiler.Analysis.StaticArrays.ValueConstructorPurityClassifier",
@@ -59,6 +65,8 @@ public sealed class ConstructorDependencyGuardTests
         "NetWasm.Compiler.Layout.StructMarshallingDataBuilder",
         "NetWasm.Compiler.Layout.StructMarshallingDataCollector",
         "NetWasm.Compiler.Layout.TypeObjectDataBuilder",
+        "NetWasm.Compiler.Pipeline.MissingMemberRejectingMethodBodyReader",
+        "NetWasm.Compiler.Pipeline.NativeVariadicCallPlannerFactory",
     ];
 
     public static TheoryData<string, int> MissingDependencies()

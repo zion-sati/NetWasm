@@ -295,8 +295,7 @@ public sealed class DeploymentManifestValidator : IDeploymentManifestValidator
             }
         }
 
-        var versionParts = value[(separator + 1)..].Split('.');
-        if (versionParts.Length != 3 || versionParts.Any(part => part.Length == 0 || !part.All(char.IsAsciiDigit)))
+        if (!ExactSemanticVersion.IsValid(value[(separator + 1)..]))
         {
             throw new ArgumentException("Deployment contract and interface identities require an exact numeric version.", nameof(value));
         }

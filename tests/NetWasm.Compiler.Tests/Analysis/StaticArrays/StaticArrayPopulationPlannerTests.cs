@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Analysis.StaticArrays;
@@ -151,12 +152,15 @@ public sealed class StaticArrayPopulationPlannerTests
     public void RejectsMissingProofCapabilitiesAndInputs()
     {
         var facts = new Facts();
-        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(null!, facts, facts, facts.Purity(), facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, null!, facts, facts.Purity(), facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, null!, facts.Purity(), facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, facts, null!, facts, facts));
-        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, facts, facts.Purity(), null!, facts));
-        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, facts, facts.Purity(), facts, null!));
+        var purity = facts.Purity();
+        var initialization = facts.Initialization();
+        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(null!, facts, facts, purity, facts, facts, initialization));
+        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, null!, facts, purity, facts, facts, initialization));
+        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, null!, purity, facts, facts, initialization));
+        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, facts, null!, facts, facts, initialization));
+        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, facts, purity, null!, facts, initialization));
+        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, facts, purity, facts, null!, initialization));
+        Assert.Throws<ArgumentNullException>(() => new StaticArrayPopulationPlanner(facts, facts, facts, purity, facts, facts, null!));
         Assert.Throws<ArgumentNullException>(() => facts.Planner().Plan(null!, []));
         Assert.Throws<ArgumentNullException>(() => facts.Planner().Plan(Initializer(), null!));
     }
@@ -216,6 +220,125 @@ public sealed class StaticArrayPopulationPlannerTests
                 .SetItem(7, I(7, element.IsValueType ? CilOperation.StoreArrayElement : CilOperation.StoreArrayElementReference,
                     new CilOperand.TypeIdentity(element))),
         });
+    }
+
+    // The inliner's expansion of newobj Element(42L): the argument in a local, then the value built in another local.
+    private static ManagedMethodBody InlinedInitializer(
+        Func<ImmutableArray<CilInstruction>, ImmutableArray<CilInstruction>>? change = null)
+    {
+        var initial = Initializer();
+        ImmutableArray<CilInstruction> instructions =
+        [
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(1, CilOperation.NewArray, new CilOperand.TypeIdentity(Element)),
+            I(2, CilOperation.Duplicate),
+            I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(4, CilOperation.LoadInt32, new CilOperand.ConstantI4(42)),
+            I(5, CilOperation.ConvertInt64),
+            I(6, CilOperation.StoreLocal, new CilOperand.Index(1)),
+            I(7, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            I(8, CilOperation.InitializeObject, new CilOperand.TypeIdentity(Element)),
+            I(9, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            I(10, CilOperation.LoadLocal, new CilOperand.Index(1)),
+            I(11, CilOperation.StoreField, new CilOperand.Entity(Value.Key)),
+            I(12, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(13, CilOperation.StoreArrayElement, new CilOperand.TypeIdentity(Element)),
+            I(14, CilOperation.StoreStaticField, new CilOperand.Entity(Table.Key)),
+            I(15, CilOperation.Return),
+        ];
+        return Managed(initial.Body with { Instructions = change?.Invoke(instructions) ?? instructions });
+    }
+
+    [Fact]
+    public void ProvesAnElementConstructorTheInlinerExpanded()
+    {
+        Assert.Equal(Enumerable.Range(2, 12), new Facts().Planner().Plan(InlinedInitializer(), []).Order());
+    }
+
+    // The expanded constructor stores an int, a float or a double field as well as a long, and names the field by a
+    // field instance of the element type as well as by its token; a field instance of another type, a generic
+    // element's field named by token, no field at all, or a null stored to it is not proven.
+    [Theory]
+    [InlineData("int", true)]
+    [InlineData("float", true)]
+    [InlineData("double", true)]
+    [InlineData("field instance", true)]
+    [InlineData("another type's field instance", false)]
+    [InlineData("generic element token", false)]
+    [InlineData("no field", false)]
+    [InlineData("null", false)]
+    public void ProvesEachScalarFieldAnExpandedConstructorStores(string shape, bool proven)
+    {
+        var facts = new Facts();
+        var (kind, load) = shape switch
+        {
+            "int" => (CliValueKind.I4, I(4, CilOperation.LoadInt32, new CilOperand.ConstantI4(42))),
+            "float" => (CliValueKind.F4, I(4, CilOperation.LoadFloat32, new CilOperand.ConstantF4(1.5f))),
+            "double" => (CliValueKind.F8, I(4, CilOperation.LoadFloat64, new CilOperand.ConstantF8(1.5))),
+            _ => (CliValueKind.I8, I(4, CilOperation.LoadInt32, new CilOperand.ConstantI4(42))),
+        };
+        facts.Fields[Value.Key] = Value with { FieldType = kind };
+        var method = InlinedInitializer(instructions =>
+        {
+            if (kind != CliValueKind.I8)
+                instructions = instructions.SetItem(4, load).SetItem(5, I(5, CilOperation.Nop));
+            return shape switch
+            {
+                "field instance" => instructions.SetItem(11, I(11, CilOperation.StoreField,
+                    new CilOperand.FieldInstance(new FieldInstanceModel(Value, Element, CliTypeIdentity.FromStackKind(CliValueKind.I8))))),
+                "another type's field instance" => instructions.SetItem(11, I(11, CilOperation.StoreField,
+                    new CilOperand.FieldInstance(new FieldInstanceModel(Value, Holder, CliTypeIdentity.FromStackKind(CliValueKind.I8))))),
+                "generic element token" => instructions.SetItem(8, I(8, CilOperation.InitializeObject,
+                    new CilOperand.TypeIdentity(CliTypeIdentity.GenericInstantiation(Element, [Holder])))),
+                "no field" => instructions.SetItem(11, I(11, CilOperation.StoreField)),
+                "null" => instructions.SetItem(10, I(10, CilOperation.LoadNull)),
+                _ => instructions,
+            };
+        });
+
+        Assert.Equal(proven, !facts.Planner().Plan(method, []).IsEmpty);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public void DeclinesAnExpandedConstructionItCannotProve(int kind)
+    {
+        var facts = new Facts();
+        var other = new FieldDefinitionModel(new(Assembly, 0x04000004), HolderKey, "Other", CliValueKind.I8, false);
+        facts.Fields.Add(other.Key, other);
+        facts.HasInitializer = kind == 6;
+        if (kind == 7)
+            facts.Fields[Value.Key] = Value with { IsStatic = true };
+        var method = InlinedInitializer(instructions => kind switch
+        {
+            // The local the value is built in is read after the population.
+            0 => instructions.SetItem(15, I(15, CilOperation.LoadLocal, new CilOperand.Index(0)))
+                .Add(I(16, CilOperation.Pop)).Add(I(17, CilOperation.Return)),
+            // Another type's field.
+            1 => instructions.SetItem(11, I(11, CilOperation.StoreField, new CilOperand.Entity(other.Key))),
+            // An int into a long field.
+            2 => instructions.SetItem(5, I(5, CilOperation.Nop)),
+            // A local the population never wrote.
+            3 => instructions.SetItem(10, I(10, CilOperation.LoadLocal, new CilOperand.Index(2))),
+            // A field store into a value no initobj started.
+            4 => instructions.SetItem(8, I(8, CilOperation.Nop)).SetItem(7, I(7, CilOperation.Nop)),
+            // An address stored to a local.
+            5 => instructions.SetItem(4, I(4, CilOperation.LoadLocalAddress, new CilOperand.Index(3))).SetItem(5, I(5, CilOperation.Nop)),
+            // 6: the element type's static constructor is precise; 7: the field is static.
+            // A call between the field stores.
+            8 => instructions.SetItem(10, I(10, CilOperation.Call, new CilOperand.MethodInstance(Constructor()))),
+            _ => instructions,
+        });
+
+        Assert.Empty(facts.Planner().Plan(method, []));
     }
 
     [Fact]

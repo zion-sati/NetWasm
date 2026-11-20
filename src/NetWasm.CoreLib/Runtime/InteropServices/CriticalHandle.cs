@@ -124,6 +124,10 @@ namespace System.Runtime.InteropServices
         // ! Do not add or rearrange fields as the EE depends on this layout.
         //------------------------------------------------------------------
         protected IntPtr handle;    // This must be protected so derived classes can use out params.
+
+        // NetWasm: Marshal's structure members write a CriticalHandle field's handle, as desktop .NET's runtime
+        // marshalling does.
+        internal IntPtr Handle => handle;
         private bool _isClosed;     // Set by SetHandleAsInvalid or Close/Dispose/finalization.
 
         // Creates a CriticalHandle class.  Users must then set the Handle property or allow P/Invoke marshaling to set it implicitly.

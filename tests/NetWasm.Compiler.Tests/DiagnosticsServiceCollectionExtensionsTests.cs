@@ -43,7 +43,7 @@ public sealed class DiagnosticsServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void DiagnosticsRegistrationUsesTheDiagnosticProgressReporter()
+    public void DiagnosticsRegistrationReportsMemoryAfterTheDiagnosticProgressReporter()
     {
         var services = new ServiceCollection();
         services.AddCompilerDiagnostics();
@@ -51,7 +51,8 @@ public sealed class DiagnosticsServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var reporter = provider.GetRequiredService<ICompilerProgressReporter>();
 
-        Assert.IsType<CompilerDiagnosticProgressReporter>(reporter);
+        Assert.IsType<MemoryReportingProgressReporter>(reporter);
+        Assert.IsType<ProcessCompilerMemoryReader>(provider.GetRequiredService<ICompilerMemoryReader>());
     }
 
 }

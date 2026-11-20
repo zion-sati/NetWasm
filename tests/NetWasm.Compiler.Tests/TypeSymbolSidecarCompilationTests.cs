@@ -3,13 +3,14 @@
 
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Tests.Symbols;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
 
-// Issue 225: a program carries no type or assembly names. Without names its types read as type#<id> and
-// its assemblies as <Assembly name unavailable>; with NetWasmTypeNames it loads both from its type-symbols
-// sidecar at startup and forms them as .NET does.
+// Issue 225: a program carries no type names. Without them its types read as type#<id>; with NetWasmTypeNames
+// a program that reads a name loads them from its type-symbols sidecar at startup and forms them as .NET does.
+// Assembly names come from the program's assembly table either way.
 public sealed class TypeSymbolSidecarCompilationTests
 {
     private const string Source = """
@@ -39,7 +40,8 @@ public sealed class TypeSymbolSidecarCompilationTests
                     return Check(order.Name.StartsWith("type#"), 1) |
                         Check(order.Name == order.FullName && order.Name == text, 2) |
                         Check(order.Namespace == null, 4) |
-                        Check(order.AssemblyQualifiedName == order.Name + ", <Assembly name unavailable>", 8) |
+                        Check(order.AssemblyQualifiedName == order.Name + ", " + order.Assembly.FullName &&
+                            order.Assembly.GetName().Name == "TypeIds", 8) |
                         Check(list.Name != order.Name, 16) |
                         Check(NeedsNames(() => Type.GetType(order.FullName!)) && NeedsNames(() => order.GetInterface(typeof(IOrder).Name)) &&
                             NeedsNames(() => order.GetNestedType(typeof(Order.Line).Name)), 32);
@@ -71,6 +73,41 @@ public sealed class TypeSymbolSidecarCompilationTests
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
         Assert.Equal(63, executor.Execute(new CompilationScenario(
             "TypeIds", Source, "Sample.Names.EntryPoint", optimize, target, 0, [])));
+    }
+
+    // Only a program that reads a name carries the loader, so one built with names that reads none pays nothing for
+    // them: no loader, and a sidecar naming only the exception types, as without names. A method of the loader's name
+    // elsewhere is not the loader.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AProgramThatReadsNoNameCarriesNoLoader(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource("NoNameReads", """
+            namespace NoNameReads;
+            public static class EntryPoint
+            {
+                private static int LoadTypeSymbols() => 3;
+                public static int Run(int input) => input + LoadTypeSymbols();
+            }
+            """);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "NoNameReads.EntryPoint",
+            "Run",
+            [new RequestedExport("run", "NoNameReads.EntryPoint", "Run")],
+            Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform/platform@1.0.0",
+            EmitTypeNames: true));
+
+        Assert.DoesNotContain(compilation.Program.Methods.Values,
+            method => method.Method.CanonicalName.Contains("ProgramSidecars::LoadTypeSymbols", StringComparison.Ordinal));
+        var names = SymbolSidecarContents.Read(compilation.TypeSymbols!.Bytes).Texts;
+        Assert.DoesNotContain("NoNameReads.EntryPoint", names);
     }
 
     [Theory]

@@ -83,6 +83,21 @@ namespace System.Runtime.InteropServices
                 throw new InvalidOperationException("The GC handle is not pinned.");
             }
 
+            // As upstream finds it: a string's characters and an array's elements from the object itself, which a
+            // string literal or an array in static data has before the runtime has allocated one of its type; any
+            // other object's fields from the runtime.
+            object? target = GCHandleRuntime.Get(handle.ToInt32());
+            unsafe
+            {
+                if (target is string text)
+                {
+                    return (IntPtr)Unsafe.AsPointer(ref text.GetRawStringData());
+                }
+                if (target is Array array)
+                {
+                    return (IntPtr)Unsafe.AsPointer(ref Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(array));
+                }
+            }
             return GCHandleRuntime.Address(handle.ToInt32());
         }
 

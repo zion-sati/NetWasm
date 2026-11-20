@@ -48,7 +48,8 @@ const nullableAbiTypes = new Set([...scalarAbiTypes].map(type => `${type}?`));
 // An object, exception, or array of strings, JSObjects or objects: managed code
 // converts it to and from a host handle to its JavaScript value, which whoever
 // receives the handle releases.
-const handleValueAbiTypes = new Set(["any", "error", "string[]", "object[]", "any[]"]);
+// memory-view is an ArraySegment's view, which only an import's parameter takes.
+const handleValueAbiTypes = new Set(["any", "error", "string[]", "object[]", "any[]", "memory-view"]);
 
 const abiTypes = new Set([
   "void", ...scalarAbiTypes, ...nullableAbiTypes, ...handleValueAbiTypes, "string", "object",
@@ -127,6 +128,17 @@ export function memoryViewConstructor(type) {
   return memoryViewConstructors[type];
 }
 
+// A value array crossing into managed code, as .NET's browser runtime takes one: its own typed array, or a plain
+// array whose elements are copied into one (a 64-bit element as a BigInt). Null for anything else.
+export function toValueArray(type, value) {
+  const constructor = valueArrayConstructor(type);
+  if (value instanceof constructor) return value;
+  if (!Array.isArray(value)) return null;
+  return constructor === BigInt64Array || constructor === BigUint64Array
+    ? constructor.from(value, element => BigInt(element))
+    : constructor.from(value);
+}
+
 export function isValueArray(value) {
   return Object.values(valueArrayConstructors).some(constructor => value instanceof constructor);
 }
@@ -134,6 +146,6 @@ export function isValueArray(value) {
 // Names the JavaScript form a value-array parameter or result must take.
 export function describeValueArray(type) {
   const constructor = valueArrayConstructor(type);
-  return type === "bytes" ? "byte-array value must be Uint8Array or null"
-    : `${type} value must be ${constructor.name} or null`;
+  return type === "bytes" ? "byte-array value must be Uint8Array, an array, or null"
+    : `${type} value must be ${constructor.name}, an array, or null`;
 }

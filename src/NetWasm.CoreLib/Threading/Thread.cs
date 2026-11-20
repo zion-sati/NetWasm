@@ -6,6 +6,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Runtime.ConstrainedExecution;
 using System.Security.Principal;
 namespace System.Threading;
@@ -16,8 +17,16 @@ public sealed partial class Thread : CriticalFinalizerObject
     private static AsyncLocal<IPrincipal?>? s_principal;
     private string? _name;
     private Thread(bool currentReactor) { }
-    public static Thread CurrentThread => s_current ??= new Thread(currentReactor: true);
-    public int ManagedThreadId => Environment.CurrentManagedThreadId;
+    public static Thread CurrentThread
+    {
+        [Intrinsic]
+        get => s_current ??= new Thread(currentReactor: true);
+    }
+    public int ManagedThreadId
+    {
+        [Intrinsic]
+        get => Environment.CurrentManagedThreadId;
+    }
     public override int GetHashCode() => ManagedThreadId;
     public bool IsAlive => true;
     public bool IsThreadPoolThread => false;
@@ -49,6 +58,7 @@ public sealed partial class Thread : CriticalFinalizerObject
     }
     public static AppDomain GetDomain() => AppDomain.CurrentDomain;
     public static int GetDomainID() => 1;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int GetCurrentProcessorId() => 0;
     public Thread(ThreadStart start) { ArgumentNullException.ThrowIfNull(start); throw Unsupported("creation"); }
     public Thread(ParameterizedThreadStart start) { ArgumentNullException.ThrowIfNull(start); throw Unsupported("creation"); }

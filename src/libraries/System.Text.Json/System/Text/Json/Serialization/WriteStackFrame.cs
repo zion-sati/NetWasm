@@ -125,6 +125,9 @@ namespace System.Text.Json
                 // To determine the contract for an object value:
                 // 1. Find the JsonTypeInfo for the runtime type with fallback to the nearest ancestor, if not available.
                 // 2. If the resolved type is deriving from a polymorphic type, use the contract of the polymorphic type instead.
+#if NETWASM
+                JsonSerializerOptions.s_nearestAncestorFallbackReachable = nameof(InitializePolymorphicReEntry);
+#endif
                 JsonTypeInfo typeInfo = options.GetTypeInfoInternal(runtimeType, fallBackToNearestAncestorType: true);
                 PolymorphicTypeInfo = typeInfo.AncestorPolymorphicType ?? typeInfo;
             }

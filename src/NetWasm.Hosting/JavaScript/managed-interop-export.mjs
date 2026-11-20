@@ -7,7 +7,6 @@ import {
 } from "./managed-errors.mjs";
 import { normalizeInteropHandle } from "./interop-handle-table.mjs";
 import {
-  describeValueArray,
   isHandleValueAbiType,
   isHostObject,
   isTransferAbiType,
@@ -33,8 +32,14 @@ const requestKeys = [
   "descriptor", "exceptionReporter", "getMemory", "handles", "instance", "target", "targetLayout",
 ];
 const optionalRequestKeys = new Set([
-  "assertAvailable", "consumeExceptionPayload", "enterExport", "observeAsyncExport",
+  "assertAvailable", "consumeExceptionPayload", "enterExport", "observeAsyncExport", "staging",
 ]);
+
+// A host without the runtime's allocator, such as a test of other values, takes no number array. It stages
+// nothing, so nothing of it is ever discarded.
+const unavailableValueArrayStaging = Object.freeze({
+  stage() { throw new NetWasmHostError("this host does not stage number arrays"); },
+});
 
 export function createManagedExports(instance, exportNames) {
   if (!(instance instanceof WebAssembly.Instance)) {
@@ -72,6 +77,11 @@ export function createManagedInteropExport(request) {
       || typeof enterExport !== "function") {
     throw new TypeError("managed interop export lifetime actions are invalid");
   }
+  if (request.staging !== undefined && (request.staging === null || typeof request.staging !== "object"
+      || typeof request.staging.stage !== "function" || typeof request.staging.discard !== "function")) {
+    throw new TypeError("managed interop export number-array staging is invalid");
+  }
+  const staging = request.staging ?? unavailableValueArrayStaging;
   if (descriptor === null || typeof descriptor !== "object" || Array.isArray(descriptor)
       || !Array.isArray(descriptor.parameters) || typeof descriptor.name !== "string") {
     throw new TypeError("managed interop export descriptor is invalid");
@@ -97,21 +107,24 @@ export function createManagedInteropExport(request) {
     // An asynchronous export takes a trailing { signal }, as a worker call does.
     const hasOptions = descriptor.asyncReturn != null && values.length === descriptor.parameters.length + 1;
     const arguments_ = hasOptions ? values.slice(0, -1) : values;
-    if (arguments_.length !== descriptor.parameters.length) {
+    if (arguments_.length > descriptor.parameters.length) {
       throw new NetWasmHostError(
         `managed export ${descriptor.name} received an invalid argument count`);
     }
+    // As on .NET's browser runtime, an argument left out is undefined, which crosses as its parameter's default.
+    while (arguments_.length < descriptor.parameters.length) arguments_.push(undefined);
     const signal = hasOptions ? readCallSignal(values.at(-1)) : null;
     if (signal?.aborted) return Promise.reject(signal.reason);
     // A JavaScript import may call back into an export while managed frames are live.
     const leaveExport = enterExport();
     const argumentHandles = [];
     const objectHandles = [];
+    const stagedBlocks = [];
     let invoked = false;
     let result;
     try {
       const wasmArguments = lowerArguments(
-        descriptor.parameters, arguments_, handles, argumentHandles, objectHandles);
+        descriptor.parameters, arguments_, handles, argumentHandles, objectHandles, staging, stagedBlocks);
       invoked = true;
       const value = invoke(...wasmArguments);
       if (descriptor.asyncReturn != null) {
@@ -150,8 +163,12 @@ export function createManagedInteropExport(request) {
       else throw managedFailure;
     } finally {
       for (const handle of argumentHandles) handles.release(handle);
-      // A JSObject argument's handle belongs to its managed wrapper once the call starts.
-      if (!invoked) for (const handle of objectHandles) handles.release(handle);
+      // A JSObject argument's handle belongs to its managed wrapper once the call starts, and a staged number
+      // array's block to the managed code that copies and frees it.
+      if (!invoked) {
+        for (const handle of objectHandles) handles.release(handle);
+        for (const block of stagedBlocks) staging.discard(block);
+      }
       leaveExport();
     }
     return result;
@@ -159,9 +176,15 @@ export function createManagedInteropExport(request) {
 }
 
 // Shared with callbacks, which take and return the same values. A nullable
-// argument crosses as two Wasm values, its presence and its value.
-export function lowerArguments(types, values, handles, argumentHandles, objectHandles) {
+// argument crosses as two Wasm values, its presence and its value, and a number
+// array as two, its staged elements' address and its length.
+export function lowerArguments(types, values, handles, argumentHandles, objectHandles, staging, stagedBlocks) {
   return values.flatMap((value, index) => {
+    if (isValueArrayAbiType(types[index])) {
+      const staged = staging.stage(types[index], value);
+      stagedBlocks.push(staged[0]);
+      return staged;
+    }
     const underlying = nullableUnderlying(types[index]);
     if (underlying === null) return [lowerArgument(types[index], value, handles, argumentHandles, objectHandles)];
     const present = value !== null && value !== undefined;
@@ -179,7 +202,7 @@ function lowerArgument(type, value, handles, argumentHandles, objectHandles) {
     return handle;
   }
   if (type === "object") {
-    if (value === null) return 0;
+    if (value === null || value === undefined) return 0;
     if (!isHostObject(value)) {
       throw new NetWasmHostError("JSObject value must be an object, function, or null");
     }
@@ -187,13 +210,11 @@ function lowerArgument(type, value, handles, argumentHandles, objectHandles) {
     objectHandles.push(handle);
     return handle;
   }
+  // A string is all that is left to transfer through a handle: lowerArguments stages number arrays.
   if (!isTransferAbiType(type)) return lowerScalar(type, value);
-  if (value === null) return 0;
-  if (type === "string" && typeof value !== "string") {
+  if (value === null || value === undefined) return 0;
+  if (typeof value !== "string") {
     throw new NetWasmHostError("string value must be a string or null");
-  }
-  if (isValueArrayAbiType(type) && !(value instanceof valueArrayConstructor(type))) {
-    throw new NetWasmHostError(describeValueArray(type));
   }
   const handle = handles.acquire(value);
   argumentHandles.push(handle);

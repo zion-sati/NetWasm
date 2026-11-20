@@ -45,6 +45,7 @@ internal static class LoadingServiceCollectionExtensions
         services.AddSingleton<IMethodFinderFactory, MetadataMethodFinderFactory>();
         services.AddSingleton<ISymbolFormatterFactory, MetadataSymbolFormatterFactory>();
         services.AddSingleton<IMetadataCompilationFactory, MetadataCompilationFactory>();
+        services.AddSingleton<ILoadedAssemblyNativeStructSourceFactory, LoadedAssemblyNativeStructSourceFactory>();
         services.AddSingleton<IMetadataCompilationLoader, MetadataCompilationLoader>();
         services.AddSingleton<IAssemblyIdentityFormatterFactory,
             AssemblyIdentityFormatterFactory>();

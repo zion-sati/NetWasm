@@ -16,7 +16,8 @@ const result = document.querySelector("#result");
 const lines = [];
 const errors = [];
 let listener = null;
-let labelled = null;
+let labeled = null;
+let backHandler = null;
 let shifted = null;
 let picked = null;
 let inspected = null;
@@ -32,7 +33,7 @@ const host = {
     return { dispose() { listener = null; } };
   },
   label(callback) {
-    labelled = callback("a", "b", document.querySelector("#probe"));
+    labeled = callback("a", "b", document.querySelector("#probe"));
     return { dispose() {} };
   },
   reenter(depth) { return current.nest(depth); },
@@ -69,6 +70,17 @@ const host = {
     return { dispose() {} };
   },
   nothing() { return null; },
+  async writeLater(data) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const copy = new Uint8Array(data.byteLength);
+    data.copyTo(copy);
+    data.dispose();
+    return copy.reduce((sum, value) => sum + value, 0) * 10 + (data.isDisposed ? 1 : 0);
+  },
+  fillSegment(values) { values.set(Int32Array.of(7, 8)); },
+  onBack(handler) { backHandler = handler; },
+  missing() { return undefined; },
+  plainNumbers() { return [1, 2, 3]; },
   echo(value) { return value; },
   words(values) { return values === null ? null : values.map(value => value === null ? null : value.toUpperCase()); },
   raise(message) { return new TypeError(message); },
@@ -106,6 +118,7 @@ try {
   check(first.echo("hi") === "bundled:hi", "String export or bundled import failed.");
   check(document.querySelector("#shown").textContent === "hi", "Supplied import did not reach the DOM.");
   check(first.echo(null) === null, "Null string did not round-trip.");
+  check(first.lookups("x") === "fmt:x|7", "A dotted import or a global function import was not found.");
 
   document.body.dataset.testCase = "typed-array";
   const scaled = first.scale(Float64Array.of(1.5, -2), 2);
@@ -120,9 +133,19 @@ try {
   const probe = document.querySelector("#probe");
   check(first.describe(probe) === "probe title", "JSObject argument failed.");
   check(first.same(probe) === probe && first.same(null) === null, "JSObject identity was lost.");
+  const target = { count: 2, ratio: 1.25, name: "n", bytes: [1, 2], nested: { depth: 3 } };
+  check(first.properties(target) === "True,False,object,undefined,True,0,True,3,False,True"
+    && target.flag === true && target.count === 3 && target.ratio === 2.5 && target.name === "n!"
+    && target.bytes instanceof Uint8Array && target.bytes.length === 2 && target.same === target.nested
+    && target.gone === null, "JSObject's property API failed.");
+  check(first.looseResults() === "True:1+2+3", "undefined or a plain array result was not read as .NET reads it.");
+  check(first.add() === 42, "An argument left out did not take its default.");
 
   document.body.dataset.testCase = "async";
   check(await first.later("ok") === 1002, "Task export with an async string import failed.");
+  check(await first.segments() === "61:0,7,8,0", "An ArraySegment did not cross as a MemoryView.");
+  check(await first.importBound() === "function:fmt::refused:object",
+    "JSHost.ImportAsync or JSHost.GlobalThis failed.");
   check(await first.shoutLater("ok") === "OK!", "Task<string> export result failed.");
   const scaledLater = await first.scaleLater(Float64Array.of(1.5, -2));
   check(scaledLater instanceof Float64Array && scaledLater[0] === 3 && scaledLater[1] === -4,
@@ -210,8 +233,12 @@ try {
   check((await failure(() => abandoned)).name === "AbortError", "Aborting an async export call did not reject it.");
 
   document.body.dataset.testCase = "callback";
-  check(first.labelThroughCallback() === "a/b/probe title" && labelled === "a/b/probe title",
+  check(first.labelThroughCallback() === "a/b/probe title" && labeled === "a/b/probe title",
     "A callback with two strings and a JSObject did not return its string.");
+  first.registerBack();
+  first.collectGarbage();
+  check(backHandler(100) === true && backHandler(1) === false,
+    "A callback passed to a void import did not stay alive while JavaScript held it.");
   first.startListening();
   listener(5);
   listener(37);
@@ -281,6 +308,12 @@ try {
 } catch (error) {
   await first?.close().catch(() => {});
   await second?.close().catch(() => {});
-  result.textContent = String(error?.stack ?? error);
+  result.textContent = describe(error);
   document.body.dataset.state = "failed";
+}
+
+// The error's message and stack: WebKit's and Firefox's stacks leave out the message, which V8's starts with.
+function describe(error) {
+  const text = String(error);
+  return error?.stack?.startsWith(text) ? error.stack : [text, error?.stack].filter(Boolean).join("\n");
 }

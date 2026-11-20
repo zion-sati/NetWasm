@@ -80,10 +80,10 @@ public sealed class ConstructedObjectNullCheckEliminatorTests
         var stacks = new TypedStackValidatorFactory(new StackTypeCompatibilityValidator());
         var graphFactory = new ControlFlowGraphBuilderFactory();
         var calls = new CalledMethodResolverFactory();
-        Assert.Throws<ArgumentNullException>(() => new ConstructorReceiverProverFactory(null!, graphFactory, calls));
-        Assert.Throws<ArgumentNullException>(() => new ConstructorReceiverProverFactory(stacks, null!, calls));
-        Assert.Throws<ArgumentNullException>(() => new ConstructorReceiverProverFactory(stacks, graphFactory, null!));
-        Assert.IsType<ConstructorReceiverProver>(new ConstructorReceiverProverFactory(stacks, graphFactory, calls).Create(
+        Assert.Throws<ArgumentNullException>(() => new ReceiverProverFactory(null!, graphFactory, calls));
+        Assert.Throws<ArgumentNullException>(() => new ReceiverProverFactory(stacks, null!, calls));
+        Assert.Throws<ArgumentNullException>(() => new ReceiverProverFactory(stacks, graphFactory, null!));
+        Assert.IsType<ReceiverProver>(new ReceiverProverFactory(stacks, graphFactory, calls).Create(
             ValidationTestData.Types(), ValidationTestData.Fields(), ValidationTestData.Methods(),
             ValidationTestData.MethodInstances(), ValidationTestData.Symbols(), enabled: true));
     }

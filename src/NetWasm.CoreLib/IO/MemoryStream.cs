@@ -473,6 +473,7 @@ namespace System.IO
 
         internal int InternalGetPosition() => _position;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ReadOnlySpan<byte> InternalReadSpan(int count)
         {
             EnsureNotClosed();

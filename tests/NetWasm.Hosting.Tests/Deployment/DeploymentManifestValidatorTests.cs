@@ -25,6 +25,21 @@ public sealed class DeploymentManifestValidatorTests
             Exports = [],
         });
 
+    // A WIT package version is a full semantic version: wasi:tls is a prerelease (0.3.0-draft).
+    [Fact]
+    public void AcceptsPrereleaseAndBuildInterfaceVersions()
+    {
+        var manifest = ManifestFixture.Create();
+        _subject.Validate(manifest with
+        {
+            RequiredImportModules = [
+                .. manifest.RequiredImportModules,
+                "wasi:tls/client@0.3.0-draft",
+                "example:service/api@1.2.0-rc.1+build.7",
+            ],
+        });
+    }
+
     [Fact]
     public void AcceptsTypeOnlyRequiredImportModule() =>
         _subject.Validate(ManifestFixture.Create() with
@@ -208,7 +223,7 @@ public sealed class DeploymentManifestValidatorTests
             data.Add(valid with { Artifacts = [application, receipt with { MediaType = mediaType! }] });
         }
 
-        foreach (var identifier in new[] { null, "", " ", "@1.0.0", "wasi-command@", "a@b@1.0.0", "Wasi@1.0.0", "wasi_command@1.0.0", "wasi@1.0", "wasi@1..0", "wasi@1.x.0", "bad\0id@1.0.0" })
+        foreach (var identifier in new[] { null, "", " ", "@1.0.0", "wasi-command@", "a@b@1.0.0", "Wasi@1.0.0", "wasi_command@1.0.0", "wasi@1.0", "wasi@1..0", "wasi@1.x.0", "bad\0id@1.0.0", "wasi@01.0.0", "wasi@1.0.0-", "wasi@1.0.0+", "wasi@1.0.0-a..b", "wasi@1.0.0-dr_aft" })
         {
             data.Add(valid with { ExecutionContract = identifier! });
             data.Add(valid with { RequiredImports = [import with { Interface = identifier! }] });

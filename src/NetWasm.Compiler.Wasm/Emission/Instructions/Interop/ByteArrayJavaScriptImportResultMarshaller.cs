@@ -8,70 +8,45 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 
+// A number array an import returns arrives staged in linear memory, as a JavaScript value an export or callback takes
+// does: the host writes the block's address at the result's offset and the array's length LengthOffset bytes after
+// it (-1 for null). Both are read before the call's value frame is left; the array is built from the block, which is
+// then freed.
 internal sealed class ByteArrayJavaScriptImportResultMarshaller(
-    ITypeLayoutProvider typeLayouts,
-    IValueLayoutProvider values,
+    ITargetLayout layouts,
     IRuntimeImportResolver runtimeImports,
-    IImplicitExceptionEmitter exceptions,
-    IOptionalFunctionIndexValidator functionIndices,
-    IJavaScriptResultHandleCapturer resultHandles,
     IStackLocalResolver stackLocals,
-    IJavaScriptResultLengthValidator resultLengths,
-    IInteropHandleReleaser interopHandles,
-    IAllocationResultValidator allocations,
-    IAddressInstructionEmitter addresses) : IJavaScriptImportResultEmitter
+    IStagedValueArrayEmitter stagedArrays) : IJavaScriptImportResultEmitter
 {
+    internal const int LengthOffset = sizeof(long);
+
     public void Emit(JavaScriptImportResultRequest request, IWasmInstructionWriter code)
     {
         var signature = request.Signature;
         var stack = request.Stack;
         var context = request.Context;
-        var target = request.Target;
-        functionIndices.Validate(
-            target.Imports.ByteLength,
-            "byte host result helpers were not emitted");
-        functionIndices.Validate(
-            target.Imports.CopyBytes,
-            "byte host result helpers were not emitted");
-        functionIndices.Validate(
-            target.Imports.ReleaseHandle,
-            "byte host result helpers were not emitted");
-        resultHandles.Capture(code, context);
-        var destination = stackLocals.Resolve(
-            context,
-            request.ArgumentBase,
-            signature.ReturnType);
+        var address = layouts.Target.UsesMemory64 ? context.NumericTemporaryI8 : context.InteropHandle;
+        LocalGet(code, context.InteropDescriptor);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, LengthOffset)));
+        LocalSet(code, context.InteropResult);
+        LocalGet(code, context.InteropDescriptor);
+        code.Write(layouts.Target.UsesMemory64
+            ? WasmInstruction.WithOperand(WasmOpcodes.I64Load, WasmInstructionOperand.Memory(3, 0))
+            : WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, 0)));
+        LocalSet(code, address);
+        LocalGet(code, context.InteropDescriptor);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
+            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave))));
+        var destination = stackLocals.Resolve(context, request.ArgumentBase, signature.ReturnType);
         stack.RemoveRange(request.ArgumentBase, request.Consumed);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropHandle))));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        addresses.Emit(code, 0);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(destination))));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropHandle))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(target.Imports.ByteLength.Value))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(context.InteropResult))));
-        resultLengths.Validate(code, context, target);
-        var arrayType = signature.ReturnSignatureType;
-        var elementType = arrayType.ElementType!;
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropResult))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(typeLayouts.GetObjectLayout(arrayType).TypeId)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(typeLayouts.GetObjectLayout(elementType).TypeId)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(values.GetValueLayout(elementType).Size)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.AllocateValueArray)))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(context.ObjectTemporary))));
-        allocations.Validate(code, context.ObjectTemporary, request.Context.ManagedThrowFunction);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropHandle))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.ObjectTemporary))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(target.Imports.CopyBytes.Value))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        interopHandles.Release(code, context, target);
-        exceptions.Emit(code, ManagedExceptionKind.JSException, request.Context.ManagedThrowFunction);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        interopHandles.Release(code, context, target);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.ObjectTemporary))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(destination))));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        stagedArrays.Emit(code, signature.ReturnSignatureType, address, context.InteropResult, destination,
+            context.ObjectTemporary, context.ManagedThrowFunction);
         stack.Add(signature.ReturnType);
     }
+
+    private static void LocalGet(IWasmInstructionWriter code, int local) =>
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));
+
+    private static void LocalSet(IWasmInstructionWriter code, int local) =>
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)local)));
 }

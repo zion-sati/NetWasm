@@ -31,7 +31,8 @@ namespace System.Net.Http
 
         internal static class SocketsHttpHandler
         {
-#if !TARGET_BROWSER && !TARGET_WASI
+            // NetWasm: SocketsHttpHandler runs on WASI over wasi:sockets, without HTTP/3 (WASI has no QUIC).
+#if !TARGET_BROWSER
             // Default to allowing HTTP/2, but enable that to be overridden by an
             // AppContext switch, or by an environment variable being set to false/0.
             public static bool AllowHttp2 { get; } = RuntimeSettingParser.QueryRuntimeSettingSwitch(
@@ -45,10 +46,14 @@ namespace System.Net.Http
             [SupportedOSPlatformGuard("macOS")]
             [SupportedOSPlatformGuard("windows")]
             [FeatureSwitchDefinition("System.Net.SocketsHttpHandler.Http3Support")]
+#if TARGET_WASI
+            public static bool AllowHttp3 => false;
+#else
             public static bool AllowHttp3 { get; } = RuntimeSettingParser.QueryRuntimeSettingSwitch(
                 "System.Net.SocketsHttpHandler.Http3Support",
                 "DOTNET_SYSTEM_NET_HTTP_SOCKETSHTTPHANDLER_HTTP3SUPPORT",
                 (OperatingSystem.IsLinux() && !OperatingSystem.IsAndroid()) || OperatingSystem.IsWindows() || OperatingSystem.IsMacOS());
+#endif
 
             // Switch to disable the HTTP/2 dynamic window scaling algorithm. Enabled by default.
             public static bool DisableDynamicHttp2WindowSizing { get; } = RuntimeSettingParser.QueryRuntimeSettingSwitch(

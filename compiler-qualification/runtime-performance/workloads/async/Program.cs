@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
 
-// Async state machines and Task, single-threaded, modelled on dotnet/performance's Perf_AsyncMethods and
+// Async state machines and Task, single-threaded, modeled on dotnet/performance's Perf_AsyncMethods and
 // ValueTaskPerfTest. Each scenario prints ASYNC|name|ticks|frequency|checksum, then GC|collections|allocated|total
 // for the timed region. Completions come from queued work items or the event loop, never from another thread, so
 // every runtime runs the same interleaving and the checksum is exact.

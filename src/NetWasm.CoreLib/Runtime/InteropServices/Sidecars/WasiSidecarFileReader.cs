@@ -3,7 +3,6 @@
 
 namespace System.Runtime.InteropServices.Sidecars
 {
-    using System.Collections.Generic;
     using System.Runtime.InteropServices.TimeZones;
 
     // Reads a sidecar through wasi:filesystem from the preopened sidecar mount, a chunk at a time until the
@@ -27,7 +26,7 @@ namespace System.Runtime.InteropServices.Sidecars
             {
                 throw new ArgumentNullException();
             }
-            if (fileName.Length == 0 || fileName.Contains('/') || fileName.Contains(".."))
+            if (!IsFileName(fileName))
             {
                 throw new PlatformNotSupportedException(
                     "the sidecar name '" + fileName + "' is not a file name");
@@ -43,28 +42,50 @@ namespace System.Runtime.InteropServices.Sidecars
                 "the host mounts no " + SidecarDescriptor.MountPath + " directory");
         }
 
+        // A name within the mount: not empty, no directory separator and no "..".
+        private static bool IsFileName(string name)
+        {
+            if (name.Length == 0)
+            {
+                return false;
+            }
+            for (var index = 0; index < name.Length; index++)
+            {
+                if (name[index] == '/' || name[index] == '.' && index + 1 < name.Length && name[index + 1] == '.')
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // The buffer doubles as chunks arrive and is trimmed to the file's length at the end.
         private byte[] ReadAll(int handle)
         {
-            var chunks = new List<byte[]>();
-            var total = 0L;
+            var contents = new byte[ChunkSize];
+            var total = 0;
             while (true)
             {
                 var chunk = _reader.Read(handle, total, ChunkSize);
-                chunks.Add(chunk);
+                if (chunk.Length > contents.Length - total)
+                {
+                    contents = Copy(contents, total, Math.Max(checked(contents.Length * 2), checked(total + chunk.Length)));
+                }
+                chunk.AsSpan().CopyTo(contents.AsSpan(total));
                 total += chunk.Length;
                 if (chunk.Length < ChunkSize)
                 {
                     break;
                 }
             }
-            var contents = new byte[checked((int)total)];
-            var offset = 0;
-            foreach (var chunk in chunks)
-            {
-                chunk.CopyTo(contents, offset);
-                offset += chunk.Length;
-            }
-            return contents;
+            return total == contents.Length ? contents : Copy(contents, total, total);
+        }
+
+        private static byte[] Copy(byte[] source, int length, int capacity)
+        {
+            var copy = new byte[capacity];
+            source.AsSpan(0, length).CopyTo(copy);
+            return copy;
         }
     }
 }

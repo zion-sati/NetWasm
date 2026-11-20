@@ -48,6 +48,144 @@ namespace System.Runtime.InteropServices.JavaScript
                 _handle = 0;
             }
         }
+
+        // Dispose releases the host handle, and a live object always has one.
+        public bool IsDisposed => _handle == 0;
+
+        public bool HasProperty(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.Has(this, propertyName);
+        }
+
+        public string GetTypeOfProperty(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.TypeOf(this, propertyName);
+        }
+
+        public bool GetPropertyAsBoolean(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.GetBoolean(this, propertyName);
+        }
+
+        public int GetPropertyAsInt32(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.GetInt32(this, propertyName);
+        }
+
+        public double GetPropertyAsDouble(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.GetDouble(this, propertyName);
+        }
+
+        public string? GetPropertyAsString(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.GetString(this, propertyName);
+        }
+
+        public JSObject? GetPropertyAsJSObject(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.GetObject(this, propertyName);
+        }
+
+        public byte[]? GetPropertyAsByteArray(string propertyName)
+        {
+            AssertNotDisposed();
+            return JSObjectProperty.GetBytes(this, propertyName);
+        }
+
+        public void SetProperty(string propertyName, bool value)
+        {
+            AssertNotDisposed();
+            JSObjectProperty.SetBoolean(this, propertyName, value);
+        }
+
+        public void SetProperty(string propertyName, int value)
+        {
+            AssertNotDisposed();
+            JSObjectProperty.SetInt32(this, propertyName, value);
+        }
+
+        public void SetProperty(string propertyName, double value)
+        {
+            AssertNotDisposed();
+            JSObjectProperty.SetDouble(this, propertyName, value);
+        }
+
+        public void SetProperty(string propertyName, string? value)
+        {
+            AssertNotDisposed();
+            JSObjectProperty.SetString(this, propertyName, value);
+        }
+
+        public void SetProperty(string propertyName, JSObject? value)
+        {
+            AssertNotDisposed();
+            JSObjectProperty.SetObject(this, propertyName, value);
+        }
+
+        public void SetProperty(string propertyName, byte[]? value)
+        {
+            AssertNotDisposed();
+            JSObjectProperty.SetBytes(this, propertyName, value);
+        }
+
+        private void AssertNotDisposed() => ObjectDisposedException.ThrowIf(IsDisposed, this);
+    }
+
+    // A JavaScript object's properties, read and written as .NET's browser runtime does: a missing property reads as
+    // undefined, which is a scalar's default and null otherwise. Served by the runtime's own import module.
+    internal static class JSObjectProperty
+    {
+        private const string Module = "netwasm.host.v1";
+
+        [JSImport("object_has_property", Module)]
+        internal static extern bool Has(JSObject self, string propertyName);
+
+        [JSImport("object_type_of_property", Module)]
+        internal static extern string TypeOf(JSObject self, string propertyName);
+
+        [JSImport("object_get_boolean", Module)]
+        internal static extern bool GetBoolean(JSObject self, string propertyName);
+
+        [JSImport("object_get_int32", Module)]
+        internal static extern int GetInt32(JSObject self, string propertyName);
+
+        [JSImport("object_get_double", Module)]
+        internal static extern double GetDouble(JSObject self, string propertyName);
+
+        [JSImport("object_get_string", Module)]
+        internal static extern string? GetString(JSObject self, string propertyName);
+
+        [JSImport("object_get_object", Module)]
+        internal static extern JSObject? GetObject(JSObject self, string propertyName);
+
+        [JSImport("object_get_bytes", Module)]
+        internal static extern byte[]? GetBytes(JSObject self, string propertyName);
+
+        [JSImport("object_set_boolean", Module)]
+        internal static extern void SetBoolean(JSObject self, string propertyName, bool value);
+
+        [JSImport("object_set_int32", Module)]
+        internal static extern void SetInt32(JSObject self, string propertyName, int value);
+
+        [JSImport("object_set_double", Module)]
+        internal static extern void SetDouble(JSObject self, string propertyName, double value);
+
+        [JSImport("object_set_string", Module)]
+        internal static extern void SetString(JSObject self, string propertyName, string? value);
+
+        [JSImport("object_set_object", Module)]
+        internal static extern void SetObject(JSObject self, string propertyName, JSObject? value);
+
+        [JSImport("object_set_bytes", Module)]
+        internal static extern void SetBytes(JSObject self, string propertyName, byte[]? value);
     }
 
     public sealed class JSSubscription : IDisposable

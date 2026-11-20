@@ -38,6 +38,8 @@ internal static class ConstantRewriteTestSupport
     internal static ConstantCallEvaluator Evaluator(MethodFacts facts) =>
         new(facts, facts, facts, Constructors(facts), facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([]));
 
+    internal static IConstantValueFlow Flow() => new ConstantValueFlow(new StackEffectResolver(OperandCalledMethodResolver.Instance));
+
     internal static IControlFlowGraphBuilder Graph(CilMethodBody body) => new FixedGraph(
         new ControlFlowGraphBuilderFactory().Create().Build(body));
 

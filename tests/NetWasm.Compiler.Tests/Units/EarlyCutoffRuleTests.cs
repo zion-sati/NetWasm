@@ -14,7 +14,7 @@ using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Tests.Units;
 
-// Managed optimizations analyse each method alone at O0 or none, without overrides other than
+// Managed optimizations analyze each method alone at O0 or none, without overrides other than
 // the defaults: only then can an edited method's facts be derived from it alone.
 public sealed class MethodLocalAnalysisTests
 {
@@ -27,7 +27,7 @@ public sealed class MethodLocalAnalysisTests
 
     [Theory]
     [MemberData(nameof(Settings))]
-    public void MethodsAreAnalysedAloneOnlyWithoutCrossMethodOptimizations(string setting, bool alone) =>
+    public void MethodsAreAnalyzedAloneOnlyWithoutCrossMethodOptimizations(string setting, bool alone) =>
         Assert.Equal(alone, CompilationInputDetector.AnalysesMethodsLocally(setting switch
         {
             "O0" => Base with { Optimization = FinalWasmOptimization.O0 },
@@ -47,7 +47,7 @@ public sealed class MethodLocalAnalysisTests
         }));
 }
 
-// Every analysed instance of an edited body must add what it added last time: the record of
+// Every analyzed instance of an edited body must add what it added last time: the record of
 // a compile, its account and the early cutoff all compare them alike.
 public sealed class EditedContributionsTests
 {
@@ -98,7 +98,7 @@ public sealed class EditedContributionsTests
     {
         Assert.Null(new EditedContributions(2, [], []).Obstacle);
         Assert.Equal("M changed what it adds to the program", new EditedContributions(0, ["M"], ["N"]).Obstacle);
-        Assert.Equal("N is no longer analysed", new EditedContributions(0, [], ["N"]).Obstacle);
+        Assert.Equal("N is no longer analyzed", new EditedContributions(0, [], ["N"]).Obstacle);
     }
 }
 

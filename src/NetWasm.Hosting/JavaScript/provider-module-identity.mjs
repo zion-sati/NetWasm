@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
+import { exactSemanticVersion } from "./exact-semantic-version.mjs";
+
 const requestKeys = ["module"];
-const versionNumber = "(?:0|[1-9][0-9]*)";
 const modulePattern = new RegExp(
-  `^([a-z0-9][a-z0-9.-]*:[a-z0-9][a-z0-9.-]*)/`
-  + `([a-z0-9][a-z0-9.-]*)@(${versionNumber}\\.${versionNumber}\\.${versionNumber})$`,
+  `^([a-z0-9][a-z0-9.-]*:[a-z0-9][a-z0-9.-]*)/([a-z0-9][a-z0-9.-]*)@(${exactSemanticVersion})$`,
   "u");
 
 export function projectProviderModuleIdentity(request) {

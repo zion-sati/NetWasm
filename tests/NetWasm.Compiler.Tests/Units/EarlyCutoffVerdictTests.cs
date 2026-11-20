@@ -8,7 +8,7 @@ using NetWasm.Compiler.Pipeline;
 
 namespace NetWasm.Compiler.Tests.Units;
 
-// The early cutoff applies only when bodies alone changed and every analysed instance of
+// The early cutoff applies only when bodies alone changed and every analyzed instance of
 // an edited body adds to the program what it added last time.
 public sealed class EarlyCutoffVerdictTests
 {
@@ -28,7 +28,7 @@ public sealed class EarlyCutoffVerdictTests
 
     [Fact]
     public void OverriddenOptimizationsStopIt() =>
-        Assert.Contains("managed optimizations analyse across methods", CompilationInputRecorder.DescribeCutoff(
+        Assert.Contains("managed optimizations analyze across methods", CompilationInputRecorder.DescribeCutoff(
             new("units", Inputs(10), Inputs(11), CompilationInputChanges.Between(Inputs(10), Inputs(11)))
             {
                 MethodLocalAnalysis = false,
@@ -41,7 +41,7 @@ public sealed class EarlyCutoffVerdictTests
 
     [Fact]
     public void AnEditThatKeepsItsContributionQualifies() =>
-        Assert.Contains("yes (1 analysed instances of 1 edited bodies",
+        Assert.Contains("yes (1 analyzed instances of 1 edited bodies",
             Verdict(Inputs(10, contribution: 5), Inputs(11, contribution: 5)));
 
     [Fact]
@@ -51,8 +51,8 @@ public sealed class EarlyCutoffVerdictTests
 
     // An edited method the program no longer reaches adds nothing it added before.
     [Fact]
-    public void AnEditedMethodNoLongerAnalysedStopsIt() =>
-        Assert.Contains("M is no longer analysed",
+    public void AnEditedMethodNoLongerAnalyzedStopsIt() =>
+        Assert.Contains("M is no longer analyzed",
             Verdict(Inputs(10, contribution: 5), Inputs(11)), StringComparison.Ordinal);
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class EarlyCutoffVerdictTests
         var account = CompilationInputRecorder.DescribeContributions(before, after, CompilationInputChanges.Between(before, after));
 
         Assert.StartsWith("contributions: 1 kept, 3 changed: ", account, StringComparison.Ordinal);
-        Assert.Contains("Gone (no longer analysed)", account, StringComparison.Ordinal);
+        Assert.Contains("Gone (no longer analyzed)", account, StringComparison.Ordinal);
         Assert.Equal("contributions: no edited methods to compare\n", CompilationInputRecorder.DescribeContributions(
             before, before, CompilationInputChanges.Between(before, before)));
     }

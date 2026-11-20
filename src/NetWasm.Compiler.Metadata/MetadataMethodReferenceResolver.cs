@@ -249,6 +249,7 @@ internal sealed class MetadataMethodReferenceResolver(
         string methodDisplayName, int ilOffset)
     {
         HashSet<EntityKey>? visited = null;
+        var (namedDefinition, namedIdentity, namedArguments) = (declaringDefinition, declaringIdentity, typeArguments);
         while (true)
         {
             var matches = FindMatches(declaringDefinition, name, genericArity, isStatic,
@@ -267,7 +268,13 @@ internal sealed class MetadataMethodReferenceResolver(
             declaringDefinition = ResolveTypeIdentity(parent);
             typeArguments = parent.Shape == CliTypeShape.GenericInstantiation ? parent.TypeArguments : [];
         }
-        // Preserve the existing diagnostic for a missing or ambiguous definition.
+        // An ambiguous definition is reported where the search stopped; a missing one against the type the
+        // reference names, as .NET's MissingMethodException names it, not the last base the search reached.
+        if (FindMatches(declaringDefinition, name, genericArity, isStatic, expected, typeArguments, declared, null)
+            .Length == 0)
+        {
+            (declaringDefinition, declaringIdentity, typeArguments) = (namedDefinition, namedIdentity, namedArguments);
+        }
         return (MatchDefinition(declaringDefinition, declaringIdentity, name, genericArity,
             isStatic, expected, typeArguments, declared, methodDisplayName, ilOffset),
             declaringIdentity, typeArguments);
@@ -321,16 +328,28 @@ internal sealed class MetadataMethodReferenceResolver(
     {
         var matches = FindMatches(declaringDefinition, name, genericArity, isStatic,
             expected, typeArguments, declared, originalSource);
-        return matches.Length == 1
-            ? matches[0]
-            : throw new CompilerException(
-                new CompilerDiagnostic(
-                    matches.Length == 0 ? DiagnosticCode.MissingApi : DiagnosticCode.AssemblyResolution,
-                    $"method reference '{declaringIdentity}::{name}' did not resolve uniquely " +
-                    $"({matches.Length} matches; expected {expected.ReturnSignatureType} " +
-                    $"({string.Join(", ", expected.ParameterSignatureTypes)}))",
-                    methodDisplayName,
-                    ilOffset));
+        if (matches.Length == 1)
+        {
+            return matches[0];
+        }
+        var message = $"method reference '{declaringIdentity}::{name}' did not resolve uniquely " +
+            $"({matches.Length} matches; expected {expected.ReturnSignatureType} " +
+            $"({string.Join(", ", expected.ParameterSignatureTypes)}))";
+        throw new CompilerException(
+            new CompilerDiagnostic(
+                matches.Length == 0 ? DiagnosticCode.MissingApi : DiagnosticCode.AssemblyResolution,
+                message,
+                methodDisplayName,
+                ilOffset)
+            {
+                MissingMember = matches.Length == 0
+                    ? new(MissingMemberKind.Method,
+                        $"{MissingMemberDisplay.Type(expected.ReturnSignatureType)} " +
+                        $"{MissingMemberDisplay.Type(declaringIdentity)}.{name}" +
+                        $"({string.Join(", ", expected.ParameterSignatureTypes.Select(MissingMemberDisplay.Type))})",
+                        methodDisplayName, ilOffset, message)
+                    : null,
+            });
     }
 
     // A resolution's inputs: the token's assembly and the generic context's arguments,

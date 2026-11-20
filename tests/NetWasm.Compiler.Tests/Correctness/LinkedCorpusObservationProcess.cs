@@ -43,6 +43,29 @@ internal sealed class LinkedCorpusObservationProcess(
         {
             throw new LinkedCorpusObservationException(invocation, result);
         }
-        return responses.Read(responsePath, request, typeNames);
+        return WithReports(responses.Read(responsePath, request, typeNames), result.StandardError);
+    }
+
+    // A program that traps has often said why on its standard error first, as the runtime's checks do (the
+    // collector's check of write barriers names the store it caught), and a trap carries nothing else to show.
+    private static LinkedCorpusObservationResult WithReports(LinkedCorpusObservationResult result, string standardError)
+    {
+        var reported = standardError.Trim();
+        if (reported.Length == 0)
+        {
+            return result;
+        }
+        if (reported.Length > 4000)
+        {
+            reported = "..." + reported[^4000..];
+        }
+        return result with
+        {
+            Observations = result.Observations.ToImmutableDictionary(
+                pair => pair.Key,
+                pair => pair.Value.Kind == OracleObservationKind.Trap && pair.Value.Detail is null
+                    ? pair.Value with { Detail = reported }
+                    : pair.Value),
+        };
     }
 }

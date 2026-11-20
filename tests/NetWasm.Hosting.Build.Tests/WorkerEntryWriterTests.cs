@@ -37,6 +37,8 @@ public sealed class WorkerEntryWriterTests
         Assert.DoesNotContain("\r", source, StringComparison.Ordinal);
         Assert.Contains("createBrowserRawExportSession", source, StringComparison.Ordinal);
         Assert.Contains("createWorkerSessionHost", source, StringComparison.Ordinal);
+        // The worker's scope times its module's idle and quiet collections.
+        Assert.Contains("  scope: globalThis,", source, StringComparison.Ordinal);
         BrowserApiBindings.AssertNoneAtImport(source);
         Assert.Contains("\"consumer.worker\": Object.freeze", source, StringComparison.Ordinal);
         Assert.Contains("\"increment\": imports0[\"increment\"]", source, StringComparison.Ordinal);
@@ -64,6 +66,7 @@ public sealed class WorkerEntryWriterTests
         Assert.Contains("createImports: createWasiPlatform(Object.freeze({ initialDirectory: null, network: null })),",
             source, StringComparison.Ordinal);
         Assert.Contains("createFilesystemScope: null,", source, StringComparison.Ordinal);
+        Assert.Contains("createSidecarMaterializer: null,", source, StringComparison.Ordinal);
         Assert.Contains("\"module\":\"wasi:random/random@0.3.2\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("wasi:http/client", source, StringComparison.Ordinal);
         Assert.DoesNotContain("netwasm:runtime/filesystem", source, StringComparison.Ordinal);
@@ -135,9 +138,36 @@ public sealed class WorkerEntryWriterTests
         new WorkerEntryWriter().WriteHost(Request(bindsModule: true));
 
         Assert.Contains(
-            "...Object.fromEntries(Object.entries(imports0).filter(([name, value]) => name !== \"createWorkerImports\" && typeof value === \"function\")),",
+            "...Object.fromEntries(Object.entries(imports0).filter(([name, value]) => name !== \"createWorkerImports\" && (typeof value === \"function\" || value !== null && typeof value === \"object\"))),",
             File.ReadAllText(output), StringComparison.Ordinal);
         Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteHost(Request(bindsModule: false)));
+    }
+
+    [Fact]
+    public void PassesTheMemberADottedImportReachesInto()
+    {
+        // "Format.wrap" and "Format.unwrap" call functions the module's Format holds: the worker passes Format once,
+        // which the export session resolves each dotted name through.
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "worker-entry.mjs");
+        HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
+
+        new WorkerEntryWriter().WriteHost(new(
+            Path.Combine(directory.Path, "hosting"),
+            output,
+            [new("app.formats", Path.Combine(directory.Path, "formats.mjs"), ["Format.wrap", "stamp", "Format.unwrap"])],
+            [],
+            [],
+            [],
+            "denyAll",
+            false,
+            [],
+            true));
+
+        var source = File.ReadAllText(output);
+        Assert.Equal(1, source.Split("\"Format\": imports0[\"Format\"],").Length - 1);
+        Assert.Contains("\"stamp\": imports0[\"stamp\"],", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Format.wrap", source, StringComparison.Ordinal);
     }
 
     [Fact]

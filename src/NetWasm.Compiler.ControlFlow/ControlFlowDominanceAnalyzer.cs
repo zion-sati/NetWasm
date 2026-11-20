@@ -19,6 +19,9 @@ public sealed class ControlFlowDominanceAnalyzer : IControlFlowDominanceAnalyzer
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(blocks);
         var sets = new DominanceBitSets(DominanceBitSets.CountFor(graph, blocks));
+        // Every block but the entry starts dominated by all blocks: one full row, copied.
+        var all = new ulong[sets.Scratch.Length];
+        DominanceBitSets.Fill(all, blocks);
         foreach (var node in blocks)
         {
             var row = sets.Row(node);
@@ -29,7 +32,7 @@ public sealed class ControlFlowDominanceAnalyzer : IControlFlowDominanceAnalyzer
             }
             else
             {
-                DominanceBitSets.Fill(row, blocks);
+                all.CopyTo(row);
             }
         }
         var order = new List<int>(blocks.Count);

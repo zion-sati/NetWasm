@@ -5,9 +5,11 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace System
 {
@@ -101,19 +103,17 @@ namespace System
             int sourceIndex,
             T[] destinationArray,
             int destinationIndex,
-            int length) => CopyPhysical(
+            int length) => CopyPhysical<NoElementConversion>(
                 (Array)sourceArray,
                 sourceIndex,
                 destinationArray,
                 destinationIndex,
                 length);
 
-        public static void Copy(Array sourceArray, Array destinationArray, int length)
-        {
-            // The first element is always at physical offset zero, including
-            // ARRAY instances whose public indices start at a non-zero bound.
-            CopyPhysical(sourceArray, 0, destinationArray, 0, length);
-        }
+        // The first element is always at physical offset zero, including ARRAY instances whose
+        // public indices start at a non-zero bound.
+        public static void Copy(Array sourceArray, Array destinationArray, int length) =>
+            CopyPhysical<PrimitiveElementConversion>(sourceArray, 0, destinationArray, 0, length);
 
         public static void Copy(Array sourceArray, Array destinationArray, long length)
         {
@@ -125,7 +125,42 @@ namespace System
             int sourceIndex,
             Array destinationArray,
             int destinationIndex,
+            int length) =>
+            CopyIndexed<PrimitiveElementConversion>(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
+
+        // The compiler calls these for Copy whose two arrays have one static one-dimensional
+        // type (ArrayCopyCallRewriter). Their elements are then one type, or types the runtime
+        // treats as one (int and uint, an enum and its underlying type), so they never convert
+        // and a program that copies only such arrays carries no conversion.
+        internal static void CopyOfOneType(Array sourceArray, Array destinationArray, int length) =>
+            CopyPhysical<NoElementConversion>(sourceArray, 0, destinationArray, 0, length);
+
+        internal static void CopyOfOneType(Array sourceArray, Array destinationArray, long length) =>
+            CopyOfOneType(sourceArray, destinationArray, ToInt32(length));
+
+        internal static void CopyOfOneType(
+            Array sourceArray,
+            int sourceIndex,
+            Array destinationArray,
+            int destinationIndex,
+            int length) =>
+            CopyIndexed<NoElementConversion>(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
+
+        internal static void CopyOfOneType(
+            Array sourceArray,
+            long sourceIndex,
+            Array destinationArray,
+            long destinationIndex,
+            long length) =>
+            CopyOfOneType(sourceArray, ToInt32(sourceIndex), destinationArray, ToInt32(destinationIndex), ToInt32(length));
+
+        private static void CopyIndexed<TConversion>(
+            Array sourceArray,
+            int sourceIndex,
+            Array destinationArray,
+            int destinationIndex,
             int length)
+            where TConversion : struct, IElementConversion
         {
             ArgumentNullException.ThrowIfNull(sourceArray);
             ArgumentNullException.ThrowIfNull(destinationArray);
@@ -144,15 +179,43 @@ namespace System
             {
                 throw new ArgumentException();
             }
-            CopyPhysical(sourceArray, (int)sourceOffset, destinationArray, (int)destinationOffset, length);
+            CopyPhysical<TConversion>(sourceArray, (int)sourceOffset, destinationArray, (int)destinationOffset, length);
         }
 
-        private static void CopyPhysical(
+        // Strategy: what a copy does with elements the runtime cannot assign to the destination's,
+        // chosen by each caller at compile time so that only a copy that may convert reaches the
+        // conversion.
+        private interface IElementConversion
+        {
+            static abstract bool TryCopy(
+                Array sourceArray,
+                int sourceIndex,
+                Array destinationArray,
+                int destinationIndex,
+                int length);
+        }
+
+        private struct NoElementConversion : IElementConversion
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool TryCopy(Array sourceArray, int sourceIndex, Array destinationArray, int destinationIndex, int length) =>
+                false;
+        }
+
+        private struct PrimitiveElementConversion : IElementConversion
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool TryCopy(Array sourceArray, int sourceIndex, Array destinationArray, int destinationIndex, int length) =>
+                TryCopyPrimitives(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
+        }
+
+        private static void CopyPhysical<TConversion>(
             Array sourceArray,
             int sourceOffset,
             Array destinationArray,
             int destinationOffset,
             int length)
+            where TConversion : struct, IElementConversion
         {
             ArgumentNullException.ThrowIfNull(sourceArray);
             ArgumentNullException.ThrowIfNull(destinationArray);
@@ -170,6 +233,8 @@ namespace System
                 length);
             if (status == ArrayCopyStatus.TypeMismatch)
             {
+                if (TConversion.TryCopy(sourceArray, sourceOffset, destinationArray, destinationOffset, length))
+                    return;
                 throw new ArrayTypeMismatchException();
             }
             if (status == ArrayCopyStatus.ElementCastFailure)
@@ -185,6 +250,67 @@ namespace System
                 throw new InvalidOperationException();
             }
         }
+
+        // The runtime's copy takes arrays whose element types it can assign; upstream's
+        // CanAssignArrayType (Array.CoreCLR.cs) also takes primitive elements (an enum's by its
+        // underlying type) that are the same integral type up to sign, which it copies as they
+        // are, or that widen, which CopyImplPrimitiveWiden converts one at a time.
+        private static bool TryCopyPrimitives(
+            Array sourceArray,
+            int sourceIndex,
+            Array destinationArray,
+            int destinationIndex,
+            int length)
+        {
+            CorElementType srcElType = GetPrimitiveElementType(sourceArray);
+            CorElementType destElType = GetPrimitiveElementType(destinationArray);
+            if (!srcElType.IsPrimitiveType() || !destElType.IsPrimitiveType())
+                return false;
+            bool sameType = GetNormalizedIntegralArrayElementType(srcElType) == GetNormalizedIntegralArrayElementType(destElType);
+            if (!sameType && !RuntimeHelpers.CanPrimitiveWiden(srcElType, destElType))
+                return false;
+
+            nuint srcElSize = GetPrimitiveSize(srcElType);
+            nuint destElSize = GetPrimitiveSize(destElType);
+            ref byte srcData = ref Unsafe.AddByteOffset(ref MemoryMarshal.GetArrayDataReference(sourceArray), (nuint)sourceIndex * srcElSize);
+            ref byte data = ref Unsafe.AddByteOffset(ref MemoryMarshal.GetArrayDataReference(destinationArray), (nuint)destinationIndex * destElSize);
+            if (sameType)
+            {
+                SpanHelpers.Memmove(ref data, ref srcData, (nuint)length * srcElSize);
+                return true;
+            }
+
+            for (int i = 0; i < length; i++)
+            {
+                InvokeUtils.PrimitiveWiden(ref srcData, ref data, srcElType, destElType);
+                srcData = ref Unsafe.AddByteOffset(ref srcData, srcElSize);
+                data = ref Unsafe.AddByteOffset(ref data, destElSize);
+            }
+            return true;
+        }
+
+        // Upstream's, from Array.CoreCLR.cs at deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+        private static CorElementType GetNormalizedIntegralArrayElementType(CorElementType elementType)
+        {
+            Debug.Assert(elementType.IsPrimitiveType());
+
+            // Array Primitive types such as E_T_I4 and E_T_U4 are interchangeable
+            // Enums with interchangeable underlying types are interchangeable
+            // BOOL is NOT interchangeable with I1/U1, neither CHAR -- with I2/U2
+
+            // U1/U2/U4/U8/U
+            int shift = (0b0010_0000_0000_0000_1010_1010_0000 >> (int)elementType) & 1;
+            return (CorElementType)((int)elementType - shift);
+        }
+
+        private static nuint GetPrimitiveSize(CorElementType elementType) => elementType switch
+        {
+            CorElementType.ELEMENT_TYPE_BOOLEAN or CorElementType.ELEMENT_TYPE_I1 or CorElementType.ELEMENT_TYPE_U1 => 1,
+            CorElementType.ELEMENT_TYPE_CHAR or CorElementType.ELEMENT_TYPE_I2 or CorElementType.ELEMENT_TYPE_U2 => 2,
+            CorElementType.ELEMENT_TYPE_I4 or CorElementType.ELEMENT_TYPE_U4 or CorElementType.ELEMENT_TYPE_R4 => 4,
+            CorElementType.ELEMENT_TYPE_I8 or CorElementType.ELEMENT_TYPE_U8 or CorElementType.ELEMENT_TYPE_R8 => 8,
+            _ => (nuint)IntPtr.Size,
+        };
 
         public static void Copy(
             Array sourceArray,
@@ -424,7 +550,7 @@ namespace System
                 throw new ArrayTypeMismatchException();
             }
 
-            CopyPhysical(
+            CopyPhysical<NoElementConversion>(
                 sourceArray,
                 (int)sourceOffset,
                 destinationArray,
@@ -576,7 +702,7 @@ namespace System
             var physicalIndex = index - lowerBound;
             for (var offset = 0; offset < length; offset++)
             {
-                CopyPhysical(
+                CopyPhysical<NoElementConversion>(
                     source,
                     physicalIndex + length - offset - 1,
                     array,
@@ -717,7 +843,7 @@ namespace System
             var itemSource = items is null ? null : (Array)InternalClone(items);
             for (var offset = 0; offset < length; offset++)
             {
-                CopyPhysical(
+                CopyPhysical<NoElementConversion>(
                     keySource,
                     sourceOffset + order[offset],
                     keys,
@@ -725,7 +851,7 @@ namespace System
                     1);
                 if (items is not null)
                 {
-                    CopyPhysical(
+                    CopyPhysical<NoElementConversion>(
                         itemSource!,
                         sourceOffset + order[offset],
                         items,
@@ -745,6 +871,7 @@ namespace System
             return true;
         }
 
+        [Intrinsic]
         public int GetLength(int dimension)
         {
             if (dimension != 0) throw new IndexOutOfRangeException();
@@ -752,11 +879,13 @@ namespace System
         }
 
         public long GetLongLength(int dimension) => GetLength(dimension);
+        [Intrinsic]
         public int GetLowerBound(int dimension)
         {
             _ = GetLength(dimension);
             return 0;
         }
+        [Intrinsic]
         public int GetUpperBound(int dimension)
         {
             return unchecked(GetLowerBound(dimension) + GetLength(dimension) - 1);
@@ -892,6 +1021,15 @@ namespace System
             if (!RuntimeHelpers.CanPrimitiveWiden(sourceType, targetType)) throw new ArgumentException();
             return Widen(value, sourceType, targetType);
         }
+
+        // What upstream's GetCorElementTypeOfElementType (Array.CoreCLR.cs) answers: the array's
+        // exact element type, an enum's being its underlying primitive and anything else
+        // ELEMENT_TYPE_CLASS. A type test cannot give it, since int[] and uint[] pass each other's;
+        // the compiler answers from the element types of the arrays the program constructs.
+        internal static CorElementType GetPrimitiveElementType(Array array) =>
+            (CorElementType)InternalPrimitiveElementType(array);
+
+        private static int InternalPrimitiveElementType(Array array) => throw new PlatformNotSupportedException();
 
         // A primitive's element type, and an enum's underlying one, as upstream's
         // GetPrimitiveCorElementType reads them; any other type answers ELEMENT_TYPE_CLASS.
@@ -1064,6 +1202,7 @@ namespace System
 
         public void CopyTo(Array array, long index) => CopyTo(array, ToInt32(index));
 
+        [Intrinsic]
         public object Clone()
         {
             return InternalClone(this);

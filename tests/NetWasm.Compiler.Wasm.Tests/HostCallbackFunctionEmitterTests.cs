@@ -17,7 +17,7 @@ using static EmitterTestSupport;
 public sealed class HostCallbackFunctionEmitterTests
 {
     [Fact]
-    public void CallbackAbiUsesHandlesForStringAndByteArrayParameters()
+    public void CallbackAbiUsesHandlesForStringsAndStagedBlocksForByteArrays()
     {
         var method = new FakeProgram().GetMethod(EntryKey) with
         {
@@ -40,8 +40,9 @@ public sealed class HostCallbackFunctionEmitterTests
 
         var type = CreateFunctionTypes().Resolve(instance);
 
+        // The delegate's handle, the string's handle, then the byte array's staged block and length.
         Assert.True(type.Parameters.SequenceEqual(
-            [CliValueKind.I4, CliValueKind.I4, CliValueKind.I4]));
+            [CliValueKind.I4, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4]));
         Assert.Equal(CliValueKind.I4, type.Result);
     }
 
@@ -105,7 +106,7 @@ public sealed class HostCallbackFunctionEmitterTests
             ManagedThrowFunctionIndex = OptionalFunctionIndex.At(EmitterTestSupport.ManagedThrowFunction),
         };
 
-        Assert.Equal(4, CreateFunctionTypes().Resolve(instance).Parameters.Length);
+        Assert.Equal(5, CreateFunctionTypes().Resolve(instance).Parameters.Length);
 
         var body = emitter.Emit(
             callback,
@@ -116,9 +117,7 @@ public sealed class HostCallbackFunctionEmitterTests
                 OptionalFunctionIndex.At(1),
                 OptionalFunctionIndex.At(2),
                 OptionalFunctionIndex.Missing,
-                OptionalFunctionIndex.Missing,
-                OptionalFunctionIndex.At(3),
-                OptionalFunctionIndex.At(4)),
+                OptionalFunctionIndex.Missing),
             runtimeImportSelection);
 
         Assert.True(runtime.Called);
@@ -174,8 +173,7 @@ public sealed class HostCallbackFunctionEmitterTests
         var type = CreateFunctionTypes().Resolve(instance);
         var body = emitter.Emit(new HostCallbackDeclaration(EntryKey, 0, instance, "callback"), indices,
             TestRuntimeInitialization.Create(256), new InteropImportPlan([], OptionalFunctionIndex.At(1),
-                OptionalFunctionIndex.At(2), OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
-                OptionalFunctionIndex.At(3), OptionalFunctionIndex.At(4)), selection);
+                OptionalFunctionIndex.At(2), OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing), selection);
 
         Assert.Equal([CliValueKind.I4, CliValueKind.I4, CliValueKind.I4, CliValueKind.I4], type.Parameters.ToArray());
         Assert.Equal(CliValueKind.I4, type.Result);
@@ -244,8 +242,6 @@ public sealed class HostCallbackFunctionEmitterTests
                 OptionalFunctionIndex.Missing,
                 OptionalFunctionIndex.Missing,
                 OptionalFunctionIndex.Missing,
-                OptionalFunctionIndex.Missing,
-                OptionalFunctionIndex.Missing,
                 OptionalFunctionIndex.Missing),
             runtimeImportSelection);
 
@@ -261,7 +257,7 @@ public sealed class HostCallbackFunctionEmitterTests
             .Cast<IHostCallbackFunctionTypeResolver>()
             .Single();
 
-    private sealed class RecordingRuntimeInitializer : IRuntimeStateInitializer
+    private sealed class RecordingRuntimeInitializer : IEntryRuntimeInitializer
     {
         public bool Called { get; private set; }
 
@@ -302,7 +298,7 @@ public sealed class HostCallbackFunctionEmitterTests
     }
 
     private sealed class RecordingByteArrayMarshaller :
-        IHostCallbackByteArrayArgumentMarshaller
+        IStagedValueArrayEmitter
     {
         public bool Called { get; private set; }
 
@@ -310,10 +306,9 @@ public sealed class HostCallbackFunctionEmitterTests
             IWasmInstructionWriter code,
             CliTypeIdentity arrayType,
             int handleParameter,
+            int lengthLocal,
             int destination,
-            int temporaryI4,
             int objectTemporary,
-            InteropMarshallingTarget target,
             OptionalFunctionIndex throwFunction) => Called = true;
     }
 

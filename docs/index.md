@@ -9,6 +9,15 @@ repository.
 
 ## Start here
 
+- [Guide](README.md): the task-oriented starting point for these pages.
+- [Getting started](getting-started.md): a console program and a web page, from
+  install to publish.
+- [Configuration reference](configuration.md): every MSBuild property and item,
+  with its default.
+- [Optimization reference](optimization.md): the optimization levels and every
+  individual optimization each one turns on.
+- [Troubleshooting](troubleshooting.md): common build and run-time problems and
+  their fixes.
 - [Changelog](changelog.md): every release, newest first, with its release notes.
 - [Size measurements and methodology](size-and-methodology.md): reproduce the
   28,383-byte C# component and read the Rust, Kotlin, TinyGo, Blazor and JSON

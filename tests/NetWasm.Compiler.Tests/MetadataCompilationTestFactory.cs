@@ -27,5 +27,6 @@ internal static class MetadataCompilationTestFactory
             new NativeImportDeclarationReader(),
             new NativeCallbackDeclarationReader()),
         new MetadataCompilationFactory(),
-        new TypeForwarderReader(new ManagedAssemblyImageReader()));
+        new TypeForwarderReader(new ManagedAssemblyImageReader()),
+        new LoadedAssemblyNativeStructSourceFactory());
 }

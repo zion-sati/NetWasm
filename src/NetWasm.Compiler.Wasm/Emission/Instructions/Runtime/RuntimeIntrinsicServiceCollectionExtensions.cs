@@ -26,12 +26,15 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<ArrayGetValueIntrinsicEmitter>();
         services.AddSingleton<ObjectCloneIntrinsicEmitter>();
         services.AddSingleton<ArrayElementTypeIntrinsicEmitter>();
+        services.AddSingleton<ArrayPrimitiveElementTypeIntrinsicEmitter>();
+        services.AddSingleton<AllocateUninitializedArrayIntrinsicEmitter>();
         services.AddSingleton<ArraySetValueIntrinsicEmitter>();
         services.AddSingleton<ArrayCreateInstanceIntrinsicEmitter>();
         services.AddSingleton<ArrayCreateRectangularInstanceIntrinsicEmitter>();
         services.AddSingleton<RunClassConstructorIntrinsicEmitter>();
         services.AddSingleton<AllocateUninitializedObjectIntrinsicEmitter>();
         services.AddSingleton<StructMarshallingDataIntrinsicEmitter>();
+        services.AddSingleton<StructMarshallingConstructIntrinsicEmitter>();
         services.AddSingleton<ArrayCopyIntrinsicEmitter>();
         services.AddSingleton<ArrayClearIntrinsicEmitter>();
         services.AddSingleton<ArrayCloneIntrinsicEmitter>();
@@ -64,12 +67,18 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<GcGetMetricIntrinsicEmitter>();
         services.AddSingleton<GcMetricIsSupportedIntrinsicEmitter>();
         services.AddSingleton<GcWaitForPendingFinalizersIntrinsicEmitter>();
+        services.AddSingleton<GcRunQueuedFinalizersIntrinsicEmitter>();
         services.AddSingleton<ObjectIdentityHashIntrinsicEmitter>();
         services.AddSingleton<BoxedValueCloneIntrinsicEmitter>();
         services.AddSingleton<PreallocatedOutOfMemoryIntrinsicEmitter>();
         services.AddSingleton<DelegateCloneIntrinsicEmitter>();
         services.AddSingleton<RuntimeHelpersEqualsIntrinsicEmitter>();
         services.AddSingleton<RandomSeedIntrinsicEmitter>();
+        services.AddSingleton<RecordReferenceWritesIntrinsicEmitter>();
+        services.AddSingleton<GcObjectGenerationIntrinsicEmitter>();
+        services.AddSingleton<GcCollectYoungIntrinsicEmitter>();
+        services.AddSingleton<GcCollectWhenIdleIntrinsicEmitter>();
+        services.AddSingleton<GcCollectWhenQuietIntrinsicEmitter>();
         services.AddSingleton<IValueTypeEqualityFieldPlanner,
             ValueTypeEqualityFieldPlanner>();
         services.AddSingleton<IValueTypeEqualsEmitter, ValueTypeEqualsEmitter>();
@@ -135,6 +144,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<SimdVectorComparisonIntrinsicEmitter>();
         services.AddSingleton<SimdVectorReductionIntrinsicEmitter>();
         services.AddSingleton<SimdVectorElementIntrinsicEmitter>();
+        services.AddSingleton<SimdVectorHalfIntrinsicEmitter>();
         services.AddSingleton<SimdVectorCreationIntrinsicEmitter>();
         services.AddSingleton<SimdVectorMemoryIntrinsicEmitter>();
         services.AddSingleton<SimdVectorPermutationIntrinsicEmitter>();
@@ -144,7 +154,6 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<ObjectArrayDelegateAdapterIntrinsicEmitter>();
         services.AddSingleton<MemberExecutionIntrinsicEmitter>();
         services.AddSingleton<MemberExecution.IMemberExecutionPlanValidator, MemberExecution.MemberExecutionPlanValidator>();
-        services.AddSingleton<MemberExecution.IMemberDescriptorCaseEmitter, MemberExecution.MemberDescriptorCaseEmitter>();
         services.AddSingleton<MemberExecution.IMemberReferenceCheckEmitter, MemberExecution.MemberReferenceCheckEmitter>();
         services.AddSingleton<MemberExecution.IBoxPayloadAddressEmitter, MemberExecution.BoxPayloadAddressEmitter>();
         services.AddSingleton<MemberExecution.IMemberFieldLocationEmitter, MemberExecution.MemberFieldLocationEmitter>();
@@ -205,6 +214,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<ArrayGetLowerBoundIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayGetLowerBound);
         AddRegistration<ArrayElementTypeIntrinsicEmitter>(services, RuntimeIntrinsic.ArrayElementType);
+        AddRegistration<ArrayPrimitiveElementTypeIntrinsicEmitter>(services, RuntimeIntrinsic.ArrayPrimitiveElementType);
+        AddRegistration<AllocateUninitializedArrayIntrinsicEmitter>(services, RuntimeIntrinsic.AllocateUninitializedArray);
         AddRegistration<ArraySetValueIntrinsicEmitter>(services, RuntimeIntrinsic.ArraySetValue);
         AddRegistration<ArrayCreateInstanceIntrinsicEmitter>(services, RuntimeIntrinsic.ArrayCreateInstance);
         AddRegistration<ArrayCreateRectangularInstanceIntrinsicEmitter>(
@@ -269,6 +280,12 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<GcHandleReleaseIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleRelease);
         AddRegistration<GcHandleAddressIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleAddress);
         AddRegistration<ObjectContainsReferencesIntrinsicEmitter>(services, RuntimeIntrinsic.ObjectContainsReferences);
+        AddRegistration<RecordReferenceWritesIntrinsicEmitter>(services, RuntimeIntrinsic.RecordReferenceWrites);
+        AddRegistration<GcObjectGenerationIntrinsicEmitter>(services, RuntimeIntrinsic.GcObjectGeneration);
+        AddRegistration<GcCollectYoungIntrinsicEmitter>(services, RuntimeIntrinsic.GcCollectYoung);
+        AddRegistration<GcCollectWhenIdleIntrinsicEmitter>(services, RuntimeIntrinsic.GcCollectWhenIdle);
+        AddRegistration<GcCollectWhenQuietIntrinsicEmitter>(services, RuntimeIntrinsic.GcCollectWhenQuiet);
+        AddRegistration<StructMarshallingConstructIntrinsicEmitter>(services, RuntimeIntrinsic.StructMarshallingConstruct);
         AddRegistration<TypeRegistryIntrinsicEmitter>(services, RuntimeIntrinsic.TypeBaseId);
         AddRegistration<TypeRegistryIntrinsicEmitter>(services, RuntimeIntrinsic.TypeIsAssignable);
         AddRegistration<GcGetMetricIntrinsicEmitter>(services, RuntimeIntrinsic.GcGetMetric);
@@ -278,6 +295,9 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<GcWaitForPendingFinalizersIntrinsicEmitter>(
             services,
             RuntimeIntrinsic.GcWaitForPendingFinalizers);
+        AddRegistration<GcRunQueuedFinalizersIntrinsicEmitter>(
+            services,
+            RuntimeIntrinsic.GcRunQueuedFinalizers);
         AddRegistration<ObjectIdentityHashIntrinsicEmitter>(services, RuntimeIntrinsic.ObjectIdentityHash);
         AddRegistration<BoxedValueCloneIntrinsicEmitter>(
             services, RuntimeIntrinsic.BoxedValueClone);
@@ -434,6 +454,9 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             RuntimeIntrinsic.SimdExtractMostSignificantBits, RuntimeIntrinsic.SimdToScalar, RuntimeIntrinsic.SimdSum);
         AddRegistrations<SimdVectorElementIntrinsicEmitter>(services,
             RuntimeIntrinsic.SimdGetElement, RuntimeIntrinsic.SimdWithElement);
+        AddRegistrations<SimdVectorHalfIntrinsicEmitter>(services,
+            RuntimeIntrinsic.SimdGetHalf, RuntimeIntrinsic.SimdWithHalf, RuntimeIntrinsic.SimdCreateFromHalves,
+            RuntimeIntrinsic.SimdHalfToVector);
         AddRegistrations<SimdVectorCreationIntrinsicEmitter>(services,
             RuntimeIntrinsic.SimdCreateBroadcast, RuntimeIntrinsic.SimdCreateElements, RuntimeIntrinsic.SimdCreateScalar);
         AddRegistrations<SimdVectorMemoryIntrinsicEmitter>(services,

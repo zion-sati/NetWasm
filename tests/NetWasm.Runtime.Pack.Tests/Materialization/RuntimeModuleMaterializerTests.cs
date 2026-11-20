@@ -80,9 +80,12 @@ public sealed class RuntimeModuleMaterializerTests
         Assert.Equal(request.RuntimeLayoutPath, layouts.Path);
         Assert.Equal(request.InitialHeapSizeBytes, calculator.Request?.InitialHeapSizeBytes);
         Assert.Equal(request.MaximumMemorySizeBytes, calculator.Request?.MaximumMemorySizeBytes);
-        Assert.Equal(4, assets.Verifications.Count);
+        Assert.Equal(8, assets.Verifications.Count);
         Assert.EndsWith($"{target}/system-libraries/libc.a", assets.Verifications[3].Path,
             StringComparison.Ordinal);
+        Assert.EndsWith($"{target}/system-libraries/libc++-wasmexcept.a", assets.Verifications[4].Path, StringComparison.Ordinal);
+        Assert.EndsWith($"{target}/libnetwasm-emscripten-support.a", assets.Verifications[6].Path, StringComparison.Ordinal);
+        Assert.EndsWith($"{target}/libnetwasm-emscripten-stand-ins.a", assets.Verifications[7].Path, StringComparison.Ordinal);
         Assert.Equal(request.OutputPath, arguments.Request?.OutputPath);
         Assert.Equal(3, commands.Commands.Count);
         var link = commands.Commands[0];
@@ -152,6 +155,71 @@ public sealed class RuntimeModuleMaterializerTests
         Assert.Equal(["validate", Path.GetFullPath(request.OutputPath), "--features", "all"],
             validation.Arguments.ToArray());
         Assert.EndsWith("runtime-validate.log", validation.LogPath, StringComparison.Ordinal);
+    }
+
+    // NetWasmGen finds an older object's newer ones through the stores the program records, so it is linked
+    // only with a program that says it records them.
+    [Theory]
+    [InlineData("wasm32", RuntimeWasmOptimization.Oz)]
+    [InlineData("wasm64", RuntimeWasmOptimization.O3)]
+    public void MaterializesNetWasmGenForAProgramThatRecordsItsReferenceStores(string target, RuntimeWasmOptimization mode)
+    {
+        using var directory = new TemporaryDirectory();
+        var assets = new RecordingAssetVerifier();
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, target, 65_537)
+            {
+                RuntimeFeatures = ["finalization", "reference-write-barrier"],
+            }),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout(target)),
+            assets,
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator());
+
+        var result = materializer.Materialize(Request(directory, target) with
+        {
+            GarbageCollector = "NetWasmGen",
+            Optimization = mode,
+        });
+
+        Assert.Equal("NetWasmGen", result.GarbageCollector);
+        var profilePath = mode == RuntimeWasmOptimization.O3 ? "speed/" : string.Empty;
+        Assert.EndsWith($"{target}/netwasmgen/{profilePath}libgc.a", assets.Verifications[1].Path, StringComparison.Ordinal);
+    }
+
+    public static TheoryData<string> ProgramsThatDoNotRecord() => ["no features", "none recorded", "other features"];
+
+    [Theory]
+    [MemberData(nameof(ProgramsThatDoNotRecord))]
+    public void RejectsNetWasmGenForAProgramCompiledForAnotherCollector(string program)
+    {
+        using var directory = new TemporaryDirectory();
+        var layout = new RuntimeLayout(2, "wasm32", 65_537);
+        if (program == "none recorded") layout = layout with { RuntimeFeatures = [] };
+        if (program == "other features") layout = layout with { RuntimeFeatures = ["finalization", "random-seed"] };
+        var commands = new RecordingCommandInvoker();
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(layout),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new Sha256ArtifactDigestCalculator());
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            materializer.Materialize(Request(directory, "wasm32") with { GarbageCollector = "NetWasmGen" }));
+
+        Assert.Equal(RuntimeGarbageCollectors.UnrecordedWritesMessage, exception.Message);
+        Assert.Contains("NetWasmGarbageCollector", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(commands.Commands);
+        // Every other collector takes the same program.
+        foreach (var collector in new[] { "Compact", "NetWasm", "Bump" })
+            RuntimeGarbageCollectors.RequireProgramFor(collector, layout.RuntimeFeatures);
     }
 
     [Fact]

@@ -81,6 +81,11 @@ if [[ "$test_collectors" == true ]]; then
     exit 2
   }
 fi
+# Every consumer pins this SDK (global.json), and the size canary is checked against it.
+[[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]] || {
+  echo "Set NETWASM_QUALIFY_SDK_VERSION to the .NET SDK to qualify (eng/csharp15-toolchain.json: sdk10MinimumVersion or sdk11Version)." >&2
+  exit 2
+}
 if [[ -n "$artifact_directory" ]]; then
   [[ "$artifact_directory" = /* ]] || { echo "Artifact directory must be absolute." >&2; exit 2; }
   [[ ! -e "$artifact_directory" && ! -L "$artifact_directory" ]] || {
@@ -282,8 +287,7 @@ unset EMSDK EMSDK_ROOT EMSDK_NODE NETWASM_EMSDK_ROOT
 unset NETWASM_NODE_PATH NETWASM_WASM_LD_PATH
 unset NETWASM_WASM_OPT_PATH NETWASM_WASM_MERGE_PATH
 
-if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
-  cat > "$work_root/global.json" <<EOF
+cat > "$work_root/global.json" <<EOF
 {
   "sdk": {
     "version": "$NETWASM_QUALIFY_SDK_VERSION",
@@ -292,34 +296,40 @@ if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
   }
 }
 EOF
-fi
 cd "$work_root"
 run_log "$work_root/template-install.log" \
   dotnet new install "$dotnet_package_root/NetWasm.Templates.$version.nupkg" \
     --nuget-source "$dotnet_package_root" --force
 run_log "$work_root/app-create.log" \
   dotnet new netwasm-app -n NetWasmApp -o "$app_root"
-if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
-  # Templates leave SDK selection to the user's dotnet; pin the qualified SDK.
-  if [[ -e "$app_root/global.json" ]]; then
-    echo "The template SDK selection has changed; minimum-SDK qualification needs review" >&2
-    exit 1
-  fi
-  printf '{\n  "sdk": {\n    "version": "%s",\n    "rollForward": "disable"\n  }\n}\n' \
-    "$NETWASM_QUALIFY_SDK_VERSION" > "$app_root/global.json"
+# Templates leave SDK selection to the user's dotnet; pin the qualified SDK.
+if [[ -e "$app_root/global.json" ]]; then
+  echo "The template SDK selection has changed; minimum-SDK qualification needs review" >&2
+  exit 1
 fi
+printf '{\n  "sdk": {\n    "version": "%s",\n    "rollForward": "disable"\n  }\n}\n' \
+  "$NETWASM_QUALIFY_SDK_VERSION" > "$app_root/global.json"
+# Every fixture below that stands for a new project targets what the template creates. Read from the project file,
+# not MSBuild, so nothing prepares the project before its first run.
+app_target_framework="$(python3 - "$app_project" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+frameworks = [element.text for element in ET.parse(sys.argv[1]).getroot().iter('TargetFramework')]
+if len(frameworks) != 1 or not frameworks[0]:
+    raise SystemExit('The application template must set one TargetFramework.')
+print(frameworks[0])
+PY
+)"
 
 # The .NET CLI selects global.json from its working directory, even when a
 # project path points elsewhere. Keep every consumer command in the fixture.
 cd "$app_root"
-if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
-  actual_sdk="$(dotnet --version)"
-  if [[ "$actual_sdk" != "$NETWASM_QUALIFY_SDK_VERSION" ]]; then
-    echo "Expected .NET SDK $NETWASM_QUALIFY_SDK_VERSION; selected $actual_sdk" >&2
-    exit 1
-  fi
-  printf 'Qualifying minimum .NET SDK %s\n' "$actual_sdk"
+actual_sdk="$(dotnet --version)"
+if [[ "$actual_sdk" != "$NETWASM_QUALIFY_SDK_VERSION" ]]; then
+  echo "Expected .NET SDK $NETWASM_QUALIFY_SDK_VERSION; selected $actual_sdk" >&2
+  exit 1
 fi
+printf 'Qualifying minimum .NET SDK %s\n' "$actual_sdk"
 
 # Exercise the exact first-use path before any qualification-only restore or
 # build step can prepare the project. This is the command sequence shown to a
@@ -399,7 +409,7 @@ PY
       --disable-build-servers "${collector_arguments[@]}"
     # Snapshot the runnable component before the metadata build can replace it.
     node --input-type=module - \
-      "$app_root/bin/Release/netwasm0.1/NetWasmApp.wasm" \
+      "$app_root/bin/Release/$app_target_framework/NetWasmApp.wasm" \
       "$work_root/collector-$sequence-final.json" <<'JS'
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -422,7 +432,7 @@ JS
     python3 - "$work_root/collector-$sequence-metadata.log" "$expected_collector" \
       "$work_root/collector-$sequence.json" \
       "$work_root/collector-$sequence-final.json" \
-      "$app_root/bin/Release/netwasm0.1/NetWasmApp.wasm" <<'PY'
+      "$app_root/bin/Release/$app_target_framework/NetWasmApp.wasm" <<'PY'
 import hashlib
 import json
 import sys
@@ -541,14 +551,12 @@ PY
   printf 'Collector consumer canary PASS\n'
   exit 0
 fi
-if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
-  evaluated_sdk="$(dotnet msbuild "$app_project" -getProperty:NETCoreSdkVersion -nologo | tr -d '\r')"
-  if [[ "$evaluated_sdk" != "$NETWASM_QUALIFY_SDK_VERSION" ]]; then
-    echo "Expected MSBuild SDK $NETWASM_QUALIFY_SDK_VERSION; evaluated $evaluated_sdk" >&2
-    exit 1
-  fi
-  printf 'MSBuild evaluated .NET SDK %s\n' "$evaluated_sdk"
+evaluated_sdk="$(dotnet msbuild "$app_project" -getProperty:NETCoreSdkVersion -nologo | tr -d '\r')"
+if [[ "$evaluated_sdk" != "$NETWASM_QUALIFY_SDK_VERSION" ]]; then
+  echo "Expected MSBuild SDK $NETWASM_QUALIFY_SDK_VERSION; evaluated $evaluated_sdk" >&2
+  exit 1
 fi
+printf 'MSBuild evaluated .NET SDK %s\n' "$evaluated_sdk"
 run_log "$work_root/app-build-debug.log" \
   dotnet build "$app_project" -c Debug --no-restore \
     --disable-build-servers --nologo -v:normal
@@ -920,7 +928,7 @@ cat > "$wasm_consumer_root/TransitiveWasm.csproj" <<EOF
 <Project Sdk="NetWasm.Sdk/${version}">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netwasm0.1</TargetFramework>
+    <TargetFramework>${app_target_framework}</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="RuntimeLibrary" Version="1.0.0" />
@@ -1008,6 +1016,7 @@ print(version)
 PY
 )"
 printf '<Project Sdk="NetWasm.Sdk/%s">\n' "$version" > "$test_root/RuntimeHostTests.csproj"
+# This consumer uses the released TUnit-NetWasm pinned in tests/libraries, which ships for netwasm0.1.
 cat >> "$test_root/RuntimeHostTests.csproj" <<EOF
   <PropertyGroup>
     <TargetFramework>netwasm0.1</TargetFramework>
@@ -1223,7 +1232,7 @@ cp "$app_root/global.json" "$vstest_root/global.json"
 cat > "$vstest_project" <<EOF
 <Project Sdk="NetWasm.Sdk/${version}">
   <PropertyGroup>
-    <TargetFramework>netwasm0.1</TargetFramework>
+    <TargetFramework>${app_target_framework}</TargetFramework>
     <OutputType>Exe</OutputType>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -1275,7 +1284,7 @@ if [[ "$test_collectors" == false ]]; then
   create_consumer WitWorker --worker wit
   (cd "$consumer_root/WitWorker" && run_log "$work_root/wit-worker-publish.log" \
     dotnet publish WitWorker.csproj -c Release --disable-build-servers --nologo)
-  require_file "$consumer_root/WitWorker/bin/Release/netwasm0.1/publish/browser/WitWorker.worker-client.mjs"
+  require_file "$consumer_root/WitWorker/bin/Release/$app_target_framework/publish/browser/WitWorker.worker-client.mjs"
 
   # NetWasmWit items generate bindings during the build, here in a library:
   # a WIT file and a WIT package directory with its deps, both under paths with
@@ -1283,10 +1292,9 @@ if [[ "$test_collectors" == false ]]; then
   wit_root="$consumer_root/wit bindings"
   mkdir -p "$wit_root/host api" "$wit_root/wit packages/deps"
   cp "$app_root/global.json" "$wit_root/global.json"
-  printf '<Project Sdk="NetWasm.Sdk/%s">\n' "$version" > "$wit_root/WitBindings.csproj"
+  printf '<Project Sdk="NetWasm.Sdk/%s">\n  <PropertyGroup>\n    <TargetFramework>%s</TargetFramework>\n' \
+    "$version" "$app_target_framework" > "$wit_root/WitBindings.csproj"
   cat >> "$wit_root/WitBindings.csproj" <<'EOF'
-  <PropertyGroup>
-    <TargetFramework>netwasm0.1</TargetFramework>
     <OutputType>Library</OutputType>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -1343,7 +1351,7 @@ EOF
     echo "A library with NetWasmWit items did not restore the host tools" >&2
     exit 1
   }
-  wit_bindings="$wit_root/obj/Release/netwasm0.1/netwasm/wit-bindings"
+  wit_bindings="$wit_root/obj/Release/$app_target_framework/netwasm/wit-bindings"
   require_file "$wit_bindings/world.wit.g.cs"
   require_file "$wit_bindings/wit packages.g.cs"
   grep -Fq 'internal static partial class HostWorldImports' "$wit_bindings/world.wit.g.cs" || {
@@ -1356,10 +1364,9 @@ EOF
   exports_root="$consumer_root/PageExports"
   mkdir -p "$exports_root"
   cp "$app_root/global.json" "$exports_root/global.json"
-  printf '<Project Sdk="NetWasm.Sdk/%s">\n' "$version" > "$exports_root/PageExports.csproj"
+  printf '<Project Sdk="NetWasm.Sdk/%s">\n  <PropertyGroup>\n    <TargetFramework>%s</TargetFramework>\n' \
+    "$version" "$app_target_framework" > "$exports_root/PageExports.csproj"
   cat >> "$exports_root/PageExports.csproj" <<'EOF'
-  <PropertyGroup>
-    <TargetFramework>netwasm0.1</TargetFramework>
     <OutputType>Library</OutputType>
     <Nullable>enable</Nullable>
     <IsPublishable Condition="'$(PageExportsPublishable)' != ''">$(PageExportsPublishable)</IsPublishable>
@@ -1389,7 +1396,7 @@ project.write_text(text, encoding="utf-8")
 PY
   (cd "$consumer_root/PageModule" && run_log "$work_root/page-module-publish.log" \
     dotnet publish PageModule.csproj -c Release --disable-build-servers --nologo)
-  page_publish="$consumer_root/PageModule/bin/Release/netwasm0.1/publish/browser"
+  page_publish="$consumer_root/PageModule/bin/Release/$app_target_framework/publish/browser"
   # A solution publishes every publishable project (issue #143): the library
   # publishes as a .NET class library, staging nothing, and the page stages
   # its deployment without the library's assembly, which its module holds. A
@@ -1425,8 +1432,8 @@ EOF
   assert_unpublished() {
     local name
     for name in SettingsPage QuietConsole; do
-      if [[ -d "$consumer_root/$name/bin/Release/netwasm0.1/publish" ]] &&
-          find "$consumer_root/$name/bin/Release/netwasm0.1/publish" -type f | grep -q .; then
+      if [[ -d "$consumer_root/$name/bin/Release/$app_target_framework/publish" ]] &&
+          find "$consumer_root/$name/bin/Release/$app_target_framework/publish" -type f | grep -q .; then
         echo "$name, which sets IsPublishable=false, published files" >&2
         exit 1
       fi
@@ -1440,12 +1447,12 @@ EOF
         -p:PageExportsPublishable=$publishable)
     require_file "$page_publish/PageModule.mjs"
     assert_unpublished
-    if find "$consumer_root/PageModule/bin/Release/netwasm0.1/publish" \( -name '*.dll' -o -name '*.pdb' \) | grep -q .; then
+    if find "$consumer_root/PageModule/bin/Release/$app_target_framework/publish" \( -name '*.dll' -o -name '*.pdb' \) | grep -q .; then
       echo "The page's publish holds managed assemblies" >&2
       exit 1
     fi
-    if [[ -d "$consumer_root/PageExports/bin/Release/netwasm0.1/publish" ]] &&
-        find "$consumer_root/PageExports/bin/Release/netwasm0.1/publish" -type f | grep -q .; then
+    if [[ -d "$consumer_root/PageExports/bin/Release/$app_target_framework/publish" ]] &&
+        find "$consumer_root/PageExports/bin/Release/$app_target_framework/publish" -type f | grep -q .; then
       echo "The library's publish staged files" >&2
       exit 1
     fi
@@ -1465,7 +1472,7 @@ EOF
   assert_unpublished
   (cd "$consumer_root/SettingsPage" && run_log "$work_root/SettingsPage-publish-on-purpose.log" \
     dotnet publish SettingsPage.csproj -c Release --disable-build-servers --nologo -p:IsPublishable=true)
-  require_file "$consumer_root/SettingsPage/bin/Release/netwasm0.1/publish/browser/SettingsPage.mjs"
+  require_file "$consumer_root/SettingsPage/bin/Release/$app_target_framework/publish/browser/SettingsPage.mjs"
   rm -rf "$consumer_root/PageModule/bin" "$consumer_root/PageExports/bin" "$consumer_root/SettingsPage/bin"
   (cd "$consumer_root/PageModule" && run_log "$work_root/page-module-publish-again.log" \
     dotnet publish PageModule.csproj -c Release --disable-build-servers --nologo)
@@ -1592,6 +1599,37 @@ PY
   expect_failure_contains "$work_root/zone-app-unselected.log" 'Asia/Tokyo' \
     bash -c 'cd "$1" && dotnet run --project ZoneApp.csproj --no-build --disable-build-servers -e TZ=Asia/Tokyo' \
       _ "$consumer_root/ZoneApp"
+
+  # A module initializer runs once, before Main, as on desktop .NET, and may wait as Main may: it
+  # writes to the console and reads a type name from the program's sidecar. jco traps any wait while
+  # it instantiates a component, so the initializer runs in wasi:cli/run, here an async Main's.
+  create_consumer InitializerApp
+  cat > "$consumer_root/InitializerApp/Program.cs" <<'EOF'
+await System.Threading.Tasks.Task.Yield();
+System.Console.WriteLine($"main {Startup.Runs}");
+
+internal static class Startup
+{
+    internal static int Runs;
+
+#pragma warning disable CA2255 // A module initializer in an application is what this consumer checks.
+    [System.Runtime.CompilerServices.ModuleInitializer]
+#pragma warning restore CA2255
+    internal static void Initialize()
+    {
+        Runs++;
+        System.Console.WriteLine($"initializer {typeof(Startup).FullName}");
+    }
+}
+EOF
+  (cd "$consumer_root/InitializerApp" && run_log "$work_root/initializer-app-run.log" \
+    dotnet run --project InitializerApp.csproj --disable-build-servers)
+  initializer_output="$(tr -d '\r' < "$work_root/initializer-app-run.log" | tail -n 2)"
+  if [[ "$initializer_output" != $'initializer Startup\nmain 1' ]]; then
+    cat "$work_root/initializer-app-run.log" >&2
+    echo "Unexpected module initializer output: $initializer_output" >&2
+    exit 1
+  fi
 fi
 
 corrupt_package_root="$consumer_root/corrupt-host-package"

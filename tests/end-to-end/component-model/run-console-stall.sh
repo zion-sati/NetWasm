@@ -8,7 +8,9 @@
 # and NetWasm's JavaScript host in a worker the parent stops once the line arrives). A command writes
 # 2,000 lines and returns: every line has reached the sink when the run completes, even through a
 # JavaScript host whose reads lag behind the program, and the run still completes when the host
-# refuses output past a limit.
+# refuses output past a limit. A module initializer that writes to the console runs once, before
+# Main, under both hosts: jco traps any wait while it instantiates a component, so the initializer
+# runs in wasi:cli/run.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -130,4 +132,35 @@ node "$repo_root/tests/end-to-end/component-model/run-console-refused.mjs" "$bur
   exit 1
 }
 
-printf 'Console output before a stall, before an exit and after the host refuses it PASS\n'
+initializer_assembly="$artifact_root/ConsoleModuleInitializer.dll"
+initializer_application="$artifact_root/initializer.wasm"
+initializer_runtime="$artifact_root/initializer-runtime.wasm"
+initializer_layout="$artifact_root/initializer-runtime-layout.json"
+initializer_component="$artifact_root/ConsoleModuleInitializer.wasm"
+dotnet "$csc" -nologo -noconfig -nostdlib -langversion:latest -warnaserror+ -nullable:enable \
+  -deterministic+ -optimize+ -target:exe -runtimemetadataversion:v4.0.30319 "-reference:$corelib" \
+  "-out:$initializer_assembly" "$repo_root/tests/end-to-end/component-model/fixtures/ConsoleModuleInitializerProgram.cs" \
+  > "$artifact_root/logs/initializer-csc.stdout" 2> "$artifact_root/logs/initializer-csc.stderr"
+dotnet "$harness" compile "$repo_root" "$initializer_assembly" "$initializer_application" "$initializer_layout" \
+  > "$artifact_root/logs/initializer-compile.stdout" 2> "$artifact_root/logs/initializer-compile.stderr"
+bash "$repo_root/eng/build-netwasm-runtime.sh" --runtime-layout "$initializer_layout" \
+  --target wasm32 --configuration release --output "$initializer_runtime" \
+  > "$artifact_root/logs/initializer-runtime.stdout" 2> "$artifact_root/logs/initializer-runtime.stderr"
+dotnet "$harness" package "$initializer_application" "$initializer_runtime" "$command_wit" "$initializer_component" int \
+  > "$artifact_root/logs/initializer-package.stdout" 2> "$artifact_root/logs/initializer-package.stderr"
+wasmtime run "$initializer_component" > "$artifact_root/logs/initializer-wasmtime.stdout" \
+  2> "$artifact_root/logs/initializer-wasmtime.stderr"
+[[ "$(tr -d '\r' < "$artifact_root/logs/initializer-wasmtime.stdout")" = $'initializer\nmain 1' ]] || {
+  echo "Wasmtime ran the module initializer out of order: $(cat "$artifact_root/logs/initializer-wasmtime.stdout")" >&2
+  exit 1
+}
+initializer_jco="$artifact_root/initializer-jco"
+transpile "$initializer_component" "$initializer_jco" \
+  > "$artifact_root/logs/initializer-jco.stdout" 2> "$artifact_root/logs/initializer-jco.stderr"
+node "$repo_root/tests/end-to-end/component-model/run-console-module-initializer.mjs" "$initializer_jco" \
+  > "$artifact_root/logs/initializer-host.stdout" 2> "$artifact_root/logs/initializer-host.stderr" || {
+  cat "$artifact_root/logs/initializer-host.stderr" >&2
+  exit 1
+}
+
+printf 'Console output before a stall, before an exit, after the host refuses it and from a module initializer PASS\n'

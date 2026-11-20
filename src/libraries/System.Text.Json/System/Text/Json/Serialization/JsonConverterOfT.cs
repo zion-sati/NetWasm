@@ -209,7 +209,6 @@ namespace System.Text.Json.Serialization
             bool isContinuation = state.IsContinuation;
             bool success;
 
-#if !NETWASM
             if (!IsValueType && CanBePolymorphic)
             {
                 // Special case object converters since they don't
@@ -220,7 +219,6 @@ namespace System.Text.Json.Serialization
                 isPopulatedValue = false;
                 return true;
             }
-#endif
 
             JsonPropertyInfo? propertyInfo = state.Current.JsonPropertyInfo;
             object? parentObj = state.Current.ReturnValue;
@@ -361,7 +359,7 @@ namespace System.Text.Json.Serialization
             bool success;
 
             if (
-#if NET && !NETWASM
+#if NET
                 // Short-circuit the check against "is not null"; treated as a constant by recent versions of the JIT.
                 !typeof(T).IsValueType &&
 #else
@@ -376,10 +374,47 @@ namespace System.Text.Json.Serialization
                 Debug.Assert(jsonTypeInfo.Converter.Type == Type);
 
 #if NETWASM
-                bool canBePolymorphic = false;
+                // NetWasm: only an object converter (T is object) writes values of other runtime types, and only
+                // declared polymorphic types have a resolver. Each test folds where it cannot hold, and the
+                // polymorphic write sits inside it, so other instantiations make no virtual call into the converters
+                // of other types.
+                if ((typeof(T) == typeof(object) && s_objectValuesReachable is not null && CanBePolymorphic) ||
+                    (s_polymorphicTypesReachable is not null && jsonTypeInfo.PolymorphicTypeResolver is not null))
+                {
+                    JsonConverter? resolvedConverter = ResolvePolymorphicConverter(value, jsonTypeInfo, options, ref state);
+
+                    if (!isContinuation && options.ReferenceHandlingStrategy != JsonKnownReferenceHandler.Unspecified &&
+                        TryHandleSerializedObjectReference(writer, value, options, resolvedConverter, ref state))
+                    {
+                        // The reference handler wrote reference metadata, serialization complete.
+                        return true;
+                    }
+
+                    if (resolvedConverter is not null)
+                    {
+                        success = resolvedConverter.TryWriteAsObject(writer, value, options, ref state);
+                        state.Current.ExitPolymorphicConverter(success);
+
+                        if (success)
+                        {
+                            if (state.Current.IsPushedReferenceForCycleDetection)
+                            {
+                                state.ReferenceResolver.PopReferenceForCycleDetection();
+                                state.Current.IsPushedReferenceForCycleDetection = false;
+                            }
+                        }
+
+                        return success;
+                    }
+                }
+                else if (!isContinuation && options.ReferenceHandlingStrategy != JsonKnownReferenceHandler.Unspecified &&
+                    TryHandleSerializedObjectReference(writer, value, options, polymorphicConverter: null, ref state))
+                {
+                    // The reference handler wrote reference metadata, serialization complete.
+                    return true;
+                }
 #else
                 bool canBePolymorphic = CanBePolymorphic || jsonTypeInfo.PolymorphicTypeResolver is not null;
-#endif
                 JsonConverter? polymorphicConverter = canBePolymorphic ?
                     ResolvePolymorphicConverter(value, jsonTypeInfo, options, ref state) :
                     null;
@@ -407,6 +442,7 @@ namespace System.Text.Json.Serialization
 
                     return success;
                 }
+#endif
             }
 
 #if DEBUG

@@ -39,7 +39,7 @@ public sealed class AsyncJSImportSetAppenderTests
         var target = EmitterTestSupport.CreateFunctionIndexResolver(program);
 
         appender.Append([], 4, ImmutableDictionary.CreateBuilder<string, int>(),
-            request, target, new InteropImportPlan([], default, default, default, default, default, default), []);
+            request, target, new InteropImportPlan([], default, default, default, default), []);
 
         Assert.Equal([low.Method, high.Method], leaf.Methods);
         Assert.Equal([4, 4], leaf.ImportCounts);
@@ -55,7 +55,7 @@ public sealed class AsyncJSImportSetAppenderTests
         var resolver = EmitterTestSupport.CreateFunctionIndexResolver();
         var boundaries = new List<ManagedBoundaryPlanEntry>();
 
-        var plan = new InteropImportPlan([], default, default, default, default, default, default);
+        var plan = new InteropImportPlan([], default, default, default, default);
 
         appender.Append(functions, 0, indices, request, resolver, plan, boundaries);
         Assert.Throws<ArgumentNullException>(() => appender.Append(null!, 0, indices,

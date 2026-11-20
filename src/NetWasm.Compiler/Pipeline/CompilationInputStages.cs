@@ -34,7 +34,7 @@ internal sealed record CompilationInputObservation(
 {
     // A plain account of the changes, kept with the inputs.
     public string Report { get; init; } = "";
-    // Whether managed optimizations analyse each method alone: O0's (or no optimization's)
+    // Whether managed optimizations analyze each method alone: O0's (or no optimization's)
     // defaults run no analysis across methods (inlining, constant arguments, call folding),
     // so a method's code depends on its own body alone.
     public bool MethodLocalAnalysis { get; init; } = true;
@@ -62,7 +62,7 @@ internal sealed class CompilationInputDetector(
     ICompilationInputReader inputs,
     NetWasm.Compiler.Wasm.Units.IUnitInputsLoader loader) : ICompilationInputDetector
 {
-    // Whether managed optimizations analyse each method alone: at O0 or none, without overrides
+    // Whether managed optimizations analyze each method alone: at O0 or none, without overrides
     // (overrides naming the defaults are none).
     internal static bool AnalysesMethodsLocally(CompilerOptions options) =>
         options.Optimization is FinalWasmOptimization.O0 or FinalWasmOptimization.None &&
@@ -112,7 +112,7 @@ internal sealed class CompilationInputRecorder(
             DescribeCutoff(observation, current));
     }
 
-    // The compile's inputs with what each analysed method contributed.
+    // The compile's inputs with what each analyzed method contributed.
     private static CompilationInputs WithContributions(CompilationInputs current, ReachableProgram program)
     {
         var contributions = new Dictionary<string, MethodContributionRecord>(
@@ -141,11 +141,11 @@ internal sealed class CompilationInputRecorder(
         if (!observation.Changes.IsBodiesOnly)
             return "an assembly was added, removed or changed shape";
         if (!observation.MethodLocalAnalysis)
-            return "managed optimizations analyse across methods";
+            return "managed optimizations analyze across methods";
         return null;
     }
 
-    // Whether the early cutoff applies: only bodies changed, and every analysed instance of
+    // Whether the early cutoff applies: only bodies changed, and every analyzed instance of
     // an edited method adds to the program what it added last time, so nothing beyond the
     // edited methods' own code can differ from the last compile's module.
     internal static (bool Applies, string Reason) CutoffVerdict(CompilationInputObservation observation,
@@ -160,10 +160,10 @@ internal sealed class CompilationInputRecorder(
         var contributions = EditedContributions.Compare(edited, observation.Previous.Contributions, current.Contributions);
         if (contributions.Obstacle is { } obstacle)
             return (false, obstacle);
-        return (true, $"{contributions.Kept} analysed instances of {edited.Count} edited bodies keep their contributions");
+        return (true, $"{contributions.Kept} analyzed instances of {edited.Count} edited bodies keep their contributions");
     }
 
-    // Whether every analysed instance of an edited method added what it added last time.
+    // Whether every analyzed instance of an edited method added what it added last time.
     internal static string DescribeContributions(
         CompilationInputs previous, CompilationInputs current, CompilationInputChanges changes)
     {
@@ -172,7 +172,7 @@ internal sealed class CompilationInputRecorder(
             return "contributions: no edited methods to compare\n";
         var contributions = EditedContributions.Compare(edited, previous.Contributions, current.Contributions);
         var kept = contributions.Kept;
-        List<string> changed = [.. contributions.Changed, .. contributions.Gone.Select(name => name + " (no longer analysed)")];
+        List<string> changed = [.. contributions.Changed, .. contributions.Gone.Select(name => name + " (no longer analyzed)")];
         return $"contributions: {kept} kept, {changed.Count} changed" +
             (changed.Count == 0 ? "" : ": " + string.Join(", ", changed)) + "\n";
     }

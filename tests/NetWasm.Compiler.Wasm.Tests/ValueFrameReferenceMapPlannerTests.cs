@@ -33,8 +33,8 @@ public sealed class ValueFrameReferenceMapPlannerTests
     {
         var size = WasmTargetLayout.For(target).ObjectReferenceSize;
         // Local 0 a reference, 1 a pair whose second word is one, 2 a scalar, 3 a
-        // promoted reference, 4 a reference a filter captures, 5 a pair in lane
-        // locals; argument 0 a reference.
+        // promoted reference, 4 a reference a filter captures (covered where its
+        // capture lives), 5 a pair in lane locals; argument 0 a reference.
         var layout = new ValueFrameLayout(32 * size,
             ImmutableDictionary<int, int>.Empty.Add(0, 0).Add(1, 2 * size).Add(2, 4 * size).Add(3, 5 * size)
                 .Add(4, 6 * size).Add(5, 8 * size),
@@ -55,7 +55,7 @@ public sealed class ValueFrameReferenceMapPlannerTests
         var map = Planner(target).Plan(Header([Reference, Pair, Scalar, Reference, Reference, Pair]), layout, filters, aggregates);
 
         Assert.Equal(new[] { (1UL << 0) | (1UL << 3) | (1UL << 6) | (1UL << 9) | (1UL << 12) }, map.Words.ToArray());
-        Assert.True(map.Storages.SetEquals([(false, 0), (false, 1), (true, 0)]));
+        Assert.True(map.Storages.SetEquals([(false, 0), (false, 1), (false, 4), (true, 0)]));
         // Locals start zeroed and arguments copied.
         Assert.Empty(map.EntryClears);
     }
@@ -82,8 +82,47 @@ public sealed class ValueFrameReferenceMapPlannerTests
         Assert.Equal(new[] { (3 * size, size) }, map.EntryClears);
     }
 
+    // The map covers a method's captures when it covers each capture that holds a reference; an aggregate split into
+    // lanes keeps its own publication, so a method that captures one keeps its filter root frame. Without one, the
+    // environment drops its own root frame and the captures' copies into it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheMapCoversCapturesUnlessOneIsAnAggregateInLanes(bool aggregate)
+    {
+        var size = WasmTargetLayout.For(WasmTarget.Wasm32).ObjectReferenceSize;
+        var layout = new ValueFrameLayout(8 * size, ImmutableDictionary<int, int>.Empty.Add(1, 4 * size), [], [], []);
+        var filters = FilterEnvironmentLayout.Empty with
+        {
+            Size = 8 * size,
+            RootSlotCount = 3,
+            Captures = ImmutableDictionary<CapturedSlot, FilterCapture>.Empty
+                .Add(new(false, 0), new(new(false, 0), Reference, 2 * size, [(0, 0)]))
+                .Add(new(false, 1), new(new(false, 1), Pair, 4 * size, [(0, 1)]))
+                .Add(new(false, 2), new(new(false, 2), Scalar, 6 * size, [])),
+        };
+        var aggregates = aggregate
+            ? ManagedAggregateSsaPlan.Empty with
+            {
+                Storages = ImmutableDictionary<ManagedAggregateStorageId, ManagedAggregateStorage>.Empty.Add(
+                    new(ManagedAggregateStorageKind.Local, 1), null!),
+            }
+            : null;
+
+        var map = Planner(WasmTarget.Wasm32).Plan(Header([Reference, Pair, Scalar]), layout, filters, aggregates);
+
+        Assert.Equal(!aggregate, map.CoversCaptures(filters));
+        var released = filters.WithoutRootFrame();
+        Assert.Equal(0, released.RootSlotCount);
+        Assert.All(released.Captures.Values, capture => Assert.Empty(capture.Roots));
+        Assert.True(released.Captures.Keys.ToHashSet().SetEquals(filters.Captures.Keys));
+        Assert.Throws<ArgumentNullException>(() => map.CoversCaptures(null!));
+    }
+
     // A filter's argument capture holds a copy made at the frame's entry; a
-    // captured byref is mapped as the interior pointer it is.
+    // captured byref is mapped as the interior pointer it is. Every load and store
+    // of a captured slot uses its capture, so the map covers the slot there and no
+    // safepoint publishes it; a capture without references covers nothing.
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
@@ -102,7 +141,7 @@ public sealed class ValueFrameReferenceMapPlannerTests
         var map = Planner(target).Plan(Header([Scalar]), layout, filters, null);
 
         Assert.Equal(new[] { (1UL << 4) | (1UL << 5) }, map.Words.ToArray());
-        Assert.Empty(map.Storages);
+        Assert.True(map.Storages.SetEquals([(true, 0), (true, 1)]));
         Assert.Empty(map.EntryClears);
     }
 

@@ -90,6 +90,7 @@ internal sealed class ManagedMethodOptimizerFactory(
             fields,
             settings.AddressTakenValuePromotion,
             new MethodInitializationTriggerClassifier(types));
+        var vectorLanes = new VectorLaneFields(fields, typeDefinitions);
         return new ManagedMethodOptimizationPipeline(
             staticDataViews,
             constantCallFolding,
@@ -106,7 +107,8 @@ internal sealed class ManagedMethodOptimizerFactory(
                     intrinsics,
                     ManagedInliningResolver.SmallBodyInstructionLimit,
                     ManagedInliningResolver.LeafBodyInstructionLimit,
-                    ManagedInliningResolver.LoopBodyInstructionLimit), inliningExcludedCallers),
+                    ManagedInliningResolver.LoopBodyInstructionLimit,
+                    ManagedInliningResolver.LeafBodyILBytes), inliningExcludedCallers),
                 new TerminalContinuationInliningPlanner()),
             graphBuilder,
             stackValidator,
@@ -114,9 +116,10 @@ internal sealed class ManagedMethodOptimizerFactory(
             _arrayBounds.Create(graphBuilder, stackValidator, dominance, settings),
             new ArrayLoopUnroller(graphBuilder, stackValidator,
                 // Bound expanded CIL work, not a presumed native cache capacity.
-                new ArrayLoopUnrollingPlanner(induction, intrinsics, expandedBodyBudget: 128),
+                new ArrayLoopUnrollingPlanner(induction, intrinsics,
+                    new IntegerRangeAnalysis(new StackEffectResolver(calledMethods)), expandedBodyBudget: 128),
                 settings.LoopUnrolling == LoopUnrollingPolicy.Bounded),
-            _repeatedAccesses.Create(graphBuilder, stackValidator, dominance, settings),
+            _repeatedAccesses.Create(graphBuilder, stackValidator, dominance, calledMethods, settings),
             new Devirtualization.ExactReceiverDevirtualizer(calledMethods, dispatchTargets, calleeBodies, fields, graphBuilder, stackValidator,
                 dominance, settings.Devirtualization == DevirtualizationPolicy.ExactType),
             new Allocations.UnusedAllocationEliminator(calleeBodies, calledMethods, finalizers,
@@ -124,8 +127,12 @@ internal sealed class ManagedMethodOptimizerFactory(
                 settings.AllocationElimination == AllocationEliminationPolicy.Unused),
             new RvaSpanLocalEliminator(graphBuilder, dominance,
                 settings.StaticDataViewElimination == StaticDataViewEliminationPolicy.Conservative),
-            new LocalAddressDereferenceFolder(graphBuilder, stackValidator,
-                settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled),
+            new LaneStoringLocalAddressDereferenceFolder(
+                new ByReferenceLocalForwarder(settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled),
+                new VectorLocalLaneStoreRewriter(graphBuilder, stackValidator, vectorLoopMethods, vectorLanes,
+                    settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled),
+                new LocalAddressDereferenceFolder(graphBuilder, stackValidator, vectorLanes,
+                    settings.AddressTakenValuePromotion != AddressTakenValuePromotionPolicy.Disabled)),
             new IdempotentLoopCollapser(graphBuilder, stackValidator, intrinsics,
                 settings.IdempotentLoopCollapse == IdempotentLoopCollapsePolicy.CountedLoops),
             new ArrayLoopIdiomRewriter(arrayLoopMethods, settings.ArrayLoopIdioms == ArrayLoopIdiomPolicy.Bulk),
@@ -137,14 +144,16 @@ internal sealed class ManagedMethodOptimizerFactory(
             new LoopStoreForwarder(graphBuilder, stackValidator, new ControlFlowNaturalLoopAnalyzer(dominance), intrinsics,
                 settings.LoopStoreForwarding == LoopStoreForwardingPolicy.Elements),
             new ConditionalStoreMerger(fields, settings.ConditionalStoreMerging == ConditionalStoreMergingPolicy.SameFieldArms),
-            new FieldLoadReuser(graphBuilder, calledMethods, fields, settings.FieldLoadReuse == FieldLoadReusePolicy.AvailableLoads),
+            new FieldLoadReuser(graphBuilder, calledMethods, fields,
+                new FieldStoreOwnerFinder(new StackValueConsumerFinder(new StackEffectResolver(calledMethods))),
+                settings.FieldLoadReuse == FieldLoadReusePolicy.AvailableLoads),
             new QuotientReuser(graphBuilder, stackValidator, settings.QuotientReuse == QuotientReusePolicy.AvailableQuotients),
             _integerChecks.Create(graphBuilder, stackValidator, calledMethods, settings),
             new BeforeFieldInitEntryInitializer(graphBuilder, dominance, types, methods, fields,
                 settings.StaticInitializationHoisting == StaticInitializationHoistingPolicy.MethodEntry),
             new EmptyFinallyRemover(settings.EmptyFinallyRemoval == EmptyFinallyRemovalPolicy.EmptyHandlers),
             new StructLocalScalarReplacer(graphBuilder, stackValidator, new ControlFlowNaturalLoopAnalyzer(dominance),
-                typeDefinitions, fields,
+                typeDefinitions, fields, vectorLanes,
                 settings.StructScalarReplacement == StructScalarReplacementPolicy.FieldAccessedLocals),
             new Allocations.NonEscapingAllocationReplacer(graphBuilder, stackValidator, calleeBodies, calledMethods, fields,
                 finalizers, new MethodInitializationTriggerClassifier(types),
@@ -162,7 +171,9 @@ internal sealed class ManagedMethodOptimizerFactory(
             new RangeBranchRewriter(graphBuilder, stackValidator,
                 new IntegerRangeAnalysis(new StackEffectResolver(calledMethods)),
                 Constants.ConstantBranchFoldingFactory.Create(graphBuilder),
-                settings.RangeBranchFolding == RangeBranchFoldingPolicy.ProvenRanges));
+                settings.RangeBranchFolding == RangeBranchFoldingPolicy.ProvenRanges),
+            // The loops whose bounds the array passes prove are the ones that gain from it.
+            new LoopArgumentLocalizer(settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative));
     }
 
     // Matching (the body parser, the lane selector), then rewriting (the prefixes).

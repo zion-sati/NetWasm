@@ -27,6 +27,9 @@
 
   <ItemGroup>
     <None Update="IntegrationAssets/native-mule.c" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/native-runtime-mule.c" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/native-runtime-mule.cpp" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/NativeRuntimeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/named-callback-mule.c" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/native-host-import.c" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/NativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
@@ -36,6 +39,8 @@
     <None Update="IntegrationAssets/AggregateProfileNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/ArrayUtf8NativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/SafeHandleNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/RawMarshallingNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/VariadicNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/CallbackNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/NamedCallbackNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/CallbackOnlyNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />

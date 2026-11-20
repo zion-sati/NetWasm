@@ -28,6 +28,9 @@ internal enum RuntimeTypeFactsFlags
     GenericMethodParameter = 1 << 15,
     ByRefLike = 1 << 16,
     TypeDefinition = 1 << 23,
+    // No type is both a pointer and a by-reference type, so the two together mark a function pointer type, which the
+    // word has no bit of its own for; its rank field is 1 when its calling convention is unmanaged.
+    FunctionPointer = ByReference | Pointer,
 }
 
 // The flag word of a type's runtime type table entry: CoreLib's flags, the array rank (a generic
@@ -57,6 +60,7 @@ internal static class RuntimeTypeFactsEncoding
         {
             CliTypeShape.SzArray => 1,
             CliTypeShape.Array => identity.ArrayRank,
+            CliTypeShape.FunctionPointer => IsUnmanaged(identity.FunctionPointerSignature!) ? 1 : 0,
             _ => parameter,
         };
         return (uint)Flags(identity, definition, parameter) | (uint)rank << ArrayRankShift |
@@ -73,8 +77,9 @@ internal static class RuntimeTypeFactsEncoding
         var flags = RuntimeTypeFactsFlags.None;
         var hasDefinitionSemantics = identity.Shape is
             CliTypeShape.Named or CliTypeShape.GenericInstantiation;
+        // A function pointer type is a class with no base type and no definition, as a pointer type is.
         var isElementModifier = identity.Shape is
-            CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer;
+            CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer;
         // A generic parameter with the struct constraint is a value type, as .NET reports it.
         var isRuntimeValueType = identity.IsValueType && !isElementModifier ||
             (parameter & NotNullableValueTypeConstraint) != 0;
@@ -97,6 +102,10 @@ internal static class RuntimeTypeFactsEncoding
         if (identity.Shape == CliTypeShape.UnmanagedPointer)
         {
             flags |= RuntimeTypeFactsFlags.Pointer;
+        }
+        if (identity.Shape == CliTypeShape.FunctionPointer)
+        {
+            flags |= RuntimeTypeFactsFlags.FunctionPointer;
         }
         if (identity.ContainsGenericParameters ||
             identity.Shape == CliTypeShape.Named && definition!.GenericArity != 0)
@@ -161,6 +170,10 @@ internal static class RuntimeTypeFactsEncoding
         }
         return flags;
     }
+
+    // The signature header's calling convention: default and vararg are managed; C, stdcall, thiscall, fastcall and
+    // unmanaged are not (ECMA-335 II.23.2.3, with 9 for unmanaged).
+    private static bool IsUnmanaged(CliFunctionPointerSignature signature) => (signature.Header & 0x0f) is 1 or 2 or 3 or 4 or 9;
 
     private static int TypeCode(
         CliTypeIdentity identity,

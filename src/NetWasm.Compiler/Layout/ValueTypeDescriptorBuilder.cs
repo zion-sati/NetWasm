@@ -44,7 +44,7 @@ internal sealed class ValueTypeDescriptorBuilder(
                          pair.Key.IsValueType &&
                          pair.Key.HasRuntimeStorage &&
                          pair.Key.Shape != CliTypeShape.ManagedByReference &&
-                         (pair.Key.Shape != CliTypeShape.UnmanagedPointer ||
+                         (pair.Key.Shape is not (CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer) ||
                           _types.ValueLayoutState.Values.ContainsKey(pair.Key)))
                      .OrderBy(pair => pair.Value.TypeId))
         {

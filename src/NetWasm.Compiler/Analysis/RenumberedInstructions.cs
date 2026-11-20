@@ -12,11 +12,8 @@ namespace NetWasm.Compiler.Analysis;
 // protected regions follow each original offset to where its replacement starts.
 internal static class RenumberedInstructions
 {
-    public static CilOperand Operand(CilOperand operand, IReadOnlyDictionary<int, int> starts) => operand switch
-    {
-        CilOperand.BranchTarget target => new CilOperand.BranchTarget(starts[target.Offset]),
-        _ => operand,
-    };
+    public static CilOperand Operand(CilOperand operand, IReadOnlyDictionary<int, int> starts) =>
+        operand is CilOperand.BranchTarget target ? new CilOperand.BranchTarget(starts[target.Offset]) : operand;
 
     public static CilExceptionRegion Region(CilExceptionRegion region, IReadOnlyDictionary<int, int> starts)
     {

@@ -151,6 +151,10 @@ async function bundleRuntime(facades, output, minify) {
       entryFileNames: "netwasm.runtime.[name].[hash].mjs",
       format: "esm",
       minify,
+      // V8's explicit compile hint: a page or worker runs most of its runtime while it starts, so the
+      // engine compiles every function as it streams the file, off the main thread, instead of each one
+      // lazily on the main thread at its first call. Engines without the hint read a comment.
+      postBanner: "//# allFunctionsCalledOnLoad",
       sourcemap: false,
     });
     const chunks = new Map(generated.output.map(chunk => {
@@ -165,15 +169,18 @@ async function bundleRuntime(facades, output, minify) {
     const entries = [...chunks.values()].filter(value => value.isEntry)
       .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
     for (const chunk of entries) {
-      modules[chunk.name] = { file: chunk.fileName, files: closure(chunk, chunks) };
+      const files = closure(chunk, chunks);
+      modules[chunk.name] = { file: chunk.fileName, files, lazyFiles: lazyClosure(files, chunks) };
     }
-    await writeFile(join(output, "runtime.json"), JSON.stringify({ schemaVersion: 1, modules }), "utf8");
+    await writeFile(join(output, "runtime.json"), JSON.stringify({ schemaVersion: 2, modules }), "utf8");
   } finally {
     await build.close();
   }
 }
 
-// The files a runtime module loads: itself and every chunk it imports.
+// The files a runtime module loads when it loads: itself and every chunk it imports statically. A chunk it imports
+// only dynamically, such as code that runs when something fails, loads when it is first used, so a page does not
+// preload it.
 function closure(entry, chunks) {
   const files = new Set();
   const pending = [entry.fileName];
@@ -181,8 +188,24 @@ function closure(entry, chunks) {
     const fileName = pending.pop();
     if (files.has(fileName)) continue;
     files.add(fileName);
+    pending.push(...chunks.get(fileName).imports);
+  }
+  return [...files].sort();
+}
+
+// The chunks a runtime module loads only when its code first needs them: those its files import dynamically, and
+// everything those import in turn. A deployment publishes them beside the module, since a page outside a secure
+// context loads the SHA-256 fallback this way, but a page does not preload them.
+function lazyClosure(files, chunks) {
+  const loaded = new Set(files);
+  const lazy = new Set();
+  const pending = files.flatMap(fileName => chunks.get(fileName).dynamicImports);
+  while (pending.length !== 0) {
+    const fileName = pending.pop();
+    if (loaded.has(fileName) || lazy.has(fileName)) continue;
+    lazy.add(fileName);
     const chunk = chunks.get(fileName);
     pending.push(...chunk.imports, ...chunk.dynamicImports);
   }
-  return [...files].sort();
+  return [...lazy].sort();
 }

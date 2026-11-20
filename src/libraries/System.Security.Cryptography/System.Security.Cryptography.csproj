@@ -309,6 +309,7 @@
     <Compile Include="System/Security/Cryptography/PasswordDeriveBytes.cs" />
     <Compile Include="System/Security/Cryptography/Pbkdf2Implementation.Managed.cs" />
     <Compile Include="System/Security/Cryptography/PemEncoding.cs" />
+    <Compile Include="System/Security/Cryptography/PemEnumerator.cs" />
     <Compile Include="System/Security/Cryptography/PemFields.cs" />
     <Compile Include="System/Security/Cryptography/PemKeyHelpers.cs" />
     <Compile Include="System/Security/Cryptography/PinAndClear.cs" />

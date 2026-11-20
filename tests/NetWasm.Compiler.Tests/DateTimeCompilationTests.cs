@@ -1269,11 +1269,14 @@ public sealed class DateTimeCompilationTests
         Assert.DoesNotContain(result.Program.WitImportMethods,
             method => method.WitImport!.InterfaceName.StartsWith(
                 "netwasm:timezone", StringComparison.Ordinal));
+        // A component without a process entry reads local time at first use, not while it is instantiated
+        // (instantiation must never wait): no environment read before run, one (TZ) during it.
         Assert.Equal(42, ExecuteWithNode(
             result.ApplicationModule,
             assets.Directory,
             41,
-            expectedEnvironmentReadsBeforeRun: 1));
+            expectedEnvironmentReadsBeforeRun: 0,
+            expectedEnvironmentReadsAfterRun: 1));
     }
 
     [Fact]

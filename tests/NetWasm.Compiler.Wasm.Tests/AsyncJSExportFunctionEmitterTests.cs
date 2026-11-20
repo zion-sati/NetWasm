@@ -197,11 +197,12 @@ public sealed class AsyncJSExportFunctionEmitterTests
             initialization: TestRuntimeInitialization.Create(512),
             hasFinalizers: false,
             CreateFunctionIndices(methods),
-            interopImports: new InteropImportPlan([], default, default, default, default, default, default));
+            interopImports: new InteropImportPlan([], default, default, default, default));
 
         Assert.Equal([0], strings.Parameters);
         Assert.Equal([(doubles, 2)], arrays.Parameters);
-        Assert.Equal([(jsObject, 3)], objects.Parameters);
+        // The array before it takes two values, its staged block and its length.
+        Assert.Equal([(jsObject, 4)], objects.Parameters);
         var calls = Calls(body);
         // One argument frame plus the existing task frame. The normal path leaves
         // the argument frame; the rethrowing path unwinds it with every frame the
@@ -224,7 +225,7 @@ public sealed class AsyncJSExportFunctionEmitterTests
         var methods = new FakeProgram();
         var date = CliTypeIdentity.Named(Assembly, "System", "DateTime", isValueType: true);
         var emitter = CreateWrapperEmitter(layouts, imports);
-        var interop = new InteropImportPlan([], default, default, default, default, default, default)
+        var interop = new InteropImportPlan([], default, default, default, default)
         {
             Conversions = ImmutableDictionary<string, int>.Empty.Add(JavaScriptConversion.ToManaged(date)!, 77),
         };
@@ -404,7 +405,7 @@ public sealed class AsyncJSExportFunctionEmitterTests
             new JavaScriptNullableEmitter(layouts, layouts, CreateAddressInstructions(layouts)),
             new GeneratedFunctionWriterFactory());
         const byte conversion = 77;
-        var imports = new InteropImportPlan([], default, default, default, default, default, default)
+        var imports = new InteropImportPlan([], default, default, default, default)
         {
             Conversions = ImmutableDictionary<string, int>.Empty.Add(JavaScriptConversion.FromManaged(result)!, conversion),
         };
@@ -493,14 +494,14 @@ public sealed class AsyncJSExportFunctionEmitterTests
         RecordingLayoutProvider layouts,
         RuntimeImportCatalog imports,
         IHostCallbackStringArgumentMarshaller? strings = null,
-        IHostCallbackByteArrayArgumentMarshaller? arrays = null,
+        IStagedValueArrayEmitter? arrays = null,
         IHostCallbackHostObjectArgumentMarshaller? objects = null) => new[]
         {
             new AsyncJSExportWrapperEmitter(
                 layouts,
                 layouts,
                 imports,
-                CreateRuntimeStateInitializer(),
+                CreateEntryRuntimeInitializer(),
                 new ImplicitExceptionEmitter(layouts),
                 CreateReferenceComparisons(layouts),
                 new GeneratedFunctionWriterFactory(),
@@ -560,7 +561,7 @@ public sealed class AsyncJSExportFunctionEmitterTests
             OptionalFunctionIndex throwFunction) => Parameters.Add((objectType, handleParameter));
     }
 
-    private sealed class RecordingArrayArguments : IHostCallbackByteArrayArgumentMarshaller
+    private sealed class RecordingArrayArguments : IStagedValueArrayEmitter
     {
         public List<(CliTypeIdentity Type, int Parameter)> Parameters { get; } = [];
 
@@ -568,10 +569,9 @@ public sealed class AsyncJSExportFunctionEmitterTests
             IWasmInstructionWriter code,
             CliTypeIdentity arrayType,
             int handleParameter,
+            int lengthLocal,
             int destination,
-            int temporaryI4,
             int objectTemporary,
-            InteropMarshallingTarget target,
             OptionalFunctionIndex throwFunction) => Parameters.Add((arrayType, handleParameter));
     }
 }

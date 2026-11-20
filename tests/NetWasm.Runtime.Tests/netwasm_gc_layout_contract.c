@@ -23,6 +23,19 @@ static void all_size_classes_fit(void)
     }
 }
 
+/* The slot a distance falls in is found by a multiply; it is the divide's answer for every size class and every
+ * distance within a block, and a class's block_class_index is its index. */
+static void slot_index_by_multiply_matches_the_divide(void)
+{
+    for (size_t stride = NWGC_ALIGNMENT; stride <= NWGC_SMALL_LIMIT; stride += NWGC_ALIGNMENT) {
+        NetWasmGcBlock block = {.slot_bytes = stride};
+        block.slot_inverse = (uint32_t)((((uint64_t)1 << 32) + stride - 1) / stride);
+        assert(block_class_index(&block) == stride / NWGC_ALIGNMENT - 1);
+        for (size_t distance = 0; distance < NWGC_BLOCK_BYTES; distance++)
+            assert(block_slot_at(&block, distance) == distance / stride);
+    }
+}
+
 static void *page_aligned_backing(size_t bytes, size_t alignment)
 {
     assert(alignment <= NWGC_PAGE_BYTES);
@@ -151,7 +164,7 @@ static void reserved_run_tail_is_unpublished_and_retired(void)
     void *object = NULL;
     assert(test_allocate(gc, 1, 1, NULL, &object) == NETWASM_GC_OK);
     NetWasmGcBlock *block = object_block(gc, object);
-    NetWasmGcRun *run = &gc->runs[block->class_index][block->traced];
+    NetWasmGcRun *run = &gc->runs[block_class_index(block)][block->traced];
     assert(block_class(gc, block)->run_block == block);
     assert(run->cursor < run->end);
     uintptr_t reserved_payload = (uintptr_t)run->cursor;
@@ -230,6 +243,7 @@ static void empty_blocks_leave_and_reenter_the_active_list(void)
 int main(void)
 {
     all_size_classes_fit();
+    slot_index_by_multiply_matches_the_divide();
     page_boundary_endpoint_keeps_owner();
     word_run_operations_cross_bitmap_boundaries();
     segmented_directory_separates_radix_paths();

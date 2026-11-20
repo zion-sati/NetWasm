@@ -55,6 +55,7 @@ internal static class InstructionEmissionServiceCollectionExtensions
         services.AddSingleton<NumericConversionInstructionEmitter>();
         services.AddSingleton<NumericComparisonInstructionEmitter>();
         services.AddSingleton<ExceptionalNumericInstructionEmitter>();
+        services.AddSingleton<ConditionalSelectEmitter>();
         services.AddSingleton<NumericInstructionEmitter>();
         services.AddInstructionCommandProvider<ConstantsStackEmitter>();
         services.AddInstructionCommandProvider<LocalsArgumentsEmitter>();

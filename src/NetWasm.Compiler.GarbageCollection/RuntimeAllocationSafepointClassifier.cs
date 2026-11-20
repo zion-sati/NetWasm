@@ -26,7 +26,14 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.GCHandleRuntime", "Create"),
             ("System.GCHandleRuntime", "Set"),
             ("System.GCCollectionRuntime", "Collect"),
+            ("System.GCCollectionRuntime", "CollectYoung"),
+            ("System.GCCollectionRuntime", "CollectWhenIdle"),
+            ("System.GCCollectionRuntime", "CollectWhenQuiet"),
+            // A structure's constructor runs managed code.
+            ("System.Runtime.InteropServices.StructureMarshallingRuntime", "Construct"),
             ("System.GCFinalizerRuntime", "WaitForPending"),
+            // The finalizers it runs are managed code.
+            ("System.GCFinalizerRuntime", "RunQueued"),
             ("System.Array", "InternalGetValue"),
             // The element type is an uncached type object.
             ("System.Array", "InternalElementType"),
@@ -44,6 +51,8 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Object", "MemberwiseClone"),
             ("System.Array", "InternalCreateInstance"),
             ("System.Array", "InternalCreateRectangularInstance"),
+            // GC.AllocateUninitializedArray's array, which the runtime allocates.
+            ("System.GC", "InternalAllocateUninitializedArray"),
             ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AllocateUninitializedObject"),
             ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "RunClassConstructor"),
             ("System.Nullable", "GetUnderlyingType"),

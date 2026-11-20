@@ -24,7 +24,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
         }.ToFrozenDictionary();
 
     // AggressiveInlining in managed code is honored wherever speed counts, Oz
-    // included, and Os ignores it (owner, 2026-10-23). The runtime's own hints
+    // included, and Os ignores it. The runtime's own hints
     // keep the preset's choice above.
     private static readonly FrozenDictionary<FinalWasmOptimization, WasmInlineAnnotationSelection> ManagedHintPresets =
         new Dictionary<FinalWasmOptimization, WasmInlineAnnotationSelection>
@@ -40,8 +40,8 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
 
     // Oz takes O3's field hoisting, static data-view elimination, address-taken
     // promotion and bounds-check elimination: each shrinks the module, and with
-    // Oz's inlining inside loops they make DoomSharp 0.71 of Loops alone (owner,
-    // 2026-10-28). Os has no managed inlining for them to work on: no faster,
+    // Oz's inlining inside loops they make DoomSharp 0.71 of Loops alone. Os has
+    // no managed inlining for them to work on: no faster,
     // and its Brotli size grows, so it keeps them off.
     private static readonly FrozenDictionary<FinalWasmOptimization, LoopInvariantFieldHoistingPolicy>
         FieldHoistingPresets =
@@ -281,6 +281,17 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedSwitchBitTests.Enabled => SwitchBitTestPolicy.Conservative,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // A select replaces a branch whose arms only compute a number, which data the engine cannot predict, as image
+        // pixels are, makes it mispredict; it is no larger than the branch.
+        var conditionalSelectOverride = options?.ConditionalSelects ?? ManagedConditionalSelects.Auto;
+        var conditionalSelects = conditionalSelectOverride switch
+        {
+            ManagedConditionalSelects.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? ConditionalSelectPolicy.Disabled : ConditionalSelectPolicy.Enabled,
+            ManagedConditionalSelects.Disabled => ConditionalSelectPolicy.Disabled,
+            ManagedConditionalSelects.Enabled => ConditionalSelectPolicy.Enabled,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
         // A direct call replaces a dispatch, so it is smaller as well as faster.
         var devirtualizationOverride = options?.Devirtualization ?? ManagedDevirtualization.Auto;
         var devirtualization = devirtualizationOverride switch
@@ -303,7 +314,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
         };
         // Rotation repeats the loop condition, so Os keeps one copy. Oz rotates
         // conditions without calls: once field hoisting drops the null check, an
-        // unrotated loop takes two branches per iteration (owner, 2026-10-29).
+        // unrotated loop takes two branches per iteration.
         var rotationOverride = options?.LoopRotation ?? ManagedLoopRotation.Auto;
         var rotation = rotationOverride switch
         {
@@ -646,11 +657,13 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             strengthReduction,
             rangeBranches,
             unwrittenStaticFields,
-            // A shared body for object's virtual calls costs a call where the speed presets would dispatch
-            // inline (about 15% on a loop of nothing but such calls), and saves a dispatch over every allocated
-            // type at each call: a fifth of an HttpClient program at Oz.
+            // A shared body for object's virtual calls costs a call and saves a dispatch over every allocated type
+            // at each call: a fifth of an HttpClient program at Oz. The speed presets share only at 1,024 targets:
+            // a test framework's engine at O3 shrinks from 58.9 MB to 18.3 MB with no slowdown measured
+            // (micro screen, run.py, DoomBench), and a small program keeps its calls inline, unchanged.
             preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
-                ? ObjectDispatchPolicy.Inline
-                : ObjectDispatchPolicy.Shared);
+                ? ObjectDispatchPolicy.SharedAtLargeSites
+                : ObjectDispatchPolicy.Shared,
+            conditionalSelects);
     }
 }

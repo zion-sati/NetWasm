@@ -15,6 +15,8 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
+
 namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
@@ -43,7 +45,7 @@ public sealed class EnumIntrinsicBranchTests
         var names = As<IEnumGetNameEmitter>(CreateGetNameEmitter(metadata));
         var values = As<IEnumGetValuesEmitter>(CreateGetValuesEmitter(metadata));
         var defined = As<IEnumIsDefinedEmitter>(new EnumIsDefinedEmitter(
-            metadata, metadata, metadata.Layouts, metadata.Layouts, metadata));
+            metadata, metadata, metadata.Layouts, metadata.Layouts, metadata, new KeyedDispatchEmitter()));
 
         names.EmitGetName(getName, nameCode);
         defined.EmitIsDefined(isDefined, definedCode);
@@ -361,7 +363,7 @@ public sealed class EnumIntrinsicBranchTests
         var exceptions = new RecordingExceptions();
         var emitter = As<IEnumGetValuesEmitter>(new EnumGetValuesEmitter(
             metadata, metadata, metadata.Layouts, metadata.Layouts, WasmRuntimeImports.CreateCatalog(),
-            metadata.Layouts, new AddressInstructionEmitter(metadata.Layouts), metadata, exceptions));
+            metadata.Layouts, new AddressInstructionEmitter(metadata.Layouts), metadata, exceptions, new KeyedDispatchEmitter()));
         var request = Request("InternalGetValues", RuntimeIntrinsic.EnumGetValues,
             CliValueKind.ManagedReference, [CliValueKind.ManagedReference, CliValueKind.I4],
             [CliValueKind.ManagedReference, CliValueKind.I4], target: target);
@@ -484,7 +486,7 @@ public sealed class EnumIntrinsicBranchTests
             entry with { EnumType = selected },
         ];
         var emitter = As<IRuntimeIntrinsicEmitter>(new EnumGetMetadataIntrinsicEmitter(
-            metadata, metadata, new ImplicitExceptionEmitter(metadata.Layouts), new AddressInstructionEmitter(metadata.Layouts)));
+            metadata, metadata, new ImplicitExceptionEmitter(metadata.Layouts), new AddressInstructionEmitter(metadata.Layouts), new KeyedDispatchEmitter()));
         var request = Request("InternalGetMetadata", RuntimeIntrinsic.EnumGetMetadata, CliValueKind.NativeInt,
             generic ? [] : [CliValueKind.ManagedReference], generic ? [] : [CliValueKind.ManagedReference],
             generic ? [selected] : [], target: target);
@@ -525,7 +527,7 @@ public sealed class EnumIntrinsicBranchTests
         var definition = CliTypeIdentity.Named(TestAssembly, "Tests", "Outer`1+Code", true, CliValueKind.I4);
         var missing = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.FromStackKind(CliValueKind.I4)]);
         var emitter = As<IRuntimeIntrinsicEmitter>(new EnumGetMetadataIntrinsicEmitter(
-            metadata, metadata, new ImplicitExceptionEmitter(metadata.Layouts), new AddressInstructionEmitter(metadata.Layouts)));
+            metadata, metadata, new ImplicitExceptionEmitter(metadata.Layouts), new AddressInstructionEmitter(metadata.Layouts), new KeyedDispatchEmitter()));
         var request = Request("InternalGetMetadata", RuntimeIntrinsic.EnumGetMetadata,
             CliValueKind.NativeInt, [], [], [missing]);
         var code = new RecordingInstructionWriter();
@@ -556,10 +558,12 @@ public sealed class EnumIntrinsicBranchTests
         var code = new RecordingInstructionWriter();
 
         new EnumIsDefinedEmitter(
-                metadata, metadata, metadata.Layouts, metadata.Layouts, metadata)
+                metadata, metadata, metadata.Layouts, metadata.Layouts, metadata, new KeyedDispatchEmitter())
             .EmitIsDefined(request, code);
 
         Assert.Contains(comparison, code.ToArray());
+        // The answer is in the result local; the call leaves nothing on the Wasm stack.
+        Assert.Equal(WasmOpcodes.End, code.ToInstructions()[^1].Opcode);
     }
 
     [Fact]
@@ -577,7 +581,7 @@ public sealed class EnumIntrinsicBranchTests
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             new EnumIsDefinedEmitter(
-                    metadata, metadata, metadata.Layouts, metadata.Layouts, metadata)
+                    metadata, metadata, metadata.Layouts, metadata.Layouts, metadata, new KeyedDispatchEmitter())
                 .EmitIsDefined(request, new RecordingInstructionWriter()));
 
         Assert.Contains("one enum type argument", exception.Message);
@@ -603,10 +607,13 @@ public sealed class EnumIntrinsicBranchTests
         var code = new RecordingInstructionWriter();
 
         new EnumIsDefinedEmitter(
-                metadata, metadata, metadata.Layouts, metadata.Layouts, metadata)
+                metadata, metadata, metadata.Layouts, metadata.Layouts, metadata, new KeyedDispatchEmitter())
             .EmitIsDefined(request, code);
 
         Assert.Contains(comparison, code.ToArray());
+        // As for the type-based contract, the answer stays in the result local: a value left on the Wasm stack is
+        // invalid once the call is inlined into ordinary flow.
+        Assert.Equal(WasmOpcodes.End, code.ToInstructions()[^1].Opcode);
     }
 
     [Fact]
@@ -630,7 +637,7 @@ public sealed class EnumIntrinsicBranchTests
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             new EnumIsDefinedEmitter(
-                    metadata, metadata, metadata.Layouts, metadata.Layouts, metadata)
+                    metadata, metadata, metadata.Layouts, metadata.Layouts, metadata, new KeyedDispatchEmitter())
                 .EmitIsDefined(request, new RecordingInstructionWriter()));
 
         Assert.Contains("metadata is unavailable", exception.Message);
@@ -933,6 +940,39 @@ public sealed class EnumIntrinsicBranchTests
         Assert.Equal(2, exceptions.Kinds.Count(kind => kind == ManagedExceptionKind.Argument));
         Assert.Equal(closed, Assert.Single(metadata.Layouts.RequestedObjects));
         Assert.DoesNotContain(open, metadata.Layouts.RequestedValues);
+    }
+
+    // Without closed enums Enum.ToObject has nothing to box as: with no enum at all the result is left null; with only
+    // an open definition an object value finds no source group (no search, the group is -1) and is rejected.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ToObjectWithoutClosedEnumsBoxesNothing(bool openDefinition)
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("i4", CliValueKind.I4));
+        var entry = metadata.EnumMetadata[0];
+        metadata.MetadataOverride = openDefinition ? [entry with { IsOpenDefinition = true }] : [];
+        var exceptions = new RecordingExceptions();
+        var emitter = As<IEnumToObjectEmitter>(new EnumToObjectEmitter(
+            metadata, metadata, metadata, metadata.Layouts, metadata.Layouts, WasmRuntimeImports.CreateCatalog(),
+            exceptions, new AddressInstructionEmitter(metadata.Layouts), metadata.Layouts, metadata));
+        var request = Request("InternalToObject", RuntimeIntrinsic.EnumToObject,
+            CliValueKind.ManagedReference, [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
+            [CliValueKind.ManagedReference, CliValueKind.ManagedReference]);
+        var writer = new RecordingInstructionWriter();
+
+        emitter.EmitToObject(request, writer);
+
+        Assert.Empty(metadata.Layouts.RequestedObjects);
+        if (openDefinition)
+        {
+            Assert.Contains(ManagedExceptionKind.Argument, exceptions.Kinds);
+        }
+        else
+        {
+            Assert.Equal([ManagedExceptionKind.ArgumentNull], exceptions.Kinds);
+            Assert.DoesNotContain(writer.ToInstructions(), instruction => instruction.Opcode == WasmOpcodes.Block);
+        }
     }
 
     [Theory]
@@ -1608,9 +1648,9 @@ public sealed class EnumIntrinsicBranchTests
             metadata,
             metadata.Layouts,
             metadata.Layouts,
-            new ReferenceComparisonEmitter(metadata.Layouts),
             new AddressInstructionEmitter(metadata.Layouts),
-            CreateTypeArgumentValidator(metadata));
+            CreateTypeArgumentValidator(metadata),
+            new KeyedDispatchEmitter());
 
     private static EnumGetNamesEmitter CreateGetNamesEmitter(
         EnumMetadataFixture metadata) => new(
@@ -1619,7 +1659,7 @@ public sealed class EnumIntrinsicBranchTests
             WasmRuntimeImports.CreateCatalog(),
             metadata.Layouts,
             new AddressInstructionEmitter(metadata.Layouts),
-            CreateTypeArgumentValidator(metadata));
+            CreateTypeArgumentValidator(metadata), new KeyedDispatchEmitter());
 
     private static EnumGetValuesEmitter CreateGetValuesEmitter(
         EnumMetadataFixture metadata) => new(
@@ -1631,7 +1671,7 @@ public sealed class EnumIntrinsicBranchTests
             metadata.Layouts,
             new AddressInstructionEmitter(metadata.Layouts),
             CreateTypeArgumentValidator(metadata),
-            new ImplicitExceptionEmitter(metadata.Layouts));
+            new ImplicitExceptionEmitter(metadata.Layouts), new KeyedDispatchEmitter());
 
     private static EnumGetUnderlyingTypeEmitter CreateGetUnderlyingTypeEmitter(
         EnumMetadataFixture metadata) => new(
@@ -1640,7 +1680,7 @@ public sealed class EnumIntrinsicBranchTests
             metadata.Layouts,
             WasmRuntimeImports.CreateCatalog(),
             new AddressInstructionEmitter(metadata.Layouts),
-            CreateTypeArgumentValidator(metadata));
+            CreateTypeArgumentValidator(metadata), new KeyedDispatchEmitter());
 
     private static EnumToStringEmitter CreateToStringEmitter(
         EnumMetadataFixture metadata) => new(
@@ -1651,7 +1691,7 @@ public sealed class EnumIntrinsicBranchTests
             metadata.Layouts,
             metadata.Layouts,
             new AddressInstructionEmitter(metadata.Layouts),
-            CreateTypeArgumentValidator(metadata));
+            CreateTypeArgumentValidator(metadata), new KeyedDispatchEmitter());
 
     private static EnumTypeArgumentValidator CreateTypeArgumentValidator(
         EnumMetadataFixture metadata) => new(

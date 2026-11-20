@@ -14,7 +14,8 @@ internal sealed class AtomicInstructionEmitter(
     ITargetLayout layouts,
     ICilTypeOperandResolver types,
     IImplicitExceptionEmitter exceptions,
-    IAddressInstructionEmitter addresses) : InstructionCommandProvider
+    IAddressInstructionEmitter addresses,
+    IReferenceWriteBarrierEmitter writeBarrier) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -27,7 +28,8 @@ internal sealed class AtomicInstructionEmitter(
     private void EmitCompareExchange(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var address = request.Stack.Count - 3;
-        var resultKind = types.Resolve(request.Instruction, request.Header.MethodInstance).StackKind;
+        var exchanged = types.Resolve(request.Instruction, request.Header.MethodInstance);
+        var resultKind = exchanged.StackKind;
         var encoding = SelectEncoding(resultKind);
         var temporary = encoding.UsesI64
             ? request.Context.NumericTemporaryI8
@@ -69,6 +71,8 @@ internal sealed class AtomicInstructionEmitter(
         code.Write(WasmInstruction.WithOperand(
             encoding.Store,
             WasmInstructionOperand.Memory(encoding.Alignment, 0)));
+        // An exchange that stored a reference is a store like any other.
+        writeBarrier.Emit(request, code, addressLocal, exchanged);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)temporary)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(resultLocal))));

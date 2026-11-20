@@ -35,7 +35,7 @@ class RuntimePackPackageTests(unittest.TestCase):
         self.entries = {}
         targets = []
         for target in ("wasm32", "wasm64"):
-            for collector in ("Compact", "NetWasm", "Bump"):
+            for collector in ("Compact", "NetWasm", "NetWasmGen", "Bump"):
                 prefix = f"{target}/{collector.lower()}"
                 self.entries[f"runtime/{prefix}/layout.json"] = json.dumps({
                     "schemaVersion": 1, "target": target, "runtimeFootprintBytes": 70_000,
@@ -65,10 +65,14 @@ class RuntimePackPackageTests(unittest.TestCase):
                     },
                     "allowedUndefinedSymbols": self.asset(f"{target}/allowed-undefined-symbols.txt",
                                                           b"emscripten_notify_memory_growth\n"),
+                    "emscriptenArchives": {
+                        "support": self.asset(f"{target}/libnetwasm-emscripten-support.a", b"support"),
+                        "standIns": self.asset(f"{target}/libnetwasm-emscripten-stand-ins.a", b"stand-ins"),
+                    },
                     "systemLibraries": {"names": ["libc.a"], "assets": [
                         self.asset(f"{target}/system-libraries/libc.a", b"system")]},
                 })
-        self.manifest = {"schemaVersion": 6, "emscriptenVersion": "6.0.7",
+        self.manifest = {"schemaVersion": 7, "emscriptenVersion": "6.0.7",
                          "defaultGarbageCollector": "Compact", "exports": ["allocate"],
                          "targets": targets}
         self.entries["runtime/runtime-exports.txt"] = b"allocate\n"
@@ -98,7 +102,7 @@ class RuntimePackPackageTests(unittest.TestCase):
         MODULE.inspect(self.package(), self.root, self.version)
 
     def test_rejects_old_schema(self) -> None:
-        manifest = self.manifest | {"schemaVersion": 5}
+        manifest = self.manifest | {"schemaVersion": 6}
         with self.assertRaisesRegex(ValueError, "source version"):
             MODULE.inspect(self.package(manifest), self.root, self.version)
 

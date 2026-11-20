@@ -376,7 +376,7 @@ internal sealed record UnitQueryArguments(
         Definitions = Definitions,
     };
 
-    // A method's identities from its analysed body.
+    // A method's identities from its analyzed body.
     public static UnitQueryArguments Of(NetWasm.Compiler.ControlFlow.ManagedMethodBody method)
     {
         ArgumentNullException.ThrowIfNull(method);
@@ -392,7 +392,7 @@ internal sealed record UnitQueryArguments(
         };
     }
 
-    // Every identity the analysed bodies name.
+    // Every identity the analyzed bodies name.
     public static UnitQueryArguments Of(IEnumerable<NetWasm.Compiler.ControlFlow.ManagedMethodBody> all) =>
         Over(UnitQueryIdentities.Of(all));
 

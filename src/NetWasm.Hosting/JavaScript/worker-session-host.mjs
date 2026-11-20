@@ -2,15 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { describeFailureCause } from "./execution-result.mjs";
+import { selectIdleScheduler, selectQuietTimer } from "./host-idle-scheduler.mjs";
+import { createSessionCollection } from "./session-collection.mjs";
 import { readEnvironmentOverride } from "./session-options.mjs";
 import { createWorkerSessionDispatcher } from "./worker-session-dispatcher.mjs";
 
-const optionKeys = ["files", "openSession", "post", "terminate"];
+const optionKeys = ["files", "openSession", "post", "scope", "terminate"];
 const protocolVersion = 2;
 const filePrefix = "netwasm:files:";
 
 // files: the worker's in-memory file system (#142), whose mount, unmount and sync the page
 // reaches through reserved operations, or null for a worker without file APIs.
+// scope: the worker's global scope, whose timers and clock give the module's collector the worker's idle time
+// and the quiet after the page's last operation.
 export function createWorkerSessionHost(options) {
   assertExactDataObject(options, optionKeys, "worker session host options");
   if (typeof options.openSession !== "function" || typeof options.post !== "function"
@@ -25,6 +29,8 @@ export function createWorkerSessionHost(options) {
     [`${filePrefix}unmount`]: options.files.unmount,
     [`${filePrefix}sync`]: options.files.sync,
   };
+  const requestIdle = selectIdleScheduler(options.scope);
+  const quietTimer = selectQuietTimer(options.scope);
   let state = "waiting";
   let generation = null;
   let dispatcher = null;
@@ -49,9 +55,17 @@ export function createWorkerSessionHost(options) {
             await session.close();
             return;
           }
+          // Opening ran the module, and so does each operation the page sends it; a file operation does not.
+          const moduleRan = createSessionCollection({
+            collectWhenIdle: session.collectWhenIdle,
+            collectWhenQuiet: session.collectWhenQuiet,
+            quietTimer,
+            requestIdle,
+          });
+          moduleRan();
           dispatcher = createWorkerSessionDispatcher({
             close: session.close,
-            exports: { ...session.exports, ...fileOperations },
+            exports: { ...reportingRuns(session.exports, moduleRan), ...fileOperations },
             generation,
             onFailure: cause => {
               terminate(postTerminalFailure(cause, "delivery"));
@@ -184,9 +198,20 @@ function readSession(value) {
   }
   return Object.freeze({
     close: value.close.bind(value),
+    collectWhenIdle: value.collectWhenIdle,
+    collectWhenQuiet: value.collectWhenQuiet,
     exports: value.exports,
     failure: value.failure,
   });
+}
+
+// The session's exports, each function reporting that the module ran before it runs.
+function reportingRuns(exports, moduleRan) {
+  return Object.fromEntries(Object.entries(exports).map(([name, member]) => [name,
+    typeof member !== "function" ? member : function (...parameters) {
+      moduleRan();
+      return member.apply(this, parameters);
+    }]));
 }
 
 function validateGeneration(value) {

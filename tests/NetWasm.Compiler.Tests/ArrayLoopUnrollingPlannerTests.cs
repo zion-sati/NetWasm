@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System.Collections.Immutable;
+using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Arrays;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
@@ -59,7 +60,7 @@ public sealed class ArrayLoopUnrollingPlannerTests
             new(2, 3, CilOperation.Pop, new CilOperand.None()),
         ]);
         var planner = new ArrayLoopUnrollingPlanner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)),
-            new Intrinsics(method, intrinsic), 512);
+            new Intrinsics(method, intrinsic), new Ranges(null), 512);
 
         Assert.Equal(admitted, !planner.Plan(fixture.Flow).IsEmpty);
     }
@@ -96,13 +97,102 @@ public sealed class ArrayLoopUnrollingPlannerTests
         var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
         var induction = new FrozenInduction([]);
         Assert.Throws<ArgumentNullException>(() => Planner(null!, 0));
-        Assert.Throws<ArgumentNullException>(() => new ArrayLoopUnrollingPlanner(induction, null!, 0));
+        Assert.Throws<ArgumentNullException>(() => new ArrayLoopUnrollingPlanner(induction, null!, new Ranges(null), 0));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ArrayLoopUnrollingPlanner(induction, new Intrinsics(default, default), null!, 0));
         Assert.Throws<ArgumentNullException>(() => Planner(induction, 0).Plan(null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => Planner(induction, -1).Plan(fixture.Flow));
     }
 
+    // A loop whose bound is known to stay under eight iterations past its start is left as written; a bound that
+    // may reach eight, one nothing is known of, and a negative one an unsigned guard would read as large are not.
+    [Theory]
+    [InlineData(0, 7, false, false)]
+    [InlineData(-3, 7, false, false)]
+    [InlineData(0, 8, false, true)]
+    [InlineData(int.MinValue, int.MaxValue, false, true)]
+    [InlineData(0, 7, true, false)]
+    [InlineData(-1, 7, true, true)]
+    public void LeavesALoopKnownToRunOnlyAFewIterationsAlone(int low, int high, bool unsignedGuard, bool planned)
+    {
+        var fixture = WithPayload(Payload(CilOperation.Add));
+        var proofs = fixture.Analyzer.Analyze(fixture.Flow);
+        var flow = unsignedGuard ? WithUnsignedGuards(fixture.Flow) : fixture.Flow;
+        var planner = new ArrayLoopUnrollingPlanner(new FrozenInduction(proofs), new Intrinsics(default, default),
+            new Ranges(new IntegerRange(low, high)), 512);
+
+        Assert.Equal(planned, !planner.Plan(flow).IsEmpty);
+    }
+
+    // A top-tested loop exits on bge: signed, a bound of -1 to 7 runs fewer than eight trips; unsigned, -1 reads as a
+    // large bound, so the loop is planned.
+    [Theory]
+    [InlineData(CilOperation.BranchIfGreaterThanOrEqualSigned, false)]
+    [InlineData(CilOperation.BranchIfGreaterThanOrEqualUnsigned, true)]
+    public void ATopTestedLoopsUnsignedGuardReadsANegativeBoundAsLarge(CilOperation comparison, bool planned)
+    {
+        var (analyzer, flow) = ArrayLoopInductionAnalyzerTests.TopTested(comparison);
+        var planner = new ArrayLoopUnrollingPlanner(new FrozenInduction(analyzer.Analyze(flow)), new Intrinsics(default, default),
+            new Ranges(new IntegerRange(-1, 7)), 512);
+
+        Assert.Equal(planned, !planner.Plan(flow).IsEmpty);
+    }
+
+    // The bound is on top where the guard branches; a guard the analysis has no stack for is planned.
+    [Fact]
+    public void AsksForTheBoundAtTheGuardsBranch()
+    {
+        var fixture = WithPayload(Payload(CilOperation.Add));
+        var proofs = fixture.Analyzer.Analyze(fixture.Flow);
+        var ranges = new Ranges(new IntegerRange(0, 3));
+
+        Assert.Empty(new ArrayLoopUnrollingPlanner(new FrozenInduction(proofs), new Intrinsics(default, default), ranges, 512)
+            .Plan(fixture.Flow));
+        var guard = fixture.Flow.Graph.GetBlock(Assert.Single(proofs).GuardBlock);
+        Assert.Equal([guard.Instructions[^1].Offset], ranges.Asked);
+        Assert.Single(new ArrayLoopUnrollingPlanner(new FrozenInduction(proofs), new Intrinsics(default, default),
+            new Ranges(new IntegerRange(0, 3)) { Known = false }, 512).Plan(fixture.Flow));
+    }
+
     private static ArrayLoopUnrollingPlanner Planner(IArrayLoopInductionAnalyzer induction, int budget) =>
-        new(induction, new Intrinsics(default, default), budget);
+        new(induction, new Intrinsics(default, default), new Ranges(null), budget);
+
+    // The same graph with each signed compare-branch read unsigned.
+    private static ValidatedControlFlowGraph WithUnsignedGuards(ValidatedControlFlowGraph flow)
+    {
+        var body = flow.Graph.MethodBody;
+        var rewritten = body with
+        {
+            Instructions =
+            [
+                .. body.Instructions.Select(instruction => instruction.Operation switch
+                {
+                    CilOperation.BranchIfLessThanSigned => instruction with { Operation = CilOperation.BranchIfLessThanUnsigned },
+                    CilOperation.BranchIfGreaterThanOrEqualSigned =>
+                        instruction with { Operation = CilOperation.BranchIfGreaterThanOrEqualUnsigned },
+                    _ => instruction,
+                }),
+            ],
+        };
+        return flow with { Graph = new ControlFlowGraphBuilderFactory().Create().Build(rewritten) };
+    }
+
+    // Every stack asked for holds an index of any value under a bound in the given range.
+    private sealed class Ranges(IntegerRange? bound) : IIntegerRangeAnalysis
+    {
+        public bool Known { get; init; } = true;
+
+        public List<int> Asked { get; } = [];
+
+        public IReadOnlyDictionary<int, ImmutableArray<IntegerRange?>> StacksAt(
+            ValidatedControlFlowGraph controlFlow, IReadOnlySet<int> offsets)
+        {
+            Asked.AddRange(offsets.Order());
+            return Known
+                ? offsets.ToDictionary(offset => offset, _ => ImmutableArray.Create<IntegerRange?>(IntegerRange.Int32, bound))
+                : new Dictionary<int, ImmutableArray<IntegerRange?>>();
+        }
+    }
 
     private sealed class Intrinsics(EntityKey method, RuntimeIntrinsic value) : IRuntimeIntrinsicRegistry
     {

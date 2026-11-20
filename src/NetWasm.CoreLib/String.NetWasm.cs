@@ -38,12 +38,14 @@ namespace System
 
         public int Length
         {
+            [Intrinsic]
             get { return 0; }
         }
 
         [Runtime.CompilerServices.IndexerName("Chars")]
         public char this[int index]
         {
+            [Intrinsic]
             get { return default(char); }
         }
 

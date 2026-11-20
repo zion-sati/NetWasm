@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System.Collections.Immutable;
+using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -52,6 +53,10 @@ public sealed record CompilerOptions(
     public ImmutableArray<string> OriginalContractReferencePaths { get; init; } = [];
 
     public ImmutableArray<CompilationReferenceOrigin> ReferenceOrigins { get; init; } = [];
+
+    // The collector the program runs with, which decides what its code does around a store of a reference.
+    // None is the runtime's default collector, which asks nothing of compiled code.
+    public RuntimeCollector? Collector { get; init; }
     // Keep and reuse compiled units under IntermediateOutputPath. nwc and the SDK turn them
     // on by default at O0; at an optimizing level they are reused only when asked for.
     public bool CompiledUnits { get; init; }
@@ -67,6 +72,19 @@ public sealed record CompilerOptions(
     // The native libraries the program links, by NetWasmLibraryName. When given, a P/Invoke into any other library
     // compiles to a body that throws DllNotFoundException (NativeLibraryBinding); when null, every P/Invoke binds.
     public ImmutableArray<string>? LinkedNativeLibraries { get; init; }
+
+    // A reached method whose IL names a member its declaring type lacks fails the compile (NW1016). Otherwise it
+    // compiles to a body that throws MissingMethodException or MissingFieldException when called, as .NET throws
+    // when it first compiles such a method, and the compile warns NW1016 for it.
+    public bool MissingApiAsError { get; init; }
+
+    // The least severe entries the diagnostic log keeps. Trace, the most detailed (an entry for each emitted
+    // function and each method's metrics), is left out unless asked for: it is nearly all of a large program's log.
+    public LogLevel DiagnosticLogLevel { get; init; } = LogLevel.Debug;
+
+    // The native archives the program links, each with its library's NetWasmLibraryName. A C variadic function that
+    // P/Invokes declare through fixed-signature overloads takes the type its archive gives it.
+    public ImmutableArray<(string Library, string Path)> NativeArchives { get; init; } = [];
 
     // The project's feature switches the compiler folds: Trim="true" RuntimeHostConfigurationOption items with a
     // Boolean value. A call to a [FeatureSwitchDefinition] getter of one becomes its value.

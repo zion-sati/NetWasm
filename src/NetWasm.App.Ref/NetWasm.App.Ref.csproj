@@ -29,9 +29,12 @@
     <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
     <NetWasmSdkPackTaskAssemblyFile>$(NetWasmPackTaskOutput)</NetWasmSdkPackTaskAssemblyFile>
     <!-- The System.Text.Json and Regex source generators Microsoft.NETCore.App.Ref carries, from the exact
-         net10.0 targeting-pack archive, as NetWasm.Ref takes its LibraryImport generator: consumers load them
-         into their compiler, which may be .NET 10's. -->
+         targeting-pack archive, as NetWasm.Ref takes its LibraryImport generator. They come from .NET 11's pack,
+         as the libraries are .NET 11's: its System.Text.Json generator states each type's polymorphism, which
+         .NET 10's left to attributes read at run time. They reference Roslyn 4.4 (System.Text.Json) and 5.0
+         (Regex), which every .NET 10 SDK NetWasm supports has, so consumers' compilers still load them. -->
     <NetWasmRefGeneratorProvenanceName>source-generators</NetWasmRefGeneratorProvenanceName>
+    <NetWasmRefGeneratorTargetFramework>net11.0</NetWasmRefGeneratorTargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -67,10 +70,14 @@
   <UsingTask TaskName="NetWasm.Sdk.Pack.References.GenerateFrameworkFacadesTask"
              AssemblyFile="$(NetWasmPackTaskOutput)" />
   <!-- Contracts NetWasm.App owns only in part that still get a facade: the .NET Framework and .NET Standard 1.x
-       contract names, whose missing types (Registry, ArgIterator, code access security) no .NET Standard library
-       names. Other partial contracts also ship as packages, which keep their implementations. -->
+       contract names, whose missing types (Registry, ArgIterator, code access security, GDI+, WPF and syndication)
+       no .NET Standard library names; and System.Runtime.InteropServices.JavaScript, whose interop attributes and
+       JSObject a net8.0 or later package names and which has no package beyond .NET Standard 1.x, whose
+       implementation the framework's newer identity wins over. Other partial contracts, such as
+       System.Reflection.TypeExtensions and System.Security.Cryptography.Cng, also ship as packages, which keep their
+       implementations. -->
   <ItemGroup>
-    <NetWasmLegacyFacadeContract Include="mscorlib;System;System.Core;System.Data;System.Net;System.Runtime;System.Runtime.Extensions;System.Runtime.Serialization;System.Transactions;System.Linq.Expressions;System.Net.NameResolution;System.Net.WebClient;System.Reflection.Emit;System.Security.Cryptography.Algorithms" />
+    <NetWasmLegacyFacadeContract Include="mscorlib;System;System.Core;System.Data;System.Drawing;System.Net;System.Runtime;System.Runtime.Extensions;System.Runtime.Serialization;System.ServiceModel.Web;System.Transactions;System.Linq.Expressions;System.Net.NameResolution;System.Net.WebClient;System.Reflection.Emit;System.Security.Cryptography.Algorithms;System.Runtime.InteropServices.JavaScript;WindowsBase" />
   </ItemGroup>
 
   <Target Name="NetWasmAppRefBuildContracts"
@@ -175,6 +182,12 @@
         <AssetFolder>NetWasm,Version=v0.1</AssetFolder>
         <DependencyGroup>NetWasm,Version=v0.1</DependencyGroup>
       </_NetWasmAppRefTargetProfile>
+      <_NetWasmAppRefTargetProfile Include="net10.0-netwasm">
+        <Alias>net10.0-netwasm</Alias>
+        <Identifier>.NETCoreApp</Identifier>
+        <Version>v10.0</Version>
+        <AssetFolder>net10.0-netwasm</AssetFolder>
+      </_NetWasmAppRefTargetProfile>
       <_NetWasmAppRefPackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))">
         <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))</SourcePath>
         <PackagePath>README.md</PackagePath>
@@ -196,6 +209,24 @@
         <SourcePath>%(_NetWasmFrameworkFacade.FullPath)</SourcePath>
         <PackagePath>ref/NetWasm,Version=v0.1/%(_NetWasmFrameworkFacade.Filename)%(_NetWasmFrameworkFacade.Extension)</PackagePath>
         <TargetFrameworkAlias>netwasm0.1</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmAppRefPackageFile>
+      <_NetWasmAppRefPackageFile Include="@(_NetWasmAppReferenceAssembly)">
+        <SourcePath>%(_NetWasmAppReferenceAssembly.FullPath)</SourcePath>
+        <PackagePath>ref/net10.0-netwasm/%(_NetWasmAppReferenceAssembly.Filename)%(_NetWasmAppReferenceAssembly.Extension)</PackagePath>
+        <TargetFrameworkAlias>net10.0-netwasm</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmAppRefPackageFile>
+      <_NetWasmAppRefPackageFile Include="$(_NetWasmGeneratedStandardFacadePath)">
+        <SourcePath>$(_NetWasmGeneratedStandardFacadePath)</SourcePath>
+        <PackagePath>ref/net10.0-netwasm/netstandard.dll</PackagePath>
+        <TargetFrameworkAlias>net10.0-netwasm</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmAppRefPackageFile>
+      <_NetWasmAppRefPackageFile Include="@(_NetWasmFrameworkFacade)">
+        <SourcePath>%(_NetWasmFrameworkFacade.FullPath)</SourcePath>
+        <PackagePath>ref/net10.0-netwasm/%(_NetWasmFrameworkFacade.Filename)%(_NetWasmFrameworkFacade.Extension)</PackagePath>
+        <TargetFrameworkAlias>net10.0-netwasm</TargetFrameworkAlias>
         <PackKind>BuildOutput</PackKind>
       </_NetWasmAppRefPackageFile>
       <_NetWasmAppRefPackageFile Include="@(_NetWasmRefGeneratorPackageFile)" />

@@ -105,9 +105,54 @@ public sealed class ManagedInliningResolverTests
     [Fact]
     public void PreservesCallsThatTriggerTypeInitialization()
     {
-        var fixture = new Fixture { RequiresInitialization = true };
+        // A caller of another type must trigger the callee's type.
+        var other = CliTypeIdentity.Named(new AssemblyIdentity("InliningTests"), "", "Other", false);
+        var fixture = new Fixture
+        {
+            RequiresInitialization = true,
+            CallerOf = target => target with { DeclaringType = other },
+        };
         Assert.Null(fixture.Resolver().Resolve(fixture.Request()));
         Assert.Equal(0, fixture.SpecializerCalls);
+    }
+
+    // A static method of the caller's own type needs no trigger once the caller runs: a static method, constructor or
+    // reference type's instance method of that type. Another type's method, the type's initializer, a value type's
+    // instance method or another instantiation of a generic type still triggers it.
+    [Theory]
+    [InlineData("static", true)]
+    [InlineData("constructor", true)]
+    [InlineData("instance", true)]
+    [InlineData("other type", false)]
+    [InlineData("initializer", false)]
+    [InlineData("value type instance", false)]
+    [InlineData("other instantiation", false)]
+    public void ACallOfTheCallersOwnTypeNeedsNoTrigger(string caller, bool inlined)
+    {
+        var fixture = new Fixture
+        {
+            RequiresInitialization = true,
+            CallerOf = target =>
+            {
+                var declaring = caller switch
+                {
+                    "other type" => CliTypeIdentity.Named(new AssemblyIdentity("InliningTests"), "", "Other", false),
+                    "value type instance" => CliTypeIdentity.Named(new AssemblyIdentity("InliningTests"), "", "Owner", true),
+                    "other instantiation" => CliTypeIdentity.GenericInstantiation(target.DeclaringType,
+                        [CliTypeIdentity.Primitive("i8", CliValueKind.I8)]),
+                    _ => target.DeclaringType,
+                };
+                var definition = new MethodDefinitionModel(new(new AssemblyIdentity("InliningTests"), 0x06000099),
+                    target.Definition.DeclaringType,
+                    caller switch { "constructor" => ".ctor", "initializer" => ".cctor", _ => "Caller" },
+                    caller is "static" or "initializer" or "other type" or "other instantiation",
+                    target.Definition.Signature, 1);
+                return new MethodInstanceModel(definition, declaring, [], definition.Signature);
+            },
+        };
+        Assert.True(fixture.Target.Definition.IsStatic);
+
+        Assert.Equal(inlined, fixture.Resolver().Resolve(fixture.Request()) is not null);
     }
 
     [Theory]
@@ -362,15 +407,83 @@ public sealed class ManagedInliningResolverTests
     }
 
     [Theory]
-    [InlineData(false, 3, 1, true)]
-    [InlineData(true, 3, 1, true)]
-    [InlineData(true, 17, 1, false)]
-    [InlineData(true, 3, 0, false)]
-    public void AWrapperOfALargePriorityCalleeIsNotSmall(bool aggressive, int calleeInstructions, int calleeBody, bool resolves)
+    [InlineData(false, false, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void TheSmallOnlyRoundsTakeOnlySmallCalleesThatDoNotAllocate(bool allocates, bool large, bool resolves)
     {
-        // The leaf calls another method. An aggressive callee is a priority
-        // candidate, so a large one makes the wrapper really its size, while a
-        // small one composes like any small callee.
+        // The callee asks to be inlined, which a nested round grants. The last rounds take only a small callee that
+        // does not allocate.
+        var fixture = new Fixture(byReferenceParameter: false, aggressive: true, instructions: large
+            ? LeafBody(LeafShape.Straight, ManagedInliningResolver.SmallBodyInstructionLimit + 1)
+            :
+            [
+                new(0, 1, allocates ? CilOperation.NewArray : CilOperation.Nop, new CilOperand.None()),
+                new(1, 2, CilOperation.Nop, new CilOperand.None()),
+                new(2, 3, CilOperation.Return, new CilOperand.None()),
+            ])
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+        };
+
+        var resolver = fixture.Resolver();
+        Assert.NotNull(resolver.Resolve(fixture.Request() with { Nested = true }));
+        Assert.Equal(resolves, resolver.Resolve(fixture.Request() with { Nested = true, SmallOnly = true }) is not null);
+    }
+
+    [Theory]
+    [InlineData("Ctor", true, false)]
+    // Another static method of string, or an instance one named Ctor, is not the construction.
+    [InlineData("Concat", true, true)]
+    [InlineData("Ctor", false, true)]
+    public void NestedCallsLeaveACalleeThatConstructsAStringAsACall(string name, bool isStatic, bool resolves)
+    {
+        // Specialization has turned the callee's newobj of a string into a call to string's static Ctor.
+        var assembly = new AssemblyIdentity("InliningTests");
+        var signature = MethodSignatureModel.Create(CliValueKind.ManagedReference);
+        var target = new MethodInstanceModel(
+            new(new(assembly, 0x0600000b), new(assembly, 0x02000003), name, isStatic, signature, 1),
+            CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false), [], signature);
+        var fixture = new Fixture(byReferenceParameter: false, instructions:
+        [
+            new(0, 1, CilOperation.Call, new CilOperand.MethodInstance(target)),
+            new(1, 2, CilOperation.Pop, new CilOperand.None()),
+            new(2, 3, CilOperation.Return, new CilOperand.None()),
+        ])
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+        };
+
+        var resolver = fixture.Resolver();
+        Assert.NotNull(resolver.Resolve(fixture.Request()));
+        Assert.Equal(resolves, resolver.Resolve(fixture.Request() with { Nested = true }) is not null);
+    }
+
+    [Theory]
+    // A call in the caller's own body.
+    [InlineData(ManagedMethodInliningPolicy.Speed, false, 3, 1, false, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, 3, 1, false, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, 17, 1, false, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, ManagedInliningResolver.ComposedBodyInstructionLimit - 3, 1, false, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, ManagedInliningResolver.ComposedBodyInstructionLimit - 2, 1, false, false)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, 3, 0, false, false)]
+    // A call an earlier round exposed.
+    [InlineData(ManagedMethodInliningPolicy.Speed, false, 3, 1, true, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, 3, 1, true, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, 17, 1, true, false)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, ManagedInliningResolver.ComposedBodyInstructionLimit - 3, 1, true, false)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, true, 3, 0, true, false)]
+    [InlineData(ManagedMethodInliningPolicy.Loops, true, 3, 1, true, true)]
+    [InlineData(ManagedMethodInliningPolicy.Loops, true, 17, 1, true, false)]
+    public void AWrapperOfAPriorityCalleeIsSmallWhileTheWholeFitsThePolicysBudgetInTheCallersOwnBody(
+        ManagedMethodInliningPolicy policy, bool aggressive, int calleeInstructions, int calleeBody, bool nested,
+        bool resolves)
+    {
+        // The three-instruction wrapper calls another method. An aggressive callee is a priority candidate, so a
+        // large one is composed into the wrapper: under the speed policy, for a call in the caller's own body, the
+        // whole counts as small within the composed budget, and otherwise only within the small limit, since the
+        // later rounds leave the callee a call. A small callee composes like any small callee, and a callee with no
+        // body makes the wrapper large. The call is in a loop, where the size tiers decide under either policy.
         var fixture = new Fixture(byReferenceParameter: false, instructions:
         [
             new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
@@ -378,8 +491,138 @@ public sealed class ManagedInliningResolverTests
             new(2, 3, CilOperation.Return, new CilOperand.None()),
         ])
         {
+            Policy = policy,
             SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
             CalleeShape = (aggressive, calleeInstructions, calleeBody),
+        };
+
+        Assert.Equal(resolves, fixture.Resolver().Resolve(fixture.Request() with { Nested = nested, InLoop = true }) is not null);
+    }
+
+    [Theory]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes - 1, -1, false, "nop", true)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes, -1, false, "nop", false)]
+    [InlineData(true, ManagedInliningResolver.ByReferenceBodyILBytes, -1, false, "nop", true)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes, 0, false, "nop", true)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes, 0, true, "nop", false)]
+    // In a loop, past the budget, only a callee whose own loop loads the parameter that receives a local's address:
+    // not one that reaches the local once, nor one whose loop loads another parameter.
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes, 0, true, "load", false)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes, 0, true, "loop", true)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes, 1, true, "loop", false)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes, -1, true, "loop", false)]
+    public void AByReferenceCalleeIsAPriorityCandidateWithinTheJitsBudgetOrWhereItGetsALocalsAddress(
+        bool aggressive, int instructions, int addressArgument, bool inLoop, string access, bool resolves)
+    {
+        // The size tiers are off, so only the priority tier can take the callee, anywhere. Each instruction is one byte
+        // of IL, the head's included: the callee starts with a nop, a load through its by-reference parameter, or that
+        // load inside a loop.
+        CilInstruction[] head = access switch
+        {
+            "nop" => [new(0, 1, CilOperation.Nop, new CilOperand.None())],
+            "load" =>
+            [
+                new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.LoadObject, new CilOperand.TypeIdentity(CliTypeIdentity.Primitive("i4", CliValueKind.I4))),
+                new(2, 3, CilOperation.Pop, new CilOperand.None()),
+            ],
+            _ =>
+            [
+                new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.LoadObject, new CilOperand.TypeIdentity(CliTypeIdentity.Primitive("i4", CliValueKind.I4))),
+                new(2, 3, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(0)),
+            ],
+        };
+        var fixture = new Fixture(aggressive: aggressive, instructions:
+        [
+            .. head,
+            .. LeafBody(LeafShape.ManyBranches, instructions).Select(instruction => instruction with
+            {
+                Offset = instruction.Offset + head.Length,
+                NextOffset = instruction.NextOffset + head.Length,
+                Operand = instruction.Operand is CilOperand.BranchTarget target
+                    ? new CilOperand.BranchTarget(target.Offset + head.Length)
+                    : instruction.Operand,
+            }),
+        ]);
+
+        var request = fixture.Request() with
+        {
+            LocalAddressArguments = addressArgument < 0 ? [] : [addressArgument],
+            InLoop = inLoop,
+        };
+        Assert.Equal(resolves, fixture.Resolver().Resolve(request) is not null);
+        // A nested round takes only what the callee asks for.
+        Assert.Equal(aggressive, fixture.Resolver().Resolve(request with { Nested = true }) is not null);
+    }
+
+    [Fact]
+    public void ALocalsAddressDoesNotMakeAnInstanceOrByValueCalleeAPriorityCandidate()
+    {
+        var byValue = new Fixture(byReferenceParameter: false,
+            instructions: LeafBody(LeafShape.ManyBranches, ManagedInliningResolver.ByReferenceBodyILBytes + 1));
+        var instance = new Fixture(instance: true, callOperation: CilOperation.Call,
+            instructions: LeafBody(LeafShape.ManyBranches, ManagedInliningResolver.ByReferenceBodyILBytes + 1));
+
+        Assert.Null(byValue.Resolver().Resolve(byValue.Request() with { LocalAddressArguments = [0] }));
+        Assert.Null(instance.Resolver().Resolve(instance.Request() with { LocalAddressArguments = [0] }));
+        // Nor in a loop.
+        Assert.Null(byValue.Resolver().Resolve(byValue.Request() with { LocalAddressArguments = [0], InLoop = true }));
+        Assert.Null(instance.Resolver().Resolve(instance.Request() with { LocalAddressArguments = [0], InLoop = true }));
+    }
+
+    [Theory]
+    [InlineData(false, 3, true)]
+    [InlineData(false, ManagedInliningResolver.SmallBodyInstructionLimit + 1, false)]
+    [InlineData(true, ManagedInliningResolver.SmallBodyInstructionLimit + 1, true)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes + 1, true)]
+    public void AWrapperOfALargeByReferenceCalleeIsSmallOnlyWhenTheCalleeAsksToBeInlined(
+        bool aggressive, int calleeInstructions, bool resolves)
+    {
+        // A three-instruction wrapper that takes its argument by value passes it by reference to a callee, as
+        // decimal.Round(decimal, int, MidpointRounding) does to its private overload. The callee is a priority
+        // candidate within the by-reference budget, but the next round takes it only when it asks to be inlined:
+        // then the wrapper composes; otherwise it is as large as the callee. A small callee composes as any small
+        // callee does, and past the budget the callee stays a call. The call is in the caller's own body and in a
+        // loop, where only the size tiers decide.
+        var fixture = new Fixture(byReferenceParameter: false, instructions:
+        [
+            new(0, 1, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+            new(1, 2, CilOperation.Call, new CilOperand.None()),
+            new(2, 3, CilOperation.Return, new CilOperand.None()),
+        ])
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            CalleeShape = (aggressive, calleeInstructions, 1),
+            CalleeByReference = true,
+        };
+
+        Assert.Equal(resolves, fixture.Resolver().Resolve(fixture.Request() with { InLoop = true }) is not null);
+    }
+
+    [Theory]
+    [InlineData(ManagedInliningResolver.SmallBodyInstructionLimit, true)]
+    [InlineData(ManagedInliningResolver.SmallBodyInstructionLimit + 1, false)]
+    [InlineData(ManagedInliningResolver.ComposedBodyInstructionLimit - 3, false)]
+    [InlineData(ManagedInliningResolver.ByReferenceBodyILBytes, false)]
+    [InlineData(ManagedInliningResolver.ByReferenceBodyILBytes + 1, true)]
+    public void ANestedCallTakesAWrapperOfAByReferenceCalleeOnlyWhenTheCalleeIsSmallOrPastTheBudget(
+        int calleeInstructions, bool resolves)
+    {
+        // The wrapper and its callee both take an argument by reference. The priority tier composes a callee within
+        // its budget but larger than a small one, which makes the three-instruction wrapper that much larger. A nested
+        // call takes only a wrapper that is small by itself, as the later rounds leave such a callee a call (a call in
+        // the caller's own body takes the wrapper as a priority candidate). Past the budget the callee stays a call, and
+        // the wrapper stays small.
+        var fixture = new Fixture(instructions:
+        [
+            new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            new(1, 2, CilOperation.Call, new CilOperand.None()),
+            new(2, 3, CilOperation.Return, new CilOperand.None()),
+        ])
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            CalleeShape = (false, calleeInstructions, 1),
         };
 
         Assert.Equal(resolves, fixture.Resolver().Resolve(fixture.Request() with { Nested = true }) is not null);
@@ -464,6 +707,8 @@ public sealed class ManagedInliningResolverTests
             fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, -1, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ManagedInliningResolver(
             fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ManagedInliningResolver(
+            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0, 0, leafBodyILBytes: -1));
         Assert.Throws<ArgumentNullException>(() => fixture.Resolver().Resolve(null!));
     }
 
@@ -552,6 +797,42 @@ public sealed class ManagedInliningResolverTests
     }
 
     [Theory]
+    // Inside a loop a straight-line leaf inlines within the JIT's 128 IL bytes as well as within the leaf's
+    // instruction count, as a pixel helper of 58 instructions in 112 bytes does. Past both it is a loop body
+    // within that tier's size, or stays a call.
+    [InlineData(58, 2, true, true)]
+    [InlineData(64, 2, true, true)]
+    [InlineData(65, 2, false, false)]
+    [InlineData(33, 4, false, true)]
+    [InlineData(58, 3, false, false)]
+    public void AStraightLineLeafInlinesInsideALoopWithinTheJitsILBudget(int instructions, int bytesPerInstruction,
+        bool leaf, bool resolves)
+    {
+        foreach (var policy in new[] { ManagedMethodInliningPolicy.Speed, ManagedMethodInliningPolicy.Loops })
+        {
+            Fixture Callee(bool loopBodyTier) => new(byReferenceParameter: false,
+                instructions: Spaced(LeafBody(LeafShape.Straight, instructions), bytesPerInstruction))
+            {
+                Policy = policy,
+                SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+                LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+                LoopBodyLimit = loopBodyTier ? ManagedInliningResolver.LoopBodyInstructionLimit : 0,
+                LeafBodyILBytes = ManagedInliningResolver.LeafBodyILBytes,
+            };
+
+            var callee = Callee(loopBodyTier: true);
+            Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request() with { InLoop = true }) is not null);
+            Assert.Null(callee.Resolver().Resolve(callee.Request()));
+            var leafOnly = Callee(loopBodyTier: false);
+            Assert.Equal(leaf, leafOnly.Resolver().Resolve(leafOnly.Request() with { InLoop = true }) is not null);
+        }
+    }
+
+    // Spreads a body's instructions over the given number of IL bytes each, as their source offsets record.
+    private static ImmutableArray<CilInstruction> Spaced(ImmutableArray<CilInstruction> body, int bytesPerInstruction) =>
+        [.. body.Select(instruction => instruction with { OriginalOffset = instruction.Offset * bytesPerInstruction })];
+
+    [Theory]
     // A call the next round inlines leaves the loop without a call of its own.
     [InlineData(true, 40, true)]
     [InlineData(false, ManagedInliningResolver.SmallBodyInstructionLimit, true)]
@@ -570,12 +851,197 @@ public sealed class ManagedInliningResolverTests
     }
 
     [Theory]
+    // The next round inlines a small intrinsic that allocates, as it does an aggressive callee; a small callee
+    // that allocates and asks for nothing stays a call.
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void ALoopBodyMayCallASmallIntrinsicThatAllocates(bool intrinsic, bool resolves)
+    {
+        var caller = new Fixture(byReferenceParameter: false, instructions: LeafBody(LeafShape.Call, 40))
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+            CalleeShape = (false, 4, 1),
+            CalleeIntrinsic = intrinsic,
+            CalleeAllocates = true,
+        };
+
+        Assert.Equal(resolves, caller.Resolver().Resolve(caller.Request() with { InLoop = true }) is not null);
+    }
+
+    // The JIT's always-inline size: under the loops policy a callee of at most 16 IL bytes inlines outside a loop too,
+    // as at any call site, unless it allocates or throws; a larger one waits for a loop.
+    [Theory]
+    [InlineData(LeafShape.Straight, 8, true)]
+    [InlineData(LeafShape.Straight, 16, true)]
+    [InlineData(LeafShape.Straight, 17, false)]
+    [InlineData(LeafShape.ForwardBranch, 12, true)]
+    [InlineData(LeafShape.ThrownException, 8, false)]
+    [InlineData(LeafShape.ObjectAllocation, 8, false)]
+    public void UnderTheLoopsPolicyACalleeOfTheAlwaysInlineSizeInlinesAnywhere(LeafShape shape, int instructions, bool resolves)
+    {
+        var callee = new Fixture(byReferenceParameter: false, instructions: LeafBody(shape, instructions))
+        {
+            Policy = ManagedMethodInliningPolicy.Loops,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        };
+
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request()) is not null);
+    }
+
+    // ILLink removes the code a feature switch's branch cuts off before .NET's JIT measures a callee, so the
+    // always-inline size counts only what specialization leaves: 20 IL bytes with 6 folded away are 14.
+    [Theory]
+    [InlineData(new int[0], false)]
+    [InlineData(new[] { 2, 3, 4, 5, 6, 7 }, true)]
+    [InlineData(new[] { 2, 3, 4 }, false)]
+    public void TheAlwaysInlineSizeCountsOnlyTheCodeSpecializationLeaves(int[] removed, bool resolves)
+    {
+        var callee = LoopsPolicyCallee(LeafBody(LeafShape.Straight, 20), Removing(removed));
+
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request()) is not null);
+    }
+
+    // An instruction the decoder expanded (a call a platform guard proves false: its argument pops and a constant)
+    // keeps its IL bytes: it counts once, and goes only when every instruction made from it is a nop. Here 13
+    // one-byte instructions, a five-byte call expanded to three and the return, 19 bytes in all.
+    [Theory]
+    [InlineData(new int[0], false)]
+    [InlineData(new[] { 13, 14 }, false)]
+    [InlineData(new[] { 13, 14, 15 }, true)]
+    public void AnExpandedInstructionCountsOnceAndGoesWithAllItsParts(int[] removed, bool resolves)
+    {
+        CilInstruction[] expanded =
+        [
+            new(13, 14, CilOperation.Pop, new CilOperand.None()),
+            new(14, 15, CilOperation.Pop, new CilOperand.None()) { OriginalOffset = 13 },
+            new(15, 18, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)) { OriginalOffset = 13 },
+        ];
+        ImmutableArray<CilInstruction> body =
+        [
+            .. LeafBody(LeafShape.Straight, 14).Take(13),
+            .. expanded,
+            new(18, 19, CilOperation.Return, new CilOperand.None()),
+        ];
+        var callee = LoopsPolicyCallee(body, Removing(removed));
+
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request()) is not null);
+    }
+
+    // A body whose switch was lowered is renumbered one unit per instruction, each keeping its IL offset as its
+    // source: there an instruction spans up to the next source offset. Nine instructions two IL bytes apart are 17
+    // bytes, the last a byte; one of them removed leaves 15.
+    [Theory]
+    [InlineData(new int[0], false)]
+    [InlineData(new[] { 3 }, true)]
+    public void ARenumberedBodyMeasuresEachInstructionToTheNextSourceOffset(int[] removed, bool resolves)
+    {
+        var callee = LoopsPolicyCallee(Spaced(LeafBody(LeafShape.Straight, 9), 2), Removing(removed));
+
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request()) is not null);
+    }
+
+    // A nop in the IL is not code a fold removed, and counts: 16 instructions and a nop are 17 bytes.
+    [Fact]
+    public void ANopInTheILStillCounts()
+    {
+        ImmutableArray<CilInstruction> body =
+        [
+            new(0, 1, CilOperation.Nop, new CilOperand.None()),
+            .. LeafBody(LeafShape.Straight, 16).Select(static instruction =>
+                instruction with { Offset = instruction.Offset + 1, NextOffset = instruction.NextOffset + 1 }),
+        ];
+
+        var callee = LoopsPolicyCallee(body, null);
+
+        Assert.Null(callee.Resolver().Resolve(callee.Request()));
+    }
+
+    // The leaf tier's IL budget counts the same bytes: 33 three-byte instructions, a 40-byte one a fold removed and
+    // the return are 100 bytes, within the 128 a leaf of more than 32 instructions may take inside a loop.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void TheLeafTiersILBudgetCountsOnlyTheCodeSpecializationLeaves(bool folded, bool resolves)
+    {
+        ImmutableArray<CilInstruction> body =
+        [
+            .. Enumerable.Range(0, 33).Select(static index =>
+                new CilInstruction(index * 3, index * 3 + 3, CilOperation.LoadInt32, new CilOperand.ConstantI4(index))),
+            new(99, 139, CilOperation.LoadInt32, new CilOperand.ConstantI4(33)),
+            new(139, 140, CilOperation.Return, new CilOperand.None()),
+        ];
+        var callee = new Fixture(byReferenceParameter: false, instructions: body)
+        {
+            Specialize = folded ? Removing([33]) : null,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LeafBodyILBytes = ManagedInliningResolver.LeafBodyILBytes,
+        };
+
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request() with { InLoop = true }) is not null);
+    }
+
+    private static Fixture LoopsPolicyCallee(
+        ImmutableArray<CilInstruction> body, Func<CilMethodBody, CilMethodBody>? specialize) =>
+        new(byReferenceParameter: false, instructions: body)
+        {
+            Specialize = specialize,
+            Policy = ManagedMethodInliningPolicy.Loops,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        };
+
+    // A specialization that leaves the instructions at these positions as nops, as a folded branch leaves its code.
+    private static Func<CilMethodBody, CilMethodBody> Removing(int[] positions) => body => body with
+    {
+        Instructions = [.. body.Instructions.Select((instruction, index) => positions.Contains(index)
+            ? instruction with { Operation = CilOperation.Nop, Operand = new CilOperand.None() }
+            : instruction)],
+    };
+
+    [Theory]
+    // .NET's JIT expands the core library's intrinsics in place, so a small intrinsic asks to be inlined as
+    // AggressiveInlining does, outside loops too, under each policy that honors the ask; a body past the small tier
+    // is a software fallback and asks for nothing.
+    [InlineData(ManagedMethodInliningPolicy.Loops, 8, true)]
+    [InlineData(ManagedMethodInliningPolicy.Loops, 24, false)]
+    [InlineData(ManagedMethodInliningPolicy.Aggressive, 8, true)]
+    [InlineData(ManagedMethodInliningPolicy.Aggressive, 24, false)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, 24, false)]
+    public void ASmallIntrinsicAsksToBeInlined(ManagedMethodInliningPolicy policy, int instructions, bool resolves)
+    {
+        Fixture Callee(bool intrinsic) => new(byReferenceParameter: false, intrinsicAttribute: intrinsic,
+            instructions: LeafBody(LeafShape.ForwardBranch, instructions))
+        {
+            Policy = policy,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        };
+
+        var callee = Callee(intrinsic: true);
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request()) is not null);
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request() with { Nested = true }) is not null);
+        // Without the attribute the same body asks for nothing, though the loops policy inlines one within the JIT's
+        // always-inline size anyway.
+        var plain = Callee(intrinsic: false);
+        Assert.Equal(policy == ManagedMethodInliningPolicy.Loops && instructions <= ManagedInliningResolver.AlwaysInlineILBytes,
+            plain.Resolver().Resolve(plain.Request() with { Nested = true }) is not null);
+    }
+
+    [Theory]
     // Inside a loop the loops policy takes what the speed policy takes there: a small
-    // body, a leaf or a loop body, but not the unbounded priority shapes. Outside a loop
-    // it takes a callee marked AggressiveInlining, as the aggressive policy does, and a
-    // field accessor, which inlining only shrinks.
+    // body, a leaf or a loop body, but not the priority shapes. Outside a loop
+    // it takes a callee marked AggressiveInlining, as the aggressive policy does, a
+    // field accessor, which inlining only shrinks, and a callee within the JIT's
+    // always-inline size, as the small one here is.
     [InlineData(CalleeShape.Small, false, true, true)]
-    [InlineData(CalleeShape.Small, false, false, false)]
+    [InlineData(CalleeShape.Small, false, false, true)]
     [InlineData(CalleeShape.Leaf, false, true, true)]
     [InlineData(CalleeShape.Leaf, false, false, false)]
     [InlineData(CalleeShape.LoopBody, false, true, true)]
@@ -597,8 +1063,9 @@ public sealed class ManagedInliningResolverTests
                 CalleeShape.FieldAccessor => null,
                 CalleeShape.Leaf => LeafBody(LeafShape.Straight, 24),
                 CalleeShape.LoopBody => LeafBody(LeafShape.ForwardBranch, 40),
-                // Larger than every size tier: only its byref parameter makes it a candidate.
-                CalleeShape.ByReferencePriority => LeafBody(LeafShape.Straight, 60),
+                // Larger than the small and leaf tiers and branching too often for a loop body: only its byref
+                // parameter makes it a candidate.
+                CalleeShape.ByReferencePriority => LeafBody(LeafShape.ManyBranches, 50),
                 _ => LeafBody(LeafShape.Straight, 8),
             })
         {
@@ -611,6 +1078,33 @@ public sealed class ManagedInliningResolverTests
         var request = callee.Request() with { InLoop = inLoop };
         Assert.Equal(resolves, callee.Resolver().Resolve(request) is not null);
         Assert.Equal(resolves, callee.Resolver().Resolve(request with { Nested = true }) is not null);
+    }
+
+    [Theory]
+    // Outside a loop the loops policy also takes a small callee that receives an address: an argument by reference
+    // or a value type's instance. A larger one stays a call there, as does a small one that receives no address, and
+    // a nested round leaves one that allocates. Each instruction here spans three IL bytes, as field and argument
+    // loads do, so no callee is within the always-inline size.
+    [InlineData(true, false, 8, false, true)]
+    [InlineData(false, true, 8, false, true)]
+    [InlineData(false, false, 8, false, false)]
+    [InlineData(true, false, 24, false, false)]
+    [InlineData(true, false, 8, true, false)]
+    public void TheLoopsPolicyInlinesASmallCalleeThatReceivesAnAddressAnywhere(
+        bool byReference, bool valueTypeInstance, int instructions, bool allocates, bool resolves)
+    {
+        var callee = new Fixture(byReferenceParameter: byReference, instance: valueTypeInstance,
+            valueType: valueTypeInstance,
+            instructions: [.. LeafBody(allocates ? LeafShape.ArrayAllocation : LeafShape.Straight, instructions)
+                .Select(static instruction => instruction with { OriginalOffset = instruction.Offset * 3 })])
+        {
+            Policy = ManagedMethodInliningPolicy.Loops,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        };
+
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request() with { Nested = allocates }) is not null);
     }
 
     public enum CalleeShape { Small, Leaf, LoopBody, ByReferencePriority, FieldAccessor }
@@ -832,7 +1326,8 @@ public sealed class ManagedInliningResolverTests
             ImmutableArray<CilInstruction>? instructions = null,
             int import = 0,
             bool constructed = false,
-            bool valueType = false)
+            bool valueType = false,
+            bool intrinsicAttribute = false)
         {
             valueType |= rejection == RejectedCandidate.ValueTypeInstance;
             constructed |= rejection == RejectedCandidate.OpenLocal;
@@ -880,6 +1375,7 @@ public sealed class ManagedInliningResolverTests
                 rejection == RejectedCandidate.NoBody ? 0 : 1)
             {
                 IsAggressiveInlining = aggressive,
+                IsIntrinsic = intrinsicAttribute,
                 IsNoInlining = rejection == RejectedCandidate.NoInlining,
                 GenericArity = constructed ? 1 : 0,
                 IsVirtual = isVirtual || rejection == RejectedCandidate.OverridableCallVirtual,
@@ -915,6 +1411,8 @@ public sealed class ManagedInliningResolverTests
 
         public int LoopBodyLimit { get; init; }
 
+        public int LeafBodyILBytes { get; init; }
+
         public ManagedMethodInliningPolicy Policy { get; init; } = ManagedMethodInliningPolicy.Speed;
         public bool Classify(MethodDefinitionModel method) => RequiresInitialization;
         public bool IsIntrinsic { get; init; }
@@ -931,10 +1429,13 @@ public sealed class ManagedInliningResolverTests
             this,
             this,
             this,
-            Policy, this, this, SmallBodyLimit, LeafBodyLimit, LoopBodyLimit);
+            Policy, this, this, SmallBodyLimit, LeafBodyLimit, LoopBodyLimit, LeafBodyILBytes);
+
+        // Another caller, in place of the fixture's own.
+        public Func<MethodInstanceModel, MethodInstanceModel>? CallerOf { get; init; }
 
         public ManagedInliningRequest Request() => new(
-            Caller,
+            CallerOf?.Invoke(Target) ?? Caller,
             new(
                 0,
                 1,
@@ -965,8 +1466,10 @@ public sealed class ManagedInliningResolverTests
                     Method = method.Definition,
                     Instructions =
                     [
-                        .. Enumerable.Range(0, shape.Instructions - 1).Select(static index =>
-                            new CilInstruction(index, index + 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(index))),
+                        .. Enumerable.Range(0, shape.Instructions - 1).Select(index =>
+                            CalleeAllocates && index == shape.Instructions - 2
+                                ? new CilInstruction(index, index + 1, CilOperation.NewArray, new CilOperand.TypeIdentity(Int32))
+                                : new CilInstruction(index, index + 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(index))),
                         new(shape.Instructions - 1, shape.Instructions, CilOperation.Return, new CilOperand.None()),
                     ],
                 }
@@ -974,6 +1477,10 @@ public sealed class ManagedInliningResolverTests
 
         // The method that a call without an operand in the leaf's body reaches.
         public (bool Aggressive, int Instructions, int RelativeVirtualAddress)? CalleeShape { get; init; }
+
+        // The callee is a core library intrinsic, and its body allocates an array before it returns.
+        public bool CalleeIntrinsic { get; init; }
+        public bool CalleeAllocates { get; init; }
 
         private static readonly EntityKey CalleeKey = new(Assembly, 0x06000009);
 
@@ -990,25 +1497,41 @@ public sealed class ManagedInliningResolverTests
             Signature = MethodSignatureModel.Create(Int32),
         };
 
+        // The callee takes its argument by reference while the leaf takes it by value, as a public method that
+        // passes its parameter's address to a private overload does.
+        public bool CalleeByReference { get; init; }
+
+        private MethodSignatureModel CalleeSignature => CalleeByReference
+            ? MethodSignatureModel.Create(Int32, [CliTypeIdentity.ManagedByReference(Int32)])
+            : Target.Definition.Signature;
+
         private MethodInstanceModel Callee(bool aggressive, int relativeVirtualAddress) => Target with
         {
             Definition = new MethodDefinitionModel(CalleeKey, Target.Definition.DeclaringType, "Callee", true,
-                Target.Definition.Signature, relativeVirtualAddress)
+                CalleeSignature, relativeVirtualAddress)
             {
                 IsAggressiveInlining = aggressive,
+                IsIntrinsic = CalleeIntrinsic,
             },
+            Signature = CalleeSignature,
         };
 
         public CilMethodBody Rewrite(CilMethodBody body)
         {
             SpecializerCalls++;
-            return body;
+            return Specialize?.Invoke(body) ?? body;
         }
+
+        // What specialization does to the body as read; nothing by default.
+        public Func<CilMethodBody, CilMethodBody>? Specialize { get; init; }
 
         public MethodInstanceModel? Resolve(CilInstruction instruction) =>
             _rejection == RejectedCandidate.Unresolved ? null
             : instruction.Operand is CilOperand.Entity { Key: var key } && key == AccessorKey ? Accessor
             : instruction is { Operation: CilOperation.NewObject, Operand: CilOperand.MethodInstance constructor } ? constructor.Value
+            // A call to one of string's own methods reaches it.
+            : instruction is { Operation: CilOperation.Call, Operand: CilOperand.MethodInstance { Value.DeclaringType.CanonicalName: "primitive:string" } call }
+                ? call.Value
             : instruction.Operand is CilOperand.None && CalleeShape is { } shape ? Callee(shape.Aggressive, shape.RelativeVirtualAddress)
             : Target;
 

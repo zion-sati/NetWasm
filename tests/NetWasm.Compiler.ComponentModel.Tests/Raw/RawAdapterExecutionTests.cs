@@ -113,9 +113,9 @@ public sealed class RawAdapterExecutionTests
             ], D(8)),
         ], """
             let received;
-            let behaviour = () => ({ xValue: -3, y: 2.5 });
+            let behavior = () => ({ xValue: -3, y: 2.5 });
             const harness = await open({ "sample:raw/api@1.0.0": {
-              shapes(...values) { received = values; return behaviour(); },
+              shapes(...values) { received = values; return behavior(); },
             } });
             const { imports, address, view, readPointer, readBytes } = harness;
             const scratch = new DataView(new ArrayBuffer(8));
@@ -141,15 +141,15 @@ public sealed class RawAdapterExecutionTests
             call(2, 0n);
             assert.deepEqual(received[1], { tag: "empty" });
             assert.throws(() => call(3, 0n), /variant discriminant is invalid/);
-            behaviour = () => { throw Object.assign(new Error("no"), { payload: "bad" }); };
+            behavior = () => { throw Object.assign(new Error("no"), { payload: "bad" }); };
             call(2, 0n);
             assert.equal(view().getUint8(1024), 1);
             // The point's f64 aligns the payload at 8.
             const text = readPointer(1032);
             assert.equal(new TextDecoder().decode(readBytes(text, 3)), "bad");
-            behaviour = () => { throw new RangeError("host failure"); };
+            behavior = () => { throw new RangeError("host failure"); };
             assert.throws(() => call(2, 0n), /host failure/);
-            behaviour = () => ({ xValue: 1 });
+            behavior = () => ({ xValue: 1 });
             assert.throws(() => call(2, 0n), /record value is invalid/);
             """);
     }

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
@@ -79,16 +80,24 @@ public sealed class ValueTaskCompilationTests
             }
             """);
 
+        // Both builders complete their tasks. Inlining is off: Create only returns a default builder, and each
+        // builder's SetResult is a small method of a struct, which the loops policy inlines where it is called.
         var result = NetWasmCompiler.Compile(CreateReactorOptions(
             assets,
             assembly,
             "AsyncValueTaskFixture.EntryPoint",
-            "Run"));
+            "Run") with
+        {
+            OptimizationOverrides = new(ManagedMethodInlining: ManagedMethodInlining.Disabled),
+        });
 
         Assert.Contains(result.Program.MethodInstances.Values, method =>
-            method.Definition.Name == "Create" &&
-            method.DeclaringType.CanonicalName.Contains(
-                "AsyncValueTaskMethodBuilder", StringComparison.Ordinal));
+            method.Definition.Name == "SetResult" &&
+            method.DeclaringType.CanonicalName.Contains("AsyncValueTaskMethodBuilder`1", StringComparison.Ordinal));
+        Assert.Contains(result.Program.MethodInstances.Values, method =>
+            method.Definition.Name == "SetResult" &&
+            method.DeclaringType.CanonicalName.EndsWith("System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder",
+                StringComparison.Ordinal));
         Assert.NotEmpty(result.ApplicationModule);
     }
 }

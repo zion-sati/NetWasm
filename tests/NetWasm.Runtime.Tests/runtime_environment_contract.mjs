@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createOutputStreamImports } from './output-stream-imports.mjs';
 import { createRuntimeContractImports } from './runtime-contract-imports.mjs';
 
 const [modulePath, target, collectionMode = 'normal'] = process.argv.slice(2);
@@ -49,9 +50,17 @@ for (const { environment, earlyAllocation } of startupCases) {
     return Number(pointer);
   }
   const runtimeImports = createRuntimeContractImports(target, () => instance.exports.memory);
+  // WASI 0.3 standard error: the runtime opens one stream for it and writes each report to that stream.
+  const outputs = createOutputStreamImports(target, () => instance.exports.memory, unexpected,
+    bytes => output.push(new TextDecoder().decode(bytes)));
+  const writeStderr = outputs[`${prefix}|wasi:cli/stderr@0.3`]['write-via-stream'];
   instance = await WebAssembly.instantiate(module, {
     ...runtimeImports,
-    [`${prefix}|wasi:cli/environment@0.2`]: {
+    ...outputs,
+    [`${prefix}|wasi:cli/stderr@0.3`]: {
+      'write-via-stream'(readable) { ++stderrReads; return writeStderr(readable); },
+    },
+    [`${prefix}|wasi:cli/environment@0.3`]: {
       'get-environment'(result) {
         ++valueReads;
         const pointers = allocate(encoded.length * addressSize * 4, addressSize);
@@ -71,22 +80,6 @@ for (const { environment, earlyAllocation } of startupCases) {
         writeSize(Number(result) + addressSize, encoded.length);
       },
     },
-    [`${prefix}|wasi:cli/stdout@0.2`]: { 'get-stdout': unexpected },
-    [`${prefix}|wasi:cli/stderr@0.2`]: {
-      'get-stderr'() { ++stderrReads; return 42; },
-    },
-    [`${prefix}|wasi:io/streams@0.2`]: {
-      '[method]output-stream.blocking-write-and-flush'(handle, contents, length, result) {
-        assert.equal(handle, 42);
-        assert.ok(Number(length) <= 4096);
-        output.push(new TextDecoder().decode(new Uint8Array(
-          instance.exports.memory.buffer, Number(contents), Number(length))));
-        new DataView(instance.exports.memory.buffer).setUint8(Number(result), 0);
-      },
-      'output-stream_drop': unexpected,
-    },
-    [`${prefix}|wasi:io/error@0.2`]: { error_drop: unexpected },
-    [`${prefix}|wasi:cli/exit@0.2`]: { exit: unexpected },
   });
   assert.equal(instance.exports.component_realloc(
     address(1), address(0), address(1), address(0)), address(0));

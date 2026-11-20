@@ -57,6 +57,38 @@ public sealed class ReadOnlySpanDataResolverTests
         Assert.Equal(elementSize * 2, resolved.Field.Definition.InitialData.Length);
     }
 
+    // Roslyn reads a constant span of an enum from data as its underlying type's (RuntimeHelpers.CreateSpan<TEnum>).
+    [Theory]
+    [InlineData("u1", CliValueKind.I4, 1)]
+    [InlineData("i2", CliValueKind.I4, 2)]
+    [InlineData("u4", CliValueKind.I4, 4)]
+    [InlineData("i8", CliValueKind.I8, 8)]
+    public void AnEnumElementTakesItsUnderlyingPrimitivesSize(string underlying, CliValueKind stackKind, int elementSize)
+    {
+        var element = CliTypeIdentity.Named(new AssemblyIdentity("App"), "App", "Color", isValueType: true, stackKind)
+            .WithStackStorageType(CliTypeIdentity.Primitive(underlying, stackKind));
+        var fixture = new Fixture(elementSize: elementSize, element: element);
+
+        var resolved = new ReadOnlySpanDataResolver().Resolve(fixture.Target, fixture.Field);
+
+        Assert.NotNull(resolved);
+        Assert.Equal(element, resolved.ElementType);
+        Assert.Equal(2, resolved.ElementCount);
+        Assert.True(ReadOnlySpanDataResolver.TryGetElementSize(element, out var size));
+        Assert.Equal(elementSize, size);
+    }
+
+    [Fact]
+    public void AStructElementWithoutAPrimitiveStorageIsNotConstantData()
+    {
+        var element = CliTypeIdentity.Named(new AssemblyIdentity("App"), "App", "Pair", isValueType: true);
+
+        var fixture = new Fixture(element: element);
+
+        Assert.False(ReadOnlySpanDataResolver.TryGetElementSize(element, out _));
+        Assert.Null(new ReadOnlySpanDataResolver().Resolve(fixture.Target, fixture.Field));
+    }
+
     [Theory]
     [InlineData(ResolverFault.NullTarget)]
     [InlineData(ResolverFault.DeclaringAssembly)]
@@ -130,11 +162,12 @@ public sealed class ReadOnlySpanDataResolverTests
             ResolverFault fault = ResolverFault.None,
             string elementCanonicalName = "u1",
             CliValueKind elementStackKind = CliValueKind.I4,
-            int elementSize = 1)
+            int elementSize = 1,
+            CliTypeIdentity? element = null)
         {
             var core = new AssemblyIdentity("NetWasm.CoreLib");
             var other = new AssemblyIdentity("Other");
-            Element = fault == ResolverFault.OpenElement
+            Element = element ?? (fault == ResolverFault.OpenElement
                 ? CliTypeIdentity.GenericParameter(method: true, 0)
                 : fault == ResolverFault.UnsupportedElement
                     ? CliTypeIdentity.Primitive(
@@ -144,7 +177,7 @@ public sealed class ReadOnlySpanDataResolverTests
                         ? CliTypeIdentity.Primitive("u4", CliValueKind.I4)
                     : CliTypeIdentity.Primitive(
                         elementCanonicalName,
-                        elementStackKind);
+                        elementStackKind));
             var spanDefinition = CliTypeIdentity.Named(
                 fault == ResolverFault.ReturnAssembly ? other : core,
                 "System",

@@ -9,10 +9,11 @@ namespace NetWasm.Compiler.Analysis.Arrays;
 
 internal sealed class RepeatedArrayAccessEliminatorFactory : IRepeatedArrayAccessEliminatorFactory
 {
-    public IRepeatedArrayAccessEliminator Create(IControlFlowGraphBuilder graphs, ITypedStackValidator stacks, IControlFlowDominanceAnalyzer dominance, WasmOptimizationSettings settings)
+    public IRepeatedArrayAccessEliminator Create(IControlFlowGraphBuilder graphs, ITypedStackValidator stacks,
+        IControlFlowDominanceAnalyzer dominance, ICalledMethodResolver calledMethods, WasmOptimizationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return new RepeatedArrayAccessEliminator(graphs, stacks, new RepeatedArrayAccessPlanner(dominance),
+        return new RepeatedArrayAccessEliminator(graphs, stacks, new RepeatedArrayAccessPlanner(dominance, calledMethods),
             settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative);
     }
 }

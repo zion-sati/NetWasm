@@ -13,13 +13,24 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 // the meet of the exits of its ordinary predecessors that some path reaches, and the empty fact at
 // an opaque block (the method's entry among them). Starting from the opaque blocks, exits only
 // shrink, so the iteration stops at the greatest fixpoint; a block no path reaches gets the empty
-// fact.
+// fact. The method's entry block may start with a fact of its own (what the frame's entry
+// establishes) when no ordinary edge returns to it.
 internal static class RootFactFlow
 {
     public static ImmutableDictionary<StructuredBlockId, TFact> Solve<TFact>(
         StructuredMethod method,
         StructuredBlockPredecessors flow,
         TFact empty,
+        Func<TFact, TFact, TFact> meet,
+        Func<TFact, TFact, bool> equal,
+        Func<StructuredBlockDefinition, TFact, TFact> transfer) =>
+        Solve(method, flow, empty, empty, meet, equal, transfer);
+
+    public static ImmutableDictionary<StructuredBlockId, TFact> Solve<TFact>(
+        StructuredMethod method,
+        StructuredBlockPredecessors flow,
+        TFact empty,
+        TFact methodEntry,
         Func<TFact, TFact, TFact> meet,
         Func<TFact, TFact, bool> equal,
         Func<StructuredBlockDefinition, TFact, TFact> transfer)
@@ -52,7 +63,8 @@ internal static class RootFactFlow
 
         TFact Entry(StructuredBlockId id)
         {
-            if (flow.Opaque.Contains(id)) return empty;
+            if (flow.Opaque.Contains(id))
+                return id == method.EntryBlock && flow.Predecessors[id].IsEmpty ? methodEntry : empty;
             var reached = flow.Predecessors[id].Where(exits.ContainsKey).ToArray();
             // A block is queued only once a predecessor is reached.
             return reached.Skip(1).Aggregate(exits[reached[0]], (fact, predecessor) => meet(fact, exits[predecessor]));

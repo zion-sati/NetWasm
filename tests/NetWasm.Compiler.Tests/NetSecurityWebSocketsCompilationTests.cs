@@ -362,13 +362,16 @@ public sealed class NetSecurityWebSocketsCompilationTests
                 // Concrete TLS and Negotiate streams check their arguments as upstream does.
                 if (!Throws<ArgumentNullException>(() => new SslStream(null!))) return 41;
                 if (!Throws<ArgumentException>(() => new NegotiateStream(new ReadOnlyStream()))) return 42;
-        #if !DESKTOP_ORACLE
-                // NetWasm has no TLS or Negotiate backend: construction throws before using the stream.
+                // A TLS stream touches nothing until it authenticates, and refuses I/O before that, as upstream's does.
                 var untouched = new DuplexStream(new Pipe(), new Pipe());
-                if (!Throws<PlatformNotSupportedException>(() => new SslStream(untouched, false))) return 43;
+                var tls = new SslStream(untouched, false);
+                if (tls.IsAuthenticated || tls.CanRead || tls.CanWrite || tls.IsServer) return 43;
+                if (!Throws<InvalidOperationException>(() => tls.ReadByte()) || !Throws<InvalidOperationException>(() => tls.Write(new byte[1]))) return 43;
+        #if !DESKTOP_ORACLE
+                // NetWasm has no Negotiate backend: construction throws before using the stream.
                 if (!Throws<PlatformNotSupportedException>(() => new NegotiateStream(untouched))) return 44;
-                if (untouched.Disposed || untouched.Flushes != 0) return 45;
         #endif
+                if (untouched.Disposed || untouched.Flushes != 0) return 45;
 
                 // Client options: owner-created defaults, validation and identity.
                 var socket = new ClientWebSocket();
@@ -508,9 +511,11 @@ public sealed class NetSecurityWebSocketsCompilationTests
                 if (cancelled.State != WebSocketState.Closed || !Throws<InvalidOperationException>(() => cancelled.Options.KeepAliveInterval = TimeSpan.Zero)) return 121;
                 if (!Throws<ObjectDisposedException>(() => cancelled.ConnectAsync(new Uri("ws://example.com/"), default))) return 122;
         #if !DESKTOP_ORACLE
-                // NetWasm has no transport to upgrade: connecting fails catchably and the client ends closed.
+                // NetWasm's upgrade cannot authenticate over HTTP: connecting fails catchably, before connecting, and
+                // the client ends closed.
                 var unsupported = new ClientWebSocket();
-                if (!await ThrowsAsync<PlatformNotSupportedException>(() => unsupported.ConnectAsync(new Uri("wss://example.com/"), default)).ConfigureAwait(false)) return 123;
+                unsupported.Options.Credentials = new NetworkCredential("user", "secret");
+                if (!await ThrowsAsync<PlatformNotSupportedException>(() => unsupported.ConnectAsync(new Uri("ws://example.com/"), default)).ConfigureAwait(false)) return 123;
                 if (unsupported.State != WebSocketState.Closed || !Throws<ObjectDisposedException>(() => unsupported.ConnectAsync(new Uri("ws://example.com/"), default))) return 124;
         #endif
                 return 0;

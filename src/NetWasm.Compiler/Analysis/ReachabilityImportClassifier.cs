@@ -60,8 +60,9 @@ internal sealed class ReachabilityImportClassifier(
         var enqueuedMethods = ImmutableArray.CreateBuilder<MethodInstanceModel>();
         var exceptions = ImmutableArray.CreateBuilder<ReachabilityExceptionRequirement>();
         var hostCallbacks = ImmutableArray.CreateBuilder<HostCallbackDeclaration>();
-        var isAsyncExportBoundary = request.IsOutwardBoundary ||
-                                    method.JSExport is not null;
+        // A JSExport is a boundary where the program exports it, which it does wherever a JavaScript host runs the
+        // program; without one, the method is an ordinary call, which a program may make from C#.
+        var isAsyncExportBoundary = request.IsOutwardBoundary;
         var asyncBinding = method.JSImport is not null || isAsyncExportBoundary
             ? javaScriptAsyncBindings.Resolve(method)
             : null;
@@ -250,7 +251,7 @@ internal sealed class ReachabilityImportClassifier(
                 "reachable method has no CIL body and is not a declared runtime intrinsic",
                 symbols.Format(method)));
         }
-        var exportConversions = method.JSExport is not null
+        var exportConversions = method.JSExport is not null && request.IsOutwardBoundary
             ? AddConversions(ExportBoundary(method, asyncBinding), enqueuedMethods)
             : ImmutableDictionary<string, MethodInstanceModel>.Empty;
         return new(

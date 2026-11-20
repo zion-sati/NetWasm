@@ -99,6 +99,8 @@ internal static class CompilationOptionsFingerprint
                      .OrderBy(pair => pair.Key, StringComparer.Ordinal))
             Add("alias", $"{alias}:{target}");
         Add("type-names", options.EmitTypeNames);
+        // What the collector asks of compiled code, not its name: collectors that ask the same share units.
+        Add("reference-write-barrier", options.Collector?.HasGenerations ?? false);
         Add("stack-trace", options.EmitStackTrace);
         Add("javascript-boundary", options.UseJavaScriptExportBoundary);
         Add("project", options.ProjectDirectory);
@@ -114,6 +116,15 @@ internal static class CompilationOptionsFingerprint
             Add("runtime-property", $"{name}={value}");
         foreach (var library in (options.LinkedNativeLibraries ?? []).Order(StringComparer.Ordinal))
             Add("native-library", library);
+        // An archive gives a C variadic function the type its stubs call; one that changes changes them.
+        foreach (var (library, path) in options.NativeArchives.IsDefault ? [] : options.NativeArchives)
+            Add("native-archive", $"{library}={path}={ArchiveStamp(path)}");
         return Convert.ToHexString(XxHash128.Hash(Encoding.UTF8.GetBytes(text.ToString())));
+    }
+
+    private static string ArchiveStamp(string path)
+    {
+        var file = new System.IO.FileInfo(path);
+        return file.Exists ? $"{file.Length}:{file.LastWriteTimeUtc.Ticks}" : "missing";
     }
 }

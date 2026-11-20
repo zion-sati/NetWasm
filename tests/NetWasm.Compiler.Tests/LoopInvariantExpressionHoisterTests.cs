@@ -59,7 +59,7 @@ public sealed class LoopInvariantExpressionHoisterTests
         { "two tests for one arm", true },
         { "square root in an arm", true },
         { "reinterpreted vector in an arm", true },
-        { "switch ahead of the choice", true },
+        { "branch ahead of the choice", true },
         { "choice of vectors", false },
         { "straight-line duplicate and comparison", false },
         { "jump back to the body's start", false },
@@ -299,9 +299,8 @@ public sealed class LoopInvariantExpressionHoisterTests
             I(CilOperation.ConvertInt32)], [Arg(1)])),
         "reinterpreted vector in an arm" => Loop(Choice([Local(4), Call(AsInt64), I(CilOperation.LoadInt32, 0), Call(GetElement),
             I(CilOperation.ConvertInt32)], [Arg(1)])),
-        // switch (a) { case 0: ... }, landing just past itself and on an offset no instruction has.
-        "switch ahead of the choice" => Loop(Choice(Arg(0), Arg(1)), [Arg(0),
-            I(CilOperation.Switch, new CilOperand.SwitchTargets([5, 999]))]),
+        // A branch landing just past itself; the splice moves its target with it.
+        "branch ahead of the choice" => Loop(Choice(Arg(0), Arg(1)), [Arg(0), Branch(CilOperation.BranchIfTrue, 5)]),
         "choice of vectors" => Loop(Choice(Local(4), Local(4))),
         // Each instruction here, taken as a run's first, has nothing on the stack to work on.
         "straight-line duplicate and comparison" => Loop([Arg(0), I(CilOperation.Duplicate), I(CilOperation.CompareLessThanSigned)]),

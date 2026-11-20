@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Immutable;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
@@ -19,7 +20,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 // becomes the call's result (a nullable's value's box, a struct copied into a new box).
 internal sealed class MemberFieldReadCaseEmitter(
     IMemberDescriptorLayout descriptors,
-    IMemberDescriptorCaseEmitter descriptorCases,
     IStaticInitializationEmitter initialization,
     IMemberReferenceCheckEmitter referenceChecks,
     INullableTypeResolver nullableTypes,
@@ -34,8 +34,6 @@ internal sealed class MemberFieldReadCaseEmitter(
 {
     private readonly IMemberDescriptorLayout _descriptors = descriptors ??
         throw new ArgumentNullException(nameof(descriptors));
-    private readonly IMemberDescriptorCaseEmitter _descriptorCases = descriptorCases ??
-        throw new ArgumentNullException(nameof(descriptorCases));
     private readonly IStaticInitializationEmitter _initialization = initialization ??
         throw new ArgumentNullException(nameof(initialization));
     private readonly IMemberReferenceCheckEmitter _referenceChecks = referenceChecks ??
@@ -59,23 +57,20 @@ internal sealed class MemberFieldReadCaseEmitter(
     private readonly IAddressInstructionEmitter _addresses = addresses ??
         throw new ArgumentNullException(nameof(addresses));
 
-    public int EmitCases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan)
+    public ImmutableArray<MemberCase> Cases(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, MemberExecutionPlan plan)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(plan);
-        int descriptorLocal = request.Local(0, CliValueKind.ManagedReference);
         int receiverLocal = request.Local(1, CliValueKind.ManagedReference);
         var cases = plan.Fields.Values
             .OrderBy(field => field.CanonicalName, StringComparer.Ordinal)
             .ToArray();
         var throwFunction = request.Instruction.Context.ManagedThrowFunction;
-        foreach (var field in cases)
+        return [.. cases.Select(field => new MemberCase(_descriptors.GetDescriptorAddress(field), () => EmitCase(field)))];
+
+        void EmitCase(FieldInstanceModel field)
         {
-            _descriptorCases.Open(
-                code,
-                descriptorLocal,
-                _descriptors.GetDescriptorAddress(field));
             if (field.Definition.IsStatic)
             {
                 _initialization.Emit(new(field.Definition.DeclaringType, field.DeclaringType,
@@ -91,8 +86,7 @@ internal sealed class MemberFieldReadCaseEmitter(
             {
                 _fieldLocations.Emit(code, receiverLocal, field, address: true);
                 _nullableResults.Emit(request, code, underlying);
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-                continue;
+                return;
             }
             if (field.FieldType.StackKind == CliValueKind.ValueType)
             {
@@ -105,8 +99,7 @@ internal sealed class MemberFieldReadCaseEmitter(
                 _fieldLocations.Emit(code, receiverLocal, field, address: true);
                 SmallBlockEmitter.EmitKnownSizeCopy(code, request.Instruction.Context, valueLayout.Size,
                     SmallBlockEmitter.WidestChunk(valueLayout), writer => _addresses.Emit(writer, valueLayout.Size));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-                continue;
+                return;
             }
             var fieldOffset = _fieldLocations.Emit(code, receiverLocal, field, address: false);
             ManagedMemoryEmitter.EmitLoadByType(
@@ -116,8 +109,6 @@ internal sealed class MemberFieldReadCaseEmitter(
                 field.FieldType,
                 _values.GetValueLayout(field.FieldType).Size, scratch: request.Instruction.Context.VectorScratch);
             _results.Emit(request, code, field.FieldType);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
         }
-        return cases.Length;
     }
 }

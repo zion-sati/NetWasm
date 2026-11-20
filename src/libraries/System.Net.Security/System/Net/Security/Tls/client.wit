@@ -1,0 +1,10 @@
+package netwasm:tls@1.0.0;
+
+// The interfaces System.Net.Security's wasi:tls provider binds: the client connector of the
+// Preview 3 draft Wasmtime 50 implements. WasiTlsBindings.g.cs is generated from this file, with
+// the toolchain's src/NetWasm.Toolchain/wit/deps/wasi-tls copied beside it as deps/tls:
+//   netwasm-wit-bindgen --wit <directory> --world netwasm:tls@1.0.0/client \
+//     --output WasiTlsBindings.g.cs --accessibility internal
+world client {
+  import wasi:tls/client@0.3.0-draft;
+}

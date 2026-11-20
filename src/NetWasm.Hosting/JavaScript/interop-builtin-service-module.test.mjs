@@ -39,7 +39,64 @@ test("composes selected generated and supplied built-in services", async () => {
   assert.equal(callbacks, 1);
 });
 
-test("adapts built-in string, byte, handle, and subscription services", () => {
+// .NET's module-less [JSImport("globalThis.<path>")] calls the global function the path names.
+test("serves a module-less import of a global function", () => {
+  globalThis.netwasmBuiltinFixture = { offset: 5, shift(value) { return value + this.offset; } };
+  try {
+    const fixture = createFixture([
+      Object.freeze({ module: "netwasm.host.v1", name: "globalThis.netwasmBuiltinFixture.shift" }),
+      Object.freeze({ module: "netwasm.host.v1", name: "globalThis.netwasmBuiltinMissing" }),
+    ]);
+    const builtins = createInteropBuiltinServiceModule(fixture.request);
+
+    assert.equal(builtins["globalThis.netwasmBuiltinFixture.shift"](2), 7);
+    assert.equal(builtins["globalThis.netwasmBuiltinMissing"], undefined);
+  } finally {
+    delete globalThis.netwasmBuiltinFixture;
+  }
+});
+
+// JSObject's property API reads and writes the object's own property, as .NET's browser runtime does.
+test("serves JSObject's property access", () => {
+  const names = [
+    "object_has_property", "object_type_of_property", "object_get_boolean", "object_get_int32", "object_get_double",
+    "object_get_string", "object_get_object", "object_get_bytes", "object_set_boolean", "object_set_int32",
+    "object_set_double", "object_set_string", "object_set_object", "object_set_bytes",
+  ];
+  const fixture = createFixture(names.map(name => Object.freeze({ module: "netwasm.host.v1", name })));
+  const builtins = createInteropBuiltinServiceModule(fixture.request);
+  const target = { count: 3, nested: { a: 1 } };
+
+  assert.equal(builtins.object_has_property(target, "count"), true);
+  assert.equal(builtins.object_has_property(target, "missing"), false);
+  assert.equal(builtins.object_has_property(target, "toString"), true);
+  assert.equal(builtins.object_type_of_property(target, "nested"), "object");
+  assert.equal(builtins.object_type_of_property(target, "missing"), "undefined");
+  for (const name of names.filter(name => name.startsWith("object_get_"))) {
+    assert.equal(builtins[name](target, "count"), 3, name);
+  }
+  for (const [index, name] of names.filter(name => name.startsWith("object_set_")).entries()) {
+    assert.equal(builtins[name](target, "value" + index, index), undefined, name);
+    assert.equal(target["value" + index], index, name);
+  }
+  assert.throws(() => builtins.object_get_int32(null, "count"), TypeError);
+});
+
+// JSHost.GlobalThis is the global object, and JSHost.ImportAsync completes with a module the host bound.
+test("serves the global object and the host's bound modules", () => {
+  const bound = { greet() {} };
+  const fixture = createFixture(
+    ["host_global_this", "host_module"].map(name => Object.freeze({ module: "netwasm.host.v1", name })),
+    Object.freeze({ "app.bound": bound }));
+  const builtins = createInteropBuiltinServiceModule(fixture.request);
+
+  assert.strictEqual(builtins.host_global_this(), globalThis);
+  assert.strictEqual(builtins.host_module("app.bound"), bound);
+  assert.equal(builtins.host_module("app.missing"), null);
+  assert.equal(builtins.host_module("toString"), null);
+});
+
+test("adapts built-in string, handle, and subscription services", () => {
   const fixture = createFixture();
   const builtins = createInteropBuiltinServiceModule(fixture.request);
   const view = new DataView(fixture.memory.buffer);
@@ -55,23 +112,9 @@ test("adapts built-in string, byte, handle, and subscription services", () => {
   assert.equal(builtins.interop_copy_string_utf16(objectHandle, 64), 1);
   assert.equal(builtins.interop_copy_string_utf16(999, 64), 1);
 
-  const bytesHandle = fixture.handles.acquire(Uint8Array.of(4, 5, 6));
-  assert.equal(builtins.interop_byte_length(bytesHandle), 3);
-  assert.equal(builtins.interop_byte_length(objectHandle), -1);
-  assert.equal(builtins.interop_byte_length(999), -1);
-  view.setInt32(132, 3, true);
-  view.setUint32(136, 160, true);
-  assert.equal(builtins.interop_copy_bytes(bytesHandle, 128), 0);
-  assert.deepEqual([...new Uint8Array(fixture.memory.buffer, 160, 3)], [4, 5, 6]);
-  assert.equal(builtins.interop_copy_bytes(objectHandle, 128), 1);
-  assert.equal(builtins.interop_copy_bytes(999, 128), 1);
-
-  const numbersHandle = fixture.handles.acquire(Float64Array.of(1.5, -2));
-  assert.equal(builtins.interop_byte_length(numbersHandle), 2);
-  view.setInt32(132, 2, true);
-  view.setUint32(136, 200, true);
-  assert.equal(builtins.interop_copy_bytes(numbersHandle, 128), 0);
-  assert.deepEqual([...new Float64Array(fixture.memory.buffer.slice(200, 216))], [1.5, -2]);
+  // Number arrays enter managed code staged in linear memory, not through these services.
+  assert.equal(builtins.interop_byte_length, undefined);
+  assert.equal(builtins.interop_copy_bytes, undefined);
 
   builtins.interop_release_handle(stringHandle);
   builtins.interop_release_handle(stringHandle);
@@ -90,10 +133,6 @@ test("maps invalid managed destinations to built-in failure status", () => {
   const stringHandle = fixture.handles.acquire("abc");
   view.setInt32(196, 2, true);
   assert.equal(builtins.interop_copy_string_utf16(stringHandle, 192), 1);
-  const bytesHandle = fixture.handles.acquire(Uint8Array.of(1, 2));
-  view.setInt32(260, 1, true);
-  view.setUint32(264, 288, true);
-  assert.equal(builtins.interop_copy_bytes(bytesHandle, 256), 1);
 });
 
 test("rejects malformed built-in service composition", () => {
@@ -118,7 +157,7 @@ test("rejects malformed built-in service composition", () => {
   }), /actions/);
 });
 
-function createFixture() {
+function createFixture(additionalImports = [], consumerModules = {}) {
   const memory = new WebAssembly.Memory({ initial: 1 });
   const handles = createInteropHandleTable();
   const statusDescriptors = [];
@@ -130,6 +169,7 @@ function createFixture() {
       Object.freeze({ module: "consumer", name: "unrelated" }),
       Object.freeze({ module: "netwasm.host.v1", name: "unknown" }),
       Object.freeze({ module: "netwasm.host.v1", name: "queue_microtask" }),
+      ...additionalImports,
     ]),
   });
   return {
@@ -142,6 +182,7 @@ function createFixture() {
         custom: () => 17,
         interop_string_length: overriddenStringLength,
       },
+      consumerModules,
       contract,
       createStatusService(descriptor, service) {
         statusDescriptors.push(descriptor.name);
@@ -234,6 +275,28 @@ test("serves the JavaScript values CoreLib converts", () => {
     assert.equal(handles.get(create(item)), item);
   }
   assert.equal(handles.get(values.value_from_date(5)).getTime(), 5);
+
+  // An ArraySegment's view keeps its array's handle until JavaScript disposes or collects it.
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  new Uint8Array(memory.buffer).set([5, 6, 7], 16);
+  const unregistered = [];
+  class ViewRegistry {
+    constructor(callback) { this.callback = callback; }
+    register(item, handle, token) { registered.push([handle, token === item]); }
+    unregister(token) { unregistered.push(token); }
+  }
+  const viewValues = createJavaScriptValueServices(handles, ViewRegistry, () => memory);
+  const viewHandle = viewValues.value_from_memory_view(8n, 17, 2, 0);
+  const view = handles.get(viewHandle);
+  assert.deepEqual([...view.slice()], [6, 7]);
+  assert.deepEqual(registered.at(-1), [8n, true]);
+  assert.equal(viewValues.value_collected(), 0n);
+  view.dispose();
+  assert.deepEqual(unregistered, [view]);
+  assert.equal(viewValues.value_collected(), 8n);
+  const unregisteredView = createJavaScriptValueServices(handles, null, () => memory);
+  handles.get(unregisteredView.value_from_memory_view(9n, 16, 1, 0)).dispose();
+  assert.equal(unregisteredView.value_collected(), 9n);
 
   // Without a FinalizationRegistry, a managed object stays pinned.
   const pinned = createJavaScriptValueServices(handles, null);

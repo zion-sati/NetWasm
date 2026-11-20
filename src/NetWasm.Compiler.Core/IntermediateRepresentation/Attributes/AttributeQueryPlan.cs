@@ -56,10 +56,14 @@ public sealed record AttributeConstructionPlan(
     ImmutableArray<AttributeNamedArgumentPlan> NamedArguments);
 
 public sealed record AttributeQueryEntry(
-    CliTypeIdentity TargetType,
+    CliTypeIdentity? TargetType,
     CliTypeIdentity FilterType,
     AttributeQueryResult Direct,
-    AttributeQueryResult Inherited);
+    AttributeQueryResult Inherited)
+{
+    // The assembly whose own attributes the query reads, when it has no target type.
+    public AssemblyIdentity? TargetAssembly { get; init; }
+}
 
 public abstract record AttributeQueryResult;
 

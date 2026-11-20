@@ -227,6 +227,37 @@ public sealed class ValueFrameInitializationEmitterTests
         Assert.Equal(WasmOpcodes.I64Store, instructions[1].Opcode);
     }
 
+    // Without localsinit a local that holds no reference keeps what its frame held; one that holds a
+    // reference is still zeroed, since the collector traces it.
+    [Fact]
+    public void WithoutLocalsInitZeroesOnlyLocalsThatHoldReferences()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var addresses = new RecordingValueFrameAddressEmitter();
+        var emitter = CreateEmitter(layouts, addresses, new FixedValueLayoutProvider(8));
+        var plain = CliTypeIdentity.Named(Assembly, "Fixture", "Value", isValueType: true, CliValueKind.ValueType);
+        var reference = CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference);
+        var context = CreateContext(new ValueFrameLayout(
+            32,
+            ImmutableDictionary<int, int>.Empty.Add(0, 8).Add(1, 24),
+            [],
+            [],
+            []));
+
+        var skipped = new RecordingInstructionWriter();
+        emitter.Initialize(skipped, CreateHeader([plain, reference], initializesLocals: false), context);
+        Assert.Equal([24], addresses.Offsets);
+
+        var onlyPlain = new RecordingInstructionWriter();
+        var plainAddresses = new RecordingValueFrameAddressEmitter();
+        CreateEmitter(layouts, plainAddresses, new FixedValueLayoutProvider(8)).Initialize(
+            onlyPlain,
+            CreateHeader([plain], initializesLocals: false),
+            CreateContext(new ValueFrameLayout(16, ImmutableDictionary<int, int>.Empty.Add(0, 8), [], [], [])));
+        Assert.Empty(plainAddresses.Offsets);
+        Assert.Empty(onlyPlain.ToInstructions());
+    }
+
     // Mapped words nothing writes before the first safepoint, as a newobj
     // temporary's, are zeroed at the frame's entry, each range on its own.
     [Theory]
@@ -281,14 +312,19 @@ public sealed class ValueFrameInitializationEmitterTests
             addresses),
     }.Cast<IValueFrameInitializationEmitter>().Single();
 
+    // A C# method's header, which carries localsinit unless SkipLocalsInit applies.
     private static StructuredMethodHeader CreateHeader(
-        ImmutableArray<CliTypeIdentity> locals) => new(
+        ImmutableArray<CliTypeIdentity> locals,
+        bool initializesLocals = true) => new(
         new FakeProgram().GetMethod(EntryKey),
         null,
         1,
         [.. locals.Select(local => local.StackKind)],
         locals,
-        []);
+        [])
+        {
+            InitializesLocals = initializesLocals,
+        };
 
     private static MethodEmissionContext CreateContext(
         ValueFrameLayout values,

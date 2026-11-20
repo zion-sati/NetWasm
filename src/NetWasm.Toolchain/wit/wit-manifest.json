@@ -11,14 +11,24 @@
     "sourcePin": "eng/toolchain.json:wasiWit=0.3.2",
     "sourceRevision": "bdadbbb8cadd287cc5014c4b5a0bf76efc60291c",
     "sourcePackage": "wasi:cli@0.3.2",
-    "closurePolicy": "wasi-cli-command-with-wasi-http-client-and-transitive-wasi-dependencies",
-    "aggregateFormat": "sha256 of UTF-8 path, NUL, lowercase SHA-256, LF for each file in inventory order"
+    "closurePolicy": "wasi-cli-command-with-wasi-http-client-and-wasi-tls-client-and-transitive-wasi-dependencies",
+    "aggregateFormat": "sha256 of UTF-8 path, NUL, lowercase SHA-256, LF for each file in inventory order",
+    "additionalSources": [
+      {
+        "package": "wasi:tls@0.3.0-draft",
+        "sourceRepository": "https://github.com/bytecodealliance/wasmtime",
+        "sourceTag": "v50.0.1",
+        "sourceRevision": "c307ec81d",
+        "sourcePath": "crates/wasi-tls/src/p3/wit/deps/tls",
+        "license": "Apache-2.0 WITH LLVM-exception"
+      }
+    ]
   },
-  "aggregateSha256": "8364d759c7e39418691486ad27ff80af12c6f5180727fa9d54397450e2d5621b",
+  "aggregateSha256": "87ed0629d23ec9acd633aac68f67e038e2b5769ef1902fa0c747fe53daed5128",
   "files": [
     {
       "path": "command.wit",
-      "sha256": "2ee35934445d7017ef44d5419eb15cdd94f58066fb41b6b38f8215158337bced"
+      "sha256": "e36afd3f3b7913d1b31758c62e59b5ed8688812c527eefbba46532b5009a8723"
     },
     {
       "path": "deps/netwasm-diagnostics/command.wit",
@@ -123,6 +133,18 @@
     {
       "path": "deps/wasi-sockets/world.wit",
       "sha256": "af185d99df6d88976d359dca1b50afeeef2e76694ceda3b0878606c515b156b7"
+    },
+    {
+      "path": "deps/wasi-tls/client.wit",
+      "sha256": "33ec99ca9249e9d8fc4acfb55b3a5128bc1882d9eca5c09825208234fde46779"
+    },
+    {
+      "path": "deps/wasi-tls/types.wit",
+      "sha256": "68df2870d96284ae3fdcf324aeafc7317d73cf4911bb5c8f18979252d7a6a6a3"
+    },
+    {
+      "path": "deps/wasi-tls/world.wit",
+      "sha256": "150060162dfedb5c88afb88aa26a8a4eaa86781f4c5ed1840ebd0102fe0de0fc"
     }
   ]
 }

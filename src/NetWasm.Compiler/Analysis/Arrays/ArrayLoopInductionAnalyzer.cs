@@ -121,6 +121,7 @@ internal sealed class ArrayLoopInductionAnalyzer(
                 {
                     Lookahead = lookahead,
                     LengthLocal = arrayBound ? -1 : bound,
+                    Initial = ((CilOperand.ConstantI4)init.Block.Instructions[init.Position - 1].Operand).Value,
                 });
             }
         }

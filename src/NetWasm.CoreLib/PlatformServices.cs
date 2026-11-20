@@ -270,9 +270,20 @@ namespace System.Runtime.InteropServices
             _timerFactory ??=
                 WasiPlatformServicesComposition.CreateTimerFactory(Scheduler);
 
-        internal static ILocalTimeOffsetResolver LocalTimeOffsets =>
-            _localTimeOffsets ??=
-                WasiPlatformServicesComposition.CreateLocalTimeOffsetResolver();
+        // Local time is read at first use (no startup preflight runs, so a component can be instantiated without
+        // waiting), and these two are its only readers. The preflight installs both, so each loads it only while
+        // its own value is not installed yet.
+        internal static ILocalTimeOffsetResolver LocalTimeOffsets
+        {
+            get
+            {
+                if (_localTimeOffsets == null)
+                {
+                    EnsureLocalTimeReady();
+                }
+                return _localTimeOffsets ??= WasiPlatformServicesComposition.CreateLocalTimeOffsetResolver();
+            }
+        }
 
         internal static void UseLocalTimeOffsetResolver(
             ILocalTimeOffsetResolver resolver)
@@ -280,9 +291,17 @@ namespace System.Runtime.InteropServices
             _localTimeOffsets = resolver ?? throw new ArgumentNullException();
         }
 
-        internal static TimeZoneCatalogSnapshot TimeZoneCatalogSnapshot =>
-            _timeZoneCatalogSnapshot ??=
-                new TimeZoneCatalogSnapshot(null, null, null);
+        internal static TimeZoneCatalogSnapshot TimeZoneCatalogSnapshot
+        {
+            get
+            {
+                if (_timeZoneCatalogSnapshot == null)
+                {
+                    EnsureLocalTimeReady();
+                }
+                return _timeZoneCatalogSnapshot ??= new TimeZoneCatalogSnapshot(null, null, null);
+            }
+        }
 
         internal static void UseTimeZoneCatalogSnapshot(
             TimeZoneCatalogSnapshot snapshot)
@@ -539,8 +558,26 @@ namespace System.Runtime.InteropServices
             // An entry point that so far only awaits its host, such as a JavaScript promise, has
             // scheduled nothing; the event loop still decides whether it can complete.
             _ = Scheduler;
-            return _commandScheduler!;
+            var loop = _commandScheduler!;
+            if (!_loopCollects)
+            {
+                _loopCollects = true;
+                // The loop gives its collector the time it waits, once it runs in callbacks. A JavaScript
+                // host collects for its module itself, and a loop without a clock has no timers; a program
+                // that never runs callbacks never reaches this.
+                if (PlatformWorld.ImportsMonotonicClock() && !PlatformWorld.HasHostEventLoop())
+                {
+                    loop.CollectWith(new Concurrency.EventLoopCollection(
+                        loop,
+                        new WasiMonotonicClock(new WasiMonotonicClockSource()),
+                        new Concurrency.RuntimeIdleCollector()));
+                }
+            }
+
+            return loop;
         }
+
+        private static bool _loopCollects;
 
         internal static void EnsureLocalTimeReady()
         {

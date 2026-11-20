@@ -1,0 +1,2 @@
+Mediator.Switch.SourceGenerator 4.0.0
+Jab 0.12.0

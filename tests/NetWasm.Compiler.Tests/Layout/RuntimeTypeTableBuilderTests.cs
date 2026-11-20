@@ -28,14 +28,18 @@ public sealed class RuntimeTypeTableBuilderTests
         var assemblies = new Assemblies();
         var interfaces = new Interfaces();
         var encoder = new CapturingEncoder();
+        var names = new NoManifests();
+        var resources = new NoManifests();
 
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(null!, target, state, identities, assemblies, interfaces, encoder));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, null!, state, identities, assemblies, interfaces, encoder));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, null!, identities, assemblies, interfaces, encoder));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, null!, assemblies, interfaces, encoder));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, null!, interfaces, encoder));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, assemblies, null!, encoder));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, assemblies, interfaces, null!));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(null!, target, state, identities, assemblies, interfaces, encoder, names, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, null!, state, identities, assemblies, interfaces, encoder, names, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, null!, identities, assemblies, interfaces, encoder, names, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, null!, assemblies, interfaces, encoder, names, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, null!, interfaces, encoder, names, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, assemblies, null!, encoder, names, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, assemblies, interfaces, null!, names, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, assemblies, interfaces, encoder, null!, resources));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeTableBuilder(program, target, state, identities, assemblies, interfaces, encoder, names, null!));
     }
 
     // Each registered type takes its descriptor's layout and its facts; a nested type its enclosing
@@ -273,7 +277,8 @@ public sealed class RuntimeTypeTableBuilderTests
 
     private static RuntimeTypeTableBuilder Builder(
         ReachableProgram program, ManagedStaticDataBuildState state, CapturingEncoder encoder) =>
-        new(program, WasmTargetLayout.For(WasmTarget.Wasm32), state, new Identities(), new Assemblies(), new Interfaces(), encoder);
+        new(program, WasmTargetLayout.For(WasmTarget.Wasm32), state, new Identities(), new Assemblies(), new Interfaces(), encoder,
+            new NoManifests(), new NoManifests());
 
     private static ReachableProgram Program(bool declaring)
     {
@@ -331,5 +336,14 @@ public sealed class RuntimeTypeTableBuilderTests
             Request = request;
             return Bytes;
         }
+    }
+
+    // A program that names no assemblies and reads no resources.
+    private sealed class NoManifests : IProgramAssemblyNames, IProgramManifestResources
+    {
+        public string DisplayName(AssemblyIdentity assembly) => throw new InvalidOperationException();
+
+        public ImmutableDictionary<AssemblyIdentity, ImmutableArray<NetWasm.Compiler.Metadata.ManifestResourceData>> KeptResources() =>
+            ImmutableDictionary<AssemblyIdentity, ImmutableArray<NetWasm.Compiler.Metadata.ManifestResourceData>>.Empty;
     }
 }

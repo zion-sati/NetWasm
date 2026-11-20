@@ -47,9 +47,8 @@ namespace System.Net.Http
 
         internal bool GZipEnabled => (_decompressionMethods & DecompressionMethods.GZip) != 0;
         internal bool DeflateEnabled => (_decompressionMethods & DecompressionMethods.Deflate) != 0;
-        // NetWasm: netstandard 2.1's DecompressionMethods names neither Brotli nor Zstandard; their values are .NET's.
-        internal bool BrotliEnabled => (_decompressionMethods & (DecompressionMethods)4) != 0;
-        internal bool ZstandardEnabled => (_decompressionMethods & (DecompressionMethods)8) != 0;
+        internal bool BrotliEnabled => (_decompressionMethods & DecompressionMethods.Brotli) != 0;
+        internal bool ZstandardEnabled => (_decompressionMethods & DecompressionMethods.Zstandard) != 0;
 
         private static bool EncodingExists(HttpHeaderValueCollection<StringWithQualityHeaderValue> acceptEncodingHeader, string encoding)
         {
@@ -162,17 +161,28 @@ namespace System.Net.Http
 
             protected abstract Stream GetDecompressedStream(Stream originalStream);
 
+            protected override void SerializeToStream(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+            {
+                using Stream decompressedStream = CreateContentReadStream(cancellationToken);
+                decompressedStream.CopyTo(stream);
+            }
+
             protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
                 SerializeToStreamAsync(stream, context, CancellationToken.None);
 
-            // NetWasm: internal, as in NetWasm's netstandard-shaped HttpContent, which has no synchronous
-            // SerializeToStream or CreateContentReadStream to override.
-            internal override async Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+            protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
             {
                 using (Stream decompressedStream = TryCreateContentReadStream() ?? await CreateContentReadStreamAsync(cancellationToken).ConfigureAwait(false))
                 {
                     await decompressedStream.CopyToAsync(stream, cancellationToken).ConfigureAwait(false);
                 }
+            }
+
+            protected override Stream CreateContentReadStream(CancellationToken cancellationToken)
+            {
+                ValueTask<Stream> task = CreateContentReadStreamAsyncCore(async: false, cancellationToken);
+                Debug.Assert(task.IsCompleted);
+                return task.GetAwaiter().GetResult();
             }
 
             protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken) =>

@@ -376,7 +376,7 @@ public sealed class CompiledUnitRestoreTests
             if (step != "cold")
                 Assert.False(reuse.StartsWith("restored 0 ", StringComparison.Ordinal), $"{step}: nothing was restored: {reuse}");
             if (step == "back")
-                Assert.Contains("managed optimizations analyse across methods", memory.InputReport(Name), StringComparison.Ordinal);
+                Assert.Contains("managed optimizations analyze across methods", memory.InputReport(Name), StringComparison.Ordinal);
         }
     }
 

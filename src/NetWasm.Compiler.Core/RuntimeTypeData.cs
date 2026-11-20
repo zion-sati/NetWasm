@@ -9,7 +9,17 @@ namespace NetWasm.Compiler.Core;
 /// The structure-marshalling descriptor published for one runtime type. Address is the
 /// static descriptor that Marshal's structure members read; it is never reflection metadata.
 /// </summary>
-public readonly record struct StructMarshallingLayout(CliTypeIdentity Type, int TypeId, int Address);
+public readonly record struct StructMarshallingLayout(CliTypeIdentity Type, int TypeId, int Address)
+{
+    /// <summary>
+    /// The parameterless constructor PtrToStructure runs on a new instance, when the program creates
+    /// structures by their runtime type and the type declares one; null otherwise.
+    /// </summary>
+    public MethodInstanceModel? Constructor { get; init; }
+
+    /// <summary>Where a boxed value's payload starts, which a value type's constructor receives.</summary>
+    public int PayloadOffset { get; init; }
+}
 
 /// <summary>Descriptors for the types Marshal's structure members can receive.</summary>
 public interface IStructMarshallingSource

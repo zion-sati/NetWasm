@@ -9,6 +9,7 @@ import { createRuntimeContractImports } from "../../NetWasm.Runtime.Tests/runtim
 import { createMonotonicClockImports } from "../../NetWasm.Runtime.Tests/monotonic-clock-imports.mjs";
 import { createSystemClockImports } from "../../NetWasm.Runtime.Tests/system-clock-imports.mjs";
 import { createReadOnlyAssetImports } from "../../NetWasm.Runtime.Tests/read-only-asset-imports.mjs";
+import { createOutputStreamImports } from "../../NetWasm.Runtime.Tests/output-stream-imports.mjs";
 import { createLinkedCorpusProgram } from "./linked-corpus-program.mjs";
 
 export const linkedCorpusProgramDependencies = Object.freeze({
@@ -29,6 +30,10 @@ export const linkedCorpusProgramDependencies = Object.freeze({
       const address = target === "wasm64" ? BigInt : Number;
       return getExports().component_realloc(address(0), address(0), address(alignment), address(size));
     }, sidecar == null ? null : { mountPath: "/netwasm-sidecars", fileName: sidecar.fileName, bytes: sidecar.bytes }),
+    // The program's standard output and error go to the process's, as any host's do; the response goes to its
+    // own file. A runtime's report, such as the collector's check of write barriers, then reaches the failure.
+    ...createOutputStreamImports(target, getMemory,
+      bytes => process.stdout.write(bytes), bytes => process.stderr.write(bytes)),
   }),
 });
 const program = createLinkedCorpusProgram(linkedCorpusProgramDependencies);

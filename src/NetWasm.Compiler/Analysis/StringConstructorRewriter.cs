@@ -47,6 +47,10 @@ internal sealed class StringConstructorRewriter(
         return rewritten is null ? body : body with { Instructions = rewritten.ToImmutable() };
     }
 
+    // The call a newobj of a string constructor becomes, which allocates the string as the newobj did.
+    public static bool IsConstructorCall(MethodInstanceModel? method) =>
+        method is { DeclaringType.CanonicalName: "primitive:string", Definition: { Name: "Ctor", IsStatic: true } };
+
     private MethodInstanceModel Resolve(MethodDefinitionModel constructor, int offset) =>
         _targets.GetOrAdd(constructor.Key, _ =>
         {

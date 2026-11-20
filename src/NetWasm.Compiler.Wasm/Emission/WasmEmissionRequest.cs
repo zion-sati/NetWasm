@@ -99,10 +99,16 @@ public sealed record WasmEmissionRequest(
 
     public bool StructuredDiagnostics { get; init; }
 
+    // The program's collector has generations: every store of a reference into memory is followed by its
+    // write barrier.
+    public bool ReferenceWriteBarrier { get; init; }
+
     public bool EnableAddressTakenAggregatePromotion { get; init; }
     public bool EnableAggregateReferenceLanes { get; init; }
 
-    public bool EnableBranchValueFramePlacement { get; init; }
+    // Disabled places no frames in branch arms; SizeAware places them only where no code is copied; Speed also
+    // copies a straight-line tail into both arms.
+    public BranchPrefixDuplicationPolicy BranchPrefixDuplication { get; init; }
 
     public bool EnableArrayMetadataCaching { get; init; }
     public bool HoistArrayNullChecks { get; init; }

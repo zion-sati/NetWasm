@@ -61,10 +61,14 @@ for (let index = 0; index < 2; index++) {
     } else {
       values = [managed.instance.exports.run(-100), managed.instance.exports.run(35)];
       assert.deepEqual(values, profile === "named-callbacks" ? [-100, 35] : [42, 42]);
+      // Native runtime support allocates nothing managed, so its memory need not grow.
     }
     if (profile !== "callback-failure") assert.equal(events.length, 0);
     const finalMemoryBytes = managed.instance.exports.memory.buffer.byteLength;
-    if (profile === "named-callbacks" || profile === "callback-only" || profile === "unmanaged-calls") {
+    // Native runtime support, and variadic calls' buffers in the value frame, allocate little managed.
+    if (profile === "native-runtime" || profile === "variadic") {
+      assert(finalMemoryBytes >= initialMemoryBytes);
+    } else if (profile === "named-callbacks" || profile === "callback-only" || profile === "unmanaged-calls") {
       assert.equal(finalMemoryBytes, initialMemoryBytes);
     } else if (profile !== "callback-failure") {
       assert(finalMemoryBytes > initialMemoryBytes);

@@ -3,6 +3,7 @@
 
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { createInteropBuiltinServiceModule } from "./interop-builtin-service-module.mjs";
+import { resolveJavaScriptImport } from "./javascript-import-resolver.mjs";
 import { createInteropStatusService } from "./interop-status-service.mjs";
 import { createInteropDirectService } from "./interop-direct-service.mjs";
 import {
@@ -25,6 +26,7 @@ import { observeManagedAsyncExport } from "./managed-async-export-observer.mjs";
 import { createManagedExceptionCapture } from "./managed-exception-capture.mjs";
 import { createManagedExceptionPayloadConsumer } from "./managed-exception-payload-consumer.mjs";
 import { createManagedExceptionTypeResolver } from "./managed-exception-type-resolver.mjs";
+import { createValueArrayStaging } from "./value-array-staging.mjs";
 
 const builtinModule = "netwasm.host.v1";
 const exceptionReporters = new WeakMap();
@@ -40,6 +42,7 @@ export function prepareNetWasmInterop({
   assertAvailable = () => {},
   observeAsyncFailure = () => {},
   observeAsyncCompletion = () => {},
+  observeImportCall,
   stackTraceSymbols,
 }) {
   return prepareParsedNetWasmInterop({
@@ -53,6 +56,7 @@ export function prepareNetWasmInterop({
     assertAvailable,
     observeAsyncFailure,
     observeAsyncCompletion,
+    observeImportCall,
     parsedStackTraceSymbols: parseStackTraceSymbols(stackTraceSymbols),
   });
 }
@@ -88,10 +92,14 @@ export function prepareParsedNetWasmInterop({
   assertAvailable = () => {},
   observeAsyncFailure = () => {},
   observeAsyncCompletion = () => {},
+  // Told of each import the program calls (a page's idle collection learns the program ran); absent, imports run
+  // unwrapped.
+  observeImportCall,
   parsedStackTraceSymbols,
 }) {
   if (typeof assertAsyncDeliveryAvailable !== "function"
-      || typeof assertAvailable !== "function" || typeof observeAsyncFailure !== "function" || typeof observeAsyncCompletion !== "function") {
+      || typeof assertAvailable !== "function" || typeof observeAsyncFailure !== "function" || typeof observeAsyncCompletion !== "function"
+      || (observeImportCall !== undefined && typeof observeImportCall !== "function")) {
     throw new TypeError("managed interop lifetime actions are invalid");
   }
   const contract = parseInteropManifest(manifest);
@@ -108,11 +116,18 @@ export function prepareParsedNetWasmInterop({
   // The imports on the stack; a subscription callback reads the count.
   const activity = { active: 0 };
   let deferred;
+  let staging;
   let exceptionReporter;
   let consumeExceptionPayload;
   const preparation = prepareInteropExecution({
     createImports(readers) {
       deferred = readers;
+      staging = createValueArrayStaging({
+        getInstance: readers.readInstance,
+        getMemory: readers.readMemory,
+        runtimeModules,
+        target: contract.target,
+      });
       exceptionReporter = createManagedExceptionReporter({
         getMemory: readers.readMemory,
         stringDataOffset: contract.targetLayout.stringDataOffset,
@@ -140,6 +155,7 @@ export function prepareParsedNetWasmInterop({
       });
       const builtins = createInteropBuiltinServiceModule({
         builtinServices: { ...builtinServices, capture_managed_exception_v1: captureException },
+        consumerModules,
         contract,
         createStatusService: (descriptor, service) => createStatusService(
           descriptor, service, readers),
@@ -161,9 +177,8 @@ export function prepareParsedNetWasmInterop({
         if (descriptor.module === builtinModule) {
           continue;
         }
-        const serviceModule = consumerModules[descriptor.module];
-        const service = serviceModule?.[descriptor.name];
-        if (typeof service !== "function") {
+        const service = observed(resolveJavaScriptImport(consumerModules[descriptor.module], descriptor.name));
+        if (service === null) {
           throw new NetWasmHostError(
             `missing host service ${descriptor.module}.${descriptor.name}`);
         }
@@ -217,6 +232,7 @@ export function prepareParsedNetWasmInterop({
             assertAvailable();
           },
           enterExport,
+          staging,
           observeAsyncExport(request) {
             return observeManagedAsyncExport({
               ...request,
@@ -274,6 +290,15 @@ export function prepareParsedNetWasmInterop({
     throw new Error("diagnostic exception artifacts were not deployed");
   }
 
+  // The resolved import, reporting each call to the import observer first.
+  function observed(service) {
+    if (service === null || observeImportCall === undefined) return service;
+    return function (...parameters) {
+      observeImportCall();
+      return service.apply(this, parameters);
+    };
+  }
+
   function createStatusService(descriptor, service, readers) {
     if (descriptor.call === "direct") {
       return createInteropDirectService({ descriptor, service, activity });
@@ -289,6 +314,7 @@ export function prepareParsedNetWasmInterop({
       pendingAsyncOperations,
       observeAsyncFailure,
       service,
+      staging,
       statusAbi: contract.statusAbi,
       target: contract.target,
       targetLayout: contract.targetLayout,

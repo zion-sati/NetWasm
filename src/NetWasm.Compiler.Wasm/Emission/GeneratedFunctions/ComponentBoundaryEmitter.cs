@@ -19,17 +19,14 @@ internal sealed record ComponentBoundaryArtifacts(
 
 internal sealed class ComponentBoundaryEmitter(
     IRuntimeImportResolver runtimeImports,
-    IRuntimeStateInitializer runtimeState,
+    IInstantiationStateInitializer runtimeState,
     ICanonicalAbiFunctionTypePlanner canonicalTypes,
-    IStartupPreflightCallEmitter startupPreflights,
     IStartupPreflightMethodSelector startupMethods,
     IGeneratedFunctionWriterFactory writers) : IComponentBoundaryEmitter
 {
     private readonly IRuntimeImportResolver _runtimeImports = runtimeImports;
-    private readonly IRuntimeStateInitializer _runtimeState = runtimeState;
+    private readonly IInstantiationStateInitializer _runtimeState = runtimeState;
     private readonly ICanonicalAbiFunctionTypePlanner _canonicalTypes = canonicalTypes;
-    private readonly IStartupPreflightCallEmitter _startupPreflights =
-        startupPreflights;
     private readonly IStartupPreflightMethodSelector _startupMethods = startupMethods;
 
     public ComponentBoundaryArtifacts Emit(
@@ -38,12 +35,10 @@ internal sealed class ComponentBoundaryEmitter(
         RuntimeInitializationPlan initialization,
         int importedFunctionCount,
         int definedFunctionCount,
-        IReadOnlyDictionary<string, int> managedExportIndices,
-        IFunctionIndexResolver functionIndices)
+        IReadOnlyDictionary<string, int> managedExportIndices)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(managedExportIndices);
-        ArgumentNullException.ThrowIfNull(functionIndices);
 
         var witExports = request.ComponentContract.Exports
             .OrderBy(function => function.InterfaceName, StringComparer.Ordinal)
@@ -68,7 +63,7 @@ internal sealed class ComponentBoundaryEmitter(
                 CliValueKind.ManagedAddress),
             EmitReallocate(),
             CanonicalAbiNames.Reallocate(target));
-        var initialize = EmitInitialize(request, initialization, functionIndices);
+        var initialize = EmitInitialize(request, initialization);
         AddFunction(
             "component.initialize",
             WasmFunctionType.Create(CliValueKind.Void),
@@ -139,21 +134,21 @@ internal sealed class ComponentBoundaryEmitter(
         return body.Snapshots.Read();
     }
 
+    // Instantiation readies the runtime state and runs no managed code: jco calls this export while it
+    // instantiates the component, and the Component Model traps any wait there ("cannot block a
+    // synchronous task before returning"). A process entry runs the startup preflights and every entry
+    // the module initializers; a module without a process entry reads local time and symbols at
+    // first use, as a raw module does. The local-time feature is still reported, so the build
+    // deploys the time zone data the program can read.
     private (byte[] Body, bool UsesLocalTime) EmitInitialize(
         WasmEmissionRequest request,
-        RuntimeInitializationPlan initialization,
-        IFunctionIndexResolver functionIndices)
+        RuntimeInitializationPlan initialization)
     {
         var body = writers.Create();
         body.Bytes.Write([0]);
         _runtimeState.Initialize(body, initialization);
-        var preflights = _startupMethods.Select(request);
-        if (!StartupPreflightPlacement.RunsInProcessEntry(request))
-        {
-            _startupPreflights.Emit(body, preflights.Methods, functionIndices);
-        }
         body.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        return (body.Snapshots.Read(), preflights.UsesLocalTime);
+        return (body.Snapshots.Read(), _startupMethods.Select(request).UsesLocalTime);
     }
 
     private byte[] EmitNoOp()

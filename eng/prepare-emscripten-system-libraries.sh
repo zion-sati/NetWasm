@@ -31,4 +31,20 @@ for target in wasm32 wasm64; do
     arguments=(--wasm64 --lto)
   fi
   "$embuilder" "${arguments[@]}" build "${libraries[@]}"
+
+  # The libraries a program with C++ exceptions links instead (libc++, libc++abi and libunwind with Wasm exception
+  # handling, and the standalone runtime without its aborting __cxa_throw), as object files: their exception
+  # handling then needs no LTO code generation flags in the final link.
+  exception_libraries=()
+  while IFS= read -r library; do
+    [[ -n "$library" ]] && exception_libraries+=("${library%.a}")
+  done < <(node -p \
+    'const t = require(process.argv[1]).targets[process.argv[2]];
+     (t.exceptionSystemLibraries ?? []).filter(name => !t.systemLibraries.includes(name)).join("\n")' \
+    "$policy" "$target")
+  if (( ${#exception_libraries[@]} > 0 )); then
+    exception_arguments=()
+    if [[ "$target" = wasm64 ]]; then exception_arguments=(--wasm64); fi
+    "$embuilder" "${exception_arguments[@]}" build "${exception_libraries[@]}"
+  fi
 done

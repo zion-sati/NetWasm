@@ -268,11 +268,53 @@ public sealed class RootValueElisionPlannerTests
         Assert.Empty(plan[2]);
     }
 
+    // An evaluation-stack value stays published until the stack drops to its position. Here a value sits at position
+    // 0 under two calls; between them a push and a store leave it (published at the first call, skipped at the
+    // second), a pop takes it (published again), and a call with a result, its height unchanged, may have replaced it.
+    [Theory]
+    [InlineData(CilOperation.LoadNull, new[] { 1, 1, 2, 1 }, true)]
+    [InlineData(CilOperation.Pop, new[] { 1, 1, 0, 1 }, false)]
+    [InlineData(CilOperation.Add, new[] { 1, 1, 1, 1 }, false)]
+    public void AnEvaluationStackValueIsPublishedUntilTheStackDropsToIt(CilOperation between, int[] heights, bool skipped)
+    {
+        var source = new RootSource(RootSourceKind.EvaluationStack, 0);
+        var context = Context([new(0, [source], []), new(3, [source], [])], source);
+        var second = between == CilOperation.LoadNull ? I(2, CilOperation.StoreLocal, new CilOperand.Index(0)) : I(2, CilOperation.Nop);
+        var plan = _planner.Plan(Method([I(0, CilOperation.Nop), I(1, between), second, I(3, CilOperation.Call)], heights), context);
+        Assert.Empty(plan[0]);
+        Assert.Equal(skipped, plan[3].Contains(0));
+    }
+
+    // A taller stack after an instruction keeps every position, a dup's included; a store keeps every position below
+    // its height after; anything else of unknown pushes loses the top one; a block's last instruction is taken to pop
+    // two; without heights nothing is kept.
+    [Fact]
+    public void KeptPositionsFollowTheHeightsAroundAnInstruction()
+    {
+        var instructions = ImmutableArray.Create(I(0, CilOperation.Duplicate), I(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(2, CilOperation.Add), I(3, CilOperation.Nop), I(4, CilOperation.Pop));
+        var method = Method(instructions, [3, 4, 3, 2, 3]);
+        Assert.Equal(3, RootValueElisionPlanner.KeptStackPositions(method, instructions, 0));
+        Assert.Equal(3, RootValueElisionPlanner.KeptStackPositions(method, instructions, 1));
+        Assert.Equal(1, RootValueElisionPlanner.KeptStackPositions(method, instructions, 2));
+        Assert.Equal(2, RootValueElisionPlanner.KeptStackPositions(method, instructions, 3));
+        Assert.Equal(1, RootValueElisionPlanner.KeptStackPositions(method, instructions, 4));
+        Assert.Equal(0, RootValueElisionPlanner.KeptStackPositions(Method(instructions), instructions, 0));
+    }
+
     private static MethodEmissionContext Context(IEnumerable<SafepointRootMap> points, RootSource? source = null) =>
         CreateMethodEmissionContext() with
         {
             RootMap = new(EntryKey, ImmutableDictionary<RootSource, int>.Empty.Add(source ?? Source, 0),
                 points.ToImmutableDictionary(point => point.IlOffset)),
+        };
+
+    private static StructuredMethod Method(ImmutableArray<CilInstruction> instructions, int[] heights) =>
+        Method(instructions) with
+        {
+            InstructionEntryStacks = instructions.Select((instruction, index) => (instruction.Offset, heights[index]))
+                .ToImmutableDictionary(pair => pair.Offset,
+                    pair => Enumerable.Repeat(CliValueKind.ManagedReference, pair.Item2).ToImmutableArray()),
         };
 
     private static StructuredMethod Method(ImmutableArray<CilInstruction> instructions)

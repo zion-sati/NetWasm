@@ -253,6 +253,10 @@ internal static class UnitAnswerCodec
                     writer.Type(layout.Type);
                     writer.Int(layout.TypeId);
                     writer.Int(layout.Address);
+                    writer.Bool(layout.Constructor is not null);
+                    if (layout.Constructor is { } constructor)
+                        writer.Method(constructor);
+                    writer.Int(layout.PayloadOffset);
                 });
                 break;
             case UnitQueryKind.UninitializedObjectTypes:
@@ -524,7 +528,12 @@ internal static class UnitAnswerCodec
                 value = Array(reader, static reader => new MetadataTypeDescriptorLayout(reader.Type()!, reader.Int()));
                 break;
             case UnitQueryKind.StructMarshalling:
-                value = Array(reader, static reader => new StructMarshallingLayout(reader.Type()!, reader.Int(), reader.Int()));
+                value = Array(reader, static reader =>
+                {
+                    var layout = new StructMarshallingLayout(reader.Type()!, reader.Int(), reader.Int());
+                    var constructor = reader.Bool() ? reader.Method() : null;
+                    return layout with { Constructor = constructor, PayloadOffset = reader.Int() };
+                });
                 break;
             case UnitQueryKind.UninitializedObjectTypes:
                 value = Array(reader, static reader => reader.Type()!);

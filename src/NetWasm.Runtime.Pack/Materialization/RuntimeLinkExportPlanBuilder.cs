@@ -11,7 +11,11 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
 {
     private const string ArraySetValueFeature = "array-set-value";
     private const string ObjectCloneFeature = "object-clone";
+    private const string ObjectGenerationFeature = "object-generation";
+    private const string YoungCollectionFeature = "young-collection";
     private const string RandomSeedFeature = "random-seed";
+    private const string ReferenceWriteBarrierFeature = "reference-write-barrier";
+    private const string UninitializedArraysFeature = "uninitialized-arrays";
     private const string EphemeronHandlesFeature = "ephemeron-handles";
     private const string FinalizationFeature = "finalization";
     private const string StructuredCommandDiagnosticsFeature =
@@ -122,6 +126,23 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
         if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(RandomSeedFeature))
         {
             exports = exports.Remove("random_seed");
+        }
+        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(UninitializedArraysFeature))
+        {
+            exports = exports.Remove("allocate_uninitialized_value_array");
+        }
+        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ObjectGenerationFeature))
+        {
+            exports = exports.Remove("gc_object_generation");
+        }
+        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(YoungCollectionFeature))
+        {
+            exports = exports.Remove("gc_collect_young");
+        }
+        // Only a program compiled for a collector with generations records its stores of references.
+        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ReferenceWriteBarrierFeature))
+        {
+            exports = exports.Remove("record_reference_write").Remove("record_reference_writes");
         }
         return exports;
     }

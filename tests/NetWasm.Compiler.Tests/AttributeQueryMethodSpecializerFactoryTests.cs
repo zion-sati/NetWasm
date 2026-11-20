@@ -41,7 +41,7 @@ public sealed class AttributeQueryMethodSpecializerFactoryTests
         var factoryResult = fixture.Create();
         Assert.IsType<AttributeQueryMethodSpecializer>(factoryResult);
         Assert.Same(fixture.Specialized, factoryResult.Rewrite(fixture.Input));
-        Assert.Equal(1, fixture.ConstructorResolutions);
+        Assert.Equal(3, fixture.ConstructorResolutions);
         Assert.Equal(1, fixture.Specializations);
     }
 
@@ -96,6 +96,8 @@ public sealed class AttributeQueryMethodSpecializerFactoryTests
             AddType("System", "Nullable`1");
             AddType("System.Reflection", "AmbiguousMatchException", ("Other", false, 0),
                 (".ctor", true, 0), (".ctor", false, 1), (".ctor", false, 0));
+            AddType("System", "NullReferenceException", ("Other", false, 0), (".ctor", false, 1), (".ctor", false, 0));
+            AddType("System", "ArgumentNullException", ("Other", false, 1), (".ctor", false, 0), (".ctor", false, 1));
             AddType("System", "SerializableAttribute");
             AddType("System.Runtime.InteropServices", "ComImportAttribute");
             AddType("System.Runtime.InteropServices", "StructLayoutAttribute");
@@ -139,7 +141,7 @@ public sealed class AttributeQueryMethodSpecializerFactoryTests
         internal IMethodSpecializer Create(bool includeContracts = true) =>
             ((IAttributeQueryMethodSpecializerFactory)new AttributeQueryMethodSpecializerFactory(new MetadataCompilationMaterializationFactory())).Create(this,
                 includeContracts ? _metadata : _metadata with { Types = [FindType("System.Object")] },
-                this, this, this, this, this, this, this, this, this, this, this, this);
+                this, this, this, this, this, this, this, this, this, this, this, this).Specializer;
 
         public CilMethodBody Rewrite(CilMethodBody body)
         {
@@ -152,10 +154,14 @@ public sealed class AttributeQueryMethodSpecializerFactoryTests
             string methodDisplayName, int ilOffset, CliGenericContext? genericContext = null)
         {
             var method = GetMethod(new(source, metadataToken));
-            Assert.Equal(FindType("System.Reflection.AmbiguousMatchException").Key, method.DeclaringType);
+            // The exceptions the lowered queries throw: an ambiguous singular query, and a run-time Type query's null
+            // target (ArgumentNullException(paramName) for Attribute's statics and the extensions).
+            var declaring = _assembly.Types.Values.Single(type => type.Key == method.DeclaringType).FullName;
+            Assert.True(declaring is "System.Reflection.AmbiguousMatchException" or "System.NullReferenceException" or
+                "System.ArgumentNullException", declaring);
             Assert.Equal(".ctor", methodDisplayName);
             Assert.False(method.IsStatic);
-            Assert.Empty(method.Signature.ParameterTypes);
+            Assert.Equal(declaring == "System.ArgumentNullException" ? 1 : 0, method.Signature.ParameterTypes.Length);
             Assert.Equal(0, ilOffset);
             Assert.Null(genericContext);
             ConstructorResolutions++;

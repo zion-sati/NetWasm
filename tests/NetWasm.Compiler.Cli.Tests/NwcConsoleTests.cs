@@ -18,7 +18,11 @@ public sealed class NwcConsoleTests
     [InlineData("NetWasm.Compiler.Diagnostics.CompilerDiagnosticFileLogger", LogLevel.Information, false)]
     [InlineData("NetWasm.Compiler.Clinic", LogLevel.Error, false)]
     [InlineData(null, LogLevel.Critical, false)]
-    public void ShowsOnlyNwcEntriesAndTheCompilerProgress(string? category, LogLevel level, bool expected) =>
+    // The warnings the compilation pipeline reports to the build, such as NW1016, NW1017 and NW1018.
+    [InlineData("NetWasm.Compiler.Pipeline.MissingMemberReporter", LogLevel.Warning, true)]
+    [InlineData("NetWasm.Compiler.Pipeline.DeclinedJavaScriptBindingReporter", LogLevel.Warning, true)]
+    [InlineData("NetWasm.Compiler.Pipeline.CompilationPipelineExecutor", LogLevel.Information, false)]
+    public void ShowsOnlyNwcEntriesTheCompilerProgressAndThePipelinesWarnings(string? category, LogLevel level, bool expected) =>
         Assert.Equal(expected, NwcConsoleLoggerProvider.Shows(category, level));
 
     [Theory]

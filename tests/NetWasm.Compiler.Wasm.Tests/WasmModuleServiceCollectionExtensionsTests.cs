@@ -97,8 +97,8 @@ public sealed class WasmModuleServiceCollectionExtensionsTests
             provider.GetRequiredService<IManagedTerminalExceptionBoundaryEmitter>());
         Assert.IsType<HostCallbackStringArgumentMarshaller>(
             provider.GetRequiredService<IHostCallbackStringArgumentMarshaller>());
-        Assert.IsType<HostCallbackByteArrayArgumentMarshaller>(
-            provider.GetRequiredService<IHostCallbackByteArrayArgumentMarshaller>());
+        Assert.IsType<StagedValueArrayEmitter>(
+            provider.GetRequiredService<IStagedValueArrayEmitter>());
 
         Assert.IsType<FunctionLoadEmitter>(
             provider.GetRequiredService<IFunctionLoader>());

@@ -24,7 +24,7 @@ internal sealed class ReachabilityLedger
     public ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Builder ManagedCallSites { get; } =
         ImmutableDictionary.CreateBuilder<ManagedCallSiteKey, ManagedCallSite>();
 
-    // What each analysed method adds to the whole program, by canonical name.
+    // What each analyzed method adds to the whole program, by canonical name.
     internal Dictionary<string, MethodContribution> Contributions { get; } = new(StringComparer.Ordinal);
 
     internal ImmutableDictionary<EntityKey, ManagedMethodBody>.Builder Methods { get; } =
@@ -63,6 +63,9 @@ internal sealed class ReachabilityLedger
     internal bool RequiresTypeAttributes { get; set; }
     internal bool RequiresInterfaces { get; set; }
     internal bool RequiresMemberNames { get; set; }
+    internal bool RequiresManifestResources { get; set; }
+    internal bool RequiresAssemblyNames { get; set; }
+    internal bool RequiresAssemblyEnumeration { get; set; }
     internal ImmutableHashSet<EntityKey>.Builder Types { get; } =
         ImmutableHashSet.CreateBuilder<EntityKey>();
     internal ImmutableHashSet<EntityKey>.Builder Fields { get; } =
@@ -93,11 +96,16 @@ internal sealed class ReachabilityLedger
     internal HashSet<string> ConstructedIdentities { get; } = new(StringComparer.Ordinal);
     internal HashSet<CliTypeIdentity> AllocatedTypes { get; } = [];
     internal HashSet<CliTypeIdentity> UninitializedObjectTypes { get; } = [];
+    // Every closed type the program has at run time (AddRuntimeType): a Type object can exist only for these and the
+    // allocated types.
+    internal HashSet<CliTypeIdentity> RuntimeTypes { get; } = [];
 
     // Types that only managed optimization kept out of the program (ReachableMethodAnalysis.RequiredTypes).
     internal HashSet<CliTypeIdentity> RequiredTypes { get; } = [];
     internal HashSet<CliTypeIdentity> StructMarshallingTypes { get; } = [];
     internal bool StructMarshallingFieldNames { get; set; }
+    // The parameterless constructors PtrToStructure runs, by the structure type that declares them.
+    internal Dictionary<CliTypeIdentity, MethodInstanceModel> StructMarshallingConstructors { get; } = [];
     internal Dictionary<string, DispatchDeclaration> DispatchDeclarations { get; } =
         new(StringComparer.Ordinal);
     // Object's virtual calls whose many-target sites call a shared body, by declaration.

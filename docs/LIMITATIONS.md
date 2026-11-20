@@ -86,9 +86,9 @@ evidence of support.
 
 ## Compatibility and release status
 
-- Released SDK/template packages support the current `netwasm0.1` profile. A
-  0.x release does not carry the 1.x compatibility commitment described in the
-  root roadmap.
+- Released SDK/template packages target `net10.0-netwasm`; the deprecated
+  `netwasm0.1` still builds and is removed by 1.0. A 0.x release does not
+  carry the 1.x compatibility commitment described in the root roadmap.
 - Changes to CIL support, CoreLib APIs, runtime ABI, generated manifests, and
   build output remain possible.
 - There is no service-level agreement or independent security audit; deployments

@@ -96,6 +96,41 @@ test("rejects sockets whose entry point is duplicated or whose module lacks the 
   }
 });
 
+const tls = Object.freeze({
+  "wasi:tls/client@0.3.0-draft": Object.freeze({ Connector: class Connector {} }),
+  "wasi:tls/types@0.3.0-draft": Object.freeze({ Error: class TlsError {} }),
+});
+
+test("adds NetWasm's wasi:tls beside the carried providers when the program imports it", async () => {
+  const requiredImportModules = ["wasi:http/client@0.3.2", "wasi:tls/client@0.3.0-draft", "wasi:tls/types@0.3.0-draft"];
+  await withDeployment({ requiredImportModules, createTls: () => tls }, async ({ manifestPath, load }) => {
+    const network = await load(manifestPath);
+    assert.deepEqual(Object.keys(network.modules), [
+      "wasi:http/types@0.3.2", "wasi:http/client@0.3.2",
+      "wasi:tls/client@0.3.0-draft", "wasi:tls/types@0.3.0-draft",
+    ]);
+    assert.equal(network.modules["wasi:tls/client@0.3.0-draft"], tls["wasi:tls/client@0.3.0-draft"]);
+  });
+});
+
+test("gives a deployment that imports only wasi:tls just NetWasm's wasi:tls", async () => {
+  await withDeployment({ artifacts: () => [application()], requiredImportModules: ["wasi:tls/types@0.3.0-draft"], createTls: () => tls },
+    async ({ manifestPath, load }) => {
+      const network = await load(manifestPath);
+      assert.equal(Object.isFrozen(network), true);
+      assert.equal(network.modules, tls);
+    });
+});
+
+test("rejects a wasi:tls that does not supply exactly its frozen modules", async () => {
+  for (const value of [null, { ...tls }, Object.freeze({ "wasi:tls/client@0.3.0-draft": {} })]) {
+    await withDeployment({ artifacts: () => [application()], requiredImportModules: ["wasi:tls/client@0.3.0-draft"], createTls: () => value },
+      async ({ manifestPath, load }) => {
+        await assert.rejects(() => load(manifestPath), /exactly its frozen client and types modules/);
+      });
+  }
+});
+
 test("gives a deployment without an HTTP client no network", async () => {
   await withDeployment({ artifacts: () => [application()] }, async ({ manifestPath, load }) => {
     assert.equal(await load(manifestPath), null);
@@ -169,7 +204,7 @@ test("rejects invalid physical paths and file readers", async () => {
 });
 
 test("rejects malformed options and manifest paths", async () => {
-  const actions = { hashBytes() {}, importModule() {}, readFile() {}, realPath() {} };
+  const actions = { createTls() {}, hashBytes() {}, importModule() {}, readFile() {}, realPath() {} };
   for (const value of [null, 1, [], {}, { ...actions, extra() {} },
     Object.create(actions), { ...actions, [Symbol("extra")]: true }]) {
     assert.throws(() => createLocalNodeNetworkLoader(value), TypeError);
@@ -219,8 +254,12 @@ async function withDeployment(overrides, action) {
       await writeFile(join(root, path), text);
     }
     const manifestPath = join(root, "deployment.json");
-    await writeFile(manifestPath, JSON.stringify(manifest((overrides.artifacts ?? defaultArtifacts)())));
+    await writeFile(manifestPath, JSON.stringify({
+      ...manifest((overrides.artifacts ?? defaultArtifacts)()),
+      requiredImportModules: overrides.requiredImportModules ?? [],
+    }));
     const load = createLocalNodeNetworkLoader({
+      createTls: overrides.createTls ?? (() => assert.fail("no wasi:tls was imported")),
       hashBytes: sha256,
       importModule: overrides.importModule ?? (value => import(value)),
       readFile: overrides.readFile ?? readFile,

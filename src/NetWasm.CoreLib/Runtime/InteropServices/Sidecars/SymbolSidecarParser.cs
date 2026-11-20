@@ -26,8 +26,7 @@ namespace System.Runtime.InteropServices.Sidecars
             {
                 throw new FormatException("it is another version or kind of symbols file");
             }
-            var fileBuildId = MemoryMarshal.Cast<byte, char>(span.Slice(8, SymbolSidecar.BuildIdLength * sizeof(char)));
-            if (!fileBuildId.SequenceEqual(buildId))
+            if (!HasBuildId(span, buildId))
             {
                 throw new FormatException("it is from another build of the program");
             }
@@ -61,6 +60,23 @@ namespace System.Runtime.InteropServices.Sidecars
                 }
             }
             return sidecar;
+        }
+
+        // The file's build ID, UTF-16 after the kind, compared a character at a time.
+        private static bool HasBuildId(ReadOnlySpan<byte> file, string buildId)
+        {
+            if (buildId.Length != SymbolSidecar.BuildIdLength)
+            {
+                return false;
+            }
+            for (var index = 0; index < SymbolSidecar.BuildIdLength; index++)
+            {
+                if (BinaryPrimitives.ReadUInt16LittleEndian(file[(8 + index * sizeof(char))..]) != buildId[index])
+                {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 }

@@ -1,9 +1,12 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System;
+using System.Collections.Generic;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
@@ -14,7 +17,8 @@ internal sealed class ArrayCreateInstanceIntrinsicEmitter(
     IRuntimeImportResolver imports,
     IRootPublicationEmitter roots,
     IAddressInstructionEmitter addresses,
-    IImplicitExceptionEmitter exceptions) : IRuntimeIntrinsicEmitter
+    IImplicitExceptionEmitter exceptions,
+    IKeyedDispatchEmitter keyedDispatch) : IRuntimeIntrinsicEmitter
 {
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -25,6 +29,8 @@ internal sealed class ArrayCreateInstanceIntrinsicEmitter(
         roots.Emit(request.Instruction, code);
         addresses.Emit(code, 0);
         Set(code, result);
+        // The element's type id picks the vector type to allocate, searched among the program's vectors' elements.
+        var cases = new List<(long Key, Action Emit)>();
         foreach (var descriptor in descriptors.ConstructedTypeDescriptors)
         {
             if (descriptor.Type.Shape != CliTypeShape.SzArray || descriptor.Type.ContainsGenericParameters)
@@ -35,32 +41,31 @@ internal sealed class ArrayCreateInstanceIntrinsicEmitter(
             if (!types.GetObjectLayout(element, out var elementLayout))
                 continue;
             var typeId = elementLayout.TypeId;
-            Get(code, elementId);
-            I32(code, typeId);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            Get(code, request.Local(1, CliValueKind.I4));
-            I32(code, descriptor.TypeId);
-            I32(code, typeId);
-            var import = RuntimeImportSymbol.AllocateReferenceArray;
-            if (element.StackKind != CliValueKind.ManagedReference)
+            cases.Add((typeId, () =>
             {
-                I32(code, values.GetValueLayout(element).Size);
-                import = RuntimeImportSymbol.AllocateValueArray;
+                Get(code, request.Local(1, CliValueKind.I4));
+                I32(code, descriptor.TypeId);
+                I32(code, typeId);
+                var import = RuntimeImportSymbol.AllocateReferenceArray;
+                if (element.StackKind != CliValueKind.ManagedReference)
+                {
+                    I32(code, values.GetValueLayout(element).Size);
+                    import = RuntimeImportSymbol.AllocateValueArray;
+                }
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned((uint)imports.Resolve(import,
+                        request.Instruction.Target.RuntimeImportSelection))));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
+                    WasmInstructionOperand.Unsigned((uint)result)));
+                addresses.Emit(code, AddressOperation.EqualZero);
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
+                    WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+                exceptions.Emit(code, ManagedExceptionKind.OutOfMemory, request.Instruction.Context.ManagedThrowFunction);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
             }
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)imports.Resolve(import,
-                    request.Instruction.Target.RuntimeImportSelection))));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
-                WasmInstructionOperand.Unsigned((uint)result)));
-            addresses.Emit(code, AddressOperation.EqualZero);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
-                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            exceptions.Emit(code, ManagedExceptionKind.OutOfMemory, request.Instruction.Context.ManagedThrowFunction);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            ));
         }
+        keyedDispatch.Emit(code, KeyedDispatch.Of(elementId, false, cases, () => { }));
     }
 
     private static void Get(IWasmInstructionWriter code, int local) => code.Write(

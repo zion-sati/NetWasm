@@ -21,10 +21,24 @@ internal static class ReachabilityMarkers
     public static bool RequiresGenericDefinitions(MethodInstanceModel method) =>
         method.DeclaringType.FullName == "System.RuntimeTypeTable" && method.Definition.Name == "GenericDefinition";
 
-    // The table readers Type.Assembly and Assembly.GetEntryAssembly call.
+    // The table readers Type.Assembly and Assembly.GetEntryAssembly call, and those of an assembly's resources, name
+    // and enumeration, which read assemblies by the same indexes.
     public static bool RequiresAssemblies(MethodInstanceModel method) =>
         method.DeclaringType.FullName == "System.RuntimeTypeTable" &&
-        method.Definition.Name is "Assembly" or "EntryAssembly" or "AssemblyCapacity";
+        method.Definition.Name is "Assembly" or "EntryAssembly" or "AssemblyCapacity" or
+            "ManifestResources" or "AssemblyDisplayName" or "AssemblyCount";
+
+    // The table reader Assembly's manifest resource members call: the program's embedded resources.
+    public static bool RequiresManifestResources(MethodInstanceModel method) =>
+        method.DeclaringType.FullName == "System.RuntimeTypeTable" && method.Definition.Name == "ManifestResources";
+
+    // The table reader Assembly.GetName and FullName call: each assembly's display name.
+    public static bool RequiresAssemblyNames(MethodInstanceModel method) =>
+        method.DeclaringType.FullName == "System.RuntimeTypeTable" && method.Definition.Name == "AssemblyDisplayName";
+
+    // The table reader AppDomain.GetAssemblies and Assembly.Load call: every assembly in the program.
+    public static bool RequiresAssemblyEnumeration(MethodInstanceModel method) =>
+        method.DeclaringType.FullName == "System.RuntimeTypeTable" && method.Definition.Name == "AssemblyCount";
 
     // The table reader Type.GetElementType calls.
     public static bool RequiresElementTypes(MethodInstanceModel method) =>

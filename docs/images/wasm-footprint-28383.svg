@@ -1,4 +1,4 @@
-<svg role="img" aria-labelledby="chart-title chart-description"
+<svg role="img" aria-labeledby="chart-title chart-description"
      xmlns="http://www.w3.org/2000/svg" width="960" height="880" viewBox="0 0 960 880">
   <title id="chart-title">Wasm footprint landscape: C# with precise GC is smallest raw and after Brotli 11</title>
   <desc id="chart-description">Zero-based size comparison for programs that print 42. NetWasm with precise Compact garbage collection is 28,383 raw and 11,992 Brotli-11 bytes. Rust 1.100.0 is 63,528 raw and 19,519 compressed bytes. These are matched WASI 0.3 components. For context, Rust 1.100.0's WASI 0.2 component is 53,382 raw and 16,725 compressed bytes. Kotlin 2.4 is 79,293 raw and 22,655 compressed bytes. TinyGo 0.39 is 93,043 raw and 26,931 compressed bytes. Kotlin and TinyGo are contextual WASI Preview 1 references.</desc>

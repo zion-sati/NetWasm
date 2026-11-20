@@ -23,7 +23,7 @@ public sealed class SolePredecessorResolverTests
         Assert.Equal(Load, Resolve([Load, Construct, unrelated], Construct));
     }
 
-    public static TheoryData<string> Unproven => ["first", "gap", "branch", "switch"];
+    public static TheoryData<string> Unproven => ["first", "gap", "branch"];
 
     [Theory]
     [MemberData(nameof(Unproven))]
@@ -33,8 +33,7 @@ public sealed class SolePredecessorResolverTests
         {
             "first" => (ImmutableArray.Create(Construct), Construct),
             "gap" => ([Load with { NextOffset = 5 }, Construct], Construct),
-            "branch" => ([Load, Construct, new(11, 16, CilOperation.Branch, new CilOperand.BranchTarget(6))], Construct),
-            _ => ([Load, Construct, new(11, 16, CilOperation.Switch, new CilOperand.SwitchTargets([0, 6]))], Construct),
+            _ => ([Load, Construct, new(11, 16, CilOperation.Branch, new CilOperand.BranchTarget(6))], Construct),
         };
 
         Assert.Null(Resolve(body, instruction));

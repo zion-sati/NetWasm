@@ -1493,7 +1493,7 @@
       "cases": 3,
       "durationSeconds": 0.2200671
     },
-    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabelledSuccessful": {
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabeledSuccessful": {
       "cases": 5,
       "durationSeconds": 0.5969759
     },
@@ -1569,7 +1569,7 @@
       "cases": 1,
       "durationSeconds": 0.0215563
     },
-    "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.RejectsAnExecutionLabelledWithAnotherTarget": {
+    "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.RejectsAnExecutionLabeledWithAnotherTarget": {
       "cases": 1,
       "durationSeconds": 0.0013698
     },
@@ -2205,7 +2205,7 @@
       "cases": 16,
       "durationSeconds": 356.6072592
     },
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero": {
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero": {
       "cases": 16,
       "durationSeconds": 420.7192467
     },
@@ -7573,11 +7573,11 @@
     "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.EvidenceCaptureFailureIsSecondaryToTheOriginalProcessFailure(timeout: False, emptyPath: False)": 0.2195319,
     "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.EvidenceCaptureFailureIsSecondaryToTheOriginalProcessFailure(timeout: False, emptyPath: True)": 0.0002685,
     "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.EvidenceCaptureFailureIsSecondaryToTheOriginalProcessFailure(timeout: True, emptyPath: False)": 0.0002667,
-    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabelledSuccessful(completion: 0, exit: 1)": 0.0001669,
-    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabelledSuccessful(completion: 0, exit: 139)": 1.7e-05,
-    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabelledSuccessful(completion: 0, exit: null)": 2.04e-05,
-    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabelledSuccessful(completion: 1, exit: null)": 0.3515367,
-    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabelledSuccessful(completion: 2, exit: null)": 0.2452349,
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabeledSuccessful(completion: 0, exit: 1)": 0.0001669,
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabeledSuccessful(completion: 0, exit: 139)": 1.7e-05,
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabeledSuccessful(completion: 0, exit: null)": 2.04e-05,
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabeledSuccessful(completion: 1, exit: null)": 0.3515367,
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.FailedProcessIsCapturedOnceAndNeverRelabeledSuccessful(completion: 2, exit: null)": 0.2452349,
     "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.MissingBoundaryDataFailsBeforeEvidenceCapture(missing: 0)": 1.43e-05,
     "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.MissingBoundaryDataFailsBeforeEvidenceCapture(missing: 1)": 0.1874628,
     "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests.MissingBoundaryDataFailsBeforeEvidenceCapture(missing: 2)": 0.0002425,
@@ -7625,7 +7625,7 @@
     "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.AcceptsCompleteRequestedExecution(memory64: True, optimized: True)": 0.0058246,
     "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.AcceptsExplicitValidationOnlyWasm64WithoutPretendingItExecuted": 0.0009549,
     "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.DoesNotRequireUnrequestedOptimization": 0.0215563,
-    "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.RejectsAnExecutionLabelledWithAnotherTarget": 0.0013698,
+    "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.RejectsAnExecutionLabeledWithAnotherTarget": 0.0013698,
     "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.RejectsMissingDirectInput": 0.0008693,
     "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.RejectsMissingOptimizedArtifactIdentity(path: \" \", hash: \"sha\")": 9.9e-06,
     "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests.RejectsMissingOptimizedArtifactIdentity(path: \"module\", hash: \" \")": 0.0001379,
@@ -8278,22 +8278,22 @@
     "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingArgumentsRespectNet10LimitsAndExceptionPrecedence(caseId: \"numeric.rounding-arguments\", cell: \"Release-Wasm64-Direct-Linked\")": 18.603789,
     "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingArgumentsRespectNet10LimitsAndExceptionPrecedence(caseId: \"numeric.rounding-arguments\", cell: \"Release-Wasm64-Optimized\")": 30.2398768,
     "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingArgumentsRespectNet10LimitsAndExceptionPrecedence(caseId: \"numeric.rounding-arguments\", cell: \"Release-Wasm64-Optimized-Linked\")": 21.9467852,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Direct\")": 23.69992,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Direct-Linked\")": 15.8957035,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Optimized\")": 37.8526128,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Optimized-Linked\")": 20.1355403,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Direct\")": 27.2081601,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Direct-Linked\")": 15.0239655,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Optimized\")": 43.0977459,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Optimized-Linked\")": 22.0625988,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Direct\")": 21.1856482,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Direct-Linked\")": 18.2214885,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Optimized\")": 43.5527045,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Optimized-Linked\")": 21.6986688,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Direct\")": 26.4384015,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Direct-Linked\")": 15.3250277,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Optimized\")": 44.7855487,
-    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Optimized-Linked\")": 24.5355119,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Direct\")": 23.69992,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Direct-Linked\")": 15.8957035,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Optimized\")": 37.8526128,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm32-Optimized-Linked\")": 20.1355403,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Direct\")": 27.2081601,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Direct-Linked\")": 15.0239655,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Optimized\")": 43.0977459,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Debug-Wasm64-Optimized-Linked\")": 22.0625988,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Direct\")": 21.1856482,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Direct-Linked\")": 18.2214885,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Optimized\")": 43.5527045,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm32-Optimized-Linked\")": 21.6986688,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Direct\")": 26.4384015,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Direct-Linked\")": 15.3250277,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Optimized\")": 44.7855487,
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero(caseId: \"numeric.floating-rounding\", cell: \"Release-Wasm64-Optimized-Linked\")": 24.5355119,
     "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.SpecialValueRoundingInvalidModePrecedenceIsNotRequired": 0.001,
     "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.TrigonometricNegativeZeroDesktopBitsAreNotRequired": 0.001,
     "NetWasm.Compiler.Tests.Correctness.FrozenDictionaryCompatibilityCorpusTests.FrozenDictionariesMatchDesktopForEveryCompilerProfileAndTarget": 130.8671494,

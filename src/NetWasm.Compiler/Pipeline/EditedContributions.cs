@@ -10,9 +10,9 @@ using NetWasm.Compiler.Metadata.Inputs;
 namespace NetWasm.Compiler.Pipeline;
 
 /// <summary>
-/// How the analysed instances of the edited methods compare with the last compile's: how
+/// How the analyzed instances of the edited methods compare with the last compile's: how
 /// many add what they added before, which changed what they add, and which earlier instances
-/// are no longer analysed. The early cutoff needs every instance kept.
+/// are no longer analyzed. The early cutoff needs every instance kept.
 /// </summary>
 internal sealed record EditedContributions(int Kept, ImmutableArray<string> Changed, ImmutableArray<string> Gone)
 {
@@ -52,6 +52,6 @@ internal sealed record EditedContributions(int Kept, ImmutableArray<string> Chan
     // Why the early cutoff cannot apply, or null when every instance is kept.
     public string? Obstacle =>
         !Changed.IsEmpty ? $"{Changed[0]} changed what it adds to the program"
-        : !Gone.IsEmpty ? $"{Gone[0]} is no longer analysed"
+        : !Gone.IsEmpty ? $"{Gone[0]} is no longer analyzed"
         : null;
 }

@@ -260,6 +260,12 @@ namespace System.Text.Json.Serialization.Metadata
 
         private protected override JsonPropertyInfo CreateJsonPropertyInfo(JsonTypeInfo declaringTypeInfo, Type? declaringType, JsonSerializerOptions options)
         {
+#if NETWASM
+            if (typeof(T) == typeof(object))
+            {
+                JsonConverter.s_objectValuesReachable = nameof(CreateJsonPropertyInfo);
+            }
+#endif
             return new JsonPropertyInfo<T>(declaringType ?? declaringTypeInfo.Type, declaringTypeInfo, options)
             {
                 JsonTypeInfo = this

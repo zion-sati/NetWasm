@@ -7,4 +7,6 @@ world runtime-platform {
   import wasi:cli/stderr@0.3.2;
   import wasi:cli/exit@0.3.2;
   import wasi:random/random@0.3.2;
+  import wasi:clocks/system-clock@0.3.2;
+  import wasi:clocks/monotonic-clock@0.3.2;
 }

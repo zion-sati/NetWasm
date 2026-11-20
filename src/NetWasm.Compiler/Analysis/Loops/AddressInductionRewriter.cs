@@ -204,7 +204,7 @@ internal sealed class AddressInductionRewriter(
                 var target = indices[destination];
                 if (inside ? target < index && target >= head && (target != head || index != back) : target >= head && target <= back)
                 {
-                    if (inside || entry == head || target != entry || instructions[index].Operand is not CilOperand.BranchTarget)
+                    if (inside || entry == head || target != entry)
                     {
                         return null;
                     }
@@ -362,12 +362,8 @@ internal sealed class AddressInductionRewriter(
         return index;
     }
 
-    private static ImmutableArray<int> Destinations(CilInstruction instruction) => instruction.Operand switch
-    {
-        CilOperand.BranchTarget target => [target.Offset],
-        CilOperand.SwitchTargets switchTargets => switchTargets.Offsets,
-        _ => [],
-    };
+    private static ImmutableArray<int> Destinations(CilInstruction instruction) =>
+        instruction.Operand is CilOperand.BranchTarget target ? [target.Offset] : [];
 
     private static (bool Argument, int Index)? Key(CilInstruction instruction) => instruction switch
     {

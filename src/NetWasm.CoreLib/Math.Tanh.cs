@@ -37,10 +37,13 @@
  *    only tanh(0)=0 is exact for finite argument.
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Tanh(double value)
     {
         const double one = 1.0;

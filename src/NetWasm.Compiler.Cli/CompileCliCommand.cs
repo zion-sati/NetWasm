@@ -5,6 +5,7 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.IO;
+using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.ManagedExecutables;
@@ -81,7 +82,8 @@ internal sealed class CompileCliCommand(
             options.ManagedNewObjectNullCheckElimination,
             options.ManagedLoopStrengthReduction,
             options.ManagedRangeBranchFolding,
-            options.ManagedUnwrittenStaticFieldFolding);
+            options.ManagedUnwrittenStaticFieldFolding,
+            options.ManagedConditionalSelects);
         var entryPoint = options.Target == NwcTarget.Exe ? _entryPoints.Read(options.Input) : null;
         using var session = _sessions.Create(options.WasmTools);
         var compilation = session.Compile(new CompilerOptions(
@@ -111,10 +113,14 @@ internal sealed class CompileCliCommand(
         {
             ImportModules = options.ImportModules,
             LinkedNativeLibraries = options.LinkedNativeOnly ? options.NativeLibraries : null,
+            MissingApiAsError = options.MissingApiError,
+            DiagnosticLogLevel = options.DiagnosticLogLevel ?? LogLevel.Debug,
+            NativeArchives = options.NativeArchives,
             FeatureSwitches = options.FeatureSwitches,
             RuntimeProperties = options.RuntimeProperties,
             OriginalContractReferencePaths = options.OriginalContracts,
             ReferenceOrigins = options.ReferenceOrigins,
+            Collector = options.Collector,
             PlainCoreModule = options.Target == NwcTarget.CoreModule,
             CompiledUnits = CompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),
             VerifyCompiledUnits = VerifiesCompiledUnits(Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS"), options),

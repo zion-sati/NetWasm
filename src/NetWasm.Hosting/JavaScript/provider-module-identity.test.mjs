@@ -20,6 +20,11 @@ test("projects exact deployment modules into component and raw provider identiti
       "netwasm:platform/process-control@10.0.1",
       "netwasm:platform/process-control",
     ],
+    // A prerelease WIT package, such as Wasmtime's wasi:tls draft.
+    [
+      "wasi:tls/client@0.3.0-draft",
+      "wasi:tls/client",
+    ],
   ]) {
     const result = projectProviderModuleIdentity({ module });
     assert.deepEqual(result, { componentModule, rawModule: module });

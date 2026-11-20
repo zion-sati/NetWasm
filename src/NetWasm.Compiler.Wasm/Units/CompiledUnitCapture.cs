@@ -40,7 +40,7 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
         FrozenDictionary<string, UnitFingerprint>.Empty;
     // The pipeline's structuring, for outlines whose units turn out stale.
     internal IWasmMethodLowerer? Structuring { get; init; }
-    // The analysed bodies by method identity: a unit's input is its method's analysed body.
+    // The analyzed bodies by method identity: a unit's input is its method's analyzed body.
     internal FrozenDictionary<string, ManagedMethodBody> Bodies { get; init; } =
         FrozenDictionary<string, ManagedMethodBody>.Empty;
 
@@ -52,7 +52,7 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
         return bodies.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
-    // A method's emission input: its analysed body, the structuring policy and its root map.
+    // A method's emission input: its analyzed body, the structuring policy and its root map.
     // Fingerprinted once per root map: restoring the root map, outlining and restoring the
     // method all ask.
     internal UnitFingerprint? InputOf(string identity, MethodRootMap rootMap)
@@ -121,7 +121,7 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
     internal int Outlined;
     // Methods whose root maps were taken from their units.
     internal int RestoredRootMaps;
-    // The facts each analysed method's root map was built from, by method identity.
+    // The facts each analyzed method's root map was built from, by method identity.
     internal ConcurrentDictionary<string, ImmutableArray<UnitDependency>> RootMapDependencies { get; } =
         new(StringComparer.Ordinal);
     // The units methods' root maps were taken from, by method identity.

@@ -31,7 +31,8 @@ internal sealed record CompilationRequest(
     string? RuntimeLayoutPath = null,
     string? InteropManifestPath = null,
     bool StructuredDiagnostics = false,
-    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz);
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
+    string? GarbageCollector = null);
 
 internal sealed record CompilationResponse(
     ImmutableDictionary<int, string> TypeNames,

@@ -36,7 +36,8 @@ public sealed class AppRuntimePackTests
         var targets = XDocument.Load(Path.Combine(Root, "src/NetWasm.App.Runtime/buildTransitive/NetWasm.App.Runtime.targets"));
         var group = targets.Descendants("ItemGroup").Single(itemGroup => itemGroup.Element("NetWasmFrameworkAssembly") is not null);
 
-        Assert.Equal("'$(TargetFramework)' == 'netwasm0.1'", (string?)group.Attribute("Condition"));
+        // A guest build under either target framework (net10.0-netwasm, or the deprecated netwasm0.1).
+        Assert.Equal("'$(NetWasmGuestFramework)' == 'true'", (string?)group.Attribute("Condition"));
         Assert.Equal("$(MSBuildThisFileDirectory)../framework/*.dll",
             (string?)group.Element("NetWasmFrameworkAssembly")!.Attribute("Include"));
     }

@@ -3,7 +3,7 @@
 
 using System;
 using System.Runtime.ExceptionServices;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace NetWasm.Compiler.Core;
 
@@ -32,23 +32,30 @@ public static class OrderedParallel
         ArgumentNullException.ThrowIfNull(body);
         ArgumentOutOfRangeException.ThrowIfNegative(count);
         var results = new TResult[count];
-        if (count < SerialThreshold)
+        // A host with one core, as a host without threads reports, runs the items in turn too.
+        if (count < SerialThreshold || Environment.ProcessorCount == 1)
         {
             for (var index = 0; index < count; index++) results[index] = body(index);
             return results;
         }
         var failures = new ExceptionDispatchInfo?[count];
-        Parallel.For(0, count, index =>
+        var next = -1;
+        // Large-stack threads, one per core, each taking the next item: a check recurses as deep as the
+        // method it checks nests.
+        LargeStackThreads.Run(Math.Min(Environment.ProcessorCount, count), _ =>
         {
-            try
+            for (var index = Interlocked.Increment(ref next); index < count; index = Interlocked.Increment(ref next))
             {
-                results[index] = body(index);
-            }
+                try
+                {
+                    results[index] = body(index);
+                }
 #pragma warning disable CA1031 // Rethrown below, in item order.
-            catch (Exception exception)
+                catch (Exception exception)
 #pragma warning restore CA1031
-            {
-                failures[index] = ExceptionDispatchInfo.Capture(exception);
+                {
+                    failures[index] = ExceptionDispatchInfo.Capture(exception);
+                }
             }
         });
         foreach (var failure in failures) failure?.Throw();

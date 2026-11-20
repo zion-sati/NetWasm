@@ -41,8 +41,26 @@ internal static class RuntimeTypeNameFormatter
             CliTypeShape.GenericTypeParameter or CliTypeShape.GenericMethodParameter =>
                 GenericParameter(identity, genericParameterNames),
             CliTypeShape.GenericInstantiation => FormatConstructed(identity, definitions, genericParameterNames, assemblyName),
+            CliTypeShape.FunctionPointer => FormatFunctionPointer(
+                identity.FunctionPointerSignature!.Signature, definitions, genericParameterNames, assemblyName),
+            // Custom modifiers are no part of a type's names.
+            CliTypeShape.Modified => FormatAll(identity.ElementType!, definitions, genericParameterNames, assemblyName),
             _ => FormatDefinition(definitions.ResolveTypeIdentity(identity)),
         };
+
+    // A function pointer type has no name, namespace or full name; ToString() writes its return type and its
+    // parameter types, as System.Int64(System.Int32, System.String), with no calling convention.
+    private static Names FormatFunctionPointer(
+        MethodSignatureModel signature,
+        ITypeDefinitionResolver definitions,
+        IReadOnlyDictionary<CliTypeIdentity, string> genericParameterNames,
+        Func<CliTypeIdentity, string> assemblyName)
+    {
+        string Display(CliTypeIdentity type) => FormatAll(type, definitions, genericParameterNames, assemblyName).DisplayName;
+        return new(string.Empty, null, null,
+            Display(signature.ReturnSignatureType) + "(" +
+            string.Join(", ", signature.ParameterSignatureTypes.Select(Display)) + ")");
+    }
 
     // A generic parameter has no namespace or full name; its name is the declared one (T), or its position
     // when the compiler kept no declared name.
@@ -105,6 +123,14 @@ internal static class RuntimeTypeNameFormatter
             ? definition.FullName
             : definition.FullName + "[" + string.Join(",", definition.GenericParameterNames) + "]";
         return new(SimpleName(definition.Name), EmptyToNull(definition.Namespace), definition.FullName, displayName);
+    }
+
+    // Type.Name and Type.Namespace of a named type or an instantiation of one, as .NET reports them: a nested type's
+    // simple name, and its outermost declaring type's namespace.
+    internal static (string Name, string? Namespace) NameAndNamespace(CliTypeIdentity identity, ITypeDefinitionResolver definitions)
+    {
+        var definition = definitions.ResolveTypeIdentity(identity);
+        return (SimpleName(definition.Name), EmptyToNull(definition.Namespace));
     }
 
     private static string SimpleName(string metadataName)

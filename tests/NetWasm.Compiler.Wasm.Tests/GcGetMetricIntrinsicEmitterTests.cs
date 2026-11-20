@@ -78,6 +78,8 @@ internal static class RuntimeIntrinsicEmitterTestFactory
                 new GcMetricIsSupportedIntrinsicEmitter(runtimeImports),
             RuntimeIntrinsic.GcWaitForPendingFinalizers =>
                 new GcWaitForPendingFinalizersIntrinsicEmitter(runtimeImports),
+            RuntimeIntrinsic.GcRunQueuedFinalizers =>
+                new GcRunQueuedFinalizersIntrinsicEmitter(runtimeImports),
             RuntimeIntrinsic.ObjectIdentityHash => new ObjectIdentityHashIntrinsicEmitter(runtimeImports),
             RuntimeIntrinsic.BoxedValueClone => new BoxedValueCloneIntrinsicEmitter(runtimeImports),
             RuntimeIntrinsic.RuntimeHelpersEquals =>

@@ -66,7 +66,7 @@ public sealed class OutwardMethodFunctionAppenderTests
             marshaller));
         var interop = new InteropImportPlan([], OptionalFunctionIndex.Missing,
             OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
-            OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing);
+            OptionalFunctionIndex.Missing);
         var request = CreateRequest(method) with { InteropImports = interop };
 
         appender.Append(request);
@@ -310,7 +310,7 @@ public sealed class OutwardMethodFunctionAppenderTests
                 CliTypeIdentity.FromStackKind(CliValueKind.F8)),
         };
         var binding = CreateBinding(method);
-        var interopImports = new InteropImportPlan([], default, default, default, default, default, default);
+        var interopImports = new InteropImportPlan([], default, default, default, default);
         var request = CreateRequest(method) with
         {
             AsyncBinding = binding,

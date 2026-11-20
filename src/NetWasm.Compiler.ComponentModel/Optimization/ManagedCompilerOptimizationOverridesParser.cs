@@ -107,6 +107,14 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedConstantCallFolding.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedConditionalSelects> ConditionalSelectValues =
+        new Dictionary<string, ManagedConditionalSelects>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedConditionalSelects.Auto,
+            ["Disabled"] = ManagedConditionalSelects.Disabled,
+            ["Enabled"] = ManagedConditionalSelects.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private static readonly FrozenDictionary<string, ManagedSwitchBitTests> SwitchBitTestValues =
         new Dictionary<string, ManagedSwitchBitTests>(StringComparer.Ordinal)
         {
@@ -364,7 +372,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? newObjectNullCheckElimination = null,
         string? loopStrengthReduction = null,
         string? rangeBranchFolding = null,
-        string? unwrittenStaticFieldFolding = null)
+        string? unwrittenStaticFieldFolding = null,
+        string? conditionalSelects = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -508,6 +517,11 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? unwrittenStaticFieldsParsed
             : throw ComponentException.Invalid(
                 "Managed unwritten static field folding must be Auto, Disabled or Enabled.");
+        var conditionalSelectsValue = ConditionalSelectValues.TryGetValue(
+            conditionalSelects ?? "Auto", out var conditionalSelectsParsed)
+            ? conditionalSelectsParsed
+            : throw ComponentException.Invalid(
+                "Managed conditional selects must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -543,7 +557,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                newObjectsValue == ManagedNewObjectNullCheckElimination.Auto &&
                strengthReductionValue == ManagedLoopStrengthReduction.Auto &&
                rangeBranchesValue == ManagedRangeBranchFolding.Auto &&
-               unwrittenStaticFieldsValue == ManagedUnwrittenStaticFieldFolding.Auto
+               unwrittenStaticFieldsValue == ManagedUnwrittenStaticFieldFolding.Auto &&
+               conditionalSelectsValue == ManagedConditionalSelects.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -581,7 +596,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 NewObjectNullCheckElimination: newObjectsValue,
                 LoopStrengthReduction: strengthReductionValue,
                 RangeBranchFolding: rangeBranchesValue,
-                UnwrittenStaticFieldFolding: unwrittenStaticFieldsValue);
+                UnwrittenStaticFieldFolding: unwrittenStaticFieldsValue,
+                ConditionalSelects: conditionalSelectsValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>

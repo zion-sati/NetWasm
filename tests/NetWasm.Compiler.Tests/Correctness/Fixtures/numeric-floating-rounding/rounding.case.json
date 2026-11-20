@@ -8229,5 +8229,5 @@
   "supportsBatchedOracle": true,
   "usesTypedTrace": true,
   "reportAllMismatches": true,
-  "testMethod": "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighboursAndSignedZero"
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.RoundingModesRespectHalfwayNeighborsAndSignedZero"
 }

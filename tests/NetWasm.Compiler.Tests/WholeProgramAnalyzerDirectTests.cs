@@ -996,9 +996,12 @@ public sealed class WholeProgramAnalyzerDirectTests
                 _dispatchTargets,
                 new ManagedCallSiteLedgerWriter(),
                 new CompilerDiagnosticProvenanceBinder(),
-                new RecordingReachabilityClosureObserver());
+                new RecordingReachabilityClosureObserver(),
+                new IgnoredReachabilityProgress());
             var derivedRoots = Make<ReachabilityDerivedRootExpander>(
-                Make<RuntimeReachabilityExpander>(new NoSharedObjectDispatch(), delegateTypes, intrinsicRoots,
+                Make<RuntimeReachabilityExpander>(new NoSharedObjectDispatch(),
+                    new ObjectDispatchSharing(NetWasm.Compiler.ComponentModel.Optimization.ObjectDispatchPolicy.Shared),
+                    delegateTypes, intrinsicRoots,
                     typeDefinitions, typeIdentities, new EmptyObjectArrayDelegateAdapterPlanner()),
                 Make<MemberReachabilityExpander>(new MemberDescriptorPlanner(propertyAccessors),
                     new FixedMemberExecutionPlanner(MemberExecution), _dispatchTargets,
@@ -1121,6 +1124,14 @@ public sealed class WholeProgramAnalyzerDirectTests
                             CilOperation.LoadVirtualFunction)),
                 ],
                 [target], []);
+        }
+    }
+
+    // Progress reporting has its own tests (ReachabilityProgressReporterTests); these watch the closure itself.
+    private sealed class IgnoredReachabilityProgress : IReachabilityProgressObserver
+    {
+        public void Observe(ReachabilityLedger ledger)
+        {
         }
     }
 

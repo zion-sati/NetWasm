@@ -8,5 +8,9 @@ namespace NetWasm.Compiler.Analysis.Constants;
 internal static class ConstantBranchFoldingFactory
 {
     public static ConstantBranchFolding Create(IControlFlowGraphBuilder graphs) =>
-        new([new ConstantBranchRewriter(graphs), new UnreachableInstructionRewriter(graphs), new DeadJumpRewriter(graphs)]);
+        new([
+            new ConstantBranchRewriter(graphs, new ConstantValueFlow(new StackEffectResolver(OperandCalledMethodResolver.Instance))),
+            new UnreachableInstructionRewriter(graphs),
+            new DeadJumpRewriter(graphs),
+        ]);
 }

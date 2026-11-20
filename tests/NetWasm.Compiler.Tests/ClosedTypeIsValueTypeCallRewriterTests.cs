@@ -42,6 +42,27 @@ public sealed class ClosedTypeIsValueTypeCallRewriterTests
             Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[2].Operand).Value);
     }
 
+    // A pointer, function pointer or by-reference type holds a value but is no value type, as .NET reports it.
+    [Theory]
+    [InlineData("pointer")]
+    [InlineData("function pointer")]
+    [InlineData("by reference")]
+    public void APointerOrByReferenceTypeIsNoValueType(string shape)
+    {
+        var element = Type(isValueType: true);
+        var type = shape switch
+        {
+            "pointer" => CliTypeIdentity.UnmanagedPointer(element),
+            "function pointer" => CliTypeIdentity.FunctionPointer(new CliFunctionPointerSignature(0, 0, 0,
+                new MethodSignatureModel(CliTypeIdentity.FromStackKind(CliValueKind.Void), []))),
+            _ => CliTypeIdentity.ManagedByReference(element),
+        };
+
+        var rewritten = Rewriter().Rewrite(Body(type));
+
+        Assert.Equal(0, Assert.IsType<CilOperand.ConstantI4>(rewritten.Instructions[2].Operand).Value);
+    }
+
     [Fact]
     public void FoldsVirtualGetterCall()
     {

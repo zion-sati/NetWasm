@@ -20,3 +20,11 @@ internal sealed record ArrayMetadataCachingLayout(
 
     public ImmutableDictionary<ArrayReferenceSlot, RectangularArraySnapshotLocals> RectangularSlots { get; init; } = [];
 }
+
+// The run plan with the length local each of its slots keeps.
+internal sealed record ArrayLengthRunLayout(
+    ArrayLengthRunPlan Plan,
+    ImmutableDictionary<ArrayReferenceSlot, int> Locals)
+{
+    public static ArrayLengthRunLayout Empty { get; } = new(ArrayLengthRunPlan.Empty, []);
+}

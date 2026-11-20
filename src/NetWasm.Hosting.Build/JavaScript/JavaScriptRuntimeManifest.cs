@@ -7,8 +7,11 @@ using System.Text.RegularExpressions;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
-/// <summary>A runtime module's file and every file it loads, itself included.</summary>
-internal sealed record JavaScriptRuntimeModule(string File, ImmutableArray<string> Files);
+/// <summary>
+/// A runtime module's file, every file it loads when it loads, itself included, and the files it loads only when its
+/// code first needs them, which a deployment publishes but a page does not preload.
+/// </summary>
+internal sealed record JavaScriptRuntimeModule(string File, ImmutableArray<string> Files, ImmutableArray<string> LazyFiles);
 
 /// <summary>
 /// The <c>runtime.json</c> the runtime bundler writes beside its files, and
@@ -22,7 +25,7 @@ internal static partial class JavaScriptRuntimeManifest
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object
             || !root.TryGetProperty("schemaVersion", out var version) || version.ValueKind != JsonValueKind.Number
-            || version.GetInt32() != 1
+            || version.GetInt32() != 2
             || !root.TryGetProperty("modules", out var modules) || modules.ValueKind != JsonValueKind.Object)
         {
             throw Invalid();
@@ -33,20 +36,28 @@ internal static partial class JavaScriptRuntimeManifest
             if (!ModuleName().IsMatch(module.Name)
                 || module.Value.ValueKind != JsonValueKind.Object
                 || !module.Value.TryGetProperty("file", out var file) || file.ValueKind != JsonValueKind.String
-                || !module.Value.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array)
+                || !module.Value.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array
+                || !module.Value.TryGetProperty("lazyFiles", out var lazyFiles) || lazyFiles.ValueKind != JsonValueKind.Array)
             {
                 throw Invalid();
             }
-            var names = files.EnumerateArray()
-                .Select(value => value.ValueKind == JsonValueKind.String ? value.GetString()! : throw Invalid())
-                .ToImmutableArray();
-            if (names.Any(name => !FileName().IsMatch(name)) || !names.Contains(file.GetString()!))
+            var names = FileNames(files);
+            var lazyNames = FileNames(lazyFiles);
+            if (!names.Contains(file.GetString()!) || lazyNames.Intersect(names, StringComparer.Ordinal).Any())
             {
                 throw Invalid();
             }
-            result.Add(module.Name, new(file.GetString()!, names));
+            result.Add(module.Name, new(file.GetString()!, names, lazyNames));
         }
         return result.ToImmutable();
+    }
+
+    private static ImmutableArray<string> FileNames(JsonElement files)
+    {
+        var names = files.EnumerateArray()
+            .Select(value => value.ValueKind == JsonValueKind.String ? value.GetString()! : throw Invalid())
+            .ToImmutableArray();
+        return names.All(name => FileName().IsMatch(name)) ? names : throw Invalid();
     }
 
     /// <summary>The runtime modules a generated entry's import statements name.</summary>

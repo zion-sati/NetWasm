@@ -4,3 +4,11 @@
 export function stamp(value) {
   return `bundled:${value}`;
 }
+
+// An import named "Format.wrap" finds wrap on Format and calls it with Format as `this`, as .NET does.
+export const Format = Object.freeze({
+  prefix: "fmt:",
+  wrap(value) {
+    return this.prefix + value;
+  },
+});

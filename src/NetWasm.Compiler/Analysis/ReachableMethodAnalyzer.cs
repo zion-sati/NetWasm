@@ -69,7 +69,7 @@ internal sealed class ReachableMethodAnalyzer(
     }
 
     // Managed optimization may remove an allocation (an unused newobj); the types the original body constructed and
-    // the optimized one does not stay required. The original body is analysed again only when a newobj went.
+    // the optimized one does not stay required. The original body is analyzed again only when a newobj went.
     private ImmutableArray<CliTypeIdentity> RemovedConstructions(
         MethodInstanceModel method,
         CilMethodBody original,

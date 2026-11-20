@@ -154,7 +154,10 @@ internal sealed class ReachabilitySession : IDisposable
         bool RequiresElementTypes,
         bool RequiresTypeAttributes,
         bool RequiresInterfaces,
-        bool RequiresMemberNames)
+        bool RequiresMemberNames,
+        bool RequiresManifestResources,
+        bool RequiresAssemblyNames,
+        bool RequiresAssemblyEnumeration)
         CaptureClosureStamp() => (
         _state.Types.Count,
         _state.RuntimeTypeDefinitions.Count,
@@ -180,7 +183,10 @@ internal sealed class ReachabilitySession : IDisposable
         _state.RequiresElementTypes,
         _state.RequiresTypeAttributes,
         _state.RequiresInterfaces,
-        _state.RequiresMemberNames);
+        _state.RequiresMemberNames,
+        _state.RequiresManifestResources,
+        _state.RequiresAssemblyNames,
+        _state.RequiresAssemblyEnumeration);
 
     private void EnsureModuleInitialized(AssemblyIdentity assembly)
     {
@@ -341,9 +347,11 @@ internal sealed class ReachabilitySession : IDisposable
         _state.TypeDependencyPaths.TryAdd(type.CanonicalName, CurrentDependencyPath);
         var isElementModifier = type.Shape is
             CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer;
+        // A function pointer type, an array's element as a pointer type is, keeps its identity the same way; it has no
+        // element of its own.
         if (type.Shape is CliTypeShape.GenericInstantiation or
                 CliTypeShape.SzArray or CliTypeShape.Array ||
-            isElementModifier && retainElementModifierIdentity)
+            (isElementModifier || type.Shape == CliTypeShape.FunctionPointer) && retainElementModifierIdentity)
         {
             AddConstructedIdentity(type.CanonicalName);
             _state.ConstructedTypes.Add(type);
@@ -366,6 +374,7 @@ internal sealed class ReachabilitySession : IDisposable
     internal void AddRuntimeType(CliTypeIdentity type)
     {
         _state.TypeDependencyPaths.TryAdd(type.CanonicalName, CurrentDependencyPath);
+        _state.RuntimeTypes.Add(type);
         if (type.Shape is CliTypeShape.Named or
             CliTypeShape.GenericInstantiation)
         {
@@ -561,6 +570,28 @@ internal sealed class ReachabilitySession : IDisposable
         {
             AddAllocatedType(_nullableTypes.Resolve(type) ?? type);
         }
+    }
+
+    // PtrToStructure runs a structure's parameterless constructor, of any accessibility, when it creates the
+    // structure by its runtime type; a type without one, or a generic one, which cannot be marshalled, has none.
+    internal void AddStructureConstructor(CliTypeIdentity type)
+    {
+        if (type.Shape != CliTypeShape.Named || _state.StructMarshallingConstructors.ContainsKey(type))
+        {
+            return;
+        }
+        var constructor = _typeDefinitions.ResolveTypeIdentity(type)
+            .Methods
+            .Select(_methodRepository.GetMethod)
+            .SingleOrDefault(candidate =>
+                candidate.Name == ".ctor" && !candidate.IsStatic && candidate.Signature.ParameterTypes.IsEmpty);
+        if (constructor is null)
+        {
+            return;
+        }
+        var instance = DirectInstance(constructor);
+        _state.StructMarshallingConstructors.Add(type, instance);
+        EnqueueInstance(instance);
     }
 
     internal void EnsureTypeInitialized(EntityKey definition, CliTypeIdentity declaringType)

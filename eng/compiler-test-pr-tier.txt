@@ -357,3 +357,5 @@ NetWasm.Compiler.Tests.WholeLocalBlockCopyFolderTests
 NetWasm.Compiler.Tests.WholeProgramAnalyzerDirectTests
 NetWasm.Compiler.Tests.WideValueStackCompilationTests
 NetWasm.Compiler.Tests.WitBindingTargetMatrixTests
+NetWasm.Compiler.Tests.ComponentInstantiationCompilationTests
+NetWasm.Compiler.Tests.DeepNestingCompilationTests

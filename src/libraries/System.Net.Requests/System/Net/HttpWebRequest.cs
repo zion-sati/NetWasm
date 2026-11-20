@@ -1720,7 +1720,7 @@ namespace System.Net
         }
 
         // NetWasm: options that need per-request control of the host's connections, TLS, routing or protocol fail before
-        // anything is sent, naming the option; their defaults keep the host's own behaviour. TCP keep-alive set through
+        // anything is sent, naming the option; their defaults keep the host's own behavior. TCP keep-alive set through
         // ServicePoint is CoreLib-internal state this assembly cannot read.
         private void ValidateTransportOptions()
         {

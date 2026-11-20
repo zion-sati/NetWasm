@@ -281,9 +281,12 @@ test("execution request validator enforces application import bindings", () => {
   for (const value of [inherited, { ...binding, extra: true }, wrongKey, nonEnumerable, accessor]) {
     expectInvalid(request({ applicationImports: [value] }), /binding shape/i);
   }
-  for (const module of [null, "", "Module@1.0.0", "module@1.0", "bad_module@1.0.0"]){
+  for (const module of [null, "", "Module@1.0.0", "module@1.0", "bad_module@1.0.0", "module@01.0.0", "module@1.0.0-"]){
     expectInvalid(request({ applicationImports: [{ ...binding, module }] }), /exact versioned identifier/i);
   }
+  // A prerelease WIT package version is exact.
+  const prerelease = "example:widgets/render@1.0.0-preview.2";
+  assert.equal(createValidator()(request({ applicationImports: [{ ...binding, module: prerelease }] })).applicationImports[0].module, prerelease);
   for (const module of ["wasi:logging/logger@1.0.0", "netwasm:platform/logging@1.0.0"]) {
     expectInvalid(request({ applicationImports: [{ ...binding, module }] }), /reserved/i);
   }

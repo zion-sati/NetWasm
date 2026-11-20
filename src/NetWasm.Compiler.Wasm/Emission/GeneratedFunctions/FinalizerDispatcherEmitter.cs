@@ -2,15 +2,20 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using NetWasm.Compiler.Core;
+using System;
+using System.Linq;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
+// The object's type id picks its finalizer, searched among the finalizable types' ids.
 internal sealed class FinalizerDispatcherEmitter(
     ITargetLayout layouts,
     IExceptionPayloadBlockEmitter exceptions,
-    IGeneratedFunctionWriterFactory writers) : IFinalizerDispatcherEmitter
+    IGeneratedFunctionWriterFactory writers,
+    IKeyedDispatchEmitter keyedDispatch) : IFinalizerDispatcherEmitter
 {
     public byte[] Emit(
         FinalizerDispatchPlan[] finalizableTypes,
@@ -50,31 +55,26 @@ internal sealed class FinalizerDispatcherEmitter(
                 WasmOpcodes.EmptyBlockType,
                 0,
                 0)));
-        foreach (var descriptor in finalizableTypes)
-        {
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)typeIdParameter)));
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(descriptor.TypeId)));
-            code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)objectParameter)));
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
-                    descriptor.Finalizer))));
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(0)));
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalSet,
-                WasmInstructionOperand.Unsigned((uint)statusLocal)));
-            code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        }
+        keyedDispatch.Emit(code.Instructions, KeyedDispatch.Of(
+            typeIdParameter,
+            wide: false,
+            finalizableTypes.Select(descriptor => ((long)descriptor.TypeId, (Action)(() =>
+            {
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.LocalGet,
+                    WasmInstructionOperand.Unsigned((uint)objectParameter)));
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
+                        descriptor.Finalizer))));
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.I32Constant,
+                    WasmInstructionOperand.Signed(0)));
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.LocalSet,
+                    WasmInstructionOperand.Unsigned((uint)statusLocal)));
+            }))),
+            () => { }));
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Branch,

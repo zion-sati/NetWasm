@@ -46,6 +46,17 @@ namespace System
         internal const string StandardOutputEncodingNotAllowed = "StandardOutputEncoding is only supported when standard output is redirected.";
         internal const string NotSupportedRemoteThread = "Feature is not supported for threads on remote computers.";
         internal const string WaitReasonUnavailable = "WaitReason is only available if the ThreadState is Wait.";
+        internal const string Arg_InvalidHandle = "Invalid handle.";
+        internal const string CantSetHandleAndRedirect = "The StandardInputHandle, StandardOutputHandle, and StandardErrorHandle properties cannot be used together with the corresponding RedirectStandardInput, RedirectStandardOutput, and RedirectStandardError properties.";
+        internal const string CantSetRedirectForSafeProcessHandleStart = "The RedirectStandardInput, RedirectStandardOutput, and RedirectStandardError properties cannot be used by SafeProcessHandle.Start or Process.StartAndForget. Use the StandardInputHandle, StandardOutputHandle, and StandardErrorHandle properties.";
+        internal const string InheritedHandlesRequiresCreateProcess = "The InheritedHandles property cannot be used with UseShellExecute or UserName.";
+        internal const string InheritedHandles_MustNotContainDuplicates = "InheritedHandles must not contain duplicates.";
+        internal const string InheritedHandles_OnlySelectedSafeHandlesAreSupported = "InheritedHandles only supports SafeFileHandle and SafePipeHandle. Other handle types are not supported.";
+        internal const string KillOnParentExitCannotBeUsedWithUseShellExecute = "The KillOnParentExit property cannot be used with UseShellExecute.";
+        internal const string RedirectStandardOutputAndErrorRequired = "RedirectStandardOutput and RedirectStandardError must both be set to true when calling Process.{0} with a ProcessStartInfo.";
+        internal const string StartDetachedNotCompatible = "The StartDetached property cannot be used with UseShellExecute set to true.";
+        internal const string StartSuspendedNotCompatible = "The StartSuspended property cannot be used with UseShellExecute set to true.";
+        internal const string UseShellExecuteNotSupportedForScenario = "UseShellExecute is not supported by Process.{0}. On Windows, shell execution may not create a new process, which would make it impossible to return a valid process ID.";
         internal const string ProcessHandleNotSupported = "Process handles are not available on this NetWasm platform.";
         internal const string Argument_NullCharInEnvVar = "Environment variable cannot contain a null character.";
     }

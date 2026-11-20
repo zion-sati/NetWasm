@@ -11,6 +11,9 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 using static NetWasm.Compiler.Wasm.Tests.ExpressionIntrinsicEmissionFixture;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -1005,6 +1008,64 @@ public sealed class MemberExecutionIntrinsicEmitterTests
         Assert.Empty(fixture.TypeValidator.Requests);
     }
 
+    public static TheoryData<string, bool> WrittenFields() => new()
+    {
+        { "an instance reference", true },
+        { "a static reference", false },
+        { "an instance number", false },
+    };
+
+    // For a collector with generations, a reference written into an instance field is recorded at the receiver.
+    // A static field is a root, which every collection reads, and a number is no reference.
+    [Theory]
+    [MemberData(nameof(WrittenFields))]
+    public void AWrittenReferenceFieldIsRecordedAtItsReceiverForACollectorWithGenerations(string written, bool recorded)
+    {
+        var fieldType = written == "an instance number"
+            ? CliTypeIdentity.FromStackKind(CliValueKind.I4)
+            : CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference, false);
+        var field = new FieldInstanceModel(
+            new FieldDefinitionModel(new(EmitterTestSupport.Assembly, 0x04000040), EmitterTestSupport.TypeKey, "Value",
+                fieldType, written == "a static reference"),
+            Type("Owner"), fieldType);
+        var plan = Members() with
+        {
+            Fields = ImmutableDictionary<string, FieldInstanceModel>.Empty.Add(field.CanonicalName, field),
+        };
+        (ImmutableArray<WasmInstruction> Code, uint Record) Write(bool recording)
+        {
+            var fixture = new ExpressionIntrinsicEmissionFixture(false);
+            var request = fixture.Request(RuntimeIntrinsic.MemberWriteField, members: plan);
+            // Whether a program records its reference stores is its module's to say.
+            request = request with
+            {
+                Call = request.Call with
+                {
+                    Instruction = request.Instruction with
+                    {
+                        Target = request.Instruction.Target with
+                        {
+                            RuntimeImportSelection = request.Instruction.Target.RuntimeImportSelection with
+                            {
+                                IncludeReferenceWriteBarrier = recording,
+                            },
+                        },
+                    },
+                },
+            };
+            Create(fixture).Emit(request, fixture.Writer);
+            return (fixture.Code, recording ? EmitterTestSupport.RecordReferenceWriteImport(request.Instruction) : 0);
+        }
+
+        var (instructions, record) = Write(recording: true);
+        var (unrecorded, _) = Write(recording: false);
+
+        var calls = instructions.Count(instruction =>
+            instruction.Opcode == WasmOpcodes.Call && instruction.Operand.UnsignedValue == record);
+        Assert.Equal(recorded ? 1 : 0, calls);
+        Assert.Equal(unrecorded.Length + (recorded ? 2 : 0), instructions.Length);
+    }
+
     [Fact]
     public void StructResultGoesToARootedBoxTheCalleeWrites()
     {
@@ -1127,7 +1188,6 @@ public sealed class MemberExecutionIntrinsicEmitterTests
             var results = new MemberResultBoxEmitter(fixture.Layouts, fixture.Scalars, fixture.Layouts, _addresses,
                 fixture.Imports, fixture.Exceptions);
             var nullable = new MemberNullableResultEmitter(fixture);
-            var cases = new MemberDescriptorCaseEmitter(_addresses);
             var arguments = new MemberArgumentEmitter(fixture.Layouts, fixture.Layouts, _addresses, fixture.Scalars, checks,
                 payloads);
             var counts = new MemberArgumentCountCheckEmitter(_addresses, fixture.Layouts, fixture.Exceptions);
@@ -1140,25 +1200,27 @@ public sealed class MemberExecutionIntrinsicEmitterTests
             yield return (typeof(MemberResultBoxEmitter),
                 [fixture.Layouts, fixture.Scalars, fixture.Layouts, _addresses, fixture.Imports, fixture.Exceptions]);
             yield return (typeof(MemberNullableResultEmitter), [fixture]);
-            yield return (typeof(MemberDescriptorCaseEmitter), [_addresses]);
             yield return (typeof(MemberArgumentEmitter),
                 [fixture.Layouts, fixture.Layouts, _addresses, fixture.Scalars, checks, payloads]);
             yield return (typeof(MemberArgumentCountCheckEmitter), [_addresses, fixture.Layouts, fixture.Exceptions]);
             yield return (typeof(MemberExecutionPlanValidator), [fixture]);
             yield return (typeof(MemberMethodCaseEmitter),
             [
-                fixture.Layouts, cases, counts, arguments, checks, allocator, payloads, results, nullable, fixture,
-                fixture.Initialization, fixture, fixture, fixture.Layouts, fixture.Exceptions, _addresses,
+                fixture.Layouts, counts, arguments, checks, allocator, payloads, results, nullable, fixture,
+                fixture.Initialization, fixture, fixture, new VirtualDispatchCasePlanner(fixture.Layouts, new FakeIntrinsics()),
+                new KeyedDispatchEmitter(), fixture.Exceptions, _addresses,
+                new ReferenceWriteBarrierEmitter(fixture.Imports, new ReferenceWriteRecordPolicy(fixture.Scalars)),
             ]);
             yield return (typeof(MemberFieldReadCaseEmitter),
             [
-                fixture.Layouts, cases, fixture.Initialization, checks, fixture, locations, nullable, allocator, payloads,
+                fixture.Layouts, fixture.Initialization, checks, fixture, locations, nullable, allocator, payloads,
                 results, fixture.Layouts, fixture.Scalars, _addresses,
             ]);
             yield return (typeof(MemberFieldWriteCaseEmitter),
             [
-                fixture.Layouts, cases, fixture.Initialization, checks, fixture, locations, payloads, fixture.Layouts,
+                fixture.Layouts, fixture.Initialization, checks, fixture, locations, payloads, fixture.Layouts,
                 fixture.Scalars, fixture.Layouts, _addresses, fixture.Imports, fixture.Exceptions,
+                new ReferenceWriteBarrierEmitter(fixture.Imports, new ReferenceWriteRecordPolicy(fixture.Scalars)),
             ]);
         }
 
@@ -1171,7 +1233,9 @@ public sealed class MemberExecutionIntrinsicEmitterTests
                 fixture.Roots,
                 (IMemberMethodCaseEmitter)built[typeof(MemberMethodCaseEmitter)],
                 (IMemberFieldReadCaseEmitter)built[typeof(MemberFieldReadCaseEmitter)],
-                (IMemberFieldWriteCaseEmitter)built[typeof(MemberFieldWriteCaseEmitter)]);
+                (IMemberFieldWriteCaseEmitter)built[typeof(MemberFieldWriteCaseEmitter)],
+                new KeyedDispatchEmitter(),
+                fixture.Layouts);
         }
     }
 
@@ -1185,6 +1249,7 @@ public sealed class MemberExecutionIntrinsicEmitterTests
         [
             built[typeof(MemberExecutionPlanValidator)], fixture.Roots, built[typeof(MemberMethodCaseEmitter)],
             built[typeof(MemberFieldReadCaseEmitter)], built[typeof(MemberFieldWriteCaseEmitter)],
+            new KeyedDispatchEmitter(), fixture.Layouts,
         ];
         var constructor = Assert.Single(typeof(MemberExecutionIntrinsicEmitter).GetConstructors());
         for (var index = 0; index < arguments.Length; index++)

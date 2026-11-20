@@ -58,7 +58,13 @@ internal sealed class CompilerHostApplication(
                 MetricsObserver: request.CollectCompilerMetrics ? metrics : null,
                 IntermediateOutputPath: request.IntermediateOutputPath,
                 StructuredDiagnostics: request.StructuredDiagnostics,
-                Optimization: request.Optimization);
+                Optimization: request.Optimization)
+            {
+                Collector = request.GarbageCollector is { } collector
+                    ? RuntimeCollector.Named(collector) ??
+                        throw new InvalidOperationException($"'{collector}' names no collector")
+                    : null,
+            };
             var result = _compiler.Compile(options);
             _artifactWriter.Write(_artifactFormatter.Format(request, result));
             unitVerification?.Verify(options);

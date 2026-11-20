@@ -8,6 +8,7 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace System.IO;
@@ -154,6 +155,7 @@ public class BinaryReader : IDisposable
 
     public virtual byte ReadByte() => InternalReadByte();
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private byte InternalReadByte()
     {
         ThrowIfDisposed();

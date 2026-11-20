@@ -75,7 +75,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                         24 => WalkFromMiddle(Ints(size + 3, 2)),
                         25 => WalkSpan(Ints(size, 7)),
                         26 => SpanSum(Ints(size, 3)),
-                        27 => SpanNeighbours(Ints(size, 5)),
+                        27 => SpanNeighbors(Ints(size, 5)),
                         28 => SpanSlice(Ints(size + 3, 7)),
                         29 => SpanCopy(Ints(size, 9)),
                         30 => SpanPastTheEnd(Ints(size, 2), size + size % 3 / 2),
@@ -465,7 +465,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
             }
 
             [MethodImpl(MethodImplOptions.NoInlining)]
-            private static int SpanNeighbours(ReadOnlySpan<int> input)
+            private static int SpanNeighbors(ReadOnlySpan<int> input)
             {
                 var result = 0;
                 for (var i = 0; i < input.Length - 1; i++) result ^= input[i] - (input[i + 1] << 1);
@@ -637,7 +637,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
         [
             "Bounded", "CopyAfterLoop", "Counters", "ElementCopy", "Floats", "FoldAndStore", "Folds", "InPlace", "Integers",
             "Ints", "LateStart", "Longs", "NullArray", "Offsets", "PastTheEnd", "Shapes", "SpanBeforeTheStart", "SpanCopy",
-            "SpanNeighbours", "SpanPastTheEnd", "SpanSlice", "SpanSum", "Stencil", "StencilInto", "UInts", "UnsafeInts",
+            "SpanNeighbors", "SpanPastTheEnd", "SpanSlice", "SpanSum", "Stencil", "StencilInto", "UInts", "UnsafeInts",
             "UnsafeNativeInts", "Unsigned", "WalkCopy", "WalkFromMiddle", "WalkInts", "WalkLongs", "WalkSpan",
         ];
         var actual = string.Join(", ", Vectorized(vectorized));

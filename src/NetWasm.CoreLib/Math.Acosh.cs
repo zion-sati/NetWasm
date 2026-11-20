@@ -31,10 +31,13 @@
 
 /* 0x3FE62E42, 0xFEFA39EF */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Acosh(double value)
     {
         const double one = 1.0;

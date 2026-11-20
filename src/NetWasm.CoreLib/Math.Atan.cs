@@ -35,10 +35,13 @@
  * to produce the hexadecimal values shown.
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class Math
 {
+    [Intrinsic]
     public static double Atan(double value)
     {
         const double one = 1.0;

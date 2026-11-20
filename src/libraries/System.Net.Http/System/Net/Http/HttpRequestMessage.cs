@@ -21,15 +21,19 @@ namespace System.Net.Http
             PropagatorStateInjectedByDiagnosticsHandler = 2,
             Disposed = 4,
             AuthDisabled = 8,
+            ConnectionIdSet = 16,
             DoNotPartitionConnectionPoolBySni = 32,
         }
 
         private MessageFlags _flags;
 
+        private long _connectionId;
+
         private HttpMethod _method;
         private Uri? _requestUri;
         private HttpRequestHeaders? _headers;
         private Version _version;
+        private HttpVersionPolicy _versionPolicy;
         private HttpContent? _content;
         internal HttpRequestOptions? _options;
 
@@ -42,6 +46,25 @@ namespace System.Net.Http
                 CheckDisposed();
 
                 _version = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the policy determining how <see cref="Version" /> is interpreted and how is the final HTTP version negotiated with the server.
+        /// </summary>
+        public HttpVersionPolicy VersionPolicy
+        {
+            get { return _versionPolicy; }
+            set
+            {
+                if ((uint)value > (uint)HttpVersionPolicy.RequestVersionExact)
+                {
+                    throw new ArgumentException(SR.Format(SR.net_invalid_enum, nameof(HttpVersionPolicy)), nameof(value));
+                }
+
+                CheckDisposed();
+
+                _versionPolicy = value;
             }
         }
 
@@ -103,6 +126,56 @@ namespace System.Net.Http
         /// </summary>
         public HttpRequestOptions Options => _options ??= new HttpRequestOptions();
 
+        /// <summary>
+        /// Gets or sets the identifier of the connection that this request was most recently sent on. The value is not
+        /// guaranteed to be set: it remains <see langword="null"/> when the request was not handled by a connection, for
+        /// example because it timed out before a connection could be obtained.
+        /// </summary>
+        /// <remarks>
+        /// When the request is sent through a <see cref="SocketsHttpHandler"/>, the value matches the connection id
+        /// reported through EventSource telemetry and the id passed to
+        /// <see cref="SocketsHttpHandler.ShouldEvictConnection"/> for the connection that served the request, allowing
+        /// a caller to correlate a request with that connection. It also matches the id surfaced to a custom
+        /// <see cref="SocketsHttpHandler.ConnectCallback"/>. When a request is sent over multiple connections (for
+        /// example after a redirect or a retry), the value reflects the most recent attempt.
+        /// <para>
+        /// HTTP CONNECT proxy tunnels are an exception to the correlation with a custom
+        /// <see cref="SocketsHttpHandler.ConnectCallback"/>: when the request is served over such a tunnel, the callback
+        /// observes the tunnel's underlying transport connection to the proxy, whose id differs from this one (which
+        /// identifies the tunneled connection that carried the request). Both ids remain observable through a
+        /// <see cref="SocketsHttpHandler.PlaintextStreamFilter"/>, which runs once per hop and reports the transport
+        /// connection's id for the CONNECT hop and this id for the tunneled hop.
+        /// </para>
+        /// <para>
+        /// These correlations apply only when the request is handled by <see cref="SocketsHttpHandler"/>. Another
+        /// <see cref="HttpMessageHandler"/> may never set this value, or may assign it a different meaning.
+        /// </para>
+        /// <para>
+        /// This property is intended to be read after the request has been sent. Assigning a value before the request
+        /// is sent has no effect on how the request is handled: it does not request or influence the use of a particular
+        /// connection, and any value set by the caller is overwritten with the id of the connection that actually serves
+        /// the request.
+        /// </para>
+        /// </remarks>
+        [Experimental(Experimentals.SocketsHttpHandlerExperimentalDiagId, UrlFormat = Experimentals.SharedUrlFormat)]
+        public long? ConnectionId
+        {
+            // ConnectionIdSet is stored separately to avoid the extra bytes needed for a nullable 'long?' field.
+            get => _flags.HasFlag(MessageFlags.ConnectionIdSet) ? _connectionId : null;
+            set
+            {
+                if (value is null)
+                {
+                    _flags &= ~MessageFlags.ConnectionIdSet;
+                }
+                else
+                {
+                    _connectionId = value.Value;
+                    _flags |= MessageFlags.ConnectionIdSet;
+                }
+            }
+        }
+
         public HttpRequestMessage()
             : this(HttpMethod.Get, (Uri?)null)
         {
@@ -118,6 +191,7 @@ namespace System.Net.Http
             _method = method;
             _requestUri = requestUri;
             _version = DefaultRequestVersion;
+            _versionPolicy = DefaultVersionPolicy;
         }
 
         public HttpRequestMessage(HttpMethod method, [StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri)
@@ -187,6 +261,8 @@ namespace System.Net.Http
                 _flags |= MessageFlags.Disposed;
             }
         }
+
+        internal bool IsExtendedConnectRequest => Method == HttpMethod.Connect && _headers?.Protocol != null;
 
         #region IDisposable Members
 

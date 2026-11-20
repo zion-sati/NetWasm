@@ -54,7 +54,7 @@ internal sealed class ConstrainedCallTargetResolver(
             .Where(candidate => MatchesSignature(candidate, request))
             .DistinctBy(candidate => candidate.Key)
             .ToArray();
-        if (candidates.Length == 0)
+        if (candidates.Length == 0 && !request.Declaration.HasBody)
         {
             candidates = namedCandidates
                 .Where(candidate => MatchesStackSignature(candidate, request))
@@ -91,12 +91,17 @@ internal sealed class ConstrainedCallTargetResolver(
             .Where(candidate => MatchesSignature(candidate, request))
             .DistinctBy(candidate => candidate.Key)
             .ToArray();
-        return exact.Length != 0
-            ? exact
-            : named
-                .Where(candidate => MatchesStackSignature(candidate, request))
-                .DistinctBy(candidate => candidate.Key)
-                .ToArray();
+        // A declaration with a body is a default implementation, which a type without an exact implementation uses
+        // (ECMA-335 II.12.2): matching only stack kinds would take an overload of another signature, such as
+        // TryParse(ReadOnlySpan<char>, ...) for INumberBase's default TryParse(ReadOnlySpan<byte>, ...).
+        if (exact.Length != 0 || request.Declaration.HasBody)
+        {
+            return exact;
+        }
+        return named
+            .Where(candidate => MatchesStackSignature(candidate, request))
+            .DistinctBy(candidate => candidate.Key)
+            .ToArray();
     }
 
     private static MethodDefinitionModel RequireUnique(

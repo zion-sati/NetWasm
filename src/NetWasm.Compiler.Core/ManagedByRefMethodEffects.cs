@@ -31,7 +31,7 @@ public sealed record ManagedByRefEffects(
     public static ManagedByRefEffects Empty { get; } = new(
         ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty);
 
-    // The managed methods each analysed method (one with argument addresses) calls, whose
+    // The managed methods each analyzed method (one with argument addresses) calls, whose
     // effects its own were derived from.
     public IReadOnlyDictionary<string, ImmutableArray<string>> Callees { get; init; } =
         ImmutableDictionary<string, ImmutableArray<string>>.Empty;

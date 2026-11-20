@@ -51,15 +51,16 @@ internal sealed record StackSlotProducers(
         CilOperation.ShiftLeft, CilOperation.ShiftRightSigned, CilOperation.ShiftRightUnsigned, CilOperation.Negate,
         CilOperation.OnesComplement, CilOperation.CompareEqual, CilOperation.CompareGreaterThanSigned,
         CilOperation.CompareGreaterThanUnsigned, CilOperation.CompareLessThanSigned, CilOperation.CompareLessThanUnsigned,
+        CilOperation.Select,
     }.ToFrozenSet();
 
     // Whether control can reach the instruction other than from the one before it.
     public bool Enters(int index) => _entries.Contains(Body.Instructions[index].Offset);
 
     // The producer of the value on top of the consumer's entry stack.
-    public int? FindTop(int consumer, bool acrossBranches = false) =>
+    public int? FindTop(int consumer, bool acrossBranches = false, bool acrossThrowPaths = false) =>
         Stacks.TryGetValue(Body.Instructions[consumer].Offset, out var stack) && stack.Length > 0
-            ? Find(consumer, stack.Length - 1, acrossBranches: acrossBranches)
+            ? Find(consumer, stack.Length - 1, acrossBranches: acrossBranches, acrossThrowPaths: acrossThrowPaths)
             : null;
 
     // The producer of the value in `slot`, counted from the bottom of the
@@ -67,8 +68,11 @@ internal sealed record StackSlotProducers(
     // counts as the producer of the lower copy it leaves as well as the top one.
     // With `acrossBranches`, the walk continues from an instruction that only
     // one earlier branch reaches, with nothing falling into it, at that branch,
-    // as past a bounds check's branch around its throw.
-    public int? Find(int consumer, int slot, bool duplicates = false, bool acrossBranches = false)
+    // as past a bounds check's branch around its throw. With `acrossThrowPaths`,
+    // only where the branch's other path throws without reading or replacing any
+    // value already on the stack, so the value the walk finds has no other use.
+    public int? Find(
+        int consumer, int slot, bool duplicates = false, bool acrossBranches = false, bool acrossThrowPaths = false)
     {
         var after = Stacks[Body.Instructions[consumer].Offset].Length;
         for (var index = consumer - 1; index >= 0; index--)
@@ -76,7 +80,11 @@ internal sealed record StackSlotProducers(
             // Another path could reach the consumer with a different value.
             if (_entries.Contains(Body.Instructions[index + 1].Offset))
             {
-                if (!acrossBranches || !SoleBranches().TryGetValue(index + 1, out var branch)) return null;
+                if (!(acrossBranches || acrossThrowPaths) || !SoleBranches().TryGetValue(index + 1, out var branch) ||
+                    !acrossBranches && !ThrowsAbove(branch, index + 1))
+                {
+                    return null;
+                }
                 index = branch;
             }
             if (!Stacks.TryGetValue(Body.Instructions[index].Offset, out var stack))
@@ -104,6 +112,30 @@ internal sealed record StackSlotProducers(
             after = stack.Length;
         }
         return null;
+    }
+
+    // Whether the instructions a branch skips to reach its target end in a throw
+    // and work only on values they push themselves: none branches, and none
+    // consumes below the depth the branch leaves.
+    private bool ThrowsAbove(int branch, int target)
+    {
+        if (Body.Instructions[target - 1].Operation != CilOperation.Throw ||
+            !Stacks.TryGetValue(Body.Instructions[branch + 1].Offset, out var start) ||
+            !Stacks.TryGetValue(Body.Instructions[target - 1].Offset, out var thrown) || thrown.Length <= start.Length)
+        {
+            return false;
+        }
+        for (var index = branch + 1; index < target - 1; index++)
+        {
+            if (Body.Instructions[index].Operand is CilOperand.BranchTarget ||
+                Pushed(Body.Instructions[index]) is not { } pushed ||
+                !Stacks.TryGetValue(Body.Instructions[index + 1].Offset, out var next) ||
+                next.Length - pushed < start.Length)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     // Instructions that only one earlier branch reaches, by the branch's index:

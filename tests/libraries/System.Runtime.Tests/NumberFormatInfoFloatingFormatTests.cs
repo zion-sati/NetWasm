@@ -11,5 +11,5 @@ namespace NetWasm.CoreLib.Tests;
 public sealed class NumberFormatInfoFloatingFormatTests
 {
     [Test]
-    public async Task FloatingAndDecimalFormattingHonoursTheProvidedNumberFormatInfo() => await Assert.That(NumberFormatInfoFloatingFixture.EntryPoint.Run(41)).IsEqualTo(42);
+    public async Task FloatingAndDecimalFormattingHonorsTheProvidedNumberFormatInfo() => await Assert.That(NumberFormatInfoFloatingFixture.EntryPoint.Run(41)).IsEqualTo(42);
 }

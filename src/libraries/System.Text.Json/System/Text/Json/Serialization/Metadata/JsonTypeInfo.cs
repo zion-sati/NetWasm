@@ -318,6 +318,7 @@ namespace System.Text.Json.Serialization.Metadata
                     }
 
                     value.DeclaringTypeInfo = this;
+                    JsonConverter.s_polymorphicTypesReachable = nameof(PolymorphismOptions);
                 }
 
                 _polymorphismOptions = value;
@@ -329,6 +330,7 @@ namespace System.Text.Json.Serialization.Metadata
             Debug.Assert(!IsReadOnly);
             Debug.Assert(options.DeclaringTypeInfo is null || options.DeclaringTypeInfo == this);
 
+            // NetWasm: generated options reach here only when not empty, so their own mutators have set the markers.
             options.DeclaringTypeInfo = this;
             _polymorphismOptions = options;
         }
@@ -988,14 +990,17 @@ namespace System.Text.Json.Serialization.Metadata
 
             PropertyInfoForTypeInfo.Configure();
 
+#if NETWASM
+            // Options are set only with the markers set: by the public setter, or non-empty, whose mutators set them.
+            if (JsonConverter.s_polymorphicTypesReachable is not null && PolymorphismOptions is not null)
+#else
             if (PolymorphismOptions is not null)
+#endif
             {
-#if !NETWASM
                 // This needs to be done before ConfigureProperties() is called
                 // JsonPropertyInfo.Configure() must have this value available in order to detect Polymoprhic + cyclic class case
                 PolymorphicTypeResolver = new PolymorphicTypeResolver(Options, PolymorphismOptions, Type, Converter.CanHaveMetadata);
                 ConfigureTypeClassifier();
-#endif
             }
 
             if (Kind == JsonTypeInfoKind.Object)
@@ -1281,11 +1286,7 @@ namespace System.Text.Json.Serialization.Metadata
 
                 if (!_isAncestorPolymorphicTypeResolved)
                 {
-#if NETWASM
-                    _ancestorPolymorhicType = null;
-#else
                     _ancestorPolymorhicType = PolymorphicTypeResolver.FindNearestPolymorphicBaseType(this);
-#endif
                     _isAncestorPolymorphicTypeResolved = true;
                 }
 

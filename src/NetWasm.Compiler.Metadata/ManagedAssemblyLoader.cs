@@ -30,7 +30,9 @@ public sealed class ManagedAssemblyLoader(
         string path,
         ImmutableDictionary<string, string> referenceAssemblyAliases,
         ImmutableDictionary<(AssemblyIdentity Assembly, string FullName), AssemblyIdentity>? typeForwarders = null,
-        INativeImportBinder? nativeBinding = null) =>
+        INativeImportBinder? nativeBinding = null,
+        INativeVariadicCallPlanner? nativeVariadics = null,
+        GeneratedJavaScriptBinding? javaScriptBinding = null) =>
         ManagedAssembly.Parse(
             path,
             _images.Read(path),
@@ -38,5 +40,5 @@ public sealed class ManagedAssemblyLoader(
             _stackKinds,
             _nativeImports,
             _nativeCallbacks,
-            nativeBinding);
+            nativeBinding, nativeVariadics, javaScriptBinding);
 }

@@ -22,4 +22,8 @@ internal sealed record RuntimeIntrinsicTypeRootPlan(
     // Types Marshal's structure members can receive, and whether OffsetOf needs field names.
     public ImmutableArray<CliTypeIdentity> StructMarshallingTypes { get; init; } = [];
     public bool StructMarshallingFieldNames { get; init; }
+
+    // Whether PtrToStructure creates structures by their runtime type, which runs the parameterless constructor of
+    // each StructMarshallingTypes type that declares one.
+    public bool StructMarshallingConstructors { get; init; }
 }

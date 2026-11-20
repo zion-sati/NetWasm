@@ -228,8 +228,6 @@ public static class RuntimeAbi
     public const string HostInteropCopyStringUtf16 = "interop_copy_string_utf16";
     public const string HostInteropReleaseHandle = "interop_release_handle";
     public const string HostInteropReleaseSubscription = "interop_release_subscription";
-    public const string HostInteropByteLength = "interop_byte_length";
-    public const string HostInteropCopyBytes = "interop_copy_bytes";
     public const string RuntimeInitialize = "initialize";
     public const string RuntimeInitializeFinalization = "initialize_finalization";
     public const string RuntimeRegisterTypes = "register_types";
@@ -265,8 +263,21 @@ public static class RuntimeAbi
     public const string RuntimeAllocateObjectFallback = "allocate_object_fallback";
     public const string RuntimeAllocateFinalizable = "allocate_finalizable";
     public const string RuntimeCollect = "collect";
+    // The write barrier of a collector with generations: a reference was stored through this address, or into
+    // the object or value that starts at it; and the same for a range of memory that received references.
+    public const string RuntimeRecordReferenceWrite = "record_reference_write";
+    public const string RuntimeRecordReferenceWrites = "record_reference_writes";
+    // The generation of an object: the oldest once it has survived a collection, 0 without generations.
+    public const string RuntimeGcObjectGeneration = "gc_object_generation";
+    // GC.Collect(0): a collection of the youngest generation alone, every object without generations.
+    public const string RuntimeGcCollectYoung = "gc_collect_young";
+    // The collections an embedder asks for when it is idle and once it has stayed quiet; the WASI event loop
+    // asks for them as NetWasm's JavaScript hosts do.
+    public const string RuntimeCollectWhenIdle = "collect_when_idle";
+    public const string RuntimeCollectWhenQuiet = "collect_when_quiet";
     public const string RuntimeAllocateReferenceArray = "allocate_reference_array";
     public const string RuntimeAllocateValueArray = "allocate_value_array";
+    public const string RuntimeAllocateUninitializedValueArray = "allocate_uninitialized_value_array";
     public const string RuntimeAllocateRectangularArray = "allocate_rectangular_array";
     public const string RuntimeAllocateBoundedRectangularArray = "allocate_bounded_rectangular_array";
     public const string RuntimeArrayRank = "array_rank";

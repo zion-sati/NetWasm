@@ -26,9 +26,6 @@ public sealed class ComponentPackageOperationRunner(
         {
             return;
         }
-        var error = result.StandardError.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        throw ComponentException.Tool(
-            $"wasm-tools failed to {operation}: " +
-            (error.Length == 0 ? "unknown error" : error));
+        throw ComponentException.Tool($"wasm-tools failed to {operation}: " + result.FailureDescription);
     }
 }

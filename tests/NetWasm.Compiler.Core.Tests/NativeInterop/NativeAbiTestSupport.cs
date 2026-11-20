@@ -12,7 +12,7 @@ internal static class NativeAbiTestSupport
 
     private sealed class RejectingAggregates : INativeAggregateAbiPlanner
     {
-        public NativeAbiValuePlan Plan(CliTypeIdentity type, string methodName) =>
+        public NativeAbiValuePlan Plan(CliTypeIdentity type, string methodName, NativeMarshallingRules rules) =>
             throw new CompilerException(new(DiagnosticCode.NativeInterop, "Unqualified fixture aggregate.", methodName));
     }
 }

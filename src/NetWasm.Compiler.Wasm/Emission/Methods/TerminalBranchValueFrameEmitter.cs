@@ -47,6 +47,10 @@ internal sealed class TerminalBranchValueFrameEmitter(
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
         EmitArm(placement.Plan.WhenFalse, !placement.Plan.FramedWhenTrue);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        if (placement.Plan.UnframedTail is { } tail)
+        {
+            emitBody(tail, context);
+        }
 
         void EmitArm(StructuredSequence sequence, bool framed)
         {
@@ -81,6 +85,14 @@ internal sealed class TerminalBranchValueFrameEmitter(
                     layouts.Target.GetStorageSize(type));
             }
             emitBody(sequence, framedContext);
+            if (placement.Plan.UnframedTail is not null)
+            {
+                // The arm flows into code that holds no root, which runs after its frame is gone.
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                    WasmInstructionOperand.Unsigned((uint)framedContext.RootFrame)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.RootFrameLeave))));
+            }
         }
 
         // The root frame the prologue would have entered, entered where the arm begins: each

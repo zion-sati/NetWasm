@@ -242,10 +242,12 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
                 fullName: fullName),
             // Vector128<T> and Vector<T> are 16 bytes that move as one Wasm v128
             // value; their instantiations take this kind from the definition.
-            // So do System.Numerics' float vectors, as RyuJIT's SIMD types:
-            // Vector4, Quaternion and Plane fill the 16 bytes, Vector3 the low
-            // 12 and Vector2 the low 8, the lanes above them undefined.
+            // So do Vector64<T> and System.Numerics' float vectors, as RyuJIT's
+            // SIMD types: Vector4, Quaternion and Plane fill the 16 bytes,
+            // Vector3 the low 12, and Vector64 and Vector2 the low 8, the lanes
+            // above them undefined.
             "System.Runtime.Intrinsics.Vector128`1" or
+            "System.Runtime.Intrinsics.Vector64`1" or
             "System.Numerics.Vector`1" or
             "System.Numerics.Vector2" or
             "System.Numerics.Vector3" or
@@ -690,6 +692,18 @@ public sealed record FieldDefinitionModel(
     public int? ExplicitOffset { get; init; }
     public bool IsInitOnly { get; init; }
     public bool IsLiteral { get; init; }
+    // The native type a [MarshalAs] gives the field, which runtime marshalling of a struct holding it honors; null
+    // without one.
+    public System.Runtime.InteropServices.UnmanagedType? MarshalAs { get; init; }
+    // A [MarshalAs] that says more than a native type (a fixed array's or string's size, a custom marshaler), which a
+    // marshalling stub does not take.
+    public bool HasComplexMarshalAs { get; init; }
+    // An inline [MarshalAs(ByValTStr or ByValArray)]: its SizeConst (characters or elements), and a ByValArray's
+    // ArraySubType when it names one. MarshalAs is then ByValTStr or ByValArray, and HasComplexMarshalAs is set.
+    public int? MarshalAsSizeConst { get; init; }
+    public System.Runtime.InteropServices.UnmanagedType? MarshalAsArraySubType { get; init; }
+    // A private field, which Marshal.OffsetOf on a derived class does not find.
+    public bool IsPrivate { get; init; }
     public CliTypeIdentity SignatureType { get; init; } =
         CliTypeIdentity.FromStackKind(FieldType);
 
@@ -790,8 +804,15 @@ public sealed record MethodDefinitionModel(
     public bool IsNoInlining { get; init; }
     // StackTraceHiddenAttribute on the method or its declaring type.
     public bool IsStackTraceHidden { get; init; }
+    // IntrinsicAttribute on a core library method. .NET's JIT expands the intrinsics it recognizes in place, so where
+    // this compiler keeps the managed body, a small one is inlined as AggressiveInlining asks; a large body is a
+    // software fallback, which the JIT calls.
+    public bool IsIntrinsic { get; init; }
     public InteropImportDeclaration? JSImport { get; init; }
     public InteropExportDeclaration? JSExport { get; init; }
+    // A JavaScript binding .NET's browser binding generator wrote for a library that NetWasm's interop does not take;
+    // the method is ordinary code.
+    public DeclinedJavaScriptBinding? DeclinedJavaScriptBinding { get; init; }
     public WitImportDeclaration? WitImport { get; init; }
     public WitExportDeclaration? WitExport { get; init; }
     public WitPostReturnDeclaration? WitPostReturn { get; init; }
@@ -799,7 +820,15 @@ public sealed record MethodDefinitionModel(
     // A native import whose library the program does not link (NativeLibraryBinding): the method has no NativeImport
     // and compiles to a body that throws DllNotFoundException.
     public NativeImportDeclaration? UnboundNativeImport { get; init; }
+    // A native import that takes runtime marshalling NetWasm provides: the method has no NativeImport and compiles to a
+    // stub that marshals its arguments and calls the native method, which has.
+    public NativeMarshallingStub? NativeMarshallingStub { get; init; }
     public NativeCallbackDeclaration? NativeCallback { get; init; }
+    // Its assembly applies [DisableRuntimeMarshalling], so its P/Invokes, native callbacks and unmanaged calls follow
+    // desktop .NET's disabled-marshalling rules.
+    public bool DisablesRuntimeMarshalling { get; init; }
+    public NativeMarshallingRules NativeMarshalling =>
+        DisablesRuntimeMarshalling ? NativeMarshallingRules.Disabled : NativeMarshallingRules.Runtime;
     public UnsafeAccessors.UnsafeAccessorDeclaration? UnsafeAccessor { get; init; }
     public bool IsDelegateAsynchronousCall { get; init; }
     // The feature switch a getter answers ([FeatureSwitchDefinition(name)] on its property), which a project's
@@ -812,9 +841,11 @@ public sealed record MethodDefinitionModel(
 
     // Physical metadata readers still use HasBody. Managed analysis may also
     // consume compiler-generated accessor wrappers and the runtime-provided
-    // delegate BeginInvoke/EndInvoke bodies and unbound native imports' throwing bodies, which have no physical RVA.
+    // delegate BeginInvoke/EndInvoke bodies, unbound native imports' throwing bodies and native marshalling stubs, which
+    // have no physical RVA.
     public bool HasManagedBody =>
-        HasBody || UnsafeAccessor is not null || IsDelegateAsynchronousCall || UnboundNativeImport is not null;
+        HasBody || UnsafeAccessor is not null || IsDelegateAsynchronousCall || UnboundNativeImport is not null ||
+        NativeMarshallingStub is not null;
 
     public ImmutableArray<CliValueKind> WasmParameterTypes => IsStatic
         ? Signature.ParameterTypes
@@ -880,9 +911,11 @@ public sealed record MethodInstanceModel(
             Definition.IsAggressiveInlining == other.Definition.IsAggressiveInlining &
             Definition.IsNoInlining == other.Definition.IsNoInlining &
             Definition.IsStackTraceHidden == other.Definition.IsStackTraceHidden &
+            Definition.IsIntrinsic == other.Definition.IsIntrinsic &
             Definition.UnsafeAccessor == other.Definition.UnsafeAccessor &
             Definition.NativeImport == other.Definition.NativeImport &
             Definition.UnboundNativeImport == other.Definition.UnboundNativeImport &
+            Definition.NativeMarshallingStub == other.Definition.NativeMarshallingStub &
             StringComparer.Ordinal.Equals(Definition.FeatureSwitch, other.Definition.FeatureSwitch) &
             Definition.FeatureSwitchStubs.SequenceEqual(other.Definition.FeatureSwitchStubs) &
             (Definition.NativeCallback is null
@@ -998,9 +1031,9 @@ public sealed record DispatchTargetModel(
     CliTypeIdentity ReceiverType,
     MethodInstanceModel Method);
 
-// A virtual call on object (Equals, GetHashCode, ToString) with at least this many targets calls CoreLib's shared
-// body for it (SharedObjectDispatch) instead of carrying its own dispatch: under whole-program analysis such a call
-// dispatches to every allocated type, and each value type's default Equals and GetHashCode is a case of its own.
+// A virtual or interface call with at least this many targets calls one generated dispatch function per declaration
+// (SharedVirtualDispatch) instead of carrying its own. Calls on object's Equals, GetHashCode and ToString use CoreLib's
+// shared bodies instead, at the threshold the preset's ObjectDispatchPolicy sets.
 public static class SharedDispatchPolicy
 {
     public const int MinimumTargets = 32;
@@ -1178,7 +1211,9 @@ public enum RuntimeIntrinsic
     FloatingCopySign,
     ObjectClone,
     ArrayElementType,
+    ArrayPrimitiveElementType,
     ArraySetValue,
+    AllocateUninitializedArray,
     ArrayCreateInstance,
     JavaScriptHost,
     ArrayCreateRectangularInstance,
@@ -1237,6 +1272,12 @@ public enum RuntimeIntrinsic
     SimdCompareAny,
     SimdPermute,
     SimdCreateScalar,
+    // A Vector128's Vector64 halves: GetLower and GetUpper, WithLower and WithUpper, Create from two halves, and
+    // Vector64's ToVector128 and ToVector128Unsafe.
+    SimdGetHalf,
+    SimdWithHalf,
+    SimdCreateFromHalves,
+    SimdHalfToVector,
     SimdReinterpret,
     PackedSimdIsSupported,
     PackedSimdInstruction,
@@ -1247,6 +1288,21 @@ public enum RuntimeIntrinsic
     TypeIsAssignable,
     PreallocatedOutOfMemoryException,
     StackTraceRegisterSymbol,
+    // The write barrier over a range of memory that received references (Buffer.RecordReferenceWrites).
+    RecordReferenceWrites,
+    // The collector's generation of an object (GC.GetGeneration).
+    GcObjectGeneration,
+    // A collection of the youngest generation (GC.Collect(0) under a collector with generations).
+    GcCollectYoung,
+    // An event loop's idle and quiet collections (GCCollectionRuntime.CollectWhenIdle and CollectWhenQuiet).
+    GcCollectWhenIdle,
+    GcCollectWhenQuiet,
+    // Runs the parameterless constructor of a structure PtrToStructure creates by its runtime type
+    // (StructureMarshallingRuntime.Construct).
+    StructMarshallingConstruct,
+    // Runs the finalizers a collection has queued and yields the exception one let escape, or null
+    // (GCFinalizerRuntime.RunQueued; the runtime's finalizer safepoint).
+    GcRunQueuedFinalizers,
 }
 
 public static class RuntimeIntrinsicKinds

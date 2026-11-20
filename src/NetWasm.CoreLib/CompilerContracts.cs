@@ -305,6 +305,7 @@ namespace System.Runtime.CompilerServices
         public delegate void CleanupCode(object? userData, bool exceptionThrown);
         public delegate void TryCode(object? userData);
 
+        [Intrinsic]
         public static bool IsReferenceOrContainsReferences<T>()
             where T : allows ref struct => false;
 
@@ -312,6 +313,7 @@ namespace System.Runtime.CompilerServices
         // comparing values for the integer primitives, char and bool, and each
         // specialization folds the type tests to a constant. Other types, enums
         // included, take the paths that call Equals, which agree.
+        [Intrinsic]
         internal static bool IsBitwiseEquatable<T>() =>
             typeof(T) == typeof(byte) || typeof(T) == typeof(sbyte) ||
             typeof(T) == typeof(short) || typeof(T) == typeof(ushort) ||
@@ -363,6 +365,7 @@ namespace System.Runtime.CompilerServices
         // CoreCLR and Mono read a component-size flag from the object's type. NetWasm's
         // variable-length objects are strings and arrays, and whole-program type tests check
         // both inline.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool ObjectHasComponentSize(object obj) => obj is string || obj is Array;
 
         // Whether the object's fields or elements hold references; CoreCLR reads its
@@ -376,6 +379,7 @@ namespace System.Runtime.CompilerServices
         public static ReadOnlySpan<T> CreateSpan<T>(RuntimeFieldHandle fldHandle) =>
             throw new PlatformNotSupportedException();
 
+        [Intrinsic]
         public static void InitializeArray(
             Array array,
             RuntimeFieldHandle fieldHandle) =>
@@ -470,13 +474,50 @@ namespace System.Runtime.CompilerServices
         {
         }
 
-        // NetWasm has no engine-stack capacity to report, so both checks succeed (owner decision
-        // 2026-10-21); upstream compares the current position with the thread's stack limit.
+        // NetWasm has no engine-stack capacity to report, so both checks succeed; upstream compares
+        // the current position with the thread's stack limit.
         public static void EnsureSufficientExecutionStack()
         {
         }
 
         public static bool TryEnsureSufficientExecutionStack() => true;
+
+        // Upstream's NativeAOT and Mono bodies: NetWasm unloads no type, so the memory is never freed.
+        /// <summary>Allocates memory that's associated with the <paramref name="type" /> and is freed if and when the <see cref="Type" /> is unloaded.</summary>
+        public static unsafe IntPtr AllocateTypeAssociatedMemory(Type type, int size)
+        {
+            if (type is not RuntimeType)
+            {
+                throw new ArgumentException(System.SR.Arg_MustBeType, nameof(type));
+            }
+
+            ArgumentOutOfRangeException.ThrowIfNegative(size);
+
+            // We don't support unloading; the memory will never be freed.
+            return (IntPtr)System.Runtime.InteropServices.NativeMemory.AllocZeroed((uint)size);
+        }
+
+        /// <summary>Allocates aligned memory that's associated with the <paramref name="type" /> and is freed if and when the <see cref="Type" /> is unloaded.</summary>
+        public static unsafe IntPtr AllocateTypeAssociatedMemory(Type type, int size, int alignment)
+        {
+            if (type is not RuntimeType)
+            {
+                throw new ArgumentException(System.SR.Arg_MustBeType, nameof(type));
+            }
+
+            ArgumentOutOfRangeException.ThrowIfNegative(size);
+
+            if (!System.Numerics.BitOperations.IsPow2(alignment))
+            {
+                // The C standard doesn't define what a valid alignment is, however Windows and POSIX implementation requires a power of 2
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Argument_AlignmentMustBePow2);
+            }
+
+            // We don't support unloading; the memory will never be freed.
+            void* result = System.Runtime.InteropServices.NativeMemory.AlignedAlloc((uint)size, (uint)alignment);
+            System.Runtime.InteropServices.NativeMemory.Clear(result, (uint)size);
+            return (IntPtr)result;
+        }
 
         // The compiler calls this for a value type that inherits ToString from Object or ValueType,
         // passing the receiver by reference instead of boxing it.
@@ -522,7 +563,8 @@ namespace System.Runtime.CompilerServices
         }
 
         // Native AOT's checks and order. The compiler allocates zeroed storage for the types the
-        // program names or already allocates; IsCOMObject and IsFunctionPointer never hold here.
+        // program names or already allocates; IsCOMObject never holds here, and a function pointer
+        // type is not supported, as desktop .NET reports it.
         public static object GetUninitializedObject(
             [Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
                 Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors |
@@ -534,6 +576,9 @@ namespace System.Runtime.CompilerServices
 
             if (type.HasElementType || type.IsGenericParameter)
                 throw new ArgumentException(SR.Argument_InvalidValue);
+
+            if (type.IsFunctionPointer)
+                throw new ArgumentException(SR.NotSupported_Type);
 
             if (type.ContainsGenericParameters)
                 throw new MemberAccessException(SR.Acc_CreateGeneric);

@@ -105,6 +105,7 @@
     <PrunePackageReference Include="System.Security.Principal" Version="4.3.0" />
     <PrunePackageReference Include="System.Security.SecureString" Version="4.3.0" />
     <PrunePackageReference Include="System.Text.Encoding" Version="4.3.0" />
+    <PrunePackageReference Include="System.Text.Encoding.CodePages" Version="11.0.0" />
     <PrunePackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
     <PrunePackageReference Include="System.Text.Encodings.Web" Version="11.0.0" />
     <PrunePackageReference Include="System.Text.Json" Version="11.0.0" />

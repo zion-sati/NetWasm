@@ -48,6 +48,7 @@
          the ordinary System.Text.Json assembly. -->
     <Compile Include="System/Text/Json/Nodes/**/*.cs" />
 
+    <Compile Include="System/Runtime/InteropServices/JsonMarshal.cs" />
     <Compile Include="System/Text/Json/JsonConstants.cs" />
     <Compile Include="System/Text/Json/JsonEncodedText.cs" />
     <Compile Include="System/Text/Json/JsonException.cs" />
@@ -59,6 +60,7 @@
     <Compile Include="System/Text/Json/ThrowHelper.Serialization.cs" />
     <Compile Include="System/Text/Json/ThrowHelper.Node.cs" />
     <ProjectReference Include="../System.Collections/System.Collections.csproj" />
+    <ProjectReference Include="../System.Collections.Concurrent/System.Collections.Concurrent.csproj" />
     <ProjectReference Include="../System.Collections.NonGeneric/System.Collections.NonGeneric.csproj" />
     <ProjectReference Include="../System.Collections.Specialized/System.Collections.Specialized.csproj" />
     <ProjectReference Include="../System.Memory/System.Memory.csproj" />

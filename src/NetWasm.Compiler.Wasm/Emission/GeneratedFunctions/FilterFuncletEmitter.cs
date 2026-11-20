@@ -24,7 +24,8 @@ ITargetLayout layouts,
         MethodRootMap rootMap,
         IFilterSequenceEmitter emitSequence,
         MemberExecutionPlan? memberExecution = null,
-        OptionalFunctionIndex managedThrowFunction = default)
+        OptionalFunctionIndex managedThrowFunction = default,
+        NativeImportPlan? nativeImports = null)
     {
         ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(environment);
@@ -48,7 +49,8 @@ ITargetLayout layouts,
         var numericTemporaryI4 = checked(interopHandle + 1);
         var numericTemporaryI8 = checked(numericTemporaryI4 + 1);
         var dispatcherProgramCounter = checked(numericTemporaryI8 + 1);
-        var valueLayout = valueFrames.Create(filter.Method, memberExecution: memberExecution) with
+        // The filter's frame is its method's, which reserves storage for the method's native calls by their plan.
+        var valueLayout = valueFrames.Create(filter.Method, nativeImports, memberExecution) with
         {
             Size = environment.Size,
         };

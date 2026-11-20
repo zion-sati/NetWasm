@@ -434,6 +434,63 @@ public sealed class FieldInstructionEmitterTests
         Assert.Empty(request.Stack);
     }
 
+    public static TheoryData<string, bool> StoredFields() => new()
+    {
+        { "a reference", true },
+        { "a value that holds a reference", true },
+        { "a value without references", false },
+        { "a scalar", false },
+    };
+
+    // For a collector with generations, a field store of a reference, or of a value that holds one, is followed
+    // by its record at the object stored into; no other field store is.
+    [Theory]
+    [MemberData(nameof(StoredFields))]
+    public void AStoredReferenceIsRecordedAtItsObjectForACollectorWithGenerations(string stored, bool recorded)
+    {
+        var fieldType = stored switch
+        {
+            "a reference" => CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference),
+            "a scalar" => CliTypeIdentity.FromStackKind(CliValueKind.I4),
+            _ => CreateValueType(),
+        };
+        var field = CreateField(fieldType);
+        var emitter = CreateEmitter(
+            new FieldProgram(field, false),
+            new FieldLayoutScenario(
+                WasmTargetLayout.Wasm32,
+                new FieldLayout(8) { Size = 4, Type = fieldType },
+                holdsReference: stored == "a value that holds a reference"));
+        InstructionEmissionRequest Store() => CreateRequest(
+            CilOperation.StoreField,
+            [CliValueKind.ManagedReference, fieldType.StackKind],
+            new CilOperand.FieldInstance(new FieldInstanceModel(
+                field,
+                CliTypeIdentity.Named(Assembly, "Test", "Owner", false),
+                fieldType)));
+        var request = RecordingReferenceWrites(Store());
+        var silent = Store();
+
+        Emit(emitter, request);
+        Emit(emitter, silent);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        var unrecorded = ((RecordingInstructionWriter)GetCodeWriter(silent)).ToInstructions();
+        var record = RecordReferenceWriteImport(request);
+        if (!recorded)
+        {
+            Assert.Equal(unrecorded.Select(instruction => instruction.Opcode), instructions.Select(instruction => instruction.Opcode));
+            return;
+        }
+        // The store as it is for any collector, then the object's local and the call.
+        Assert.Equal(unrecorded.Length + 2, instructions.Length);
+        Assert.Equal(WasmOpcodes.LocalGet, instructions[^2].Opcode);
+        Assert.Equal(instructions.First(instruction => instruction.Opcode == WasmOpcodes.LocalGet).Operand.UnsignedValue,
+            instructions[^2].Operand.UnsignedValue);
+        Assert.Equal(WasmOpcodes.Call, instructions[^1].Opcode);
+        Assert.Equal(record, instructions[^1].Operand.UnsignedValue);
+    }
+
     // A scalar field of a vector value, such as Vector<T>'s ulongs, is the lane
     // its offset names, extracted with the field's width and signedness.
     [Theory]
@@ -500,13 +557,14 @@ public sealed class FieldInstructionEmitterTests
         Assert.Empty(((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions());
     }
 
+    // A vector field that is neither the vector's start nor an 8-byte upper half has no lowering.
     [Fact]
     public void AVectorFieldAfterTheStartIsRejected()
     {
         var fieldType = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector2", isValueType: true);
         var emitter = CreateEmitter(
             new FieldProgram(CreateField(fieldType), true),
-            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(8) { Size = 8, Type = fieldType }));
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(4) { Size = 8, Type = fieldType }));
         var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey));
 
         var exception = Assert.Throws<CompilerException>(() => Emit(emitter, request));
@@ -544,6 +602,65 @@ public sealed class FieldInstructionEmitterTests
         Assert.Equal(temporary != 0, opcodes.Contains(WasmOpcodes.I32Add));
         Assert.Equal(3, opcodes.Count(static opcode => opcode == WasmOpcodes.SimdPrefixed));
         Assert.Equal(CliValueKind.ValueType, request.Stack[0]);
+    }
+
+    // A vector field of a vector, as Vector128's Vector64 halves, is a v128 in its low lanes: the lower half is the
+    // value itself, the upper half moves down in one shuffle, and a vector field anywhere else has no lowering.
+    [Theory]
+    [InlineData(0, "")]
+    [InlineData(8, "shuffle 8 8")]
+    public void AVectorsVectorFieldIsItsLowOrUpperHalf(int offset, string expected)
+    {
+        var half = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(Assembly, "System.Runtime.Intrinsics", "Vector64`1", true),
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(half), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(offset) { Size = 8, Type = half }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey));
+
+        Emit(emitter, request);
+
+        var described = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions()
+            .Where(static instruction => instruction.Opcode == WasmOpcodes.SimdPrefixed)
+            .Select(static instruction => instruction.Operand.Bytes is [(byte)WasmSimdOpcodes.I8x16Shuffle, .. var lanes]
+                ? $"shuffle {lanes[0]} {lanes[8]}"
+                : "other");
+        Assert.Equal(expected, string.Join(',', described));
+        Assert.Equal(CliValueKind.V128, request.Stack[0]);
+    }
+
+    // A struct field copies out in the widest lanes its offset and size allow:
+    // an 8-byte struct at either half as one 64-bit lane, Plane's Normal and an
+    // 8-byte struct that starts mid-lane as 32-bit lanes.
+    [Theory]
+    [InlineData(0, 8, WasmSimdOpcodes.I64x2ExtractLane, new uint[] { 0 }, WasmOpcodes.I64Store)]
+    [InlineData(8, 8, WasmSimdOpcodes.I64x2ExtractLane, new uint[] { 1 }, WasmOpcodes.I64Store)]
+    [InlineData(4, 8, WasmSimdOpcodes.I32x4ExtractLane, new uint[] { 1, 2 }, WasmOpcodes.I32Store)]
+    [InlineData(0, 12, WasmSimdOpcodes.I32x4ExtractLane, new uint[] { 0, 1, 2 }, WasmOpcodes.I32Store)]
+    public void AVectorsStructFieldCopiesOutInItsWidestLanes(int offset, int size, uint extract, uint[] lanes, byte store)
+    {
+        var valueType = CreateValueType();
+        var context = CreateMethodEmissionContext() with
+        {
+            ValueLayout = new ValueFrameLayout(
+                16,
+                [],
+                [],
+                ImmutableDictionary<int, int>.Empty.Add(0, 0),
+                []),
+        };
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(valueType), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(offset) { Size = size, Type = valueType }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey), context);
+
+        Emit(emitter, request);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.Equal(lanes, instructions.Where(static instruction => instruction.Opcode == WasmOpcodes.SimdPrefixed)
+            .Select(instruction => instruction.Operand.Alignment == extract ? instruction.Operand.Offset : uint.MaxValue));
+        Assert.Equal(lanes.Length, instructions.Count(instruction => instruction.Opcode == store));
     }
 
     // A struct field of a vector, as Plane's Normal, copies out whole 32-bit
@@ -590,7 +707,8 @@ public sealed class FieldInstructionEmitterTests
             (IValueLayoutProvider)actualLayouts,
             new RecordingImplicitExceptionEmitter(),
             addresses,
-            projections ?? new AddressTakenAggregateProjectionEmitter(actualLayouts)));
+            projections ?? new AddressTakenAggregateProjectionEmitter(actualLayouts),
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy((IValueLayoutProvider)actualLayouts))));
     }
 
     private static IInstructionCommandProvider CreateEmitter(
@@ -671,11 +789,12 @@ public sealed class FieldInstructionEmitterTests
         WasmTargetLayout target,
         FieldLayout layout,
         int alignment = 16,
-        bool holdsByReference = false) : ITargetLayout, IInstanceFieldLayoutProvider, IValueLayoutProvider
+        bool holdsByReference = false,
+        bool holdsReference = false) : ITargetLayout, IInstanceFieldLayoutProvider, IValueLayoutProvider
     {
         public WasmTargetLayout Target { get; } = target;
 
-        public ValueLayout GetValueLayout(CliTypeIdentity type) => new(type, layout.Size, alignment, [])
+        public ValueLayout GetValueLayout(CliTypeIdentity type) => new(type, layout.Size, alignment, holdsReference ? [0] : [])
         {
             ByReferenceOffsets = holdsByReference ? [0] : [],
         };

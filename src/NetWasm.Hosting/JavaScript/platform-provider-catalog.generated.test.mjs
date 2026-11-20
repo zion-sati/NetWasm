@@ -11,11 +11,17 @@ test("binds the exact generated WASI 0.3 provider catalog", () => {
   assert.equal(catalog.schema, 2);
   assert.equal(catalog.world, "netwasm:hosting-platform/wasi@1.0.0");
   assert.equal(catalog.witSha256,
-    "4f122e65638086e633ab12a4b1248c3263ff26385bedf1ff1ef1d23f76a34f16");
+    "0b139b5b7ad38279e8316b36985ff8be7fc3c8b050b69e942090b092530d2a81");
   assert.equal(Object.hasOwn(catalog, "shim"), false);
-  assert.equal(catalog.providers.length, 23);
+  assert.equal(catalog.providers.length, 25);
   assert.equal(catalog.providers.reduce(
-    (count, provider) => count + provider.functions.length, 0), 125);
+    (count, provider) => count + provider.functions.length, 0), 130);
+  // wasi:tls's client and types, which a program that can reach TLS imports, are network providers.
+  assert.deepEqual(catalog.providers.filter(provider => provider.module.startsWith("wasi:tls/"))
+    .map(provider => [provider.module, provider.capability]), [
+    ["wasi:tls/client@0.3.0-draft", "network"],
+    ["wasi:tls/types@0.3.0-draft", "network"],
+  ]);
   // Types-only interfaces are providers too: JavaScript bindings construct their resources.
   assert.deepEqual(catalog.providers.filter(provider => provider.functions.length === 0)
     .map(provider => provider.module), [

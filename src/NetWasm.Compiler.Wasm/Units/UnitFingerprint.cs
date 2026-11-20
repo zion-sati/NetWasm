@@ -120,7 +120,7 @@ internal ref struct UnitFingerprintBuilder
         Add(layout.DataOffset);
     }
 
-    // A method's analysed body: its CIL by resolved identity (never by metadata token, which
+    // A method's analyzed body: its CIL by resolved identity (never by metadata token, which
     // shifts when the assembly gains a member), its locals, its exception regions and the
     // proofs analysis attached. Structuring is a function of these and the compile's
     // structuring policy, so a method whose body fingerprints the same structures the same.
@@ -140,7 +140,11 @@ internal ref struct UnitFingerprintBuilder
         Add(body.ExceptionRegions.IsEmpty && body.ArrayBoundsProof is not null);
         if (body.ExceptionRegions.IsEmpty && body.ArrayBoundsProof is { } proof) Add(proof.NonNullOffsets.Order());
         Add(body.IntegerCheckProof is not null);
+        // Whether this is young at entry depends on every caller, and decides which stores are recorded.
+        Add(body.YoungThisAtEntry);
         Add(body.PinnedLocals.Order());
+        // localsinit decides what localloc and the value frame's entry zero.
+        Add(body.InitializesLocals);
         Add(body.ExceptionRegions.Length);
         foreach (var region in body.ExceptionRegions)
         {

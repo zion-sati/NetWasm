@@ -26,7 +26,7 @@ import subprocess
 import sys
 
 PRESETS = ("O0", "O1", "O2", "O3", "Os", "Oz")
-COLLECTORS = ("NetWasm", "Compact")
+COLLECTORS = ("NetWasm", "NetWasmGen", "Compact")
 FRAMES = 120
 BATCHES = 2
 BATCH = re.compile(r"^batch (\d+) map \S+ frames (\d+) ms ([0-9.]+) checksum (-?\d+)$", re.MULTILINE)

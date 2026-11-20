@@ -61,4 +61,5 @@ public sealed record WasmOptimizationSettings(
     LoopStrengthReductionPolicy LoopStrengthReduction = LoopStrengthReductionPolicy.Disabled,
     RangeBranchFoldingPolicy RangeBranchFolding = RangeBranchFoldingPolicy.Disabled,
     UnwrittenStaticFieldFoldingPolicy UnwrittenStaticFieldFolding = UnwrittenStaticFieldFoldingPolicy.Disabled,
-    ObjectDispatchPolicy ObjectDispatch = ObjectDispatchPolicy.Inline);
+    ObjectDispatchPolicy ObjectDispatch = ObjectDispatchPolicy.SharedAtLargeSites,
+    ConditionalSelectPolicy ConditionalSelects = ConditionalSelectPolicy.Disabled);

@@ -10,12 +10,19 @@ public sealed class CanonicalAbiNamesTests
     private static readonly EntityKey Method = new(
         new AssemblyIdentity("Fixture"), 0x06000001);
 
+    // As the pinned wasm-tools names a world's imports in its core module (component embed --dummy): build metadata
+    // never counts, and a prerelease or a 0.0.x version is compatible only with itself.
     [Theory]
     [InlineData("example:service/api@1.2.3", "example:service/api@1")]
-    [InlineData("example:service/api@2.0.0-preview.1", "example:service/api@2")]
+    [InlineData("example:service/api@2.5.1+meta", "example:service/api@2")]
     [InlineData("wasi:clocks/monotonic-clock@0.2.11",
         "wasi:clocks/monotonic-clock@0.2")]
     [InlineData("example:service/api@0.3.0+build", "example:service/api@0.3")]
+    [InlineData("example:service/api@2.0.0-preview.1", "example:service/api@2.0.0-preview.1")]
+    [InlineData("example:service/api@1.2.0-rc.1+build.7", "example:service/api@1.2.0-rc.1")]
+    [InlineData("wasi:tls/types@0.3.0-draft", "wasi:tls/types@0.3.0-draft")]
+    [InlineData("example:service/api@0.0.4", "example:service/api@0.0.4")]
+    [InlineData("example:service/api@0.0.4+build", "example:service/api@0.0.4")]
     public void UsesTheWitSemanticCompatibilityTrack(
         string interfaceName,
         string expected)

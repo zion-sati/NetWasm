@@ -12,6 +12,7 @@ import {
   nullableRecord,
   nullableUnderlying,
   requireHandleValue,
+  toValueArray,
   valueArrayConstructor,
 } from "./interop-abi-types.mjs";
 import { takeHandleValue } from "./managed-interop-export.mjs";
@@ -32,6 +33,11 @@ import {
   readValueArray,
 } from "./managed-interop-memory-codec.mjs";
 import { NetWasmHostError } from "./managed-errors.mjs";
+import { createManagedCallbackLifetime } from "./managed-callback-lifetime.mjs";
+
+// Where a staged number array result's length follows its block's address (the compiler's
+// ByteArrayJavaScriptImportResultMarshaller.LengthOffset).
+const stagedLengthOffset = 8;
 
 const requestKeys = [
   "assertAsyncDeliveryAvailable",
@@ -44,6 +50,7 @@ const requestKeys = [
   "observeAsyncFailure",
   "pendingAsyncOperations",
   "service",
+  "staging",
   "statusAbi",
   "target",
   "targetLayout",
@@ -62,6 +69,10 @@ export function createInteropStatusService(
   if (!(request.pendingAsyncOperations instanceof Map)) {
     throw new TypeError("interop status-service pending-operation registry is invalid");
   }
+  if (request.staging === null || typeof request.staging !== "object"
+      || typeof request.staging.stage !== "function" || typeof request.staging.discard !== "function") {
+    throw new TypeError("interop status-service number-array staging is invalid");
+  }
 
   // Each parameter's value-array or memory-view type, found once rather than on every call.
   const arrayConstructors = request.descriptor.parameters.map(
@@ -69,12 +80,20 @@ export function createInteropStatusService(
   const viewConstructors = request.descriptor.parameters.map(
     type => isMemoryViewAbiType(type) ? memoryViewConstructor(type) : null);
   const nullables = request.descriptor.parameters.map(nullableUnderlying);
+  // A subscription or Promise-style result owns its callbacks; any other import's callbacks belong to JavaScript.
+  const lifetime = request.descriptor.result !== "subscription" && request.descriptor.result !== "promise"
+      && request.descriptor.parameters.includes("callback")
+    ? createManagedCallbackLifetime(handle => releaseManagedInteropCallback({ getInstance: request.getInstance, handle }))
+    : null;
   return Object.freeze((...argumentsWithDescriptor) => {
     const descriptorAddress = argumentsWithDescriptor.pop();
+    const adopted = [];
+    let owned = [];
     try {
       const asyncHandle = request.descriptor.asyncReturn == null
         ? 0
         : normalizeInteropHandle(argumentsWithDescriptor.pop());
+      if (lifetime !== null) owned = ownedCallbackHandles(request.descriptor.parameters, nullables, argumentsWithDescriptor);
       const callbackHandles = [];
       // A nullable argument arrives as two Wasm values, its presence and its value.
       const argumentsForService = [];
@@ -86,12 +105,21 @@ export function createInteropStatusService(
           position += 2;
           continue;
         }
-        argumentsForService.push(liftArgument(request, argumentsWithDescriptor[position++], index, callbackHandles,
-          observeAsyncCompletion, isImportActive, arrayConstructors[index], viewConstructors[index]));
+        const argument = liftArgument(request, argumentsWithDescriptor[position++], index, callbackHandles,
+          observeAsyncCompletion, isImportActive, arrayConstructors[index], viewConstructors[index]);
+        if (lifetime !== null && argument !== null && request.descriptor.parameters[index] === "callback") {
+          const callback = lifetime.adopt(callbackHandles.at(-1), argument);
+          adopted.push(callback);
+          argumentsForService.push(callback.function);
+          continue;
+        }
+        argumentsForService.push(argument);
       }
       let result;
       if (request.descriptor.asyncReturn != null) {
-        return startAsyncOperation(request, asyncHandle, argumentsForService, observeAsyncCompletion);
+        const status = startAsyncOperation(request, asyncHandle, argumentsForService, observeAsyncCompletion);
+        for (const callback of adopted) callback.keep();
+        return status;
       }
       if (request.descriptor.result === "promise") {
         const promiseCallbacks = argumentsForService.filter(
@@ -114,11 +142,29 @@ export function createInteropStatusService(
         result = request.service(...argumentsForService);
       }
       writeResult(request, result, descriptorAddress, callbackHandles);
+      for (const callback of adopted) callback.keep();
       return request.statusAbi.successStatus;
     } catch {
+      // The failed import's callbacks end with it.
+      for (const callback of adopted) callback.drop();
+      for (const handle of owned) lifetime.release(handle);
       return request.statusAbi.hostFailureStatus;
     }
   });
+}
+
+// The handles of the callbacks an import passes, read before any argument can fail: a nullable argument arrives as two
+// Wasm values, and a null delegate as handle 0.
+function ownedCallbackHandles(parameters, nullables, values) {
+  const handles = [];
+  for (let index = 0, position = 0; index < parameters.length; index++) {
+    if (parameters[index] === "callback") {
+      const handle = normalizeInteropHandle(values[position]);
+      if (handle !== 0) handles.push(handle);
+    }
+    position += nullables[index] === null ? 1 : 2;
+  }
+  return handles;
 }
 
 function liftArgument(
@@ -150,6 +196,7 @@ function liftArgument(
       handle,
       handles: request.handles,
       parameterIndex: index,
+      staging: request.staging,
       target: request.target,
       targetLayout: request.targetLayout,
     });
@@ -247,11 +294,16 @@ function prepareAsyncResolution(request, asyncHandle, resolve, value) {
     const normalized = lowerScalar(underlying, present ? value : null);
     return () => resolve(asyncHandle, present ? 1 : 0, normalized);
   }
-  requireTransferResult(result, value);
-  // The resolve export copies a string or array before returning, so its handle
-  // ends here. A JSObject wrapper owns its handle once resolve succeeds.
+  if (isValueArrayAbiType(result)) {
+    // The resolve export builds the array from the staged block and frees it.
+    const [address, length] = request.staging.stage(result, transferResult(result, value));
+    return () => resolve(asyncHandle, address, length);
+  }
+  const normalized = transferResult(result, value);
+  // The resolve export copies a string before returning, so its handle ends here.
+  // A JSObject wrapper owns its handle once resolve succeeds.
   return () => {
-    const handle = value === null || value === undefined ? 0 : handles.acquire(value);
+    const handle = normalized === null || normalized === undefined ? 0 : handles.acquire(normalized);
     let transferred = false;
     try {
       resolve(asyncHandle, handle);
@@ -262,24 +314,31 @@ function prepareAsyncResolution(request, asyncHandle, resolve, value) {
   };
 }
 
-function requireTransferResult(type, result) {
+// The value a string, JSObject or array result crosses as, as .NET's browser runtime reads it: undefined is null,
+// and a plain array of numbers is copied into its typed array.
+function transferResult(type, result) {
   if (isHandleValueAbiType(type)) {
     requireHandleValue(type, result);
-    return;
+    return result;
   }
-  if (result === null) return;
+  if (result === null || result === undefined) return null;
   if (type === "string" && typeof result !== "string") {
     throw new NetWasmHostError("a string host service must return string or null");
   }
-  if (isValueArrayAbiType(type) && !(result instanceof valueArrayConstructor(type))) {
-    throw new NetWasmHostError(type === "bytes"
-      ? "a byte-array host service must return Uint8Array or null"
-      : `a host service result: ${describeValueArray(type)}`);
+  if (isValueArrayAbiType(type)) {
+    const array = toValueArray(type, result);
+    if (array === null) {
+      throw new NetWasmHostError(type === "bytes"
+        ? "a byte-array host service must return Uint8Array, an array, or null"
+        : `a host service result: ${describeValueArray(type)}`);
+    }
+    return array;
   }
   if (type === "object" && !isHostObject(result)) {
     throw new NetWasmHostError(
       "a JSObject host service must return an object, function, or null");
   }
+  return result;
 }
 
 function settleAsyncCompletion(request, action, observeAsyncCompletion) {
@@ -325,11 +384,18 @@ function writeResult(request, result, descriptorAddress, callbackHandles) {
     writeHandle(handles, result === null || result === undefined ? 0 : handles.acquire(result), memory, byteOffset);
     return;
   }
-  if (descriptor.result === "string" || descriptor.result === "object"
-      || isValueArrayAbiType(descriptor.result)) {
-    requireTransferResult(descriptor.result, result);
-    const value = result !== null && isValueArrayAbiType(descriptor.result) ? result.slice() : result;
-    writeHandle(handles, value === null ? 0 : handles.acquire(value), memory, byteOffset);
+  if (isValueArrayAbiType(descriptor.result)) {
+    // The managed side reads the staged block's address, then the length 8 bytes after it, and frees the block.
+    const [address, length] = request.staging.stage(descriptor.result, transferResult(descriptor.result, result));
+    const view = new DataView(request.getMemory().buffer);
+    if (target === "wasm64") view.setBigUint64(byteOffset, address, true);
+    else view.setUint32(byteOffset, address, true);
+    view.setInt32(byteOffset + stagedLengthOffset, length, true);
+    return;
+  }
+  if (descriptor.result === "string" || descriptor.result === "object") {
+    const transferred = transferResult(descriptor.result, result);
+    writeHandle(handles, transferred === null ? 0 : handles.acquire(transferred), memory, byteOffset);
     return;
   }
   if (descriptor.result === "subscription" || descriptor.result === "promise") {

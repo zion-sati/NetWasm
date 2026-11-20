@@ -15,7 +15,8 @@
     "NewBoundedRectangularArray",
     "LoadRectangularArrayElement",
     "StoreRectangularArrayElement",
-    "LoadRectangularArrayElementAddress"
+    "LoadRectangularArrayElementAddress",
+    "Select"
   ],
   "families": {
     "ConstantsStackLocalsArguments": {
@@ -752,6 +753,7 @@
         "ShiftRightUnsigned",
         "Negate",
         "OnesComplement",
+        "Select",
         "AddChecked",
         "AddCheckedUnsigned",
         "SubtractChecked",

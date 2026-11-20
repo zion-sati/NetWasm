@@ -21,6 +21,14 @@ static __attribute__((noinline)) void *allocate_slow(size_t bytes, bool contains
     return status == NETWASM_GC_OK ? result : NULL;
 }
 
+void *collector_allocate_uninitialized_object(size_t bytes)
+{
+    void *result = NULL;
+    NetWasmGcResult status = netwasm_gc_allocate_uninitialized(netwasm_gc_runtime, bytes, &result);
+    if (status == NETWASM_GC_INVALID_ARGUMENT) abort();
+    return status == NETWASM_GC_OK ? result : NULL;
+}
+
 void *collector_allocate_object(size_t bytes, bool contains_references)
 {
     /* Stress collects in the slow path, so every allocation takes it. */

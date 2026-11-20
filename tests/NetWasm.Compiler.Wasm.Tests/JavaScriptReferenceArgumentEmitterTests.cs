@@ -25,8 +25,7 @@ public sealed class JavaScriptReferenceArgumentEmitterTests
             new JavaScriptReferenceArgumentEmitter(strings, arrays, objects),
         }.Cast<IJavaScriptReferenceArgumentEmitter>().Single();
         var target = new InteropMarshallingTarget(new InteropImportPlan([], OptionalFunctionIndex.At(1),
-            OptionalFunctionIndex.At(2), OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
-            OptionalFunctionIndex.At(3), OptionalFunctionIndex.At(4)));
+            OptionalFunctionIndex.At(2), OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing));
         var code = new WasmInstructionWriter(new WasmBinaryWriter(new WasmBinaryBuffer()));
         var stringType = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
         var arrayType = CliTypeIdentity.SzArray(CliTypeIdentity.Primitive("f8", CliValueKind.F8));
@@ -53,12 +52,18 @@ public sealed class JavaScriptReferenceArgumentEmitterTests
             Calls.Add((handleParameter, destination));
     }
 
-    private sealed class RecordingArrays : IHostCallbackByteArrayArgumentMarshaller
+    private sealed class RecordingArrays : IStagedValueArrayEmitter
     {
         public List<(CliTypeIdentity, int, int)> Calls { get; } = [];
 
-        public void Emit(IWasmInstructionWriter code, CliTypeIdentity arrayType, int handleParameter, int destination,
-            int temporaryI4, int objectTemporary, InteropMarshallingTarget target, OptionalFunctionIndex throwFunction) =>
+        public void Emit(
+            IWasmInstructionWriter code,
+            CliTypeIdentity arrayType,
+            int handleParameter,
+            int lengthLocal,
+            int destination,
+            int objectTemporary,
+            OptionalFunctionIndex throwFunction) =>
             Calls.Add((arrayType, handleParameter, destination));
     }
 

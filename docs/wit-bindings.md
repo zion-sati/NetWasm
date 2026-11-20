@@ -160,7 +160,7 @@ For this example, replace the application project with:
 <Project Sdk="NetWasm.Sdk">
   <PropertyGroup>
     <OutputType>WitWebWorker</OutputType>
-    <TargetFramework>netwasm0.1</TargetFramework>
+    <TargetFramework>net10.0-netwasm</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <NetWasmWitPath>$(MSBuildProjectDirectory)/wit</NetWasmWitPath>
@@ -213,7 +213,7 @@ try {
 ```
 
 Run `dotnet publish -c Release`, serve
-`bin/Release/netwasm0.1/publish` over HTTP, and open `index.html`. It displays
+`bin/Release/net10.0-netwasm/publish` over HTTP, and open `index.html`. It displays
 `42`. This example exercises the generated record and variant marshalling,
 JavaScript host import, managed export, and worker client using the released
 packages.
@@ -225,7 +225,7 @@ layout:
 ```sh
 dotnet build -c Release
 netwasm-wit-bindgen \
-  --wit obj/Release/netwasm0.1/netwasm/wasm32/wit-worker-source \
+  --wit obj/Release/net10.0-netwasm/netwasm/wasm32/wit-worker-source \
   --world docs:bindings@1.0.0/service \
   --output Bindings.g.cs --accessibility internal
 dotnet publish -c Release

@@ -18,6 +18,7 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 public sealed class ArrayInstructionEmitterTests
 {
@@ -387,6 +388,58 @@ public sealed class ArrayInstructionEmitterTests
         Assert.Contains(WasmOpcodes.Prefixed, GetCodeBytes(request));
     }
 
+    public static TheoryData<string, bool> StoredElements() => new()
+    {
+        { "stelem.ref", true },
+        { "a reference", true },
+        { "a value that holds a reference", true },
+        { "a value without references", false },
+        { "a scalar", false },
+    };
+
+    // For a collector with generations, an element store of a reference, or of a value that holds one, keeps
+    // the element's address before the store and records the store there after it; no other element store does.
+    [Theory]
+    [MemberData(nameof(StoredElements))]
+    public void AStoredReferenceIsRecordedAtItsElementForACollectorWithGenerations(string stored, bool recorded)
+    {
+        var elementType = stored switch
+        {
+            "stelem.ref" or "a reference" => CliTypeIdentity.Named(Assembly, "Test", "Item", isValueType: false),
+            "a scalar" => CliTypeIdentity.FromStackKind(CliValueKind.I4),
+            _ => CliTypeIdentity.Named(Assembly, "Test", "Value", isValueType: true),
+        };
+        var emitter = CreateEmitter(new RecordingLayoutProvider(
+            valuesHoldReferences: stored == "a value that holds a reference"));
+        InstructionEmissionRequest Store() => CreateRequest(
+            stored == "stelem.ref" ? CilOperation.StoreArrayElementReference : CilOperation.StoreArrayElement,
+            [CliValueKind.ManagedReference, CliValueKind.I4, elementType.StackKind],
+            stored == "stelem.ref" ? null : new CilOperand.TypeIdentity(elementType));
+        var request = RecordingReferenceWrites(Store());
+        var silent = Store();
+
+        Emit((IInstructionCommandProvider)emitter, request);
+        Emit((IInstructionCommandProvider)emitter, silent);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        var unrecorded = ((RecordingInstructionWriter)GetCodeWriter(silent)).ToInstructions();
+        if (!recorded)
+        {
+            Assert.Equal(unrecorded.Select(instruction => instruction.Opcode), instructions.Select(instruction => instruction.Opcode));
+            return;
+        }
+        var scratch = (uint)request.Context.ObjectTemporary;
+        // The store as it is for any collector, with the address copied on its way and recorded at the end.
+        Assert.Equal(unrecorded.Length + 3, instructions.Length);
+        Assert.Single(instructions, instruction =>
+            instruction.Opcode == WasmOpcodes.LocalTee && instruction.Operand.UnsignedValue == scratch);
+        Assert.True(EndsWithRecordAt(request, instructions, scratch));
+        Assert.Equal(unrecorded.Select(instruction => instruction.Opcode),
+            instructions.Take(instructions.Length - 2)
+                .Where(instruction => !(instruction.Opcode == WasmOpcodes.LocalTee && instruction.Operand.UnsignedValue == scratch))
+                .Select(instruction => instruction.Opcode));
+    }
+
     [Fact]
     public void ElementStoreUsesTypedStoreForScalarElements()
     {
@@ -532,7 +585,9 @@ public sealed class ArrayInstructionEmitterTests
             lengths,
             indexes,
             new ArrayElementAddressEmitter(layouts, addresses),
-            layouts);
+            layouts,
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(layouts)),
+            new ReferenceWriteAddressRememberer(new ReferenceWriteRecordPolicy(layouts)));
     }
 
     private sealed class RecordingArrayExceptions : IImplicitExceptionEmitter

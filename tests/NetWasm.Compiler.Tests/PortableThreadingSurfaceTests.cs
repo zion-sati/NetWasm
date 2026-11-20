@@ -61,10 +61,17 @@ public sealed class PortableThreadingSurfaceTests
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource("VolatileRetention", """
+            using System;
+            using System.Runtime.CompilerServices;
             using System.Threading;
             public static class EntryPoint
             {
-                public static int Run(int input) => Volatile.Read(ref input);
+                public static int Run(int input)
+                {
+                    if (input != 0) return Volatile.Read(ref input);
+                    try { return Volatile.Read(ref Unsafe.NullRef<int>()); }
+                    catch (NullReferenceException) { return -1; }
+                }
             }
             """);
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", [])
@@ -74,12 +81,17 @@ public sealed class PortableThreadingSurfaceTests
         var methods = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
             .Select(body => body.Method)
             .Where(method => method.DeclaringType.FullName == "System.Threading.Volatile").ToArray();
-        Assert.Equal(2, methods.Length);
-        Assert.Equal(["Read", "ValidateLocation"], methods.Select(method => method.Definition.Name).Order());
+        // Read and its location check are small and may be inlined, as upstream's AggressiveInlining asks; the check
+        // folds away where the address cannot be null (an argument's). Nothing else of threading comes with them, and a
+        // null location still throws as on desktop.
+        Assert.Subset(new HashSet<string> { "Read", "ValidateLocation" },
+            methods.Select(method => method.Definition.Name).ToHashSet());
         Assert.DoesNotContain(result.Program.Methods.Values,
             body => body.Method.DeclaringType.FullName == "System.Threading.Timeout");
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 42, target, result.StaticDataEnd));
+        Assert.Equal(-1, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 0, target, result.StaticDataEnd));
     }
 
     // The .NET Standard 2.1 scalar and reference surface. This does not imply

@@ -15,6 +15,7 @@ namespace System.Net.Http
     {
         #region Fields
 
+        private static IWebProxy? s_defaultProxy;
         private static readonly TimeSpan s_defaultTimeout = TimeSpan.FromSeconds(100);
         private static readonly TimeSpan s_maxTimeout = TimeSpan.FromMilliseconds(int.MaxValue);
         private static readonly TimeSpan s_infiniteTimeout = Threading.Timeout.InfiniteTimeSpan;
@@ -25,6 +26,8 @@ namespace System.Net.Http
 
         private CancellationTokenSource _pendingRequestsCts;
         private HttpRequestHeaders? _defaultRequestHeaders;
+        private Version _defaultRequestVersion = HttpRequestMessage.DefaultRequestVersion;
+        private HttpVersionPolicy _defaultVersionPolicy = HttpRequestMessage.DefaultVersionPolicy;
 
         private Uri? _baseAddress;
         private TimeSpan _timeout;
@@ -33,9 +36,52 @@ namespace System.Net.Http
         #endregion Fields
 
         #region Properties
+        public static IWebProxy DefaultProxy
+        {
+            get => LazyInitializer.EnsureInitialized(ref s_defaultProxy, () => SystemProxyInfo.Proxy);
+            set
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                s_defaultProxy = value;
+            }
+        }
 
         public HttpRequestHeaders DefaultRequestHeaders =>
             _defaultRequestHeaders ??= new HttpRequestHeaders();
+
+        public Version DefaultRequestVersion
+        {
+            get => _defaultRequestVersion;
+            set
+            {
+                CheckDisposedOrStarted();
+                ArgumentNullException.ThrowIfNull(value);
+                _defaultRequestVersion = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the default value of <see cref="HttpRequestMessage.VersionPolicy" /> for implicitly created requests in convenience methods,
+        /// e.g.: <see cref="GetAsync(string?)" />, <see cref="PostAsync(string?, HttpContent)" />.
+        /// </summary>
+        /// <remarks>
+        /// Note that this property has no effect on any of the <see cref="Send(HttpRequestMessage)" /> and <see cref="SendAsync(HttpRequestMessage)" /> overloads
+        /// since they accept fully initialized <see cref="HttpRequestMessage" />.
+        /// </remarks>
+        public HttpVersionPolicy DefaultVersionPolicy
+        {
+            get => _defaultVersionPolicy;
+            set
+            {
+                if ((uint)value > (uint)HttpVersionPolicy.RequestVersionExact)
+                {
+                    throw new ArgumentException(SR.Format(SR.net_invalid_enum, nameof(HttpVersionPolicy)), nameof(value));
+                }
+
+                CheckDisposedOrStarted();
+                _defaultVersionPolicy = value;
+            }
+        }
 
         public Uri? BaseAddress
         {
@@ -121,10 +167,10 @@ namespace System.Net.Http
         public Task<string> GetStringAsync(Uri? requestUri) =>
             GetStringAsync(requestUri, CancellationToken.None);
 
-        internal Task<string> GetStringAsync([StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri, CancellationToken cancellationToken) =>
+        public Task<string> GetStringAsync([StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri, CancellationToken cancellationToken) =>
             GetStringAsync(CreateUri(requestUri), cancellationToken);
 
-        internal Task<string> GetStringAsync(Uri? requestUri, CancellationToken cancellationToken)
+        public Task<string> GetStringAsync(Uri? requestUri, CancellationToken cancellationToken)
         {
             HttpRequestMessage request = CreateRequestMessage(HttpMethod.Get, requestUri);
 
@@ -195,10 +241,10 @@ namespace System.Net.Http
         public Task<byte[]> GetByteArrayAsync(Uri? requestUri) =>
             GetByteArrayAsync(requestUri, CancellationToken.None);
 
-        internal Task<byte[]> GetByteArrayAsync([StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri, CancellationToken cancellationToken) =>
+        public Task<byte[]> GetByteArrayAsync([StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri, CancellationToken cancellationToken) =>
             GetByteArrayAsync(CreateUri(requestUri), cancellationToken);
 
-        internal Task<byte[]> GetByteArrayAsync(Uri? requestUri, CancellationToken cancellationToken)
+        public Task<byte[]> GetByteArrayAsync(Uri? requestUri, CancellationToken cancellationToken)
         {
             HttpRequestMessage request = CreateRequestMessage(HttpMethod.Get, requestUri);
 
@@ -269,13 +315,13 @@ namespace System.Net.Http
         public Task<Stream> GetStreamAsync([StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri) =>
             GetStreamAsync(CreateUri(requestUri));
 
-        internal Task<Stream> GetStreamAsync([StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri, CancellationToken cancellationToken) =>
+        public Task<Stream> GetStreamAsync([StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri, CancellationToken cancellationToken) =>
             GetStreamAsync(CreateUri(requestUri), cancellationToken);
 
         public Task<Stream> GetStreamAsync(Uri? requestUri) =>
             GetStreamAsync(requestUri, CancellationToken.None);
 
-        internal Task<Stream> GetStreamAsync(Uri? requestUri, CancellationToken cancellationToken)
+        public Task<Stream> GetStreamAsync(Uri? requestUri, CancellationToken cancellationToken)
         {
             HttpRequestMessage request = CreateRequestMessage(HttpMethod.Get, requestUri);
 
@@ -786,7 +832,7 @@ namespace System.Net.Http
             string.IsNullOrEmpty(uri) ? null : new Uri(uri, UriKind.RelativeOrAbsolute);
 
         private HttpRequestMessage CreateRequestMessage(HttpMethod method, Uri? uri) =>
-            new HttpRequestMessage(method, uri);
+            new HttpRequestMessage(method, uri) { Version = _defaultRequestVersion, VersionPolicy = _defaultVersionPolicy };
         #endregion Private Helpers
     }
 }

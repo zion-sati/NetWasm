@@ -156,6 +156,88 @@ public sealed class StjSourceGenerationAcceptanceTests
         }
     }
 
+    // Generated polymorphism metadata: discriminated hierarchies, object-typed values and collections of either, as
+    // desktop writes and reads them; a runtime type the context does not describe fails as desktop's does.
+    [Theory]
+    [InlineData("Debug", WasmTarget.Wasm32)]
+    [InlineData("Debug", WasmTarget.Wasm64)]
+    [InlineData("Release", WasmTarget.Wasm32)]
+    [InlineData("Release", WasmTarget.Wasm64)]
+    public void GeneratedPolymorphismMatchesDesktopForEveryProfileAndTarget(string profileName, WasmTarget target)
+    {
+        var profile = Enum.Parse<CilProfile>(profileName);
+        using var services = CorrectnessTestAssets.CreateServices();
+        var environment = services.GetRequiredService<CompilerCorrectnessEnvironment>();
+        var processes = services.GetRequiredService<IQualifiedProcessRunner>();
+        var desktop = services.GetRequiredService<IDesktopOracleRunner>();
+        var netWasm = services.GetRequiredService<INetWasmOracleRunner>();
+
+        using var built = SourceGenerationFixtureBuild.CreatePolymorphism(environment, processes, profile);
+        var expected = desktop.Run(built.Compilation, TestContext.Current.CancellationToken);
+        var execution = netWasm.CompileAndRun(built.Compilation, target, TestContext.Current.CancellationToken);
+
+        Assert.True(execution.Executed);
+        Assert.Equal(expected.Keys.Order(), execution.Observations.Keys.Order());
+        foreach (var input in expected.Keys)
+        {
+            var observation = execution.Observations[input];
+            Assert.True(observation.Kind == OracleObservationKind.Value,
+                $"{profile}/{target}/input={input}: kind={observation.Kind}, detail={observation.Detail}, " +
+                $"exception={observation.ExceptionType}, trace={observation.Trace}");
+            Assert.Equal(expected[input].Value, observation.Value);
+        }
+    }
+
+    // Polymorphism is pay-for-use. .NET 11's generator gives every type polymorphism options, empty unless the type
+    // declares derived types; a program whose metadata declares no polymorphic type and no object-typed value reaches
+    // none of the code that reads or writes a value by its runtime type. The polymorphism fixture, which declares
+    // both, reaches all of it.
+    [Fact]
+    public void OnlyProgramsThatDeclarePolymorphismReachItsCode()
+    {
+        using var services = CorrectnessTestAssets.CreateServices();
+        var environment = services.GetRequiredService<CompilerCorrectnessEnvironment>();
+        var processes = services.GetRequiredService<IQualifiedProcessRunner>();
+        using var plain = SourceGenerationFixtureBuild.Create(environment, processes, CilProfile.Release, targetFramework: "net11.0");
+        using var polymorphic = SourceGenerationFixtureBuild.CreatePolymorphism(environment, processes, CilProfile.Release);
+        string[] polymorphism =
+        [
+            "System.Text.Json.Serialization.Metadata.PolymorphicTypeResolver::.ctor",
+            "System.Text.Json.Serialization.Metadata.PolymorphicTypeResolver::TryGetDerivedJsonTypeInfo",
+            "System.Text.Json.WriteStackFrame::InitializePolymorphicReEntry",
+            "System.Text.Json.ReadStack::InitializePolymorphicReEntry",
+            "System.Text.Json.JsonSerializerOptions+CachingContext::DetermineNearestAncestor",
+            "System.Text.Json.Serialization.Metadata.JsonTypeInfo::get_AncestorPolymorphicType",
+        ];
+
+        var plainMethods = ReachedMethods(environment, plain);
+        var polymorphicMethods = ReachedMethods(environment, polymorphic);
+
+        Assert.Equal("", string.Join(", ", polymorphism.Where(plainMethods.Contains)));
+        Assert.Equal("", string.Join(", ", polymorphism.Where(name => !polymorphicMethods.Contains(name))));
+    }
+
+    // Each reached method as its declaring type and name, without the assembly.
+    private static ImmutableHashSet<string> ReachedMethods(
+        CompilerCorrectnessEnvironment environment,
+        SourceGenerationFixtureBuild built)
+    {
+        var fixture = built.Compilation.Fixture;
+        var references = fixture.NetWasmReferencePaths.Insert(
+            0,
+            Path.Combine(environment.RepositoryRoot, "src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"));
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            built.Compilation.NetWasm.AssemblyPath,
+            references,
+            fixture.EntryType,
+            fixture.WasmEntryMethod,
+            [],
+            ReferenceAssemblyAliases: fixture.ReferenceAssemblyAliases));
+        return [.. result.Program.Methods.Values.Select(body =>
+            body.Method.CanonicalName.Split("::")[0][(body.Method.CanonicalName.IndexOf(']', StringComparison.Ordinal) + 1)..] +
+            "::" + body.Method.Definition.Name)];
+    }
+
     [Fact]
     public void GeneratedMixedShapeDeserializesWithAdditionalGeneratedContexts()
     {
@@ -202,6 +284,12 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
         "tests/end-to-end/stj-generated-shape-closure/" +
         "GeneratedShapeClosureFixture.cs";
 
+    private const string PolymorphismFixtureProject =
+        "tests/end-to-end/stj-polymorphism/NetWasm.Stj.Polymorphism.Fixture.csproj";
+
+    private const string PolymorphismFixtureSource =
+        "tests/end-to-end/stj-polymorphism/PolymorphismFixture.cs";
+
     private const string AsyncFixtureProject =
         "tests/end-to-end/stj-source-generation-async/" +
         "NetWasm.Stj.SourceGeneration.Async.Fixture.csproj";
@@ -243,7 +331,8 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
     public static SourceGenerationFixtureBuild Create(
         CompilerCorrectnessEnvironment environment,
         IQualifiedProcessRunner processes,
-        CilProfile profile) => Create(
+        CilProfile profile,
+        string targetFramework = "net10.0") => Create(
             environment,
             processes,
             profile,
@@ -263,7 +352,30 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
                 "Nested.Pair",
                 "MarkerConverter",
             ],
-            requiresReactor: false);
+            requiresReactor: false,
+            targetFramework: targetFramework);
+
+    public static SourceGenerationFixtureBuild CreatePolymorphism(
+        CompilerCorrectnessEnvironment environment,
+        IQualifiedProcessRunner processes,
+        CilProfile profile) => Create(
+            environment,
+            processes,
+            profile,
+            "netwasm-stj-polymorphism",
+            PolymorphismFixtureProject,
+            PolymorphismFixtureSource,
+            "NetWasm.Stj.Polymorphism.Fixture.dll",
+            "StjPolymorphism",
+            "NetWasm.Tests.StjPolymorphism.Fixture",
+            [
+                "partial class PolymorphismJsonContext",
+                "JsonDerivedType",
+                "Household",
+            ],
+            requiresReactor: false,
+            inputs: [0, 1, 2, 3],
+            targetFramework: "net11.0");
 
     public static SourceGenerationFixtureBuild CreateGeneratedShapeClosure(
         CompilerCorrectnessEnvironment environment,
@@ -456,7 +568,8 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
         string? wasmEntryMethod = null,
         bool callbackEntry = false,
         bool usesStjDependencies = true,
-        bool usesRegexDependencies = false)
+        bool usesRegexDependencies = false,
+        string targetFramework = "net10.0")
     {
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(processes);
@@ -482,6 +595,8 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
                 "--verbosity:minimal",
                 "/p:BaseOutputPath=" + outputBase,
                 "/p:BaseIntermediateOutputPath=" + intermediateBase,
+                // A fixture project may take its target framework from this (restore ignores a global TargetFramework).
+                "/p:StjFixtureTargetFramework=" + targetFramework,
             ],
             environment.ProcessTimeout));
         if (!process.Succeeded)
@@ -509,7 +624,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
                 "ordinary SDK source generation did not emit the required metadata");
         }
 
-        var outputDirectory = Path.Combine(outputBase, profile.ToString(), "net10.0");
+        var outputDirectory = Path.Combine(outputBase, profile.ToString(), targetFramework);
         var assemblyPath = Path.Combine(
             outputDirectory,
             assemblyFileName);

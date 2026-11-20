@@ -6,9 +6,19 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis.Attributes;
 
+// The attribute query services of one compilation: the specializer that resolves queries at compile time, and the
+// reducer that answers queries on a Type known only at run time.
+internal sealed class AttributeQueryServices(
+    IMethodSpecializer specializer,
+    NetWasm.Compiler.Analysis.Constants.IReachableProgramReducer runtimeTypeQueries)
+{
+    public IMethodSpecializer Specializer { get; } = specializer;
+    public NetWasm.Compiler.Analysis.Constants.IReachableProgramReducer RuntimeTypeQueries { get; } = runtimeTypeQueries;
+}
+
 internal interface IAttributeQueryMethodSpecializerFactory
 {
-    IMethodSpecializer Create(
+    AttributeQueryServices Create(
         IMethodSpecializer specializer,
         MetadataCompilationSnapshot metadata,
         ITypeRepository typeRepository,

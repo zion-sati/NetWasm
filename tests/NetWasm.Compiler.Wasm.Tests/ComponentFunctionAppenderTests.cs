@@ -36,8 +36,7 @@ public sealed class ComponentFunctionAppenderTests
             WasmTarget.Wasm32,
             TestRuntimeInitialization.Create(128),
             2,
-            ImmutableDictionary<string, int>.Empty,
-            EmitterTestSupport.CreateFunctionIndexResolver());
+            ImmutableDictionary<string, int>.Empty);
 
         Assert.Equal(4, functions.Count);
         Assert.Equal(4, exports.Count);
@@ -63,32 +62,21 @@ public sealed class ComponentFunctionAppenderTests
         var entries = new List<ManagedBoundaryPlanEntry>();
         var request = EmitterTestSupport.CreateEmissionRequest();
         var indices = ImmutableDictionary<string, int>.Empty;
-        var functionIndices = EmitterTestSupport.CreateFunctionIndexResolver();
 
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            null!, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices,
-            functionIndices));
+            null!, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, null!, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices,
-            functionIndices));
+            functions, null!, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, exports, null!, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices,
-            functionIndices));
+            functions, exports, null!, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, exports, entries, null!, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices,
-            functionIndices));
+            functions, exports, entries, null!, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices));
         Assert.Throws<ArgumentOutOfRangeException>(() => appender.Append(
-            functions, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(-1), 0, indices,
-            functionIndices));
+            functions, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(-1), 0, indices));
         Assert.Throws<ArgumentOutOfRangeException>(() => appender.Append(
-            functions, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), -1, indices,
-            functionIndices));
+            functions, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), -1, indices));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, null!,
-            functionIndices));
-        Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, indices,
-            null!));
+            functions, exports, entries, request, WasmTarget.Wasm32, TestRuntimeInitialization.Create(0), 0, null!));
     }
 
     private static IComponentFunctionAppender CreateAppender() => new[]
@@ -111,8 +99,7 @@ public sealed class ComponentFunctionAppenderTests
             RuntimeInitializationPlan initialization,
             int importedFunctionCount,
             int definedFunctionCount,
-            IReadOnlyDictionary<string, int> managedExportIndices,
-            IFunctionIndexResolver functionIndices)
+            IReadOnlyDictionary<string, int> managedExportIndices)
         {
             Request = request;
             StaticDataEnd = initialization.StaticDataEnd;

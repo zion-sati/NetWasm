@@ -18,17 +18,32 @@ public sealed class JSImportInvocationEmitterTests
     private const int RawImportIndex = 40;
     private const int ForwarderIndex = 50;
 
+    // A JSSubscription result keeps its callback's handle and releases it on failure; any other import passes the
+    // handle to JavaScript, which owns it.
     [Theory]
-    [InlineData(false, 2, 0, 0)]
-    [InlineData(true, 1, 1, 1)]
+    [InlineData(false, false, 2, 0, 0, 0)]
+    [InlineData(true, true, 1, 1, 0, 1)]
+    [InlineData(true, false, 1, 0, 1, 0)]
     public void EmitsArgumentsCallbackFailureCleanupAndResultThroughFocusedActions(
         bool hasCallback,
+        bool subscription,
         int expectedArgumentCount,
         int expectedCallbackCount,
+        int expectedTransferredCount,
         int expectedReleaseCount)
     {
         var program = new FakeProgram();
         var method = CreateImport(program);
+        if (subscription)
+        {
+            method = CreateMethodInstance(method.Definition with
+            {
+                Signature = MethodSignatureModel.Create(
+                    CliTypeIdentity.Named(Assembly, "System.Runtime.InteropServices.JavaScript", "JSSubscription", isValueType: false),
+                    CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference),
+                    CliTypeIdentity.FromStackKind(CliValueKind.I4)),
+            });
+        }
         var target = CreateInstructionModuleTarget(program);
         if (hasCallback)
         {
@@ -43,6 +58,7 @@ public sealed class JSImportInvocationEmitterTests
         }
         var arguments = new RecordingArgumentEmitter();
         var callbackHandles = new RecordingCallbackHandleEmitter();
+        var transferred = new RecordingTransferredCallbackEmitter();
         var handles = new RecordingHandleReleaser();
         var results = new RecordingResultEmitter();
         var exceptions = new RecordingExceptionEmitter();
@@ -52,6 +68,7 @@ public sealed class JSImportInvocationEmitterTests
             new FixedDescriptorSizeResolver(16),
             arguments,
             callbackHandles,
+            transferred,
             handles,
             results,
             exceptions,
@@ -72,10 +89,11 @@ public sealed class JSImportInvocationEmitterTests
 
         Assert.Equal(expectedArgumentCount, arguments.Count);
         Assert.Equal(expectedCallbackCount, callbackHandles.Count);
+        Assert.Equal(expectedTransferredCount, transferred.Count);
         Assert.Equal(expectedReleaseCount, handles.Count);
         Assert.Equal([ManagedExceptionKind.JSException], exceptions.Kinds);
         Assert.NotNull(results.Request);
-        Assert.Equal(hasCallback, results.Request.Callback is not null);
+        Assert.Equal(hasCallback && subscription, results.Request.Callback is not null);
     }
 
     [Fact]
@@ -90,6 +108,7 @@ public sealed class JSImportInvocationEmitterTests
             new FixedDescriptorSizeResolver(16),
             new RecordingArgumentEmitter(),
             new RecordingCallbackHandleEmitter(),
+            new RecordingTransferredCallbackEmitter(),
             new RecordingHandleReleaser(),
             new RecordingResultEmitter(),
             new RecordingExceptionEmitter(),
@@ -138,6 +157,7 @@ public sealed class JSImportInvocationEmitterTests
             new FixedDescriptorSizeResolver(16),
             arguments,
             new RecordingCallbackHandleEmitter(),
+            new RecordingTransferredCallbackEmitter(),
             new RecordingHandleReleaser(),
             results,
             exceptions,
@@ -221,6 +241,13 @@ public sealed class JSImportInvocationEmitterTests
             IWasmInstructionWriter code,
             int delegateLocal,
             MethodEmissionContext context) => Count++;
+    }
+
+    private sealed class RecordingTransferredCallbackEmitter : ITransferredHostCallbackEmitter
+    {
+        public int Count { get; private set; }
+
+        public void Emit(IWasmInstructionWriter code, int delegateLocal) => Count++;
     }
 
     private sealed class RecordingHandleReleaser : IInteropHandleReleaser

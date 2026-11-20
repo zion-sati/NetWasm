@@ -28,6 +28,24 @@ public sealed class CompilerDiagnosticFileLoggerTests
     }
 
     [Fact]
+    public void KeepsOnlyEntriesFromTheScopesMinimumLevelUp()
+    {
+        var reader = new MutableScopeReader
+        {
+            Scope = new CompilerDiagnosticScope("compiler.jsonl", LogLevel.Debug),
+        };
+        var logger = Assert.IsAssignableFrom<ILogger>(CreateLogger(reader, out var sink, out _));
+
+        Assert.False(logger.IsEnabled(LogLevel.Trace));
+        Assert.True(logger.IsEnabled(LogLevel.Debug));
+        logger.Log(LogLevel.Trace, default, "trace", null, static (state, _) => state);
+        logger.Log(LogLevel.Debug, default, "debug", null, static (state, _) => state);
+        logger.Log(LogLevel.Critical, default, "critical", null, static (state, _) => state);
+
+        Assert.Equal(["debug", "critical"], sink.Writes.Select(write => write.Entry.Message));
+    }
+
+    [Fact]
     public void LogPublishesTheFormattedEntryAndExceptionDetails()
     {
         var reader = new MutableScopeReader

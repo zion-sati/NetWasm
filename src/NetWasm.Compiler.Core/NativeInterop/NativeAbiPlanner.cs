@@ -19,6 +19,6 @@ public sealed class NativeAbiPlanner(
         ArgumentNullException.ThrowIfNull(method);
         _declarations.Validate(method);
         return new(method.Definition.NativeImport!, _signatures.Plan(method.Signature,
-            NativeAbiSignatureKind.Import, method.CanonicalName));
+            NativeAbiSignatureKind.Import, method.CanonicalName, method.Definition.NativeMarshalling));
     }
 }

@@ -36,12 +36,9 @@ public sealed class WasmTextModuleWriter(
             {
                 return;
             }
-            var error = result.StandardError.Replace('\r', ' ')
-                .Replace('\n', ' ').Trim();
             throw ComponentException.Tool(
                 $"wasm-tools failed to create link support module " +
-                $"'{Path.GetFileName(outputPath)}': " +
-                (error.Length == 0 ? "unknown error" : error));
+                $"'{Path.GetFileName(outputPath)}': " + result.FailureDescription);
         }
         finally
         {

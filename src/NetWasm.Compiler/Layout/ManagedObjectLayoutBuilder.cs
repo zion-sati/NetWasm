@@ -69,6 +69,13 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         if (type.GenericArity > 0)
         {
             var identity = _identities.GetTypeIdentity(typeKey);
+            // A generic definition is run-time metadata only, but its type descriptor names a closed base (Attribute for
+            // TagAttribute<T>), as typeof(TagAttribute<>).BaseType does, so that base needs a layout even where nothing
+            // else names it. A base generic over the definition's parameters stays open (TypeDescriptorBuilder).
+            if (_identityBaseTypes.GetBaseType(identity) is { ContainsGenericParameters: false } closedBase)
+            {
+                BuildBaseObjectLayout(closedBase);
+            }
             var metadata = new ObjectLayout(
                 NewTypeId(null),
                 AlignObject(_target.ObjectHeaderSize),
@@ -143,8 +150,10 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
     {
         if (_state.ConstructedObjects.TryGetValue(type, out var existing))
             return existing;
+        // A pointer, function pointer or by-reference type is never an object's type: an array of them names it as
+        // its element type by this id alone.
         if (type.Shape is CliTypeShape.ManagedByReference or
-            CliTypeShape.UnmanagedPointer)
+            CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer)
         {
             var semanticIdentity = new ObjectLayout(
                 NewTypeId(null),
@@ -155,6 +164,11 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         }
         if (type.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
         {
+            // An array stores a pointer or function pointer element as a value, one address wide. The element type
+            // then has a value layout whether or not a local, parameter or field of the program has that type:
+            // without one the runtime would take the array's elements for references.
+            if (type.ElementType is { Shape: CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer } element)
+                _valueLayouts.Resolve(element);
             var array = Build(_types.FindType("System.Array").Key);
             if (type.Shape == CliTypeShape.Array)
             {

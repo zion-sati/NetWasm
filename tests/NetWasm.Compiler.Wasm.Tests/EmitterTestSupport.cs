@@ -370,7 +370,7 @@ internal static class EmitterTestSupport
             runtimeImports,
             CreateAddressInstructions(layouts));
 
-    public static IRuntimeStateInitializer CreateRuntimeStateInitializer() => new RuntimeStateInitializer();
+    public static IEntryRuntimeInitializer CreateEntryRuntimeInitializer() => new EntryRuntimeInitializer();
 
     public static IRuntimeInitializerFunctionEmitter CreateRuntimeInitializerFunctionEmitter(
         RecordingLayoutProvider layouts,
@@ -553,6 +553,34 @@ internal static class EmitterTestSupport
     internal static bool ContainsManagedThrow(IReadOnlyList<WasmInstruction> instructions) =>
         CountManagedThrows(instructions) > 0;
 
+    // The same request in a program compiled for a collector with generations, which records its reference
+    // stores, with a code writer of its own. Whether a program records is its module's to say.
+    internal static InstructionEmissionRequest RecordingReferenceWrites(InstructionEmissionRequest request)
+    {
+        var recording = request with
+        {
+            Target = request.Target with
+            {
+                RuntimeImportSelection = request.Target.RuntimeImportSelection with { IncludeReferenceWriteBarrier = true },
+            },
+        };
+        Writers.Add(recording, new RecordingInstructionWriter());
+        return recording;
+    }
+
+    // The module's index of the write barrier's import.
+    internal static uint RecordReferenceWriteImport(InstructionEmissionRequest request) =>
+        (uint)WasmRuntimeImports.CreateCatalog().Resolve(
+            RuntimeImportSymbol.RecordReferenceWrite, request.Target.RuntimeImportSelection);
+
+    // Whether the instructions end with the record of a reference store at the address a local holds.
+    internal static bool EndsWithRecordAt(
+        InstructionEmissionRequest request, IReadOnlyList<WasmInstruction> instructions, uint addressLocal) =>
+        instructions.Count >= 2 &&
+        instructions[^2].Opcode == WasmOpcodes.LocalGet && instructions[^2].Operand.UnsignedValue == addressLocal &&
+        instructions[^1].Opcode == WasmOpcodes.Call &&
+        instructions[^1].Operand.UnsignedValue == RecordReferenceWriteImport(request);
+
     internal static MethodEmissionContext CreateMethodEmissionContext(
         int maxStack = 3)
     {
@@ -636,7 +664,7 @@ internal static class EmitterTestSupport
             []);
         return new(
             indices,
-            new InteropImportPlan([], default, default, default, default, default, default),
+            new InteropImportPlan([], default, default, default, default),
             ModuleDataPlan.Empty,
             Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty),
             Lookups.Of(ImmutableDictionary<string, TypeTestSiteModel>.Empty),
@@ -728,6 +756,19 @@ internal static class EmitterTestSupport
                 },
             };
         }
+        else if (intrinsic == RuntimeIntrinsic.AllocateUninitializedArray)
+        {
+            instruction = instruction with
+            {
+                Target = instruction.Target with
+                {
+                    RuntimeImportSelection = instruction.Target.RuntimeImportSelection with
+                    {
+                        IncludeUninitializedArrays = true,
+                    },
+                },
+            };
+        }
         else if (intrinsic is RuntimeIntrinsic.ArraySetValue or RuntimeIntrinsic.ObjectClone)
         {
             instruction = instruction with
@@ -804,15 +845,8 @@ internal static class EmitterTestSupport
                 allocations,
                 addresses)),
             new(JavaScriptImportResultKind.ByteArray,
-                new ByteArrayJavaScriptImportResultMarshaller(layouts, layouts, runtimeImports,
-                exceptions,
-                functionIndices,
-                resultHandles,
-                stackLocals,
-                resultLengths,
-                interopHandles,
-                allocations,
-                addresses)),
+                new ByteArrayJavaScriptImportResultMarshaller(layouts, runtimeImports, stackLocals,
+                    new StagedValueArrayEmitter(layouts, layouts, layouts, runtimeImports, exceptions, addresses))),
             new(JavaScriptImportResultKind.HostObject,
                 new HostObjectJavaScriptImportResultMarshaller(
                     layouts,
@@ -894,7 +928,8 @@ internal sealed class EmptyEnumStorageResolver : IEnumStorageResolver
 // memory.fill above them.
 internal sealed class RecordingLayoutProvider(
     WasmTargetLayout? target = null,
-    int valueSize = 4) :
+    int valueSize = 4,
+    bool valuesHoldReferences = false) :
     ITargetLayout,
     IValueLayoutProvider,
     ITypeLayoutProvider,
@@ -961,10 +996,14 @@ internal sealed class RecordingLayoutProvider(
     // Type IDs by canonical name; other types read 9.
     public IReadOnlyDictionary<string, int> TypeIds { get; init; } = new Dictionary<string, int>();
 
+    // Object sizes by canonical name; 16 for the rest.
+    public IReadOnlyDictionary<string, int> ObjectSizes { get; init; } = new Dictionary<string, int>();
+
     public ObjectLayout GetObjectLayout(CliTypeIdentity type)
     {
         ObjectIdentityRequest = type;
-        return new ObjectLayout(TypeIds.GetValueOrDefault(type.CanonicalName, 9), 16, ObjectReferenceOffsets);
+        return new ObjectLayout(TypeIds.GetValueOrDefault(type.CanonicalName, 9),
+            ObjectSizes.GetValueOrDefault(type.CanonicalName, 16), ObjectReferenceOffsets);
     }
 
     public bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout)
@@ -974,7 +1013,8 @@ internal sealed class RecordingLayoutProvider(
     }
 
     public ValueLayout GetValueLayout(CliTypeIdentity type) =>
-        new(type, valueSize, Math.Min(valueSize, 8), type.StackKind == CliValueKind.ManagedReference ? [0] : []);
+        new(type, valueSize, Math.Min(valueSize, 8),
+            type.StackKind == CliValueKind.ManagedReference || valuesHoldReferences ? [0] : []);
 
     public FieldLayout GetFieldLayout(EntityKey field)
     {

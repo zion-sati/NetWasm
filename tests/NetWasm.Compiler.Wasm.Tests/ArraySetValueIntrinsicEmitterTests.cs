@@ -8,6 +8,8 @@ using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
+
 namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
@@ -31,7 +33,7 @@ public sealed class ArraySetValueIntrinsicEmitterTests
         { Target = WasmTargetLayout.For(target) };
         var writer = new RecordingInstructionWriter();
         var emitter = Assert.IsAssignableFrom<IRuntimeIntrinsicEmitter>(new ArraySetValueIntrinsicEmitter(
-            descriptors, resolver, layout, layout, layout, imports, addresses));
+            descriptors, resolver, layout, layout, layout, imports, addresses, new KeyedDispatchEmitter()));
         emitter.Emit(request, writer);
         var code = writer.ToInstructions();
         Assert.Equal((uint)layout.ArrayElementTypeIdOffset, code[1].Operand.Offset);

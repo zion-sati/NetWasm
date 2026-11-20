@@ -56,6 +56,12 @@ try {
 } catch (error) {
   await page?.close().catch(() => {});
   worker?.terminate();
-  result.textContent = String(error?.stack ?? error);
+  result.textContent = describe(error);
   document.body.dataset.state = "failed";
+}
+
+// The error's message and stack: WebKit's and Firefox's stacks leave out the message, which V8's starts with.
+function describe(error) {
+  const text = String(error);
+  return error?.stack?.startsWith(text) ? error.stack : [text, error?.stack].filter(Boolean).join("\n");
 }

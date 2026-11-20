@@ -339,6 +339,10 @@ public sealed class RuntimeIntrinsicRegistryTests
         "System.Runtime.InteropServices.StructureMarshallingRuntime",
         "GetDescriptorWithFieldNames",
         RuntimeIntrinsic.StructMarshallingFieldNames)]
+    [InlineData(
+        "System.Runtime.InteropServices.StructureMarshallingRuntime",
+        "Construct",
+        RuntimeIntrinsic.StructMarshallingConstruct)]
     [InlineData("System.DelegateRuntime", "Clone", RuntimeIntrinsic.DelegateClone)]
     public void RegistryRecognizesRuntimeSupportContracts(
         string declaringTypeName,

@@ -30,8 +30,8 @@ internal sealed class SimdVectorLaneGuard(IImplicitExceptionEmitter exceptions) 
             RuntimeIntrinsic.SimdConditionalSelect => signature.ParameterSignatureTypes[1],
             _ => signature.ParameterSignatureTypes[0],
         };
-        // The classifier takes only Vector128<T> and Vector<T> operands and
-        // results, each with its one element type.
+        // The classifier takes only Vector128<T>, Vector<T> and Vector64<T>
+        // operands and results, each with its one element type.
         var element = vector.TypeArguments[0];
         var result = default(SimdLane);
         if (!TryGetLane(element, request.Target, out var lane) ||

@@ -7,6 +7,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -60,7 +61,7 @@ public sealed class FilterDispatcherEmitterTests
     }
 
     private static IFilterDispatcherEmitter CreateEmitter() =>
-        new[] { new FilterDispatcherEmitter(new GeneratedFunctionWriterFactory()) }
+        new[] { new FilterDispatcherEmitter(new GeneratedFunctionWriterFactory(), new KeyedDispatchEmitter()) }
             .Cast<IFilterDispatcherEmitter>()
             .Single();
 

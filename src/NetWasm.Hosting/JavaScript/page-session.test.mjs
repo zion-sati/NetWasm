@@ -361,6 +361,182 @@ test("validates the factory, request, export names and open options", async () =
   await assert.rejects(() => openPage({ exports: ["Add"], startup }), /request shape is invalid/);
 });
 
+test("prefetched responses go to the export session's fetch once each", async () => {
+  const state = fixture();
+  const fetched = [];
+  const openPage = state.factory({ ...pageOptions(), platform: Object.freeze({
+    fetch: (input, init) => {
+      fetched.push(input);
+      return Promise.resolve("fetched");
+    },
+  }) });
+  const url = "https://example.test/app/App.wasm";
+  const response = Promise.resolve("prefetched");
+  const prefetched = new Map([[url, response]]);
+
+  await openPage({ exports: ["Add"], options: undefined, prefetched, startup });
+  await openPage({ exports: ["Add"], options: undefined, prefetched, startup });
+  const first = state.calls[0][1].platform;
+  const second = state.calls[2][1].platform;
+
+  assert.equal(Object.isFrozen(first), true);
+  assert.equal(first.fetch(url), response);
+  assert.equal(await second.fetch(url), "fetched");
+  assert.deepEqual(fetched, [url]);
+  await assert.rejects(() => openPage({ exports: ["Add"], options: undefined, prefetched: {}, startup }),
+    /prefetched responses must be a Map/);
+  await assert.rejects(() => openPage({ exports: ["Add"], prefetched, startup }), /request shape is invalid/);
+  await assert.rejects(() => openPage(null), /open request is invalid/);
+});
+
+test("lets the collector use the page's next idle period whenever the module ran", async () => {
+  const idle = [];
+  let collections = 0;
+  const session = collectWhenIdle => Object.freeze({
+    close: async () => {},
+    ...(collectWhenIdle === undefined ? {} : { collectWhenIdle }),
+    exports: Object.freeze({ Add: (a, b) => a + b, version: 3 }),
+    failure: new Promise(() => {}),
+  });
+  let imports;
+  let importCalled;
+  const factory = collectWhenIdle => createPageSessionFactory(options => {
+    imports = options.consumerModules;
+    importCalled = options.observeImportCall;
+    return async () => session(collectWhenIdle);
+  }, run => idle.push(run));
+  const host = { read() { return this === undefined ? "detached" : "bound"; }, label: "page" };
+  const openPage = factory(() => { collections++; return true; })(pageOptions({ host }));
+
+  // Opening ran the module, so does each export call and each import the module calls.
+  const page = await openPage({ exports: ["Add", "version"], options: undefined, startup });
+  assert.equal(idle.length, 1);
+  assert.equal(page.Add(2, 3), 5);
+  assert.equal(page.version, 3);
+  assert.equal(imports.host.read(), "bound");
+  assert.equal(idle.length, 1);
+  idle.shift()();
+  assert.equal(collections, 1);
+  // The modules stay as written; the export session reports each import the program calls.
+  assert.equal(imports.host.read, host.read);
+  assert.equal(imports.host.read.call(undefined), "detached");
+  assert.equal(idle.length, 0);
+  importCalled();
+  assert.equal(idle.length, 1);
+  page.Add(1, 1);
+  assert.equal(idle.length, 1);
+
+  // A runtime without the idle entry, and a host that never says it is idle, are left alone.
+  const before = idle.length;
+  const plain = await factory(undefined)(pageOptions())({ exports: ["Add", "version"], options: undefined, startup });
+  plain.Add(1, 1);
+  const quiet = await createPageSessionFactory(() => async () => session(() => true))(pageOptions())(
+    { exports: ["Add", "version"], options: undefined, startup });
+  quiet.Add(1, 1);
+  assert.equal(idle.length, before);
+  assert.throws(() => createPageSessionFactory(() => {}, "idle"), /idle scheduler must be a function/);
+});
+
+test("passes a module's exported classes as written, so a dotted import reaches a static member", async () => {
+  class AvaloniaDOM {
+    static #created = 0;
+    static addClass(element, name) { element.classes.push(name); return AvaloniaDOM.#created; }
+    constructor() { AvaloniaDOM.#created++; }
+  }
+  const avalonia = Object.freeze({ AvaloniaDOM, version: 1 });
+  let modules;
+  const open = createPageSessionFactory(options => {
+    modules = options.consumerModules;
+    return async () => Object.freeze({
+      close: async () => {}, exports: Object.freeze({}), failure: new Promise(() => {}),
+    });
+  })(pageOptions({ avalonia }));
+
+  await open({ exports: [], options: undefined, startup });
+
+  assert.equal(modules.avalonia.AvaloniaDOM, AvaloniaDOM);
+  const element = { classes: [] };
+  new modules.avalonia.AvaloniaDOM();
+  assert.equal(modules.avalonia.AvaloniaDOM.addClass.call(modules.avalonia.AvaloniaDOM, element, "root"), 1);
+  assert.deepEqual(element.classes, ["root"]);
+});
+
+test("passes a module's object members, so a dotted import reaches a function an object holds", async () => {
+  const Format = Object.freeze({ prefix: "fmt:", wrap(value) { return this.prefix + value; } });
+  const formats = Object.freeze({ Format, stamp: value => `stamp:${value}`, version: 1 });
+  let modules;
+  const open = createPageSessionFactory(options => {
+    modules = options.consumerModules;
+    return async () => Object.freeze({
+      close: async () => {}, exports: Object.freeze({}), failure: new Promise(() => {}),
+    });
+  })(pageOptions({ formats }));
+
+  await open({ exports: [], options: undefined, startup });
+
+  assert.equal(modules.formats.Format, Format);
+  assert.equal(modules.formats.Format.wrap.call(modules.formats.Format, "x"), "fmt:x");
+  assert.equal(modules.formats.stamp("x"), "stamp:x");
+  assert.equal(Object.hasOwn(modules.formats, "version"), false);
+});
+
+test("lets the collector collect once the module has stayed quiet, unless an idle collection came first", async () => {
+  const idle = [];
+  const timers = [];
+  let idleAnswer = false;
+  let quiet = 0;
+  const session = collectors => Object.freeze({
+    close: async () => {},
+    ...collectors,
+    exports: Object.freeze({ Add: (a, b) => a + b }),
+    failure: new Promise(() => {}),
+  });
+  const timer = { now: () => 0, setTimer: (run, milliseconds) => timers.push({ milliseconds, run }) };
+  const open = (collectors, requestIdle = run => idle.push(run), quietTimer = timer) =>
+    createPageSessionFactory(() => async () => session(collectors), requestIdle, quietTimer)(pageOptions())(
+      { exports: ["Add"], options: undefined, startup });
+  const collectors = { collectWhenIdle: () => idleAnswer, collectWhenQuiet: () => { quiet++; return 256; } };
+
+  // Opening ran the module: the timer is set once, and calls during its period set no other.
+  const page = await open(collectors);
+  assert.deepEqual(timers.map(entry => entry.milliseconds), [1000]);
+  page.Add(1, 2);
+  assert.equal(timers.length, 1);
+  // The module ran during the period, so it runs out another, and then the collection follows.
+  timers.shift().run();
+  assert.equal(quiet, 0);
+  timers.shift().run();
+  assert.equal(quiet, 1);
+
+  // An idle collection that declined leaves the quiet one due; one that collected leaves it nothing to do.
+  page.Add(1, 2);
+  idle.shift()();
+  timers.shift().run();
+  assert.equal(quiet, 2);
+  page.Add(1, 2);
+  idleAnswer = true;
+  idle.shift()();
+  timers.shift().run();
+  assert.equal(quiet, 2);
+
+  // A host without an idle scheduler still collects when quiet.
+  const timed = await open(collectors, null);
+  assert.equal(timers.length, 1);
+  timers.shift().run();
+  assert.equal(quiet, 3);
+  timed.Add(1, 2);
+  timers.shift().run();
+  assert.equal(quiet, 4);
+
+  // A runtime without the quiet entry, and a host without a timer, are left alone.
+  await open({ collectWhenIdle: () => true });
+  await open(collectors, null, null);
+  assert.equal(timers.length, 0);
+  for (const invalid of ["timer", { now() {} }, { setTimer() {} }, { now: 1, setTimer() {} }]) {
+    assert.throws(() => createPageSessionFactory(() => {}, null, invalid), /quiet timer must be a timer and a clock/);
+  }
+});
+
 test("the root wires the browser raw export session", async () => {
   const openPage = createPageSession(pageOptions());
   await assert.rejects(() => openPage({ exports: ["Add"], options: {}, startup }),

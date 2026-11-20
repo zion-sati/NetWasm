@@ -42,6 +42,6 @@ internal static class CompiledValueFrames
             new SimdValueFrameSlotAlignmentResolver()).Create(structured);
         var planner = Assert.IsAssignableFrom<ITerminalBranchValueFramePlanner>(
             new TerminalBranchValueFramePlanner(new ArgumentSignatureTypeResolver(identities)));
-        return (layout, planner.Plan(structured, layout, roots));
+        return (layout, planner.Plan(structured, layout, roots, copyTails: true));
     }
 }

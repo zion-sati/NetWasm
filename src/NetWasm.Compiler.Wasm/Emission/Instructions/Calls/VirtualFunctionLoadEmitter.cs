@@ -4,15 +4,20 @@
 using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
+// ldvirtftn: the receiver's type id picks the function its type's override compiles to, through the runs of type ids
+// that share one, as a virtual call picks its target.
 internal sealed class VirtualFunctionLoadEmitter(
     ITargetLayout layouts,
-    ITypeLayoutProvider typeLayouts,
+    IVirtualDispatchCasePlanner cases,
+    IKeyedDispatchEmitter keyedDispatch,
     IImplicitExceptionEmitter exceptions,
     IInstructionCommandFactory commands) :
     InstructionCommandProvider,
@@ -52,26 +57,26 @@ internal sealed class VirtualFunctionLoadEmitter(
             ? value
             : throw new InvalidOperationException(
                 $"Missing virtual function-load site '{key}'.");
-        foreach (var target in dispatch.Targets)
-        {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(receiverLocal))));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(typeLayouts.GetObjectLayout(target.ReceiverType).TypeId)));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(functionIndices.Resolve(new FunctionAddress(target.Method)))));
-            if (layouts.Target.UsesMemory64)
+        var dispatchCases = cases.Plan(dispatch.Targets, dispatch.Targets);
+        var typeIdLocal = request.Context.NumericTemporaryI4;
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)receiverLocal)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, 0)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)typeIdLocal)));
+        keyedDispatch.Emit(code, new(
+            typeIdLocal,
+            wide: false,
+            [.. dispatchCases.Select(dispatchCase => new KeyRange(dispatchCase.LowTypeId, dispatchCase.HighTypeId))],
+            index =>
             {
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
-            }
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(functionLocal))));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        }
-        exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Context.ManagedThrowFunction);
-        for (var index = 0; index < dispatch.Targets.Length; index++)
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        }
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(
+                    functionIndices.Resolve(new FunctionAddress(dispatchCases[index].Target.Method)))));
+                if (layouts.Target.UsesMemory64)
+                {
+                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+                }
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)functionLocal)));
+            },
+            () => exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Context.ManagedThrowFunction)));
         request.Stack[receiver] = CliValueKind.NativeInt;
     }
 

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
+using System.Runtime.CompilerServices;
+
 namespace System
 {
     public static partial class GC
@@ -29,6 +31,7 @@ namespace System
         // wrapped in TargetInvocationException; a non-public parameterless constructor and every
         // other T throw what .NET throws. The compiler answers the two questions for the closed T
         // and replaces CreateDefaultInstance<T>() with the construction.
+        [Intrinsic]
         public static T CreateInstance<T>()
         {
             if (!HasDefaultConstructor<T>())

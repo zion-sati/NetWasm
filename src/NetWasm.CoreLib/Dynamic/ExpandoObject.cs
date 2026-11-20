@@ -4,7 +4,7 @@
 // NetWasm adaptation: NetWasm has no dynamic language runtime, so GetMetaObject throws
 // PlatformNotSupportedException instead of returning MetaExpando, and MetaExpando, its reflected
 // RuntimeOps method fields and the RuntimeOps helpers are not ported. The dictionary,
-// notification and class-transition behaviour is upstream's.
+// notification and class-transition behavior is upstream's.
 
 using System.Collections.Generic;
 using System.ComponentModel;

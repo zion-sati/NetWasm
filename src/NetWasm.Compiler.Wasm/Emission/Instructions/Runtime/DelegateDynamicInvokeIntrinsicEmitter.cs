@@ -6,7 +6,9 @@ using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
@@ -25,11 +27,15 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
     IRootPublicationEmitter roots,
+    IKeyedDispatchEmitter keyedDispatch,
     IExceptionPayloadBlockEmitter exceptionPayloadBlocks,
     INullableTypeResolver nullableTypes,
     INullableBoxEmitter nullableBoxes,
-    IValueFrameAddressEmitter valueFrames) : IRuntimeIntrinsicEmitter
+    IValueFrameAddressEmitter valueFrames,
+    IReferenceWriteBarrierEmitter writeBarrier) : IRuntimeIntrinsicEmitter
 {
+    private static readonly CliTypeIdentity ObjectReference = CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference);
+
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -50,13 +56,21 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
         int descriptorLocal = request.Local(0, CliValueKind.ManagedReference);
         int receiverLocal = request.Local(1, CliValueKind.ManagedReference);
         int argumentsLocal = request.Local(2, CliValueKind.ManagedReference);
-        int caseCount = 0;
-        foreach (var method in plan.Methods.Values.OrderBy(
-                     method => method.CanonicalName,
-                     StringComparer.Ordinal))
+        // The descriptor names the method: its address picks the case, searched among the methods' descriptors.
+        var methods = plan.Methods.Values
+            .OrderBy(method => method.CanonicalName, StringComparer.Ordinal)
+            .Select(method => (Address: descriptors.GetDescriptorAddress(method), Method: method))
+            .OrderBy(entry => entry.Address)
+            .ToArray();
+        keyedDispatch.Emit(code, new(
+            descriptorLocal,
+            layouts.Target.UsesMemory64,
+            [.. methods.Select(entry => new KeyRange(entry.Address, entry.Address))],
+            index => EmitCase(methods[index].Method),
+            () => EmitThrow(request, code, plan.UnsupportedTarget)));
+
+        void EmitCase(MethodInstanceModel method)
         {
-            caseCount++;
-            EmitDescriptorCase(code, descriptorLocal, method);
             EmitArgumentArityCheck(
                 request,
                 code,
@@ -74,13 +88,6 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
                 method,
                 plan.InvocationTarget);
             EmitPostInvocationResult(request, code, method.Signature.ReturnSignatureType);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        }
-
-        EmitThrow(request, code, plan.UnsupportedTarget);
-        for (var index = 0; index < caseCount; index++)
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
     }
 
@@ -340,6 +347,10 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
         var underlying = nullableTypes.Resolve(resultType);
         if (underlying is null)
         {
+            // A struct result: the callee wrote it into the box allocated before the call, which a collection
+            // during the call may have made old.
+            if (resultType.StackKind == CliValueKind.ValueType)
+                writeBarrier.Emit(request.Instruction, code, resultLocal, resultType);
             return;
         }
         EmitMemberResultAddress(request, code);
@@ -440,6 +451,10 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
             layouts.Target,
             0,
             layouts.Target.ObjectReferenceSize);
+        // The caller's array may be older than the box just allocated for it. The box is in the scratch
+        // local, so the slot's address is worked out again.
+        writeBarrier.Emit(request.Instruction, code,
+            writer => EmitArgumentSlotAddress(writer, argumentsLocal, index), ObjectReference);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
@@ -525,21 +540,6 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         EmitThrow(request, code, target);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-    }
-
-    private void EmitDescriptorCase(
-        IWasmInstructionWriter code,
-        int descriptorLocal,
-        MethodInstanceModel method)
-    {
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)descriptorLocal)));
-        addresses.Emit(code, descriptors.GetDescriptorAddress(method));
-        addresses.Emit(code, AddressOperation.Equal);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.If,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
     }
 
     private void EmitArgumentReference(

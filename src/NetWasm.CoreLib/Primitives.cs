@@ -33,12 +33,14 @@ namespace System
         // enum descriptor (underlying type, constants and names). The public
         // methods retain the normal BCL validation and overload surface while
         // the compiler supplies the storage and metadata operation.
+        [Intrinsic]
         public override bool Equals(object? value) => InternalEquals(this, value);
         public override int GetHashCode() => InternalGetHashCode(this);
         public int CompareTo(object? value) => InternalCompareTo(this, value);
 
         public TypeCode GetTypeCode() => InternalGetTypeCode(this);
 
+        [Intrinsic]
         public bool HasFlag(Enum flag)
         {
             if (flag == null)
@@ -60,6 +62,7 @@ namespace System
         // Upstream's internal entry for formatting a value whose enum type a
         // generic caller does not constrain, such as an interpolated string
         // handler; NetWasm formats it as the enum's ISpanFormattable does.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool TryFormatUnconstrained<TEnum>(
             TEnum value,
             Span<char> destination,
@@ -128,6 +131,7 @@ namespace System
             _ => throw new InvalidOperationException("Unknown enum underlying type."),
         };
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string? GetName<TEnum>(TEnum value) where TEnum : struct, Enum =>
             InternalGetName(value);
 
@@ -174,6 +178,7 @@ namespace System
             return InternalIsDefined(enumType, value);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsDefined<TEnum>(TEnum value) where TEnum : struct, Enum =>
             InternalIsDefined(value);
 
@@ -1930,14 +1935,21 @@ namespace System
             return y;
         }
         public static int MinMagnitudeNumber(int left, int right) => MinMagnitude(left, right);
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int Log2(int value) => value < 0
             ? throw new ArgumentOutOfRangeException()
             : Numerics.BitOperations.Log2((uint)value);
         public static bool IsPow2(int value) => value > 0 && (value & (value - 1)) == 0;
+        [Intrinsic]
         public static int LeadingZeroCount(int value) => Numerics.BitOperations.LeadingZeroCount((uint)value);
+        [Intrinsic]
         public static int PopCount(int value) => Numerics.BitOperations.PopCount((uint)value);
+        [Intrinsic]
         public static int TrailingZeroCount(int value) => Numerics.BitOperations.TrailingZeroCount(value);
+        [Intrinsic]
         public static int RotateLeft(int value, int amount) => (int)Numerics.BitOperations.RotateLeft((uint)value, amount);
+        [Intrinsic]
         public static int RotateRight(int value, int amount) => (int)Numerics.BitOperations.RotateRight((uint)value, amount);
         public static (int Quotient, int Remainder) DivRem(int left, int right) { var q = left / right; return (q, left - q * right); }
         public int GetByteCount() => 4;
@@ -2215,12 +2227,18 @@ namespace System
         public static uint MaxMagnitudeNumber(uint l, uint r) => MaxMagnitude(l, r);
         public static uint MinMagnitude(uint l, uint r) => Min(l, r);
         public static uint MinMagnitudeNumber(uint l, uint r) => MinMagnitude(l, r);
+        [Intrinsic]
         public static uint Log2(uint value) => (uint)Numerics.BitOperations.Log2(value);
         public static bool IsPow2(uint value) { ulong bits = (ulong)value; return bits != 0 && (bits & (bits - 1)) == 0; }
+        [Intrinsic]
         public static uint LeadingZeroCount(uint value) => (uint)Numerics.BitOperations.LeadingZeroCount(value);
+        [Intrinsic]
         public static uint PopCount(uint value) => (uint)Numerics.BitOperations.PopCount(value);
+        [Intrinsic]
         public static uint TrailingZeroCount(uint value) => (uint)Numerics.BitOperations.TrailingZeroCount(value);
+        [Intrinsic]
         public static uint RotateLeft(uint value, int amount) => Numerics.BitOperations.RotateLeft(value, amount);
+        [Intrinsic]
         public static uint RotateRight(uint value, int amount) => Numerics.BitOperations.RotateRight(value, amount);
         public static (uint Quotient, uint Remainder) DivRem(uint l, uint r) { var q = (uint)(l / r); return (q, (uint)(l - q * r)); }
         public int GetByteCount() => 4;
@@ -2534,14 +2552,21 @@ namespace System
             return y;
         }
         public static long MinMagnitudeNumber(long l, long r) => MinMagnitude(l, r);
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long Log2(long value) => value < 0
             ? throw new ArgumentOutOfRangeException()
             : Numerics.BitOperations.Log2((ulong)value);
         public static bool IsPow2(long value) { ulong bits = (ulong)value; return value > 0 && bits != 0 && (bits & (bits - 1)) == 0; }
+        [Intrinsic]
         public static long LeadingZeroCount(long value) => Numerics.BitOperations.LeadingZeroCount((ulong)value);
+        [Intrinsic]
         public static long PopCount(long value) => Numerics.BitOperations.PopCount((ulong)value);
+        [Intrinsic]
         public static long TrailingZeroCount(long value) => Numerics.BitOperations.TrailingZeroCount(value);
+        [Intrinsic]
         public static long RotateLeft(long value, int amount) => (long)Numerics.BitOperations.RotateLeft((ulong)value, amount);
+        [Intrinsic]
         public static long RotateRight(long value, int amount) => (long)Numerics.BitOperations.RotateRight((ulong)value, amount);
         public static (long Quotient, long Remainder) DivRem(long l, long r) { var q = (long)(l / r); return (q, (long)(l - q * r)); }
         public int GetByteCount() => 8;
@@ -2820,12 +2845,18 @@ namespace System
         public static ulong MaxMagnitudeNumber(ulong l, ulong r) => MaxMagnitude(l, r);
         public static ulong MinMagnitude(ulong l, ulong r) => Min(l, r);
         public static ulong MinMagnitudeNumber(ulong l, ulong r) => MinMagnitude(l, r);
+        [Intrinsic]
         public static ulong Log2(ulong value) => (ulong)Numerics.BitOperations.Log2(value);
         public static bool IsPow2(ulong value) { ulong bits = (ulong)value; return bits != 0 && (bits & (bits - 1)) == 0; }
+        [Intrinsic]
         public static ulong LeadingZeroCount(ulong value) => (ulong)Numerics.BitOperations.LeadingZeroCount(value);
+        [Intrinsic]
         public static ulong PopCount(ulong value) => (ulong)Numerics.BitOperations.PopCount(value);
+        [Intrinsic]
         public static ulong TrailingZeroCount(ulong value) => (ulong)Numerics.BitOperations.TrailingZeroCount(value);
+        [Intrinsic]
         public static ulong RotateLeft(ulong value, int amount) => Numerics.BitOperations.RotateLeft(value, amount);
+        [Intrinsic]
         public static ulong RotateRight(ulong value, int amount) => Numerics.BitOperations.RotateRight(value, amount);
         public static (ulong Quotient, ulong Remainder) DivRem(ulong l, ulong r) { var q = (ulong)(l / r); return (q, (ulong)(l - q * r)); }
         public int GetByteCount() => 8;
@@ -3282,6 +3313,7 @@ namespace System
         public const float NegativeZero = -0.0f;
 
         public bool Equals(float other) => this == other || IsNaN(this) && IsNaN(other);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int CompareTo(float other)
         {
             if (this < other) return -1;
@@ -3296,6 +3328,7 @@ namespace System
             throw new ArgumentException();
         }
         public override bool Equals(object? value) => value is float other && Equals(other);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override int GetHashCode()
         {
             var bits = BitConverter.SingleToUInt32Bits(this);
@@ -3304,26 +3337,35 @@ namespace System
         }
         public override string ToString() => Number.FormatSingle(this);
         public string ToString(string? format) => ToString(format, null);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNaN(float value) => !(value >= 0 || value < 0);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsInfinity(float value) => value == PositiveInfinity || value == NegativeInfinity;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsFinite(float value) => !IsNaN(value) && !IsInfinity(value);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNegative(float value) =>
             (BitConverter.SingleToUInt32Bits(value) & 0x8000_0000U) != 0;
 
         public static float One => 1;
         public static float Zero => 0;
         public static int Radix => 2;
+        [Intrinsic]
         public static float Abs(float v) => (float)Math.Abs(v);
         public static float Clamp(float v, float min, float max) => min > max ? throw new ArgumentException() : Min(Max(v, min), max);
         public static float CopySign(float v, float s) => IsNegative(v) == IsNegative(s) ? v : -v;
+        [Intrinsic]
         public static float Max(float l, float r) => Math.Max(l, r);
+        [Intrinsic]
         public static float Min(float l, float r) => Math.Min(l, r);
         public static int Sign(float v) => IsNaN(v) ? throw new ArithmeticException() : v < 0 ? -1 : v > 0 ? 1 : 0;
         public static bool IsCanonical(float v) => true;
         public static bool IsComplexNumber(float v) => false;
         public static bool IsEvenInteger(float v) => IsFinite(v) && Math.Truncate(v) == v && v % 2 == 0;
         public static bool IsImaginaryNumber(float v) => false;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNegativeInfinity(float v) => v == NegativeInfinity;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNormal(float f)
         {
             uint bits = BitConverter.SingleToUInt32Bits(Abs(f));
@@ -3332,15 +3374,20 @@ namespace System
         public static bool IsInteger(float v) => IsFinite(v) && Math.Truncate(v) == v;
         public static bool IsOddInteger(float v) => IsInteger(v) && v % 2 != 0;
         public static bool IsPositive(float v) => !IsNegative(v) && !IsNaN(v);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsPositiveInfinity(float v) => v == PositiveInfinity;
         public static bool IsRealNumber(float v) => !IsNaN(v);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsSubnormal(float f)
         {
             uint bits = BitConverter.SingleToUInt32Bits(Abs(f));
             return (bits - 1) < MaxTrailingSignificand;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsZero(float v) => v == 0;
+        [Intrinsic]
         public static float MaxMagnitude(float x, float y) => MathF.MaxMagnitude(x, y);
+        [Intrinsic]
         public static float MaxMagnitudeNumber(float x, float y)
         {
             // This matches the IEEE 754:2019 `maximumMagnitudeNumber` function
@@ -3364,7 +3411,9 @@ namespace System
 
             return y;
         }
+        [Intrinsic]
         public static float MinMagnitude(float x, float y) => MathF.MinMagnitude(x, y);
+        [Intrinsic]
         public static float MinMagnitudeNumber(float x, float y)
         {
             // This matches the IEEE 754:2019 `minimumMagnitudeNumber` function
@@ -3388,46 +3437,70 @@ namespace System
 
             return y;
         }
+        [Intrinsic]
         public static float Acos(float x) => MathF.Acos(x);
         public static float AcosPi(float v) => Acos(v) / Pi;
+        [Intrinsic]
         public static float Asin(float x) => MathF.Asin(x);
         public static float AsinPi(float v) => Asin(v) / Pi;
+        [Intrinsic]
         public static float Atan(float x) => MathF.Atan(x);
         public static float AtanPi(float v) => Atan(v) / Pi;
+        [Intrinsic]
         public static float Atan2(float y, float x) => MathF.Atan2(y, x);
         public static float Atan2Pi(float y, float x) => Atan2(y, x) / Pi;
+        [Intrinsic]
         public static float Cos(float v) => MathF.Cos(v);
+        [Intrinsic]
         public static float Sin(float v) => MathF.Sin(v);
         public static (float Sin, float Cos) SinCos(float v) => MathF.SinCos(v);
+        [Intrinsic]
         public static float Tan(float v) => MathF.Tan(v);
+        [Intrinsic]
         public static float Acosh(float x) => MathF.Acosh(x);
+        [Intrinsic]
         public static float Asinh(float x) => MathF.Asinh(x);
+        [Intrinsic]
         public static float Atanh(float x) => MathF.Atanh(x);
+        [Intrinsic]
         public static float Cosh(float x) => MathF.Cosh(x);
+        [Intrinsic]
         public static float Sinh(float x) => MathF.Sinh(x);
+        [Intrinsic]
         public static float Tanh(float x) => MathF.Tanh(x);
+        [Intrinsic]
         public static float Exp(float v) => MathF.Exp(v);
         // Upstream computes MathF.Pow(2, x) and MathF.Pow(10, x), and desktop answers
         // vary with the platform's powf. The double exp2, rounded once, is faster here and
         // within half an ulp.
         public static float Exp2(float v) => (float)double.Exp2(v);
         public static float Exp10(float v) => (float)double.Exp2(3.321928094887362 * v);
+        [Intrinsic]
         public static float Log(float v) => MathF.Log(v);
         public static float Log(float x, float newBase) => MathF.Log(x, newBase);
+        [Intrinsic]
         public static float Log2(float v) => MathF.Log2(v);
+        [Intrinsic]
         public static float Log10(float x) => MathF.Log10(x);
+        [Intrinsic]
         public static float Pow(float x, float y) => MathF.Pow(x, y);
+        [Intrinsic]
         public static float Cbrt(float x) => MathF.Cbrt(x);
+        [Intrinsic]
         public static float Sqrt(float x) => MathF.Sqrt(x);
         public static float BitDecrement(float x) => MathF.BitDecrement(x);
         public static float BitIncrement(float x) => MathF.BitIncrement(x);
+        [Intrinsic]
         public static float FusedMultiplyAdd(float left, float right, float addend) => MathF.FusedMultiplyAdd(left, right, addend);
         public static float Ieee754Remainder(float left, float right) => MathF.IEEERemainder(left, right);
         public static int ILogB(float v) => Math.ILogB(v);
         public static float ScaleB(float x, int n) => MathF.ScaleB(x, n);
         public static float Round(float v, int d, MidpointRounding m) => (float)Math.Round(v, d, m);
+        [Intrinsic]
         public static float Ceiling(float x) => MathF.Ceiling(x);
+        [Intrinsic]
         public static float Floor(float x) => MathF.Floor(x);
+        [Intrinsic]
         public static float Truncate(float x) => MathF.Truncate(x);
         /// <inheritdoc cref="IFloatingPoint{TSelf}.GetExponentByteCount()" />
         int Numerics.IFloatingPoint<float>.GetExponentByteCount() => sizeof(sbyte);
@@ -3611,6 +3684,7 @@ namespace System
         public const double NegativeZero = -0.0;
 
         public bool Equals(double other) => this == other || IsNaN(this) && IsNaN(other);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int CompareTo(double other)
         {
             if (this < other) return -1;
@@ -3625,6 +3699,7 @@ namespace System
             throw new ArgumentException();
         }
         public override bool Equals(object? value) => value is double other && Equals(other);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override int GetHashCode()
         {
             var bits = BitConverter.DoubleToUInt64Bits(this);
@@ -3633,25 +3708,34 @@ namespace System
         }
         public override string ToString() => Number.FormatDouble(this);
         public string ToString(string? format) => ToString(format, null);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNaN(double value) => !(value >= 0 || value < 0);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsInfinity(double value) => value == PositiveInfinity || value == NegativeInfinity;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsFinite(double value) => !IsNaN(value) && !IsInfinity(value);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNegative(double value) =>
             (BitConverter.DoubleToUInt64Bits(value) & 0x8000_0000_0000_0000UL) != 0;
         public static double One => 1;
         public static double Zero => 0;
         public static int Radix => 2;
+        [Intrinsic]
         public static double Abs(double v) => (double)Math.Abs(v);
         public static double Clamp(double v, double min, double max) => min > max ? throw new ArgumentException() : Min(Max(v, min), max);
         public static double CopySign(double v, double s) => IsNegative(v) == IsNegative(s) ? v : -v;
+        [Intrinsic]
         public static double Max(double l, double r) => Math.Max(l, r);
+        [Intrinsic]
         public static double Min(double l, double r) => Math.Min(l, r);
         public static int Sign(double v) => IsNaN(v) ? throw new ArithmeticException() : v < 0 ? -1 : v > 0 ? 1 : 0;
         public static bool IsCanonical(double v) => true;
         public static bool IsComplexNumber(double v) => false;
         public static bool IsEvenInteger(double v) => IsFinite(v) && Math.Truncate(v) == v && v % 2 == 0;
         public static bool IsImaginaryNumber(double v) => false;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNegativeInfinity(double v) => v == NegativeInfinity;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNormal(double d)
         {
             ulong bits = BitConverter.DoubleToUInt64Bits(Abs(d));
@@ -3660,15 +3744,20 @@ namespace System
         public static bool IsInteger(double v) => IsFinite(v) && Math.Truncate(v) == v;
         public static bool IsOddInteger(double v) => IsInteger(v) && v % 2 != 0;
         public static bool IsPositive(double v) => !IsNegative(v) && !IsNaN(v);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsPositiveInfinity(double v) => v == PositiveInfinity;
         public static bool IsRealNumber(double v) => !IsNaN(v);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsSubnormal(double d)
         {
             ulong bits = BitConverter.DoubleToUInt64Bits(Abs(d));
             return (bits - 1) < MaxTrailingSignificand;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsZero(double v) => v == 0;
+        [Intrinsic]
         public static double MaxMagnitude(double x, double y) => Math.MaxMagnitude(x, y);
+        [Intrinsic]
         public static double MaxMagnitudeNumber(double x, double y)
         {
             // This matches the IEEE 754:2019 `maximumMagnitudeNumber` function
@@ -3692,7 +3781,9 @@ namespace System
 
             return y;
         }
+        [Intrinsic]
         public static double MinMagnitude(double x, double y) => Math.MinMagnitude(x, y);
+        [Intrinsic]
         public static double MinMagnitudeNumber(double x, double y)
         {
             // This matches the IEEE 754:2019 `minimumMagnitudeNumber` function
@@ -3716,43 +3807,67 @@ namespace System
 
             return y;
         }
+        [Intrinsic]
         public static double Acos(double v) => (double)Math.Acos(v);
         public static double AcosPi(double v) => Acos(v) / Pi;
+        [Intrinsic]
         public static double Asin(double v) => (double)Math.Asin(v);
         public static double AsinPi(double v) => Asin(v) / Pi;
+        [Intrinsic]
         public static double Atan(double v) => (double)Math.Atan(v);
         public static double AtanPi(double v) => Atan(v) / Pi;
+        [Intrinsic]
         public static double Atan2(double y, double x) => (double)Math.Atan2(y, x);
         public static double Atan2Pi(double y, double x) => Atan2(y, x) / Pi;
+        [Intrinsic]
         public static double Cos(double v) => (double)Math.Cos(v);
+        [Intrinsic]
         public static double Sin(double v) => (double)Math.Sin(v);
         public static (double Sin, double Cos) SinCos(double v) => (Sin(v), Cos(v));
+        [Intrinsic]
         public static double Tan(double v) => (double)Math.Tan(v);
+        [Intrinsic]
         public static double Acosh(double v) => (double)Math.Acosh(v);
+        [Intrinsic]
         public static double Asinh(double v) => (double)Math.Asinh(v);
+        [Intrinsic]
         public static double Atanh(double v) => (double)Math.Atanh(v);
+        [Intrinsic]
         public static double Cosh(double v) => (double)Math.Cosh(v);
+        [Intrinsic]
         public static double Sinh(double v) => (double)Math.Sinh(v);
+        [Intrinsic]
         public static double Tanh(double v) => (double)Math.Tanh(v);
+        [Intrinsic]
         public static double Exp(double v) => (double)Math.Exp(v);
         public static double Exp2(double v) => Math.Exp2(v);
         public static double Exp10(double v) => (double)Math.Pow(10.0, v);
+        [Intrinsic]
         public static double Log(double v) => (double)Math.Log(v);
         public static double Log(double v, double b) => (double)Math.Log(v, b);
+        [Intrinsic]
         public static double Log2(double v) => (double)Math.Log2(v);
+        [Intrinsic]
         public static double Log10(double v) => (double)Math.Log10(v);
+        [Intrinsic]
         public static double Pow(double x, double y) => (double)Math.Pow(x, y);
+        [Intrinsic]
         public static double Cbrt(double v) => (double)Math.Cbrt(v);
+        [Intrinsic]
         public static double Sqrt(double v) => (double)Math.Sqrt(v);
         public static double BitDecrement(double x) => Math.BitDecrement(x);
         public static double BitIncrement(double x) => Math.BitIncrement(x);
+        [Intrinsic]
         public static double FusedMultiplyAdd(double l, double r, double a) => (double)Math.FusedMultiplyAdd(l, r, a);
         public static double Ieee754Remainder(double l, double r) => (double)Math.IEEERemainder(l, r);
         public static int ILogB(double v) => Math.ILogB(v);
         public static double ScaleB(double v, int n) => (double)Math.ScaleB(v, n);
         public static double Round(double v, int d, MidpointRounding m) => (double)Math.Round(v, d, m);
+        [Intrinsic]
         public static double Ceiling(double v) => (double)Math.Ceiling(v);
+        [Intrinsic]
         public static double Floor(double v) => (double)Math.Floor(v);
+        [Intrinsic]
         public static double Truncate(double v) => (double)Math.Truncate(v);
         /// <inheritdoc cref="IFloatingPoint{TSelf}.GetExponentByteCount()" />
         int Numerics.IFloatingPoint<double>.GetExponentByteCount() => sizeof(short);

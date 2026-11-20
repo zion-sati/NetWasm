@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+
+    <!-- .NET 11.0.0's System.Text.Json generator, the one NetWasm.App.Ref ships and the first that states each
+         type's polymorphism in its metadata, which NetWasm's closed world needs (it reads no attributes at run time). -->
+
+    <!-- The acceptance test checks these files to prove that the ordinary SDK
+         System.Text.Json generator ran during the host build. -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="PolymorphismFixture.cs" />
+  </ItemGroup>
+</Project>

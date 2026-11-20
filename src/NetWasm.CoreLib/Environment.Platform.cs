@@ -12,7 +12,7 @@ public static partial class Environment
     private static OperatingSystem? s_osVersion;
     public static OperatingSystem OSVersion => s_osVersion ??= new OperatingSystem(PlatformID.Other, new Version(1, 0, 0, 0));
     // NetWasm reports its own product version, without prerelease or build metadata, rather than
-    // .NET's (owner decision 2026-10-20).
+    // .NET's.
     public static Version Version
     {
         get

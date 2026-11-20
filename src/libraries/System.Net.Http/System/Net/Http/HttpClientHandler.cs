@@ -30,6 +30,7 @@ namespace System.Net.Http
 
 #if TARGET_BROWSER || TARGET_WASI
         private HttpMessageHandler? _firstHandler; // DiagnosticsHandler or MetricsHandler, depending on global configuration.
+        private IMeterFactory? _meterFactory;
 
         private HttpMessageHandler Handler
         {
@@ -47,7 +48,7 @@ namespace System.Net.Http
                 // Since HttpClientHandler.Proxy is unsupported on most platforms, don't bother passing it to telemetry handlers.
                 if (GlobalHttpSettings.MetricsHandler.IsGloballyEnabled)
                 {
-                    handler = new MetricsHandler(handler, meterFactory: null, proxy: null, out _);
+                    handler = new MetricsHandler(handler, _meterFactory, proxy: null, out _);
                 }
                 if (GlobalHttpSettings.DiagnosticsHandler.EnableActivityPropagation)
                 {
@@ -99,6 +100,28 @@ namespace System.Net.Http
         public virtual bool SupportsAutomaticDecompression => HttpHandlerType.SupportsAutomaticDecompression;
         public virtual bool SupportsProxy => HttpHandlerType.SupportsProxy;
         public virtual bool SupportsRedirectConfiguration => HttpHandlerType.SupportsRedirectConfiguration;
+
+        /// <summary>
+        /// Gets or sets the <see cref="IMeterFactory"/> to create a custom <see cref="Meter"/> for the <see cref="HttpClientHandler"/> instance.
+        /// </summary>
+        /// <remarks>
+        /// When <see cref="MeterFactory"/> is set to a non-<see langword="null"/> value, all metrics emitted by the <see cref="HttpClientHandler"/> instance
+        /// will be recorded using the <see cref="Meter"/> provided by the <see cref="IMeterFactory"/>.
+        /// </remarks>
+        [CLSCompliant(false)]
+        public IMeterFactory? MeterFactory
+        {
+            get => _meterFactory;
+            set
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_firstHandler != null)
+                {
+                    throw new InvalidOperationException(SR.net_http_operation_started);
+                }
+                _meterFactory = value;
+            }
+        }
 
         [UnsupportedOSPlatform("browser")]
         public bool UseCookies

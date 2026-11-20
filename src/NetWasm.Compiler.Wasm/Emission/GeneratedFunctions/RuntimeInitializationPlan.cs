@@ -42,6 +42,13 @@ internal sealed record RuntimeInitializationPlan
     public int? SidecarDescriptorAddress { get; init; }
     public int? SidecarSlotAddress { get; init; }
 
-    // The generated function that holds this initialization; every entry calls it.
+    // The generated function every entry calls: it readies the runtime state, then runs the
+    // module initializers, each once.
     public int? InitializerFunctionIndex { get; init; }
+
+    // The generated function that readies the runtime state and runs no managed code. A
+    // component's initialize export calls it during instantiation, which may not wait, while a
+    // module initializer may wait as any entry's code may. Without module initializers it is
+    // the function every entry calls.
+    public int? StateInitializerFunctionIndex { get; init; }
 }

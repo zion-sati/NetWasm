@@ -14,6 +14,8 @@
  * ====================================================
  */
 
+using System.Runtime.CompilerServices;
+
 namespace System;
 
 public static partial class MathF
@@ -30,6 +32,7 @@ public static partial class MathF
     private const float Lg3 = 0.284987866878509521484375f; /* 0x91e9ee.0p-25 */
     private const float Lg4 = 0.2427907884120941162109375f; /* 0xf89e26.0p-26 */
 
+    [Intrinsic]
     public static float Log10(float x)
     {
         uint ix = BitConverter.SingleToUInt32Bits(x);

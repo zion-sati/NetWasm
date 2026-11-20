@@ -40,15 +40,6 @@ internal static class WasmRuntimeImports
             WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4)),
     ];
 
-    public static WasmFunctionImport[] CreateHostInteropByteResultImports() =>
-    [
-        new WasmFunctionImport(RuntimeAbi.HostModule, RuntimeAbi.HostInteropByteLength,
-            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4)),
-        new WasmFunctionImport(RuntimeAbi.HostModule, RuntimeAbi.HostInteropCopyBytes,
-            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4,
-                CliValueKind.ManagedReference)),
-    ];
-
     private static RuntimeImportBinding[] CreateBindings() =>
     [
         .. CreateLegacyBindings(),
@@ -224,6 +215,39 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeTypeIsAssignable,
             WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.I4))),
+        new(RuntimeImportSymbol.AllocateUninitializedValueArray, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeAllocateUninitializedValueArray,
+            WasmFunctionType.Create(
+                CliValueKind.ManagedReference,
+                CliValueKind.I4,
+                CliValueKind.I4,
+                CliValueKind.I4,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.RecordReferenceWrite, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeRecordReferenceWrite,
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.ManagedAddress))),
+        new(RuntimeImportSymbol.RecordReferenceWrites, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeRecordReferenceWrites,
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.ManagedAddress, CliValueKind.NativeInt))),
+        new(RuntimeImportSymbol.GcObjectGeneration, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeGcObjectGeneration,
+            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.ManagedReference))),
+        new(RuntimeImportSymbol.CollectWhenIdle, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeCollectWhenIdle,
+            WasmFunctionType.Create(CliValueKind.I4))),
+        new(RuntimeImportSymbol.CollectWhenQuiet, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeCollectWhenQuiet,
+            WasmFunctionType.Create(CliValueKind.I4))),
+        new(RuntimeImportSymbol.GcCollectYoung, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeGcCollectYoung,
+            WasmFunctionType.Create(CliValueKind.Void))),
     ];
 
     private static RuntimeImportBinding[] CreateLegacyBindings() =>

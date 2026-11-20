@@ -15,9 +15,19 @@ namespace NetWasm.Compiler.Analysis;
 internal sealed class ReachableProgramBuilder(
     IAllocationCapabilityAnalyzer allocationCapabilities,
     IManagedByRefEffectAnalyzer byRefEffects,
-    IDelegateBindingPlanner delegateBindings) :
+    IDelegateBindingPlanner delegateBindings,
+    IObjectDispatchSharing objectDispatchSharing) :
     IReachableProgramBuilder
 {
+    private readonly IAllocationCapabilityAnalyzer _allocationCapabilities = allocationCapabilities ??
+        throw new ArgumentNullException(nameof(allocationCapabilities));
+    private readonly IManagedByRefEffectAnalyzer _byRefEffects = byRefEffects ??
+        throw new ArgumentNullException(nameof(byRefEffects));
+    private readonly IDelegateBindingPlanner _delegateBindings = delegateBindings ??
+        throw new ArgumentNullException(nameof(delegateBindings));
+    private readonly IObjectDispatchSharing _objectDispatchSharing = objectDispatchSharing ??
+        throw new ArgumentNullException(nameof(objectDispatchSharing));
+
     public ReachableProgram Build(
         MethodDefinitionModel? entryPoint,
         ImmutableArray<ProgramExport> exports,
@@ -44,12 +54,12 @@ internal sealed class ReachableProgramBuilder(
             methods.Values.Concat(constructedMethods.Values),
             state.AllocatedTypes);
 
-        var capabilities = allocationCapabilities.Analyze(
+        var capabilities = _allocationCapabilities.Analyze(
             new AllocationCapabilityAnalysisRequest(
                 methods,
                 constructedMethods,
                 dispatchCallSites));
-        var managedByRefEffects = byRefEffects.Analyze(
+        var managedByRefEffects = _byRefEffects.Analyze(
             new ManagedByRefEffectAnalysisRequest(
                 methods,
                 constructedMethods,
@@ -74,7 +84,7 @@ internal sealed class ReachableProgramBuilder(
             .Select(site => site.Target)
             .Concat(state.HostCallbacks.Select(callback => callback.Invoke))
             .Concat(state.MemberExecution.DelegateInvocation?.Methods.Values ?? []);
-        var plannedDelegateBindings = delegateBindings.Plan(
+        var plannedDelegateBindings = _delegateBindings.Plan(
             delegateInvokeMethods,
             state.CallableMethods.Values);
 
@@ -108,6 +118,7 @@ internal sealed class ReachableProgramBuilder(
             StructMarshallingTypes = [.. state.StructMarshallingTypes
                 .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
             StructMarshallingFieldNames = state.StructMarshallingFieldNames,
+            StructMarshallingConstructors = state.StructMarshallingConstructors,
             MethodContributions = state.Contributions,
             ModuleInitializers = [
                 .. state.ModuleInitializers
@@ -118,6 +129,7 @@ internal sealed class ReachableProgramBuilder(
             MethodInstances = state.MethodInstances,
             ConstructedTypes = state.ConstructedTypes,
             RuntimeTypeDefinitions = state.RuntimeTypeDefinitions,
+            RuntimeTypes = state.RuntimeTypes,
             ConstructedAllocatingMethods = constructedAllocatingMethods,
             ConstructedRootMaps = constructedRootMaps,
             ConstructedFields = state.ConstructedFields,
@@ -135,6 +147,9 @@ internal sealed class ReachableProgramBuilder(
             RequiresElementTypes = state.RequiresElementTypes,
             RequiresTypeAttributes = state.RequiresTypeAttributes,
             RequiresInterfaces = state.RequiresInterfaces,
+            RequiresManifestResources = state.RequiresManifestResources,
+            RequiresAssemblyNames = state.RequiresAssemblyNames,
+            RequiresAssemblyEnumeration = state.RequiresAssemblyEnumeration,
             ConstructedStaticInitializers = [
                 ..state.ConstructedStaticInitializers
                     .Order(StringComparer.Ordinal)
@@ -170,15 +185,15 @@ internal sealed class ReachableProgramBuilder(
         ImmutableDictionary<RootSource, int>.Empty,
         ImmutableDictionary<int, SafepointRootMap>.Empty);
 
-    // An unbounded virtual call on object with many targets uses the shared body the analysis reached for it; the
-    // shared body's own call dispatches.
-    private static bool SharesObjectDispatch(
+    // An unbounded virtual call on object with as many targets as the preset shares at uses the shared body the
+    // analysis reached for it; the shared body's own call dispatches.
+    private bool SharesObjectDispatch(
         DispatchDeclaration declaration,
         ImmutableArray<DispatchTargetModel> targets,
         ReachabilityLedgerSnapshot state) =>
         declaration.Operation == CilOperation.CallVirtual &&
         declaration.ReceiverBound is null &&
-        !targets.IsDefault && targets.Length >= SharedDispatchPolicy.MinimumTargets &&
+        !targets.IsDefault && _objectDispatchSharing.Shares(targets.Length) &&
         state.SharedObjectDispatch.TryGetValue(declaration.Declaration.CanonicalName, out var shared) &&
         declaration.Caller != shared.CanonicalName;
 }

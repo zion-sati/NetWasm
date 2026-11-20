@@ -34,7 +34,7 @@ internal interface IManagedMethodEmitter
         AddressTakenAggregatePromotionPlan? addressTakenAggregatePromotions = null,
         ManagedByRefAggregatePromotionPlan? managedByRefAggregatePromotions = null,
         ManagedAggregateSsaPlan? managedAggregateValues = null,
-        bool enableBranchValueFramePlacement = false,
+        BranchPrefixDuplicationPolicy branchPrefixDuplication = BranchPrefixDuplicationPolicy.Disabled,
         bool enableArrayMetadataCaching = false,
         bool enableScalarCallPreservation = false,
         bool hoistArrayNullChecks = false,

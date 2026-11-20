@@ -136,6 +136,9 @@ public enum CilOperation
     MaterializeField,
     GetTypeFacts,
     LoadStaticDataElement,
+    // value-if-true, value-if-false, condition (int32) -> the first when the condition is not zero, as Wasm's
+    // select: the compiler's form of a branch whose arms only compute numbers, which it runs without branching.
+    Select,
 }
 
 public abstract record CilOperand
@@ -204,6 +207,11 @@ public sealed record CilMethodBody(
 
     public MethodInstanceModel? MethodInstance { get; init; }
 
+    // A class constructor whose this is a young object when it starts: every way the program reaches it passes an
+    // object allocated since the last collection. Its stores into this before its first safepoint need not be
+    // recorded for a collector with generations. It depends on the rest of the program, as a proof does.
+    public bool YoungThisAtEntry { get; init; }
+
     public ImmutableArray<CliTypeIdentity> LocalSignatureTypes { get; init; } =
         [.. Locals.Select(CliTypeIdentity.FromStackKind)];
 
@@ -212,6 +220,47 @@ public sealed record CilMethodBody(
     // The locals the signature pins: each keeps what it holds alive until it is
     // overwritten, though the code reads it only once to take an address.
     public ImmutableHashSet<int> PinnedLocals { get; init; } = [];
+
+    // The header's localsinit flag (C# sets it unless SkipLocalsInit applies): locals start zeroed
+    // and localloc returns zeroed memory (ECMA-335 II.24.4.4, III.3.47).
+    public bool InitializesLocals { get; init; }
+
+    // Set when the method's IL names a member its declaring type lacks: the body then only throws
+    // MissingMethodException or MissingFieldException, as .NET throws when it first compiles such a method.
+    public MissingMemberReference? MissingMember { get; init; }
+}
+
+public enum MissingMemberKind
+{
+    Method,
+    Field,
+    // A type the IL names that its assembly lacks.
+    Type,
+}
+
+// A member a method's IL names that its resolved declaring type lacks, or a type its assembly lacks: the member or
+// type as the reference names it, where the method names it, and the NW1016 message that reports it.
+public sealed record MissingMemberReference(MissingMemberKind Kind, string Member, string Method, int IlOffset,
+    string Message)
+{
+    // For a missing type, the assembly the reference names.
+    public string? Assembly { get; init; }
+
+    // The message .NET's MissingMethodException, MissingFieldException or TypeLoadException carries for it.
+    public string ExceptionMessage => Kind switch
+    {
+        MissingMemberKind.Method => $"Method not found: '{Member}'.",
+        MissingMemberKind.Field => $"Field not found: '{Member}'.",
+        _ => $"Could not load type '{Member}' from assembly '{Assembly}'.",
+    };
+
+    // The exception a call of the method throws.
+    public string ExceptionType => Kind switch
+    {
+        MissingMemberKind.Method => "System.MissingMethodException",
+        MissingMemberKind.Field => "System.MissingFieldException",
+        _ => "System.TypeLoadException",
+    };
 }
 
 public enum CilExceptionRegionKind

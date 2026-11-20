@@ -10,6 +10,9 @@ const FINALIZER = 2 ** 29;
 const VALUE_LAYOUT = 2 ** 30;
 const REGISTERED = 2 ** 31;
 const INTERFACE = 4;
+// RuntimeTypeTableEncoder.Format, and its header's HeaderFields 32-bit fields, then the flag words.
+const FORMAT = 2;
+const HEADER_BITS = 21 * 32;
 
 const reader = (bytes, table) => {
   const read = (offset, width) => {
@@ -72,7 +75,7 @@ const readRuntimeTypeTable = (bytes, table) => {
       for (let index = 0; index < count; index++, lists += idBits) ids.add(read(lists, idBits));
     }
     if (flagIndex === 0) continue;
-    const flags = read(640 + flagIndex * 32, 32);
+    const flags = read(HEADER_BITS + flagIndex * 32, 32);
     const layout = header(10) + read(shape + flagIndexBits, layoutIndexBits) * layoutBits;
     types.push({
       type,
@@ -133,8 +136,8 @@ const encodeRuntimeTypeTable = types => {
   const lengthBits = width(Math.max(0, ...lengths));
   const poolBits = lengths.reduce((total, length) => total + lengthBits + length, 0);
   const poolOffsetBits = width(poolBits);
-  for (let field = 0; field < 20; field++) write(0, 32);
-  patch(0, 1);
+  for (let field = 0; field < HEADER_BITS / 32; field++) write(0, 32);
+  patch(0, FORMAT);
   patch(32, capacity);
   patch(64, idBits + shapeIndexBits * 64 + flagIndexBits * 4096 + layoutIndexBits * 262144 +
     (flagIndexBits + layoutIndexBits) * 16777216);

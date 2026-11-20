@@ -9,26 +9,21 @@ namespace NetWasm.Compiler.Core.NativeInterop;
 
 public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggregates) : INativeAbiSignaturePlanner
 {
-    // The signature headers of an unmanaged function pointer the C ABI calls: C, StdCall and ThisCall
-    // (0x01 to 0x03), and Unmanaged, whose return type's modifiers name its CallConv types.
-    private const byte CdeclFunctionPointerHeader = 0x01;
-    private const byte ThiscallFunctionPointerHeader = 0x03;
-    private const byte UnmanagedFunctionPointerHeader = 0x09;
-
     private readonly INativeAggregateAbiPlanner _aggregates =
         aggregates ?? throw new ArgumentNullException(nameof(aggregates));
 
     public NativeAbiSignaturePlan Plan(
         MethodSignatureModel signature,
         NativeAbiSignatureKind kind,
-        string methodName)
+        string methodName,
+        NativeMarshallingRules rules = NativeMarshallingRules.Runtime)
     {
         ArgumentNullException.ThrowIfNull(signature);
         ArgumentException.ThrowIfNullOrWhiteSpace(methodName);
         if (kind is not (NativeAbiSignatureKind.Import or NativeAbiSignatureKind.Callback))
             throw new ArgumentOutOfRangeException(nameof(kind));
 
-        var result = PlanType(signature.ReturnSignatureType, kind, methodName, isReturn: true);
+        var result = PlanType(signature.ReturnSignatureType, kind, methodName, rules, isReturn: true);
         var physicalParameters = ImmutableArray.CreateBuilder<CliTypeIdentity>();
         var parameters = ImmutableArray.CreateBuilder<NativeAbiParameterPlan>();
         int? hiddenResult = null;
@@ -39,7 +34,7 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
         }
         for (var index = 0; index < signature.ParameterSignatureTypes.Length; index++)
         {
-            var value = PlanType(signature.ParameterSignatureTypes[index], kind, methodName, isReturn: false);
+            var value = PlanType(signature.ParameterSignatureTypes[index], kind, methodName, rules, isReturn: false);
             int? physicalIndex = null;
             if (value.Kind != NativeAbiValueKind.IgnoredAggregate)
             {
@@ -59,20 +54,23 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
         CliTypeIdentity type,
         NativeAbiSignatureKind kind,
         string methodName,
+        NativeMarshallingRules rules,
         bool isReturn)
     {
         if (type.Shape == CliTypeShape.UnmanagedPointer && !type.ContainsGenericParameters)
             return new(NativeAbiValueKind.Scalar, type, CliTypeIdentity.FromStackKind(CliValueKind.NativeInt));
 
-        if (!isReturn && kind == NativeAbiSignatureKind.Import &&
-            type.Shape == CliTypeShape.ManagedByReference &&
-            type.ElementType!.Shape == CliTypeShape.Primitive && NativeAbiScalars.IsBlittable(type.ElementType))
+        // A ref, in or out of a blittable value pins its storage and passes its address, as desktop .NET's runtime
+        // marshalling does: a scalar, a pointer, an unmanaged function pointer or a struct the C ABI lays out. Under
+        // disabled runtime marshalling desktop .NET rejects it.
+        if (!isReturn && kind == NativeAbiSignatureKind.Import && rules == NativeMarshallingRules.Runtime &&
+            type.Shape == CliTypeShape.ManagedByReference && PinsByReference(type.ElementType!, methodName, rules))
             return new(NativeAbiValueKind.Scalar, type, CliTypeIdentity.FromStackKind(CliValueKind.NativeInt));
 
         if (!isReturn && kind == NativeAbiSignatureKind.Import &&
             type.Shape == CliTypeShape.FunctionPointer)
         {
-            ValidateFunctionPointer(type, methodName);
+            ValidateFunctionPointer(type, methodName, rules);
             return new(
                 NativeAbiValueKind.Scalar,
                 type,
@@ -80,29 +78,51 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
         }
 
         if (type.Shape == CliTypeShape.Primitive &&
-            (NativeAbiScalars.IsBlittable(type) || isReturn && type.StackKind == CliValueKind.Void))
+            (NativeAbiScalars.IsBlittable(type, rules) || isReturn && type.StackKind == CliValueKind.Void))
             return new(type.StackKind == CliValueKind.Void ? NativeAbiValueKind.Void : NativeAbiValueKind.Scalar,
                 type, type.StackKind == CliValueKind.Void ? null : type);
 
-        if (kind == NativeAbiSignatureKind.Import && type.IsValueType &&
-            type.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation)
-            return _aggregates.Plan(type, methodName);
+        // A struct by value, as a parameter or result, of an import or of a callback the C ABI calls.
+        if (type.IsValueType && type.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation)
+            return _aggregates.Plan(type, methodName, rules);
 
         throw new CompilerException(new(DiagnosticCode.NativeInterop,
             "The native ABI requires qualified scalars, pointers or blittable aggregate layouts; scalar ref/out is supported only for imports.",
             methodName));
     }
 
+    private bool PinsByReference(CliTypeIdentity element, string methodName, NativeMarshallingRules rules)
+    {
+        if (element.ContainsGenericParameters)
+            return false;
+        switch (element.Shape)
+        {
+            case CliTypeShape.Primitive:
+                return NativeAbiScalars.IsBlittable(element);
+            case CliTypeShape.UnmanagedPointer:
+                return true;
+            case CliTypeShape.FunctionPointer:
+                ValidateFunctionPointer(element, methodName, rules);
+                return true;
+            case CliTypeShape.Named or CliTypeShape.GenericInstantiation when element.IsValueType:
+                // The aggregate planner rejects a struct whose layout is not the C ABI's.
+                _aggregates.Plan(element, methodName, rules);
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private void ValidateFunctionPointer(
         CliTypeIdentity type,
-        string methodName)
+        string methodName,
+        NativeMarshallingRules rules)
     {
         var pointer = type.FunctionPointerSignature!;
         if (type.ContainsGenericParameters || pointer.GenericArity != 0 ||
             pointer.RequiredParameterCount !=
             pointer.Signature.ParameterSignatureTypes.Length ||
-            pointer.Header is not (>= CdeclFunctionPointerHeader and <= ThiscallFunctionPointerHeader or
-                UnmanagedFunctionPointerHeader))
+            !UnmanagedCallingConventions.IsUnmanagedHeader(pointer.Header))
         {
             throw UnsupportedFunctionPointer(methodName);
         }
@@ -118,7 +138,7 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
             }
             returnType = returnType.ElementType!;
         }
-        if (pointer.Header == UnmanagedFunctionPointerHeader &&
+        if (pointer.Header == UnmanagedCallingConventions.UnmanagedHeader &&
             UnmanagedCallingConventions.Unsupported(conventions) is not null)
         {
             throw UnsupportedFunctionPointer(methodName);
@@ -129,7 +149,8 @@ public sealed class NativeAbiSignaturePlanner(INativeAggregateAbiPlanner aggrega
                 returnType,
                 pointer.Signature.ParameterSignatureTypes),
             NativeAbiSignatureKind.Callback,
-            methodName);
+            methodName,
+            rules);
     }
 
     private static CompilerException UnsupportedFunctionPointer(string methodName) =>

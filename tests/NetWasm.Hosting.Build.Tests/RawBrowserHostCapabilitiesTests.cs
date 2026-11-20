@@ -52,8 +52,10 @@ public sealed class RawBrowserHostCapabilitiesTests
         var text = source.ToString();
         Assert.Contains("import { createWasiPlatform, webPlatform } from \"netwasm:runtime/page\";", text,
             StringComparison.Ordinal);
-        Assert.Contains("import { createBrowserFileMounts, createWasiFilesystem } from \"netwasm:runtime/filesystem\";", text,
-            StringComparison.Ordinal);
+        Assert.Contains("import { createBrowserFileMounts, createBrowserSidecarMaterializer, createWasiFilesystem } from " +
+            "\"netwasm:runtime/filesystem\";", text, StringComparison.Ordinal);
+        // Sidecars mount in the filesystem scope, so the materializer comes with it.
+        Assert.Contains("createSidecarMaterializer: createBrowserSidecarMaterializer,", text, StringComparison.Ordinal);
         // The in-memory tree (#142): a read-write root holding /tmp and what the page mounts.
         Assert.Contains("createFilesystemScope: preopens => createWasiFilesystem(Object.freeze({ hostFiles: fileMounts.hostFiles, " +
             "preopens: Object.freeze([...preopens, Object.freeze({ access: \"readWrite\", guestPath: \"/\", hostPath: \"/\" })]) })),",
@@ -77,6 +79,7 @@ public sealed class RawBrowserHostCapabilitiesTests
         BrowserHostSource.AppendRawPlatformMembers(minimal, "", withoutFilesystem);
         Assert.DoesNotContain("netwasm:runtime/filesystem", minimal.ToString(), StringComparison.Ordinal);
         Assert.Contains("createFilesystemScope: null,", minimal.ToString(), StringComparison.Ordinal);
+        Assert.Contains("createSidecarMaterializer: null,", minimal.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
