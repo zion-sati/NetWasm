@@ -71,19 +71,19 @@ framework builds one: the row, its label, two closures and a binding object):
 
 | Program | NetWasmGC | NetWasmGen | |
 | --- | ---: | ---: | --- |
-| 150,000 rows kept while 250 MB of short-lived arrays and strings pass through | 205.2 ms | 67.5 ms | 3.0 times as fast |
-| 40,000 rows kept while 200 MB pass through | 118.0 ms | 39.1 ms | 3.0 times as fast |
-| binary-trees at depth 16: one long-lived tree, many short-lived ones | 182.5 ms | 102.8 ms | 1.8 times as fast |
-| binary-trees at depth 18 | 1,216.2 ms | 781.7 ms | 1.6 times as fast |
-| a one-off peak of 600,000 rows that all die, then 200 MB passing through 40,000 kept rows (only the latter timed) | 48.6 ms | 32.6 ms | 1.5 times as fast |
-| 550,000 rows kept while 300 MB pass through | 222.9 ms, 279 MiB | 169.1 ms, 119 MiB | 1.3 times as fast, 57% less memory |
-| 40,000 requests, each building lists, strings and a dictionary, one in a hundred kept | 86.0 ms, 15.3 MiB | 90.1 ms, 7.4 MiB | 5% slower, half the memory |
-| 5,000 frames, each making 512 objects and keeping 64 of them in place of older ones | 47.5 ms | 49.1 ms | 3% slower |
-| 7,000 rows replaced wholesale 30 times | 9.7 ms | 10.6 ms | 10% slower |
-| 55,000 rows built once and kept, one collection | 4.5 ms | 5.0 ms | 12% slower |
+| 150,000 rows kept while 250 MB of short-lived arrays and strings pass through | 204.0 ms | 67.1 ms | 3.0 times as fast |
+| 40,000 rows kept while 200 MB pass through | 118.5 ms | 39.3 ms | 3.0 times as fast |
+| binary-trees at depth 16: one long-lived tree, many short-lived ones | 182.3 ms | 102.8 ms | 1.8 times as fast |
+| binary-trees at depth 18 | 1,218.0 ms | 782.7 ms | 1.6 times as fast |
+| a one-off peak of 600,000 rows that all die, then 200 MB passing through 40,000 kept rows (only the latter timed) | 48.3 ms | 32.5 ms | 1.5 times as fast |
+| 550,000 rows kept while 300 MB pass through | 223.5 ms, 279 MiB | 169.3 ms, 119 MiB | 1.3 times as fast, 57% less memory |
+| 40,000 requests, each building lists, strings and a dictionary, one in a hundred kept | 86.0 ms, 15.3 MiB | 90.3 ms, 7.4 MiB | 5% slower, half the memory |
+| 5,000 frames, each making 512 objects and keeping 64 of them in place of older ones | 47.8 ms | 49.0 ms | 3% slower |
+| 7,000 rows replaced wholesale 30 times | 9.7 ms | 10.7 ms | 10% slower |
+| 55,000 rows built once and kept, one collection | 4.5 ms | 5.1 ms | 14% slower |
 
 Across 57 such programs, NetWasmGen takes 0.93 of NetWasmGC's time and 0.97 of
-its memory; 27 are more than 3% slower, none more than 12%, and none uses more
+its memory; 27 are more than 3% slower, none more than 14%, and none uses more
 than 3% more memory. The figures are medians of seven rounds of each program's
 timed region, with the order of the two builds rotating each round, on an Apple
 M1 Max under Wasmtime 50.0.1, built at `O3`; memory is each run's peak linear
@@ -106,26 +106,34 @@ order on every sample. Every cell used the same managed program and the `O3`
 compiler profile, and every result matched the same program on desktop .NET;
 lower is better.
 
-| Collector | Full transaction | Retained object graph | UI-style object churn |
-| --- | ---: | ---: | ---: |
-| Bump | 24.11 ms | 3.83 ms | 8.34 ms |
-| NetWasmGC | 26.84 ms | 3.95 ms | 5.34 ms |
-| Compact | 40.85 ms | 12.03 ms | 20.12 ms |
+| Collector | Full transaction | Retained object graph | UI-style object churn | Binary trees |
+| --- | ---: | ---: | ---: | ---: |
+| Bump | 23.26 ms | 3.64 ms | 8.23 ms | 33.28 ms |
+| NetWasmGC | 26.87 ms | 4.24 ms | 5.00 ms | 24.23 ms |
+| NetWasmGen | 27.29 ms | 4.31 ms | 5.20 ms | **19.79 ms** |
+| Compact | 39.94 ms | 11.75 ms | 19.64 ms | 111.80 ms |
 
 The full transaction creates 100,000 transactions, normalizes their account
 strings and aggregates them into growing containers, with allocation and
-collection inside the timed region. Bump is not an equivalent lifetime choice:
-it never collects or reclaims managed objects. Nor is it always fastest. On UI
-churn, where Bump grows to 20 MiB while NetWasmGC reuses 7.3 MiB, NetWasmGC
-takes less time.
+collection inside the timed region. Binary trees keeps one long-lived tree while
+it builds and drops many short-lived ones, at depth 14: the shape NetWasmGen is
+for, where it takes 0.82 of NetWasmGC's time and a fifth of Compact's. On the other
+three, which keep little alive while they churn or build data they keep,
+NetWasmGen is within 5% of NetWasmGC; see
+[when to choose NetWasmGen](#when-to-choose-netwasmgen) for larger heaps. Bump is
+not an equivalent lifetime choice: it never collects or reclaims managed
+objects. Nor is it always fastest. On UI churn, where Bump grows to 20 MiB while
+NetWasmGC reuses 7.3 MiB, and on binary trees, where it grows to 52 MiB, the
+tracing collectors take less time.
 
 The same artifacts reached this aggregate Wasm linear memory capacity:
 
-| Collector | Full transaction | Retained object graph | UI-style object churn |
-| --- | ---: | ---: | ---: |
-| Bump | 20.375 MiB | 12.375 MiB | 20 MiB |
-| NetWasmGC | 20.9375 MiB | 15.6875 MiB | 7.3125 MiB |
-| Compact | 17.4375 MiB | 11.8125 MiB | 1.6875 MiB |
+| Collector | Full transaction | Retained object graph | UI-style object churn | Binary trees |
+| --- | ---: | ---: | ---: | ---: |
+| Bump | 20.375 MiB | 16.375 MiB | 20 MiB | 52 MiB |
+| NetWasmGC | 20.9375 MiB | 15.6875 MiB | 7.3125 MiB | 7.25 MiB |
+| NetWasmGen | 21.125 MiB | 15.8125 MiB | 7.4375 MiB | 7.4375 MiB |
+| Compact | 17.9375 MiB | 12.5 MiB | 1.6875 MiB | 3.25 MiB |
 
 This is whole-invocation linear-memory capacity, not live managed bytes, host
 RSS or a promised ceiling. Each figure repeated exactly across runs. It makes
@@ -133,8 +141,9 @@ the tradeoffs visible: Bump keeps growing because it never reclaims, and Compact
 trades throughput for the smallest tracing-collector artifact.
 
 The corresponding complete Console `42` components, published with the SDK at
-`Oz`, are 23,810 bytes for Bump (9,870 with Brotli quality 11), 28,383 for
-Compact (11,992) and 32,159 for NetWasmGC (13,478). See
+`Oz`, are 22,981 bytes for Bump (9,523 with Brotli quality 11), 27,583 for
+Compact (11,525), 31,588 for NetWasmGC (13,312) and 34,930 for NetWasmGen
+(14,709). See
 [Size and methodology](size-and-methodology.md#collector-selection-and-compression)
 for the exact size boundary. Timing and file size measure
 different things; neither table is a universal collector ranking.

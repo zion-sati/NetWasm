@@ -26,6 +26,21 @@ class CiImpactTests(unittest.TestCase):
 
         self.assertEqual("docs", IMPACT.classify(changes))
 
+    def test_documentation_images_are_documentation_only(self):
+        changes = [
+            IMPACT.Change("docs/images/chart-new.svg", None, b"<svg/>"),
+            IMPACT.Change("docs/images/chart-old.svg", b"<svg/>", None),
+            IMPACT.Change("docs/images/photo.PNG", b"old", b"new"),
+            IMPACT.Change("README.md", b"old", b"new"),
+        ]
+
+        self.assertEqual("docs", IMPACT.classify(changes))
+
+    def test_images_outside_documentation_are_full(self):
+        for path in ("src/NetWasm.Templates/icon.png", "eng/images/chart.svg", "docs-site/logo.svg"):
+            with self.subTest(path=path):
+                self.assertEqual("full", IMPACT.classify([IMPACT.Change(path, b"old", b"new")]))
+
     def test_package_description_only_is_documentation(self):
         before = b"<Project><PropertyGroup><Version>1</Version><Description>Before</Description></PropertyGroup></Project>"
         after = b"<Project><PropertyGroup><Version>1</Version><Description>After</Description></PropertyGroup></Project>"
@@ -107,6 +122,13 @@ class CiImpactTests(unittest.TestCase):
             )
             IMPACT.verify_changed_markdown_links(root, [change])
             broken = IMPACT.Change("docs/index.md", b"old", b"[Bad](missing.md)\n")
+            with self.assertRaisesRegex(ValueError, "broken local Markdown link"):
+                IMPACT.verify_changed_markdown_links(root, [broken])
+            (root / "docs/images").mkdir()
+            (root / "docs/images/chart.svg").write_text("<svg/>")
+            shown = IMPACT.Change("docs/index.md", b"old", b"![A chart](images/chart.svg)\n")
+            IMPACT.verify_changed_markdown_links(root, [shown])
+            broken = IMPACT.Change("docs/index.md", b"old", b"![A chart](images/renamed.svg)\n")
             with self.assertRaisesRegex(ValueError, "broken local Markdown link"):
                 IMPACT.verify_changed_markdown_links(root, [broken])
 

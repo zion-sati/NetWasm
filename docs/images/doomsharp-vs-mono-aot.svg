@@ -1,0 +1,53 @@
+<svg role="img" aria-labelledby="chart-title chart-description"
+     xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600">
+  <title id="chart-title">DoomSharp in the browser: NetWasm against Mono AOT, faster and a fraction of the download</title>
+  <desc id="chart-description">DoomSharp, David Fowler's C# Doom engine, in headless Chromium on an Apple M1 Max. Rendering 120 frames, warmed up, takes 1,686 ms with NetWasm and 2,311 ms with its Blazor WebAssembly build, which is Mono AOT. The page downloads 0.49 MiB with NetWasm and 4.03 MiB with Mono AOT, every file it loads compressed at Brotli quality 11, not counting the game's WAD file, which both load. Lower is better.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="960" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#080b10"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="netwasm-bar" x1="90" y1="0" x2="870" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06b6d4"/>
+      <stop offset="1" stop-color="#67e8f9"/>
+    </linearGradient>
+    <linearGradient id="mono-bar" x1="90" y1="0" x2="870" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5b3fa8"/>
+      <stop offset="1" stop-color="#b19aff"/>
+    </linearGradient>
+    <filter id="bar-shadow" x="-10%" y="-60%" width="120%" height="220%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.38"/>
+    </filter>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .muted { fill: #94a3b8; }
+      .section { font-size: 12px; font-weight: 800; letter-spacing: 1.7px; }
+      .label { fill: #f8fafc; font-size: 17px; font-weight: 700; }
+      .value { fill: #e2e8f0; font-size: 15px; font-weight: 700; text-anchor: end; }
+    </style>
+  </defs>
+
+  <rect width="960" height="600" rx="22" fill="url(#background)"/>
+
+  <text x="90" y="46" class="muted" font-size="15">DOOMSHARP IN CHROMIUM  /  NETWASM VS MONO AOT  /  LOWER IS BETTER</text>
+  <text x="90" y="103" fill="#67e8f9" font-size="44" font-weight="820">Faster than Mono AOT</text>
+  <text x="90" y="145" fill="#f8fafc" font-size="28" font-weight="760">with an eighth of the download</text>
+
+  <text x="90" y="205" fill="#67e8f9" class="section">RENDER 120 FRAMES, WARMED UP</text>
+  <text x="90" y="240" class="label">NetWasm</text>
+  <text x="870" y="240" class="value">1,686 ms</text>
+  <rect x="90" y="252" width="526.2" height="26" rx="6" fill="url(#netwasm-bar)" stroke="#67e8f9" filter="url(#bar-shadow)"/>
+  <text x="90" y="310" class="label">Mono AOT (Blazor WebAssembly)</text>
+  <text x="870" y="310" class="value">2,311 ms</text>
+  <rect x="90" y="322" width="721.2" height="26" rx="6" fill="url(#mono-bar)" stroke="#b19aff" filter="url(#bar-shadow)"/>
+
+  <text x="90" y="395" fill="#67e8f9" class="section">DOWNLOAD, BROTLI 11</text>
+  <text x="90" y="430" class="label">NetWasm</text>
+  <text x="870" y="430" class="value">0.49 MiB</text>
+  <rect x="90" y="442" width="85.0" height="26" rx="6" fill="url(#netwasm-bar)" stroke="#67e8f9" filter="url(#bar-shadow)"/>
+  <text x="90" y="500" class="label">Mono AOT (Blazor WebAssembly)</text>
+  <text x="870" y="500" class="value">4.03 MiB</text>
+  <rect x="90" y="512" width="699.2" height="26" rx="6" fill="url(#mono-bar)" stroke="#b19aff" filter="url(#bar-shadow)"/>
+
+  <text x="90" y="575" class="muted" font-size="12">Apple M1 Max, headless Chromium, median of six page loads. Download: every file the page loads, not counting the game's WAD, which both load.</text>
+</svg>

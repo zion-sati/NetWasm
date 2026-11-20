@@ -48,12 +48,16 @@ Median render time of 120 frames, with the fastest and slowest sample:
 | Desktop .NET 11 JIT, default tiering | 1,054 | 1,036–1,094 | 1.50 |
 | Desktop .NET 11 NativeAOT | 1,192 | 1,175–1,265 | 1.33 |
 
-In a browser, DoomSharp's own NetWasm build
-([davidfowl/doomsharp#60](https://github.com/davidfowl/doomsharp/pull/60),
-NetWasm 0.11.1 at `O3` with NetWasmGC) renders 120 frames 1.28 times faster
-than its Blazor WebAssembly AOT build in headless Chromium: 1,750 ms against
-2,236 ms on the same Apple M1 Max, from 0.69 MiB of Brotli-compressed files
-against 3.67 MiB.
+In a browser, DoomSharp's NetWasm build at `O3` with NetWasmGC and type names
+off renders 120 frames 1.37 times as fast as its Blazor WebAssembly AOT build,
+which is Mono AOT, in headless Chromium on the same Apple M1 Max: 1,686.4 ms
+against 2,311.4 ms. The NetWasm page downloads 0.49 MiB and the Mono AOT page
+4.03 MiB: every file each page loads, compressed at Brotli quality 11, not
+counting the game's WAD file, which both load. Each build was timed warm, as js-framework-benchmark times its
+cases: on each of six page loads, alternating the builds, five untimed rounds,
+a wait until the browser was idle so V8's background compilation finished, then
+seven timed rounds; the figure is the median of the six loads' medians, and
+every round's pixel checksum matched.
 
 ## NetWasm workloads
 
