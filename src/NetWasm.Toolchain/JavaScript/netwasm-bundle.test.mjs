@@ -75,7 +75,7 @@ test("bundles the runtime facades into the same files from any directory", async
     const files = outputs[0];
     const runtime = JSON.parse(files["runtime.json"]);
     assert.deepEqual(Object.keys(runtime.modules), ["page", "worker"]);
-    assert.equal(runtime.schemaVersion, 1);
+    assert.equal(runtime.schemaVersion, 2);
     const shared = runtime.modules.page.files.filter(file => file !== runtime.modules.page.file);
     assert.equal(shared.length, 1);
     assert.match(shared[0], /^netwasm\.runtime\.[\w-]+\.mjs$/u);
@@ -95,12 +95,14 @@ test("bundles the runtime facades into the same files from any directory", async
 });
 
 // A runtime module's files are what it loads when it loads: a chunk its code imports only when it first needs it
-// (failure handling, a fallback) is written beside it but not preloaded.
-test("lists a runtime module's static files and leaves lazily loaded chunks out", async () => {
+// (failure handling, a fallback) is not preloaded, but is listed as a lazy file, which a deployment publishes.
+test("lists a runtime module's static files and its lazily loaded chunks apart", async () => {
   await withDirectory(async directory => {
     const sources = path.join(directory, "package");
     await writeSources(sources);
-    await writeFile(path.join(sources, "lazy.mjs"), "export function lazy() { return \"loaded on demand\"; }\n");
+    // The lazy chunk imports the shared chunk the page already loads, which stays one of the page's files.
+    await writeFile(path.join(sources, "lazy.mjs"),
+      "import { shared } from \"./shared.mjs\";\nexport function lazy() { return shared(\"loaded on demand\"); }\n");
     await writeFile(path.join(sources, "page-only.mjs"),
       "import { shared } from \"./shared.mjs\";\n"
       + "export function page() { return shared(\"page\"); }\n"
@@ -118,8 +120,11 @@ test("lists a runtime module's static files and leaves lazily loaded chunks out"
     const runtime = JSON.parse(files["runtime.json"]);
     const lazy = Object.keys(files).filter(name => files[name].includes("loaded on demand"));
     assert.equal(lazy.length, 1);
+    assert.equal(runtime.schemaVersion, 2);
     assert.ok(!runtime.modules.page.files.includes(lazy[0]));
+    assert.deepEqual(runtime.modules.page.lazyFiles, [lazy[0]]);
     assert.ok(!runtime.modules.worker.files.includes(lazy[0]));
+    assert.deepEqual(runtime.modules.worker.lazyFiles, []);
   });
 });
 

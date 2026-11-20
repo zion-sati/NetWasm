@@ -29,4 +29,3 @@ internal interface IHostCallbackHostObjectArgumentMarshaller
         int destination,
         OptionalFunctionIndex throwFunction);
 }
-

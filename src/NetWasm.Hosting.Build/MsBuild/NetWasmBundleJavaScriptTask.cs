@@ -40,9 +40,14 @@ public sealed class NetWasmBundleJavaScriptTask : Microsoft.Build.Utilities.Task
     // The runtime files the bundle loads, each with its RelativePath.
     [Output] public ITaskItem[] RuntimeFiles { get; private set; } = [];
 
+    // The runtime files the bundle loads only when its code first needs them, each with its RelativePath: published
+    // beside the runtime files, but not preloaded.
+    [Output] public ITaskItem[] LazyRuntimeFiles { get; private set; } = [];
+
     public override bool Execute()
     {
         RuntimeFiles = [];
+        LazyRuntimeFiles = [];
         try
         {
             var request = new JavaScriptBundleRequest(
@@ -53,13 +58,15 @@ public sealed class NetWasmBundleJavaScriptTask : Microsoft.Build.Utilities.Task
                 Platform,
                 Minify);
             var runtimeFiles = Array.Empty<ITaskItem>();
+            var lazyRuntimeFiles = Array.Empty<ITaskItem>();
             if (RuntimeManifestPath.Length != 0)
             {
-                (request, runtimeFiles) = UseRuntime(request);
+                (request, runtimeFiles, lazyRuntimeFiles) = UseRuntime(request);
             }
             _bundler.Bundle(request);
             BundlePath = request.OutputPath;
             RuntimeFiles = runtimeFiles;
+            LazyRuntimeFiles = lazyRuntimeFiles;
             return true;
         }
         catch (Exception exception)
@@ -69,7 +76,8 @@ public sealed class NetWasmBundleJavaScriptTask : Microsoft.Build.Utilities.Task
         }
     }
 
-    private (JavaScriptBundleRequest Request, ITaskItem[] Files) UseRuntime(JavaScriptBundleRequest request)
+    private (JavaScriptBundleRequest Request, ITaskItem[] Files, ITaskItem[] LazyFiles) UseRuntime(
+        JavaScriptBundleRequest request)
     {
         if (RuntimeUrlPrefix != "./" && !RuntimeUrlPrefix.Split('/')[..^1].All(segment => segment == "..")
             || !RuntimeUrlPrefix.EndsWith('/'))
@@ -95,13 +103,19 @@ public sealed class NetWasmBundleJavaScriptTask : Microsoft.Build.Utilities.Task
         var files = used.SelectMany(module => modules[module].Files)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
-            .Select(file =>
-            {
-                var item = new TaskItem(Path.Combine(directory, file));
-                item.SetMetadata("RelativePath", file);
-                return (ITaskItem)item;
-            })
             .ToArray();
-        return (request with { RuntimeImportsPath = importsPath }, files);
+        // A chunk one module loads lazily may be another's static file; it is then published, and preloaded, once.
+        var lazyFiles = used.SelectMany(module => modules[module].LazyFiles)
+            .Except(files, StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return (request with { RuntimeImportsPath = importsPath }, Items(files), Items(lazyFiles));
+
+        ITaskItem[] Items(string[] names) => [.. names.Select(file =>
+        {
+            var item = new TaskItem(Path.Combine(directory, file));
+            item.SetMetadata("RelativePath", file);
+            return (ITaskItem)item;
+        })];
     }
 }

@@ -351,7 +351,10 @@ internal sealed class ManagedInliningResolver(
     // as the JIT, which judges a callee by its own IL, inlines a small argument
     // check that calls an aggressive comparison: ArgumentOutOfRangeException.
     // ThrowIfGreaterThanOrEqual<float> (12 instructions) calling float.CompareTo
-    // (32) left Matrix4x4.CreatePerspective 1.4 times as slow as a call. A call an
+    // (32) left Matrix4x4.CreatePerspective 1.4 times as slow as a call. Only an
+    // aggressive callee composes: decimal.Round(decimal, int, MidpointRounding)
+    // composed with its private by-reference overload was inlined into its
+    // caller, where the overload, which asks for nothing, stayed a call. A call an
     // earlier round exposed does not: the rounds after the first take only what a
     // callee asks for, and the last ones only small callees, so the wrapper's
     // callees stay calls while its own code joins the inlined code around it.
@@ -385,10 +388,18 @@ internal sealed class ManagedInliningResolver(
             {
                 return false;
             }
-            if (!CountsAsSmall(callee) && IsExplicitPriorityCandidate(target, RemainingILBytes(callee, callee)))
+            if (CountsAsSmall(callee) || !IsExplicitPriorityCandidate(target, RemainingILBytes(callee, callee)))
             {
-                composed += InstructionCount(callee);
+                continue;
             }
+            // The next round takes only what a callee asks for, so a large by-reference callee that does not ask
+            // stays a call there: inlined, the wrapper would leave it one in every caller instead of composing it
+            // into its own body, and it is as large as that callee.
+            if (!target.Definition.IsAggressiveInlining)
+            {
+                return false;
+            }
+            composed += InstructionCount(callee);
         }
         return composed <= limit;
     }

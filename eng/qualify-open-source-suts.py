@@ -12,7 +12,10 @@ packages.txt to the versions it was tested with ("Id Version" per line, exact
 versions only); packages.desktop.txt and packages.netwasm.txt, where present, add
 the packages only one side takes, such as a NetWasm port of a desktop package. It runs once on desktop .NET (net11.0), then as a net10.0-netwasm
 program: wasm32 (a component) and wasm64 (raw Wasm), each in Debug and Release.
-Every run's exit code and standard output must equal desktop's."""
+Every run's exit code and standard output must equal desktop's, as desktop prints it with its hardware
+intrinsics or with them off. A library can take an instruction set's own paths whose output differs from
+its portable one, as ImageSharp's WebP lossy encoder does on x86, and NetWasm, whose vectors are
+WebAssembly's 128-bit ones, takes neither x86's nor Arm's."""
 
 from __future__ import annotations
 
@@ -141,18 +144,42 @@ def build_errors(log: str) -> str:
     return "\n    ".join(errors[:10] or [log[-2000:]])
 
 
-def desktop(system: Path, root: Path, environment: dict[str, str]) -> Run | str:
-    """What desktop .NET prints, or why it could not be built."""
+def portable(environment: dict[str, str]) -> dict[str, str]:
+    """Desktop .NET's environment with hardware intrinsics off, so a library takes its portable paths."""
+    return dict(environment, DOTNET_EnableHWIntrinsic="0")
+
+
+def desktop(system: Path, root: Path, environment: dict[str, str]) -> list[Run] | str:
+    """What desktop .NET prints with hardware intrinsics and then without, each output once, or why it could not
+    be built."""
     project_path = stage(system, root / system.name / "desktop", netwasm=False)
     build = run(["dotnet", "build", str(project_path), "-c", "Release", "--disable-build-servers", "-nologo"],
                 root, environment)
     if build.exit_code != 0:
         return "desktop build failed:\n    " + build_errors(build.log)
-    return run(["dotnet", "run", "--project", str(project_path), "-c", "Release", "--no-build",
-                "--disable-build-servers"], root, environment)
+    runs: list[Run] = []
+    for variant in (environment, portable(environment)):
+        executed = run(["dotnet", "run", "--project", str(project_path), "-c", "Release", "--no-build",
+                        "--disable-build-servers"], root, variant)
+        if all((executed.exit_code, executed.stdout) != (seen.exit_code, seen.stdout) for seen in runs):
+            runs.append(executed)
+    return runs
 
 
-def qualify(system: Path, target: str, expected: Run, root: Path, environment: dict[str, str]) -> dict[str, str | None]:
+def outcome(executed: Run, expected: list[Run]) -> str | None:
+    """None where a run printed what one of desktop's runs printed, or how it differs from the first."""
+    if any((executed.exit_code, executed.stdout) == (reference.exit_code, reference.stdout)
+           for reference in expected):
+        return None
+    first = expected[0]
+    if executed.exit_code != first.exit_code:
+        return (f"exit {executed.exit_code}, desktop {first.exit_code}; "
+                f"{difference(first.stdout, executed.stdout)}\n{executed.log[-2000:]}")
+    return difference(first.stdout, executed.stdout)
+
+
+def qualify(system: Path, target: str, expected: list[Run], root: Path,
+            environment: dict[str, str]) -> dict[str, str | None]:
     """Each configuration's failure for one target, or None where it printed what desktop printed."""
     project_path = stage(system, root / system.name / target, netwasm=True)
     properties = target_properties(target)
@@ -166,13 +193,7 @@ def qualify(system: Path, target: str, expected: Run, root: Path, environment: d
             continue
         executed = run(["dotnet", "run", "--project", str(project_path), "-c", configuration, "--no-build",
                         "--disable-build-servers", *properties], root, environment)
-        if (executed.exit_code, executed.stdout) == (expected.exit_code, expected.stdout):
-            results[cell] = None
-        elif executed.exit_code != expected.exit_code:
-            results[cell] = (f"exit {executed.exit_code}, desktop {expected.exit_code}; "
-                             f"{difference(expected.stdout, executed.stdout)}\n{executed.log[-2000:]}")
-        else:
-            results[cell] = difference(expected.stdout, executed.stdout)
+        results[cell] = outcome(executed, expected)
     return results
 
 
@@ -198,14 +219,15 @@ def main() -> int:
     # Desktop runs one system at a time, restoring every pinned package, and the first NetWasm cell restores the
     # SDK's, before the parallel builds share the package folder.
     failures: dict[tuple[str, str], str | None] = {}
-    expected: dict[str, Run] = {}
+    expected: dict[str, list[Run]] = {}
     for system in systems:
         baseline = desktop(system, root, environment)
         if isinstance(baseline, str):
             failures[(system.name, "desktop")] = baseline
-        elif baseline.exit_code == "timeout" or not baseline.stdout:
-            failures[(system.name, "desktop")] = f"desktop .NET printed nothing (exit {baseline.exit_code}):\n" \
-                                                 f"{baseline.log[-2000:]}"
+        elif silent := next((reference for reference in baseline
+                             if reference.exit_code == "timeout" or not reference.stdout), None):
+            failures[(system.name, "desktop")] = f"desktop .NET printed nothing (exit {silent.exit_code}):\n" \
+                                                 f"{silent.log[-2000:]}"
         else:
             expected[system.name] = baseline
     cells = [(system, target) for system in systems if system.name in expected for target in TARGETS]

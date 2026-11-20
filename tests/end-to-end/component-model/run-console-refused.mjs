@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
 // Runs a command that writes 2,000 lines under NetWasm's JavaScript host with a sink that refuses
 // output after 1 KiB, as a page that caps its console does. The host stops taking the output and
 // the program sees a closed pipe, which .NET's console ignores: the run completes. Left open, the

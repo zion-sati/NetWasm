@@ -35,5 +35,11 @@ try {
   }
   finish("passed", "passed");
 } catch (error) {
-  finish("failed", String(error?.stack ?? error));
+  finish("failed", describe(error));
+}
+
+// The error's message and stack: WebKit's and Firefox's stacks leave out the message, which V8's starts with.
+function describe(error) {
+  const text = String(error);
+  return error?.stack?.startsWith(text) ? error.stack : [text, error?.stack].filter(Boolean).join("\n");
 }

@@ -1202,6 +1202,7 @@
                                 RuntimeManifestPath="$(_NetWasmJavaScriptRuntimeManifestPath)"
                                 RuntimeUrlPrefix="$(_NetWasmJavaScriptRuntimeUrlPrefix)">
       <Output TaskParameter="RuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
+      <Output TaskParameter="LazyRuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
       <Output TaskParameter="RuntimeFiles" ItemName="_NetWasmPageRuntimeFile" />
     </NetWasmBundleJavaScriptTask>
     <!-- Node.js code imports one self-contained bundle: it shares no runtime with a page. -->
@@ -1249,6 +1250,7 @@
                                 RuntimeManifestPath="$(_NetWasmJavaScriptRuntimeManifestPath)"
                                 RuntimeUrlPrefix="$(_NetWasmJavaScriptRuntimeUrlPrefix)">
       <Output TaskParameter="RuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
+      <Output TaskParameter="LazyRuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
     </NetWasmBundleJavaScriptTask>
     <ItemGroup>
       <_NetWasmWorkerDeploymentArtifact Include="$(NetWasmOutputPath)">
@@ -1367,6 +1369,7 @@
                                 RuntimeManifestPath="$(_NetWasmJavaScriptRuntimeManifestPath)"
                                 RuntimeUrlPrefix="$(_NetWasmJavaScriptRuntimeUrlPrefix)">
       <Output TaskParameter="RuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
+      <Output TaskParameter="LazyRuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
     </NetWasmBundleJavaScriptTask>
     <ItemGroup>
       <_NetWasmJavaScriptRuntimeFileDistinct Remove="@(_NetWasmJavaScriptRuntimeFileDistinct)" />

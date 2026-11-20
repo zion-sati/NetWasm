@@ -169,9 +169,10 @@ async function bundleRuntime(facades, output, minify) {
     const entries = [...chunks.values()].filter(value => value.isEntry)
       .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
     for (const chunk of entries) {
-      modules[chunk.name] = { file: chunk.fileName, files: closure(chunk, chunks) };
+      const files = closure(chunk, chunks);
+      modules[chunk.name] = { file: chunk.fileName, files, lazyFiles: lazyClosure(files, chunks) };
     }
-    await writeFile(join(output, "runtime.json"), JSON.stringify({ schemaVersion: 1, modules }), "utf8");
+    await writeFile(join(output, "runtime.json"), JSON.stringify({ schemaVersion: 2, modules }), "utf8");
   } finally {
     await build.close();
   }
@@ -190,4 +191,21 @@ function closure(entry, chunks) {
     pending.push(...chunks.get(fileName).imports);
   }
   return [...files].sort();
+}
+
+// The chunks a runtime module loads only when its code first needs them: those its files import dynamically, and
+// everything those import in turn. A deployment publishes them beside the module, since a page outside a secure
+// context loads the SHA-256 fallback this way, but a page does not preload them.
+function lazyClosure(files, chunks) {
+  const loaded = new Set(files);
+  const lazy = new Set();
+  const pending = files.flatMap(fileName => chunks.get(fileName).dynamicImports);
+  while (pending.length !== 0) {
+    const fileName = pending.pop();
+    if (loaded.has(fileName) || lazy.has(fileName)) continue;
+    lazy.add(fileName);
+    const chunk = chunks.get(fileName);
+    pending.push(...chunk.imports, ...chunk.dynamicImports);
+  }
+  return [...lazy].sort();
 }

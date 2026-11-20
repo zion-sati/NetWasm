@@ -14,10 +14,13 @@ namespace NetWasm.Hosting.Build.Tests;
 public sealed class JavaScriptRuntimeTests
 {
     private const string Manifest = """
-        {"schemaVersion":1,"modules":{
-          "page":{"file":"netwasm.runtime.page.a1.mjs","files":["netwasm.runtime.page.a1.mjs","netwasm.runtime.s1.mjs"]},
-          "worker":{"file":"netwasm.runtime.worker.b2.mjs","files":["netwasm.runtime.s1.mjs","netwasm.runtime.worker.b2.mjs"]},
-          "random":{"file":"netwasm.runtime.random.c3.mjs","files":["netwasm.runtime.random.c3.mjs","netwasm.runtime.s2.mjs"]}}}
+        {"schemaVersion":2,"modules":{
+          "page":{"file":"netwasm.runtime.page.a1.mjs","files":["netwasm.runtime.page.a1.mjs","netwasm.runtime.s1.mjs"],
+            "lazyFiles":["netwasm.runtime.l1.mjs"]},
+          "worker":{"file":"netwasm.runtime.worker.b2.mjs","files":["netwasm.runtime.s1.mjs","netwasm.runtime.worker.b2.mjs"],
+            "lazyFiles":[]},
+          "random":{"file":"netwasm.runtime.random.c3.mjs","files":["netwasm.runtime.random.c3.mjs","netwasm.runtime.s2.mjs"],
+            "lazyFiles":["netwasm.runtime.l1.mjs","netwasm.runtime.s1.mjs"]}}}
         """;
 
     [Fact]
@@ -57,18 +60,25 @@ public sealed class JavaScriptRuntimeTests
 
         Assert.Equal("netwasm.runtime.page.a1.mjs", modules["page"].File);
         Assert.Equal(["netwasm.runtime.s1.mjs", "netwasm.runtime.worker.b2.mjs"], modules["worker"].Files.ToArray());
+        Assert.Equal(["netwasm.runtime.l1.mjs"], modules["page"].LazyFiles.ToArray());
+        Assert.Empty(modules["worker"].LazyFiles);
         Assert.Equal(["page", "random"], JavaScriptRuntimeManifest.FindImports(
             "import { a } from \"netwasm:runtime/random\";\nimport { b, c } from \"netwasm:runtime/page\";\n"
             + "import { d } from \"netwasm:runtime/page\";\nconst text = \"netwasm:runtime/\";\n").ToArray());
         foreach (var invalid in new[]
                  {
                      "[]",
-                     "{\"schemaVersion\":2,\"modules\":{}}",
-                     "{\"schemaVersion\":1}",
-                     "{\"schemaVersion\":1,\"modules\":{\"Page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[\"netwasm.runtime.a.mjs\"]}}}",
-                     "{\"schemaVersion\":1,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[]}}}",
-                     "{\"schemaVersion\":1,\"modules\":{\"page\":{\"file\":\"../a.mjs\",\"files\":[\"../a.mjs\"]}}}",
-                     "{\"schemaVersion\":1,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[1]}}}",
+                     // A manifest without lazy files predates them: a deployment from it would miss the chunks.
+                     "{\"schemaVersion\":1,\"modules\":{}}",
+                     "{\"schemaVersion\":2}",
+                     "{\"schemaVersion\":2,\"modules\":{\"Page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[\"netwasm.runtime.a.mjs\"],\"lazyFiles\":[]}}}",
+                     "{\"schemaVersion\":2,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[],\"lazyFiles\":[]}}}",
+                     "{\"schemaVersion\":2,\"modules\":{\"page\":{\"file\":\"../a.mjs\",\"files\":[\"../a.mjs\"],\"lazyFiles\":[]}}}",
+                     "{\"schemaVersion\":2,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[1],\"lazyFiles\":[]}}}",
+                     "{\"schemaVersion\":2,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[\"netwasm.runtime.a.mjs\"]}}}",
+                     "{\"schemaVersion\":2,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[\"netwasm.runtime.a.mjs\"],\"lazyFiles\":{}}}}",
+                     "{\"schemaVersion\":2,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[\"netwasm.runtime.a.mjs\"],\"lazyFiles\":[\"../b.mjs\"]}}}",
+                     "{\"schemaVersion\":2,\"modules\":{\"page\":{\"file\":\"netwasm.runtime.a.mjs\",\"files\":[\"netwasm.runtime.a.mjs\"],\"lazyFiles\":[\"netwasm.runtime.a.mjs\"]}}}",
                  })
         {
             File.WriteAllText(path, invalid);
@@ -113,6 +123,11 @@ public sealed class JavaScriptRuntimeTests
             task.RuntimeFiles.Select(item => item.GetMetadata("RelativePath")));
         Assert.All(task.RuntimeFiles, item => Assert.Equal(
             Path.Combine(directory.Path, "runtime", item.GetMetadata("RelativePath")), item.ItemSpec));
+        // The page loads l1 lazily, and so does random, which also lists s1, a static file of the page's: s1 is
+        // published once, among the files the page preloads.
+        var lazy = Assert.Single(task.LazyRuntimeFiles);
+        Assert.Equal("netwasm.runtime.l1.mjs", lazy.GetMetadata("RelativePath"));
+        Assert.Equal(Path.Combine(directory.Path, "runtime", "netwasm.runtime.l1.mjs"), lazy.ItemSpec);
     }
 
     [Fact]
@@ -138,6 +153,7 @@ public sealed class JavaScriptRuntimeTests
         Assert.True(unmapped.Execute());
         Assert.Null(Assert.Single(plain.Bundles).RuntimeImportsPath);
         Assert.Empty(unmapped.RuntimeFiles);
+        Assert.Empty(unmapped.LazyRuntimeFiles);
 
         foreach (var (manifest, prefix) in new[] { (runtime, "./"), (runtime, "../x/"), (runtime, ""), (runtime, "..") })
         {

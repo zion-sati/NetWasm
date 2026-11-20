@@ -572,6 +572,35 @@ public sealed class ManagedInliningResolverTests
     }
 
     [Theory]
+    [InlineData(false, 3, true)]
+    [InlineData(false, ManagedInliningResolver.SmallBodyInstructionLimit + 1, false)]
+    [InlineData(true, ManagedInliningResolver.SmallBodyInstructionLimit + 1, true)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes + 1, true)]
+    public void AWrapperOfALargeByReferenceCalleeIsSmallOnlyWhenTheCalleeAsksToBeInlined(
+        bool aggressive, int calleeInstructions, bool resolves)
+    {
+        // A three-instruction wrapper that takes its argument by value passes it by reference to a callee, as
+        // decimal.Round(decimal, int, MidpointRounding) does to its private overload. The callee is a priority
+        // candidate within the by-reference budget, but the next round takes it only when it asks to be inlined:
+        // then the wrapper composes; otherwise it is as large as the callee. A small callee composes as any small
+        // callee does, and past the budget the callee stays a call. The call is in the caller's own body and in a
+        // loop, where only the size tiers decide.
+        var fixture = new Fixture(byReferenceParameter: false, instructions:
+        [
+            new(0, 1, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+            new(1, 2, CilOperation.Call, new CilOperand.None()),
+            new(2, 3, CilOperation.Return, new CilOperand.None()),
+        ])
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            CalleeShape = (aggressive, calleeInstructions, 1),
+            CalleeByReference = true,
+        };
+
+        Assert.Equal(resolves, fixture.Resolver().Resolve(fixture.Request() with { InLoop = true }) is not null);
+    }
+
+    [Theory]
     [InlineData(ManagedInliningResolver.SmallBodyInstructionLimit, true)]
     [InlineData(ManagedInliningResolver.SmallBodyInstructionLimit + 1, false)]
     [InlineData(ManagedInliningResolver.ComposedBodyInstructionLimit - 3, false)]
@@ -1468,14 +1497,23 @@ public sealed class ManagedInliningResolverTests
             Signature = MethodSignatureModel.Create(Int32),
         };
 
+        // The callee takes its argument by reference while the leaf takes it by value, as a public method that
+        // passes its parameter's address to a private overload does.
+        public bool CalleeByReference { get; init; }
+
+        private MethodSignatureModel CalleeSignature => CalleeByReference
+            ? MethodSignatureModel.Create(Int32, [CliTypeIdentity.ManagedByReference(Int32)])
+            : Target.Definition.Signature;
+
         private MethodInstanceModel Callee(bool aggressive, int relativeVirtualAddress) => Target with
         {
             Definition = new MethodDefinitionModel(CalleeKey, Target.Definition.DeclaringType, "Callee", true,
-                Target.Definition.Signature, relativeVirtualAddress)
+                CalleeSignature, relativeVirtualAddress)
             {
                 IsAggressiveInlining = aggressive,
                 IsIntrinsic = CalleeIntrinsic,
             },
+            Signature = CalleeSignature,
         };
 
         public CilMethodBody Rewrite(CilMethodBody body)

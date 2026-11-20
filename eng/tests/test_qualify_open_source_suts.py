@@ -96,6 +96,22 @@ class ConfigureTests(unittest.TestCase):
 
 
 class DifferenceTests(unittest.TestCase):
+    def test_the_portable_desktop_run_turns_hardware_intrinsics_off(self) -> None:
+        environment = {"PATH": "/bin"}
+        self.assertEqual({"PATH": "/bin", "DOTNET_EnableHWIntrinsic": "0"}, MODULE.portable(environment))
+        self.assertEqual({"PATH": "/bin"}, environment)
+
+    def test_a_run_matches_desktop_with_or_without_hardware_intrinsics(self) -> None:
+        # On x86, ImageSharp's WebP lossy encoder writes 760 bytes with its SSE paths and 756 with its portable
+        # ones, which NetWasm and desktop .NET on Arm also write.
+        intrinsic, portable = MODULE.Run(0, "webp 760\n", ""), MODULE.Run(0, "webp 756\n", "")
+        self.assertIsNone(MODULE.outcome(MODULE.Run(0, "webp 756\n", ""), [intrinsic, portable]))
+        self.assertIsNone(MODULE.outcome(MODULE.Run(0, "webp 760\n", ""), [intrinsic, portable]))
+        self.assertEqual("line 1: desktop 'webp 760', NetWasm 'webp 755'",
+                         MODULE.outcome(MODULE.Run(0, "webp 755\n", ""), [intrinsic, portable]))
+        self.assertEqual("exit 1, desktop 0; line 1: desktop 'webp 760', NetWasm 'webp 756'\ntrace",
+                         MODULE.outcome(MODULE.Run(1, "webp 756\n", "trace"), [intrinsic, portable]))
+
     def test_names_the_first_line_that_differs(self) -> None:
         self.assertEqual("line 2: desktop 'b', NetWasm 'c'", MODULE.difference("a\nb\nx\n", "a\nc\ny\n"))
 
