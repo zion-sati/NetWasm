@@ -117,21 +117,26 @@ Hello World is just the smallest example. NetWasm builds real applications too.
 
 **C# 15** · **JavaScript modules and Web Workers** · **static `.a` interop** · **WIT/WASI 0.3** ·
 **expression trees** · **HTTP/JSON/XML/Regex** · **reflection-free DI** ·
-**TUnit/VSTest** · **wasm64** · **three allocation strategies**
+**TUnit/VSTest** · **TLS and HTTP/2** · **Avalonia** · **wasm64** · **four allocation strategies**
 
 Today NetWasm can:
 
 - build, run, publish and test projects through the ordinary `dotnet` CLI;
 - publish C# exports as typed [JavaScript modules](docs/javascript-interop.md)
-  that run in the page or in a [Web Worker](docs/web-workers.md), and work with
-  the [DOM and Canvas](docs/dom-and-canvas.md) from C#;
-- link compatible Wasm [`.a` archives](docs/static-native-interop.md) and
-  generate bounded C ABI marshalling;
+  that run in the page or in a [Web Worker](docs/web-workers.md), work with the
+  [DOM and Canvas](docs/dom-and-canvas.md) from C#, and use libraries built for
+  the browser by .NET's SDK, their `[JSImport]` and `[JSExport]` methods
+  included;
+- link the [native archives](docs/static-native-interop.md) packages built by
+  Emscripten ship, SkiaSharp's and HarfBuzzSharp's among them, and marshal
+  handles, strings and structs to native code as desktop .NET does;
 - [generate C# bindings from WIT](docs/wit-bindings.md) and produce standalone
   WASI 0.3 components;
 - construct and inspect expression trees without general runtime reflection;
-- use LINQ, HTTP, JSON, XML and regular expressions from the framework, and
-  hashing and dependency injection from separate NetWasm packages;
+- use LINQ, HTTP, JSON, XML and regular expressions from the framework, with
+  TLS through `SslStream` and HTTP/2 and `wss://` WebSockets where the host
+  provides `wasi:tls`, and dependency injection and configuration binding from
+  NetWasm.Libraries;
 - reference NuGet packages built for .NET 10 and earlier or .NET Standard: 56
   of 100 popular packages [run unchanged](docs/package-compatibility.md);
 - dual-target libraries for `net10.0-netwasm` and desktop .NET.
@@ -240,12 +245,25 @@ Select a strategy in the executable project's `.csproj`:
 </PropertyGroup>
 ```
 
-Leaving the property unset selects Compact. `NetWasmGen`, NetWasmGC with
-generations, is opt-in for programs that keep a large set of objects alive and
-allocate short-lived ones on top. Libraries remain collector-neutral; all four
-backends are packaged for wasm32 and wasm64. See
+With any of the tracing collectors, a page, a worker and a component's event
+loop collect while the program waits, so collections land between interactions
+rather than inside them.
+
+Leaving the property unset selects Compact. Libraries remain collector-neutral;
+all four backends are packaged for wasm32 and wasm64. See
 [Choosing a garbage collector](docs/runtime-garbage-collection.md) for the
 tradeoffs and diagnostics.
+
+**NetWasmGen** is NetWasmGC with generations. Most of its collections look only
+at the objects allocated since the last one and at the old objects the program
+stored a reference into, so a program that keeps a large set of objects alive
+while short-lived ones come and go runs **up to three times as fast** as under
+NetWasmGC, and binary-trees 1.6 to 1.8 times as fast. Choose it for a service
+answering requests against in-memory state, a game or simulation making garbage
+every frame, or a compiler building and discarding trees; stay on NetWasmGC for
+short runs and for data that dies all at once. Across 57 garbage-collection
+programs it takes 0.93 of NetWasmGC's time.
+[When to choose NetWasmGen](docs/runtime-garbage-collection.md#when-to-choose-netwasmgen)
 
 ## Libraries should travel upward
 

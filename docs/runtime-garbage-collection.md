@@ -23,12 +23,9 @@ and most collections are minor ones, which look only at the objects allocated
 since the last collection and at the old objects a reference has been stored
 into since. A program built for it records every store of a reference into
 memory, which costs a little at each such store and about one byte per 256
-bytes of heap. Choose it for programs that keep a sizeable set of objects
-alive and allocate short-lived ones on top without rewriting the kept set
-much: request handling against in-memory state, building and discarding
-trees, per-frame garbage. Stay on `NetWasm` for short runs, for programs that
-mostly build data they keep, and for code that rewrites its kept data
-heavily. It is opt-in: measure your application before choosing it.
+bytes of heap. Where a program keeps a large set of objects alive while
+short-lived ones come and go, it is up to three times as fast as NetWasmGC. It
+is opt-in; see [when to choose NetWasmGen](#when-to-choose-netwasmgen).
 
 The Boehm (BDWGC) backend has been removed. A project that still sets
 `NetWasmGarbageCollector` to `Boehm` fails to build; remove the property to use
@@ -48,6 +45,56 @@ The tracing collectors support NetWasm's managed lifetime profile, including
 finalization, resurrection, weak references, dependent handles and pinning.
 Collector selection does not enable threading, reflection or other APIs outside
 the supported NetWasm profile.
+
+## When to choose NetWasmGen
+
+Most collections under NetWasmGen are minor ones: they look only at the objects
+allocated since the last collection and at the old objects the program has
+stored a reference into since, not at everything the program keeps. So the more
+a program keeps alive while short-lived objects come and go, the more
+NetWasmGen saves. Choose it for:
+
+- a service answering requests against in-memory state;
+- a game, simulation or renderer that makes garbage every frame over a world it
+  keeps;
+- a parser, compiler or solver that builds and discards trees while it holds a
+  large model.
+
+Stay on `NetWasm` for short runs that collect once or twice, for programs that
+mostly build data they keep or drop everything at once, and for code that
+keeps storing references into its old objects, such as a UI framework updating
+a reactive graph: each such store costs a little, and the minor collections it
+pays for have little to free.
+
+Against NetWasmGC, on the same program built for each (a row is a UI row as a
+framework builds one: the row, its label, two closures and a binding object):
+
+| Program | NetWasmGC | NetWasmGen | |
+| --- | ---: | ---: | --- |
+| 150,000 rows kept while 250 MB of short-lived arrays and strings pass through | 205.2 ms | 67.5 ms | 3.0 times as fast |
+| 40,000 rows kept while 200 MB pass through | 118.0 ms | 39.1 ms | 3.0 times as fast |
+| binary-trees at depth 16: one long-lived tree, many short-lived ones | 182.5 ms | 102.8 ms | 1.8 times as fast |
+| binary-trees at depth 18 | 1,216.2 ms | 781.7 ms | 1.6 times as fast |
+| a one-off peak of 600,000 rows that all die, then 200 MB passing through 40,000 kept rows (only the latter timed) | 48.6 ms | 32.6 ms | 1.5 times as fast |
+| 550,000 rows kept while 300 MB pass through | 222.9 ms, 279 MiB | 169.1 ms, 119 MiB | 1.3 times as fast, 57% less memory |
+| 40,000 requests, each building lists, strings and a dictionary, one in a hundred kept | 86.0 ms, 15.3 MiB | 90.1 ms, 7.4 MiB | 5% slower, half the memory |
+| 5,000 frames, each making 512 objects and keeping 64 of them in place of older ones | 47.5 ms | 49.1 ms | 3% slower |
+| 7,000 rows replaced wholesale 30 times | 9.7 ms | 10.6 ms | 10% slower |
+| 55,000 rows built once and kept, one collection | 4.5 ms | 5.0 ms | 12% slower |
+
+Across 57 such programs, NetWasmGen takes 0.93 of NetWasmGC's time and 0.97 of
+its memory; 27 are more than 3% slower, none more than 12%, and none uses more
+than 3% more memory. The figures are medians of seven rounds of each program's
+timed region, with the order of the two builds rotating each round, on an Apple
+M1 Max under Wasmtime 50.0.1, built at `O3`; memory is each run's peak linear
+memory, and every run's result matched the other build's. Measure your own
+program before switching:
+
+```xml
+<PropertyGroup>
+  <NetWasmGarbageCollector>NetWasmGen</NetWasmGarbageCollector>
+</PropertyGroup>
+```
 
 ## Measured performance
 
