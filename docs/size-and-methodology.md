@@ -3,15 +3,15 @@
 ## C# with precise GC: less than half Rust's size profile
 
 The measured Release/Oz `Console.WriteLine(42)` WASI 0.3 component is
-**28,383 bytes (27.7 KiB)** with the default precise Compact collector, or
-**11,992 bytes with Brotli quality 11**. The same print-`42` workload with
+**27,583 bytes (26.9 KiB)** with the default precise Compact collector, or
+**11,525 bytes with Brotli quality 11**. The same print-`42` workload with
 Rust 1.100.0's size-oriented profile produces a **63,528-byte** WASI 0.3
-component, or **19,519 bytes with Brotli quality 11**. NetWasm is **35,145 bytes
-(55.3%) smaller raw** and **7,527 bytes (38.6%) smaller compressed**, including
+component, or **19,519 bytes with Brotli quality 11**. NetWasm is **35,945 bytes
+(56.6%) smaller raw** and **7,994 bytes (41.0%) smaller compressed**, including
 its linked runtime and reachable precise-GC support.
 
-These NetWasm figures were reproduced using the released 0.14.0 SDK and template
-packages from NuGet.org. All three collector variants execute and print `42`.
+These NetWasm figures were reproduced using the released 0.15.0 SDK and template
+packages from NuGet.org. All four collector variants execute and print `42`.
 The retained Rust reference uses
 the exact toolchain and Cargo profile documented below; it is not a claim about
 the smallest possible Rust binary.
@@ -32,7 +32,7 @@ The released-package reproduction ran on macOS arm64 under Wasmtime 50.0.1.
 The ordinary released-SDK reproduction is:
 
 ```sh
-dotnet new install NetWasm.Templates@0.14.0
+dotnet new install NetWasm.Templates@0.15.0
 dotnet new netwasm-app -n NetWasmApp
 cd NetWasmApp
 dotnet restore
@@ -49,9 +49,10 @@ ordinary SDK users do not need a maintainer Emscripten installation.
 
 | Collector | Uncompressed component | Brotli quality 11 |
 | --- | ---: | ---: |
-| Compact (default) | 28,383 bytes | 11,992 bytes |
-| NetWasmGC | 32,159 bytes | 13,478 bytes |
-| Bump | 23,810 bytes | 9,870 bytes |
+| Compact (default) | 27,583 bytes | 11,525 bytes |
+| NetWasmGC | 31,588 bytes | 13,312 bytes |
+| NetWasmGen | 34,930 bytes | 14,709 bytes |
+| Bump | 22,981 bytes | 9,523 bytes |
 
 These are complete optimized components for the same application and command
 WIT, not isolated collector sizes. Brotli uses generic mode with `lgwin=22`.
@@ -184,8 +185,8 @@ loaded, their uncompressed response lengths matched the published totals,
 `42` appeared in the console, the empty component rendered, and no browser
 errors occurred.
 
-Relative to the 28,383-byte NetWasm component, these retained
-Blazor Wasm payloads are about 433x and 539x as large. The Blazor builds were
+Relative to the 27,583-byte NetWasm component, these retained
+Blazor Wasm payloads are about 445x and 554x as large. The Blazor builds were
 measured on the date above. KiB means 1,024 bytes; MiB means 1,048,576 bytes.
 Neither total includes JavaScript, HTML or the host engine.
 
@@ -216,7 +217,7 @@ fn main() {
 
 | Toolchain and build | Final component | Brotli 11 |
 | --- | ---: | ---: |
-| NetWasm, Release/Oz, Compact (WASI 0.3) | 28,383 bytes | 11,992 bytes |
+| NetWasm, Release/Oz, Compact (WASI 0.3) | 27,583 bytes | 11,525 bytes |
 | Rust 1.100.0, `wasm32-wasip3`, ordinary Cargo release | 102,875 bytes | 29,450 bytes |
 | Rust 1.100.0, `wasm32-wasip3`, size-oriented profile below | 63,528 bytes | 19,519 bytes |
 | Rust 1.100.0, `wasm32-wasip2`, ordinary Cargo release | 89,908 bytes | 26,245 bytes |
@@ -324,7 +325,7 @@ are **not equivalent deployment formats or collector boundaries**:
 
 | Build | Artifact | Raw bytes | Brotli 11 | Collector boundary |
 | --- | --- | ---: | ---: | --- |
-| NetWasm Release/Oz, Compact | WASI 0.3 component | 28,383 | 11,992 | Precise Compact GC included in the artifact |
+| NetWasm Release/Oz, Compact | WASI 0.3 component | 27,583 | 11,525 | Precise Compact GC included in the artifact |
 | Rust 1.100.0 size profile | WASI 0.3 component | 63,528 | 19,519 | No tracing GC in this workload |
 | Rust 1.100.0 size profile, for context | WASI 0.2 component | 53,382 | 16,725 | No tracing GC in this workload |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | 22,655 | WasmGC supplied by the host engine, not the artifact |
@@ -425,7 +426,7 @@ System.Text.Json workloads produced:
 These are historical scenario measurements, not current component sizes,
 not incremental package costs, and not minimum sizes for arbitrary JSON
 programs. Do not compare their 54,230-byte baseline directly with the current
-28,383-byte Compact component. `JsonDocument` is also not the mutable `JsonNode` API.
+27,583-byte Compact component. `JsonDocument` is also not the mutable `JsonNode` API.
 
 The useful result is granularity: choosing a different JSON workload retains
 a different closure. Adding a package reference alone is not the same thing

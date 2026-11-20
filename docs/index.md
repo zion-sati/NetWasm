@@ -33,7 +33,7 @@ repository.
   their fixes.
 - [Changelog](changelog.md): every release, newest first, with its release notes.
 - [Size measurements and methodology](size-and-methodology.md): reproduce the
-  28,383-byte C# component and read the Rust, Kotlin, TinyGo, Blazor and JSON
+  27,583-byte C# component and read the Rust, Kotlin, TinyGo, Blazor and JSON
   comparison boundaries.
 - [Performance compared with Mono AOT and desktop .NET](performance.md):
   speed, size and memory on allocation and garbage-collection workloads, with

@@ -16,6 +16,9 @@ from urllib.parse import unquote
 
 
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]+\]\(([^)]+)\)")
+MARKDOWN_IMAGE = re.compile(r"!\[[^]]*\]\(([^)]+)\)")
+# Images the documentation shows. Nothing builds or packs files under docs/, so only the pages that show them change.
+DOCUMENTATION_IMAGE_SUFFIXES = (".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp")
 REGULAR_FILE_MODES = {"100644", "100755"}
 CI_INFRASTRUCTURE_FILES = frozenset({
     ".github/workflows/ci.yml",
@@ -69,6 +72,10 @@ def _normalized_package_description(document: bytes) -> bytes | None:
     return ElementTree.tostring(root, encoding="utf-8")
 
 
+def _is_documentation_image(path: str) -> bool:
+    return path.startswith("docs/") and path.lower().endswith(DOCUMENTATION_IMAGE_SUFFIXES)
+
+
 def _is_description_only(change: Change) -> bool:
     if not change.path.endswith(".csproj"):
         return False
@@ -88,7 +95,7 @@ def classify(changes: list[Change]) -> str:
         for mode in (change.previous_mode, change.current_mode):
             if mode is not None and mode not in REGULAR_FILE_MODES:
                 return "full"
-        if change.path.endswith(".md"):
+        if change.path.endswith(".md") or _is_documentation_image(change.path):
             continue
         if _is_description_only(change):
             continue
@@ -151,7 +158,8 @@ def verify_changed_markdown_links(root: Path, changes: list[Change]) -> None:
         if not change.path.endswith(".md") or change.current is None:
             continue
         document = root / change.path
-        for raw_target in MARKDOWN_LINK.findall(change.current.decode("utf-8")):
+        text = change.current.decode("utf-8")
+        for raw_target in [*MARKDOWN_LINK.findall(text), *MARKDOWN_IMAGE.findall(text)]:
             target = raw_target.split("#", 1)[0].strip()
             if not target or target.startswith(("http://", "https://", "mailto:")):
                 continue
