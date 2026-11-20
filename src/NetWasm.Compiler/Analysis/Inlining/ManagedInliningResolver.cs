@@ -134,6 +134,8 @@ internal sealed class ManagedInliningResolver(
             _initializationTriggers.Classify(method.Definition) && !TriggeredByCaller(request.Caller, method) ||
             // Reachability reads these calls to emit the runtime facts they read.
             ReachabilityMarkers.IsMarker(method) ||
+            // The attribute query lowering reads these calls' targets and filters.
+            Attributes.AttributeQueryApis.IsQuery(method) ||
             method.CanonicalName == request.Caller.CanonicalName ||
             !HasSupportedCallMetadata(request.Call, method))
         {

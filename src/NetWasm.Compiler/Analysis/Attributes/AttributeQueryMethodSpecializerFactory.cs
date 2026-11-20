@@ -48,9 +48,7 @@ internal sealed class AttributeQueryMethodSpecializerFactory(
             ? null
             : new AttributeAssemblySources(typeDefinitions, assemblyOf.Key, typeAssembly.Key);
         var queryOwners = metadata.Types
-            .Where(type => type.Key.Assembly == attributeType.Key.Assembly && type.FullName is
-                "System.Type" or "System.Reflection.MemberInfo" or "System.Reflection.ICustomAttributeProvider" or
-                "System.Attribute" or "System.Reflection.CustomAttributeExtensions" or "System.Reflection.Assembly")
+            .Where(type => type.Key.Assembly == attributeType.Key.Assembly && AttributeQueryApis.OwnerTypes.Contains(type.FullName))
             .Where(type => type.FullName != "System.Reflection.Assembly" || assemblies is not null)
             .ToImmutableDictionary(type => type.Key, type => type.FullName switch
             {
