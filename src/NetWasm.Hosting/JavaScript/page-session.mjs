@@ -210,8 +210,8 @@ function readDatetime(milliseconds) {
   return { seconds: BigInt(seconds), nanoseconds: Math.round((milliseconds - seconds * 1000) * 1e6) };
 }
 
-// Accepts module namespaces (`import * as host from ...`) and plain objects;
-// only function members are import candidates.
+// Accepts module namespaces (`import * as host from ...`) and plain objects. An import is a function member, or a
+// function an object member holds, which a dotted name such as "Format.wrap" reaches; other members are left out.
 function snapshotNamespaces(value, label) {
   assertPlainDataObject(value, `${label} map`);
   const modules = new Map();
@@ -221,7 +221,7 @@ function snapshotNamespaces(value, label) {
     }
     const members = Object.create(null);
     for (const [name, member] of Object.entries(namespace)) {
-      if (typeof member === "function") members[name] = member;
+      if (typeof member === "function" || member !== null && typeof member === "object") members[name] = member;
     }
     modules.set(moduleName, members);
   }

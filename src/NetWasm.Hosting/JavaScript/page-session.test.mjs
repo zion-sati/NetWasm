@@ -461,6 +461,25 @@ test("passes a module's exported classes as written, so a dotted import reaches 
   assert.deepEqual(element.classes, ["root"]);
 });
 
+test("passes a module's object members, so a dotted import reaches a function an object holds", async () => {
+  const Format = Object.freeze({ prefix: "fmt:", wrap(value) { return this.prefix + value; } });
+  const formats = Object.freeze({ Format, stamp: value => `stamp:${value}`, version: 1 });
+  let modules;
+  const open = createPageSessionFactory(options => {
+    modules = options.consumerModules;
+    return async () => Object.freeze({
+      close: async () => {}, exports: Object.freeze({}), failure: new Promise(() => {}),
+    });
+  })(pageOptions({ formats }));
+
+  await open({ exports: [], options: undefined, startup });
+
+  assert.equal(modules.formats.Format, Format);
+  assert.equal(modules.formats.Format.wrap.call(modules.formats.Format, "x"), "fmt:x");
+  assert.equal(modules.formats.stamp("x"), "stamp:x");
+  assert.equal(Object.hasOwn(modules.formats, "version"), false);
+});
+
 test("lets the collector collect once the module has stayed quiet, unless an idle collection came first", async () => {
   const idle = [];
   const timers = [];

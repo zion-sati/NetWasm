@@ -221,7 +221,8 @@ function snapshotConsumerModules(value) {
     assertPlainDataObject(moduleValue, `worker JS import module '${moduleName}'`);
     const members = Object.create(null);
     for (const [name, member] of Object.entries(moduleValue)) {
-      if (name.length === 0 || typeof member !== "function") {
+      // A function, or an object a dotted import reaches into, as "Format.wrap" reaches Format.
+      if (name.length === 0 || typeof member !== "function" && (member === null || typeof member !== "object")) {
         throw new TypeError(`worker JS import module '${moduleName}' is invalid`);
       }
       members[name] = member;

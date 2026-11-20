@@ -315,6 +315,18 @@ test("keeps ordinary JS imports separate from WIT providers", async () => {
     /invalid/);
   assert.throws(() => fixture({ consumerModules: { "consumer.worker": { increment: 1 } } }),
     /invalid/);
+  assert.throws(() => fixture({ consumerModules: { "consumer.worker": { Format: null } } }),
+    /invalid/);
+  // An object member is what a dotted import such as "Format.wrap" reaches into.
+  const dotted = fixture({
+    consumerModules: { "consumer.worker": { increment: value => value + 1, Format: Object.freeze({ wrap: value => value }) } },
+    interopImports: [imported],
+  });
+  const dottedSession = await dotted.open({ startup: {
+    buildFingerprint, manifestSha256: dotted.manifestSha256,
+  } });
+  assert.equal(dottedSession.exports.add(20, 22), 42);
+  await dottedSession.close();
 });
 
 // A host may ask to be told of each import the program calls (a page's idle collection does); the observer is

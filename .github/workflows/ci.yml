@@ -289,7 +289,9 @@ jobs:
     needs: impact
     if: needs.impact.outputs.scope == 'full'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # The tests take about a minute; installing the browsers' system packages from the runner's apt mirror has taken
+    # more than ten.
+    timeout-minutes: 25
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

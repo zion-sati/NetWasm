@@ -109,11 +109,14 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
             AppendLine(source, $"  {Json(binding.Module)}: Object.freeze({{");
             if (binding.BindsModule)
             {
-                AppendLine(source, $"    ...Object.fromEntries(Object.entries(imports{index}).filter(([name, value]) => name !== \"createWorkerImports\" && typeof value === \"function\")),");
+                // Every function, and every object a dotted import reaches into, as "Format.wrap" reaches Format.
+                AppendLine(source, $"    ...Object.fromEntries(Object.entries(imports{index}).filter(([name, value]) => name !== \"createWorkerImports\" && (typeof value === \"function\" || value !== null && typeof value === \"object\"))),");
             }
-            foreach (var function in binding.Functions.Order(StringComparer.Ordinal))
+            // A dotted import reaches into the module member its first name names, so the worker passes that member.
+            foreach (var member in binding.Functions.Select(static name => name.Split('.')[0])
+                         .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
             {
-                AppendLine(source, $"    {Json(function)}: imports{index}[{Json(function)}],");
+                AppendLine(source, $"    {Json(member)}: imports{index}[{Json(member)}],");
             }
             source.AppendLine("  }),");
         }

@@ -138,9 +138,36 @@ public sealed class WorkerEntryWriterTests
         new WorkerEntryWriter().WriteHost(Request(bindsModule: true));
 
         Assert.Contains(
-            "...Object.fromEntries(Object.entries(imports0).filter(([name, value]) => name !== \"createWorkerImports\" && typeof value === \"function\")),",
+            "...Object.fromEntries(Object.entries(imports0).filter(([name, value]) => name !== \"createWorkerImports\" && (typeof value === \"function\" || value !== null && typeof value === \"object\"))),",
             File.ReadAllText(output), StringComparison.Ordinal);
         Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteHost(Request(bindsModule: false)));
+    }
+
+    [Fact]
+    public void PassesTheMemberADottedImportReachesInto()
+    {
+        // "Format.wrap" and "Format.unwrap" call functions the module's Format holds: the worker passes Format once,
+        // which the export session resolves each dotted name through.
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "worker-entry.mjs");
+        HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
+
+        new WorkerEntryWriter().WriteHost(new(
+            Path.Combine(directory.Path, "hosting"),
+            output,
+            [new("app.formats", Path.Combine(directory.Path, "formats.mjs"), ["Format.wrap", "stamp", "Format.unwrap"])],
+            [],
+            [],
+            [],
+            "denyAll",
+            false,
+            [],
+            true));
+
+        var source = File.ReadAllText(output);
+        Assert.Equal(1, source.Split("\"Format\": imports0[\"Format\"],").Length - 1);
+        Assert.Contains("\"stamp\": imports0[\"stamp\"],", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Format.wrap", source, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -56,7 +56,9 @@ const results = [];
 try {
   const address = `http://127.0.0.1:${server.address().port}/`;
   for (const [name, engine] of [["chromium", chromium], ["firefox", firefox], ["webkit", webkit]]) {
-    const entry = { browser: name, passed: false, pageErrors: [], consoleErrors: [] };
+    // Failed requests and worker output say which file a "Failed to load resource" error means and what a worker
+    // reported when a page stops waiting for it.
+    const entry = { browser: name, passed: false, pageErrors: [], consoleErrors: [], failedRequests: [], workerMessages: [] };
     results.push(entry);
     const browser = await engine.launch({ headless: true, ...(insecure ? { proxy: { server: address } } : {}) });
     let page;
@@ -68,6 +70,16 @@ try {
       page.on("pageerror", error => entry.pageErrors.push(String(error)));
       page.on("console", message => {
         if (message.type() === "error") entry.consoleErrors.push(message.text());
+      });
+      page.on("response", response => {
+        if (response.status() >= 400) entry.failedRequests.push(`${response.status()} ${response.url()}`);
+      });
+      page.on("requestfailed", request => entry.failedRequests.push(
+        `failed ${request.url()}: ${request.failure()?.errorText ?? "unknown"}`));
+      page.on("worker", worker => {
+        entry.workerMessages.push(`started ${worker.url()}`);
+        worker.on("close", () => entry.workerMessages.push(`closed ${worker.url()}`));
+        worker.on("console", message => entry.workerMessages.push(`${message.type()}: ${message.text()}`));
       });
       entry.stage = "navigation";
       await page.goto(`${insecure ? "http://netwasm.test/" : address}?profile=${encodeURIComponent(profile ?? "")}`,
