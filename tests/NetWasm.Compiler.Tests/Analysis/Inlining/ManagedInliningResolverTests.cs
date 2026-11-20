@@ -201,6 +201,7 @@ public sealed class ManagedInliningResolverTests
     [InlineData(RejectedCandidate.StaticCallVirtual)]
     [InlineData(RejectedCandidate.ValueTypeInstance)]
     [InlineData(RejectedCandidate.OverridableCallVirtual)]
+    [InlineData(RejectedCandidate.AttributeQuery)]
     public void PreservesCallsWithoutCompleteLeafProof(RejectedCandidate rejection)
     {
         var fixture = new Fixture(rejection: rejection);
@@ -1260,6 +1261,8 @@ public sealed class ManagedInliningResolverTests
         StaticCallVirtual,
         ValueTypeInstance,
         OverridableCallVirtual,
+        // A public attribute query (CustomAttributeExtensions.GetCustomAttribute), whose call the lowering reads.
+        AttributeQuery,
     }
 
     public enum AggregateWrapper
@@ -1367,7 +1370,7 @@ public sealed class ManagedInliningResolverTests
             var definition = new MethodDefinitionModel(
                 new(Assembly, 0x06000002),
                 new(Assembly, 0x02000001),
-                "Leaf",
+                rejection == RejectedCandidate.AttributeQuery ? "GetCustomAttribute" : "Leaf",
                 !isInstance,
                 MethodSignatureModel.Create(
                     returnType,
@@ -1386,7 +1389,9 @@ public sealed class ManagedInliningResolverTests
             };
             Target = new(
                 definition,
-                valueType ? Int32 : Owner,
+                valueType ? Int32 : rejection == RejectedCandidate.AttributeQuery
+                    ? CliTypeIdentity.Named(new AssemblyIdentity("NetWasm.CoreLib"), "System.Reflection", "CustomAttributeExtensions", false)
+                    : Owner,
                 constructed ? [Int32] : [],
                 definition.Signature);
             Caller = rejection == RejectedCandidate.Recursive

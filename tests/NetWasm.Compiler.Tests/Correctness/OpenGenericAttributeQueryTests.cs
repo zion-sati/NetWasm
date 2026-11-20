@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel;
+
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // An attribute query whose filter is an open generic attribute type (typeof(TagAttribute<>)) finds every attribute
@@ -8,16 +10,23 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // on a type known at compile time or only at run time, with and without inheritance, through the static Attribute
 // methods and the extension methods, and where the answer is cast to an interface the attribute implements, as
 // .NET's COM source-generator support reads IUnknownDerivedAttribute<,>.
+// At O3 the inliner put a public query's body in its caller, so a query on a Type known only at run time
+// (type.GetCustomAttribute(typeof(InfoAttribute<>))) became a call to RuntimeCustomAttributes, which nothing lowers, and
+// threw PlatformNotSupportedException; the inliner keeps the query's call (AttributeQueryApis), and the fixture runs at
+// the default level and at O3.
 public sealed class OpenGenericAttributeQueryTests(CorrectnessTestRunner runner)
 {
-    [Fact]
-    public void OpenGenericAttributeFiltersMatchEveryConstructedInstanceAsOnDesktop() => runner.Run(new(
-        "OpenGenericAttributeQuery", "OpenGenericAttributeQuery", Source, [0, 1, 2])
-    {
-        ExecuteWasm64 = true,
-        ExecuteOptimizedWasm = true,
-        ReportAllMismatches = true,
-    });
+    [Theory]
+    [InlineData(FinalWasmOptimization.Oz)]
+    [InlineData(FinalWasmOptimization.O3)]
+    public void OpenGenericAttributeFiltersMatchEveryConstructedInstanceAsOnDesktop(FinalWasmOptimization optimization) =>
+        runner.Run(new("OpenGenericAttributeQuery", "OpenGenericAttributeQuery", Source, [0, 1, 2])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+            ReportAllMismatches = true,
+            Optimization = optimization,
+        });
 
     private const string Source = """
         using System;
