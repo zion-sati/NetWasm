@@ -78,6 +78,28 @@ public sealed class ReachabilityProgressReporterTests
     }
 
     [Fact]
+    public void NamesAGenericMethodOfAPrimitiveTypeByItsCanonicalName()
+    {
+        // int.CreateTruncating<long> and <short>: a primitive type has no full name, so the reporter names the
+        // declaring type by its canonical name.
+        var (reporter, logger, time) = Create();
+        var ledger = new ReachabilityLedger();
+        var int32 = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        Add(ledger, Method(int32, "CreateTruncating", [CliTypeIdentity.Primitive("i8", CliValueKind.I8)]));
+        Add(ledger, Method(int32, "CreateTruncating", [CliTypeIdentity.Primitive("i2", CliValueKind.I4)]));
+        reporter.Observe(ledger);
+        time.Advance(ReachabilityProgressReporter.Period);
+
+        reporter.Observe(ledger);
+
+        Assert.Equal(
+        [
+            "Reachability: 2 methods, 0 constructed types, 0 queued",
+            "Most generic method instances: primitive:i4.CreateTruncating (2)",
+        ], logger.Messages);
+    }
+
+    [Fact]
     public void DoesNothingWhenNoLoggerTakesItsEntries()
     {
         var (reporter, logger, time) = Create();

@@ -113,7 +113,11 @@ def run_cells(*, root, env, feed, version, sdk_version, node, kinds, profiles, c
                 row['optimization'] = component_optimization
                 publish.append('-p:NetWasmOptimization=' + component_optimization)
             run('publish', publish)
-            published = cell / f'bin/{profile}/netwasm0.1/publish'
+            # The fixtures target netwasm0.1; the wit cell is the netwasm-app template's project, which targets
+            # net10.0-netwasm, so each cell's deployment is the one publish folder its own framework wrote.
+            publishes = sorted((cell / 'bin' / profile).glob('*/publish'))
+            assert len(publishes) == 1, f'{kind}/{profile}: expected one publish folder, found {publishes}'
+            published = publishes[0]
 
             def output_hashes(cell=cell, kind=kind, published=published):
                 # Component mode executes build output through dotnet run,
