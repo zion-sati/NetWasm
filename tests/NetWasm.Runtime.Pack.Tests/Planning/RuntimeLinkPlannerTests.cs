@@ -31,6 +31,29 @@ public sealed class RuntimeLinkPlannerTests
         Assert.Equal(2, plan.InternalRuntimeExports.Count(export => export.Name is "probe" or "consume"));
     }
 
+    // The browser link exports the C library functions the program imports without a native library to provide them.
+    [Fact]
+    public void CLibraryImportsNeedNoNativeLibrary()
+    {
+        var request = new RuntimeLinkPlanRequest(JsonSerializer.Serialize(RuntimePackTestData.Manifest()), "wasm32", 948,
+            SystemLibraries: SystemLibraries(RuntimePackTestData.Target("wasm32")))
+        {
+            NativeImports =
+            [
+                new("libc", "cbrt", [RuntimeLinkPlanNativeValueType.F64], RuntimeLinkPlanNativeValueType.F64),
+                new("sample", "probe", [], null),
+            ],
+            NativeLibraries = [new("sample", "wasm32", "/native/libsample.a", RuntimePackTestData.Digest)],
+        };
+
+        var plan = RuntimeLinkPlanner.Plan(request);
+
+        Assert.Single(plan.Arguments, argument => argument == "--export=cbrt");
+        Assert.DoesNotContain("--undefined=cbrt", plan.Arguments);
+        Assert.Contains(plan.InternalRuntimeExports, export => export.Name == "cbrt");
+        Assert.Contains(plan.InternalRuntimeExports, export => export.Name == "probe");
+    }
+
     [Fact]
     public void RejectsUninitializedOrInvalidNativeContracts()
     {

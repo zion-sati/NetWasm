@@ -45,7 +45,7 @@ public sealed class WasmMethodLowererTests
         Assert.Throws<ArgumentNullException>(() => lowerer.Lower(null!));
     }
 
-    private static ManagedMethodBody CreateManagedMethodBody()
+    internal static ManagedMethodBody CreateManagedMethodBody()
     {
         var assembly = new AssemblyIdentity("WasmMethodLowererTests");
         var definition = new MethodDefinitionModel(

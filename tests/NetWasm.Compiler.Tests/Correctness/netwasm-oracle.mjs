@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { readExceptionClause } from "./exception-metadata.mjs";
 import { createRefreshableDataView } from "./refreshable-data-view.mjs";
 import { createDeclaredOracleImports } from "./declared-oracle-imports.mjs";
+import { loadOracleLibm } from "./oracle-libm.mjs";
 import { addUnprovidedWasiImports } from "./unprovided-wasi-imports.mjs";
 import { readRuntimeTypeTable } from "./runtime-type-table.cjs";
 
@@ -1196,6 +1197,8 @@ var runtimeValues = {
   },
   finalizer_safepoint: zeroAddress,
 };
+// CoreLib's Math and MathF import the C library's math functions (libc, which every program links).
+Object.assign(runtimeValues, await loadOracleLibm(new URL(".", import.meta.url), target, () => memory));
 // NetWasm.App.Runtime's cryptography shim (libSystem.Security.Cryptography.Native.OpenSsl) is not linked here, nor are the
 // address getters of the callbacks a native link would provide.
 var runtime = createDeclaredOracleImports("netwasm.runtime.v1", runtimeValues,

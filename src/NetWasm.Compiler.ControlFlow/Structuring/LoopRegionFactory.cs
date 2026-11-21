@@ -19,6 +19,7 @@ internal sealed class LoopRegionFactory(
     ILoopExitPartitioner exitPartitions,
     ILoopContinueTargetFinder continueTargets,
     ILoopRegionEligibilityClassifier eligibility,
+    ILoopEntryTargetFinder entryTargets,
     BranchPrefixDuplicationPolicy duplicationPolicy = BranchPrefixDuplicationPolicy.SizeAware) : ILoopRegionFactory
 {
     private readonly IReachableSetOverlapClassifier _reachableSetOverlaps = reachableSetOverlaps ?? throw new ArgumentNullException(nameof(reachableSetOverlaps));
@@ -30,6 +31,8 @@ internal sealed class LoopRegionFactory(
     private readonly ILoopContinueTargetFinder _continueTargets = continueTargets ?? throw new ArgumentNullException(nameof(continueTargets));
     private readonly ILoopRegionEligibilityClassifier _eligibility = eligibility ??
         throw new ArgumentNullException(nameof(eligibility));
+    private readonly ILoopEntryTargetFinder _entryTargets = entryTargets ??
+        throw new ArgumentNullException(nameof(entryTargets));
     private readonly bool _allowSharedExitSplitting = duplicationPolicy switch
     {
         BranchPrefixDuplicationPolicy.Disabled or BranchPrefixDuplicationPolicy.SizeAware => false,
@@ -43,12 +46,7 @@ internal sealed class LoopRegionFactory(
         ControlFlowDomain domain,
         ImmutableArray<ControlFlowDomain> domains)
     {
-        var entryTargets = component
-            .Where(node => graph.Predecessors[node].Any(predecessor =>
-                graph.ReachableBlocks.Contains(predecessor) &&
-                !component.Contains(predecessor) &&
-                !IsExceptionDomainPredecessor(predecessor)))
-            .ToImmutableHashSet();
+        var entryTargets = _entryTargets.Find(graph, component, domain, domains);
         int header;
         if (component.Contains(domain.Entry))
         {
@@ -56,12 +54,13 @@ internal sealed class LoopRegionFactory(
             {
                 throw _errors.Create(state, "entry loop has an additional external entry");
             }
-            header = graph.Entry.Index;
+            // The method's entry, or a handler's when the loop starts the handler.
+            header = domain.Entry;
         }
         else
         {
             // Natural-loop analysis guarantees one external header for every
-            // reachable component outside the method entry domain.
+            // reachable component that does not hold its domain's entry.
             header = entryTargets.Single();
         }
 
@@ -147,12 +146,6 @@ internal sealed class LoopRegionFactory(
                 domains))
             ? new LoopRegionCreation(region, ImmutableHashSet<int>.Empty)
             : new LoopRegionCreation(null, component);
-
-        bool IsExceptionDomainPredecessor(int predecessor) =>
-            domain.Entry == graph.Entry.Index &&
-            domains.Any(candidate =>
-                candidate.Entry != graph.Entry.Index &&
-                candidate.Blocks.Contains(predecessor));
     }
 
     private LoopRegionCreation? CreateUnconditional(ControlFlowStructuringState state,

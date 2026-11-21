@@ -27,7 +27,9 @@ internal sealed class RuntimeModuleMaterializer(
     ICommandInvoker commands,
     IArtifactDigestCalculator artifactDigests,
     IRuntimeNativeModuleMaterializer nativeModules,
-    ILinkerCommandFactory linkerCommands) : IRuntimeModuleMaterializer
+    ILinkerCommandFactory linkerCommands,
+    IRuntimeSystemImportPartitioner systemImports,
+    IRuntimeLinkExportPlanBuilder exports) : IRuntimeModuleMaterializer
 {
     private const string DisableExperimentalWarningOption =
         "--disable-warning=ExperimentalWarning";
@@ -50,13 +52,18 @@ internal sealed class RuntimeModuleMaterializer(
             .Select(asset => ResolveAsset(request.AssetRoot, asset.Path))
             .ToImmutableArray();
         VerifyAssets(request.AssetRoot, target);
-        if (!sourceLayout.NativeImports.IsEmpty ||
+        // Imports of the C library are the runtime's own exports; only a native library's imports need native
+        // materialization.
+        var imports = systemImports.Partition(sourceLayout.NativeImports);
+        if (!imports.NativeImports.IsEmpty ||
             sourceLayout.NativeCallbackSupport is not null)
-            return nativeModules.Materialize(new(request, manifest, target, sourceLayout, systemLibraryPaths)
+            return nativeModules.Materialize(new(request, manifest, target,
+                sourceLayout with { NativeImports = imports.NativeImports }, systemLibraryPaths)
             {
                 ExceptionSystemLibraryPaths = target.ExceptionSystemLibraries is { } exceptionLibraries
                     ? [.. exceptionLibraries.Assets.Select(asset => ResolveAsset(request.AssetRoot, asset.Path))]
                     : [],
+                SystemExports = imports.SystemExports,
             });
         var memoryLayout = memoryLayouts.Calculate(new(
             target,
@@ -73,8 +80,14 @@ internal sealed class RuntimeModuleMaterializer(
             request.OutputPath)
         {
             RuntimeFeatures = sourceLayout.RuntimeFeatures,
+            SystemExports = imports.SystemExports,
             PlainCoreModule = request.PlainCoreModule,
         });
+        var internalExports = exports.Build(new(manifest.Exports, [])
+        {
+            RuntimeFeatures = sourceLayout.RuntimeFeatures,
+            SystemExports = imports.SystemExports,
+        }).InternalExports;
         var optimizeArguments = request.Optimization == RuntimeWasmOptimization.None
             ? ImmutableArray<string>.Empty
             : optimizationArguments.Build(new(target, request.OutputPath, request.Optimization)
@@ -111,7 +124,8 @@ internal sealed class RuntimeModuleMaterializer(
                     Recomputed: false,
                     cached.Bytes!.LongLength,
                     lookupMilliseconds,
-                    Stopwatch.GetElapsedTime(totalStarted).TotalMilliseconds));
+                    Stopwatch.GetElapsedTime(totalStarted).TotalMilliseconds),
+                internalExports);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!);
@@ -163,7 +177,8 @@ internal sealed class RuntimeModuleMaterializer(
                 Recomputed: true,
                 bytes.LongLength,
                 lookupMilliseconds,
-                Stopwatch.GetElapsedTime(totalStarted).TotalMilliseconds));
+                Stopwatch.GetElapsedTime(totalStarted).TotalMilliseconds),
+            internalExports);
     }
 
     private static RuntimeMaterialization CreateResult(
@@ -172,7 +187,8 @@ internal sealed class RuntimeModuleMaterializer(
         RuntimePackTarget target,
         RuntimeMemoryLayout memoryLayout,
         string sha256,
-        RuntimeMaterializationCacheMetrics metrics) =>
+        RuntimeMaterializationCacheMetrics metrics,
+        ImmutableArray<RuntimeLinkExport> internalExports) =>
         new(
             target.Target,
             Path.GetFullPath(request.OutputPath),
@@ -187,6 +203,7 @@ internal sealed class RuntimeModuleMaterializer(
             metrics)
         {
             GarbageCollector = target.GarbageCollector,
+            InternalRuntimeExports = internalExports,
         };
 
     private static void ValidateRequest(RuntimeMaterializationRequest request)

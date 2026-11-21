@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm;
 
 namespace NetWasm.Testing.CompilerHost;
 
@@ -45,11 +46,20 @@ internal sealed class CompilerHostArtifactFormatter : ICompilerHostArtifactForma
             };
             if (result.StaticDataEnd < 0)
                 throw new InvalidOperationException("application static-data extent is negative");
+            // The reached native imports, as nwc writes them: the C library functions CoreLib's Math and MathF
+            // import are among them, and a linked test runtime exports those (eng/build-netwasm-runtime.sh).
             Add(request.RuntimeLayoutPath, JsonSerializer.SerializeToUtf8Bytes(new
             {
                 schemaVersion = 2,
                 target,
                 applicationStaticDataEnd = result.StaticDataEnd,
+                nativeImports = result.NativeImports.Select(static import => new
+                {
+                    libraryName = import.LibraryName,
+                    entryPoint = import.EntryPoint,
+                    parameters = import.Parameters.Select(ValueTypeName).ToArray(),
+                    returnType = import.ReturnType is { } returnType ? ValueTypeName(returnType) : null,
+                }).ToArray(),
             }, JsonOptions));
         }
         if (request.InteropManifestPath is not null)
@@ -58,6 +68,8 @@ internal sealed class CompilerHostArtifactFormatter : ICompilerHostArtifactForma
             Add(request.InteropManifestPath, JsonSerializer.SerializeToUtf8Bytes(result.InteropManifest, JsonOptions));
         }
         return artifacts.ToImmutable();
+
+        static string ValueTypeName(WasmValueType type) => JsonNamingPolicy.CamelCase.ConvertName(type.ToString());
 
         void Add(string? path, byte[] bytes)
         {

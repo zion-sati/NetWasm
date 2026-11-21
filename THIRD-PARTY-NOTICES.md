@@ -19,7 +19,27 @@ and GCC Runtime Library Exception notices, and exact corresponding-source
 locations in `licenses/`.
 `NetWasm.Runtime.Pack` includes the Emscripten, musl libc and LLVM compiler-rt
 notices for its static archive inputs in its own
-[`LICENSE.txt`](src/NetWasm.Runtime.Pack/runtime/LICENSE.txt).
+[`LICENSE.txt`](src/NetWasm.Runtime.Pack/runtime/LICENSE.txt). `Math` and
+`MathF` call musl's math functions from that C library, as .NET calls the
+platform's C library.
+
+## Managed transcendental math
+
+Where a managed port gives the C library's results bit for bit and runs
+faster, `Math` and `MathF` call it in place of the C library. `Math.Asin` and
+`Math.Acos` are C# ports of Sun fdlibm, pinned to `biosbits/fdlibm` commit
+`dfd9eaed985332a1c3af98c2bab4004eea217d3d`, and retain the permissive Sun
+Microsystems notices from 1993 and 2004. `double.Exp2`, `Math.Pow`,
+`MathF.Exp`, `MathF.Log`, `MathF.Log2` and `MathF.Pow` port Arm's optimized
+routines as musl v1.2.5 carries them (commit
+`0784374d561435f7c787a555aeab8ede699ed298`), under the MIT license with the
+"Copyright (c) 2018, Arm Limited" and "Copyright (c) 2017-2018, Arm Limited"
+notices. `MathF.Acosh` ports musl's own `acoshf.c` under musl's MIT license,
+and `MathF.Cbrt` and the `log1pf` that `MathF.Acosh` uses port musl's
+`cbrtf.c` and `log1pf.c`, FreeBSD msun code that retains the 1993 Sun
+Microsystems notice. Every derived file
+identifies its upstream files; the complete notices appear in the source files
+and in `THIRD-PARTY-NOTICES.TXT`.
 
 ## .NET Foundation sources
 
@@ -52,34 +72,6 @@ Several decimal binary128 implementation files retain notices for the Intel
 Decimal Floating-Point Math Library. Source also identifies
 `sinpi`/`cospi`/`tanpi` lineage from `amd/aocl-libm-ose`. Those notices identify
 BSD-3-Clause terms.
-
-## Managed transcendental math
-
-The `Math.Sin`, `Math.Cos`, `Math.Tan`, `Math.Sinh`, `Math.Tanh`, `Math.Acosh`,
-`Math.Asin`, `Math.Acos`, `Math.Atan`, `Math.Atan2`, `Math.Cbrt` and `Math.Log`
-implementations and their `Math.Fd*` kernels are C# ports of Sun fdlibm. They retain the permissive Sun Microsystems notices from
-1993 and 2004. Their source is pinned to `biosbits/fdlibm` commit
-`dfd9eaed985332a1c3af98c2bab4004eea217d3d`; every derived file identifies its
-upstream filename. Permission to use, copy, modify and distribute is granted
-provided the corresponding notice is preserved. The complete notices appear
-in the source files and in `THIRD-PARTY-NOTICES.TXT`.
-
-`Math.Exp`, `double.Exp2` and `Math.Pow` port Arm's optimized routines as musl
-v1.2.5 carries them in `src/math/exp.c`, `exp2.c`, `exp_data.c`, `pow.c` and
-`pow_data.c` (commit
-`0784374d561435f7c787a555aeab8ede699ed298`). They retain the "Copyright (c)
-2018, Arm Limited" notice under the MIT license. `MathF.Exp`, `MathF.Log`,
-`MathF.Log2` and `MathF.Pow` port the float versions from the same release
-(`expf.c`, `logf.c`, `log2f.c`, `powf.c`, `exp2f_data.c`, `logf_data.c`,
-`log2f_data.c` and `powf_data.c`), which retain the "Copyright (c) 2017-2018,
-Arm Limited" notice under the MIT license. `MathF.Sin`, `MathF.Cos`,
-`MathF.Tan` and `MathF.SinCos` port musl's float trigonometry from the same
-release (`sinf.c`, `cosf.c`, `sincosf.c`, `tanf.c`, `__sindf.c`, `__cosdf.c`,
-`__tandf.c` and `__rem_pio2f.c`), FreeBSD msun code that retains the 1993 Sun
-Microsystems notice. `Math.FusedMultiplyAdd` ports musl's own `fma.c` under
-musl's MIT license ("Copyright © 2005-2020 Rich Felker, et al."), and
-`MathF.FusedMultiplyAdd` ports `fmaf.c`, FreeBSD msun code that retains the
-"Copyright (c) 2005-2011 David Schultz" BSD-2-Clause notice.
 
 ## IANA Time Zone Database
 

@@ -81,6 +81,7 @@ internal sealed class RuntimeLinkArgumentBuilder(IRuntimeLinkExportPlanBuilder e
         {
             RuntimeFeatures = request.RuntimeFeatures,
             NativeCallbackSupport = request.NativeCallbackSupport,
+            SystemExports = request.SystemExports,
         });
         arguments.AddRange(exportPlan.Arguments);
         if (!request.NativeBindings.IsEmpty)

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Core.Tests;
@@ -90,6 +92,64 @@ public sealed class LargeStackThreadsTests
         Assert.Equal("compilation", flowed);
         Assert.Null(suppressed);
     }
+
+    // A thread keeps nothing of the context of the call that started it: work whose caller suppressed flow, run on
+    // it later, sees no context. Here one call, with a value in its context, starts every thread.
+    [Fact]
+    public void AThreadKeepsNoContextOfTheCallThatStartedIt()
+    {
+        var run = FreshThreads();
+        var context = new AsyncLocal<string?> { Value = "compilation" };
+        string? suppressed = "unset";
+
+        RunOnEveryThread(run, _ => { });
+        using (ExecutionContext.SuppressFlow())
+        {
+            run(1, _ => suppressed = context.Value);
+        }
+
+        Assert.Null(suppressed);
+    }
+
+    // What work whose caller suppressed flow sets in its context ends with the work: the next such work on the same
+    // thread sees none of it.
+    [Fact]
+    public void WhatWorkWithoutAContextSetsEndsWithTheWork()
+    {
+        var run = FreshThreads();
+        var context = new AsyncLocal<string?>();
+        var seen = new ConcurrentBag<string?>();
+
+        using (ExecutionContext.SuppressFlow())
+        {
+            RunOnEveryThread(run, _ => context.Value = "left behind");
+            RunOnEveryThread(run, _ => seen.Add(context.Value));
+        }
+
+        Assert.Equal(Threads, seen.Count);
+        Assert.All(seen, Assert.Null);
+    }
+
+    private static readonly int Threads = Math.Max(2, Environment.ProcessorCount);
+
+    // One item on each thread: the items wait until all of them run, so each holds its own thread, and on threads
+    // that do not exist yet the call starts every one.
+    private static void RunOnEveryThread(Action<int, Action<int>> run, Action<int> body)
+    {
+        using var allRunning = new Barrier(Threads);
+        run(Threads, index =>
+        {
+            body(index);
+            Assert.True(allRunning.SignalAndWait(TimeSpan.FromMinutes(1)));
+        });
+    }
+
+    // Run of a copy of the type in a load context of its own, which has started no thread yet.
+    private static Action<int, Action<int>> FreshThreads([CallerMemberName] string test = "") =>
+        new AssemblyLoadContext(test).LoadFromAssemblyPath(typeof(LargeStackThreads).Assembly.Location)
+            .GetType(typeof(LargeStackThreads).FullName!, throwOnError: true)!
+            .GetMethod(nameof(LargeStackThreads.Run))!
+            .CreateDelegate<Action<int, Action<int>>>();
 
     [Fact]
     public void FailuresAreRethrownOnTheCallingThreadLowestIndexFirst()

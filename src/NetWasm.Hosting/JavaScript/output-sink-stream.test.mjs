@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { dropGuestStream, validateOutputSink, writeStreamToSink } from "./output-sink-stream.mjs";
+import { createGuestByteReader, dropGuestStream, validateOutputSink, writeStreamToSink } from "./output-sink-stream.mjs";
 
 function recordingSink() {
   const writes = [];
@@ -76,7 +76,9 @@ test("settles the write's future with io when the stream or the sink fails", asy
 
 // A guest whose output the host stops taking (a sink that refuses more, as a page capping its
 // console does) must see a closed pipe: left open, its next write waits for a reader forever.
-test("drops the guest's stream when its copy fails, and only then", async () => {
+// A copy that reads the end drops the host's end too, as a guest reader drops its readable end:
+// left open, the stream stays in the guest's tables for the rest of the run.
+test("drops the guest's stream when its copy fails or once it has read the end", async () => {
   const refusing = Object.freeze({ write() { throw new Error("console limit"); } });
   const disposable = chunks => {
     const { stream } = readableStream(chunks);
@@ -105,7 +107,29 @@ test("drops the guest's stream when its copy fails, and only then", async () => 
   const { writes, sink } = recordingSink();
   assert.deepEqual(await writeStreamToSink(completed, sink), { tag: "ok", val: undefined });
   assert.deepEqual(writes, [[3]]);
-  assert.equal(completed.drops, 0);
+  assert.equal(completed.drops, 1);
+
+  let returned = 0;
+  const ended = {
+    [Symbol.asyncIterator]() { return { next: async () => ({ value: undefined, done: true }) }; },
+    return: () => { returned++; },
+  };
+  assert.deepEqual(await writeStreamToSink(ended, recordingSink().sink), { tag: "ok", val: undefined });
+  assert.equal(returned, 1);
+});
+
+test("a reader drops the guest's stream once, when it reads the end", async () => {
+  const stream = { drops: 0, chunks: [[1], [2]], read: async () => {
+    const value = stream.chunks.shift();
+    return value === undefined ? { value: undefined, done: true } : { value, done: false };
+  } };
+  stream[Symbol.dispose] = () => { stream.drops++; };
+  const read = createGuestByteReader(stream);
+  assert.deepEqual([...await read()], [1]);
+  assert.deepEqual([...await read()], [2]);
+  assert.equal(stream.drops, 0);
+  assert.equal(await read(), null);
+  assert.equal(stream.drops, 1);
 });
 
 test("drops a jco stream end by disposing it and an iterator by returning it", () => {

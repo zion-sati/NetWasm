@@ -78,7 +78,7 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
             branchOverlaps,
             subgraphCycles,
             branchPrefixDuplication));
-        var domains = new ControlFlowDomainFinder(reachableBlocks);
+        var domains = new ControlFlowDomainFinder(reachableBlocks, new OutermostFirstExceptionRegionOrderer());
         var exitExtensions = new LoopExitExtensionCollector();
         var exitPartitions = new LoopExitPartitioner(exitExtensions, _reachableSetOverlaps);
         var activeBlockRetention = new LoopActiveBlockRetentionSelector();
@@ -91,6 +91,7 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
             exitPartitions,
             new LoopContinueTargetFinder(joins, reachableBlocks),
             new LoopRegionEligibilityClassifier(subgraphCycles),
+            new LoopEntryTargetFinder(),
             branchPrefixDuplication);
         var structuredControlFlow = new StructuredControlFlowBuilder(
             exceptionAwareDispatcherShells,

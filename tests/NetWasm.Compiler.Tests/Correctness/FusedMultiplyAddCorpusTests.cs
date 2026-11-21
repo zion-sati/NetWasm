@@ -96,8 +96,14 @@ public sealed class FusedMultiplyAddCorpusTests(CorrectnessTestRunner runner)
                     var y = singles[index / singles.Length % singles.Length];
                     var z = singles[index / (singles.Length * singles.Length) % singles.Length];
                     var signaling = BitConverter.Int64BitsToDouble(0x7FF0000000000001);
-                    return Double(a, b, c) * 5 + Single(x, y, z) + Double(1.5, b, signaling) * 11;
+                    return Double(a, b, c) * 5 + Single(x, y, z) + Classified(Math.FusedMultiplyAdd(1.5, b, signaling)) * 11;
                 }
+
+                // A signaling NaN addend: desktop's FMA instruction returns it quieted, and musl's fma, which Math calls
+                // as Mono's WebAssembly runtime does, returns it as it is. .NET leaves NaN payloads unspecified, so only
+                // whether the result is a NaN counts.
+                private static int Classified(double value) =>
+                    double.IsNaN(value) ? 1 : BitConverter.DoubleToInt64Bits(value).GetHashCode();
 
                 // Built from bits, so no other library function shapes the inputs.
                 private static double RandomDouble(int exponentRange)

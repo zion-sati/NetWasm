@@ -172,8 +172,17 @@ const includeObjectClone = layout.runtimeFeatures === undefined ||
   layout.runtimeFeatures.includes("object-clone");
 const includeUninitializedArrays = layout.runtimeFeatures === undefined ||
   layout.runtimeFeatures.includes("uninitialized-arrays");
+// The C library functions the program imports (CoreLib's Math and MathF call libm): the runtime links the C
+// library and exports them, as RuntimeSystemImportPartitioner does for a runtime pack.
+const systemExports = [...new Set((layout.nativeImports ?? [])
+  .filter(nativeImport => nativeImport?.libraryName === "libc")
+  .map(nativeImport => nativeImport.entryPoint))].sort();
+if (systemExports.some(name => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))) {
+  process.stderr.write("runtime layout C library imports must name C functions\n");
+  process.exit(1);
+}
 process.stdout.write(
-  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}\n${includeRandomSeed ? 1 : 0}\n${includeObjectClone ? 1 : 0}\n${includeUninitializedArrays ? 1 : 0}`);
+  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}\n${includeRandomSeed ? 1 : 0}\n${includeObjectClone ? 1 : 0}\n${includeUninitializedArrays ? 1 : 0}\nexports=${systemExports.join(" ")}`);
 NODE
 )"
 runtime_target="${runtime_layout_values%%$'\n'*}"
@@ -191,7 +200,15 @@ runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_random_seed="${runtime_layout_values%%$'\n'*}"
 runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_object_clone="${runtime_layout_values%%$'\n'*}"
-include_uninitialized_arrays="${runtime_layout_values#*$'\n'}"
+runtime_layout_values="${runtime_layout_values#*$'\n'}"
+include_uninitialized_arrays="${runtime_layout_values%%$'\n'*}"
+# The export line is marked, so an empty list survives the command substitution's trailing-newline trim.
+system_exports_line="${runtime_layout_values#*$'\n'}"
+[[ "$system_exports_line" = exports=* ]] || {
+    echo "runtime layout contract validation failed" >&2
+    exit 1
+}
+read -r -a system_exports <<< "${system_exports_line#exports=}"
 [[ "$runtime_target" = "$target" && "$runtime_global_base" =~ ^[0-9]+$ &&
    "$include_ephemerons" =~ ^[01]$ &&
    "$include_structured_command_diagnostics" =~ ^[01]$ &&
@@ -458,6 +475,9 @@ else
         mkdir -p "$(dirname "$link_map")"
         emcc_args+=(--emit-symbol-map -Wl,--print-gc-sections "-Wl,-Map=$link_map")
     fi
+    for name in ${system_exports[@]+"${system_exports[@]}"}; do
+        emcc_args+=("-Wl,--export=$name")
+    done
     emcc_args+=(
         -sGLOBAL_BASE="$runtime_global_base" -sINITIAL_MEMORY="$initial_memory"
         -sALLOW_MEMORY_GROWTH=1 -Wl,--no-entry -Wl,--gc-sections

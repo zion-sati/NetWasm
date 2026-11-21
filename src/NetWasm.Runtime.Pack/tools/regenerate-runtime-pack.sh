@@ -130,6 +130,17 @@ NODE
     }
     packaged_library="$target_root/system-libraries/$library"
     cp "$system_source/$library" "$packaged_library"
+    if [[ "$library" = libc_optz.a ]]; then
+      # libc_optz.a supplies the runtime's size-optimized memory functions. Its log, log2 and pow are older, less
+      # accurate versions than libc.a's, which Math and MathF call as Mono's WebAssembly runtime does, so they leave.
+      for member in log_small.o log2_small.o pow_small.o; do
+        emar t "$packaged_library" | grep -qx "$member" || {
+          echo "libc_optz.a for '$target' no longer has '$member'; review which math it supplies" >&2
+          exit 1
+        }
+      done
+      emar d "$packaged_library" log_small.o log2_small.o pow_small.o
+    fi
     system_paths+=("$packaged_library")
   done
 

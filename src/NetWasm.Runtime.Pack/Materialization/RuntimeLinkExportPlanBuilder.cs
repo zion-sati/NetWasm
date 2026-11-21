@@ -55,9 +55,9 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
     public RuntimeLinkExportPlan Build(RuntimeLinkExportPlanRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.PublicExports.IsDefault || request.NativeBindings.IsDefault ||
-            request.PublicExports.Any(InvalidName) || request.NativeBindings.Any(binding =>
-                binding?.Import is null || InvalidName(binding.Import.EntryPoint)) ||
+        if (request.PublicExports.IsDefault || request.NativeBindings.IsDefault || request.SystemExports.IsDefault ||
+            request.PublicExports.Any(InvalidName) || request.SystemExports.Any(InvalidName) ||
+            request.NativeBindings.Any(binding => binding?.Import is null || InvalidName(binding.Import.EntryPoint)) ||
             request.NativeCallbackSupport is { } callbackSupport &&
             (callbackSupport.TemporaryRuntimeExports.IsDefault ||
              callbackSupport.TemporaryRuntimeExports.Any(InvalidName)))
@@ -67,25 +67,33 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
         var arguments = RequiredRuntimeExports.Select(name => "--export=" + name)
             .Concat(OptionalRuntimeExports.Select(name => "--export-if-defined=" + name))
             .Concat(publicExports.Select(name => "--export=" + name)).ToImmutableArray();
-        if (request.NativeBindings.IsEmpty && request.NativeCallbackSupport is null)
-            return new(arguments, []);
         var publicNames = required.Concat(OptionalRuntimeExports).Append("memory").Append("__indirect_function_table")
             .ToHashSet(StringComparer.Ordinal);
+        if (request.SystemExports.Any(publicNames.Contains))
+            throw new InvalidOperationException("A C library function collides with a public runtime export.");
+        // The C library functions the program imports. The runtime links the C library, so it exports them for this
+        // program only, and they are internal: the linked program drops the exports again.
+        var systemExports = request.SystemExports.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+            .Select(name => new RuntimeLinkExport(name, 0)).ToImmutableArray();
+        if (request.NativeBindings.IsEmpty && request.NativeCallbackSupport is null)
+            return new(arguments.AddRange(systemExports.Select(export => "--export=" + export.Name)), systemExports);
         var callbackExports = request.NativeCallbackSupport?.TemporaryRuntimeExports ?? [];
         if (callbackExports.Any(publicNames.Contains))
             throw new InvalidOperationException("A native callback getter collides with a public runtime export.");
         var existing = InspectionExports
             .AddRange(request.NativeBindings.Select(binding =>
-                new RuntimeLinkExport(binding.Import.EntryPoint, 0)));
+                new RuntimeLinkExport(binding.Import.EntryPoint, 0)))
+            .AddRange(systemExports);
         if (callbackExports.Any(name => existing.Any(export => export.Name == name)))
             throw new InvalidOperationException("A native callback getter collides with another runtime export.");
         var added = existing
-            .AddRange(callbackExports.Select(name => new RuntimeLinkExport(name, 0)));
+            .AddRange(callbackExports.Select(name => new RuntimeLinkExport(name, 0)))
+            .Distinct().ToImmutableArray();
         if (added.GroupBy(export => export.Name, StringComparer.Ordinal)
             .Any(group => group.Select(export => export.Kind).Distinct().Count() != 1))
             throw new InvalidOperationException("The runtime export plan contains conflicting native export kinds.");
         return new(arguments.AddRange(added.Select(export => "--export=" + export.Name)),
-            added.Distinct().Where(export => !publicNames.Contains(export.Name)).ToImmutableArray());
+            added.Where(export => !publicNames.Contains(export.Name)).ToImmutableArray());
     }
 
     private static ImmutableArray<string> SelectPublicExports(

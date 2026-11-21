@@ -211,8 +211,51 @@ public sealed class RuntimeLinkExportPlanBuilderTests
             new(default, []), new([], default), new([null!], []), new(["\n"], []),
             new([], [null!]), new([], [Binding("native") with { Import = null! }]),
             new([], [Binding("")]), new([], [Binding("__heap_base")]),
+            new([], []) { SystemExports = default }, new([], []) { SystemExports = [null!] },
+            new([], []) { SystemExports = ["\n"] }, new(["initialize"], []) { SystemExports = ["initialize"] },
+            new([], []) { SystemExports = ["memory"] },
+            new([], [Binding("native")]) { SystemExports = ["__heap_base"] },
         }) Assert.Throws<InvalidOperationException>(() => builder.Build(request));
     }
+
+    // The C library functions a program imports are exported for it alone, in name order, and removed again from the
+    // linked program.
+    [Fact]
+    public void ExportsTheCLibraryFunctionsTheProgramImportsAsInternalExports()
+    {
+        var plan = new RuntimeLinkExportPlanBuilder().Build(new(["initialize"], [])
+        {
+            RuntimeFeatures = [],
+            SystemExports = ["log10", "cbrt", "log10"],
+        });
+
+        Assert.Equal(["--export=initialize", "--export=cbrt", "--export=log10"],
+            plan.Arguments.Skip(plan.Arguments.IndexOf("--export=initialize")).ToArray());
+        Assert.Equal([new RuntimeLinkExport("cbrt", 0), new("log10", 0)], plan.InternalExports.ToArray());
+    }
+
+    [Fact]
+    public void ExportsCLibraryFunctionsBesideNativeBindingsOnce()
+    {
+        var plan = new RuntimeLinkExportPlanBuilder().Build(new([], [Binding("native"), Binding("sin")])
+        {
+            SystemExports = ["sin", "cbrt"],
+        });
+
+        Assert.Single(plan.Arguments, argument => argument == "--export=sin");
+        Assert.Contains("--export=cbrt", plan.Arguments);
+        Assert.Equal([new("__global_base", 3), new("__data_end", 3), new("__stack_low", 3), new("__stack_high", 3),
+            new("__heap_base", 3), new("native", 0), new("sin", 0), new RuntimeLinkExport("cbrt", 0)],
+            plan.InternalExports.ToArray());
+    }
+
+    [Fact]
+    public void RejectsACallbackGetterThatCollidesWithACLibraryFunction() =>
+        Assert.Throws<InvalidOperationException>(() => new RuntimeLinkExportPlanBuilder().Build(new([], [])
+        {
+            NativeCallbackSupport = RuntimePackTestData.CallbackSupport() with { TemporaryRuntimeExports = ["cbrt"] },
+            SystemExports = ["cbrt"],
+        }));
 
     [Fact]
     public void RejectsCallbackGetterCollisionsBeforeBuildingArguments()

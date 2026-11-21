@@ -45,16 +45,23 @@ export function validateOutputSink(value, label = "output sink") {
 
 // jco hands a host import a stream it can read in chunks or iterate, and a raw host hands it
 // an async iterator; either yields bytes until the guest drops the writable end, then null.
+// The reader drops the host's end once it has read the end, as a guest reader drops its
+// readable end: until then the stream and its ends stay in the guest's tables.
 export function createGuestByteReader(stream) {
   if (stream !== null && typeof stream === "object" && typeof stream.read === "function") {
-    return async () => readChunk(await stream.read({ count: chunkLimit }));
+    return async () => endAtNull(stream, readChunk(await stream.read({ count: chunkLimit })));
   }
   if (stream !== null && typeof stream === "object"
       && typeof stream[Symbol.asyncIterator] === "function") {
     const iterator = stream[Symbol.asyncIterator]();
-    return async () => readChunk(await iterator.next());
+    return async () => endAtNull(stream, readChunk(await iterator.next()));
   }
   throw new TypeError("guest output stream is not readable");
+}
+
+function endAtNull(stream, chunk) {
+  if (chunk === null) dropGuestStream(stream);
+  return chunk;
 }
 
 function readChunk(value) {

@@ -1,0 +1,885 @@
+diff --git a/crates/js-component-bindgen/src/function_bindgen.rs b/crates/js-component-bindgen/src/function_bindgen.rs
+index 6dbae4a..03542aa 100644
+--- a/crates/js-component-bindgen/src/function_bindgen.rs
++++ b/crates/js-component-bindgen/src/function_bindgen.rs
+@@ -509,6 +509,12 @@ impl FunctionBindgen<'_> {
+         self.emit_guest_dealloc(&ptr, &len, size, align);
+     }
+ 
++    /// Whether lowering instructions are lowering an async import's results, which the async
++    /// return-handling machinery lowers into the caller's memory when the call returns.
++    fn async_import_results(&self) -> bool {
++        self.is_async && self.for_import.unwrap_or_default()
++    }
++
+     fn lift_callbackless_async_result(&mut self) -> Option<(String, String)> {
+         if !self.is_async || self.for_import.unwrap_or_default() {
+             return None;
+@@ -1736,6 +1742,15 @@ impl Bindgen for FunctionBindgen<'_> {
+             // when a list of lists or list of Uint8Arrays is sent.
+             //
+             Instruction::ListCanonLower { element, .. } => {
++                // An async import's results are lowered by the async return-handling machinery
++                // (see `AsyncTaskIntrinsic::LowerImport` and `task.resolve`), as for `FutureLower`:
++                // lowering here as well would register the resource or allocate guest memory a
++                // second time, which nothing then releases.
++                if self.async_import_results() {
++                    results.push("0".into());
++                    results.push("0".into());
++                    return;
++                }
+                 self.intrinsic(Intrinsic::Conversion(
+                     ConversionIntrinsic::RequireValidNumericPrimitive,
+                 ));
+@@ -1821,6 +1836,15 @@ impl Bindgen for FunctionBindgen<'_> {
+             }
+ 
+             Instruction::StringLower { .. } => {
++                // An async import's results are lowered by the async return-handling machinery
++                // (see `AsyncTaskIntrinsic::LowerImport` and `task.resolve`), as for `FutureLower`:
++                // lowering here as well would register the resource or allocate guest memory a
++                // second time, which nothing then releases.
++                if self.async_import_results() {
++                    results.push("0".into());
++                    results.push("0".into());
++                    return;
++                }
+                 // Only Utf8 and Utf16 supported for now
+                 assert!(matches!(
+                     self.encoding,
+@@ -1908,6 +1932,15 @@ impl Bindgen for FunctionBindgen<'_> {
+             Instruction::ListLower { element, .. } => {
+                 let (body, body_results) = self.blocks.pop().unwrap();
+                 assert!(body_results.is_empty());
++                // An async import's results are lowered by the async return-handling machinery
++                // (see `AsyncTaskIntrinsic::LowerImport` and `task.resolve`), as for `FutureLower`:
++                // lowering here as well would register the resource or allocate guest memory a
++                // second time, which nothing then releases.
++                if self.async_import_results() {
++                    results.push("0".into());
++                    results.push("0".into());
++                    return;
++                }
+                 let tmp = self.tmp();
+                 let vec = format!("vec{tmp}");
+                 let result = format!("result{tmp}");
+@@ -3089,6 +3122,14 @@ impl Bindgen for FunctionBindgen<'_> {
+             }
+ 
+             Instruction::HandleLower { handle, name, .. } => {
++                // An async import's results are lowered by the async return-handling machinery
++                // (see `AsyncTaskIntrinsic::LowerImport` and `task.resolve`), as for `FutureLower`:
++                // lowering here as well would register the resource or allocate guest memory a
++                // second time, which nothing then releases.
++                if self.async_import_results() {
++                    results.push(operands[0].clone());
++                    return;
++                }
+                 let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                 let is_own = matches!(handle, Handle::Own(_));
+                 let ResourceTable { imported, data } =
+@@ -3341,7 +3382,7 @@ impl Bindgen for FunctionBindgen<'_> {
+                 // (see `AsyncTaskIntrinsic::LowerImport` and `task.resolve`), so
+                 // lowering the value inline here as well would consume/settle the
+                 // `Promise` and double-lower it.
+-                if self.is_async && self.for_import.unwrap_or_default() {
++                if self.async_import_results() {
+                     results.push(future_arg.clone());
+                     return;
+                 }
+@@ -3708,7 +3749,7 @@ impl Bindgen for FunctionBindgen<'_> {
+                 // (see `AsyncTaskIntrinsic::LowerImport` and `task.resolve`), so
+                 // lowering the value inline here as well would consume/lock the
+                 // stream (e.g. a host `ReadableStream`) and double-lower it.
+-                if self.is_async && self.for_import.unwrap_or_default() {
++                if self.async_import_results() {
+                     results.push(stream_arg.clone());
+                     return;
+                 }
+diff --git a/crates/js-component-bindgen/src/intrinsics/component.rs b/crates/js-component-bindgen/src/intrinsics/component.rs
+index ce10ba4..60ffdb4 100644
+--- a/crates/js-component-bindgen/src/intrinsics/component.rs
++++ b/crates/js-component-bindgen/src/intrinsics/component.rs
+@@ -504,6 +504,7 @@ impl ComponentIntrinsic {
+ 
+                         #tickLoop = null;
+                         #tickLoopInterval = null;
++                        #tickWake = null;
+ 
+                         #onExclusiveReleaseHandlers = [];
+ 
+@@ -595,6 +596,8 @@ impl ComponentIntrinsic {
+ 
+                         setBackpressure(v) {{
+                             this.#backpressure = v;
++                            // A thread waiting for backpressure to clear may now be ready.
++                            this.wakeTickLoop();
+                             return this.#backpressure
+                         }}
+                         getBackpressure() {{ return this.#backpressure; }}
+@@ -992,25 +995,71 @@ impl ComponentIntrinsic {
+                             return false;
+                         }}
+ 
++                        // A macrotask runs once the current microtasks have drained, as
++                        // setTimeout(0) does, but without its minimum delay (1 ms in Node.js,
++                        // 4 ms in browsers once timers nest), which a guest that yields often
++                        // would otherwise pay on every yield.
++                        static #nextMacrotask() {{
++                            if (typeof setImmediate === 'function') {{
++                                return new Promise((resolve) => setImmediate(resolve));
++                            }}
++                            if (typeof MessageChannel === 'function') {{
++                                return new Promise((resolve) => {{
++                                    const channel = new MessageChannel();
++                                    channel.port1.onmessage = () => {{ channel.port1.close(); resolve(); }};
++                                    channel.port2.postMessage(null);
++                                }});
++                            }}
++                            return new Promise((resolve) => setTimeout(resolve, 0));
++                        }}
++
+                         async runTickLoop() {{
+-                            if (this.#tickLoop !== null) {{ return; }}
++                            // A loop already running is nudged: an idle one ticks at once, so whatever
++                            // the caller changed (a suspension, a cancellation) is seen without waiting
++                            // for the polling interval.
++                            if (this.#tickLoop !== null) {{
++                                this.wakeTickLoop();
++                                return;
++                            }}
+                             this.#tickLoop = 1;
+-                            setTimeout(async () => {{
+-                                let result = this.tick();
+-                                while (result !== {component_async_state_class}.TickResult.DONE) {{
+-                                    if (result === {component_async_state_class}.TickResult.IDLE) {{
+-                                        {check_for_deadlock_fn}();
+-                                    }}
+-                                    // After resuming a task, re-tick as soon as the resumed
+-                                    // slice's microtask continuations have drained (timeout 0)
+-                                    // so queued sibling resumptions aren't charged the idle
+-                                    // polling interval; otherwise poll at the idle cadence.
+-                                    const delay = result === {component_async_state_class}.TickResult.RESUMED ? 0 : 10;
+-                                    await new Promise((resolve) => setTimeout(resolve, delay));
+-                                    result = this.tick();
++                            await {component_async_state_class}.#nextMacrotask();
++                            let result = this.tick();
++                            while (result !== {component_async_state_class}.TickResult.DONE) {{
++                                if (result === {component_async_state_class}.TickResult.IDLE) {{
++                                    {check_for_deadlock_fn}();
++                                }}
++                                // After resuming a task, re-tick as soon as the resumed
++                                // slice's microtask continuations have drained (the next
++                                // macrotask) so queued sibling resumptions aren't charged the
++                                // idle polling interval; otherwise poll at the idle cadence.
++                                if (result === {component_async_state_class}.TickResult.RESUMED) {{
++                                    await {component_async_state_class}.#nextMacrotask();
++                                }} else {{
++                                    // Idle: an event becoming pending wakes the loop at once
++                                    // (wakeTickLoop), as a suspended thread may now be ready; the
++                                    // polling interval remains for readiness nothing signals. Either
++                                    // way the tick runs in a fresh macrotask, as after a timer.
++                                    await new Promise((resolve) => {{
++                                        const timer = setTimeout(wake, 10);
++                                        function wake() {{ clearTimeout(timer); resolve(); }}
++                                        this.#tickWake = wake;
++                                    }});
++                                    this.#tickWake = null;
++                                    await {component_async_state_class}.#nextMacrotask();
+                                 }}
+-                                this.#tickLoop = null;
+-                            }}, 10);
++                                result = this.tick();
++                            }}
++                            this.#tickLoop = null;
++                        }}
++
++                        // Wakes an idle tick loop: a waitable's event became pending, so a thread
++                        // waiting on it may be ready to resume.
++                        wakeTickLoop() {{
++                            const wake = this.#tickWake;
++                            if (wake !== null) {{
++                                this.#tickWake = null;
++                                wake();
++                            }}
+                         }}
+ 
+                         tick() {{
+diff --git a/crates/js-component-bindgen/src/intrinsics/mod.rs b/crates/js-component-bindgen/src/intrinsics/mod.rs
+index 44f3a5e..cd8f9cb 100644
+--- a/crates/js-component-bindgen/src/intrinsics/mod.rs
++++ b/crates/js-component-bindgen/src/intrinsics/mod.rs
+@@ -409,6 +409,7 @@ impl Intrinsic {
+                         const enumerable = typeof value !== 'string';
+                         super(enumerable ? `${String(value)} (see error.payload)` : value);
+                         Object.defineProperty(this, 'payload', { value, enumerable });
++                        componentErrorInstances.add(this);
+                     }
+                 }
+             ",
+@@ -626,8 +627,11 @@ impl Intrinsic {
+                 let fn_name = args.require_intrinsic(Intrinsic::DebugLog);
+                 output.push_str(&format!(
+                     "
++                    // Read once: in Node.js each process.env read queries the environment, and the
++                    // runtime logs on every call it makes.
++                    const {fn_name}Enabled = !!globalThis?.process?.env?.JCO_DEBUG;
+                     const {fn_name} = (...args) => {{
+-                        if (!globalThis?.process?.env?.JCO_DEBUG) {{ return; }}
++                        if (!{fn_name}Enabled) {{ return; }}
+                         console.debug(...args);
+                     }};
+                 "
+@@ -742,8 +746,8 @@ impl Intrinsic {
+                             this.capacity = args.capacity;
+                             this.#elemMeta = args.elemMeta;
+ 
+-                            if (args.data !== undefined && !Array.isArray(args.data)) {{
+-                                throw new TypeError('host-only data must be an array');
++                            if (args.data !== undefined && !Array.isArray(args.data) && !(args.data instanceof Uint8Array)) {{
++                                throw new TypeError('host-only data must be an array or a byte stream\'s Uint8Array');
+                             }}
+                             this.#hostOnlyData = args.data;
+ 
+@@ -777,11 +781,17 @@ impl Intrinsic {
+                             if (this.#elemMeta.isNone) {{
+                                 values = [...new Array(count)].map(() => null);
+                             }} else {{
+-                                if (this.isHostOwned()) {{
++                                if (this.isHostOwned() && this.#hostOnlyData instanceof Uint8Array) {{
++                                    // A byte stream's bytes: views, copied once into the reader's memory.
++                                    values = this.#hostOnlyData.subarray(0, count);
++                                    this.#hostOnlyData = this.#hostOnlyData.subarray(count);
++                                }} else if (this.isHostOwned()) {{
+                                     values = this.#hostOnlyData.slice(0, count);
+                                     this.#hostOnlyData = this.#hostOnlyData.slice(count);
+                                 }} else if (this.#elemMeta.payloadTypeName === 'U8') {{
+-                                    values = Array.from(new Uint8Array(this.#memory.buffer, this.#ptr, count));
++                                    // A copy of the bytes, as a Uint8Array: the host receives a byte stream's
++                                    // values as one.
++                                    values = new Uint8Array(this.#memory.buffer, this.#ptr, count).slice();
+                                     this.#ptr += count;
+                                 }} else {{
+                                     let currentCount = count;
+@@ -816,7 +826,9 @@ impl Intrinsic {
+                         write(values, opts = {{}}) {{
+                             {debug_log_fn}('[{managed_buffer_class}#write()] args', {{ values }});
+ 
+-                            if (!Array.isArray(values)) {{ throw new TypeError('values input to write() must be an array'); }}
++                            if (!Array.isArray(values) && !(values instanceof Uint8Array)) {{
++                                throw new TypeError('values input to write() must be an array or a byte stream\'s Uint8Array');
++                            }}
+                             let rc = this.remaining();
+                             if (values.length > rc) {{
+                                 throw new Error(`cannot write [${{values.length}}] elements to managed buffer with remaining capacity [${{rc}}]`);
+@@ -827,8 +839,17 @@ impl Intrinsic {
+                                     throw new Error('non-null values in write() to unit managed buffer');
+                                 }}
+                             }} else {{
+-                                if (this.isHostOwned()) {{
+-                                    this.#hostOnlyData = this.#hostOnlyData.concat(values);
++                                if (this.isHostOwned() && values instanceof Uint8Array
++                                    && (this.#hostOnlyData instanceof Uint8Array || this.#hostOnlyData.length === 0)) {{
++                                    // A byte stream's bytes stay a Uint8Array.
++                                    const held = this.#hostOnlyData;
++                                    const joined = new Uint8Array(held.length + values.length);
++                                    if (held instanceof Uint8Array) {{ joined.set(held); }}
++                                    joined.set(values, held.length);
++                                    this.#hostOnlyData = joined;
++                                }} else if (this.isHostOwned()) {{
++                                    const held = this.#hostOnlyData instanceof Uint8Array ? Array.from(this.#hostOnlyData) : this.#hostOnlyData;
++                                    this.#hostOnlyData = held.concat(values instanceof Uint8Array ? Array.from(values) : values);
+                                 }} else if (this.#elemMeta.payloadTypeName === 'U8') {{
+                                     new Uint8Array(this.#memory.buffer, this.#ptr, values.length).set(values);
+                                     this.#ptr += values.length;
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs b/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs
+index 23ac34b..8488755 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/async_future.rs
+@@ -441,6 +441,10 @@ impl AsyncFutureIntrinsic {
+                         writeEnd.setWaitableIdx(cstate.handles.insert(writeEnd));
+                         writeEnd.setHandle(futureTable.insert(writeEnd));
+                         if (writeEnd.futureTableIdx() !== tableIdx) {{ throw new Error("unexpectedly mismatched future table"); }}
++                        future.setReleaseHostWriterFn(() => {{
++                            cstate.handles.remove(writeEnd.waitableIdx());
++                            futureTable.remove(writeEnd.handle());
++                        }});
+ 
+                         const writeEndWaitableIdx = writeEnd.waitableIdx();
+                         const writeEndHandle = writeEnd.handle();
+@@ -622,6 +626,9 @@ impl AsyncFutureIntrinsic {
+                 );
+                 let runtime_error_class =
+                     render_args.require_intrinsic(Intrinsic::WebAssemblyRuntimeError);
++                let global_future_table_map =
++                    render_args.require_intrinsic(Self::GlobalFutureTableMap);
++                let global_future_map = render_args.require_intrinsic(Self::GlobalFutureMap);
+ 
+                 output.push_str(&format!(
+                     r#"
+@@ -676,6 +683,17 @@ impl AsyncFutureIntrinsic {
+                            }}
+                            if (futureEnd.isInSet()) {{ throw new {runtime_error_class}({CANNOT_LIFT_FUTURE_IN_WAITABLE_SET:?}); }}
+ 
++                            // The host reads the future once, through a promise it cannot drop:
++                            // once that read completes, the end leaves the component's tables and
++                            // drops, as a guest reader's drop would remove it, and this lifted
++                            // future leaves the global map, since the host can no longer pass it on.
++                            futureEnd.setHostReleaseFn(() => {{
++                                if (futureEnd.isDropped()) {{ return; }}
++                                cstate.handles.remove(futureEnd.waitableIdx());
++                                {global_future_table_map}[this.#futureTableIdx].table.remove(futureEnd.handle());
++                                {global_future_map}.remove(this.#rep);
++                                futureEnd.drop();
++                            }});
+                             return futureEnd.promise();
+                         }}
+                     }}
+@@ -780,6 +798,11 @@ impl AsyncFutureIntrinsic {
+                             if (f) {{ f(result); }}
+                         }}
+ 
++                        whenPendingEvent() {{
++                            if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
++                            return this.#waitable.whenPendingEvent();
++                        }}
++
+                         setPendingEvent(fn) {{
+                             if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
+                             {debug_log_fn}('[{future_end_class}#setPendingEvent()]', {{
+@@ -990,6 +1013,7 @@ impl AsyncFutureIntrinsic {
+                                   }}
+ 
+                                   let buffer = args.buffer;
++                                  let bufferID;
+                                   if (!buffer) {{
+                                       const createBufferRes = {global_buffer_mgr}.createBuffer({{
+                                           componentIdx,
+@@ -1003,6 +1027,7 @@ impl AsyncFutureIntrinsic {
+                                           elemMeta,
+                                       }});
+                                       buffer = createBufferRes.buffer;
++                                      bufferID = createBufferRes.id;
+                                   }}
+ 
+                                   const futureEvent = (res) => {{
+@@ -1020,6 +1045,8 @@ impl AsyncFutureIntrinsic {
+                                       }} else {{
+                                           this.setCopyState({future_end_class}.CopyState.IDLE);
+                                       }}
++                                      // The copy is complete: the manager releases the buffer it created.
++                                      if (bufferID !== undefined) {{ {global_buffer_mgr}.deleteBuffer(componentIdx, bufferID); }}
+                                       return {{ code: {async_event_code_enum}.FUTURE_READ, payload0: this.waitableIdx(), payload1: res }};
+                                   }};
+ 
+@@ -1087,6 +1114,7 @@ impl AsyncFutureIntrinsic {
+                                   }}
+ 
+                                   let buffer = args.buffer;
++                                  let bufferID;
+                                   if (!buffer) {{
+                                       const createBufferRes = {global_buffer_mgr}.createBuffer({{
+                                           componentIdx,
+@@ -1100,6 +1128,7 @@ impl AsyncFutureIntrinsic {
+                                           elemMeta,
+                                       }});
+                                       buffer = createBufferRes.buffer;
++                                      bufferID = createBufferRes.id;
+                                   }}
+ 
+                                   const futureEvent = (res) => {{
+@@ -1117,6 +1146,8 @@ impl AsyncFutureIntrinsic {
+                                       }} else {{
+                                           this.setCopyState({future_end_class}.CopyState.IDLE);
+                                       }}
++                                      // The copy is complete: the manager releases the buffer it created.
++                                      if (bufferID !== undefined) {{ {global_buffer_mgr}.deleteBuffer(componentIdx, bufferID); }}
+                                       return {{ code: {async_event_code_enum}.FUTURE_WRITE, payload0: this.waitableIdx(), payload1: res }};
+                                   }};
+ 
+@@ -1158,13 +1189,7 @@ impl AsyncFutureIntrinsic {
+                                       this.setCopyState({future_end_class}.CopyState.ASYNC_COPYING);
+ 
+                                        // Wait for the write to complete
+-                                       await new Promise((resolve) => {{
+-                                           let waitInterval = setInterval(() => {{
+-                                               if (!this.hasPendingEvent()) {{ return; }}
+-                                               clearInterval(waitInterval);
+-                                               resolve();
+-                                           }});
+-                                       }});
++                                       await this.whenPendingEvent();
+ 
+                                        if (!this.hasPendingEvent()) {{
+                                            throw new Error("missing pending event after blocked future read");
+@@ -1179,6 +1204,9 @@ impl AsyncFutureIntrinsic {
+ 
+                                   const vs = buffer.read(1);
+                                   if (vs.length !== 1) {{ throw new Error('multiple results from future'); }}
++                                  const releaseFn = this.#hostReleaseFn;
++                                  this.#hostReleaseFn = null;
++                                  releaseFn?.();
+ 
+                                   // The copy event is published from inside the guest's current
+                                   // callback slice.
+@@ -1218,13 +1246,7 @@ impl AsyncFutureIntrinsic {
+                                       this.setCopyState({future_end_class}.CopyState.ASYNC_COPYING);
+ 
+                                        // Wait for the write to complete
+-                                       await new Promise((resolve) => {{
+-                                           let waitInterval = setInterval(() => {{
+-                                               if (!this.hasPendingEvent()) {{ return; }}
+-                                               clearInterval(waitInterval);
+-                                               resolve();
+-                                           }});
+-                                       }});
++                                       await this.whenPendingEvent();
+ 
+                                        if (!this.hasPendingEvent()) {{
+                                            throw new Error("missing pending event after blocked future write");
+@@ -1326,6 +1348,10 @@ impl AsyncFutureIntrinsic {
+                             if (this.#hostInjectFn) {{ throw new Error('host injection fn is already set'); }}
+                             this.#hostInjectFn = f;
+                         }}
++                        hasHostInject() {{ return !!this.#hostInjectFn; }}
++
++                        #hostReleaseFn = null;
++                        setHostReleaseFn(f) {{ this.#hostReleaseFn = f; }}
+ 
+                         promise() {{
+                             if (this.#promise) {{ return this.#promise; }}
+@@ -1364,6 +1390,7 @@ impl AsyncFutureIntrinsic {
+                     render_args.require_intrinsic(Self::InternalFutureClass);
+                 let write_end_class = render_args.require_intrinsic(Self::FutureWritableEndClass);
+                 let read_end_class = render_args.require_intrinsic(Self::FutureReadableEndClass);
++                let global_future_map = render_args.require_intrinsic(Self::GlobalFutureMap);
+ 
+                 uwriteln!(
+                     output,
+@@ -1402,7 +1429,10 @@ impl AsyncFutureIntrinsic {
+                                 // from inside the guest.
+                                 hostInjectFn: args.hostInjectFn,
+                                 isPeerDroppedFn: () => this.#writeEnd?.isDropped() ?? false,
+-                                notifyPeerDroppedFn: () => this.#writeEnd?.notifyDropped(),
++                                notifyPeerDroppedFn: () => {{
++                                    this.#writeEnd?.notifyDropped();
++                                    this.#releaseWhenDropped();
++                                }},
+                             }});
+ 
+                             this.#writeEnd = new {write_end_class}({{
+@@ -1413,10 +1443,31 @@ impl AsyncFutureIntrinsic {
+                                 waitable: writeWaitable,
+                                 hostOwned: true,
+                                 isPeerDroppedFn: () => this.#readEnd.isDropped(),
+-                                notifyPeerDroppedFn: () => this.#readEnd.notifyDropped(),
++                                notifyPeerDroppedFn: () => {{
++                                    this.#readEnd.notifyDropped();
++                                    this.#releaseWhenDropped();
++                                }},
+                             }});
+                         }}
+ 
++                        // Once both ends are dropped nothing reaches the future by its global rep,
++                        // so the global map releases it. A host-fed future's writer is the host's own,
++                        // which no guest handle drops: once the reader is dropped the writer leaves the
++                        // component's tables as a guest's drop would remove it.
++                        #releaseWhenDropped() {{
++                            if (this.#globalFutureMapRep === undefined) {{ return; }}
++                            if (!this.#readEnd?.isDropped()) {{ return; }}
++                            const hostFed = this.#readEnd.hasHostInject?.() ?? false;
++                            if (!this.#writeEnd?.isDropped() && !hostFed) {{ return; }}
++                            if (hostFed && !this.#writeEnd.isCopying()) {{ this.#releaseHostWriterFn?.(); }}
++                            {global_future_map}.remove(this.#globalFutureMapRep);
++                            this.#globalFutureMapRep = undefined;
++                        }}
++
++                        // Removes a host-fed future's writer from the tables its component holds it in.
++                        #releaseHostWriterFn = null;
++                        setReleaseHostWriterFn(f) {{ this.#releaseHostWriterFn = f; }}
++
+                         elemMeta() {{ return this.#elemMeta; }}
+                         readEnd() {{ return this.#readEnd; }}
+                         writeEnd() {{ return this.#writeEnd; }}
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs b/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
+index 06890ab..310456c 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/async_stream.rs
+@@ -415,6 +415,10 @@ impl AsyncStreamIntrinsic {
+                         writeEnd.setWaitableIdx(cstate.handles.insert(writeEnd));
+                         writeEnd.setHandle(localStreamTable.insert(writeEnd));
+                         if (writeEnd.streamTableIdx() !== tableIdx) {{ throw new Error("unexpectedly mismatched stream table"); }}
++                        stream.setReleaseHostWriterFn(() => {{
++                            cstate.handles.remove(writeEnd.waitableIdx());
++                            localStreamTable.remove(writeEnd.handle());
++                        }});
+ 
+                         const writeEndWaitableIdx = writeEnd.waitableIdx();
+                         const writeEndHandle = writeEnd.handle();
+@@ -669,6 +673,11 @@ impl AsyncStreamIntrinsic {
+                             }}
+                         }}
+ 
++                        whenPendingEvent() {{
++                            if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
++                            return this.#waitable.whenPendingEvent();
++                        }}
++
+                         setPendingEvent(fn) {{
+                             if (!this.#waitable) {{ throw new Error('missing/invalid waitable'); }}
+                             {debug_log_fn}('[{stream_end_class}#setPendingEvent()]', {{
+@@ -868,6 +877,9 @@ impl AsyncStreamIntrinsic {
+                                 event.rejectedLength = rejectedLength;
+                             }}
+ 
++                            // The copy is complete and nothing looks its buffer up again, so the manager
++                            // releases it, with the values a host write copied into it.
++                            {global_buffer_manager}.deleteBuffer(componentIdx, bufferID);
+                             return event;
+                         }};
+ 
+@@ -1324,7 +1336,9 @@ impl AsyncStreamIntrinsic {
+ 
+                          async writeMany(values, opts = {{}}) {{
+                             {debug_log_fn}('[{end_class_name}#writeMany()] args', {{ values }});
+-                            if (!Array.isArray(values)) {{ throw new TypeError("writeMany values must be an array"); }}
++                            if (!Array.isArray(values) && !(values instanceof Uint8Array)) {{
++                                throw new TypeError("writeMany values must be an array or a byte stream's Uint8Array");
++                            }}
+ 
+                             // Wait for an existing write operation to end, if present,
+                             // otherwise register this write for any future operations.
+@@ -1403,13 +1417,7 @@ impl AsyncStreamIntrinsic {
+                                     // If the write was blocked, the pending event produced by the
+                                     // read side represents the completed copy.
+ 
+-                                    await new Promise((resolve) => {{
+-                                        let waitInterval = setInterval(async () => {{
+-                                            if (!this.hasPendingEvent()) {{ return; }}
+-                                            clearInterval(waitInterval);
+-                                            resolve();
+-                                        }});
+-                                    }});
++                                    await this.whenPendingEvent();
+ 
+                                     if (!this.hasPendingEvent()) {{
+                                         throw new Error("missing pending event after blocked stream write");
+@@ -1531,13 +1539,7 @@ impl AsyncStreamIntrinsic {
+                                     // If the read was blocked, the pending event produced by the
+                                     // write side represents the completed copy.
+ 
+-                                    await new Promise((resolve) => {{
+-                                        let waitInterval = setInterval(() => {{
+-                                            if (!this.hasPendingEvent()) {{ return; }}
+-                                            clearInterval(waitInterval);
+-                                            resolve();
+-                                        }});
+-                                    }});
++                                    await this.whenPendingEvent();
+ 
+                                     if (!this.hasPendingEvent()) {{
+                                         throw new Error("missing pending event after blocked stream read");
+@@ -1782,6 +1784,7 @@ impl AsyncStreamIntrinsic {
+                 let internal_stream_class_name = self.name();
+                 let read_end_class = render_args.require_intrinsic(Self::StreamReadableEndClass);
+                 let write_end_class = render_args.require_intrinsic(Self::StreamWritableEndClass);
++                let global_stream_map = render_args.require_intrinsic(Self::GlobalStreamMap);
+ 
+                 output.push_str(&format!(
+                     r#"
+@@ -1815,7 +1818,10 @@ impl AsyncStreamIntrinsic {
+                                 // from inside the guest.
+                                 hostInjectFn: args.hostInjectFn,
+                                 isPeerDroppedFn: () => this.#writeEnd?.isDropped() ?? false,
+-                                notifyPeerDroppedFn: () => this.#writeEnd?.notifyDropped(),
++                                notifyPeerDroppedFn: () => {{
++                                    this.#writeEnd?.notifyDropped();
++                                    this.#releaseWhenDropped();
++                                }},
+                             }});
+ 
+                             this.#writeEnd = new {write_end_class}({{
+@@ -1826,10 +1832,28 @@ impl AsyncStreamIntrinsic {
+                                 waitable: writeWaitable,
+                                 hostOwned: true,
+                                 isPeerDroppedFn: () => this.#readEnd.isDropped(),
+-                                notifyPeerDroppedFn: () => this.#readEnd.notifyDropped(),
++                                notifyPeerDroppedFn: () => {{
++                                    this.#readEnd.notifyDropped();
++                                    this.#releaseWhenDropped();
++                                }},
+                             }});
+                         }}
+ 
++                        // Once both ends are dropped nothing reaches the stream by its global rep,
++                        // so the global map releases it, with the values its ends last held. A
++                        // host-fed stream's writer is the host's own, which no guest handle drops:
++                        // once the reader is dropped (its drop hook has closed the host source) the
++                        // writer leaves the component's tables as a guest's drop would remove it.
++                        #releaseWhenDropped() {{
++                            if (this.#globalStreamMapRep === undefined) {{ return; }}
++                            if (!this.#readEnd?.isDropped()) {{ return; }}
++                            const hostFed = this.#readEnd.hasHostInject();
++                            if (!this.#writeEnd?.isDropped() && !hostFed) {{ return; }}
++                            if (hostFed && !this.#writeEnd.isCopying()) {{ this.#releaseHostWriterFn?.(); }}
++                            {global_stream_map}.remove(this.#globalStreamMapRep);
++                            this.#globalStreamMapRep = undefined;
++                        }}
++
+                         elemMeta() {{ return this.#elemMeta; }}
+ 
+                         globalStreamMapRep() {{ return this.#globalStreamMapRep; }}
+@@ -1841,6 +1865,10 @@ impl AsyncStreamIntrinsic {
+ 
+                         readEnd() {{ return this.#readEnd; }}
+                         writeEnd() {{ return this.#writeEnd; }}
++
++                        // Removes a host-fed stream's writer from the tables its component holds it in.
++                        #releaseHostWriterFn = null;
++                        setReleaseHostWriterFn(f) {{ this.#releaseHostWriterFn = f; }}
+                     }}
+                     "#
+                 ));
+@@ -1868,6 +1896,9 @@ impl AsyncStreamIntrinsic {
+                 );
+                 let runtime_error_class =
+                     render_args.require_intrinsic(Intrinsic::WebAssemblyRuntimeError);
++                let global_stream_table_map =
++                    render_args.require_intrinsic(Self::GlobalStreamTableMap);
++                let global_stream_map = render_args.require_intrinsic(Self::GlobalStreamMap);
+ 
+                 output.push_str(&format!(
+                     r#"
+@@ -1935,7 +1966,17 @@ impl AsyncStreamIntrinsic {
+                                 // The host may dispose while an already-completed read is
+                                 // between event publication and its polling continuation.
+                                 // Preserve that event for the in-flight host promise.
+-                                dropFn: () => streamEnd.drop({{ allowPendingEvent: true }}),
++                                // A host drop removes the end from the component's tables, as a
++                                // guest's drop does, and this lifted stream from the global map,
++                                // since the host can no longer pass it on; the in-flight read holds
++                                // the end itself.
++                                dropFn: () => {{
++                                    if (streamEnd.isDropped()) {{ return; }}
++                                    cstate.handles.remove(streamEnd.waitableIdx());
++                                    {global_stream_table_map}[this.#streamTableIdx].table.remove(streamEnd.handle());
++                                    {global_stream_map}.remove(this.#rep);
++                                    streamEnd.drop({{ allowPendingEvent: true }});
++                                }},
+                             }});
+                         }}
+                     }}
+@@ -2012,6 +2053,33 @@ impl AsyncStreamIntrinsic {
+                               this.#length += source.length;
+                           }}
+ 
++                          // Copies up to maxCount queued bytes into target (a Uint8Array) at index at: a byte
++                          // stream's chunks are typed arrays, copied with set() rather than one element at a time.
++                          drainBytesInto(target, at, maxCount) {{
++                              let transferred = 0;
++                              let remaining = Math.min(maxCount, this.#length);
++                              while (remaining > 0) {{
++                                  const chunk = this.#chunks[0];
++                                  const transfer = Math.min(remaining, chunk.length - this.#offset);
++                                  if (ArrayBuffer.isView(chunk)) {{
++                                      target.set(chunk.subarray(this.#offset, this.#offset + transfer), at + transferred);
++                                  }} else {{
++                                      for (let i = 0; i < transfer; i++) {{
++                                          target[at + transferred + i] = chunk[this.#offset + i];
++                                      }}
++                                  }}
++                                  this.#offset += transfer;
++                                  this.#length -= transfer;
++                                  transferred += transfer;
++                                  remaining -= transfer;
++                                  if (this.#offset === chunk.length) {{
++                                      this.#chunks.shift();
++                                      this.#offset = 0;
++                                  }}
++                              }}
++                              return transferred;
++                          }}
++
+                           drainInto(target, maxCount) {{
+                               let transferred = 0;
+                               let remaining = Math.min(maxCount, this.#length);
+@@ -2710,11 +2778,39 @@ impl AsyncStreamIntrinsic {
+                                   return doNothingFn;
+                               }}
+ 
+-                              const values = [];
++                              // A byte stream's read collects its bytes in Uint8Arrays sized to what the host has
++                              // supplied (a read may ask for far more), joined once; other element types collect
++                              // values in an array.
++                              const isBytes = elemMeta?.payloadTypeName === 'U8';
++                              const values = isBytes ? null : [];
++                              const segments = [];
++                              let byteCount = 0;
++                              const valueCount = () => isBytes ? byteCount : values.length;
++                              const takeValues = () => {{
++                                  if (!isBytes) {{ return values; }}
++                                  if (segments.length === 1) {{ return segments[0]; }}
++                                  const joined = new Uint8Array(byteCount);
++                                  let at = 0;
++                                  for (const segment of segments) {{
++                                      joined.set(segment, at);
++                                      at += segment.length;
++                                  }}
++                                  return joined;
++                              }};
+                               const hasPendingReadBuffer = () => !!readEnd.getPendingBufferMeta?.().buffer;
+ 
+                               const drainPendingValues = () => {{
+-                                  count -= pendingValues.drainInto(values, count);
++                                  if (!isBytes) {{
++                                      count -= pendingValues.drainInto(values, count);
++                                      return;
++                                  }}
++                                  const available = Math.min(count, pendingValues.length);
++                                  if (available <= 0) {{ return; }}
++                                  const segment = new Uint8Array(available);
++                                  const drained = pendingValues.drainBytesInto(segment, 0, available);
++                                  segments.push(drained === available ? segment : segment.subarray(0, drained));
++                                  byteCount += drained;
++                                  count -= drained;
+                               }};
+ 
+                               const writeValues = async (writeValues, dropAfterCopy = false) => {{
+@@ -2734,7 +2830,7 @@ impl AsyncStreamIntrinsic {
+                               }};
+ 
+                               const bail = () => {{
+-                                  pendingValues.prepend(values);
++                                  pendingValues.prepend(takeValues());
+                                   return doNothingFn;
+                               }};
+ 
+@@ -2775,7 +2871,11 @@ impl AsyncStreamIntrinsic {
+                               }}
+                               drainPendingValues();
+ 
+-                              while (count > 0 && !pendingValues.done) {{
++                              // Values the host already supplied complete the read at once. Waiting on
++                              // an asynchronous source for more would hold them until the peer sends
++                              // again, and a cancelled read would strand them here.
++                              while (count > 0 && !pendingValues.done
++                                  && (valueCount() === 0 || pendingValues.sourceIsSync)) {{
+                                   const appended = await pendingValues.readSource();
+                                   if (readEnd.hasPendingEvent()) {{ return bail(); }}
+                                   if (!hasPendingReadBuffer()) {{ return bail(); }}
+@@ -2784,23 +2884,23 @@ impl AsyncStreamIntrinsic {
+                                   // waiting on the source for a full count -- except for
+                                   // synchronous sources, which can be drained eagerly
+                                   // without waiting
+-                                  if (values.length > 0 && !pendingValues.sourceIsSync) {{ break; }}
++                                  if (valueCount() > 0 && !pendingValues.sourceIsSync) {{ break; }}
+                                   if (appended === 0 && !pendingValues.done) {{ count -= 1; }}
+                                   if (pendingValues.done) {{ break; }}
+                               }}
+ 
+                               // Iterator provided `done: true` with no final value
+-                              if (pendingValues.done && values.length === 0 && pendingValues.length > 0 && hasPendingReadBuffer()) {{
++                              if (pendingValues.done && valueCount() === 0 && pendingValues.length > 0 && hasPendingReadBuffer()) {{
+                                   drainPendingValues();
+                               }}
+-                              if (pendingValues.done && values.length === 0) {{
++                              if (pendingValues.done && valueCount() === 0) {{
+                                   hostWriteEnd.getPendingEvent();
+                                   hostWriteEnd.drop();
+                                   return doNothingFn;
+                               }}
+ 
+                               if (!hasPendingReadBuffer()) {{ return bail(); }}
+-                              await writeValues(values, pendingValues.done);
++                              await writeValues(takeValues(), pendingValues.done);
+ 
+                               return doNothingFn;
+                           }};
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/async_task.rs b/crates/js-component-bindgen/src/intrinsics/p3/async_task.rs
+index 04a7cb6..8beec63 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/async_task.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/async_task.rs
+@@ -3049,6 +3049,11 @@ impl AsyncTaskIntrinsic {
+ 
+                             this.setResult(subtaskValue);
+ 
++                            // A thread waiting for this subtask to resolve may now be ready.
++                            if (this.#componentIdx >= 0) {{
++                                {get_or_create_async_state_fn}(this.#componentIdx).wakeTickLoop();
++                            }}
++
+                             for (const f of this.#onResolveHandlers) {{
+                                 try {{
+                                     f(subtaskValue);
+diff --git a/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs b/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs
+index 6316136..03543ce 100644
+--- a/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs
++++ b/crates/js-component-bindgen/src/intrinsics/p3/waitable.rs
+@@ -322,6 +322,9 @@ impl WaitableIntrinsic {
+                 let waitable_class = render_args.require_intrinsic(Self::WaitableClass);
+                 let promise_with_resolvers_fn =
+                     render_args.require_intrinsic(Intrinsic::PromiseWithResolversPonyfill);
++                let get_or_create_async_state_fn = render_args.require_intrinsic(
++                    Intrinsic::Component(ComponentIntrinsic::GetOrCreateAsyncState),
++                );
+ 
+                 output.push_str(&format!(
+                     r#"
+@@ -381,12 +384,30 @@ impl WaitableIntrinsic {
+                             return this.#pendingEventFn !== null;
+                         }}
+ 
++                        #pendingEventWaiters = [];
++
++                        // Resolves once an event is pending. A host copy that the other end has yet to
++                        // complete waits on it: polling with a timer would wait for that timer, and a
++                        // guest the scheduler resumes on the next macrotask runs before it fires.
++                        whenPendingEvent() {{
++                            if (this.#pendingEventFn !== null) {{ return Promise.resolve(); }}
++                            return new Promise((resolve) => this.#pendingEventWaiters.push(resolve));
++                        }}
++
+                         setPendingEvent(fn) {{
+                             {debug_log_fn}('[{waitable_class}#setPendingEvent()] args', {{
+                                 waitable: this,
+                                 inSet: this.#waitableSet,
+                             }});
+                             this.#pendingEventFn = fn;
++                            const waiters = this.#pendingEventWaiters;
++                            this.#pendingEventWaiters = [];
++                            for (const resolve of waiters) {{ resolve(); }}
++                            // A guest thread waiting on this waitable may now be ready: wake the
++                            // component's idle tick loop rather than leave it to the polling interval.
++                            if (this.#componentIdx >= 0) {{
++                                {get_or_create_async_state_fn}(this.#componentIdx).wakeTickLoop();
++                            }}
+                         }}
+ 
+                         getPendingEvent() {{
+diff --git a/crates/js-component-bindgen/src/transpile_bindgen.rs b/crates/js-component-bindgen/src/transpile_bindgen.rs
+index 5a2dd91..4f66a45 100644
+--- a/crates/js-component-bindgen/src/transpile_bindgen.rs
++++ b/crates/js-component-bindgen/src/transpile_bindgen.rs
+@@ -955,11 +955,22 @@ impl JsBindgen<'_> {
+             "".into()
+         };
+ 
++        // A declared WIT error reaches the host as a thrown ComponentError. Hosts tell one from
++        // any other exception by module-private identity rather than by its properties.
++        let maybe_component_error_predicate =
++            if self.all_intrinsics.contains(&Intrinsic::ComponentError) {
++                uwriteln!(output, "\nconst componentErrorInstances = new WeakSet();");
++                "isComponentError: value => componentErrorInstances.has(value),"
++            } else {
++                ""
++            };
++
+         uwriteln!(
+             output,
+             r#"
+               export const _util = {{
+                   {maybe_ext_future_class}
++                  {maybe_component_error_predicate}
+               }}
+             "#,
+         );

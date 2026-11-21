@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm;
 using NetWasm.Testing.CompilerHost;
 
 namespace NetWasm.Testing.CompilerHost.Tests;
@@ -29,6 +30,12 @@ public sealed class CompilerHostArtifactFormatterTests
         var result = Result with
         {
             InteropManifest = new(1, name, new(0, 1, 0), new(width, 8, 12, 8, 16, 0, width), [], []),
+            NativeImports =
+            [
+                new("libc", "pow", [WasmValueType.F64, WasmValueType.F64], WasmValueType.F64),
+                new("libc", "modf", [WasmValueType.F64, WasmValueType.I32], WasmValueType.F64),
+                new("__Internal", "reset", [], null),
+            ],
         };
 
         var artifacts = ((ICompilerHostArtifactFormatter)_formatter).Format(request, result);
@@ -38,10 +45,18 @@ public sealed class CompilerHostArtifactFormatterTests
         Assert.Equal(result.ApplicationModule, artifacts[0].Bytes);
         Assert.Equal(result.MethodSymbols!.Bytes, artifacts[1].Bytes);
         using var layout = JsonDocument.Parse(artifacts[2].Bytes.AsMemory());
-        Assert.Equal(3, layout.RootElement.EnumerateObject().Count());
+        Assert.Equal(4, layout.RootElement.EnumerateObject().Count());
         Assert.Equal(2, layout.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(name, layout.RootElement.GetProperty("target").GetString());
         Assert.Equal(1234, layout.RootElement.GetProperty("applicationStaticDataEnd").GetInt32());
+        // The reached native imports in nwc's form, so a linked test runtime exports the C library's (Math's libm).
+        var imports = layout.RootElement.GetProperty("nativeImports").EnumerateArray().ToArray();
+        Assert.Equal(["libc", "libc", "__Internal"], imports.Select(import => import.GetProperty("libraryName").GetString()));
+        Assert.Equal(["pow", "modf", "reset"], imports.Select(import => import.GetProperty("entryPoint").GetString()));
+        Assert.Equal(["f64", "i32"],
+            imports[1].GetProperty("parameters").EnumerateArray().Select(parameter => parameter.GetString()));
+        Assert.Equal("f64", imports[0].GetProperty("returnType").GetString());
+        Assert.Equal(JsonValueKind.Null, imports[2].GetProperty("returnType").ValueKind);
         using var interop = JsonDocument.Parse(artifacts[3].Bytes.AsMemory());
         Assert.Equal(1, interop.RootElement.GetProperty("version").GetInt32());
         Assert.Equal(name, interop.RootElement.GetProperty("target").GetString());

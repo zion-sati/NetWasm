@@ -42,7 +42,7 @@ namespace System.Numerics
         {
             if (min > max)
             {
-                throw new ArgumentException("The minimum value must be less than or equal to the maximum value.");
+                Math.ThrowMinMaxException(min, max);
             }
 
             TSelf result = value;
@@ -63,7 +63,7 @@ namespace System.Numerics
         {
             if (min > max)
             {
-                throw new ArgumentException("The minimum value must be less than or equal to the maximum value.");
+                Math.ThrowMinMaxException(min, max);
             }
 
             TSelf result = value;
@@ -222,7 +222,7 @@ namespace System.Numerics
             {
                 if (TSelf.IsNaN(value))
                 {
-                    throw new ArithmeticException("NaN is not a valid value for this operation.");
+                    throw new ArithmeticException("Function does not accept floating point Not-a-Number values.");
                 }
                 return TSelf.IsNegative(value) ? -1 : +1;
             }

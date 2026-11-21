@@ -881,6 +881,77 @@ for target in wasm32 wasm64; do
     "${target_arguments[@]}"
 done
 
+# An HTTP client sends 3,000 requests, half with a body, in a 64 MB JavaScript heap: the
+# host releases each request's response, body streams, trailers and cancelled timeout once
+# the program is done with them, instead of keeping them for the rest of the run.
+cat > "$app_root/Program.cs" <<'EOF'
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+internal static class Program
+{
+    public static async Task<int> Main(string[] args)
+    {
+        using var client = new HttpClient();
+        var body = new byte[1024];
+        var received = 0L;
+        for (var request = 0; request < 3000; request++)
+        {
+            if (request % 2 == 0)
+            {
+                received += (await client.GetByteArrayAsync(args[0])).Length;
+            }
+            else
+            {
+                using var response = await client.PostAsync(args[0], new ByteArrayContent(body));
+                received += (await response.Content.ReadAsByteArrayAsync()).Length;
+            }
+        }
+        if (received != 3000L * 1024)
+        {
+            return 1;
+        }
+        Console.WriteLine(42);
+        return 0;
+    }
+}
+EOF
+http_port_file="$work_root/http-server.port"
+node --input-type=module -e '
+import { createServer } from "node:http";
+import { writeFileSync } from "node:fs";
+const body = Buffer.alloc(1024, 120);
+const server = createServer((request, response) => { request.resume(); request.on("end", () => response.end(body)); });
+server.listen(0, "127.0.0.1", () => writeFileSync(process.argv[1], String(server.address().port)));
+setTimeout(() => process.exit(0), 1_800_000);
+' "$http_port_file" > "$work_root/http-server.log" 2>&1 &
+http_server=$!
+for _ in $(seq 1 100); do
+  [[ -s "$http_port_file" ]] && break
+  sleep 0.1
+done
+[[ -s "$http_port_file" ]] || {
+  echo "Qualification stage failed: the local HTTP server did not start" >&2
+  cat "$work_root/http-server.log" >&2
+  exit 1
+}
+http_url="http://127.0.0.1:$(cat "$http_port_file")/"
+for target in wasm32 wasm64; do
+  target_arguments=(-p:NetWasmTarget="$target")
+  if [[ "$target" = wasm64 ]]; then
+    target_arguments+=(-p:NetWasmRawWasm=true)
+  fi
+  rm -rf "$app_root/obj" "$app_root/bin"
+  run_log "$work_root/http-client-restore-$target.log" \
+    dotnet restore "$app_project" --configfile "$work_root/NuGet.Config" \
+      --disable-build-servers --nologo "${target_arguments[@]}"
+  NODE_OPTIONS=--max-old-space-size=64 assert_run_42 "$work_root/http-client-run-$target.log" \
+    --project "$app_project" -c Release --no-restore --disable-build-servers \
+    "${target_arguments[@]}" -- "$http_url"
+done
+kill "$http_server"
+
 library_root="$consumer_root/library"
 library_project="$library_root/RuntimeLibrary.csproj"
 library_packages="$consumer_root/library-packages"

@@ -52,7 +52,9 @@ public sealed class MethodFrameEntryEmitterTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void SelectedAggregateArgumentInitializesLanesWithoutCopyOrRebinding(
+    // A promoted argument's lanes take its value with no copy; then its local addresses its frame backing, the
+    // place a store of the whole argument writes and the lanes reload from, not the caller's copy.
+    public void SelectedAggregateArgumentInitializesLanesThenAddressesItsFrameBackingWithoutACopy(
         WasmTarget target)
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
@@ -109,16 +111,11 @@ public sealed class MethodFrameEntryEmitterTests
             context);
 
         Assert.Empty(copies.Requests);
-        var instructions = code.ToInstructions();
-        Assert.Contains(instructions, instruction =>
-            instruction.Opcode == WasmOpcodes.LocalSet &&
-            instruction.Operand.UnsignedValue == 30);
-        Assert.Contains(instructions, instruction =>
-            instruction.Opcode == WasmOpcodes.LocalSet &&
-            instruction.Operand.UnsignedValue == 31);
-        Assert.DoesNotContain(instructions, instruction =>
-            instruction.Opcode == WasmOpcodes.LocalSet &&
-            instruction.Operand.UnsignedValue == 1);
+        var sets = code.ToInstructions()
+            .Where(instruction => instruction.Opcode == WasmOpcodes.LocalSet)
+            .Select(instruction => instruction.Operand.UnsignedValue);
+        Assert.Equal([30u, 31u, 1u], sets.Where(local => local is 1 or 30 or 31));
+        Assert.Equal([0], addresses.Offsets);
     }
 
     [Theory]

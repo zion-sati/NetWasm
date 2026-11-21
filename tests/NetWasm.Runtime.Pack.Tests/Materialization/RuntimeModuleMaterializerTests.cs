@@ -265,6 +265,66 @@ public sealed class RuntimeModuleMaterializerTests
         Assert.Empty(native.Request!.SourceLayout.NativeImports);
     }
 
+    // Imports of the C library are runtime exports: a program with no other native import keeps the runtime path,
+    // exports them and removes the exports again once linked.
+    [Fact]
+    public void CLibraryImportsStayOnTheRuntimePathAsInternalExports()
+    {
+        using var directory = new TemporaryDirectory();
+        var arguments = new RecordingArgumentBuilder(["link"]);
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(4, "wasm32", 65_537)
+            {
+                RuntimeFeatures = [],
+                NativeImports = [CLibraryImport("log10"), CLibraryImport("cbrt")],
+            }),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            arguments,
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator());
+
+        var result = materializer.Materialize(Request(directory, "wasm32"));
+
+        Assert.Equal(["cbrt", "log10"], arguments.Request!.SystemExports.ToArray());
+        Assert.Empty(arguments.Request.NativeBindings);
+        Assert.Equal([new RuntimeLinkExport("cbrt", 0), new("log10", 0)], result.InternalRuntimeExports.ToArray());
+    }
+
+    [Fact]
+    public void NativeMaterializationReceivesCLibraryImportsAsSystemExports()
+    {
+        using var directory = new TemporaryDirectory();
+        var native = new RecordingNativeMaterializer();
+        var sample = new RuntimeNativeImport("libsample", "sample_value", [RuntimeNativeValueType.I32],
+            RuntimeNativeValueType.I32);
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(4, "wasm32", 65_537)
+            {
+                NativeImports = [CLibraryImport("cbrt"), sample],
+            }),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator(),
+            nativeModules: native);
+
+        var result = materializer.Materialize(Request(directory, "wasm32"));
+
+        Assert.Same(native.Result, result);
+        Assert.Equal([sample], native.Request!.SourceLayout.NativeImports.ToArray());
+        Assert.Equal(["cbrt"], native.Request.SystemExports.ToArray());
+    }
+
+    private static RuntimeNativeImport CLibraryImport(string entryPoint) =>
+        new(RuntimeSystemImportPartitioner.CLibrary, entryPoint, [RuntimeNativeValueType.F64],
+            RuntimeNativeValueType.F64);
+
     [Fact]
     public void RejectsUnavailableTarget()
     {
@@ -638,7 +698,9 @@ public sealed class RuntimeModuleMaterializerTests
             commands,
             artifactDigests,
             nativeModules ?? new RejectingNativeMaterializer(),
-            new InlineLinkerCommands());
+            new InlineLinkerCommands(),
+            new RuntimeSystemImportPartitioner(),
+            new RuntimeLinkExportPlanBuilder());
 
     // The link's arguments stay inline here; ResponseFileLinkerCommandFactoryTests covers the response file.
     private sealed class InlineLinkerCommands : ILinkerCommandFactory

@@ -30,7 +30,9 @@ internal static class RuntimeMaterializationComposition
             new CommandInvoker(new ToolOutputExcerptFormatter()),
             new Sha256ArtifactDigestCalculator(),
             CreateNativeMaterializer(),
-            new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())));
+            new ResponseFileLinkerCommandFactory(new ResponseFileWriter(new LlvmResponseFileArgumentQuoter())),
+            new RuntimeSystemImportPartitioner(),
+            new RuntimeLinkExportPlanBuilder());
     }
 
     public static IRuntimeNativeModuleMaterializer CreateNativeMaterializer()

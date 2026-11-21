@@ -5,7 +5,8 @@
 // Upstream commit: deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
 // Reflection-based target-framework discovery and process exit/event hooks are intentionally excluded from the
 // NetWasm profile. The host properties .NET reads from runtimeconfig.json are the project's
-// RuntimeHostConfigurationOption items, which the compiler supplies.
+// RuntimeHostConfigurationOption items, which the compiler supplies, over the two Mono's WebAssembly hosts set
+// (HostValue).
 
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -67,8 +68,18 @@ public static partial class AppContext
                 }
             }
         }
-        return ConfiguredValue(name);
+        return ConfiguredValue(name) ?? HostValue(name);
     }
+
+    // NetWasm adaptation: the properties Mono's WebAssembly hosts give every program, as .NET's host gives
+    // runtimeconfig.json's (src/mono/wasi/runtime/driver.c and src/mono/browser/runtime/driver.c): the base
+    // directory is the sandbox root, and the runtime identifier is the target's.
+    private static string? HostValue(string name) => name switch
+    {
+        "APP_CONTEXT_BASE_DIRECTORY" => "/",
+        "RUNTIME_IDENTIFIER" => System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier,
+        _ => null,
+    };
 
     public static void SetData(string name, object? data)
     {

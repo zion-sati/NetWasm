@@ -124,6 +124,12 @@
           Pack="true"
           PackagePath="tools/net10.0/any/vstest/"
           Visible="false" />
+    <!-- The loggers the SDK's own runner carries in its Extensions directory, which the run's loading strategy
+         (ExtensionsDirectory) searches, so dotnet test's trx and html loggers work as on desktop. -->
+    <None Include="$(PkgMicrosoft_TestPlatform_Portable)/tools/net8.0/Extensions/Microsoft.VisualStudio.TestPlatform.Extensions.Trx.TestLogger.dll;$(PkgMicrosoft_TestPlatform_Portable)/tools/net8.0/Extensions/Microsoft.VisualStudio.TestPlatform.Extensions.Html.TestLogger.dll"
+          Pack="true"
+          PackagePath="tools/net10.0/any/vstest/Extensions/"
+          Visible="false" />
   </ItemGroup>
 
   <Target Name="NetWasmVSTestCollectToolAssemblies"

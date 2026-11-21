@@ -1423,7 +1423,14 @@ public readonly partial struct Single
     [Intrinsic]
     public static TInteger ConvertToIntegerNative<TInteger>(float value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
 
-    public static float ClampNative(float value, float min, float max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
+    public static float ClampNative(float value, float min, float max)
+    {
+        if (min > max)
+        {
+            Math.ThrowMinMaxException(min, max);
+        }
+        return MinNative(MaxNative(value, min), max);
+    }
     [Intrinsic]
     public static float MaxNative(float left, float right) => left > right ? left : right;
     [Intrinsic]
@@ -1654,7 +1661,14 @@ public readonly partial struct Double
     [Intrinsic]
     public static TInteger ConvertToIntegerNative<TInteger>(double value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
 
-    public static double ClampNative(double value, double min, double max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
+    public static double ClampNative(double value, double min, double max)
+    {
+        if (min > max)
+        {
+            Math.ThrowMinMaxException(min, max);
+        }
+        return MinNative(MaxNative(value, min), max);
+    }
     [Intrinsic]
     public static double MaxNative(double left, double right) => left > right ? left : right;
     [Intrinsic]
@@ -1769,6 +1783,12 @@ public readonly partial struct Single
     internal const uint MaxTrailingSignificand = 0x007F_FFFF;
     internal const uint PositiveInfinityBits = 0x7F80_0000;
     internal const uint SmallestNormalBits = 0x0080_0000;
+    // Upstream Single.cs's, which Math and MathF read.
+    internal const uint PositiveZeroBits = 0x0000_0000;
+    internal const uint NegativeZeroBits = 0x8000_0000;
+    internal const uint NegativeInfinityBits = 0xFF80_0000;
+    internal const int BiasedExponentLength = 8;
+    internal const sbyte MinExponent = -126;
     internal const int ExponentBias = 127;
     internal const int TrailingSignificandLength = 23;
     internal const int SignificandLength = TrailingSignificandLength + 1;
@@ -1882,6 +1902,12 @@ public readonly partial struct Double
     internal const ulong MaxTrailingSignificand = 0x000F_FFFF_FFFF_FFFF;
     internal const ulong PositiveInfinityBits = 0x7FF0_0000_0000_0000;
     internal const ulong SmallestNormalBits = 0x0010_0000_0000_0000;
+    // Upstream Double.cs's, which Math reads.
+    internal const ulong PositiveZeroBits = 0x0000_0000_0000_0000;
+    internal const ulong NegativeZeroBits = 0x8000_0000_0000_0000;
+    internal const ulong NegativeInfinityBits = 0xFFF0_0000_0000_0000;
+    internal const int BiasedExponentLength = 11;
+    internal const short MinExponent = -1022;
     internal const int ExponentBias = 1023;
     internal const int TrailingSignificandLength = 52;
     internal const int SignificandLength = TrailingSignificandLength + 1;
@@ -1974,9 +2000,8 @@ public readonly partial struct IntPtr
     public static nint NegativeOne => (nint)(-1);
     public static int Radix => 2;
 
-    public static nint Abs(nint value) => value == MinValue ? throw new OverflowException() : value < 0 ? -value : value;
-    public static nint Clamp(nint value, nint minimum, nint maximum) =>
-        minimum > maximum ? throw new ArgumentException() : value < minimum ? minimum : value > maximum ? maximum : value;
+    public static nint Abs(nint value) => Math.Abs(value);
+    public static nint Clamp(nint value, nint minimum, nint maximum) => Math.Clamp(value, minimum, maximum);
     public static nint CopySign(nint value, nint sign)
     {
         if (value == MinValue)
@@ -2194,8 +2219,7 @@ public readonly partial struct UIntPtr
     public static nuint One => (nuint)1;
     public static int Radix => 2;
     public static nuint Abs(nuint value) => value;
-    public static nuint Clamp(nuint value, nuint minimum, nuint maximum) =>
-        minimum > maximum ? throw new ArgumentException() : value < minimum ? minimum : value > maximum ? maximum : value;
+    public static nuint Clamp(nuint value, nuint minimum, nuint maximum) => Math.Clamp(value, minimum, maximum);
     public static nuint Max(nuint left, nuint right) => left >= right ? left : right;
     public static nuint Min(nuint left, nuint right) => left <= right ? left : right;
     public static int Sign(nuint value) => value == 0 ? 0 : 1;

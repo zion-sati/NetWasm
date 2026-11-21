@@ -114,28 +114,27 @@ public static class LargeStackThreads
 
         if (start)
         {
+            // Unsafe: without the execution context of the call that starts it. Started with it, the thread would
+            // keep it, and the compilation it belongs to, for as long as the process runs, and hand it to work
+            // whose caller suppressed flow.
             new Thread(Work, StackSize)
             {
                 IsBackground = true,
                 Name = "NetWasm compiler worker",
-            }.Start();
+            }.UnsafeStart();
         }
     }
 
     private static void Work()
     {
         t_largeStack = true;
+        // The thread started without a context, so this is the empty one. Work whose caller suppressed flow runs in
+        // it, and what the work sets there ends with the work, as the thread pool resets its own threads.
+        var empty = ExecutionContext.Capture()!;
         while (true)
         {
             var item = Next();
-            if (item.Context is { } context)
-            {
-                ExecutionContext.Run(context, static state => ((Action)state!)(), item.Body);
-            }
-            else
-            {
-                item.Body();
-            }
+            ExecutionContext.Run(item.Context ?? empty, static state => ((Action)state!)(), item.Body);
         }
     }
 

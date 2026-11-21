@@ -1,0 +1,368 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
+using NetWasm.Compiler.Core;
+using NetWasm.TestInfrastructure;
+
+namespace NetWasm.Compiler.Tests;
+
+using static CompilerTestSupport;
+
+// Math.Asinh, Math.Atanh, Math.Log10 and Math.Log2 as fdlibm and musl compute them. They were closed-form
+// expressions: Atanh was 104 ulps off for small arguments, Asinh 4, Log10(1000) was 2.9999999999999996 and 441
+// powers of two had an inexact Log2 (found qualifying Sdcb.Arithmetic, whose tests compare these with BigFloat).
+// The references are correctly rounded (Sdcb.Arithmetic's BigFloat at 53 bits); desktop .NET is within one ulp of
+// every one. Each case returns the number of results out of bounds.
+public sealed class MathAccuracyCompilationTests
+{
+    [Theory]
+    [InlineData(0, WasmTarget.Wasm32)]
+    [InlineData(1, WasmTarget.Wasm32)]
+    [InlineData(2, WasmTarget.Wasm32)]
+    [InlineData(3, WasmTarget.Wasm32)]
+    [InlineData(0, WasmTarget.Wasm64)]
+    [InlineData(1, WasmTarget.Wasm64)]
+    [InlineData(2, WasmTarget.Wasm64)]
+    [InlineData(3, WasmTarget.Wasm64)]
+    public void LogarithmsAndInverseHyperbolicsAreWithinAnUlpAndExactAtPowers(int function, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("MathAccuracyFixture", Source);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "MathAccuracyFixture.EntryPoint", "Run", [], Target: target));
+        Assert.Equal(0, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, function, target,
+            result.StaticDataEnd));
+    }
+
+    private const string Source = """
+        using System;
+
+        namespace MathAccuracyFixture;
+
+        public static class EntryPoint
+        {
+            // Pairs of input bits and the correctly rounded result's bits.
+            private static readonly ulong[] AsinhCases =
+            [
+                    0xC016594C12DCB298UL, 0xC0035F5074FE9B0EUL,
+                    0x400E0613F95C0C27UL, 0x4000438FC0301506UL,
+                    0x400D5E194A9ABC33UL, 0x400017DD4632517AUL,
+                    0x40105072B3F0A0E6UL, 0x4000E8A34E2752CDUL,
+                    0xC0113D5C71D27AB8UL, 0xC001568D7483CBF3UL,
+                    0x40131FBEA6163F7EUL, 0x400226023F12DAA4UL,
+                    0x4015BAEC003B75D8UL, 0x400326BF40DDA591UL,
+                    0xBFF7570166EEAE02UL, 0xBFF2BF1B81D132A5UL,
+                    0xC01708166EDE102CUL, 0xC0039C026AEC40B0UL,
+                    0x400AE725BF15CE4AUL, 0x3FFED66ADF41DA83UL,
+                    0xC012F45F0655E8BEUL, 0xC002142C55AEAE5BUL,
+                    0x40008BD233C117A3UL, 0x3FF7948288604F66UL,
+                    0x400184B5C083096AUL, 0x3FF8682AD98F9059UL,
+                    0xC00B4CC2A1169986UL, 0xBFFF0FF425D41594UL,
+                    0xC0059CEE3F4B39DDUL, 0xBFFB838CA160D633UL,
+                    0x400B00B74656016EUL, 0x3FFEE4F7DED667F9UL,
+                    0x4006986FB9CD30DEUL, 0x3FFC2EC10DBCCCDBUL,
+                    0x3FECDDC928B9BB98UL, 0x3FE9EEDB5B21260CUL,
+                    0x40021664DBC42CCAUL, 0x3FF8DF99AC31B1B6UL,
+                    0x3FF35375CFE6A6EAUL, 0x3FF05609DB851FAFUL,
+                    0xC009E23F4D53C47EUL, 0xBFFE3F0AA1E01403UL,
+                    0xBFF5121D726A243CUL, 0xBFF16B6CEDD1548CUL,
+                    0x40095CF9C752B9F5UL, 0x3FFDEF9A443542F4UL,
+                    0x3FC449932A289320UL, 0x3FC4341297685111UL,
+                    0xC013FEE9CA57FDD4UL, 0xC0027F728A05CE88UL,
+                    0xC012AFEAB4755FD5UL, 0xC001F7B61349183AUL,
+                    0x3FF5B944856B728CUL, 0x3FF1CF870371F2BDUL,
+                    0xC010072FB1700E5FUL, 0xC000C5744C585F62UL,
+                    0xC013DF75E857BEECUL, 0xC0027312519B8429UL,
+                    0x40003F56D2807EAFUL, 0x3FF7516F6CE770FBUL,
+                    0x400D33071ADA660EUL, 0x40000C837CA36F1AUL,
+                    0x4000DDDBC801BBB9UL, 0x3FF7DB5FC4953689UL,
+                    0xBFE43EAB06A87D54UL, 0xBFE3178211676CF5UL,
+                    0xBFCBE6A9DE37CD58UL, 0xBFCBAF46F52FAC68UL,
+                    0xC0142970837852E1UL, 0xC002901090A98BE0UL,
+                    0x40176685869ECD0CUL, 0x4003BC141965015DUL,
+                    0x3FEBFAE175B7F5C0UL, 0x3FE945357CF5703DUL,
+                    0x4012AE782AB55CF0UL, 0x4001F71AF0565BA5UL,
+                    0x4002F2F6FF05E5EEUL, 0x3FF98E91AC055CA3UL,
+                    0xC0171D41629E3A83UL, 0xC003A33DB341D624UL,
+                    0xBFFF07FD567E0FFAUL, 0xBFF6A8DADB493C5AUL,
+                    0x40008B961E01172BUL, 0x3FF7944E392042ADUL,
+                    0xC002B97BA98572F8UL, 0xBFF961A0EDE734F1UL,
+                    0x3FEFD81F38BFB040UL, 0x3FEC17FAE46A9B3AUL,
+                    0xBFDDC937333B9274UL, 0xBFDCCDC0F8B0EEFEUL,
+                    0x401243B214148764UL, 0x4001C9E92DE4B5BAUL,
+                    0xBFE17A368DA2F470UL, 0xBFE0B5363ED5FC82UL,
+                    0x3FC68AA98E2D1560UL, 0x3FC66D3E32EEE02DUL,
+                    0xBFE364C581A6C98EUL, 0xBFE25E439636C41EUL,
+                    0xBFE1FA696DA3F4D2UL, 0xBFE1255A0ECB167AUL,
+                    0x3F7A0367C0340800UL, 0x3F7A035C4A6CC1D4UL,
+                    0xBFE324FFC0A64A02UL, 0xBFE227A1B633575FUL,
+                    0x4010CD2BC5919A58UL, 0x400123378FA88498UL,
+                    0xC007B06A9B4F60D4UL, 0xBFFCE5BA630F90E2UL,
+                    0xC015639478DAC729UL, 0xC00306E179D7F232UL,
+                    0x3FFBACED26F759D8UL, 0x3FF50D7AF2B990DBUL,
+                    0xC015AB72E6FB56E6UL, 0xC0032123216CDA87UL,
+                    0xC003E67FE807CD00UL, 0xBFFA4813A9C6DEF8UL,
+                    0x40089EB8FC913D73UL, 0x3FFD7B976D98D1A8UL,
+                    0xC0168D71BD5D1AE4UL, 0xC003719BB698CA3BUL,
+                    0xC0049D24F6893A4AUL, 0xBFFACE435E749E80UL,
+                    0x400B84376357086FUL, 0x3FFF2F07D2B329BAUL,
+                    0xC003EC94E2C7D92AUL, 0xBFFA4C9C8C171DE7UL,
+                    0xBFFC9F0760793E10UL, 0xBFF5851FBB6C5971UL,
+                    0x3E15EB851EB851ECUL, 0x3E15EB851EB851ECUL,
+                    0xBE1E8F5C28F5C28FUL, 0xBE1E8F5C28F5C28FUL,
+                    0x3E25EB851EB851ECUL, 0x3E25EB851EB851ECUL,
+                    0xBE2E8F5C28F5C28FUL, 0xBE2E8F5C28F5C28FUL,
+                    0x3E35EB851EB851ECUL, 0x3E35EB851EB851ECUL,
+                    0xBE3E8F5C28F5C28FUL, 0xBE3E8F5C28F5C28FUL,
+                    0x3E45EB851EB851ECUL, 0x3E45EB851EB851ECUL,
+                    0xBE4E8F5C28F5C28FUL, 0xBE4E8F5C28F5C28FUL,
+                    0x3E55EB851EB851ECUL, 0x3E55EB851EB851ECUL,
+                    0xBE5E8F5C28F5C28FUL, 0xBE5E8F5C28F5C28EUL,
+                    0x3E65EB851EB851ECUL, 0x3E65EB851EB851EAUL,
+                    0xBE6E8F5C28F5C28FUL, 0xBE6E8F5C28F5C28AUL,
+                    0x3E75EB851EB851ECUL, 0x3E75EB851EB851E5UL,
+                    0xBE7E8F5C28F5C28FUL, 0xBE7E8F5C28F5C27CUL,
+                    0x3E85EB851EB851ECUL, 0x3E85EB851EB851D1UL,
+                    0xBE8E8F5C28F5C28FUL, 0xBE8E8F5C28F5C245UL,
+                    0x3E95EB851EB851ECUL, 0x3E95EB851EB8517EUL,
+                    0xBE9E8F5C28F5C28FUL, 0xBE9E8F5C28F5C166UL,
+                    0x3EA5EB851EB851ECUL, 0x3EA5EB851EB85035UL,
+                    0xBEAE8F5C28F5C28FUL, 0xBEAE8F5C28F5BDEAUL,
+                    0x3EB5EB851EB851ECUL, 0x3EB5EB851EB84B11UL,
+                    0xBEBE8F5C28F5C28FUL, 0xBEBE8F5C28F5AFFAUL,
+                    0x3EC5EB851EB851ECUL, 0x3EC5EB851EB8367EUL,
+                    0xBECE8F5C28F5C28FUL, 0xBECE8F5C28F5783CUL,
+                    0x3ED5EB851EB851ECUL, 0x3ED5EB851EB7E436UL,
+                    0xBEDE8F5C28F5C28FUL, 0xBEDE8F5C28F49943UL,
+                    0x3EE5EB851EB851ECUL, 0x3EE5EB851EB69B14UL,
+                    0xBEEE8F5C28F5C28FUL, 0xBEEE8F5C28F11D60UL,
+                    0x3EF5EB851EB851ECUL, 0x3EF5EB851EB1768BUL,
+                    0xBEFE8F5C28F5C28FUL, 0xBEFE8F5C28E32DD3UL,
+                    0x3F05EB851EB851ECUL, 0x3F05EB851E9CE46AUL,
+                    0xBF0E8F5C28F5C28FUL, 0xBF0E8F5C28AB6FA0UL,
+                    0x3F15EB851EB851ECUL, 0x3F15EB851E4A9BE4UL,
+                    0xBF1E8F5C28F5C28FUL, 0xBF1E8F5C27CC76D4UL,
+                    0x3F25EB851EB851ECUL, 0x3F25EB851D0179CCUL,
+                    0xBF2E8F5C28F5C28FUL, 0xBF2E8F5C245093A3UL,
+                    0x3F35EB851EB851ECUL, 0x3F35EB8517DCF170UL,
+                    0xBF3E8F5C28F5C28FUL, 0xBF3E8F5C166106F6UL,
+                    0x3F45EB851EB851ECUL, 0x3F45EB85034AD041UL,
+                    0xBF4E8F5C28F5C28FUL, 0xBF4E8F5BDEA2D599UL,
+                    0x3F55EB851EB851ECUL, 0x3F55EB84B1024F99UL,
+                    0xBF5E8F5C28F5C28FUL, 0xBF5E8F5AFFAA2597UL,
+                    0x3F65EB851EB851ECUL, 0x3F65EB8367E08E1FUL,
+                    0xBF6E8F5C28F5C28FUL, 0xBF6E8F5783C8BCB9UL,
+                    0x3F75EB851EB851ECUL, 0x3F75EB7E435D9AA6UL,
+                    0xBF7E8F5C28F5C28FUL, 0xBF7E8F4994588BA1UL,
+                    0x3F85EB851EB851ECUL, 0x3F85EB69B192F283UL,
+                    0xBF8E8F5C28F5C28FUL, 0xBF8E8F11D7EEE1B9UL,
+                    0x3F95EB851EB851ECUL, 0x3F95EB176E7A667FUL,
+                    0xBF9E8F5C28F5C28FUL, 0xBF9E8E32FBB704D3UL,
+                    0x3FA5EB851EB851ECUL, 0x3FA5E9CEA3279CB9UL,
+                    0xBFAE8F5C28F5C28FUL, 0xBFAE8AB8E10D7174UL,
+                    0x3FB5EB851EB851ECUL, 0x3FB5E4AF825FF8D5UL,
+                    0xBFBE8F5C28F5C28FUL, 0xBFBE7CE5AC822756UL,
+                    0x3FC5EB851EB851ECUL, 0x3FC5D072B04AFA12UL,
+                    0xBFCE8F5C28F5C28FUL, 0xBFCE46E156983DDFUL,
+                    0x3FD5EB851EB851ECUL, 0x3FD58339C6972548UL,
+                    0xBFDE8F5C28F5C28FUL, 0xBFDD80FA75C94FBEUL,
+                    0x3FE5EB851EB851ECUL, 0x3FE47D9F658E2923UL,
+                    0xBFEE8F5C28F5C28FUL, 0xBFEB2C9728DE4BCEUL,
+                    0x3FF5EB851EB851ECUL, 0x3FF1ED3DDA8E62D4UL,
+                    0xBFFE8F5C28F5C28FUL, 0xBFF6713D32E12C67UL,
+                    0x4004000000000000UL, 0x3FFA5B0F0BE9DCF6UL,
+                    0xC004000000000000UL, 0xBFFA5B0F0BE9DCF6UL,
+                    0x4042800000000000UL, 0x4011378CB2B84406UL,
+                    0xC042800000000000UL, 0xC011378CB2B84406UL,
+                    0x40F86A0000000000UL, 0x402869825A9284F4UL,
+                    0xC0F86A0000000000UL, 0xC02869825A9284F4UL,
+                    0x41B1E1A300000000UL, 0x403436627B57F716UL,
+                    0xC1B1E1A300000000UL, 0xC03436627B57F716UL,
+                    0x4415AF1D78B58C40UL, 0x40475F57369E9343UL,
+                    0xC415AF1D78B58C40UL, 0xC0475F57369E9343UL,
+                    0x7E37E43C8800759CUL, 0x40859BBFD8B83E44UL,
+                    0xFE37E43C8800759CUL, 0xC0859BBFD8B83E44UL,
+            ];
+
+            private static readonly ulong[] AtanhCases =
+            [
+                    0x3FEE2A14393172E0UL, 0x3FFC2DDD5C3F5B9EUL,
+                    0xBFC1E358AC598940UL, 0xBFC201833651A440UL,
+                    0xBFE16B4C3F4DB7E0UL, 0xBFE387B09771C121UL,
+                    0xBFE2F7895B4BB1A2UL, 0xBFE5D1AA73DBE2C4UL,
+                    0xBFE7158FC7049186UL, 0xBFED22FC1C82DEFEUL,
+                    0xBFDAF249131B034AUL, 0xBFDCBBA50F173675UL,
+                    0xBFE27990145CA134UL, 0xBFE5121FA7E07F07UL,
+                    0x3FE5EEF2CC7E6D42UL, 0x3FEADB3E1D175F55UL,
+                    0x3FE7EFC2038645ECUL, 0x3FEEFD72D74AC470UL,
+                    0x3FD58983AB9031BCUL, 0x3FD6690928D2FE41UL,
+                    0xBFDE1FCD99DC3F9AUL, 0xBFE059C41A9E1197UL,
+                    0x3FBD6A28819C1C00UL, 0x3FBD8B8FC53BF871UL,
+                    0xBFEA46706BA1FD84UL, 0xBFF29018E2E92989UL,
+                    0xBFE431D0F00CDE83UL, 0xBFE7C861CF76B50CUL,
+                    0xBFEC62C3C683A6CFUL, 0xBFF686EDDE8BFABEUL,
+                    0xBFE2D2CDBF331640UL, 0xBFE59944FE9454ADUL,
+                    0x3FD3CB1C243FE820UL, 0x3FD4769EEF1E5AE1UL,
+                    0xBFE970E6C83C7B67UL, 0xBFF15C0105F069D5UL,
+                    0x3FDB721F6D63B10CUL, 0x3FDD57A7A27EFCA4UL,
+                    0x3FD0D40F5AF4DB54UL, 0x3FD13BADC3DE7F98UL,
+                    0xBFE4FD80241B42AEUL, 0xBFE92425E7F41834UL,
+                    0xBFD27FCB2EE64744UL, 0xBFD30AB818315ED8UL,
+                    0x3FE4A252282C77D6UL, 0x3FE8861D7311158DUL,
+                    0xBFE362B49431A6B1UL, 0xBFE678E58CD98478UL,
+                    0xBFC263CC18794278UL, 0xBFC28498937DF0CCUL,
+                    0xBFC0442EF3D64AECUL, 0xBFC05AD1D708F7A0UL,
+                    0x3FEBD00A7C31DD86UL, 0x3FF545F14D73D3BBUL,
+                    0xBFDBDBAB7B5A46B4UL, 0xBFDDD96DB6A9D8D8UL,
+                    0xBFE745046E51BD3CUL, 0xBFED86CE686E15D5UL,
+                    0x3FD53101AAF357C4UL, 0x3FD6056D8ACB6DD6UL,
+                    0x3FDD8C6FB1B741D4UL, 0x3FDFF73D5EBC40C7UL,
+                    0x3FBA3B0B8A0661A0UL, 0x3FBA52B1B10CCC2EUL,
+                    0xBFCE70D626E34814UL, 0xBFCF08F29133975DUL,
+                    0x3FECC44CFA3136AEUL, 0x3FF777F41EDABACAUL,
+                    0x3FCB14678D7B4780UL, 0x3FCB7EB33ED35FB4UL,
+                    0xBFEDAA52DD9E87D9UL, 0xBFFA30D83D1349A2UL,
+                    0x3FD3B245A960FE24UL, 0x3FD45B2B955464A7UL,
+                    0xBFDF3193C4F2DE08UL, 0xBFE10B6F334B0CBCUL,
+                    0xBFCEA9EA08A12ADCUL, 0xBFCF457939BD2ABAUL,
+                    0xBFE5681FE428E4BAUL, 0xBFE9E22CEC503972UL,
+                    0xBFE02BEA46B057D4UL, 0xBFE1CEAE33907E6FUL,
+                    0x3FD38F6E91E347D4UL, 0x3FD434B6730AF385UL,
+                    0x3FC256A111792820UL, 0x3FC27726B3EBA635UL,
+                    0xBFE4454A9DCA761AUL, 0xBFE7E8D40BC92A5AUL,
+                    0x3FEF1B777AE7D088UL, 0x40010888299CDCEAUL,
+                    0xBF7D7A488130B700UL, 0xBF7D7A69DB7EB641UL,
+                    0x3FBDD3142A553FC0UL, 0x3FBDF5E7E18041D7UL,
+                    0x3FE7454381B6DC72UL, 0x3FED8754457B0BABUL,
+                    0xBFE06DAF5CDDA82CUL, 0xBFE2277EEA3CDDFEUL,
+                    0x3FBB242A39645CD0UL, 0x3FBB3E600F72FCFFUL,
+                    0xBFCFF1AF8C7FE360UL, 0xBFD0510CD50281CFUL,
+                    0xBFE3D8180370021CUL, 0xBFE734F427AF77EEUL,
+                    0xBFEB3DF565C5343DUL, 0xBFF42CAA4A430CB6UL,
+                    0x3FD43B55134B0608UL, 0x3FD4F3019857A4A0UL,
+                    0xBFE4227FBBBAD45CUL, 0xBFE7AEFA106CC61CUL,
+                    0x3FCEEF95570D3B50UL, 0x3FCF8F6CAA0A12AAUL,
+                    0x3FCA4BB09E79B618UL, 0x3FCAACDCE9652A0BUL,
+                    0xBFEDB6AC25FD58DDUL, 0xBFFA5D3422A6ABACUL,
+                    0x3FE14F7E25B3E6AAUL, 0x3FE360478BA52A13UL,
+                    0x3FD95320E1A491C8UL, 0x3FDAC95711D22479UL,
+                    0xBFD3363515BC2EFAUL, 0xBFD3D279647F0290UL,
+                    0x3FEB225A2431C9D2UL, 0x3FF3FB08EC81987FUL,
+                    0x3FDB0BC57FDDC5A0UL, 0x3FDCDAA5A0EC8E66UL,
+                    0xBFE256D34CD4ADA6UL, 0xBFE4DE355E1D744EUL,
+                    0x3E15EB851EB851ECUL, 0x3E15EB851EB851ECUL,
+                    0xBE1E8F5C28F5C28FUL, 0xBE1E8F5C28F5C28FUL,
+                    0x3E25EB851EB851ECUL, 0x3E25EB851EB851ECUL,
+                    0xBE2E8F5C28F5C28FUL, 0xBE2E8F5C28F5C28FUL,
+                    0x3E35EB851EB851ECUL, 0x3E35EB851EB851ECUL,
+                    0xBE3E8F5C28F5C28FUL, 0xBE3E8F5C28F5C28FUL,
+                    0x3E45EB851EB851ECUL, 0x3E45EB851EB851ECUL,
+                    0xBE4E8F5C28F5C28FUL, 0xBE4E8F5C28F5C290UL,
+                    0x3E55EB851EB851ECUL, 0x3E55EB851EB851EDUL,
+                    0xBE5E8F5C28F5C28FUL, 0xBE5E8F5C28F5C291UL,
+                    0x3E65EB851EB851ECUL, 0x3E65EB851EB851EFUL,
+                    0xBE6E8F5C28F5C28FUL, 0xBE6E8F5C28F5C298UL,
+                    0x3E75EB851EB851ECUL, 0x3E75EB851EB851FAUL,
+                    0xBE7E8F5C28F5C28FUL, 0xBE7E8F5C28F5C2B4UL,
+                    0x3E85EB851EB851ECUL, 0x3E85EB851EB85223UL,
+                    0xBE8E8F5C28F5C28FUL, 0xBE8E8F5C28F5C324UL,
+                    0x3E95EB851EB851ECUL, 0x3E95EB851EB852C7UL,
+                    0xBE9E8F5C28F5C28FUL, 0xBE9E8F5C28F5C4E2UL,
+                    0x3EA5EB851EB851ECUL, 0x3EA5EB851EB8555AUL,
+                    0xBEAE8F5C28F5C28FUL, 0xBEAE8F5C28F5CBD9UL,
+                    0x3EB5EB851EB851ECUL, 0x3EB5EB851EB85FA3UL,
+                    0xBEBE8F5C28F5C28FUL, 0xBEBE8F5C28F5E7B8UL,
+                    0x3EC5EB851EB851ECUL, 0x3EC5EB851EB888C7UL,
+                    0xBECE8F5C28F5C28FUL, 0xBECE8F5C28F65735UL,
+                    0x3ED5EB851EB851ECUL, 0x3ED5EB851EB92D58UL,
+                    0xBEDE8F5C28F5C28FUL, 0xBEDE8F5C28F81526UL,
+                    0x3EE5EB851EB851ECUL, 0x3EE5EB851EBBBF9CUL,
+                    0xBEEE8F5C28F5C28FUL, 0xBEEE8F5C28FF0CEDUL,
+                    0x3EF5EB851EB851ECUL, 0x3EF5EB851EC608ADUL,
+                    0xBEFE8F5C28F5C28FUL, 0xBEFE8F5C291AEC06UL,
+                    0x3F05EB851EB851ECUL, 0x3F05EB851EEF2CF0UL,
+                    0xBF0E8F5C28F5C28FUL, 0xBF0E8F5C298A686DUL,
+                    0x3F15EB851EB851ECUL, 0x3F15EB851F93BDFCUL,
+                    0xBF1E8F5C28F5C28FUL, 0xBF1E8F5C2B485A06UL,
+                    0x3F25EB851EB851ECUL, 0x3F25EB852226022EUL,
+                    0xBF2E8F5C28F5C28FUL, 0xBF2E8F5C32402070UL,
+                    0x3F35EB851EB851ECUL, 0x3F35EB852C6F12FFUL,
+                    0xBF3E8F5C28F5C28FUL, 0xBF3E8F5C4E1F3A4FUL,
+                    0x3F45EB851EB851ECUL, 0x3F45EB85559356F2UL,
+                    0xBF4E8F5C28F5C28FUL, 0xBF4E8F5CBD9BA561UL,
+                    0x3F55EB851EB851ECUL, 0x3F55EB85FA247199UL,
+                    0xBF5E8F5C28F5C28FUL, 0xBF5E8F5E7B8D8AD8UL,
+                    0x3F65EB851EB851ECUL, 0x3F65EB888C6989F3UL,
+                    0xBF6E8F5C28F5C28FUL, 0xBF6E8F657358B3D2UL,
+                    0x3F75EB851EB851ECUL, 0x3F75EB92D588C74DUL,
+                    0xBF7E8F5C28F5C28FUL, 0xBF7E8F8152BE8A1CUL,
+                    0x3F85EB851EB851ECUL, 0x3F85EBBBFAB37F7FUL,
+                    0xBF8E8F5C28F5C28FUL, 0xBF8E8FF0D3E92E36UL,
+                    0x3F95EB851EB851ECUL, 0x3F95EC609A3B7231UL,
+                    0xBF9E8F5C28F5C28FUL, 0xBF9E91AF11D19B00UL,
+                    0x3FA5EB851EB851ECUL, 0x3FA5EEF3C665C9CDUL,
+                    0xBFAE8F5C28F5C28FUL, 0xBFAE98AB9F9E1219UL,
+                    0x3FB5EB851EB851ECUL, 0x3FB5F94B662882ABUL,
+                    0xBFBE8F5C28F5C28FUL, 0xBFBEB4D7CE60C940UL,
+                    0x3FC5EB851EB851ECUL, 0x3FC6235C8871FB42UL,
+                    0xBFCE8F5C28F5C28FUL, 0xBFCF294EF56B60DDUL,
+                    0x3FD5EB851EB851ECUL, 0x3FD6D7CF80C4FCD0UL,
+                    0xBFDE8F5C28F5C28FUL, 0xBFE0A1B7A1B5BD1EUL,
+                    0x3FE5EB851EB851ECUL, 0x3FEAD4C7A3D1902DUL,
+                    0xBFEE8F5C28F5C28FUL, 0xBFFE2BFF451F305DUL,
+                    0x3FE0000000000000UL, 0x3FE193EA7AAD030BUL,
+                    0xBFE0000000000000UL, 0xBFE193EA7AAD030BUL,
+                    0x3FE8000000000000UL, 0x3FEF2272AE325A57UL,
+                    0xBFE8000000000000UL, 0xBFEF2272AE325A57UL,
+                    0x3FECCCCCCCCCCCCDUL, 0x3FF78E360604B32DUL,
+                    0xBFECCCCCCCCCCCCDUL, 0xBFF78E360604B32DUL,
+                    0x3FEFF7CED916872BUL, 0x400E66CFDE9C7C2DUL,
+                    0xBFEFF7CED916872BUL, 0xC00E66CFDE9C7C2DUL,
+                    0x3FEFFFFDE7210BE9UL, 0x401D046EB8B86C1CUL,
+                    0xBFEFFFFDE7210BE9UL, 0xC01D046EB8B86C1CUL,
+                    0x3FEFFFFFFFFFE000UL, 0x402C6B45D6B099BAUL,
+                    0xBFEFFFFFFFFFE000UL, 0xC02C6B45D6B099BAUL,
+            ];
+
+            public static int Run(int function) => function switch
+            {
+                0 => WithinAnUlp(AsinhCases, Math.Asinh),
+                1 => WithinAnUlp(AtanhCases, Math.Atanh),
+                2 => Log10OfPowersOfTen(),
+                _ => Log2OfPowersOfTwo(),
+            };
+
+            private static int WithinAnUlp(ulong[] cases, Func<double, double> function)
+            {
+                var outside = 0;
+                for (var i = 0; i < cases.Length; i += 2)
+                {
+                    var actual = BitConverter.DoubleToInt64Bits(function(BitConverter.Int64BitsToDouble((long)cases[i])));
+                    if (Math.Abs(actual - (long)cases[i + 1]) > 1) outside++;
+                }
+                return outside;
+            }
+
+            // log10 of the double nearest 10^p is p once rounded, for every normal power of ten.
+            private static int Log10OfPowersOfTen()
+            {
+                var inexact = 0;
+                for (var p = -307; p <= 308; p++)
+                {
+                    if (Math.Log10(double.Parse("1e" + p, System.Globalization.CultureInfo.InvariantCulture)) != p) inexact++;
+                }
+                return inexact;
+            }
+
+            private static int Log2OfPowersOfTwo()
+            {
+                var inexact = 0;
+                for (var p = -1074; p <= 1023; p++)
+                {
+                    if (Math.Log2(Math.ScaleB(1.0, p)) != p) inexact++;
+                }
+                return inexact;
+            }
+        }
+        """;
+}

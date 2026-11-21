@@ -25,6 +25,19 @@ public sealed class CommonReachableBlockFinderTests
         Assert.Equal(4, result);
     }
 
+    // A nested handler's leave out of an enclosing handler starts outside the blocks allowed: no join in them, as
+    // for two starts (issue #259's sibling, a catch in a catch's loop that returns from the method).
+    [Fact]
+    public void AStartOutsideTheAllowedBlocksHasNoJoin()
+    {
+        var state = new ControlFlowStructuringState(Validate(Body(
+            CliValueKind.Void, 0, [], I(0, CilOperation.Return, new CilOperand.None()))));
+        var actor = new CommonReachableBlockFinder(new PostDominators(), new Distances());
+
+        Assert.Null(actor.Find(state, [1, 2, 12], null, [1, 2, 3, 4]));
+        Assert.Null(actor.Find(state, 1, 12, null, [1, 2, 3, 4]));
+    }
+
     private sealed class PostDominators : IControlFlowPostDominatorFinder
     {
         public Dictionary<int, ImmutableHashSet<int>> Find(ControlFlowStructuringState state,

@@ -39,6 +39,13 @@
     <DefineConstants>$(DefineConstants);SYSTEM_NET_SOCKETS_DLL</DefineConstants>
   </PropertyGroup>
 
+  <!-- As upstream CoreLib: LibraryImport declarations (the C library's math functions) take the SDK's
+       LibraryImport generator, from the reference pack of the SDK's own runtime. -->
+  <ItemGroup>
+    <Analyzer Include="$(NetCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/Microsoft.Interop.LibraryImportGenerator.dll" />
+    <Analyzer Include="$(NetCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/$(BundledNETCoreAppPackageVersion)/analyzers/dotnet/cs/Microsoft.Interop.SourceGeneration.dll" />
+  </ItemGroup>
+
   <!-- Keep declaration order stable: metadata tokens are part of deterministic compiler output. -->
   <ItemGroup>
     <Compile Include="ComponentModel/SR.cs" />
@@ -919,35 +926,20 @@
     <Compile Include="BitConverter.cs" />
     <Compile Include="HashCode.cs" />
     <Compile Include="Math.cs" />
-    <Compile Include="MathF.Trig.cs" />
-    <Compile Include="MathF.ExpLog.cs" />
-    <Compile Include="MathF.Acosh.cs" />
-    <Compile Include="MathF.Cbrt.cs" />
-    <Compile Include="MathF.Log10.cs" />
-    <Compile Include="Math.Acosh.cs" />
-    <Compile Include="Math.Acos.cs" />
-    <Compile Include="Math.Asin.cs" />
-    <Compile Include="Math.Atan.cs" />
-    <Compile Include="Math.Atan2.cs" />
-    <Compile Include="Math.Cbrt.cs" />
-    <Compile Include="Math.Cos.cs" />
-    <Compile Include="Math.Exp.cs" />
-    <Compile Include="Math.Fma.cs" />
-    <Compile Include="Math.FdBits.cs" />
-    <Compile Include="Math.FdExpm1.cs" />
-    <Compile Include="Math.FdKernelCos.cs" />
-    <Compile Include="Math.FdKernelRemPio2.cs" />
-    <Compile Include="Math.FdKernelSin.cs" />
-    <Compile Include="Math.FdKernelTan.cs" />
-    <Compile Include="Math.FdLog1P.cs" />
-    <Compile Include="Math.FdRemPio2.cs" />
-    <Compile Include="Math.Log.cs" />
-    <Compile Include="Math.Pow.cs" />
-    <Compile Include="Math.Sin.cs" />
-    <Compile Include="Math.Sinh.cs" />
-    <Compile Include="Math.Tan.cs" />
-    <Compile Include="Math.Tanh.cs" />
-    <Compile Include="Math.Transcendentals.cs" />
+    <Compile Include="Math.NativeAot.cs" />
+    <Compile Include="MathF.cs" />
+    <Compile Include="MathF.NativeAot.cs" />
+    <Compile Include="MathPorts.Acos.cs" />
+    <Compile Include="MathPorts.Asin.cs" />
+    <Compile Include="MathPorts.Exp.cs" />
+    <Compile Include="MathPorts.FdBits.cs" />
+    <Compile Include="MathPorts.Pow.cs" />
+    <Compile Include="MathFPorts.Acosh.cs" />
+    <Compile Include="MathFPorts.Cbrt.cs" />
+    <Compile Include="MathFPorts.ExpLog.cs" />
+    <Compile Include="MathFPorts.Log1P.cs" />
+    <Compile Include="Runtime/RuntimeImports.Libm.cs" />
+    <Compile Include="Interop/Unix/Interop.Libraries.cs" />
     <Compile Include="GregorianDateMath.cs" />
     <Compile Include="TimeSpan.cs" />
     <Compile Include="TimeZoneInfo.cs" />

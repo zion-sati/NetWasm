@@ -39,6 +39,8 @@ public sealed class VSTestPackageContractTests
         "tools/net10.0/any/testhost/testhost.dll",
         "tools/net10.0/any/testhost/testhost.manifest.json",
         "tools/net10.0/any/testhost/testhost.runtimeconfig.json",
+        "tools/net10.0/any/vstest/Extensions/Microsoft.VisualStudio.TestPlatform.Extensions.Html.TestLogger.dll",
+        "tools/net10.0/any/vstest/Extensions/Microsoft.VisualStudio.TestPlatform.Extensions.Trx.TestLogger.dll",
         "tools/net10.0/any/vstest/Microsoft.CodeCoverage.IO.dll",
         "tools/net10.0/any/vstest/Microsoft.Extensions.DependencyModel.dll",
         "tools/net10.0/any/vstest/Microsoft.Extensions.FileSystemGlobbing.dll",
@@ -163,6 +165,8 @@ public sealed class VSTestPackageContractTests
     private static void AssertBuildTransitiveContract(string text)
     {
         var document = XDocument.Parse(text, LoadOptions.None);
+        // dotnet test's run settings and loggers are global properties; NetWasm's join them (VSTestTargetsEvaluationTests).
+        Assert.Equal("VSTestCLIRunSettings;VSTestLogger", document.Root!.Attribute("TreatAsLocalProperty")!.Value);
         var propertyGroup = Assert.Single(document.Root!.Elements("PropertyGroup"));
         Assert.Equal("'$(NetWasmGuestFramework)' == 'true'", propertyGroup.Attribute("Condition")!.Value);
         Assert.Equal(
@@ -178,7 +182,7 @@ public sealed class VSTestPackageContractTests
             "$(_NetWasmVSTestRunSettings);TestRunParameters.Parameter(name=\"NetWasm.TargetFramework\",value=\"$(TargetFramework)\")",
             runSettings[1].Value);
         Assert.All(
-            propertyGroup.Elements("VSTestCLIRunSettings"),
+            propertyGroup.Elements("VSTestCLIRunSettings").Skip(1),
             setting => Assert.EndsWith("$(_NetWasmVSTestRunSettings)", setting.Value, StringComparison.Ordinal));
         Assert.Equal(
             "$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any'))",
@@ -195,16 +199,18 @@ public sealed class VSTestPackageContractTests
             "'$(VSTestConsolePath)' == '' OR '$(VSTestConsolePath)' == '$(_NetWasmSdkVSTestConsolePath)'",
             consolePath.Attribute("Condition")!.Value);
         Assert.Equal("$(_NetWasmVSTestConsolePath)", consolePath.Value);
-        AssertConditionalAppendOrder(propertyGroup, "VSTestTestAdapterPath");
-        AssertConditionalAppendOrder(propertyGroup, "VSTestCLIRunSettings");
+        AssertConditionalAppendOrder(propertyGroup.Elements("VSTestTestAdapterPath").ToArray(), "VSTestTestAdapterPath");
+        // The first VSTestCLIRunSettings takes Microsoft.Testing.Platform's TRX options out; the last two append.
+        var cliRunSettings = propertyGroup.Elements("VSTestCLIRunSettings").ToArray();
+        Assert.Equal(3, cliRunSettings.Length);
+        AssertConditionalAppendOrder(cliRunSettings[1..], "VSTestCLIRunSettings");
         Assert.Empty(document.Descendants("Import"));
         Assert.Empty(document.Descendants("Target"));
         Assert.DoesNotContain("Microsoft.NET.Test.Sdk", text, StringComparison.Ordinal);
     }
 
-    private static void AssertConditionalAppendOrder(XElement propertyGroup, string propertyName)
+    private static void AssertConditionalAppendOrder(XElement[] properties, string propertyName)
     {
-        var properties = propertyGroup.Elements(propertyName).ToArray();
         Assert.Equal(2, properties.Length);
         Assert.Equal($"'$({propertyName})' != ''", properties[0].Attribute("Condition")!.Value);
         Assert.Equal($"'$({propertyName})' == ''", properties[1].Attribute("Condition")!.Value);

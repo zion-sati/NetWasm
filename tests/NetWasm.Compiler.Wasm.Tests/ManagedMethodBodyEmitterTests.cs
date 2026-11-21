@@ -262,14 +262,15 @@ public sealed class ManagedMethodBodyEmitterTests
             new RecordingManagedByRefPromotionPlanner(
                 ManagedByRefAggregatePromotionPlan.Empty),
             new RecordingValuePlanBuilder(),
-            NullLogger<WasmModuleEmitterFactory>.Instance);
+            NullLogger<WasmModuleEmitterFactory>.Instance,
+            new MethodDefectExceptionFactory());
 
         var first = factory.Create();
         var second = factory.Create();
 
         Assert.NotSame(first, second);
-        Assert.IsType<ManagedMethodBodyDiagnosticDecorator>(first);
-        Assert.IsType<ManagedMethodBodyDiagnosticDecorator>(second);
+        Assert.IsType<MethodAttributingManagedMethodBodyEmitter>(first);
+        Assert.IsType<MethodAttributingManagedMethodBodyEmitter>(second);
     }
 
     [Fact]

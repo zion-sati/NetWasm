@@ -6,16 +6,20 @@ using System.Collections.Immutable;
 
 namespace NetWasm.Compiler.ControlFlow.Structuring;
 
-internal sealed class ControlFlowDomainFinder(IReachableBlockFinder reachableBlocks) : IControlFlowDomainFinder
+internal sealed class ControlFlowDomainFinder(
+    IReachableBlockFinder reachableBlocks,
+    IExceptionRegionClaimOrderer claimOrder) : IControlFlowDomainFinder
 {
     private readonly IReachableBlockFinder _reachableBlocks = reachableBlocks ?? throw new ArgumentNullException(nameof(reachableBlocks));
+    private readonly IExceptionRegionClaimOrderer _claimOrder = claimOrder ?? throw new ArgumentNullException(nameof(claimOrder));
     public ImmutableArray<ControlFlowDomain> Find(
         ControlFlowGraph graph)
     {
         var domains = ImmutableArray.CreateBuilder<ControlFlowDomain>();
         var unclaimed = graph.ReachableBlocks;
         AddDomain(graph.Entry.Index);
-        foreach (var region in graph.MethodBody.ExceptionRegions)
+        // A handler claims its code before the handlers nested in it can claim the parts they leave to.
+        foreach (var region in _claimOrder.Order(graph.MethodBody.ExceptionRegions))
         {
             AddDomain(graph.GetBlockAtOffset(region.HandlerOffset).Index);
             if (region.FilterOffset is int filterOffset)
