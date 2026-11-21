@@ -727,8 +727,7 @@ namespace System
         public static byte Zero => 0;
         public static int Radix => 2;
         public static byte Abs(byte value) => value;
-        public static byte Clamp(byte value, byte minimum, byte maximum) =>
-            minimum > maximum ? throw new ArgumentException() : value < minimum ? minimum : value > maximum ? maximum : value;
+        public static byte Clamp(byte value, byte minimum, byte maximum) => Math.Clamp(value, minimum, maximum);
         public static byte Max(byte left, byte right) => left >= right ? left : right;
         public static byte Min(byte left, byte right) => left <= right ? left : right;
         public static int Sign(byte value) => value == 0 ? 0 : 1;
@@ -905,9 +904,8 @@ namespace System
         public static sbyte Zero => 0;
         public static sbyte NegativeOne => -1;
         public static int Radix => 2;
-        public static sbyte Abs(sbyte value) => value == MinValue ? throw new OverflowException() : value < 0 ? (sbyte)-value : value;
-        public static sbyte Clamp(sbyte value, sbyte minimum, sbyte maximum) =>
-            minimum > maximum ? throw new ArgumentException() : value < minimum ? minimum : value > maximum ? maximum : value;
+        public static sbyte Abs(sbyte value) => Math.Abs(value);
+        public static sbyte Clamp(sbyte value, sbyte minimum, sbyte maximum) => Math.Clamp(value, minimum, maximum);
         public static sbyte CopySign(sbyte value, sbyte sign)
         {
             // signMask is all-bits-set when value and sign differ in sign, in which case value needs to be negated.
@@ -1211,9 +1209,8 @@ namespace System
         public static short Zero => 0;
         public static short NegativeOne => (short)(-1);
         public static int Radix => 2;
-        public static short Abs(short value) => value == MinValue ? throw new OverflowException() : value < 0 ? (short)-value : value;
-        public static short Clamp(short value, short minimum, short maximum) =>
-            minimum > maximum ? throw new ArgumentException() : value < minimum ? minimum : value > maximum ? maximum : value;
+        public static short Abs(short value) => Math.Abs(value);
+        public static short Clamp(short value, short minimum, short maximum) => Math.Clamp(value, minimum, maximum);
         public static short CopySign(short value, short sign)
         {
             // signMask is all-bits-set when value and sign differ in sign, in which case value needs to be negated.
@@ -1599,7 +1596,7 @@ namespace System
         public static ushort Zero => 0;
         public static int Radix => 2;
         public static ushort Abs(ushort value) => value;
-        public static ushort Clamp(ushort value, ushort min, ushort max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
+        public static ushort Clamp(ushort value, ushort min, ushort max) => Math.Clamp(value, min, max);
         public static ushort Max(ushort left, ushort right) => left >= right ? left : right;
         public static ushort Min(ushort left, ushort right) => left <= right ? left : right;
         public static int Sign(ushort value) => value == 0 ? 0 : 1;
@@ -1821,8 +1818,8 @@ namespace System
         public static int Zero => 0;
         public static int NegativeOne => -1;
         public static int Radix => 2;
-        public static int Abs(int value) => value == MinValue ? throw new OverflowException() : value < 0 ? -value : value;
-        public static int Clamp(int value, int min, int max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
+        public static int Abs(int value) => Math.Abs(value);
+        public static int Clamp(int value, int min, int max) => Math.Clamp(value, min, max);
         public static int CopySign(int value, int sign)
         {
             // signMask is all-bits-set when value and sign differ in sign, in which case value needs to be negated.
@@ -2202,7 +2199,7 @@ namespace System
         public static uint Zero => 0;
         public static int Radix => 2;
         public static uint Abs(uint value) => value;
-        public static uint Clamp(uint value, uint min, uint max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
+        public static uint Clamp(uint value, uint min, uint max) => Math.Clamp(value, min, max);
         public static uint Max(uint l, uint r) => l >= r ? l : r;
         public static uint Min(uint l, uint r) => l <= r ? l : r;
         public static int Sign(uint value) => value == 0 ? 0 : 1;
@@ -2437,8 +2434,8 @@ namespace System
         public static long One => 1;
         public static long Zero => 0;
         public static int Radix => 2;
-        public static long Abs(long value) => value == MinValue ? throw new OverflowException() : value < 0 ? (long)-value : value;
-        public static long Clamp(long value, long min, long max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
+        public static long Abs(long value) => Math.Abs(value);
+        public static long Clamp(long value, long min, long max) => Math.Clamp(value, min, max);
         public static long NegativeOne => (long)(-1);
         public static long CopySign(long value, long sign)
         {
@@ -2820,7 +2817,7 @@ namespace System
         public static ulong Zero => 0;
         public static int Radix => 2;
         public static ulong Abs(ulong value) => value;
-        public static ulong Clamp(ulong value, ulong min, ulong max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
+        public static ulong Clamp(ulong value, ulong min, ulong max) => Math.Clamp(value, min, max);
         public static ulong Max(ulong l, ulong r) => l >= r ? l : r;
         public static ulong Min(ulong l, ulong r) => l <= r ? l : r;
         public static int Sign(ulong value) => value == 0 ? 0 : 1;
@@ -3070,7 +3067,6 @@ namespace System
         public static char Zero => (char)0;
         public static int Radix => 2;
         public static char Abs(char value) => value;
-        public static char Clamp(char value, char min, char max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
         public static char Max(char l, char r) => l >= r ? l : r;
         public static char Min(char l, char r) => l <= r ? l : r;
         public static int Sign(char value) => value == 0 ? 0 : 1;
@@ -3352,13 +3348,20 @@ namespace System
         public static int Radix => 2;
         [Intrinsic]
         public static float Abs(float v) => (float)Math.Abs(v);
-        public static float Clamp(float v, float min, float max) => min > max ? throw new ArgumentException() : Min(Max(v, min), max);
+        public static float Clamp(float v, float min, float max)
+        {
+            if (min > max)
+            {
+                Math.ThrowMinMaxException(min, max);
+            }
+            return Min(Max(v, min), max);
+        }
         public static float CopySign(float v, float s) => IsNegative(v) == IsNegative(s) ? v : -v;
         [Intrinsic]
         public static float Max(float l, float r) => Math.Max(l, r);
         [Intrinsic]
         public static float Min(float l, float r) => Math.Min(l, r);
-        public static int Sign(float v) => IsNaN(v) ? throw new ArithmeticException() : v < 0 ? -1 : v > 0 ? 1 : 0;
+        public static int Sign(float v) => Math.Sign(v);
         public static bool IsCanonical(float v) => true;
         public static bool IsComplexNumber(float v) => false;
         public static bool IsEvenInteger(float v) => IsFinite(v) && Math.Truncate(v) == v && v % 2 == 0;
@@ -3470,11 +3473,11 @@ namespace System
         public static float Tanh(float x) => MathF.Tanh(x);
         [Intrinsic]
         public static float Exp(float v) => MathF.Exp(v);
-        // Upstream computes MathF.Pow(2, x) and MathF.Pow(10, x), and desktop answers
-        // vary with the platform's powf. The double exp2, rounded once, is faster here and
-        // within half an ulp.
-        public static float Exp2(float v) => (float)double.Exp2(v);
-        public static float Exp10(float v) => (float)double.Exp2(3.321928094887362 * v);
+        // NetWasm deviation (speed and Mono parity): the C library's exp2f, not upstream's MathF.Pow(2, v). Mono's AOT
+        // build gives exp2f's results here (LLVM rewrites pow(2, v) as exp2(v)), and exp2f costs about what expf does,
+        // where powf costs twice that; Exp2M1 follows.
+        public static float Exp2(float v) => System.Runtime.RuntimeImports.exp2f(v);
+        public static float Exp10(float v) => MathF.Pow(10, v);
         [Intrinsic]
         public static float Log(float v) => MathF.Log(v);
         public static float Log(float x, float newBase) => MathF.Log(x, newBase);
@@ -3722,13 +3725,20 @@ namespace System
         public static int Radix => 2;
         [Intrinsic]
         public static double Abs(double v) => (double)Math.Abs(v);
-        public static double Clamp(double v, double min, double max) => min > max ? throw new ArgumentException() : Min(Max(v, min), max);
+        public static double Clamp(double v, double min, double max)
+        {
+            if (min > max)
+            {
+                Math.ThrowMinMaxException(min, max);
+            }
+            return Min(Max(v, min), max);
+        }
         public static double CopySign(double v, double s) => IsNegative(v) == IsNegative(s) ? v : -v;
         [Intrinsic]
         public static double Max(double l, double r) => Math.Max(l, r);
         [Intrinsic]
         public static double Min(double l, double r) => Math.Min(l, r);
-        public static int Sign(double v) => IsNaN(v) ? throw new ArithmeticException() : v < 0 ? -1 : v > 0 ? 1 : 0;
+        public static int Sign(double v) => Math.Sign(v);
         public static bool IsCanonical(double v) => true;
         public static bool IsComplexNumber(double v) => false;
         public static bool IsEvenInteger(double v) => IsFinite(v) && Math.Truncate(v) == v && v % 2 == 0;
@@ -3840,7 +3850,11 @@ namespace System
         public static double Tanh(double v) => (double)Math.Tanh(v);
         [Intrinsic]
         public static double Exp(double v) => (double)Math.Exp(v);
-        public static double Exp2(double v) => Math.Exp2(v);
+        // NetWasm deviation (speed and Mono parity): musl's exp2 ported to C# (MathPorts.Exp.cs, bit for bit musl's
+        // exp2 on 50 million inputs), not upstream's Math.Pow(2, v). Mono's AOT build gives exp2's results here (LLVM
+        // rewrites pow(2, v) as exp2(v)); they differ from pow(2, v)'s by an ulp for about 1 input in 4,000. exp2
+        // costs about what exp does, where pow costs nearly four times that; Exp2M1 follows.
+        public static double Exp2(double v) => MathPorts.Exp2(v);
         public static double Exp10(double v) => (double)Math.Pow(10.0, v);
         [Intrinsic]
         public static double Log(double v) => (double)Math.Log(v);

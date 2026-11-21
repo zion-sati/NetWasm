@@ -317,8 +317,10 @@ public sealed class TestAssets : IDisposable
             .ToArray();
         // As the CoreLib project, so the upstream intrinsics sources keep
         // their public surface, with the symbols the SDK defines for it, which
-        // upstream sources test (#if NET), and its preview language version
-        // (upstream files port verbatim, Padding.cs's safe modifier among them).
+        // upstream sources test (#if NET), its preview language version
+        // (upstream files port verbatim, Padding.cs's safe modifier among them)
+        // and its LibraryImport generator, which implements the C library's
+        // math functions.
         Compile(
             Root,
             null,
@@ -328,8 +330,37 @@ public sealed class TestAssets : IDisposable
             optimize: false,
             references: [],
             languageVersion: "preview",
-            defines: ["SYSTEM_PRIVATE_CORELIB", "NET", "NETCOREAPP"]);
+            defines: ["SYSTEM_PRIVATE_CORELIB", "NET", "NETCOREAPP"],
+            analyzers: LibraryImportGenerator(Root));
         return output;
+    }
+
+    // The CoreLib project's analyzers: the LibraryImport generator from the reference pack of the pinned SDK's own
+    // runtime, the version the SDK's BundledVersions.props names, as MSBuild resolves it.
+    private static string[] LibraryImportGenerator(string root)
+    {
+        var dotnetRoot = Path.GetDirectoryName(DotNetHost.Executable)
+            ?? throw new InvalidOperationException("dotnet root is unavailable");
+        var bundledVersions = Path.Combine(
+            dotnetRoot, "sdk", ReadSdkVersion(root), "Microsoft.NETCoreSdk.BundledVersions.props");
+        var runtimeVersion = File.ReadAllText(bundledVersions)
+            .Split("<BundledNETCoreAppPackageVersion>", StringSplitOptions.None)[1]
+            .Split('<')[0];
+        var directory = Path.Combine(
+            dotnetRoot, "packs", "Microsoft.NETCore.App.Ref", runtimeVersion, "analyzers", "dotnet", "cs");
+        string[] analyzers =
+        [
+            Path.Combine(directory, "Microsoft.Interop.LibraryImportGenerator.dll"),
+            Path.Combine(directory, "Microsoft.Interop.SourceGeneration.dll"),
+        ];
+        foreach (var analyzer in analyzers)
+        {
+            if (!File.Exists(analyzer))
+            {
+                throw new InvalidOperationException($"The SDK's LibraryImport generator is unavailable: {analyzer}");
+            }
+        }
+        return analyzers;
     }
 
     public string CompileSourceAgainstCoreLib(

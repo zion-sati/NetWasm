@@ -178,11 +178,6 @@ namespace System
             string.Format(format, first, second);
     }
 
-    public static partial class Math
-    {
-        internal static void ThrowMinMaxException<T>(T min, T max) => throw new ArgumentException();
-    }
-
     internal static partial class Number
     {
 

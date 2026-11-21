@@ -58,6 +58,12 @@ internal sealed class CommonReachableBlockFinder(
         {
             return starts[0];
         }
+        // As for two starts: paths that leave the allowed blocks, such as a nested handler's leave out of an
+        // enclosing handler, have no common block in them.
+        if (!starts.All(allowed.Contains))
+        {
+            return null;
+        }
         var postDominators = _postDominators.Find(state, stop, allowed);
         var distances = starts.Select(start => _distances.Find(state, start, stop, allowed)).ToArray();
         var common = starts.Select(start => postDominators[start])

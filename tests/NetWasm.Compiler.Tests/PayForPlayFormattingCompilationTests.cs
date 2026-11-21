@@ -55,6 +55,24 @@ public sealed class PayForPlayFormattingCompilationTests
         Assert.Contains(reached, method => method.StartsWith("System.Number::", StringComparison.Ordinal));
     }
 
+    // A Clamp whose bounds are not constants can throw, with a message that names both bounds. Writing it
+    // formats each bound as its ToString() does, so a program that clamps carries no composite formatting and,
+    // for integers, no culture state.
+    [Theory]
+    [InlineData("Math.Clamp(5, input, 10)", true)]
+    [InlineData("(int)Math.Clamp(5L, input, 10L)", true)]
+    [InlineData("(int)Math.Clamp(5.0, input, 10.0)", false)]
+    public void ClampsThrowPathCarriesNoCompositeFormatting(string expression, bool buildsNoCultureState)
+    {
+        var reached = ReachedMethodsOf($"public static int Run(int input) => {expression};", platformWorld: false);
+
+        Assert.Contains(reached, method => method == "System.Math::ThrowMinMaxException");
+        Assert.DoesNotContain(reached, method => method.EndsWith("::AppendFormatHelper", StringComparison.Ordinal));
+        Assert.DoesNotContain(reached, method => method == "System.String::Format");
+        if (buildsNoCultureState)
+            Assert.DoesNotContain(reached, method => CultureMachinery.Any(name => method.StartsWith(name, StringComparison.Ordinal)));
+    }
+
     // The console writes integers as their ToString() does: its provider is the current culture,
     // whose number format is always the invariant one here, so the text is the same and writing an
     // integer builds no culture state. The negative sign is read through NumberFormatInfo's static

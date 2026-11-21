@@ -1,16 +1,39 @@
-// Adapted from dotnet/runtime System.Private.CoreLib Math.cs and MathF.cs.
-// The upstream implementation is licensed under MIT.
-// Copyright (c) .NET Foundation and Contributors.
-// Source reference: dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Ported from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce
+// src/libraries/System.Private.CoreLib/src/System/Math.cs.
+// NetWasm deviation (pay-for-play): ThrowMinMaxException writes upstream's message by concatenating the
+// bounds' ToString(), not through SR.Format, whose composite formatting every program reaching a Clamp
+// would otherwise carry. The text is the same: a number formats as ToString() with no format and the
+// current culture either way. Sign(nint) chooses its form by IntPtr.Size, which the compiler folds per
+// target: one CoreLib serves wasm32 and wasm64 and defines neither TARGET_64BIT nor TARGET_32BIT.
+
+// ===================================================================================================
+// Portions of the code implemented below are based on the 'Berkeley SoftFloat Release 3e' algorithms.
+// ===================================================================================================
+
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Arm;
+using System.Runtime.Intrinsics.X86;
+using System.Runtime.Versioning;
 
 namespace System
 {
-    /// <summary>Common mathematical constants and scalar operations.</summary>
+    /// <summary>
+    /// Provides constants and static methods for trigonometric, logarithmic, and other common mathematical functions.
+    /// </summary>
     public static partial class Math
     {
+        public const double E = 2.7182818284590452354;
+
+        public const double PI = 3.14159265358979323846;
+
+        public const double Tau = 6.283185307179586476925;
+
         // The largest digit count the fast rounding path handles: `10^digits` must fit a `ulong` for the
         // integer fallback (10^19 is the last that does); larger counts use the exact routine.
         private const int maxFastRoundingDigits = 19;
@@ -19,27 +42,11 @@ namespace System
         // representable value is already an integer (2^52).
         private const double doubleIntegerBoundary = 4503599627370496.0;
 
-        public const double E = 2.718281828459045;
-        public const double PI = 3.141592653589793;
-        public const double Tau = 6.283185307179586;
+        private const double SCALEB_C1 = 8.98846567431158E+307; // 0x1p1023
 
-        [Intrinsic]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double Abs(double value) =>
-            BitConverter.UInt64BitsToDouble(BitConverter.DoubleToUInt64Bits(value) & 0x7FFFFFFFFFFFFFFFUL);
+        private const double SCALEB_C2 = 2.2250738585072014E-308; // 0x1p-1022
 
-        [Intrinsic]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Abs(float value) =>
-            BitConverter.UInt32BitsToSingle(BitConverter.SingleToUInt32Bits(value) & 0x7FFFFFFFU);
-        [Intrinsic]
-        public static double Ceiling(double value) => CeilingCore(value);
-        [Intrinsic]
-        public static double Floor(double value) => FloorCore(value);
-        [Intrinsic]
-        public static double Truncate(double value) => TruncateCore(value);
-        [Intrinsic]
-        public static double Sqrt(double value) => SqrtCore(value);
+        private const double SCALEB_C3 = 9007199254740992; // 0x1p53
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static short Abs(short value)
@@ -83,6 +90,9 @@ namespace System
             return value;
         }
 
+        /// <summary>Returns the absolute value of a native signed integer.</summary>
+        /// <param name="value">A number that is greater than <see cref="IntPtr.MinValue" />, but less than or equal to <see cref="IntPtr.MaxValue" />.</param>
+        /// <returns>A native signed integer, x, such that 0 \u2264 x \u2264 <see cref="IntPtr.MaxValue" />.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static nint Abs(nint value)
         {
@@ -98,6 +108,7 @@ namespace System
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [CLSCompliant(false)]
         public static sbyte Abs(sbyte value)
         {
             if (value < 0)
@@ -112,7 +123,30 @@ namespace System
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Abs(decimal value) => decimal.Abs(value);
+        public static decimal Abs(decimal value)
+        {
+            return decimal.Abs(value);
+        }
+
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static double Abs(double value)
+        {
+            const ulong mask = 0x7FFFFFFFFFFFFFFF;
+            ulong raw = BitConverter.DoubleToUInt64Bits(value);
+
+            return BitConverter.UInt64BitsToDouble(raw & mask);
+        }
+
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float Abs(float value)
+        {
+            const uint mask = 0x7FFFFFFF;
+            uint raw = BitConverter.SingleToUInt32Bits(value);
+
+            return BitConverter.UInt32BitsToSingle(raw & mask);
+        }
 
         [DoesNotReturn]
         [StackTraceHidden]
@@ -121,544 +155,928 @@ namespace System
             throw new OverflowException(SR.Overflow_NegateTwosCompNum);
         }
 
-        [Intrinsic]
-        public static double Asinh(double value)
-        {
-            if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
-            var absolute = value < 0 ? -value : value;
-            if (absolute < 1e-8) return value;
-            var result = absolute > 1e154
-                ? Log(absolute) + 0.6931471805599453
-                : Log(absolute + Sqrt(absolute * absolute + 1));
-            return value < 0 ? -result : result;
-        }
-
-        [Intrinsic]
-        public static double Atanh(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (value == 1) return double.PositiveInfinity;
-            if (value == -1) return double.NegativeInfinity;
-            if (value > 1 || value < -1) return double.NaN;
-            if (value == 0) return value;
-            if (Abs(value) < 1e-8) return value;
-            return 0.5 * Log((1 + value) / (1 - value));
-        }
-
-        public static long BigMul(int a, int b) => (long)a * b;
+        /// <summary>Produces the full product of two unsigned 32-bit numbers.</summary>
+        /// <param name="a">The first number to multiply.</param>
+        /// <param name="b">The second number to multiply.</param>
+        /// <returns>The number containing the product of the specified numbers.</returns>
+        [CLSCompliant(false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ulong BigMul(uint a, uint b) => (ulong)a * b;
+        public static ulong BigMul(uint a, uint b)
+        {
+            return ((ulong)a) * b;
+        }
 
+        /// <summary>Produces the full product of two 32-bit numbers.</summary>
+        /// <param name="a">The first number to multiply.</param>
+        /// <param name="b">The second number to multiply.</param>
+        /// <returns>The number containing the product of the specified numbers.</returns>
+        public static long BigMul(int a, int b)
+        {
+            return ((long)a) * b;
+        }
+
+#if !(TARGET_ARM64 || (TARGET_AMD64 && !MONO)) // BigMul 64*64 has high performance intrinsics on ARM64 and AMD64 (but not yet on MONO)
+        /// <summary>
+        /// Perform multiplication between 64 and 32 bit numbers, returning lower 64 bits in <paramref name="low"/>
+        /// </summary>
+        /// <returns>hi bits of the result</returns>
+        /// <remarks>REMOVE once BigMul(ulong, ulong) is treated as intrinsics and optimizes 32 by 64 multiplications</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong BigMul(ulong a, uint b, out ulong low)
+        {
+            ulong prodL = ((ulong)(uint)a) * b;
+            ulong prodH = (prodL >> 32) + (((ulong)(uint)(a >> 32)) * b);
+
+            low = ((prodH << 32) | (uint)prodL);
+            return (prodH >> 32);
+        }
+
+        /// <inheritdoc cref="BigMul(ulong, uint, out ulong)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong BigMul(uint a, ulong b, out ulong low)
+            => BigMul(b, a, out low);
+#endif
+
+        /// <summary>Produces the full product of two unsigned 64-bit numbers.</summary>
+        /// <param name="a">The first number to multiply.</param>
+        /// <param name="b">The second number to multiply.</param>
+        /// <param name="low">The low 64-bit of the product of the specified numbers.</param>
+        /// <returns>The high 64-bit of the product of the specified numbers.</returns>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe ulong BigMul(ulong a, ulong b, out ulong low)
+        {
+#if !MONO // X86Base.X64.BigMul is not yet implemented in MONO
+            // X86Base.X64.BigMul is more performant than Bmi2.X64.MultiplyNoFlags, which has known performance issues
+            // (https://github.com/dotnet/runtime/issues/11782), so we don't need a separate BMI2 path here.
+            if (X86Base.X64.IsSupported)
+            {
+                (low, ulong hi) = X86Base.X64.BigMul(a, b);
+                return hi;
+            }
+#else
+            if (Bmi2.X64.IsSupported)
+            {
+                ulong tmp;
+                ulong high = Bmi2.X64.MultiplyNoFlags(a, b, &tmp);
+                low = tmp;
+                return high;
+            }
+#endif
+            else if (ArmBase.Arm64.IsSupported)
+            {
+                low = a * b;
+                return ArmBase.Arm64.MultiplyHigh(a, b);
+            }
+
+            return SoftwareFallback(a, b, out low);
+
+            static ulong SoftwareFallback(ulong a, ulong b, out ulong low)
+            {
+                // Adaptation of algorithm for multiplication
+                // of 32-bit unsigned integers described
+                // in Hacker's Delight by Henry S. Warren, Jr. (ISBN 0-201-91465-4), Chapter 8
+                // Basically, it's an optimized version of FOIL method applied to
+                // low and high dwords of each operand
+
+                // Use 32-bit uints to optimize the fallback for 32-bit platforms.
+                uint al = (uint)a;
+                uint ah = (uint)(a >> 32);
+                uint bl = (uint)b;
+                uint bh = (uint)(b >> 32);
+
+                ulong mull = ((ulong)al) * bl;
+                ulong t = ((ulong)ah) * bl + (mull >> 32);
+                ulong tl = ((ulong)al) * bh + (uint)t;
+
+                low = tl << 32 | (uint)mull;
+
+                return ((ulong)ah) * bh + (t >> 32) + (tl >> 32);
+            }
+        }
+
+        /// <summary>Produces the full product of two 64-bit numbers.</summary>
+        /// <param name="a">The first number to multiply.</param>
+        /// <param name="b">The second number to multiply.</param>
+        /// <param name="low">The low 64-bit of the product of the specified numbers.</param>
+        /// <returns>The high 64-bit of the product of the specified numbers.</returns>
         public static long BigMul(long a, long b, out long low)
         {
-            var high = BigMul((ulong)a, (ulong)b, out var unsignedLow);
-            low = (long)unsignedLow;
+#if !MONO // X86Base.BigMul is not yet implemented in MONO
+            if (X86Base.X64.IsSupported)
+            {
+                (low, long hi) = X86Base.X64.BigMul(a, b);
+                return hi;
+            }
+#endif
+            if (ArmBase.Arm64.IsSupported)
+            {
+                low = a * b;
+                return ArmBase.Arm64.MultiplyHigh(a, b);
+            }
+
+            ulong high = BigMul((ulong)a, (ulong)b, out ulong ulow);
+            low = (long)ulow;
             return (long)high - ((a >> 63) & b) - ((b >> 63) & a);
         }
 
+        /// <summary>Produces the full product of two unsigned 64-bit numbers.</summary>
+        /// <param name="a">The first number to multiply.</param>
+        /// <param name="b">The second number to multiply.</param>
+        /// <returns>The full product of the specified numbers.</returns>
+        [CLSCompliant(false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ulong BigMul(ulong a, ulong b, out ulong low)
+        public static UInt128 BigMul(ulong a, ulong b)
         {
-            var al = (uint)a;
-            var ah = (uint)(a >> 32);
-            var bl = (uint)b;
-            var bh = (uint)(b >> 32);
-            var mull = (ulong)al * bl;
-            var t = (ulong)ah * bl + (mull >> 32);
-            var tl = (ulong)al * bh + (uint)t;
-            low = (tl << 32) | (uint)mull;
-            return (ulong)ah * bh + (t >> 32) + (tl >> 32);
+            ulong high = BigMul(a, b, out ulong low);
+            return new UInt128(high, low);
         }
 
-        public static double BitDecrement(double value)
+        /// <summary>Produces the full product of two 64-bit numbers.</summary>
+        /// <param name="a">The first number to multiply.</param>
+        /// <param name="b">The second number to multiply.</param>
+        /// <returns>The full product of the specified numbers.</returns>
+        public static Int128 BigMul(long a, long b)
         {
-            if (IsNaN(value) || value == double.NegativeInfinity) return value;
-            if (value == double.PositiveInfinity) return double.MaxValue;
-            if (value == 0) return -double.Epsilon;
-            // BitConverter is lowered by the compiler's existing bit intrinsics.
-            var bits = BitConverter.DoubleToUInt64Bits(value);
-            bits = IsNegative(value) ? bits + 1 : bits - 1;
-            return BitConverter.UInt64BitsToDouble(bits);
+            long high = BigMul(a, b, out long low);
+            return new Int128((ulong)high, (ulong)low);
         }
 
-        public static double BitIncrement(double value)
+        public static double BitDecrement(double x)
         {
-            if (IsNaN(value) || value == double.PositiveInfinity) return value;
-            if (value == double.NegativeInfinity) return double.MinValue;
-            if (value == 0) return double.Epsilon;
-            var bits = BitConverter.DoubleToUInt64Bits(value);
-            bits = IsNegative(value) ? bits - 1 : bits + 1;
-            return BitConverter.UInt64BitsToDouble(bits);
-        }
+            ulong bits = BitConverter.DoubleToUInt64Bits(x);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Ceiling(decimal value) => decimal.Ceiling(value);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static byte Clamp(byte value, byte minimum, byte maximum)
-        {
-            if (minimum > maximum)
+            if (!double.IsFinite(x))
             {
-                ThrowMinMaxException();
+                // NaN returns NaN
+                // -Infinity returns -Infinity
+                // +Infinity returns MaxValue
+                return (bits == double.PositiveInfinityBits) ? double.MaxValue : x;
             }
 
-            if (value < minimum)
+            if (bits == double.PositiveZeroBits)
             {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
+                // +0.0 returns -double.Epsilon
+                return -double.Epsilon;
             }
 
-            return value;
-        }
+            // Negative values need to be incremented
+            // Positive values need to be decremented
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static short Clamp(short value, short minimum, short maximum)
-        {
-            if (minimum > maximum)
+            if (double.IsNegative(x))
             {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Clamp(int value, int minimum, int maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static long Clamp(long value, long minimum, long maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static nint Clamp(nint value, nint minimum, nint maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static sbyte Clamp(sbyte value, sbyte minimum, sbyte maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ushort Clamp(ushort value, ushort minimum, ushort maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint Clamp(uint value, uint minimum, uint maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ulong Clamp(ulong value, ulong minimum, ulong maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static nuint Clamp(nuint value, nuint minimum, nuint maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Clamp(float value, float minimum, float maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double Clamp(double value, double minimum, double maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Clamp(decimal value, decimal minimum, decimal maximum)
-        {
-            if (minimum > maximum)
-            {
-                ThrowMinMaxException();
-            }
-
-            if (value < minimum)
-            {
-                return minimum;
-            }
-            else if (value > maximum)
-            {
-                return maximum;
-            }
-
-            return value;
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double CopySign(double value, double sign)
-        {
-            var magnitude = BitConverter.DoubleToUInt64Bits(value) & 0x7FFFFFFFFFFFFFFFUL;
-            var signBit = BitConverter.DoubleToUInt64Bits(sign) & 0x8000000000000000UL;
-            return BitConverter.UInt64BitsToDouble(magnitude | signBit);
-        }
-
-        [Intrinsic]
-        public static double Cosh(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (IsInfinity(value)) return double.PositiveInfinity;
-            var absolute = value < 0 ? -value : value;
-
-            // For large finite values, form exp(x) / 2 without first
-            // overflowing exp(x). This is the scalar libm shape used near the
-            // upper finite boundary.
-            if (absolute >= 22)
-            {
-                if (absolute <= 709.782712893384)
-                {
-                    return 0.5 * Exp(absolute);
-                }
-
-                var halfExponential = Exp(0.5 * absolute);
-                return (0.5 * halfExponential) * halfExponential;
-            }
-
-            var exponential = Exp(absolute);
-            return 0.5 * (exponential + 1 / exponential);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (sbyte Quotient, sbyte Remainder) DivRem(sbyte left, sbyte right)
-        {
-            var quotient = (sbyte)(left / right);
-            return (quotient, (sbyte)(left - quotient * right));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (byte Quotient, byte Remainder) DivRem(byte left, byte right)
-        {
-            var quotient = (byte)(left / right);
-            return (quotient, (byte)(left - quotient * right));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (short Quotient, short Remainder) DivRem(short left, short right)
-        {
-            var quotient = (short)(left / right);
-            return (quotient, (short)(left - quotient * right));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (ushort Quotient, ushort Remainder) DivRem(ushort left, ushort right)
-        {
-            var quotient = (ushort)(left / right);
-            return (quotient, (ushort)(left - quotient * right));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (int Quotient, int Remainder) DivRem(int left, int right)
-        {
-            var quotient = left / right;
-            return (quotient, left - quotient * right);
-        }
-
-        public static int DivRem(int left, int right, out int remainder)
-        {
-            var quotient = left / right;
-            remainder = left - quotient * right;
-            return quotient;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (uint Quotient, uint Remainder) DivRem(uint left, uint right)
-        {
-            var quotient = left / right;
-            return (quotient, left - quotient * right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (long Quotient, long Remainder) DivRem(long left, long right)
-        {
-            var quotient = left / right;
-            return (quotient, left - quotient * right);
-        }
-
-        public static long DivRem(long left, long right, out long remainder)
-        {
-            var quotient = left / right;
-            remainder = left - quotient * right;
-            return quotient;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (ulong Quotient, ulong Remainder) DivRem(ulong left, ulong right)
-        {
-            var quotient = left / right;
-            return (quotient, left - quotient * right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (nint Quotient, nint Remainder) DivRem(nint left, nint right)
-        {
-            var quotient = left / right;
-            return (quotient, left - quotient * right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (nuint Quotient, nuint Remainder) DivRem(nuint left, nuint right)
-        {
-            var quotient = left / right;
-            return (quotient, left - quotient * right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Floor(decimal value) => decimal.Floor(value);
-
-        public static double IEEERemainder(double x, double y)
-        {
-            if (IsNaN(x)) return x;
-            if (IsNaN(y)) return y;
-            var remainder = x % y;
-            if (IsNaN(remainder)) return double.NaN;
-            if (remainder == 0 && IsNegative(x)) return double.NegativeZero;
-            var alternative = remainder - Abs(y) * Sign(x);
-            if (Abs(alternative) == Abs(remainder))
-            {
-                var quotient = x / y;
-                var rounded = RoundCore(quotient);
-                return Abs(rounded) > Abs(quotient) ? alternative : remainder;
-            }
-            return Abs(alternative) < Abs(remainder) ? alternative : remainder;
-        }
-
-        public static int ILogB(double value)
-        {
-            if (value == 0) return int.MinValue;
-            if (IsNaN(value) || IsInfinity(value)) return int.MaxValue;
-            var absolute = value < 0 ? -value : value;
-            var exponent = 0;
-            if (absolute >= 1)
-            {
-                while (absolute >= 2) { absolute /= 2; exponent++; }
+                bits += 1;
             }
             else
             {
-                while (absolute < 1) { absolute *= 2; exponent--; }
+                bits -= 1;
             }
-            return exponent;
+            return BitConverter.UInt64BitsToDouble(bits);
         }
 
-        public static double Log(double value, double newBase)
+        public static double BitIncrement(double x)
         {
-            if (IsNaN(value)) return value;
-            if (IsNaN(newBase)) return newBase;
-            if (newBase == 1 || (value != 1 && (newBase == 0 || newBase == double.PositiveInfinity))) return double.NaN;
-            return Log(value) / Log(newBase);
+            ulong bits = BitConverter.DoubleToUInt64Bits(x);
+
+            if (!double.IsFinite(x))
+            {
+                // NaN returns NaN
+                // -Infinity returns MinValue
+                // +Infinity returns +Infinity
+                return (bits == double.NegativeInfinityBits) ? double.MinValue : x;
+            }
+
+            if (bits == double.NegativeZeroBits)
+            {
+                // -0.0 returns Epsilon
+                return double.Epsilon;
+            }
+
+            // Negative values need to be decremented
+            // Positive values need to be incremented
+
+            if (double.IsNegative(x))
+            {
+                bits -= 1;
+            }
+            else
+            {
+                bits += 1;
+            }
+            return BitConverter.UInt64BitsToDouble(bits);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static double CopySign(double x, double y)
+        {
+            if (Vector128.IsHardwareAccelerated)
+            {
+                return Vector128.ConditionalSelect(Vector128.CreateScalarUnsafe(-0.0), Vector128.CreateScalarUnsafe(y), Vector128.CreateScalarUnsafe(x)).ToScalar();
+            }
+            else
+            {
+                return SoftwareFallback(x, y);
+            }
+
+            static double SoftwareFallback(double x, double y)
+            {
+                // This method is required to work for all inputs,
+                // including NaN, so we operate on the raw bits.
+                ulong xbits = BitConverter.DoubleToUInt64Bits(x);
+                ulong ybits = BitConverter.DoubleToUInt64Bits(y);
+
+                // Remove the sign from x, and remove everything but the sign from y
+                // Then, simply OR them to get the correct sign
+                return BitConverter.UInt64BitsToDouble((xbits & ~double.SignMask) | (ybits & double.SignMask));
+            }
+        }
+
+        public static int DivRem(int a, int b, out int result)
+        {
+            // TODO https://github.com/dotnet/runtime/issues/5213:
+            // Restore to using % and / when the JIT is able to eliminate one of the idivs.
+            // In the meantime, a * and - is measurably faster than an extra /.
+
+            int div = a / b;
+            result = a - (div * b);
+            return div;
+        }
+
+        public static long DivRem(long a, long b, out long result)
+        {
+            long div = a / b;
+            result = a - (div * b);
+            return div;
+        }
+
+        /// <summary>Produces the quotient and the remainder of two signed 8-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (sbyte Quotient, sbyte Remainder) DivRem(sbyte left, sbyte right)
+        {
+            sbyte quotient = (sbyte)(left / right);
+            return (quotient, (sbyte)(left - (quotient * right)));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two unsigned 8-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (byte Quotient, byte Remainder) DivRem(byte left, byte right)
+        {
+            byte quotient = (byte)(left / right);
+            return (quotient, (byte)(left - (quotient * right)));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two signed 16-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (short Quotient, short Remainder) DivRem(short left, short right)
+        {
+            short quotient = (short)(left / right);
+            return (quotient, (short)(left - (quotient * right)));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two unsigned 16-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (ushort Quotient, ushort Remainder) DivRem(ushort left, ushort right)
+        {
+            ushort quotient = (ushort)(left / right);
+            return (quotient, (ushort)(left - (quotient * right)));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two signed 32-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (int Quotient, int Remainder) DivRem(int left, int right)
+        {
+            int quotient = left / right;
+            return (quotient, left - (quotient * right));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two unsigned 32-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (uint Quotient, uint Remainder) DivRem(uint left, uint right)
+        {
+            uint quotient = left / right;
+            return (quotient, left - (quotient * right));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two signed 64-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (long Quotient, long Remainder) DivRem(long left, long right)
+        {
+            long quotient = left / right;
+            return (quotient, left - (quotient * right));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two unsigned 64-bit numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (ulong Quotient, ulong Remainder) DivRem(ulong left, ulong right)
+        {
+            ulong quotient = left / right;
+            return (quotient, left - (quotient * right));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two signed native-size numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (nint Quotient, nint Remainder) DivRem(nint left, nint right)
+        {
+            nint quotient = left / right;
+            return (quotient, left - (quotient * right));
+        }
+
+        /// <summary>Produces the quotient and the remainder of two unsigned native-size numbers.</summary>
+        /// <param name="left">The dividend.</param>
+        /// <param name="right">The divisor.</param>
+        /// <returns>The quotient and the remainder of the specified numbers.</returns>
+        [NonVersionable]
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (nuint Quotient, nuint Remainder) DivRem(nuint left, nuint right)
+        {
+            nuint quotient = left / right;
+            return (quotient, left - (quotient * right));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal Ceiling(decimal d)
+        {
+            return decimal.Ceiling(d);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static byte Clamp(byte value, byte min, byte max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal Clamp(decimal value, decimal min, decimal max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static double Clamp(double value, double min, double max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static short Clamp(short value, short min, short max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int Clamp(int value, int min, int max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long Clamp(long value, long min, long max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        /// <summary>Returns <paramref name="value" /> clamped to the inclusive range of <paramref name="min" /> and <paramref name="max" />.</summary>
+        /// <param name="value">The value to be clamped.</param>
+        /// <param name="min">The lower bound of the result.</param>
+        /// <param name="max">The upper bound of the result.</param>
+        /// <returns>
+        ///   <paramref name="value" /> if <paramref name="min" /> \u2264 <paramref name="value" /> \u2264 <paramref name="max" />.
+        ///
+        ///   -or-
+        ///
+        ///   <paramref name="min" /> if <paramref name="value" /> &lt; <paramref name="min" />.
+        ///
+        ///   -or-
+        ///
+        ///   <paramref name="max" /> if <paramref name="max" /> &lt; <paramref name="value" />.
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static nint Clamp(nint value, nint min, nint max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static sbyte Clamp(sbyte value, sbyte min, sbyte max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float Clamp(float value, float min, float max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ushort Clamp(ushort value, ushort min, ushort max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [CLSCompliant(false)]
+        public static uint Clamp(uint value, uint min, uint max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [CLSCompliant(false)]
+        public static ulong Clamp(ulong value, ulong min, ulong max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        /// <summary>Returns <paramref name="value" /> clamped to the inclusive range of <paramref name="min" /> and <paramref name="max" />.</summary>
+        /// <param name="value">The value to be clamped.</param>
+        /// <param name="min">The lower bound of the result.</param>
+        /// <param name="max">The upper bound of the result.</param>
+        /// <returns>
+        ///   <paramref name="value" /> if <paramref name="min" /> \u2264 <paramref name="value" /> \u2264 <paramref name="max" />.
+        ///
+        ///   -or-
+        ///
+        ///   <paramref name="min" /> if <paramref name="value" /> &lt; <paramref name="min" />.
+        ///
+        ///   -or-
+        ///
+        ///   <paramref name="max" /> if <paramref name="max" /> &lt; <paramref name="value" />.
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [CLSCompliant(false)]
+        public static nuint Clamp(nuint value, nuint min, nuint max)
+        {
+            if (min > max)
+            {
+                ThrowMinMaxException(min, max);
+            }
+
+            if (value < min)
+            {
+                return min;
+            }
+            else if (value > max)
+            {
+                return max;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal Floor(decimal d)
+        {
+            return decimal.Floor(d);
+        }
+
+        public static double IEEERemainder(double x, double y)
+        {
+            if (double.IsNaN(x))
+            {
+                return x; // IEEE 754-2008: NaN payload must be preserved
+            }
+
+            if (double.IsNaN(y))
+            {
+                return y; // IEEE 754-2008: NaN payload must be preserved
+            }
+
+            double regularMod = x % y;
+
+            if (double.IsNaN(regularMod))
+            {
+                return double.NaN;
+            }
+
+            if ((regularMod == 0) && double.IsNegative(x))
+            {
+                return double.NegativeZero;
+            }
+
+            double alternativeResult = (regularMod - (Abs(y) * Sign(x)));
+
+            if (Abs(alternativeResult) == Abs(regularMod))
+            {
+                double divisionResult = x / y;
+                double roundedResult = Round(divisionResult);
+
+                if (Abs(roundedResult) > Abs(divisionResult))
+                {
+                    return alternativeResult;
+                }
+                else
+                {
+                    return regularMod;
+                }
+            }
+
+            if (Abs(alternativeResult) < Abs(regularMod))
+            {
+                return alternativeResult;
+            }
+            else
+            {
+                return regularMod;
+            }
+        }
+
+        public static int ILogB(double x)
+        {
+            // This code is based on `ilogb` from amd/aocl-libm-ose
+            // Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+            //
+            // Licensed under the BSD 3-Clause "New" or "Revised" License
+            // See THIRD-PARTY-NOTICES.TXT for the full license text
+
+            if (!double.IsNormal(x)) // x is zero, subnormal, infinity, or NaN
+            {
+                if (double.IsZero(x))
+                {
+                    return int.MinValue;
+                }
+
+                if (!double.IsFinite(x)) // infinity or NaN
+                {
+                    return int.MaxValue;
+                }
+
+                Debug.Assert(double.IsSubnormal(x));
+                return double.MinExponent - (BitOperations.LeadingZeroCount(x.TrailingSignificand) - double.BiasedExponentLength);
+            }
+
+            return x.Exponent;
+        }
+
+        public static double Log(double a, double newBase)
+        {
+            if (double.IsNaN(a))
+            {
+                return a; // IEEE 754-2008: NaN payload must be preserved
+            }
+
+            if (double.IsNaN(newBase))
+            {
+                return newBase; // IEEE 754-2008: NaN payload must be preserved
+            }
+
+            if (newBase == 1)
+            {
+                return double.NaN;
+            }
+
+            if ((a != 1) && ((newBase == 0) || double.IsPositiveInfinity(newBase)))
+            {
+                return double.NaN;
+            }
+
+            return Log(a) / Log(newBase);
         }
 
         [Intrinsic]
-        public static double Log10(double value) => Log(value) / 2.302585092994046;
-        [Intrinsic]
-        public static double Log2(double value) => Log(value) / 0.6931471805599453;
-
-        [Intrinsic]
-        public static byte Max(byte left, byte right) => left >= right ? left : right;
-        [Intrinsic]
-        public static short Max(short left, short right) => left >= right ? left : right;
-        [Intrinsic]
-        public static int Max(int left, int right) => left >= right ? left : right;
-        [Intrinsic]
-        public static long Max(long left, long right) => left >= right ? left : right;
-        [Intrinsic]
-        public static nint Max(nint left, nint right) => left >= right ? left : right;
-        [Intrinsic]
-        public static sbyte Max(sbyte left, sbyte right) => left >= right ? left : right;
-        [Intrinsic]
-        public static ushort Max(ushort left, ushort right) => left >= right ? left : right;
-        [Intrinsic]
-        public static uint Max(uint left, uint right) => left >= right ? left : right;
-        [Intrinsic]
-        public static ulong Max(ulong left, ulong right) => left >= right ? left : right;
-        [Intrinsic]
-        public static nuint Max(nuint left, nuint right) => left >= right ? left : right;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Max(decimal left, decimal right) => decimal.Max(left, right);
-
-        [Intrinsic]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double Max(double left, double right)
+        [NonVersionable]
+        public static byte Max(byte val1, byte val2)
         {
-            if (left != right) return !IsNaN(left) ? left > right ? left : right : left;
-            return IsNegative(right) ? left : right;
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal Max(decimal val1, decimal val2)
+        {
+            return decimal.Max(val1, val2);
         }
 
         [Intrinsic]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Max(float left, float right)
+        public static double Max(double val1, double val2)
         {
-            if (left != right) return !IsNaN(left) ? left > right ? left : right : left;
-            return IsNegative(right) ? left : right;
+            // This matches the IEEE 754:2019 `maximum` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the greater of the inputs. It
+            // treats +0 as greater than -0 as per the specification.
+
+            if (val1 != val2)
+            {
+                if (!double.IsNaN(val1))
+                {
+                    return val2 < val1 ? val1 : val2;
+                }
+
+                return val1;
+            }
+
+            return double.IsNegative(val2) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [NonVersionable]
+        public static short Max(short val1, short val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [NonVersionable]
+        public static int Max(int val1, int val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [NonVersionable]
+        public static long Max(long val1, long val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        /// <summary>Returns the larger of two native signed integers.</summary>
+        /// <param name="val1">The first of two native signed integers to compare.</param>
+        /// <param name="val2">The second of two native signed integers to compare.</param>
+        /// <returns>Parameter <paramref name="val1" /> or <paramref name="val2" />, whichever is larger.</returns>
+        [Intrinsic]
+        [NonVersionable]
+        public static nint Max(nint val1, nint val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static sbyte Max(sbyte val1, sbyte val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float Max(float val1, float val2)
+        {
+            // This matches the IEEE 754:2019 `maximum` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the greater of the inputs. It
+            // treats +0 as greater than -0 as per the specification.
+
+            if (val1 != val2)
+            {
+                if (!float.IsNaN(val1))
+                {
+                    return val2 < val1 ? val1 : val2;
+                }
+
+                return val1;
+            }
+
+            return float.IsNegative(val2) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static ushort Max(ushort val1, ushort val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static uint Max(uint val1, uint val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static ulong Max(ulong val1, ulong val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
+        }
+
+        /// <summary>Returns the larger of two native unsigned integers.</summary>
+        /// <param name="val1">The first of two native unsigned integers to compare.</param>
+        /// <param name="val2">The second of two native unsigned integers to compare.</param>
+        /// <returns>Parameter <paramref name="val1" /> or <paramref name="val2" />, whichever is larger.</returns>
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static nuint Max(nuint val1, nuint val2)
+        {
+            return (val1 >= val2) ? val1 : val2;
         }
 
         [Intrinsic]
@@ -687,42 +1105,138 @@ namespace System
         }
 
         [Intrinsic]
-        public static byte Min(byte left, byte right) => left <= right ? left : right;
-        [Intrinsic]
-        public static short Min(short left, short right) => left <= right ? left : right;
-        [Intrinsic]
-        public static int Min(int left, int right) => left <= right ? left : right;
-        [Intrinsic]
-        public static long Min(long left, long right) => left <= right ? left : right;
-        [Intrinsic]
-        public static nint Min(nint left, nint right) => left <= right ? left : right;
-        [Intrinsic]
-        public static sbyte Min(sbyte left, sbyte right) => left <= right ? left : right;
-        [Intrinsic]
-        public static ushort Min(ushort left, ushort right) => left <= right ? left : right;
-        [Intrinsic]
-        public static uint Min(uint left, uint right) => left <= right ? left : right;
-        [Intrinsic]
-        public static ulong Min(ulong left, ulong right) => left <= right ? left : right;
-        [Intrinsic]
-        public static nuint Min(nuint left, nuint right) => left <= right ? left : right;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Min(decimal left, decimal right) => decimal.Min(left, right);
-
-        [Intrinsic]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double Min(double left, double right)
+        [NonVersionable]
+        public static byte Min(byte val1, byte val2)
         {
-            if (left != right) return !IsNaN(left) ? left < right ? left : right : left;
-            return IsNegative(left) ? left : right;
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal Min(decimal val1, decimal val2)
+        {
+            return decimal.Min(val1, val2);
         }
 
         [Intrinsic]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Min(float left, float right)
+        public static double Min(double val1, double val2)
         {
-            if (left != right) return !IsNaN(left) ? left < right ? left : right : left;
-            return IsNegative(left) ? left : right;
+            // This matches the IEEE 754:2019 `minimum` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the lesser of the inputs. It
+            // treats +0 as greater than -0 as per the specification.
+
+            if (val1 != val2)
+            {
+                if (!double.IsNaN(val1))
+                {
+                    return val1 < val2 ? val1 : val2;
+                }
+
+                return val1;
+            }
+
+            return double.IsNegative(val1) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [NonVersionable]
+        public static short Min(short val1, short val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [NonVersionable]
+        public static int Min(int val1, int val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [NonVersionable]
+        public static long Min(long val1, long val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        /// <summary>Returns the smaller of two native signed integers.</summary>
+        /// <param name="val1">The first of two native signed integers to compare.</param>
+        /// <param name="val2">The second of two native signed integers to compare.</param>
+        /// <returns>Parameter <paramref name="val1" /> or <paramref name="val2" />, whichever is smaller.</returns>
+        [Intrinsic]
+        [NonVersionable]
+        public static nint Min(nint val1, nint val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static sbyte Min(sbyte val1, sbyte val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        [Intrinsic]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float Min(float val1, float val2)
+        {
+            // This matches the IEEE 754:2019 `minimum` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the lesser of the inputs. It
+            // treats +0 as greater than -0 as per the specification.
+
+            if (val1 != val2)
+            {
+                if (!float.IsNaN(val1))
+                {
+                    return val1 < val2 ? val1 : val2;
+                }
+
+                return val1;
+            }
+
+            return float.IsNegative(val1) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static ushort Min(ushort val1, ushort val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static uint Min(uint val1, uint val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static ulong Min(ulong val1, ulong val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
+        }
+
+        /// <summary>Returns the smaller of two native unsigned integers.</summary>
+        /// <param name="val1">The first of two native unsigned integers to compare.</param>
+        /// <param name="val2">The second of two native unsigned integers to compare.</param>
+        /// <returns>Parameter <paramref name="val1" /> or <paramref name="val2" />, whichever is smaller.</returns>
+        [CLSCompliant(false)]
+        [Intrinsic]
+        [NonVersionable]
+        public static nuint Min(nuint val1, nuint val2)
+        {
+            return (val1 <= val2) ? val1 : val2;
         }
 
         [Intrinsic]
@@ -750,25 +1264,149 @@ namespace System
             return y;
         }
 
+        /// <summary>Returns an estimate of the reciprocal of a specified number.</summary>
+        /// <param name="d">The number whose reciprocal is to be estimated.</param>
+        /// <returns>An estimate of the reciprocal of <paramref name="d" />.</returns>
+        /// <remarks>
+        ///    <para>On ARM64 hardware this may use the <c>FRECPE</c> instruction which performs a single Newton-Raphson iteration.</para>
+        ///    <para>On hardware without specialized support, this may just return <c>1.0 / d</c>.</para>
+        /// </remarks>
         [Intrinsic]
-        public static double ReciprocalEstimate(double value) => 1 / value;
+        public static double ReciprocalEstimate(double d)
+        {
+#if MONO
+            return 1.0 / d;
+#else
+            return ReciprocalEstimate(d);
+#endif
+        }
+
+        /// <summary>Returns an estimate of the reciprocal square root of a specified number.</summary>
+        /// <param name="d">The number whose reciprocal square root is to be estimated.</param>
+        /// <returns>An estimate of the reciprocal square root <paramref name="d" />.</returns>
+        /// <remarks>
+        ///    <para>On ARM64 hardware this may use the <c>FRSQRTE</c> instruction which performs a single Newton-Raphson iteration.</para>
+        ///    <para>On hardware without specialized support, this may just return <c>1.0 / Sqrt(d)</c>.</para>
+        /// </remarks>
         [Intrinsic]
-        public static double ReciprocalSqrtEstimate(double value) => 1 / Sqrt(value);
+        public static double ReciprocalSqrtEstimate(double d)
+        {
+#if MONO || TARGET_LOONGARCH64
+            return 1.0 / Sqrt(d);
+#else
+            return ReciprocalSqrtEstimate(d);
+#endif
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Round(decimal value) => decimal.Round(value);
+        public static decimal Round(decimal d)
+        {
+            return decimal.Round(d, 0);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Round(decimal value, int decimals) => decimal.Round(value, decimals);
+        public static decimal Round(decimal d, int decimals)
+        {
+            return decimal.Round(d, decimals);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Round(decimal value, MidpointRounding mode) => decimal.Round(value, mode);
+        public static decimal Round(decimal d, MidpointRounding mode)
+        {
+            return decimal.Round(d, 0, mode);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Round(decimal value, int decimals, MidpointRounding mode) => decimal.Round(value, decimals, mode);
+        public static decimal Round(decimal d, int decimals, MidpointRounding mode)
+        {
+            return decimal.Round(d, decimals, mode);
+        }
+
         [Intrinsic]
-        public static double Round(double value) => RoundCore(value);
+        public static double Round(double a)
+        {
+            // ************************************************************************************
+            // IMPORTANT: Do not change this implementation without also updating MathF.Round(float),
+            //            FloatingPointUtils::round(double), and FloatingPointUtils::round(float)
+            // ************************************************************************************
+
+            // This code is based on `nearbyint` from amd/aocl-libm-ose
+            // Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+            //
+            // Licensed under the BSD 3-Clause "New" or "Revised" License
+            // See THIRD-PARTY-NOTICES.TXT for the full license text
+
+            // This represents the boundary at which point we can only represent whole integers
+            const double IntegerBoundary = 4503599627370496.0; // 2^52
+
+            if (Abs(a) >= IntegerBoundary)
+            {
+                // Values above this boundary don't have a fractional
+                // portion and so we can simply return them as-is.
+                return a;
+            }
+
+            // Otherwise, since floating-point takes the inputs, performs
+            // the computation as if to infinite precision and unbounded
+            // range, and then rounds to the nearest representable result
+            // using the current rounding mode, we can rely on this to
+            // cheaply round.
+            //
+            // In particular, .NET doesn't support changing the rounding
+            // mode and defaults to "round to nearest, ties to even", thus
+            // by adding the original value to the IntegerBoundary we get
+            // an exactly represented whole integer that is precisely the
+            // IntegerBoundary greater in magnitude than the answer we want.
+            //
+            // We can then simply remove that offset to get the correct answer,
+            // noting that we also need to copy back the original sign to
+            // correctly handle -0.0
+
+            double temp = CopySign(IntegerBoundary, a);
+            return CopySign((a + temp) - temp, a);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double Round(double value, int digits) => Round(value, digits, MidpointRounding.ToEven);
+        public static double Round(double value, int digits)
+        {
+            return Round(value, digits, MidpointRounding.ToEven);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double Round(double value, MidpointRounding mode) => RoundMode(value, mode);
+        public static double Round(double value, MidpointRounding mode)
+        {
+            switch (mode)
+            {
+                // Rounds to the nearest value; if the number falls midway,
+                // it is rounded to the nearest value above (for positive numbers) or below (for negative numbers)
+                case MidpointRounding.AwayFromZero:
+                    // For ARM/ARM64 we can lower it down to a single instruction FRINTA
+                    if (AdvSimd.IsSupported)
+                        return AdvSimd.RoundAwayFromZeroScalar(Vector64.CreateScalarUnsafe(value)).ToScalar();
+                    // For other platforms we use a fast managed implementation
+                    // manually fold BitDecrement(0.5)
+                    return Truncate(value + CopySign(0.49999999999999994, value));
+
+                // Rounds to the nearest value; if the number falls midway,
+                // it is rounded to the nearest value with an even least significant digit
+                case MidpointRounding.ToEven:
+                    return Round(value);
+                // Directed rounding: Round to the nearest value, toward to zero
+                case MidpointRounding.ToZero:
+                    return Truncate(value);
+                // Directed Rounding: Round down to the next value, toward negative infinity
+                case MidpointRounding.ToNegativeInfinity:
+                    return Floor(value);
+                // Directed rounding: Round up to the next value, toward positive infinity
+                case MidpointRounding.ToPositiveInfinity:
+                    return Ceiling(value);
+
+                default:
+                    ThrowHelper.ThrowArgumentException_InvalidEnumValue(mode);
+                    return default;
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Round(double value, int digits, MidpointRounding mode)
         {
@@ -806,7 +1444,101 @@ namespace System
             return value;
         }
 
-        // Upstream's managed scalbln: Math's SCALEB_C1, SCALEB_C2 and SCALEB_C3 as literals.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int Sign(decimal value)
+        {
+            return decimal.Sign(value);
+        }
+
+        public static int Sign(double value)
+        {
+            if (value < 0)
+            {
+                return -1;
+            }
+            else if (value > 0)
+            {
+                return 1;
+            }
+            else if (value == 0)
+            {
+                return 0;
+            }
+
+            throw new ArithmeticException(SR.Arithmetic_NaN);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int Sign(short value)
+        {
+            return Sign((int)value);
+        }
+
+        public static int Sign(int value)
+        {
+            return unchecked(value >> 31 | (int)((uint)-value >> 31));
+        }
+
+        public static int Sign(long value)
+        {
+            return unchecked((int)(value >> 63 | (long)((ulong)-value >> 63)));
+        }
+
+        public static int Sign(nint value)
+        {
+            if (IntPtr.Size == 8)
+            {
+                return unchecked((int)((long)value >> 63 | (long)((ulong)-(long)value >> 63)));
+            }
+
+            return unchecked((int)value >> 31 | (int)((uint)-(int)value >> 31));
+        }
+
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int Sign(sbyte value)
+        {
+            return Sign((int)value);
+        }
+
+        public static int Sign(float value)
+        {
+            if (value < 0)
+            {
+                return -1;
+            }
+            else if (value > 0)
+            {
+                return 1;
+            }
+            else if (value == 0)
+            {
+                return 0;
+            }
+
+            throw new ArithmeticException(SR.Arithmetic_NaN);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal Truncate(decimal d)
+        {
+            return decimal.Truncate(d);
+        }
+
+        [Intrinsic]
+        public static unsafe double Truncate(double d)
+        {
+            ModF(d, &d);
+            return d;
+        }
+
+        [DoesNotReturn]
+        internal static void ThrowMinMaxException<T>(T min, T max)
+        {
+            // '{0}' cannot be greater than {1}.
+            throw new ArgumentException("'" + min!.ToString() + "' cannot be greater than " + max!.ToString() + ".");
+        }
+
         public static double ScaleB(double x, int n)
         {
             // Implementation based on https://git.musl-libc.org/cgit/musl/tree/src/math/scalbln.c
@@ -818,11 +1550,11 @@ namespace System
             double y = x;
             if (n > 1023)
             {
-                y *= 8.98846567431158E+307; // 0x1p1023
+                y *= SCALEB_C1;
                 n -= 1023;
                 if (n > 1023)
                 {
-                    y *= 8.98846567431158E+307;
+                    y *= SCALEB_C1;
                     n -= 1023;
                     if (n > 1023)
                     {
@@ -832,11 +1564,11 @@ namespace System
             }
             else if (n < -1022)
             {
-                y *= 2.2250738585072014E-308 * 9007199254740992; // 0x1p-1022 * 0x1p53
+                y *= SCALEB_C2 * SCALEB_C3;
                 n += 1022 - 53;
                 if (n < -1022)
                 {
-                    y *= 2.2250738585072014E-308 * 9007199254740992;
+                    y *= SCALEB_C2 * SCALEB_C3;
                     n += 1022 - 53;
                     if (n < -1022)
                     {
@@ -849,368 +1581,181 @@ namespace System
             return y * u;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Sign(short value) => value < 0 ? -1 : value > 0 ? 1 : 0;
-        public static int Sign(int value) => value < 0 ? -1 : value > 0 ? 1 : 0;
-        public static int Sign(long value) => value < 0 ? -1 : value > 0 ? 1 : 0;
-        public static int Sign(nint value) => value < 0 ? -1 : value > 0 ? 1 : 0;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Sign(sbyte value) => value < 0 ? -1 : value > 0 ? 1 : 0;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Sign(decimal value) => decimal.Sign(value);
-        public static int Sign(float value)
-        {
-            if (IsNaN(value)) throw new ArithmeticException();
-            return value < 0 ? -1 : value > 0 ? 1 : 0;
-        }
-
-        public static int Sign(double value)
-        {
-            if (IsNaN(value)) throw new ArithmeticException();
-            return value < 0 ? -1 : value > 0 ? 1 : 0;
-        }
+        //
+        // Helpers, those methods are referenced from the JIT
+        //
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static decimal Truncate(decimal value) => decimal.Truncate(value);
+        private static uint High32Bits(ulong a) => (uint)(a >> 32);
 
-        // The throw stays out of line, so each clamp inlines into its caller.
-        [DoesNotReturn]
-        private static void ThrowMinMaxException() => throw new ArgumentException();
-
-        private static double TruncateCore(double value)
+        [StackTraceHidden]
+        internal static long MultiplyChecked(long left, long right)
         {
-            if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
-            var result = value - value % 1;
-            return result == 0 ? CopySign(0, value) : result;
-        }
+#if DEBUG
+            long result = left * right;
+#endif
 
-        private static double RoundCore(double value)
-        {
-            if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
-            if (Abs(value) >= 4503599627370496) return value;
-            var truncated = TruncateCore(value);
-            var difference = value - truncated;
-            if (difference > 0.5 || difference == 0.5 && ((long)truncated & 1) != 0) return truncated + 1;
-            if (difference < -0.5 || difference == -0.5 && ((long)truncated & 1) != 0) return truncated - 1;
-            return truncated == 0 ? CopySign(0, value) : truncated;
-        }
+            // Remember the sign of the result
+            int sign = (int)(High32Bits((ulong)left) ^ High32Bits((ulong)right));
 
-        private static double RoundMode(double value, MidpointRounding mode)
-        {
-            if ((uint)mode > (uint)MidpointRounding.ToPositiveInfinity) throw new ArgumentException();
-            if (value == 0 || IsNaN(value) || IsInfinity(value)) return value;
-            return mode switch
+            // Convert to unsigned multiplication
+            if (left < 0)
+                left = -left;
+            if (right < 0)
+                right = -right;
+
+            // Get the upper 32 bits of the numbers
+            uint val1High = High32Bits((ulong)left);
+            uint val2High = High32Bits((ulong)right);
+
+            ulong valMid;
+
+            if (val1High == 0)
             {
-                MidpointRounding.ToEven => RoundCore(value),
-                MidpointRounding.AwayFromZero => TruncateCore(value + CopySign(0.49999999999999994, value)),
-                MidpointRounding.ToZero => TruncateCore(value),
-                MidpointRounding.ToNegativeInfinity => FloorCore(value),
-                MidpointRounding.ToPositiveInfinity => CeilingCore(value),
-                _ => throw new ArgumentException(),
-            };
-        }
-
-        private static double FloorCore(double value)
-        {
-            if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
-            var truncated = TruncateCore(value);
-            var result = value < truncated ? truncated - 1 : truncated;
-            return result == 0 ? CopySign(0, value) : result;
-        }
-
-        private static double CeilingCore(double value)
-        {
-            if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
-            var truncated = TruncateCore(value);
-            var result = value > truncated ? truncated + 1 : truncated;
-            return result == 0 ? CopySign(0, value) : result;
-        }
-
-        private static bool IsNaN(double value) => double.IsNaN(value);
-        private static bool IsInfinity(double value) => double.IsInfinity(value);
-        private static bool IsNegative(double value) => value < 0 || value == 0 && 1 / value == double.NegativeInfinity;
-
-        private static double SqrtCore(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (value < 0) return double.NaN;
-            if (value == 0 || IsInfinity(value)) return value;
-            var scaled = value;
-            var exponent = 0;
-            while (scaled > 4) { scaled *= 0.25; exponent++; }
-            while (scaled < 1) { scaled *= 4; exponent--; }
-            var result = (1 + scaled) * 0.5;
-            for (var iteration = 0; iteration < 8; iteration++)
-            {
-                result = (result + scaled / result) * 0.5;
+                // Compute the 'middle' bits of the long multiplication
+                valMid = BigMul(val2High, (uint)left);
             }
-            return ScaleB(result, exponent);
-        }
-    }
-
-    /// <summary>Single-precision counterparts of <see cref="Math"/> operations.</summary>
-    public static partial class MathF
-    {
-        // The largest digit count the fast rounding path handles: `10^digits` must be exactly representable
-        // as a `float` (10^10 is the last that is); larger counts use the exact routine.
-        private const int maxFastRoundingDigits = 10;
-
-        // Below this boundary a float may have a fractional portion; at or above it every
-        // representable value is already an integer (2^23).
-        private const float singleIntegerBoundary = 8388608.0f;
-
-        public const float E = 2.7182817f;
-        public const float PI = 3.1415927f;
-        public const float Tau = 6.2831855f;
-
-        [Intrinsic]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Abs(float value) => Math.Abs(value);
-        [Intrinsic]
-        public static float Ceiling(float value) => (float)Math.Ceiling(value);
-        [Intrinsic]
-        public static float Floor(float value) => (float)Math.Floor(value);
-        [Intrinsic]
-        public static float Truncate(float value) => (float)Math.Truncate(value);
-        [Intrinsic]
-        public static float Round(float value) => (float)Math.Round(value);
-        [Intrinsic]
-        public static float Sqrt(float value) => (float)Math.Sqrt(value);
-
-        [Intrinsic]
-        public static float Acos(float value) => (float)Math.Acos(value);
-        [Intrinsic]
-        public static float Asin(float value) => (float)Math.Asin(value);
-        [Intrinsic]
-        public static float Asinh(float value) => (float)Math.Asinh(value);
-        [Intrinsic]
-        public static float Atan(float value) => (float)Math.Atan(value);
-        [Intrinsic]
-        public static float Atan2(float y, float x) => (float)Math.Atan2(y, x);
-        [Intrinsic]
-        public static float Atanh(float value) => (float)Math.Atanh(value);
-        public static float BitDecrement(float value)
-        {
-            var bits = BitConverter.SingleToUInt32Bits(value);
-            if (!float.IsFinite(value)) return bits == 0x7F800000U ? float.MaxValue : value;
-            if (bits == 0) return -float.Epsilon;
-            bits = (bits & 0x80000000U) != 0 ? bits + 1 : bits - 1;
-            return BitConverter.UInt32BitsToSingle(bits);
-        }
-
-        public static float BitIncrement(float value)
-        {
-            var bits = BitConverter.SingleToUInt32Bits(value);
-            if (!float.IsFinite(value)) return bits == 0xFF800000U ? float.MinValue : value;
-            if (bits == 0x80000000U) return float.Epsilon;
-            bits = (bits & 0x80000000U) != 0 ? bits - 1 : bits + 1;
-            return BitConverter.UInt32BitsToSingle(bits);
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float CopySign(float value, float sign) =>
-            BitConverter.UInt32BitsToSingle(
-                (BitConverter.SingleToUInt32Bits(value) & 0x7FFFFFFFU) |
-                (BitConverter.SingleToUInt32Bits(sign) & 0x80000000U));
-        [Intrinsic]
-        public static float Cosh(float value) => (float)Math.Cosh(value);
-        // A float product is exact in double, and rounding the double sum to odd
-        // keeps enough bits that rounding it to float rounds the exact result once.
-        public static float IEEERemainder(float x, float y)
-        {
-            if (float.IsNaN(x)) return x;
-            if (float.IsNaN(y)) return y;
-            var regular = x % y;
-            if (float.IsNaN(regular)) return float.NaN;
-            if (regular == 0 && IsNegative(x)) return -0.0f;
-            var alternative = regular - Abs(y) * Sign(x);
-            if (Abs(alternative) == Abs(regular))
+            else
             {
-                var quotient = x / y;
-                var rounded = Round(quotient);
-                return Abs(rounded) > Abs(quotient) ? alternative : regular;
-            }
-            return Abs(alternative) < Abs(regular) ? alternative : regular;
-        }
-        public static int ILogB(float value) => Math.ILogB(value);
-        public static float Log(float value, float newBase) => (float)Math.Log(value, newBase);
-
-        [Intrinsic]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Min(float left, float right)
-        {
-            if (left != right) return !float.IsNaN(left) ? left < right ? left : right : left;
-            return IsNegative(left) ? left : right;
-        }
-
-        [Intrinsic]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Max(float left, float right)
-        {
-            if (left != right) return !float.IsNaN(left) ? left > right ? left : right : left;
-            return IsNegative(right) ? left : right;
-        }
-
-        [Intrinsic]
-        public static float MaxMagnitude(float x, float y)
-        {
-            // This matches the IEEE 754:2019 `maximumMagnitude` function
-            //
-            // It propagates NaN inputs back to the caller and
-            // otherwise returns the input with a greater magnitude.
-            // It treats +0 as greater than -0 as per the specification.
-
-            float ax = Abs(x);
-            float ay = Abs(y);
-
-            if ((ax > ay) || float.IsNaN(ax))
-            {
-                return x;
+                if (val2High != 0)
+                    goto Overflow;
+                // Compute the 'middle' bits of the long multiplication
+                valMid = BigMul(val1High, (uint)right);
             }
 
-            if (ax == ay)
+            // See if any bits after bit 32 are set
+            if (High32Bits(valMid) != 0)
+                goto Overflow;
+
+            long ret = (long)(BigMul((uint)left, (uint)right) + (valMid << 32));
+
+            // check for overflow
+            if (High32Bits((ulong)ret) < (uint)valMid)
+                goto Overflow;
+
+            if (sign >= 0)
             {
-                return float.IsNegative(x) ? y : x;
+                // have we spilled into the sign bit?
+                if (ret < 0)
+                    goto Overflow;
+            }
+            else
+            {
+                ret = -ret;
+                // have we spilled into the sign bit?
+                if (ret > 0)
+                    goto Overflow;
             }
 
-            return y;
+#if DEBUG
+            Debug.Assert(ret == result, $"Multiply overflow got: {ret}, expected: {result}");
+#endif
+            return ret;
+
+        Overflow:
+            ThrowHelper.ThrowOverflowException();
+            return 0;
         }
 
-        [Intrinsic]
-        public static float MinMagnitude(float x, float y)
+        [StackTraceHidden]
+        internal static ulong MultiplyChecked(ulong left, ulong right)
         {
-            // This matches the IEEE 754:2019 `minimumMagnitude` function
-            //
-            // It propagates NaN inputs back to the caller and
-            // otherwise returns the input with a lesser magnitude.
-            // It treats +0 as greater than -0 as per the specification.
+            // Get the upper 32 bits of the numbers
+            uint val1High = High32Bits(left);
+            uint val2High = High32Bits(right);
 
-            float ax = Abs(x);
-            float ay = Abs(y);
+            ulong valMid;
 
-            if ((ax < ay) || float.IsNaN(ax))
+            if (val1High == 0)
             {
-                return x;
+                if (val2High == 0)
+                    return (ulong)(uint)left * (uint)right;
+                // Compute the 'middle' bits of the long multiplication
+                valMid = BigMul(val2High, (uint)left);
+            }
+            else
+            {
+                if (val2High != 0)
+                    goto Overflow;
+                // Compute the 'middle' bits of the long multiplication
+                valMid = BigMul(val1High, (uint)right);
             }
 
-            if (ax == ay)
-            {
-                return float.IsNegative(x) ? x : y;
-            }
+            // See if any bits after bit 32 are set
+            if (High32Bits(valMid) != 0)
+                goto Overflow;
 
-            return y;
+            ulong ret = BigMul((uint)left, (uint)right) + (valMid << 32);
+
+            // check for overflow
+            if (High32Bits(ret) < (uint)valMid)
+                goto Overflow;
+
+            Debug.Assert(ret == left * right, $"Multiply overflow got: {ret}, expected: {left * right}");
+            return ret;
+
+        Overflow:
+            ThrowHelper.ThrowOverflowException();
+            return 0;
         }
 
-        [Intrinsic]
-        public static float ReciprocalEstimate(float value) => 1 / value;
-        [Intrinsic]
-        public static float ReciprocalSqrtEstimate(float value) => 1 / Sqrt(value);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Round(float value, int digits)
+        private const double Int32MaxValueOffset = (double)int.MaxValue + 1;
+        private const double UInt32MaxValueOffset = (double)uint.MaxValue + 1;
+
+        [StackTraceHidden]
+        internal static int ConvertToInt32Checked(double value)
         {
-            return Round(value, digits, MidpointRounding.ToEven);
+            // Note that this expression also works properly for val = NaN case
+            if (value is > -Int32MaxValueOffset - 1 and < Int32MaxValueOffset)
+            {
+                return double.ConvertToIntegerNative<int>(value);
+            }
+
+            ThrowHelper.ThrowOverflowException();
+            return 0;
         }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Round(float value, MidpointRounding mode) => (float)Math.Round(value, mode);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float Round(float x, int digits, MidpointRounding mode)
+
+        [StackTraceHidden]
+        internal static uint ConvertToUInt32Checked(double value)
         {
-            if (digits < 0)
+            // Note that this expression also works properly for val = NaN case
+            if (value is > -1.0 and < UInt32MaxValueOffset)
             {
-                ThrowHelper.ThrowArgumentOutOfRange_RoundingDigits(nameof(digits));
+                return double.ConvertToIntegerNative<uint>(value);
             }
 
-            if ((uint)mode > (uint)MidpointRounding.ToPositiveInfinity)
-            {
-                ThrowHelper.ThrowArgumentException_InvalidEnumValue(mode);
-            }
-
-            // Rounding to zero fractional digits is just rounding to an integer, which the dedicated
-            // overload does with a single hardware instruction on most platforms.
-            if (digits == 0)
-            {
-                return Round(x, mode);
-            }
-
-            // Only finite values with a magnitude below the integer boundary can have a fractional
-            // portion to round. All other values (including NaN and Infinity) are returned unchanged;
-            // this comparison is naturally false for those cases.
-            if (Abs(x) < singleIntegerBoundary)
-            {
-                // The fast path only handles the small-digit range where `10^digits` is exactly
-                // representable; larger counts fall back to the exact arbitrary-precision routine.
-                if ((digits > maxFastRoundingDigits) || !Number.TryRoundToDecimalDigitsFast(x, digits, mode, out float rounded))
-                {
-                    rounded = Number.RoundToDecimalDigits<float>(x, digits, mode);
-                }
-                x = rounded;
-            }
-
-            return x;
+            ThrowHelper.ThrowOverflowException();
+            return 0;
         }
-        // Upstream's managed scalblnf: MathF's SCALEB_C1, SCALEB_C2 and SCALEB_C3 as literals.
-        public static float ScaleB(float x, int n)
+
+        [StackTraceHidden]
+        internal static long ConvertToInt64Checked(double value)
         {
-            // Implementation based on https://git.musl-libc.org/cgit/musl/tree/src/math/scalblnf.c
-            //
-            // Performs the calculation x * 2^n efficiently. It constructs a float from 2^n by building
-            // the correct biased exponent. If n is greater than the maximum exponent (127) or less than
-            // the minimum exponent (-126), adjust x and n to compute correct result.
+            const double two63 = Int32MaxValueOffset * UInt32MaxValueOffset;
 
-            float y = x;
-            if (n > 127)
+            // Note that this expression also works properly for val = NaN case
+            // We need to compare with the very next double to two63. 0x402 is epsilon to get us there.
+            if (value is > -two63 - 0x402 and < two63)
             {
-                y *= 1.7014118E+38f; // 0x1p127f
-                n -= 127;
-                if (n > 127)
-                {
-                    y *= 1.7014118E+38f;
-                    n -= 127;
-                    if (n > 127)
-                    {
-                        n = 127;
-                    }
-                }
-            }
-            else if (n < -126)
-            {
-                y *= 1.1754944E-38f * 16777216f; // 0x1p-126f * 0x1p24f
-                n += 126 - 24;
-                if (n < -126)
-                {
-                    y *= 1.1754944E-38f * 16777216f;
-                    n += 126 - 24;
-                    if (n < -126)
-                    {
-                        n = -126;
-                    }
-                }
+                return double.ConvertToIntegerNative<long>(value);
             }
 
-            float u = BitConverter.Int32BitsToSingle(((int)(0x7f + n) << 23));
-            return y * u;
+            ThrowHelper.ThrowOverflowException();
+            return 0;
         }
 
-        [Intrinsic]
-        public static float Sinh(float value) => (float)Math.Sinh(value);
-        [Intrinsic]
-        public static float Tanh(float value) => (float)Math.Tanh(value);
-
-        public static float Clamp(float value, float minimum, float maximum)
+        [StackTraceHidden]
+        internal static ulong ConvertToUInt64Checked(double value)
         {
-            if (minimum > maximum) throw new ArgumentException();
-            if (value < minimum) return minimum;
-            if (value > maximum) return maximum;
-            return value;
-        }
+            const double two64 = UInt32MaxValueOffset * UInt32MaxValueOffset;
+            // Note that this expression also works properly for val = NaN case
+            if (value is > -1.0 and < two64)
+            {
+                return double.ConvertToIntegerNative<ulong>(value);
+            }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Sign(float value)
-        {
-            if (float.IsNaN(value)) throw new ArithmeticException();
-            return value < 0 ? -1 : value > 0 ? 1 : 0;
+            ThrowHelper.ThrowOverflowException();
+            return 0;
         }
-
-        private static bool IsNegative(float value) =>
-            value < 0 || value == 0 && 1 / value == float.NegativeInfinity;
     }
 }

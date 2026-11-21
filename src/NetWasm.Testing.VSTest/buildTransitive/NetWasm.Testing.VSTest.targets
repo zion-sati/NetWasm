@@ -1,4 +1,7 @@
-<Project>
+<!-- dotnet test passes the run settings after its argument separator as the global property VSTestCLIRunSettings, and
+     its loggers as VSTestLogger; treated as local here, they take NetWasm's settings beside the user's instead of
+     replacing them. -->
+<Project TreatAsLocalProperty="VSTestCLIRunSettings;VSTestLogger">
   <!-- Every NetWasm guest framework. VSTest receives net10.0-netwasm as .NETCoreApp,Version=v10.0, the same as a
        desktop project, so its run also carries a NetWasm.TargetFramework test run parameter for the runtime
        provider, which reads run settings only through VSTest's own parser. -->
@@ -12,6 +15,15 @@
     <VSTestConsolePath Condition="'$(VSTestConsolePath)' == '' OR '$(VSTestConsolePath)' == '$(_NetWasmSdkVSTestConsolePath)'">$(_NetWasmVSTestConsolePath)</VSTestConsolePath>
     <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' != ''">$(VSTestTestAdapterPath);$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
     <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' == ''">$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
+    <!-- Microsoft.Testing.Platform's TRX report options, report-trx and report-trx-filename, which upstream TUnit
+         takes after dotnet test's argument separator, select VSTest's TRX logger: they are not VSTest run settings. -->
+    <_NetWasmVSTestReportTrx Condition="$([System.String]::Copy(';$(VSTestCLIRunSettings);').Contains(';--report-trx;'))">true</_NetWasmVSTestReportTrx>
+    <_NetWasmVSTestTrxFileName>$([System.Text.RegularExpressions.Regex]::Match(';$(VSTestCLIRunSettings);', ';--report-trx-filename;([^;]+);').Groups[1].Value)</_NetWasmVSTestTrxFileName>
+    <VSTestCLIRunSettings>$([System.Text.RegularExpressions.Regex]::Replace(';$(VSTestCLIRunSettings);', ';--report-trx(-filename;[^;]*)?(?=;)', '').Trim(';'))</VSTestCLIRunSettings>
+    <_NetWasmVSTestTrxLogger Condition="'$(_NetWasmVSTestReportTrx)' == 'true'">trx</_NetWasmVSTestTrxLogger>
+    <_NetWasmVSTestTrxLogger Condition="'$(_NetWasmVSTestReportTrx)' == 'true' AND '$(_NetWasmVSTestTrxFileName)' != ''">trx%3BLogFileName=$(_NetWasmVSTestTrxFileName)</_NetWasmVSTestTrxLogger>
+    <VSTestLogger Condition="'$(_NetWasmVSTestTrxLogger)' != '' AND '$(VSTestLogger)' != ''">$(VSTestLogger);$(_NetWasmVSTestTrxLogger)</VSTestLogger>
+    <VSTestLogger Condition="'$(_NetWasmVSTestTrxLogger)' != '' AND '$(VSTestLogger)' == ''">$(_NetWasmVSTestTrxLogger)</VSTestLogger>
     <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' != ''">$(VSTestCLIRunSettings);$(_NetWasmVSTestRunSettings)</VSTestCLIRunSettings>
     <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' == ''">$(_NetWasmVSTestRunSettings)</VSTestCLIRunSettings>
   </PropertyGroup>

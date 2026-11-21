@@ -111,6 +111,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
         {
             RuntimeFeatures = request.SourceLayout.RuntimeFeatures,
             NativeCallbackSupport = callbackSupport,
+            SystemExports = request.SystemExports,
         };
         var internalExports = exports.Build(exportRequest).InternalExports;
         var identityCallbackAllowPath = callbackSupport is null
@@ -127,6 +128,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
                 : consumer.NativeCallbackObjectPath,
             NativeCallbackAllowedUndefinedPath = identityCallbackAllowPath,
             NativeCallbackSupport = callbackSupport,
+            SystemExports = request.SystemExports,
             PlainCoreModule = consumer.PlainCoreModule,
             ScriptSuppliesEmscriptenFunctions = scriptSuppliesEmscripten,
         };

@@ -17,6 +17,9 @@ const maximumTimerDelay = 0x7fffffff;
 const randomChunk = 65536;
 const nanosecondsPerMillisecond = 1_000_000;
 const exitBrand = Symbol.for("netwasm.wasi.exit");
+// The keys a component runtime disposes a discarded host result by: Symbol.dispose where the
+// engine has it, and the registered symbol jco's runtime uses where it does not.
+const disposeKeys = [Symbol.dispose, Symbol.for("dispose")].filter(key => typeof key === "symbol");
 
 // A guest's wasi:cli/exit call: the host unwinds the guest and completes the execution
 // with the status code.
@@ -47,19 +50,38 @@ export function createWasiPlatform(services) {
       });
       return promise;
     };
-    const wait = milliseconds => new Promise(resolve => {
-      if (released) return;
-      const step = remaining => {
-        const delay = Math.min(Math.max(remaining, 0), maximumTimerDelay);
-        const timer = setTimeout(() => {
+    // A guest that cancels a wait it no longer needs, as a cancelled timer does, disposes it: the
+    // timer stops and the wait settles at once with its result discarded, so the cancelled call is
+    // not held until the time it was due.
+    const wait = milliseconds => {
+      let timer = null;
+      let settle = null;
+      const waiting = new Promise(resolve => {
+        if (released) return;
+        settle = resolve;
+        const step = remaining => {
+          const delay = Math.min(Math.max(remaining, 0), maximumTimerDelay);
+          timer = setTimeout(() => {
+            timers.delete(timer);
+            timer = null;
+            if (remaining > delay) step(remaining - delay);
+            else resolve();
+          }, delay);
+          timers.add(timer);
+        };
+        step(milliseconds);
+      });
+      const dispose = () => {
+        if (timer !== null) {
+          clearTimeout(timer);
           timers.delete(timer);
-          if (remaining > delay) step(remaining - delay);
-          else resolve();
-        }, delay);
-        timers.add(timer);
+          timer = null;
+        }
+        settle?.();
       };
-      step(milliseconds);
-    });
+      for (const key of disposeKeys) waiting[key] = dispose;
+      return waiting;
+    };
 
     // Every read-via-stream reads the same standard input, opened on the guest's first read.
     let input = null;

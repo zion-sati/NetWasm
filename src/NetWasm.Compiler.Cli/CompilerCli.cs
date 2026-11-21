@@ -96,6 +96,7 @@ internal static class CompilerCliServiceCollectionExtensions
         services.AddSingleton<IComponentManifestInputReader,
             ComponentManifestInputReader>();
         services.AddSingleton<ICompilerCli, CompilerCli>();
+        services.AddSingleton<IUnhandledFailureDiagnosticFactory, UnhandledFailureDiagnosticFactory>();
         return services;
     }
 }

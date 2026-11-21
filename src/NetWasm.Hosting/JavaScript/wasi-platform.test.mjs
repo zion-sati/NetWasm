@@ -136,6 +136,55 @@ test("long waits run in steps the JavaScript timer accepts and stop at release",
   }
 });
 
+test("a wait the guest cancels stops its timer and settles at once", async () => {
+  const cleared = [];
+  const originalSet = globalThis.setTimeout;
+  const originalClear = globalThis.clearTimeout;
+  const pending = [];
+  globalThis.setTimeout = callback => {
+    const timer = { callback };
+    pending.push(timer);
+    return timer;
+  };
+  globalThis.clearTimeout = timer => cleared.push(timer);
+  const dispose = Symbol.dispose ?? Symbol.for("dispose");
+  try {
+    const { imports, release } = createWasiPlatform(Object.freeze({ initialDirectory: null, network: null }))(request());
+    const monotonic = imports["wasi:clocks/monotonic-clock@0.3.2"];
+    const cancelled = monotonic.waitFor(100_000_000_000n);
+    assert.equal(typeof cancelled[dispose], "function");
+    cancelled[dispose]();
+    assert.deepEqual(cleared, [pending[0]]);
+    await cancelled;
+
+    // A long wait cancelled between its steps stops the step that is running.
+    const stepped = monotonic.waitUntil(monotonic.now() + 3_000_000_000_000_000n);
+    pending[1].callback();
+    stepped[dispose]();
+    assert.deepEqual(cleared, [pending[0], pending[2]]);
+    await stepped;
+
+    // Disposing a wait that already settled changes nothing.
+    const due = monotonic.waitFor(1n);
+    pending[3].callback();
+    await due;
+    due[dispose]();
+    assert.equal(cleared.length, 2);
+    await release();
+    assert.equal(cleared.length, 2);
+
+    // A wait begun after release starts no timer, and disposing it stops nothing.
+    const timersBefore = pending.length;
+    const late = monotonic.waitFor(1n);
+    late[Symbol.for("dispose")]();
+    assert.equal(pending.length, timersBefore);
+    assert.equal(cleared.length, 2);
+  } finally {
+    globalThis.setTimeout = originalSet;
+    globalThis.clearTimeout = originalClear;
+  }
+});
+
 test("draws secure and insecure random values of any requested length", () => {
   const { imports } = createWasiPlatform(Object.freeze({ initialDirectory: null, network: null }))(request());
   const random = imports["wasi:random/random@0.3.2"];

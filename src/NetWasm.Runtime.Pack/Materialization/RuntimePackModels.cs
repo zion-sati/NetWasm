@@ -141,6 +141,8 @@ internal sealed record RuntimeLinkRequest(
 {
     public ImmutableArray<string> RuntimeFeatures { get; init; }
     public ImmutableArray<RuntimeNativeBinding> NativeBindings { get; init; } = [];
+    // Entry points of the C library functions the program imports, which the runtime exports for it.
+    public ImmutableArray<string> SystemExports { get; init; } = [];
     public string? NativeCallbackObjectPath { get; init; }
     public string? NativeCallbackAllowedUndefinedPath { get; init; }
     // The runtime's undefined functions plus the project's declared env functions, without callbacks.

@@ -13,6 +13,8 @@ public static class NetWasmEmissionServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IWasmModuleEmitterFactory, WasmModuleEmitterFactory>();
+        // Lowering, composed here, reports a method's defects; emission's module services take it again.
+        services.TryAddSingleton<IMethodDefectExceptionFactory, MethodDefectExceptionFactory>();
         // The engines' function limits, which every module and every patched function meets; a composition may
         // register others first (tests do, to reach them cheaply).
         services.TryAddSingleton(new NetWasm.Compiler.Wasm.ModuleEncoding.WasmFunctionLimits());

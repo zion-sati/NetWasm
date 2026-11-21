@@ -77,6 +77,13 @@ internal sealed class ValueFrameEntryEmitter(
         {
             if (aggregateValues.TryInitializeArgument(code, header, context, argumentIndex))
             {
+                // The lanes now hold the argument's value. Its frame backing, which the lanes are stored to before
+                // a call takes the argument's address and reloaded from after a store of the whole argument, takes
+                // the argument local's place, as an unpromoted argument's copy does: a store of the whole argument
+                // writes the backing, not the caller's copy.
+                addresses.Emit(code, context, offset);
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                    WasmInstructionOperand.Unsigned((uint)(argumentIndex + context.ParameterOffset))));
                 continue;
             }
             addresses.Emit(code, context, offset);

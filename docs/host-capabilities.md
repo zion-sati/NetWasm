@@ -53,6 +53,11 @@ item:
 program sees, and `Access` is `readOnly` or `readWrite`. Guest paths use forward
 slashes and must be unique in the project.
 
+`AppContext.BaseDirectory` is `/`, the sandbox root, as on Mono's WebAssembly
+runtime, so code that looks for data by walking up from it finds a directory
+mounted there (`GuestPath="/data"`, say). A `RuntimeHostConfigurationOption`
+named `APP_CONTEXT_BASE_DIRECTORY` sets another.
+
 A published program mounts nothing unless you name it. The launcher takes
 Wasmtime's `--dir HOST[::GUEST]` form, before the program's arguments:
 

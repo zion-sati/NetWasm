@@ -13,7 +13,8 @@ public sealed class ControlFlowDomainFinderTests
     [Fact]
     public void ConstructorRejectsNullReachability()
     {
-        Assert.Throws<ArgumentNullException>(() => new ControlFlowDomainFinder(null!));
+        Assert.Throws<ArgumentNullException>(() => new ControlFlowDomainFinder(null!, new OutermostFirstExceptionRegionOrderer()));
+        Assert.Throws<ArgumentNullException>(() => new ControlFlowDomainFinder(new RecordingReachableBlocks(), null!));
     }
 
     [Fact]
@@ -21,7 +22,7 @@ public sealed class ControlFlowDomainFinderTests
     {
         var graph = Graph(new CilExceptionRegion(CilExceptionRegionKind.Catch, 0, 1, 1, 1, TypeKey, null));
         var reachable = new RecordingReachableBlocks([0], [1, 2, 3]);
-        var finder = Assert.IsAssignableFrom<IControlFlowDomainFinder>(new ControlFlowDomainFinder(reachable));
+        var finder = Assert.IsAssignableFrom<IControlFlowDomainFinder>(new ControlFlowDomainFinder(reachable, new OutermostFirstExceptionRegionOrderer()));
 
         var domains = finder.Find(graph);
 
@@ -39,7 +40,7 @@ public sealed class ControlFlowDomainFinderTests
     {
         var graph = Graph(new CilExceptionRegion(CilExceptionRegionKind.Catch, 0, 1, 1, 1, TypeKey, null));
         var reachable = new RecordingReachableBlocks([0, 2, 3], [1]);
-        var finder = Assert.IsAssignableFrom<IControlFlowDomainFinder>(new ControlFlowDomainFinder(reachable));
+        var finder = Assert.IsAssignableFrom<IControlFlowDomainFinder>(new ControlFlowDomainFinder(reachable, new OutermostFirstExceptionRegionOrderer()));
 
         var domains = finder.Find(graph);
 
@@ -54,7 +55,7 @@ public sealed class ControlFlowDomainFinderTests
     {
         var graph = Graph(new CilExceptionRegion(CilExceptionRegionKind.Filter, 0, 1, 2, 1, null, 1));
         var reachable = new RecordingReachableBlocks([0], [2, 3], [1]);
-        var finder = Assert.IsAssignableFrom<IControlFlowDomainFinder>(new ControlFlowDomainFinder(reachable));
+        var finder = Assert.IsAssignableFrom<IControlFlowDomainFinder>(new ControlFlowDomainFinder(reachable, new OutermostFirstExceptionRegionOrderer()));
 
         var domains = finder.Find(graph);
 
@@ -69,7 +70,7 @@ public sealed class ControlFlowDomainFinderTests
     {
         var graph = Graph();
         var finder = Assert.IsAssignableFrom<IControlFlowDomainFinder>(new ControlFlowDomainFinder(
-            new RecordingReachableBlocks([0, 1, 2, 3])));
+            new RecordingReachableBlocks([0, 1, 2, 3]), new OutermostFirstExceptionRegionOrderer()));
 
         var domain = Assert.Single(finder.Find(graph));
 

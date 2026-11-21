@@ -69,15 +69,18 @@ public static class RuntimeLinkPlanner
         {
             ValidateVirtualPath(library.Path);
         }
+        // Imports of the C library are the runtime's own exports (RuntimeSystemImportPartitioner).
+        var imports = new RuntimeSystemImportPartitioner().Partition(nativeImports);
         var nativeBindings = new RuntimeNativeProviderSelector().Select(new(
             request.Target,
-            nativeImports,
+            imports.NativeImports,
             nativeLibraries));
         var exportPlan = new RuntimeLinkExportPlanBuilder().Build(new(
             manifest.Exports,
             nativeBindings)
         {
             RuntimeFeatures = request.RuntimeFeatures,
+            SystemExports = imports.SystemExports,
         });
         var link = new RuntimeLinkRequest(
             manifest, target, new RuntimeLinkMemoryLimits(layout.RuntimeGlobalBase, layout.InitialMemorySizeBytes,
@@ -85,6 +88,7 @@ public static class RuntimeLinkPlanner
         {
             RuntimeFeatures = request.RuntimeFeatures,
             NativeBindings = nativeBindings,
+            SystemExports = imports.SystemExports,
         };
         var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(link);
         var runtimeInput = new RuntimeLinkPlanAsset(

@@ -19,4 +19,6 @@ internal sealed record RuntimeNativeMaterializationRequest(
 {
     // The C++ libraries with Wasm exception handling, linked instead when an archive throws or catches C++ exceptions.
     public ImmutableArray<string> ExceptionSystemLibraryPaths { get; init; } = [];
+    // Entry points of the C library functions the program imports, which the runtime exports for it.
+    public ImmutableArray<string> SystemExports { get; init; } = [];
 }

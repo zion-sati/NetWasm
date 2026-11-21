@@ -55,7 +55,7 @@ internal static class Program
         catch (Exception exception)
 #pragma warning restore CA1031
         {
-            logger.Report(new CompilerDiagnostic(DiagnosticCode.HostFailure, exception.Message));
+            logger.Report(services.GetRequiredService<IUnhandledFailureDiagnosticFactory>().Create(exception));
         }
         return 1;
     }

@@ -52,6 +52,27 @@ public sealed class UnlinkedNativeLibraryCompilationTests
             WasmTarget.Wasm32, result.StaticDataEnd));
     }
 
+    // CoreLib's Math and MathF import their libm functions from libc, which every program links: they stay
+    // imports, with no warning, when the project links no native library.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CallsIntoTheCLibraryBindWithoutALinkedLibrary(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileUnsafeSource("UnlinkedNativeFixture", Source);
+        var logs = new CapturingLoggerProvider();
+
+        var result = Compile(Options(assets, assembly, target, entry: "RunMath") with
+        {
+            LinkedNativeLibraries = [],
+        }, logs);
+
+        var imports = WasmModuleInspection.ReadFunctionImports(result.ApplicationModule);
+        Assert.Contains(imports, import => import.Name == "cbrt");
+        Assert.DoesNotContain(logs.Entries, entry => entry.Level == LogLevel.Warning);
+    }
+
     [Fact]
     public void WithoutALinkedLibraryListEveryImportBinds()
     {
@@ -129,6 +150,8 @@ public sealed class UnlinkedNativeLibraryCompilationTests
                     return input + 1;
                 }
             }
+
+            public static int RunMath(int input) => (int)Math.Cbrt(input);
         }
         """;
 }

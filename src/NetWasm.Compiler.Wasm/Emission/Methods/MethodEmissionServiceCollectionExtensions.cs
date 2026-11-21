@@ -3,6 +3,7 @@
 
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Values;
@@ -90,6 +91,7 @@ internal static class MethodEmissionServiceCollectionExtensions
         services.AddSingleton<IBranchComparisonEmitter, BranchComparisonEmitter>();
         services.AddSingleton<IManagedMethodSequenceEmitter,
             ManagedMethodSequenceEmitter>();
+        services.TryAddSingleton<IMethodDefectExceptionFactory, MethodDefectExceptionFactory>();
         services.AddSingleton<IManagedMethodBodyEmitterFactory,
             ManagedMethodBodyEmitterFactory>();
         // Deferred methods are structured with the compile's structuring, which a compile

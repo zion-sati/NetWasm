@@ -18,18 +18,21 @@ internal sealed class ManagedMethodBodyEmitterFactory(
     IAddressTakenAggregatePromotionPlanner addressTakenAggregatePromotions,
     IManagedByRefAggregatePromotionPlanner managedByRefAggregatePromotions,
     IManagedMethodValuePlanBuilder managedValues,
-    ILogger<WasmModuleEmitterFactory> logger) : IManagedMethodBodyEmitterFactory
+    ILogger<WasmModuleEmitterFactory> logger,
+    IMethodDefectExceptionFactory defects) : IManagedMethodBodyEmitterFactory
 {
     public IManagedMethodBodyEmitter Create() =>
-        new ManagedMethodBodyDiagnosticDecorator(
-            new ManagedMethodBodyEmitter(
-                managedMethods,
-                sequences,
-                stackTraceMethodIds,
-                heapSampler,
-                addressTakenScalarPromotions,
-                addressTakenAggregatePromotions,
-                managedByRefAggregatePromotions,
-                managedValues),
-            logger);
+        new MethodAttributingManagedMethodBodyEmitter(
+            new ManagedMethodBodyDiagnosticDecorator(
+                new ManagedMethodBodyEmitter(
+                    managedMethods,
+                    sequences,
+                    stackTraceMethodIds,
+                    heapSampler,
+                    addressTakenScalarPromotions,
+                    addressTakenAggregatePromotions,
+                    managedByRefAggregatePromotions,
+                    managedValues),
+                logger),
+            defects);
 }

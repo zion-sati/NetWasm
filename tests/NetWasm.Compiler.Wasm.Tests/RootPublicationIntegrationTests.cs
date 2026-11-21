@@ -66,12 +66,14 @@ public sealed class RootPublicationIntegrationTests
             {
                 [3] = new(3, [unknown], [unknown]),
             }.ToImmutableDictionary());
-        Assert.Throws<InvalidOperationException>(() => emitter.Emit(
+        // The internal error names the method it occurred in.
+        var failure = Assert.Throws<CompilerException>(() => emitter.Emit(
             constructor,
             new Dictionary<EntityKey, StructuredMethod> { [ConstructorKey] = structured },
             new Dictionary<EntityKey, MethodRootMap> { [ConstructorKey] = invalidMap },
             [],
             ImmutableDictionary<string, EntityKey>.Empty));
+        Assert.Equal("Unknown root source 99.", Assert.IsType<InvalidOperationException>(failure.InnerException).Message);
     }
 
 }
