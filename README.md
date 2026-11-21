@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/netwasm-logo.svg" alt="NetWasm logo" width="112"></p>
+<p align="center"><img src="docs/images/netwasm-logo-slanted.svg" alt="NetWasm logo" width="112"></p>
 
 # NetWasm
 

@@ -10,6 +10,7 @@ using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -113,6 +114,18 @@ public sealed class MethodAttributionTests
             new LoweringStub(() => throw canceled), new MethodDefectExceptionFactory()).Lower(managed)));
     }
 
+    // A compile from stored units catches a replay miss to lower the method afresh; reported as a defect, it would
+    // fail the compile instead.
+    [Fact]
+    public void LoweringLetsAUnitReplayMissThrough()
+    {
+        var managed = WasmMethodLowererTests.CreateManagedMethodBody();
+        var miss = new UnitReplayMissException("No unit of the last compile asked StackTraceDirectMethodId 'Run'.");
+
+        Assert.Same(miss, Assert.Throws<UnitReplayMissException>(() => new MethodAttributingWasmMethodLowerer(
+            new LoweringStub(() => throw miss), new MethodDefectExceptionFactory()).Lower(managed)));
+    }
+
     [Fact]
     public void TheLoweringDecoratorRejectsMissingInputs()
     {
@@ -169,6 +182,18 @@ public sealed class MethodAttributionTests
         Assert.Same(canceled, Assert.Throws<OperationCanceledException>(() =>
             new MethodAttributingManagedMethodBodyEmitter(
                 new EmissionStub(() => throw canceled), new MethodDefectExceptionFactory())
+            .Emit(Definition, default!, default!, default!, default!, default!)));
+    }
+
+    // A compile from stored units catches a replay miss to emit the method afresh; reported as a defect, it would fail
+    // the compile instead, as every compiled-unit replay across edits did.
+    [Fact]
+    public void EmissionLetsAUnitReplayMissThrough()
+    {
+        var miss = new UnitReplayMissException("No unit of the last compile asked StackTraceDirectMethodId 'Run'.");
+
+        Assert.Same(miss, Assert.Throws<UnitReplayMissException>(() => new MethodAttributingManagedMethodBodyEmitter(
+            new EmissionStub(() => throw miss), new MethodDefectExceptionFactory())
             .Emit(Definition, default!, default!, default!, default!, default!)));
     }
 
