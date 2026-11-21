@@ -13,8 +13,8 @@ using static CompilerTestSupport;
 
 // Unsafe.BitCast between values Wasm holds in registers reinterprets them in
 // place. Read through the address of a copy instead, every caller, such as
-// fdlibm's Math.Log through BitConverter.DoubleToUInt64Bits, allocates a value
-// frame on every call.
+// musl's pow ported to C# (Math.Pow) through BitConverter.DoubleToUInt64Bits,
+// allocates a value frame on every call.
 public sealed partial class BitCastFrameCompilationTests
 {
     private const string Source = """
@@ -38,7 +38,7 @@ public sealed partial class BitCastFrameCompilationTests
             private static Vector128<int> Lanes(Vector128<float> value) => Unsafe.BitCast<Vector128<float>, Vector128<int>>(value);
 
             [MethodImpl(MethodImplOptions.NoInlining)]
-            private static double Log(double value) => Math.Log(value);
+            private static double Pow(double value) => Math.Pow(value, 1.5);
 
             [MethodImpl(MethodImplOptions.NoInlining)]
             private static byte Bytes(sbyte value) => Unsafe.BitCast<sbyte, byte>(value);
@@ -96,7 +96,7 @@ public sealed partial class BitCastFrameCompilationTests
                 if (SingleOf(input) != BitConverter.Int32BitsToSingle(input)) return -2;
                 if (Unsigned(-input) != unchecked((uint)-input)) return -3;
                 if (Lanes(Vector128.Create((float)value)).GetElement(2) != BitConverter.SingleToInt32Bits((float)value)) return -4;
-                if (Log(value) != Math.Log(value)) return -5;
+                if (Pow(value) != Math.Pow(value, 1.5)) return -5;
                 if (Bytes((sbyte)-input) != unchecked((byte)-input)) return -6;
                 if (Units("NetWasm".AsSpan(input % 3)) != "NetWasm"[input % 3]) return -7;
                 return input + 1;
@@ -119,7 +119,7 @@ public sealed partial class BitCastFrameCompilationTests
         using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
         var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
         Assert.True(printed.ExitCode == 0, printed.StandardError);
-        string[] probes = ["$EntryPoint::DoubleBits", "$EntryPoint::SingleOf", "$EntryPoint::Unsigned", "$EntryPoint::Lanes", "$System.Math::Log",
+        string[] probes = ["$EntryPoint::DoubleBits", "$EntryPoint::SingleOf", "$EntryPoint::Unsigned", "$EntryPoint::Lanes", "$System.MathPorts::Pow",
             "$EntryPoint::Bytes"];
         var framed = FunctionHeader().Split(printed.StandardOutput).Skip(1)
             .Select(static function => (Name: function[..function.IndexOf(' ', StringComparison.Ordinal)], Body: function))

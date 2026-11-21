@@ -6,11 +6,13 @@ using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
 // Names the method a lowering failure came from. Lowering reports what a method's IL cannot do as a diagnostic; any
-// other exception is a compiler defect, reported against the method instead of as a bare message (issue #259).
+// other exception is a compiler defect, reported against the method instead of as a bare message (issue #259). A unit
+// replay miss is neither: the replay catches it to compile the method afresh, so it passes through as it is.
 internal sealed class MethodAttributingWasmMethodLowerer(
     IWasmMethodLowerer inner,
     IMethodDefectExceptionFactory defects) : IWasmMethodLowerer
@@ -30,7 +32,8 @@ internal sealed class MethodAttributingWasmMethodLowerer(
         {
             return _inner.Lower(method, branchPrefixDuplication, dispatcherElimination);
         }
-        catch (Exception exception) when (exception is not (CompilerException or OperationCanceledException))
+        catch (Exception exception) when (exception is not
+            (CompilerException or OperationCanceledException or UnitReplayMissException))
         {
             throw _defects.Create(method.Method.Definition, method.Method.DeclaringType, "lowering", exception);
         }

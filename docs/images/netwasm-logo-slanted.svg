@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1d1733"/>
+      <stop offset="1" stop-color="#0b0a12"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="11" y1="19" x2="53" y2="45" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e4d9ff"/>
+      <stop offset="1" stop-color="#8a68ff"/>
+    </linearGradient>
+    <clipPath id="band">
+      <rect x="0" y="19" width="64" height="26"/>
+    </clipPath>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="63" height="63" rx="14.5" fill="none" stroke="#b9a6ff" stroke-opacity=".22"/>
+  <g transform="translate(32 32) skewX(-10) translate(-32 -32)">
+    <path d="M11 52V19l21 26V19l21 26V12" clip-path="url(#band)" fill="none" stroke="url(#mark)" stroke-width="6" stroke-linejoin="miter" stroke-miterlimit="12"/>
+  </g>
+</svg>

@@ -6,11 +6,13 @@ using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
 // Names the method an emission failure came from. Emission reports what a method cannot do as a diagnostic; any other
-// exception is a compiler defect, reported against the method instead of as a bare message.
+// exception is a compiler defect, reported against the method instead of as a bare message. A unit replay miss is
+// neither: the replay catches it to compile the method afresh, so it passes through as it is.
 internal sealed class MethodAttributingManagedMethodBodyEmitter(
     IManagedMethodBodyEmitter inner,
     IMethodDefectExceptionFactory defects) : IManagedMethodBodyEmitter
@@ -32,7 +34,8 @@ internal sealed class MethodAttributingManagedMethodBodyEmitter(
         {
             return _inner.Emit(method, callerIdentity, structured, rootMap, target, functionIndices, methodInstance);
         }
-        catch (Exception exception) when (exception is not (CompilerException or OperationCanceledException))
+        catch (Exception exception) when (exception is not
+            (CompilerException or OperationCanceledException or UnitReplayMissException))
         {
             throw _defects.Create(method, methodInstance?.DeclaringType, "emitting", exception);
         }
