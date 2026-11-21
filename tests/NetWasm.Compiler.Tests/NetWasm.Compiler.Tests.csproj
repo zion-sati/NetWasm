@@ -56,5 +56,6 @@
   <ItemGroup>
     <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Correctness/*.mjs;Correctness/*.cjs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Correctness/oracle-libm.json;Correctness/oracle-libm-*.wasm" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
