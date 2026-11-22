@@ -149,6 +149,26 @@ test("a request's body is the guest's stream and its trailers the guest's future
   assert.equal(await drain(types.Request.consumeBody(empty)[0]), "");
 });
 
+// The guest's write into its result future completes only once the host reads the future.
+test("consuming a body reads the guest's result future, failed or not", async () => {
+  const read = [];
+  const result = (label, outcome) => ({
+    then(resolve, reject) {
+      read.push(label);
+      return outcome === "fails" ? reject(new Error("the guest's read failed")) : resolve(ok(undefined));
+    },
+  });
+  const { types, client } = http(async () => new Response("reply"));
+  const [incoming] = types.Request.new(new types.Fields(), undefined, Promise.resolve(ok(undefined)), undefined);
+  types.Request.consumeBody(incoming, result("request"));
+  const { outgoing } = request(types, {});
+  const response = (await client.send(outgoing)).val;
+  const [body] = types.Response.consumeBody(response, result("response", "fails"));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(read, ["request", "response"]);
+  assert.equal(await drain(body), "reply");
+});
+
 test("send runs the request through fetch and streams the response", async () => {
   let seen;
   const { types, client } = http(async (url, init) => {

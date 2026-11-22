@@ -259,6 +259,7 @@ class Request {
   }
 
   static consumeBody(request, res) {
+    readResult(res);
     const consumed = consume(requestState, request, "request");
     return [guestBody(consumed.contents), trailersOf(consumed.trailers)];
   }
@@ -281,6 +282,14 @@ function setText(owner, key, value, pattern) {
   if (value !== undefined && (typeof value !== "string" || !pattern.test(value))) return err(undefined);
   request[key] = value;
   return ok(undefined);
+}
+
+// The guest tells through `res` how its read of the body ended. Nothing here acts on the result,
+// but the guest's write into the future completes only once it is read: until then the guest's
+// call cannot finish, so a service's handler would stay suspended after its response, and a host
+// that keeps the instance (Deno, Node.js) would keep scheduling it.
+function readResult(res) {
+  Promise.resolve(res).catch(() => {});
 }
 
 function consume(map, value, label) {
@@ -331,6 +340,7 @@ class Response {
   }
 
   static consumeBody(response, res) {
+    readResult(res);
     const consumed = consume(responseState, response, "response");
     return [consumed.body, consumed.trailers];
   }

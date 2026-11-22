@@ -108,6 +108,17 @@ dev:
   address: 127.0.0.1:8080
 ```
 
+Spin and wasmCloud offer no `wasi:tls`, so a service that reaches `SslStream`
+directly needs `<NetWasmTlsSupport>false</NetWasmTlsSupport>` there; `HttpClient`
+requests go through the host's `wasi:http` and are not affected.
+
+[NetWasm.Hosts](https://github.com/zion-sati/NetWasm.Hosts) runs the same
+service on more hosts, each checked end to end against the released packages:
+Cloudflare Workers through its NuGet package, with which `dotnet publish` also
+writes a Worker; Kubernetes through SpinKube; Google Cloud Run, Azure Container
+Apps and AWS Fargate through `wasmtime serve` in a container image; and AWS
+Lambda through a `JsModule` in a Node.js function.
+
 Node.js cannot serve WASI 0.3 HTTP components yet: jco and its preview3-shim do
 not serve them correctly.
 
