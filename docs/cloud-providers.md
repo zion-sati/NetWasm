@@ -14,7 +14,7 @@ guides have the complete files.
 | Deno, on your own servers | The component behind `deno serve` | The `NetWasm.Hosts` package: `dotnet publish` also writes the Deno entry |
 | Kubernetes, through SpinKube | The component, on the Spin containerd shim | `spin registry push`, then a `SpinApp` |
 | Google Cloud Run, Azure Container Apps, AWS Fargate | The component, served by Wasmtime in a container | A small container image |
-| AWS Lambda | C# called from a Node.js function | A `JsModule` project for the `node` host |
+| AWS Lambda, Azure Functions, Google Cloud Run functions | C# called from a Node.js function | A `JsModule` project for the `node` host and the provider's handler |
 | Your own servers | The component | Wasmtime, Spin or wasmCloud, as in [HTTP services](http-services.md) |
 
 Start from the template's service:
@@ -170,10 +170,10 @@ against its SHA-256 and runs as `nobody`; NetWasm.Hosts'
 [guide](https://github.com/zion-sati/NetWasm.Hosts/blob/main/docs/containers.md)
 keeps this Dockerfile current.
 
-## AWS Lambda
+## AWS Lambda, Azure Functions and Google Cloud Run functions
 
-Lambda runs Node.js functions, so C# reaches it as a `JsModule` for the `node`
-host, whose exports a Node.js handler calls:
+These run Node.js functions, so C# reaches them as a `JsModule` for the `node`
+host, whose exports a Node.js handler calls. One project serves all three:
 
 ```xml
 <Project Sdk="NetWasm.Sdk">
@@ -193,9 +193,16 @@ public static partial class Exports
 {
     [JSExport("handle")]
     public static Task<string> Handle(string method, string path, string body) =>
-        Task.FromResult($"Hello from C# on Lambda: {method} {path} ({body.Length} bytes)\n");
+        Task.FromResult($"Hello from C#: {method} {path} ({body.Length} bytes)\n");
 }
 ```
+
+`dotnet publish -c Release -o function` writes `Functions.node.mjs` and the
+files it loads; the provider's handler goes beside them, opens the module once
+and calls it for each request. `HttpClient` in C# makes its requests with
+Node.js's `fetch`.
+
+### AWS Lambda
 
 ```js
 // index.mjs
@@ -225,9 +232,79 @@ aws lambda create-function --function-name hello --runtime nodejs24.x --handler 
 ```
 
 The handler above takes a function URL's or an API Gateway HTTP API's request.
-`HttpClient` in C# makes its requests with Node.js's `fetch`. NetWasm.Hosts'
+NetWasm.Hosts'
 [guide](https://github.com/zion-sati/NetWasm.Hosts/blob/main/docs/aws-lambda.md)
 runs the same function locally in AWS's Lambda image first.
+
+### Azure Functions
+
+An HTTP trigger in the Node.js v4 programming model, with `@azure/functions` in
+`package.json` (whose `main` is `index.mjs`) and a `host.json` that sets the
+HTTP `routePrefix` to `""`, so the trigger answers every path:
+
+```js
+// index.mjs
+import { app } from "@azure/functions";
+import { open } from "./Functions.node.mjs";
+
+const opened = open();
+
+app.http("hello", {
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  authLevel: "anonymous",
+  route: "{*path}",
+  handler: async request => {
+    const service = await opened;
+    return {
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      body: await service.handle(request.method, new URL(request.url).pathname, await request.text()),
+    };
+  },
+});
+```
+
+```sh
+dotnet publish -c Release -o function
+cp index.mjs host.json package.json package-lock.json function/
+cd function && npm ci --omit=dev
+func azure functionapp publish <app name>
+```
+
+Node.js 24 runs on the Flex Consumption plan. NetWasm.Hosts'
+[guide](https://github.com/zion-sati/NetWasm.Hosts/blob/main/docs/azure-functions.md)
+has every file and runs the function locally in Microsoft's Functions host
+image first.
+
+### Google Cloud Run functions
+
+An HTTP function for Google's Functions Framework, with
+`@google-cloud/functions-framework` in `package.json` (`"type": "module"`,
+`main` `index.js`):
+
+```js
+// index.js
+import * as functions from "@google-cloud/functions-framework";
+import { open } from "./Functions.node.mjs";
+
+const opened = open();
+
+functions.http("hello", async (request, response) => {
+  const service = await opened;
+  const body = request.rawBody?.toString("utf8") ?? "";
+  response.type("text/plain").send(await service.handle(request.method, request.path, body));
+});
+```
+
+```sh
+dotnet publish -c Release -o function
+cp index.js package.json package-lock.json function/
+gcloud run deploy hello --source function --function hello --base-image nodejs24 --region <region> \
+  --allow-unauthenticated
+```
+
+NetWasm.Hosts'
+[guide](https://github.com/zion-sati/NetWasm.Hosts/blob/main/docs/cloud-run-functions.md)
+has every file and serves the function locally with the framework first.
 
 ## What every host shares
 

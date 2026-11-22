@@ -117,7 +117,8 @@ service on more hosts, each checked end to end against the released packages:
 Cloudflare Workers and Deno through its NuGet package, with which `dotnet
 publish` also writes what each runs; Kubernetes through SpinKube; Google Cloud Run, Azure Container
 Apps and AWS Fargate through `wasmtime serve` in a container image; and AWS
-Lambda through a `JsModule` in a Node.js function.
+Lambda, Azure Functions and Google Cloud Run functions through a `JsModule` in
+a Node.js function.
 [Running on cloud providers](cloud-providers.md) has the steps for each.
 
 Node.js cannot serve WASI 0.3 HTTP components yet: jco and its preview3-shim do
