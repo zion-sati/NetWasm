@@ -19,8 +19,9 @@ repository.
 - [HTTP services](http-services.md): a `wasi:http` component in C#, and how
   Wasmtime, Spin and wasmCloud serve it.
 - [Running on cloud providers](cloud-providers.md): the same service on
-  Cloudflare Workers, Deno, Kubernetes, container platforms and Node.js
-  functions (AWS Lambda, Azure Functions, Google Cloud Run functions).
+  Cloudflare Workers, Deno, Netlify, Vercel, Akamai Functions, Kubernetes,
+  container platforms and Node.js functions (AWS Lambda, Azure Functions,
+  Google Cloud Run functions).
 - [Publishing and deployment](deployment.md): what to deploy for each host,
   serving, caching, compression and size.
 - [Security](security.md): what a program can reach, startup's integrity checks

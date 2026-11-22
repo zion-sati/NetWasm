@@ -12,6 +12,9 @@ guides have the complete files.
 | --- | --- | --- |
 | Cloudflare Workers | The component inside a Worker | The `NetWasm.Hosts` package: `dotnet publish` also writes the Worker |
 | Deno, on your own servers | The component behind `deno serve` | The `NetWasm.Hosts` package: `dotnet publish` also writes the Deno entry |
+| Netlify Edge Functions | The component inside an edge function | The `NetWasm.Hosts` package: `dotnet publish` also writes the site |
+| Vercel Functions | The component inside a Node.js function | The `NetWasm.Hosts` package: `dotnet publish` also writes the project |
+| Akamai Functions | The component, as a Spin application | A Spin manifest, then `spin aka deploy` |
 | Kubernetes, through SpinKube | The component, on the Spin containerd shim | `spin registry push`, then a `SpinApp` |
 | Google Cloud Run, Azure Container Apps, AWS Fargate | The component, served by Wasmtime in a container | A small container image |
 | AWS Lambda, Azure Functions, Google Cloud Run functions | C# called from a Node.js function | A `JsModule` project for the `node` host and the provider's handler |
@@ -27,11 +30,11 @@ cd Hello
 
 ## Cloudflare Workers
 
-Add the `NetWasm.Hosts` package, whose version is the NetWasm version the
-project builds with, and name the host:
+Add the `NetWasm.Hosts` package, whose version starts with the NetWasm version
+the project builds with, and name the host:
 
 ```sh
-dotnet add package NetWasm.Hosts --version <the project's NetWasm.Sdk version>
+dotnet add package NetWasm.Hosts --version <the project's NetWasm.Sdk version, or a later revision of it>
 ```
 
 ```xml
@@ -78,6 +81,61 @@ deno serve --allow-read --allow-net --allow-env main.mjs     # http://localhost:
 The component's environment is its `NetWasmEnvironmentVariable` items, each
 replaced by the process's variable of the same name when it has one; no other
 variable of the process reaches it.
+
+Deno Deploy is not covered: Deno is closing it in April 2027 and moving its
+users to Cloudflare Workers.
+
+## Netlify Edge Functions
+
+The same package publishes a Netlify site whose edge function serves every
+path: name `netlify` among the hosts.
+
+```sh
+cd publish/netlify
+npx netlify-cli dev           # http://localhost:8888
+npx netlify-cli deploy --prod
+```
+
+Netlify's bundler carries JavaScript modules but no `.wasm` files, so each of
+the component's core modules comes embedded in a module beside the edge
+function, compiled once per isolate. The site's environment variables reach the
+component in place of the declared ones of the same name. An edge function gets
+50 ms of CPU time per request and 20 MB of code. NetWasm.Hosts checks the edge
+function in `netlify dev`'s local edge runtime, not on Netlify itself.
+
+## Vercel Functions
+
+Name `vercel` among the hosts, and `dotnet publish` also writes a Vercel project
+whose function runs on the Node.js runtime, which Vercel recommends over its
+Edge runtime:
+
+```sh
+cd publish/vercel
+npx vercel deploy --prod
+```
+
+`vercel.json` sends every path to the function and ships the core modules with
+it; `package.json` selects Node.js 24. The function's environment variables reach
+the component in place of the declared ones of the same name. NetWasm.Hosts
+checks the function by calling its `fetch` export on Node.js 24, as Vercel's
+runtime does, not on Vercel itself.
+
+## Akamai Functions
+
+Akamai Functions runs Spin applications (Spin 4.0.0 or later), so the component
+runs there as it is. Put a Spin manifest beside the project, like SpinKube's
+below but with `source = "publish/Hello.wasm"`, then:
+
+```sh
+dotnet publish -c Release -o publish
+spin plugin install aka
+spin aka login
+spin aka deploy
+```
+
+NetWasm.Hosts'
+[guide](https://github.com/zion-sati/NetWasm.Hosts/blob/main/docs/akamai-functions.md)
+has the manifest, which its checks serve with `spin up` on Spin 4.3.0.
 
 ## Kubernetes, through SpinKube
 
@@ -311,8 +369,8 @@ has every file and serves the function locally with the framework first.
 - Each request gets a new instance of the component where NetWasm.Hosts runs
   it, released once the response has been sent; Wasmtime, Spin and SpinKube
   manage instances themselves.
-- Workers, Deno, Spin, SpinKube and wasmCloud offer no `wasi:tls`, so a service that
+- Workers, Deno, Netlify, Vercel, Spin, Akamai Functions, SpinKube and wasmCloud offer no `wasi:tls`, so a service that
   reaches `SslStream` directly needs
   `<NetWasmTlsSupport>false</NetWasmTlsSupport>` there; `HttpClient` requests go
   through the host's `wasi:http` and are not affected.
-- A Worker has no file system, so the component sees no preopened directories.
+- The component sees no preopened directories on any host NetWasm.Hosts publishes for.
