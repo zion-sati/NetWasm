@@ -114,8 +114,9 @@ requests go through the host's `wasi:http` and are not affected.
 
 [NetWasm.Hosts](https://github.com/zion-sati/NetWasm.Hosts) runs the same
 service on more hosts, each checked end to end against the released packages:
-Cloudflare Workers and Deno through its NuGet package, with which `dotnet
-publish` also writes what each runs; Kubernetes through SpinKube; Google Cloud Run, Azure Container
+Cloudflare Workers, Deno, Netlify Edge Functions and Vercel Functions through
+its NuGet package, with which `dotnet publish` also writes what each runs;
+Akamai Functions as a Spin application; Kubernetes through SpinKube; Google Cloud Run, Azure Container
 Apps and AWS Fargate through `wasmtime serve` in a container image; and AWS
 Lambda, Azure Functions and Google Cloud Run functions through a `JsModule` in
 a Node.js function.
