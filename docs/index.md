@@ -18,6 +18,8 @@ repository.
   host grants and how to grant more.
 - [HTTP services](http-services.md): a `wasi:http` component in C#, and how
   Wasmtime, Spin and wasmCloud serve it.
+- [Running on cloud providers](cloud-providers.md): the same service on
+  Cloudflare Workers, Kubernetes, container platforms and AWS Lambda.
 - [Publishing and deployment](deployment.md): what to deploy for each host,
   serving, caching, compression and size.
 - [Security](security.md): what a program can reach, startup's integrity checks

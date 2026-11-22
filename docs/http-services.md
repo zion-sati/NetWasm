@@ -114,10 +114,11 @@ requests go through the host's `wasi:http` and are not affected.
 
 [NetWasm.Hosts](https://github.com/zion-sati/NetWasm.Hosts) runs the same
 service on more hosts, each checked end to end against the released packages:
-Cloudflare Workers through its NuGet package, with which `dotnet publish` also
-writes a Worker; Kubernetes through SpinKube; Google Cloud Run, Azure Container
+Cloudflare Workers and Deno through its NuGet package, with which `dotnet
+publish` also writes what each runs; Kubernetes through SpinKube; Google Cloud Run, Azure Container
 Apps and AWS Fargate through `wasmtime serve` in a container image; and AWS
 Lambda through a `JsModule` in a Node.js function.
+[Running on cloud providers](cloud-providers.md) has the steps for each.
 
 Node.js cannot serve WASI 0.3 HTTP components yet: jco and its preview3-shim do
 not serve them correctly.

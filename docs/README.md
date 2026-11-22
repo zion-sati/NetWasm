@@ -19,6 +19,7 @@ use, their `net10.0`, `net8.0` or .NET Standard builds, as it would for any
 | [DOM and Canvas from C#](dom-and-canvas.md) | Read and change the page, handle events, draw every animation frame |
 | [C# Web Workers](web-workers.md) | Run C# off the page's thread and call it through a generated client |
 | [HTTP services](http-services.md) | Serve HTTP from a `wasi:http` component with `HttpRequestMessage` and `HttpResponseMessage` |
+| [Running on cloud providers](cloud-providers.md) | Cloudflare Workers, Deno, Kubernetes, Cloud Run, Container Apps, Fargate and Lambda |
 | [Files, network and other host capabilities](host-capabilities.md) | What a program can reach and how a host grants it |
 | [Time zones](timezone-assets.md) | Ship time zone data and set the program's zone |
 | [Packages and libraries](netstandard-libraries.md) | Which NuGet packages work, what fails and why, and writing libraries that work everywhere |
