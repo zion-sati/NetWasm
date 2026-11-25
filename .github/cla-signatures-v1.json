@@ -1,3 +1,12 @@
 {
-  "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "unsafePtr",
+      "id": 22746240,
+      "comment_id": 7158937600,
+      "created_at": "2026-11-25T09:53:25Z",
+      "repoId": 1329713712,
+      "pullRequestNo": 267
+    }
+  ]
 }
