@@ -170,9 +170,15 @@ layouts,
     public void Memory32AtRootFrameBaseUses32BitAddressInstructions()
     {
         var program = new FakeProgram();
-        var emitter = CreateEmitter(WasmTarget.Wasm32);
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
+        var writers = new RecordingWriterFactory();
+        var emitter = new FilterFuncletEmitter(
+            layouts,
+            CreateValueFrameLayoutPlanner(program, layouts),
+            new ExceptionPayloadBlockEmitter(layouts),
+            writers);
 
-        var emission = emitter.Emit(
+        emitter.Emit(
             new FilterFunclet(
                 1,
                 new ManagedMethodIdentity("test-filter"),
@@ -182,8 +188,10 @@ layouts,
             EmptyRootMap(),
             CreateSequence());
 
-        Assert.Contains(WasmOpcodes.I32Load, emission.Body);
-        Assert.Contains(WasmOpcodes.I32Constant, emission.Body);
+        var instructions = writers.Instructions.ToInstructions();
+        Assert.Equal(WasmOpcodes.LocalGet, instructions[0].Opcode);
+        Assert.Equal(1u, instructions[0].Operand.UnsignedValue);
+        Assert.Equal(WasmOpcodes.I32Load, instructions[1].Opcode);
     }
 
     [Fact]
@@ -373,7 +381,7 @@ layouts,
         };
 
     private static FilterEnvironmentLayout CreateEnvironment(int rootFrameOffset) =>
-        new(16, rootFrameOffset, 8, []);
+        new(Size: 16, RootSlotCount: 0, RootFrameOffset: rootFrameOffset, Captures: []);
 
     private static MethodRootMap EmptyRootMap() => new(EntryKey, [], []);
 
