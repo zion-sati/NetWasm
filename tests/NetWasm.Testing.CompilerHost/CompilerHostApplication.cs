@@ -60,6 +60,9 @@ internal sealed class CompilerHostApplication(
                 StructuredDiagnostics: request.StructuredDiagnostics,
                 Optimization: request.Optimization)
             {
+                // The dev-loop levels lane (NETWASM_TEST_OPTIMIZATION O0 or None) proves each program reaches the host
+                // imports O1 reaches.
+                VerifyImportParity = Environment.GetEnvironmentVariable("NETWASM_TEST_OPTIMIZATION") is "O0" or "None",
                 Collector = request.GarbageCollector is { } collector
                     ? RuntimeCollector.Named(collector) ??
                         throw new InvalidOperationException($"'{collector}' names no collector")

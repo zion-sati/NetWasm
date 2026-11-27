@@ -40,14 +40,16 @@ internal sealed record UnitStackTraces(
 /// What a compile's whole-program analysis found that a method analyzed alone needs: the
 /// allocated types its dispatch and type tests resolve against, every method's identity,
 /// and the by-ref effects of methods that have any, with the methods each by-ref analysis
-/// read effects from.
+/// read effects from; and, where the unwritten-field fold ran, the static fields reachable code
+/// writes, outside which a method analyzed alone would read a field a full compile folds.
 /// </summary>
 internal sealed record UnitProgramFacts(
     ImmutableArray<CliTypeIdentity> AllocatedTypes,
     IReadOnlyDictionary<EntityKey, string> DirectMethods,
     ImmutableArray<string> ConstructedMethods,
     IReadOnlyDictionary<string, ManagedByRefMethodEffects> ByRefEffects,
-    IReadOnlyDictionary<string, ImmutableArray<string>> ByRefCallees);
+    IReadOnlyDictionary<string, ImmutableArray<string>> ByRefCallees,
+    ImmutableHashSet<EntityKey>? WrittenStaticFields = null);
 
 /// <summary>The runtime object offsets a compile laid out, as its plans keep them.</summary>
 internal sealed record UnitRuntimeObjectLayout(
@@ -74,7 +76,7 @@ internal sealed record UnitRuntimeObjectLayout(
 internal static class UnitPlanCodec
 {
     private const uint Magic = 0x4C504E4E; // "NNPL"
-    private const int Version = 19;
+    private const int Version = 20;
 
     public static byte[] Encode(InstructionModuleTarget target, IRuntimeObjectLayout runtimeObjects, UnitProgramFacts program)
     {
@@ -282,6 +284,16 @@ internal static class UnitPlanCodec
             writer.Int(callees.Length);
             foreach (var callee in callees) writer.String(callee);
         }
+        writer.Bool(program.WrittenStaticFields is not null);
+        if (program.WrittenStaticFields is { } written)
+        {
+            writer.Int(written.Count);
+            foreach (var field in written.OrderBy(key => key.Assembly.Name, StringComparer.Ordinal)
+                .ThenBy(key => key.MetadataToken))
+            {
+                writer.Entity(field);
+            }
+        }
     }
 
     private static UnitProgramFacts Program(UnitModelReader reader)
@@ -318,7 +330,15 @@ internal static class UnitPlanCodec
             for (var callee = 0; callee < calleeCount; callee++) list.Add(reader.String()!);
             callees.Add(identity, list.MoveToImmutable());
         }
-        return new(allocated.MoveToImmutable(), direct, constructed.MoveToImmutable(), effects, callees);
+        ImmutableHashSet<EntityKey>? writtenStaticFields = null;
+        if (reader.Bool())
+        {
+            count = reader.Int();
+            var written = ImmutableHashSet.CreateBuilder<EntityKey>();
+            for (var index = 0; index < count; index++) written.Add(reader.Entity());
+            writtenStaticFields = written.ToImmutable();
+        }
+        return new(allocated.MoveToImmutable(), direct, constructed.MoveToImmutable(), effects, callees, writtenStaticFields);
     }
 
     private static void Arguments(UnitModelWriter writer, ImmutableHashSet<int> arguments)

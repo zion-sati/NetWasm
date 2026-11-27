@@ -14,10 +14,12 @@ namespace NetWasm.Compiler.Analysis.Constants;
 // NullReferenceException: the call becomes a throw of its receiver (a throw of null raises that exception), its other
 // arguments' pushes go, and the code after it is unreachable, which the specializer removes. MemoryMarshal.TryGetArray's
 // MemoryManager<T> path, in a program that makes no MemoryManager<T>, then no longer takes a local's address, so a
-// caller it is inlined into needs no frame for it.
+// caller it is inlined into needs no frame for it. In a receiver flow audit build, a call whose bound admitted no
+// target keeps its dispatch, so a receiver the bound missed fails the audit there instead of being thrown here.
 internal sealed class UnimplementedVirtualCallProgramReducer(
     IDelegateTypeRecognizer delegates,
-    IMethodSpecializer rewrites) : IReachableProgramReducer
+    IMethodSpecializer rewrites,
+    bool auditsReceivers = false) : IReachableProgramReducer
 {
     private readonly IDelegateTypeRecognizer _delegates = delegates ?? throw new ArgumentNullException(nameof(delegates));
     private readonly IMethodSpecializer _rewrites = rewrites ?? throw new ArgumentNullException(nameof(rewrites));
@@ -45,7 +47,7 @@ internal sealed class UnimplementedVirtualCallProgramReducer(
                     // Targets the receiver flow chose are empty because nothing reached the call on the paths the flow
                     // follows, not because nothing implements the method: a receiver it missed fails loudly where the
                     // call dispatches (InvalidCastException), rather than being thrown here in place of an exception.
-                    site.PreciseTargets)
+                    site.PreciseTargets || auditsReceivers && site.BoundedTargets)
                 {
                     continue;
                 }

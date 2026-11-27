@@ -71,12 +71,11 @@ internal sealed class UnwrittenStaticFieldProgramReducer(
     // type has no constant load.
     private CilInstruction? Default(FieldDefinitionModel field)
     {
-        if (!field.IsStatic || field.IsLiteral || !field.InitialData.IsDefaultOrEmpty ||
-            StaticFieldConstantLoads.Storage(field.SignatureType, _typeDefinitions) is not { } storage)
+        if (!StaticFieldConstantLoads.HoldsFoldableDefault(field, _typeDefinitions))
         {
             return null;
         }
-        var (reference, type) = storage;
+        var (reference, type) = StaticFieldConstantLoads.Storage(field.SignatureType, _typeDefinitions)!.Value;
         return StaticFieldConstantLoads.Load(reference, type, StaticFieldConstantLoads.StackKind(reference, type), 0, 0);
     }
 

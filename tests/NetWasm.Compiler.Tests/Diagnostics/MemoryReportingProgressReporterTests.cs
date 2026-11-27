@@ -41,6 +41,22 @@ public sealed class MemoryReportingProgressReporterTests
         Assert.True(timer.Disposed);
     }
 
+    // A failed compilation reports Failed instead of Complete: its timer stops there, so nothing logs into the
+    // failed compilation's diagnostic log once that log is closed.
+    [Fact]
+    public void AFailedCompilationStopsTheTimer()
+    {
+        var (reporter, _, logger, time) = Create();
+        reporter.Report(CompilerProgressStage.Start);
+        time.Advance(TimeSpan.FromSeconds(3));
+
+        reporter.Report(CompilerProgressStage.Failed);
+
+        var timer = Assert.Single(time.Timers);
+        Assert.True(timer.Disposed);
+        Assert.Equal(2, logger.Messages.Count);
+    }
+
     [Fact]
     public void ANewCompilationRestartsTheClockAndTheTimer()
     {

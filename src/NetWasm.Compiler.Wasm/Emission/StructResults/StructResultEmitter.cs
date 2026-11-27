@@ -46,5 +46,6 @@ internal sealed class StructResultEmitter(ITargetLayout layouts) : IStructResult
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)locals[index])));
             ManagedMemoryEmitter.EmitStoreByType(code, _layouts.Target, field.Offset, field.Type, field.Size, scratch);
         }
+        StructPaddingEmitter.Emit(code, _layouts.Target, shape, emitAddress);
     }
 }

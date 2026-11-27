@@ -73,6 +73,7 @@ internal static class PipelineServiceCollectionExtensions
             NetWasm.Compiler.Metadata.Inputs.CompilationInputReader>();
         services.AddSingleton<ICompilationInputDetector, CompilationInputDetector>();
         services.AddSingleton<ICompilationInputRecorder, CompilationInputRecorder>();
+        services.AddSingleton<IImportParityVerifier, ImportParityVerifier>();
         services.AddSingleton<CompilationPipelineExecutor>();
         // A function over an engine limit repeats the compile with less inlining into its method.
         services.AddSingleton<ICompilationPipelineExecutor>(static provider =>

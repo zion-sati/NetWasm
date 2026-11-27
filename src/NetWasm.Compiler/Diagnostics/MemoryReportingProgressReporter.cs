@@ -63,7 +63,9 @@ internal sealed class MemoryReportingProgressReporter : ICompilerProgressReporte
                 }
             }
             Log();
-            if (stage == CompilerProgressStage.Complete)
+            // A compilation ends with Complete or Failed; its timer must not outlive it, or it would log into the
+            // compilation's diagnostic log after that log is closed.
+            if (stage is CompilerProgressStage.Complete or CompilerProgressStage.Failed)
             {
                 StopTimer();
             }

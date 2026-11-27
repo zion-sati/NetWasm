@@ -24,13 +24,14 @@ public sealed class StructResultEmissionTests
     private static readonly CliTypeIdentity Wide = CliTypeIdentity.Named(Assembly, "Fixture", "Wide", true);
     private static readonly CliTypeIdentity Kept = CliTypeIdentity.Named(Assembly, "Fixture", "Kept", true);
 
-    // Task: a reference, an int, a short; Pair: two ints; Wide: a long and a reference; Kept: through a buffer.
+    // Task: a reference, an int, a short and two bytes of padding; Pair: two ints; Wide: a long and a reference; Kept:
+    // through a buffer.
     private static readonly Dictionary<CliTypeIdentity, StructResultShape> Shapes = new()
     {
         [Task] = new(Task, [new(0, 4, Object, CliValueKind.ManagedReference), new(4, 4, Int32, CliValueKind.I4),
-            new(8, 2, Int16, CliValueKind.I4)]),
-        [Pair] = new(Pair, [new(0, 4, Int32, CliValueKind.I4), new(4, 4, Int32, CliValueKind.I4)]),
-        [Wide] = new(Wide, [new(0, 8, Int64, CliValueKind.I8), new(8, 4, Object, CliValueKind.ManagedReference)]),
+            new(8, 2, Int16, CliValueKind.I4)], 12),
+        [Pair] = new(Pair, [new(0, 4, Int32, CliValueKind.I4), new(4, 4, Int32, CliValueKind.I4)], 8),
+        [Wide] = new(Wide, [new(0, 8, Int64, CliValueKind.I8), new(8, 4, Object, CliValueKind.ManagedReference)], 16),
     };
 
     // The method's own return and every managed call's count; a kind takes the most any one shape holds, so Task's
@@ -69,7 +70,8 @@ public sealed class StructResultEmissionTests
     }
 
     // A load reads each field from the address at its offset as a field load of its type and size does; a store takes
-    // the results off the stack last first, then stores each at its offset.
+    // the results off the stack last first, stores each at its offset, then writes the padding the fields leave as
+    // zeros (Task's two bytes after its short), as a whole copy of a value read from zeroed memory would.
     [Fact]
     public void LoadsAndStoresMoveEachFieldAsAFieldAccessDoes()
     {
@@ -91,6 +93,7 @@ public sealed class StructResultEmissionTests
             ((byte)WasmOpcodes.LocalGet, 3u), ((byte)WasmOpcodes.LocalGet, 9u), ((byte)WasmOpcodes.I32Store, 0u),
             ((byte)WasmOpcodes.LocalGet, 3u), ((byte)WasmOpcodes.LocalGet, 7u), ((byte)WasmOpcodes.I32Store, 4u),
             ((byte)WasmOpcodes.LocalGet, 3u), ((byte)WasmOpcodes.LocalGet, 8u), ((byte)WasmOpcodes.I32Store16, 8u),
+            ((byte)WasmOpcodes.LocalGet, 3u), ((byte)WasmOpcodes.I32Constant, 0u), ((byte)WasmOpcodes.I32Store16, 10u),
         ], Summary(store));
         Assert.Throws<ArgumentException>(() => emitter.Emit(store, Shapes[Task], [9, 7], Address));
     }

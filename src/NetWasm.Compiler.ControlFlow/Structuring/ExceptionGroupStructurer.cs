@@ -254,11 +254,11 @@ internal sealed class ExceptionGroupStructurer(
                     ..source.Regions.Select((region, clauseIndex) =>
                         new StructuredExceptionClauseDraft(
                             region,
-                            BuildNestedExceptionRange(
+                            Handler(region, BuildNestedExceptionRange(
                                 region.HandlerOffset,
                                 region.HandlerLength,
                                 ExceptionScopeKind.Handler,
-                                clauseIndex),
+                                clauseIndex)),
                             region.FilterOffset is int filterOffset
                                 ? BuildNestedExceptionRange(
                                     filterOffset,
@@ -277,6 +277,12 @@ internal sealed class ExceptionGroupStructurer(
                     ? null
                     : state.Graph.GetBlockAtOffset(continuationBoundary).Index,
             };
+
+            // A finally or fault handler is left by falling out of its end, so its endfinally ends it.
+            static StructuredSequenceDraft Handler(CilExceptionRegion region, StructuredSequenceDraft body) =>
+                region.Kind is CilExceptionRegionKind.Finally or CilExceptionRegionKind.Fault
+                    ? EndFinallyPlacement.EndLast(body)
+                    : body;
 
             // The next child in the same scope (children are in try order), or the scope's end.
             int FindChildContinuationBoundary(ExceptionGroupSource child)

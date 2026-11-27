@@ -78,7 +78,8 @@ public sealed class CompilationMetricsIntegrationTests
         Assert.True(report.Stages.Single(stage =>
             stage.Stage == CompilerMetricStage.LoweringAndEmission)
             .Counters["moduleBytes"] > 0);
-        Assert.Equal(Enum.GetValues<CompilerProgressStage>(), progress.Stages);
+        Assert.Equal(Enum.GetValues<CompilerProgressStage>().Where(stage => stage != CompilerProgressStage.Failed),
+            progress.Stages);
     }
 
     [Fact]

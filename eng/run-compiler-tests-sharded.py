@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+# SPDX-License-Identifier: MIT
 """Runs NetWasm.Compiler.Tests in isolated, duration-balanced processes: one per logical CPU, each running its tests
 one at a time. Every test compiles a whole program, so one test process running many of them in parallel fragments
 its large object heap until the GC collects back to back, and is far slower than several processes; `dotnet test` on

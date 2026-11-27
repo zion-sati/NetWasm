@@ -122,8 +122,12 @@ internal sealed class ClosureReceiverFlowFactory(
 // candidates its calls admit go back to the closure's queue.
 internal sealed class ClosureReceiverFlow
 {
-    private readonly ReceiverFlowEngine? _engine;
-    private readonly ReachabilityLedger _ledger;
+    // The engine, the gate and the build's ledger serve the build only: once it has finished (SiteAdmissions), the flow
+    // keeps what the builds after it replay, so the first build's graph and ledger are not held into the next build.
+    private ReceiverFlowEngine? _engine;
+    private ReachabilityLedger? _ledger;
+    private ReceiverFlowDispatchGate? _gate;
+    private (ImmutableDictionary<string, ReceiverFlowAdmission> Sites, Admissions Replay)? _finished;
     // What a replay admits: the first build's slot admissions and call admissions.
     private readonly Dictionary<DispatchSlot, (HashSet<CliTypeIdentity> Receivers, List<FlowBound> Bounds)> _slots = [];
     private readonly IReadOnlyDictionary<string, MethodCalls>? _replayedMethods;
@@ -142,19 +146,23 @@ internal sealed class ClosureReceiverFlow
         _failOnUnreachedBodies = failOnUnreachedBodies && policy == ReceiverFlowDispatchPolicy.EveryVirtualCall;
         _ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
         _engine = new ReceiverFlowEngine(services, new ReachabilityLedgerFlowView(ledger, entryPoint, exports, roots));
-        Gate = new ReceiverFlowDispatchGate(_engine.Graph.Within, policy);
+        _gate = new ReceiverFlowDispatchGate(_engine.Graph.Within, policy);
     }
 
     private ClosureReceiverFlow(Admissions admissions, Func<CliTypeIdentity, FlowBound, bool> within,
         ReachabilityLedger ledger, ReceiverFlowDispatchPolicy policy)
     {
         _ledger = ledger;
-        Gate = new ReceiverFlowDispatchGate(within, policy, passesUnknownSlots: true);
-        foreach (var (slot, (receivers, bounds)) in admissions.Slots) Gate.Admit(slot, receivers, bounds);
+        _gate = new ReceiverFlowDispatchGate(within, policy, passesUnknownSlots: true);
+        foreach (var (slot, (receivers, bounds)) in admissions.Slots) _gate.Admit(slot, receivers, bounds);
         _replayedMethods = admissions.Methods;
     }
 
-    public ReceiverFlowDispatchGate Gate { get; }
+    public ReceiverFlowDispatchGate Gate =>
+        _gate ?? throw new InvalidOperationException("the receiver flow's build has finished: its gate is released");
+
+    private ReachabilityLedger Ledger =>
+        _ledger ?? throw new InvalidOperationException("the receiver flow's build has finished: its ledger is released");
 
     // What a finished build admitted: by slot use, and for each method its gated calls (offset and declaration) with
     // each call's admission.
@@ -166,11 +174,13 @@ internal sealed class ClosureReceiverFlow
         ImmutableHashSet<(int Offset, string Declaration)> Calls,
         IReadOnlyDictionary<string, ReceiverFlowAdmission> Sites);
 
-    internal Admissions Admitted()
+    internal Admissions Admitted() => _finished?.Replay ??
+        throw new InvalidOperationException("the receiver flow's first build has not finished: nothing to replay");
+
+    private Admissions ReplayOf(ImmutableDictionary<string, ReceiverFlowAdmission> sites)
     {
-        var sites = SiteAdmissions();
         var methods = new Dictionary<string, MethodCalls>(StringComparer.Ordinal);
-        foreach (var group in GatedCalls(_ledger).GroupBy(static call => call.Declaration.Caller, StringComparer.Ordinal))
+        foreach (var group in GatedCalls(Ledger).GroupBy(static call => call.Declaration.Caller, StringComparer.Ordinal))
         {
             methods.Add(group.Key, new(
                 group.Select(static call => (call.Declaration.IlOffset, call.Declaration.Declaration.CanonicalName))
@@ -241,7 +251,7 @@ internal sealed class ClosureReceiverFlow
         }
         foreach (var (candidate, _) in releases.OrderBy(static item => item.Order))
         {
-            _ledger.PendingDispatches.Enqueue((candidate.Slot, candidate.Declaration, candidate.Receiver));
+            Ledger.PendingDispatches.Enqueue((candidate.Slot, candidate.Declaration, candidate.Receiver));
             released++;
         }
         return released;
@@ -256,7 +266,7 @@ internal sealed class ClosureReceiverFlow
         if (_replayedMethods is not null)
         {
             var replayed = ImmutableDictionary.CreateBuilder<string, ReceiverFlowAdmission>(StringComparer.Ordinal);
-            foreach (var group in GatedCalls(_ledger).GroupBy(static call => call.Declaration.Caller, StringComparer.Ordinal))
+            foreach (var group in GatedCalls(Ledger).GroupBy(static call => call.Declaration.Caller, StringComparer.Ordinal))
             {
                 if (!_replayedMethods.TryGetValue(group.Key, out var first) ||
                     !first.Calls.SetEquals(group.Select(static call =>
@@ -271,21 +281,57 @@ internal sealed class ClosureReceiverFlow
             }
             return replayed.ToImmutable();
         }
+        if (_finished is { } finished) return finished.Sites;
+        // The sites of one slot use with the same bounds admit the same of its targets: each slot use's expansion by a set
+        // of bounds is computed once, and its sites share it wherever what reached them is within it (on the three-app
+        // repro at Oz, 155,391 sites had held 92.8 million admitted receivers in about 9,700 distinct sets).
+        var expansions = new Dictionary<(DispatchSlot Slot, string Bounds), ImmutableHashSet<CliTypeIdentity>>();
         var result = ImmutableDictionary.CreateBuilder<string, ReceiverFlowAdmission>(StringComparer.Ordinal);
         foreach (var (site, slot, receivers, bounds) in GatedAdmissions())
         {
-            var admitted = ImmutableHashSet.CreateBuilder<CliTypeIdentity>();
-            admitted.UnionWith(receivers);
-            if (bounds.Count > 0 && _ledger.DispatchTargets.TryGetValue(slot, out var targets))
-            {
-                foreach (var target in targets.Values)
-                {
-                    if (bounds.Any(bound => _engine!.Graph.Within(target.ReceiverType, bound))) admitted.Add(target.ReceiverType);
-                }
-            }
-            result.Add(site, new ReceiverFlowAdmission(admitted.ToImmutable(), bounds.Count > 0));
+            var admitted = bounds.Count == 0
+                ? receivers.ToImmutableHashSet()
+                : WithReceivers(Expansion(expansions, slot, bounds), receivers);
+            result.Add(site, new ReceiverFlowAdmission(admitted, bounds.Count > 0));
         }
-        return result.ToImmutable();
+        var sites = result.ToImmutable();
+        _finished = (sites, ReplayOf(sites));
+        _engine = null;
+        _gate = null;
+        _ledger = null;
+        return sites;
+    }
+
+    // The receivers of a slot use's targets within any of the bounds, once per slot use and bounds (Within reads only a
+    // bound's types).
+    private ImmutableHashSet<CliTypeIdentity> Expansion(
+        Dictionary<(DispatchSlot Slot, string Bounds), ImmutableHashSet<CliTypeIdentity>> expansions, DispatchSlot slot,
+        IReadOnlyList<FlowBound> bounds)
+    {
+        var key = (slot, string.Join(";", bounds.Select(static bound =>
+            string.Join(",", bound.Types.Select(static type => type.CanonicalName)))));
+        if (expansions.TryGetValue(key, out var expansion)) return expansion;
+        var within = ImmutableHashSet.CreateBuilder<CliTypeIdentity>();
+        if (Ledger.DispatchTargets.TryGetValue(slot, out var targets))
+        {
+            foreach (var target in targets.Values)
+            {
+                if (bounds.Any(bound => _engine!.Graph.Within(target.ReceiverType, bound))) within.Add(target.ReceiverType);
+            }
+        }
+        expansions.Add(key, expansion = within.ToImmutable());
+        return expansion;
+    }
+
+    // What reached a site joined to its bounds' expansion: the expansion itself, shared, where it already holds them.
+    private static ImmutableHashSet<CliTypeIdentity> WithReceivers(ImmutableHashSet<CliTypeIdentity> expansion,
+        IReadOnlySet<CliTypeIdentity> receivers)
+    {
+        foreach (var receiver in receivers)
+        {
+            if (!expansion.Contains(receiver)) return expansion.Union(receivers);
+        }
+        return expansion;
     }
 
     private IEnumerable<(string Site, DispatchSlot Slot, IReadOnlySet<CliTypeIdentity> Receivers,
@@ -293,7 +339,7 @@ internal sealed class ClosureReceiverFlow
     {
         foreach (var (site, _, arrived, bounds) in _engine!.Admissions())
         {
-            if (!_ledger.DispatchDeclarations.TryGetValue(site, out var declaration) ||
+            if (!Ledger.DispatchDeclarations.TryGetValue(site, out var declaration) ||
                 !Gate.Gates(declaration))
             {
                 continue;

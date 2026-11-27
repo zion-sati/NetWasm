@@ -17,7 +17,8 @@ namespace NetWasm.Compiler.Wasm.Emission.StructResults;
 internal sealed class StructResultClassifier(
     ITypeDefinitionResolver types,
     IFieldRepository fields,
-    IInstanceFieldLayoutProvider fieldLayouts) : IStructResultClassifier
+    IInstanceFieldLayoutProvider fieldLayouts,
+    IValueLayoutProvider values) : IStructResultClassifier
 {
     // Four results carry ValueTask<T>, Memory<T>, ArraySegment<T>, KeyValuePair<TKey, TValue> of two words and a
     // span; more would be more results than registers to return them in.
@@ -27,6 +28,7 @@ internal sealed class StructResultClassifier(
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly IInstanceFieldLayoutProvider _fieldLayouts = fieldLayouts ??
         throw new ArgumentNullException(nameof(fieldLayouts));
+    private readonly IValueLayoutProvider _values = values ?? throw new ArgumentNullException(nameof(values));
     private readonly ConcurrentDictionary<CliTypeIdentity, StructResultShape?> _shapes = new();
 
     public StructResultShape? Classify(CliTypeIdentity type)
@@ -44,7 +46,7 @@ internal sealed class StructResultClassifier(
         {
             if (ordered[index].Offset < ordered[index - 1].Offset + ordered[index - 1].Size) return null;
         }
-        return new(type, ordered);
+        return new(type, ordered, _values.GetValueLayout(type).Size);
     }
 
     // Adds the value type's scalars at their offsets from the outermost value; false when it cannot return in results.

@@ -73,6 +73,26 @@ internal sealed class ReachabilityClosureBuilder(
         {
             outwardBoundaries.Add(entryPoint.Key);
         }
+        var snapshot = Close(entryPoint, exports, roots, outwardBoundaries, rewrittenBodies);
+        // The build's ledger and receiver flow are released by now: the program is built from the snapshot alone, so the
+        // ledger is not held beside the snapshot's copy of it (nor, through the flow, into the next closure build).
+        _memory.Release();
+        var program = _steps.Record("program", () => _programBuilder.Build(
+            entryPoint,
+            [.. exports],
+            snapshot,
+            _delegateTypes,
+            _typeTestPlanner));
+        return program with
+        {
+            ModuleInitializers = _moduleInitializerOrderer.Order(program.ModuleInitializers),
+        };
+    }
+
+    // Runs the closure to its fixed point and snapshots its ledger, with each gated call's receiver flow admission.
+    private ReachabilityLedgerSnapshot Close(MethodDefinitionModel? entryPoint, ProgramExport[] exports,
+        ReachabilityRoots roots, HashSet<EntityKey> outwardBoundaries, ImmutableDictionary<string, CilMethodBody>? rewrittenBodies)
+    {
         using var session = _sessions.Create(entryPoint, outwardBoundaries, rewrittenBodies);
         // Dispatched calls go by receiver flow (RECEIVER_TYPE_FLOW_DESIGN.md, steps C and D): their candidates
         // wait in the gate, and each quiescence settles the flow and releases what it admits.
@@ -103,20 +123,8 @@ internal sealed class ReachabilityClosureBuilder(
                 break;
             }
         }
-        var snapshot = _steps.Record("ledger snapshot", () => ReachabilityLedgerSnapshot.From(session.State) with
-        {
-            ReceiverFlowAdmissions = flow.SiteAdmissions(),
-        });
-        var program = _steps.Record("program", () => _programBuilder.Build(
-            entryPoint,
-            [.. exports],
-            snapshot,
-            _delegateTypes,
-            _typeTestPlanner));
-        return program with
-        {
-            ModuleInitializers = _moduleInitializerOrderer.Order(program.ModuleInitializers),
-        };
+        var snapshot = _steps.Record("ledger snapshot", () => ReachabilityLedgerSnapshot.From(session.State));
+        return snapshot with { ReceiverFlowAdmissions = _steps.Record("site admissions", flow.SiteAdmissions) };
     }
 }
 

@@ -166,10 +166,9 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? ReceiverFlowDispatchPolicy.GenericVirtualCalls
             : ReceiverFlowDispatchPolicy.EveryVirtualCall;
 
+    // At every level: the fold decides which host imports a program reaches, which no level may change.
     private static UnwrittenStaticFieldFoldingPolicy UnwrittenStaticFieldFolding(FinalWasmOptimization preset) =>
-        preset is FinalWasmOptimization.O2 or FinalWasmOptimization.O3 or FinalWasmOptimization.Os or FinalWasmOptimization.Oz
-            ? UnwrittenStaticFieldFoldingPolicy.WholeProgram
-            : UnwrittenStaticFieldFoldingPolicy.Disabled;
+        UnwrittenStaticFieldFoldingPolicy.WholeProgram;
 
     private static LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
@@ -513,8 +512,9 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(LoopStrengthReduction: ManagedLoopStrengthReduction.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(RangeBranchFolding: ManagedRangeBranchFolding.Enabled)));
-        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
-            new(UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Enabled)));
+        // The unwritten-field fold runs at every level, None included, so enabling it there is its default.
+        Assert.Equal(UnwrittenStaticFieldFoldingPolicy.WholeProgram, resolver.Resolve(FinalWasmOptimization.None,
+            new(UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Enabled)).UnwrittenStaticFieldFolding);
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopInvariantFieldHoisting: ManagedLoopInvariantFieldHoisting.NullChecks)));
         Assert.Equal(resolver.Resolve(FinalWasmOptimization.None), resolver.Resolve(FinalWasmOptimization.None,
@@ -545,7 +545,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 NewObjectNullCheckElimination: ManagedNewObjectNullCheckElimination.Disabled,
                 LoopStrengthReduction: ManagedLoopStrengthReduction.Disabled,
                 RangeBranchFolding: ManagedRangeBranchFolding.Disabled,
-                UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Disabled)));
+                // The unwritten-field fold is None's default too.
+                UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Enabled)));
     }
 
     [Theory]

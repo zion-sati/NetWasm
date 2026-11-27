@@ -107,6 +107,7 @@ internal sealed class ReachableProgramBuilder(
             state.ImplicitExceptions)
         {
             TypeDependencyPaths = state.TypeDependencyPaths,
+            ImportDependencyPaths = state.ImportDependencyPaths,
             EnumMetadataRequirements = state.EnumMetadataRequirements,
             UninitializedObjectTypes = [.. state.UninitializedObjectTypes
                 .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
@@ -179,11 +180,14 @@ internal sealed class ReachableProgramBuilder(
     }
 
     // Each site with its slot use's targets that its bound admits: one array for every site of the same slot use and
-    // bound.
+    // bound, and of the same admitted set where the receiver flow admitted it (the flow shares one set among the sites
+    // its bounds admit the same receivers at).
     private ImmutableDictionary<string, DispatchCallSiteModel> DispatchCallSites(ReachabilityLedgerSnapshot state)
     {
         var selected =
             new Dictionary<(DispatchSlot Slot, CliTypeIdentity? Bound), ImmutableArray<DispatchTargetModel>>();
+        var admittedTargets = new Dictionary<(DispatchSlot Slot, CliTypeIdentity? Bound, ImmutableHashSet<CliTypeIdentity> Admitted),
+            ImmutableArray<DispatchTargetModel>>();
         var sites = ImmutableDictionary.CreateBuilder<string, DispatchCallSiteModel>(StringComparer.Ordinal);
         foreach (var (key, declaration) in state.DispatchDeclarations)
         {
@@ -198,7 +202,15 @@ internal sealed class ReachableProgramBuilder(
             // slot use has for other calls; with no bound among them, they are exactly what reached it.
             var admission = state.ReceiverFlowAdmissions.GetValueOrDefault(key);
             if (admission is not null)
-                targets = [.. targets.Where(target => admission.Receivers.Contains(target.ReceiverType))];
+            {
+                var admittedKey = (slot, declaration.ReceiverBound, admission.Receivers);
+                if (!admittedTargets.TryGetValue(admittedKey, out var admitted))
+                {
+                    admittedTargets.Add(admittedKey,
+                        admitted = [.. targets.Where(target => admission.Receivers.Contains(target.ReceiverType))]);
+                }
+                targets = admitted;
+            }
             sites.Add(key, new DispatchCallSiteModel(declaration.Caller, declaration.IlOffset, declaration.Declaration,
                 targets)
             {

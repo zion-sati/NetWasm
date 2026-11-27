@@ -13,13 +13,16 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
 // ldvirtftn: the receiver's type id picks the function its type's override compiles to, through the runs of type ids
-// that share one, as a virtual call picks its target.
+// that share one, as a virtual call picks its target. In an audit build the receiver is checked against the load's
+// audited receivers first, as a call's is: a load whose targets a bound admitted serves a receiver outside them with a
+// run of another target.
 internal sealed class VirtualFunctionLoadEmitter(
     ITargetLayout layouts,
     IVirtualDispatchCasePlanner cases,
     IKeyedDispatchEmitter keyedDispatch,
     IImplicitExceptionEmitter exceptions,
-    IInstructionCommandFactory commands) :
+    IInstructionCommandFactory commands,
+    IReceiverFlowAuditEmitter audits) :
     InstructionCommandProvider,
     IVirtualFunctionLoader
 {
@@ -59,6 +62,7 @@ internal sealed class VirtualFunctionLoadEmitter(
                 $"Missing virtual function-load site '{key}'.");
         var dispatchCases = cases.Plan(dispatch.Targets, dispatch.Targets, exhaustive: !dispatch.PreciseTargets);
         var typeIdLocal = request.Context.NumericTemporaryI4;
+        audits.Emit(code, dispatch, receiverLocal, typeIdLocal, functionIndices);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)receiverLocal)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, 0)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)typeIdLocal)));

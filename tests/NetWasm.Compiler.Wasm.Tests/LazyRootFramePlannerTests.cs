@@ -135,6 +135,54 @@ public sealed class LazyRootFramePlannerTests
         Assert.Null(_planner.Plan(Branching(), Context(0)));
     }
 
+    // A method with a protected block elsewhere (block 2, handler 3): block 1 allocates inline at 1 and calls at 2. The
+    // allocation publishes only on its fallback, so the fast path reaches the call with the frame not entered, and the
+    // call must test and enter it: offset 2 is not entered, the return after the call is.
+    [Fact]
+    public void AnInlineAllocationOutsideTheProtectedBlocksDoesNotEnterTheFrameOnEveryPath()
+    {
+        var condition = new StructuredCondition(0, CilOperation.BranchIfTrue, 0, CliValueKind.I4, null);
+        var blocks = ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
+            .Add(new(0), Block(0, 0, [I(0, CilOperation.LoadInt32)], new StructuredConditionalExit(condition, new(1), new(2))))
+            .Add(new(1), Block(1, 1, [I(1, CilOperation.NewObject), I(2, CilOperation.Call)],
+                new StructuredTerminalExit(I(10, CilOperation.Return))))
+            .Add(new(2), Block(2, 3, [I(3, CilOperation.Nop)], new StructuredTerminalExit(I(11, CilOperation.Return))))
+            .Add(new(3), Block(3, 5, [I(5, CilOperation.Nop)], new StructuredTerminalExit(I(6, CilOperation.Return))));
+        var method = Branching() with
+        {
+            Blocks = blocks,
+            ExceptionGroups = ImmutableDictionary<StructuredExceptionGroupId, StructuredExceptionGroup>.Empty
+                .Add(new(0), Group(0, new(3)) with { ProtectedBlocks = [new(2)] }),
+        };
+
+        var plan = _planner.Plan(method, Context(conditionalAllocations: true, 1, 2));
+
+        Assert.NotNull(plan);
+        Assert.DoesNotContain(2, plan.Entered);
+        Assert.Contains(10, plan.Entered);
+        Assert.Empty(plan.EagerGroups);
+    }
+
+    // Group 0's handler (block 3) allocates inline at 5: its fallback may enter the frame inside the handler's code, so
+    // the protected block enters it before it begins, though no path through the allocation has to enter it.
+    [Fact]
+    public void AHandlerThatMayEnterTheFrameOnAnAllocationsFallbackMakesItsBlockEager()
+    {
+        var method = Branching();
+        method = method with
+        {
+            Blocks = method.Blocks.Add(new(3),
+                Block(3, 5, [I(5, CilOperation.NewObject)], new StructuredTerminalExit(I(6, CilOperation.Return)))),
+            ExceptionGroups = ImmutableDictionary<StructuredExceptionGroupId, StructuredExceptionGroup>.Empty
+                .Add(new(0), Group(0, new(3)) with { ProtectedBlocks = [new(1)] }),
+        };
+
+        var plan = _planner.Plan(method, Context(conditionalAllocations: true, 1, 5));
+
+        Assert.NotNull(plan);
+        Assert.Equal([new StructuredExceptionGroupId(0)], plan.EagerGroups);
+    }
+
     // Block 0 -> 1 (publishes, returns) or 2 (returns); the publishing block's instruction offsets as given.
     private static StructuredMethod Branching(StructuredBlockExit? publishingExit = null)
     {
@@ -162,6 +210,16 @@ public sealed class LazyRootFramePlannerTests
     {
         public ImmutableHashSet<int> Classify(StructuredMethod method, MethodEmissionContext context) => offsets;
     }
+
+    // A frame of one slot and a live root at each safepoint offset given; an allocation there bumps inline when
+    // conditionalAllocations holds.
+    private static MethodEmissionContext Context(bool conditionalAllocations, params int[] publishedAt) =>
+        CreateMethodEmissionContext() with
+        {
+            ConditionalAllocationRoots = conditionalAllocations,
+            RootMap = new(EntryKey, ImmutableDictionary<RootSource, int>.Empty.Add(Root, 0),
+                publishedAt.ToImmutableDictionary(offset => offset, offset => new SafepointRootMap(offset, [Root], []))),
+        };
 
     // A frame of one slot and a live root at the safepoint offset given.
     private static MethodEmissionContext Context(int publishedAt) => CreateMethodEmissionContext() with

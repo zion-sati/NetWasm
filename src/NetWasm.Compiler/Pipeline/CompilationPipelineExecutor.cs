@@ -49,9 +49,12 @@ internal sealed class CompilationPipelineExecutor(
     IEarlyCutoffEmitter earlyCutoff,
     IUnitKeptCompileCommitter keptCompiles,
     INativeImportBinderFactory nativeBinders,
-    INativeVariadicCallPlannerFactory nativeVariadics) :
+    INativeVariadicCallPlannerFactory nativeVariadics,
+    IImportParityVerifier importParity) :
     ICompilationPipelineExecutor
 {
+    private readonly IImportParityVerifier _importParity = importParity ??
+        throw new ArgumentNullException(nameof(importParity));
     private readonly INativeImportBinderFactory _nativeBinders = nativeBinders ??
         throw new ArgumentNullException(nameof(nativeBinders));
     private readonly INativeVariadicCallPlannerFactory _nativeVariadics = nativeVariadics ??
@@ -221,6 +224,15 @@ internal sealed class CompilationPipelineExecutor(
                 metrics?.Stages.Start(CompilerMetricStage.Analysis);
                 var analyzed = _analysis.Analyze(metadata, prepared);
                 typeDependencyPaths = analyzed.Program.TypeDependencyPaths;
+                if (options.VerifyImportParity &&
+                    options.Optimization is ComponentModel.FinalWasmOptimization.None or ComponentModel.FinalWasmOptimization.O0)
+                {
+                    stage = "import parity";
+                    var reference = _analysis.Analyze(metadata,
+                        _preparation.Prepare(metadata, options with { Optimization = ComponentModel.FinalWasmOptimization.O1 }));
+                    _importParity.Verify(analyzed.Program, reference.Program, symbolFormatter);
+                    stage = "analysis";
+                }
                 _programArtifacts.WriteProgram(
                     options,
                     symbolFormatter,
@@ -367,6 +379,7 @@ internal sealed class CompilationPipelineExecutor(
         }
         catch (Exception exception)
         {
+            _progress.Report(CompilerProgressStage.Failed);
             CompilerException? enrichedFailure = null;
             if (exception is CompilerException failure)
             {

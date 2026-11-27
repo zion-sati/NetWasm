@@ -11,8 +11,9 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
 
-// A newobj publishes only on its allocation's fallback where allocations bump inline (ConditionalAllocationRoots), the
-// method has no protected block, and the constructor call is no safepoint of its own; nothing else does.
+// A newobj may publish only on its allocation's fallback where allocations bump inline (ConditionalAllocationRoots) and
+// the constructor call is no safepoint of its own, in a method with protected blocks too: the emitter decides per
+// instruction, and listing a newobj it publishes in place only means that newobj does not count as entering the frame.
 public sealed class FallbackPublicationClassifierTests
 {
     private static readonly RootSource Root = new(RootSourceKind.Local, 0);
@@ -25,17 +26,25 @@ public sealed class FallbackPublicationClassifierTests
         Assert.Equal([0], _classifier.Classify(Method(), Context(constructorCall: false, conditional: true)).Order());
     }
 
+    // A method with protected blocks lists its newobjs as well: the emitter may still defer one outside them, so
+    // none of them may count as entering the frame on every path.
     [Fact]
-    public void ANewobjOtherwisePublishesWhereItStands()
+    public void AMethodWithProtectedBlocksListsItsNewobjsToo()
     {
-        Assert.Empty(_classifier.Classify(Method(), Context(constructorCall: false, conditional: false)));
-        Assert.Empty(_classifier.Classify(Method(), Context(constructorCall: true, conditional: true)));
         var protectedMethod = Method() with
         {
             ExceptionGroups = ImmutableDictionary<StructuredExceptionGroupId, StructuredExceptionGroup>.Empty.Add(
                 new(0), new(new(0), null, 0, 1, [], [], [], null, null)),
         };
-        Assert.Empty(_classifier.Classify(protectedMethod, Context(constructorCall: false, conditional: true)));
+
+        Assert.Equal([0], _classifier.Classify(protectedMethod, Context(constructorCall: false, conditional: true)).Order());
+    }
+
+    [Fact]
+    public void ANewobjOtherwisePublishesWhereItStands()
+    {
+        Assert.Empty(_classifier.Classify(Method(), Context(constructorCall: false, conditional: false)));
+        Assert.Empty(_classifier.Classify(Method(), Context(constructorCall: true, conditional: true)));
         Assert.Throws<ArgumentNullException>(() => _classifier.Classify(null!, CreateMethodEmissionContext()));
         Assert.Throws<ArgumentNullException>(() => _classifier.Classify(Method(), null!));
     }

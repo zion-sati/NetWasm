@@ -65,6 +65,11 @@ public sealed record CompilerOptions(
     // differ: proves units sound on a workload (tests, diagnosis). Costs a full emission.
     public bool VerifyCompiledUnits { get; init; }
 
+    // At None and O0, analyze the program at O1 as well, and fail the compile when the two reach different host
+    // imports, naming each one with how it was reached: an optimization level never changes which imports a program
+    // has. Costs one more analysis (tests, the dev-loop levels lane).
+    public bool VerifyImportParity { get; init; }
+
     // Modules the project's native archives import from; the host supplies
     // them beside the modules [WasmImportLinkage] imports name.
     public ImmutableArray<string> ImportModules { get; init; } = [];

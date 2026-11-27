@@ -207,7 +207,8 @@ internal sealed class WholeProgramAnalyzerFactory(
                 ])));
             // A virtual call nothing the program allocates implements throws.
             reducers.Add(new UnimplementedVirtualCallProgramReducer(delegateTypeRecognizer,
-                new MethodSpecializer([ConstantBranchFoldingFactory.Create(graphBuilders.Create())])));
+                new MethodSpecializer([ConstantBranchFoldingFactory.Create(graphBuilders.Create())]),
+                auditsReceivers: receiverFlowAuditFailure is not null));
             // GetType() of a value the program allocates one type for names that type.
             reducers.Add(new SoleAllocatedTypeProgramReducer(relationships,
                 new MethodSpecializer([ConstantBranchFoldingFactory.Create(graphBuilders.Create())])));
@@ -377,6 +378,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             new ReachableProgramReductionChain(reducers.ToImmutable()),
             steps,
             memory);
+        if (optimizationSettings.UnwrittenStaticFieldFolding == UnwrittenStaticFieldFoldingPolicy.WholeProgram)
+            reduced = new WrittenStaticFieldRecordingClosureBuilder(reduced, new StaticFieldWriteCollector(fieldRepository));
         // The queries the reductions leave to their run-time paths are known once the program settles.
         reduced = new Attributes.UnplannedAttributeQueryClosureBuilder(reduced, parts.UnplannedAttributeQueries);
         if (reportsReceiverFlow || receiverFlowAuditFailure is not null)

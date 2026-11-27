@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System;
 using System.Collections.Generic;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
@@ -9,8 +10,15 @@ using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Metadata;
 
-internal sealed class MetadataCallSiteSignatureResolver : IMetadataCallSiteSignatureResolver
+// A call site's signature is stacked as a method's is: an enum, wherever it is declared, is its underlying integer.
+// Decoding knows that only for an enum this assembly declares, so the stack types resolve the rest (one declared in
+// another assembly, named directly or as a type argument).
+internal sealed class MetadataCallSiteSignatureResolver(IMetadataStackTypeResolver stackTypes)
+    : IMetadataCallSiteSignatureResolver
 {
+    private readonly IMetadataStackTypeResolver _stackTypes =
+        stackTypes ?? throw new ArgumentNullException(nameof(stackTypes));
+
     public CilOperand.CallSite Resolve(
         MetadataAssemblySnapshot source,
         int metadataToken,
@@ -39,7 +47,8 @@ internal sealed class MetadataCallSiteSignatureResolver : IMetadataCallSiteSigna
         var convention = signature.Header.CallingConvention;
         if (convention == SignatureCallingConvention.Default)
         {
-            return new(new MethodSignatureModel(signature.ReturnType, signature.ParameterTypes), false);
+            return new(_stackTypes.Resolve(new MethodSignatureModel(signature.ReturnType, signature.ParameterTypes)),
+                false);
         }
 
         // An unmanaged pointer is called with the C ABI, which reads no modifier, whichever convention
@@ -73,6 +82,6 @@ internal sealed class MetadataCallSiteSignatureResolver : IMetadataCallSiteSigna
                 offset));
         }
 
-        return new(new MethodSignatureModel(returnType, signature.ParameterTypes), true);
+        return new(_stackTypes.Resolve(new MethodSignatureModel(returnType, signature.ParameterTypes)), true);
     }
 }

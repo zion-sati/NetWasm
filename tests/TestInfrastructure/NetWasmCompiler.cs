@@ -15,6 +15,10 @@ internal static class NetWasmCompiler
         options = options with
         {
             ReferencePaths = [.. NetWasm.TestInfrastructure.TestAssets.WithFrameworkReferences(options.EntryAssemblyPath, options.ReferencePaths)],
+            // The dev-loop levels lane (NETWASM_TEST_OPTIMIZATION O0 or None) proves each program reaches the host
+            // imports O1 reaches, as the compiler host does for corpus programs.
+            VerifyImportParity = options.VerifyImportParity ||
+                Environment.GetEnvironmentVariable("NETWASM_TEST_OPTIMIZATION") is "O0" or "None",
         };
         using var services = new ServiceCollection()
             .AddNetWasmCompiler()

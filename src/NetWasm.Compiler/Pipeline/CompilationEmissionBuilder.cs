@@ -337,5 +337,6 @@ internal sealed class CompilationEmissionBuilder(
             .Where(pair => !pair.Value.WrittenArguments.IsEmpty || !pair.Value.EscapedArguments.IsEmpty ||
                 !pair.Value.ReturnedArgumentAliases.IsEmpty)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
-        program.ManagedByRefEffects.Callees);
+        program.ManagedByRefEffects.Callees,
+        program.WrittenStaticFields);
 }

@@ -165,11 +165,15 @@ public sealed class StackStorageTypeAnalyzer(
                             _ => new StackStorageLocation(StackStorageLocationKind.EvaluationStack, stack.Count - 1)), []);
                 }
 
+                // What the instruction leaves, as it leaves it: a block's last instruction is read from the block's
+                // exit, not from a successor, whose join may take a native int this block leaves as a managed pointer.
                 var outgoing = index + 1 < block.Instructions.Length
                     ? controlFlow.InstructionEntryStacks[block.Instructions[index + 1].Offset]
-                    : graph.Successors[blockIndex].IsEmpty
-                        ? []
-                        : controlFlow.EntryStacks[graph.Successors[blockIndex][0]];
+                    : controlFlow.ExitStacks.TryGetValue(blockIndex, out var exit)
+                        ? exit
+                        : graph.Successors[blockIndex].IsEmpty
+                            ? []
+                            : controlFlow.EntryStacks[graph.Successors[blockIndex][0]];
                 var produced = ProducedCount(instruction);
                 var identity = producers.GetValueOrDefault(instruction.Offset);
                 StackStorageLocation? copySource = null;

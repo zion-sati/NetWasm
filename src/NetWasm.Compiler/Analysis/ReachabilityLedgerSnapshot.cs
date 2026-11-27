@@ -120,6 +120,28 @@ internal sealed record ReachabilityLedgerSnapshot(
     internal ImmutableDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
 
+    // How the closure reached each host import (a WIT, JavaScript or native import method), by its definition: what a
+    // diagnostic about an import names as the reason it is there.
+    internal ImmutableDictionary<EntityKey, ImmutableStack<CompilerDependencyStep>> ImportDependencyPaths { get; init; } =
+        ImmutableDictionary<EntityKey, ImmutableStack<CompilerDependencyStep>>.Empty;
+
+    private static ImmutableDictionary<EntityKey, ImmutableStack<CompilerDependencyStep>> ImportPaths(ReachabilityLedger ledger)
+    {
+        var paths = ImmutableDictionary.CreateBuilder<EntityKey, ImmutableStack<CompilerDependencyStep>>();
+        foreach (var instance in ledger.MethodInstances.Values)
+        {
+            var definition = instance.Definition;
+            if (definition.WitImport is null && definition.JSImport is null && definition.NativeImport is null) continue;
+            if (!paths.ContainsKey(definition.Key))
+            {
+                paths.Add(definition.Key, ledger.MethodDependencyPaths.TryGetValue(instance.CanonicalName, out var path)
+                    ? path
+                    : ImmutableStack<CompilerDependencyStep>.Empty);
+            }
+        }
+        return paths.ToImmutable();
+    }
+
     internal static ReachabilityLedgerSnapshot From(ReachabilityLedger ledger) => new(
         ledger.Methods.ToImmutable(),
         ledger.ConstructedMethods.ToImmutable(),
@@ -150,6 +172,7 @@ internal sealed record ReachabilityLedgerSnapshot(
             ledger.ManagedCallSites.ToImmutable())
     {
         TypeDependencyPaths = ledger.TypeDependencyPaths.ToImmutableDictionary(StringComparer.Ordinal),
+        ImportDependencyPaths = ImportPaths(ledger),
         ModuleInitializers = ledger.ModuleInitializers.ToImmutable(),
         Contributions = ledger.Contributions.ToImmutableDictionary(StringComparer.Ordinal),
         JavaScriptConversions = ledger.JavaScriptConversions.ToImmutable(),

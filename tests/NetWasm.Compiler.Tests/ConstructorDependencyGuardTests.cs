@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -118,6 +120,12 @@ public sealed class ConstructorDependencyGuardTests
         type.IsValueType ? Activator.CreateInstance(type)
         // A sequence of collaborators holds one.
         : type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>) ? Sequence(type.GetGenericArguments()[0])
+        // A logger is a real null logger: DispatchProxy grants its proxy access to an interface's own assembly, not to a
+        // type argument's, so ILogger<an internal actor> could only be proxied after another test had opened that
+        // assembly to the proxies, which made this test depend on the order the suite runs in.
+        : type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ILogger<>)
+            ? typeof(NullLogger<>).MakeGenericType(type.GetGenericArguments()).GetField(nameof(NullLogger<object>.Instance))!
+                .GetValue(null)
         : type.IsInterface ? DispatchProxy.Create(type, typeof(UnusedDependencyProxy))
         : type == typeof(string) ? string.Empty
         : type.IsArray ? Array.CreateInstance(type.GetElementType()!, 0)

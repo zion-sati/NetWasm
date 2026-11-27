@@ -62,17 +62,21 @@ internal sealed class LazyRootFramePlanner(IRootClearElisionPlanner clears, IFal
         // A lazy frame starts zeroed, so its clear elisions, and the roots a throw-only point leaves unpublished where
         // their slot holds null, are those of a zeroed frame: such a point publishes nothing.
         var zeroed = _clears.Plan(method, context with { RootFrameStartsZeroed = true });
+        // The blocks and offsets whose safepoint enters the frame on every path through it, and the blocks whose
+        // safepoint may enter it. A publication on an allocation's fallback enters the frame itself; the path through
+        // the allocation does not: it may enter the frame but need not.
         var publishing = new HashSet<StructuredBlockId>();
         var publishingOffsets = new HashSet<int>();
-        // A publication on an allocation's fallback enters the frame itself; the path through the allocation does not.
+        var mayPublish = new HashSet<StructuredBlockId>();
         var fallbacks = _fallbacks.Classify(method, context);
         foreach (var (offset, point) in context.RootMap.Safepoints)
         {
             zeroed.TryGetValue((offset, false), out var knownZero);
             var deferred = DeferredRoots.Of(context.RootMap, point, knownZero);
             if (point.Roots.All(deferred.Contains) && point.ConstructorCallRoots.IsEmpty) continue;
-            if (fallbacks.Contains(offset)) continue;
             if (!blocksOf.TryGetValue(offset, out var ids)) return null;
+            mayPublish.UnionWith(ids);
+            if (fallbacks.Contains(offset)) continue;
             publishing.UnionWith(ids);
             publishingOffsets.Add(offset);
         }
@@ -98,10 +102,11 @@ internal sealed class LazyRootFramePlanner(IRootClearElisionPlanner clears, IFal
             return null;
         }
 
+        // A handler path that may enter the frame, an allocation's fallback included, needs it entered before the block.
         var eager = ImmutableHashSet.CreateBuilder<StructuredExceptionGroupId>();
         foreach (var (id, groupEntries) in entries)
         {
-            if (Reaches(method, groupEntries, avoiding: null, handlers, publishing.Contains)) eager.Add(id);
+            if (Reaches(method, groupEntries, avoiding: null, handlers, mayPublish.Contains)) eager.Add(id);
         }
         var eagerGroups = eager.ToImmutable();
         return new(eagerGroups, Entered(method, publishing, publishingOffsets, entries, eagerGroups));

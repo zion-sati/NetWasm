@@ -44,6 +44,7 @@ internal sealed class CompilerDiagnosticProgressReporter : ICompilerProgressRepo
             CompilerProgressStage.Validation => "Generating the interop manifest...",
             CompilerProgressStage.InteropManifest => "Finalizing compilation...",
             CompilerProgressStage.Complete => "Managed compilation completed.",
+            CompilerProgressStage.Failed => "Managed compilation failed.",
             _ => throw new ArgumentOutOfRangeException(nameof(stage)),
         };
         if (stage == CompilerProgressStage.Start)

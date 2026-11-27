@@ -1,8 +1,11 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.ReceiverFlow;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -173,6 +176,46 @@ public sealed class ClosureReceiverFlowReplayTests
         Assert.False(ReceiverFlowDispatchGate.Gates(ReceiverFlowDispatchPolicy.EveryVirtualCall, CilOperation.CallVirtual, count,
             CliTypeIdentity.Named(new("Test"), "Test", "Point", true)));
         Assert.False(ReceiverFlowDispatchGate.Gates(ReceiverFlowDispatchPolicy.EveryVirtualCall, CilOperation.Call, count, null));
+    }
+
+    // A finished first build keeps what the builds after it replay, not its graph, its gate or its ledger: holding
+    // them keeps a whole closure's ledger alive into the next build, beside the program built from its snapshot.
+    [Fact]
+    public void AFinishedFirstBuildKeepsItsAdmissionsButNotItsLedger()
+    {
+        var (flow, ledger) = StartFirstBuild();
+        Assert.Throws<InvalidOperationException>(flow.Admitted);
+
+        flow.SiteAdmissions();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(ledger.IsAlive, "the finished first build still holds its ledger");
+        Assert.NotNull(flow.Admitted());
+        Assert.Throws<InvalidOperationException>(() => flow.Gate);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (ClosureReceiverFlow Flow, WeakReference Ledger) StartFirstBuild()
+    {
+        var ledger = new ReachabilityLedger();
+        var services = new ReceiverFlowServices(Unused<ICalledMethodResolver>(), Unused<ITypeOperandResolver>(),
+            Unused<IFieldRepository>(), Unused<IDelegateTypeRecognizer>(), Unused<IDispatchSiteKeyBuilder>(),
+            Unused<ITypeRelationshipClassifier>(), Unused<IRuntimeIntrinsicRegistry>(), Unused<IRuntimeWrittenFields>(),
+            Unused<IReflectionObjectBounds>());
+        var flow = new ClosureReceiverFlow(services, ledger, null, [], ReachabilityRoots.Empty,
+            ReceiverFlowDispatchPolicy.EveryVirtualCall, failOnUnreachedBodies: false);
+        return (flow, new WeakReference(ledger));
+    }
+
+    // A collaborator an empty build never calls.
+    private static T Unused<T>() where T : class => DispatchProxy.Create<T, UnexpectedCall>();
+
+    public class UnexpectedCall : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            throw new InvalidOperationException($"an empty build called {targetMethod?.Name}");
     }
 
     private static DispatchDeclaration Call(string caller, int offset, MethodInstanceModel declaration,

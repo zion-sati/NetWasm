@@ -116,22 +116,44 @@ public sealed class StructResultClassifierTests
         Assert.Equal(1, fixture.TypeRequests.Count(request => request.Equals(type)));
     }
 
-    private sealed class Fixture(WasmTarget target) : ITypeDefinitionResolver, IFieldRepository, IInstanceFieldLayoutProvider
+    // A shape knows the value's size, so the bytes its fields leave (between them, and after the last up to the size)
+    // are its padding: an int?'s three after its bool, and the four after an int that follows a long.
+    [Fact]
+    public void AShapesPaddingIsTheBytesItsFieldsDoNotCover()
+    {
+        var fixture = new Fixture(WasmTarget.Wasm32);
+        fixture.Values[Boolean] = new(Boolean, 1, 1, []);
+        var nullable = fixture.Add([(Boolean, 0), (Int32, 4)]);
+        var tail = fixture.Add([(Int64, 0), (Int32, 8)], valueSize: 16);
+        var dense = fixture.Add([(Int32, 0), (Int32, 4)]);
+        var classifier = fixture.Classifier();
+
+        var nullableShape = Assert.IsType<StructResultShape>(classifier.Classify(nullable));
+        Assert.Equal(8, nullableShape.Size);
+        Assert.Equal([(1, 3)], nullableShape.Padding().AsEnumerable());
+        Assert.Equal([(12, 4)], Assert.IsType<StructResultShape>(classifier.Classify(tail)).Padding().AsEnumerable());
+        Assert.Empty(Assert.IsType<StructResultShape>(classifier.Classify(dense)).Padding());
+    }
+
+    private sealed class Fixture(WasmTarget target) : ITypeDefinitionResolver, IFieldRepository,
+        IInstanceFieldLayoutProvider, IValueLayoutProvider
     {
         public static AssemblyIdentity Assembly { get; } = new("StructResultFixture");
         private readonly WasmTargetLayout _target = WasmTargetLayout.For(target);
         private readonly Dictionary<CliTypeIdentity, TypeDefinitionModel> _types = [];
         private readonly Dictionary<EntityKey, FieldDefinitionModel> _fields = [];
         private readonly Dictionary<EntityKey, int> _offsets = [];
+        private readonly Dictionary<CliTypeIdentity, int> _valueSizes = [];
         private int _next = 1;
         public Dictionary<CliTypeIdentity, ValueLayout> Values { get; } = [];
         public List<CliTypeIdentity> TypeRequests { get; } = [];
 
         public IStructResultClassifier Classifier() =>
-            Assert.IsAssignableFrom<IStructResultClassifier>(new StructResultClassifier(this, this, this));
+            Assert.IsAssignableFrom<IStructResultClassifier>(new StructResultClassifier(this, this, this, this));
 
         public CliTypeIdentity Add((CliTypeIdentity Type, int Offset)[] fields,
-            CliTypeLayoutKind kind = CliTypeLayoutKind.Sequential, int declaredSize = 0, int inlineArrayLength = 0)
+            CliTypeLayoutKind kind = CliTypeLayoutKind.Sequential, int declaredSize = 0, int inlineArrayLength = 0,
+            int valueSize = 0)
         {
             var key = new EntityKey(Assembly, _next++);
             var name = "Value" + key.MetadataToken;
@@ -147,6 +169,7 @@ public sealed class StructResultClassifierTests
             }
             _types.Add(type, new(key, "Fixture", name, true, fieldKeys.ToImmutable(), [])
             { LayoutKind = kind, DeclaredSize = declaredSize, InlineArrayLength = inlineArrayLength });
+            if (valueSize != 0) _valueSizes.Add(type, valueSize);
             return type;
         }
 
@@ -170,6 +193,23 @@ public sealed class StructResultClassifierTests
             new(_offsets[field.Definition.Key]) { Type = field.FieldType, Size = Size(field.FieldType) };
 
         public FieldLayout GetFieldLayout(EntityKey field) => new(_offsets[field]);
+
+        // A value's size: the one it was added with, or where its last instance field ends.
+        public ValueLayout GetValueLayout(CliTypeIdentity type)
+        {
+            if (Values.TryGetValue(type, out var known)) return known;
+            if (_valueSizes.TryGetValue(type, out var declared)) return new(type, declared, 1, []);
+            var end = 0;
+            foreach (var key in _types[type].Fields)
+            {
+                var field = _fields[key];
+                if (field.IsStatic) continue;
+                var fieldType = field.SignatureType!;
+                var size = _types.ContainsKey(fieldType) ? GetValueLayout(fieldType).Size : Size(fieldType);
+                end = System.Math.Max(end, _offsets[key] + size);
+            }
+            return new(type, end, 1, []);
+        }
 
         private int Size(CliTypeIdentity type) => Values.TryGetValue(type, out var layout)
             ? layout.Size

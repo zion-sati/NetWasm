@@ -254,4 +254,109 @@ public sealed class ReceiverFlowAuditCompilationTests
             assets.Directory, 1, target, result.StaticDataEnd));
         Assert.Contains("a receiver outside the bounded call's targets", failure.Message, StringComparison.Ordinal);
     }
+
+    // ldvirtftn picks the function as a call picks its target, but the receiver flow takes a function load as a boundary
+    // and does not narrow it: its targets are every allocated type's, so the false claim that bounds the element by
+    // Label cannot misdirect it, and a Big gets Big's ToString. Were a load narrowed, it would carry audited receivers,
+    // which the load checks as a call does (CallableLoadingEmitterTests).
+    private const string TooTightFunctionLoad = """
+        using System;
+        using System.Runtime.CompilerServices;
+
+        public sealed class Big { public override string ToString() => "big"; }
+
+        public sealed class Label { public override string ToString() => "label"; }
+
+        public static class EntryPoint
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static object[] Items(int input) => [input > 0 ? new Big() : new Label()];
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Length(Func<string> text) => text().Length;
+
+            public static int Run(int input)
+            {
+                Label[] labels = Unsafe.As<Label[]>(Items(input));
+                object element = labels[0];
+                return Length(element.ToString);
+            }
+        }
+        """;
+
+    // A bound that admits no allocated type leaves a call no target; in an audit build it keeps its dispatch, so the
+    // Circle the false claim bounds by Square (which the program never makes) fails the audit, where other builds
+    // would throw the receiver as a call nothing implements.
+    private const string BoundWithoutTargets = """
+        using System.Runtime.CompilerServices;
+
+        public abstract class Shape { public abstract int Sides(); }
+
+        public sealed class Square : Shape { public override int Sides() => 4; }
+
+        public sealed class Circle : Shape { public override int Sides() => 0; }
+
+        public static class EntryPoint
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static object[] Items(int input) => [new Circle()];
+
+            public static int Run(int input)
+            {
+                Square[] squares = Unsafe.As<Square[]>(Items(input));
+                Shape shape = squares[0];
+                return shape.Sides();
+            }
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O1)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void AFunctionLoadIsNotNarrowedSoAFalseBoundCannotMisdirectIt(WasmTarget target,
+        FinalWasmOptimization optimization)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource("ReceiverFlowAuditFunctionLoadFixture", TooTightFunctionLoad);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: optimization)
+        {
+            ReceiverFlowAudit = true,
+        });
+
+        var site = Assert.Single(result.Program.DispatchCallSites.Values, static site =>
+            site.Caller.Contains("EntryPoint", StringComparison.Ordinal) && site.Declaration.Definition.Name == "ToString");
+        Assert.False(site.BoundedTargets);
+        Assert.False(site.PreciseTargets);
+        Assert.Contains(site.Targets, static target => target.ReceiverType.FullName == "Big");
+        Assert.Equal(5, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0, target,
+            result.StaticDataEnd));
+        Assert.Equal(3, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 1, target,
+            result.StaticDataEnd));
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O1)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void AReceiverABoundWithoutTargetsMissedFailsTheAudit(WasmTarget target, FinalWasmOptimization optimization)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource("ReceiverFlowAuditBoundWithoutTargetsFixture", BoundWithoutTargets);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: optimization)
+        {
+            ReceiverFlowAudit = true,
+        });
+
+        var site = Assert.Single(result.Program.DispatchCallSites.Values, static site =>
+            site.Caller.Contains("EntryPoint", StringComparison.Ordinal) && site.Declaration.Definition.Name == "Sides");
+        Assert.True(site.BoundedTargets);
+        Assert.Empty(site.Targets);
+        Assert.Empty(site.AuditedReceivers);
+        var failure = Assert.ThrowsAny<Exception>(() => ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 1, target, result.StaticDataEnd));
+        Assert.Contains("a receiver outside the bounded call's targets", failure.Message, StringComparison.Ordinal);
+    }
 }

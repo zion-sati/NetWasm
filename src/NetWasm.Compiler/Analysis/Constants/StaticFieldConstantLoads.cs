@@ -35,6 +35,13 @@ internal static class StaticFieldConstantLoads
     }
 
     // The evaluation stack kind a constant of this storage is held as.
+    // Whether the unwritten-field fold folds a load of the field when nothing writes it: a static field with no
+    // initial data, not a literal, of a type whose default has a constant load. The reducer folds these, and the early
+    // cutoff declines an edited method reading one the last compile left unwritten.
+    public static bool HoldsFoldableDefault(FieldDefinitionModel field, ITypeDefinitionResolver typeDefinitions) =>
+        field.IsStatic && !field.IsLiteral && field.InitialData.IsDefaultOrEmpty &&
+        Storage(field.SignatureType, typeDefinitions) is not null;
+
     public static CliValueKind StackKind(bool reference, CliTypeIdentity type) =>
         reference ? CliValueKind.ManagedReference : type.StackKind is CliValueKind.F4 ? CliValueKind.F8 : type.StackKind;
 

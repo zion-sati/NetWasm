@@ -151,6 +151,33 @@ internal sealed class EarlyCutoffEmitter(
             return Declined(obstacle);
         }
 
+        // A method analyzed alone keeps its loads of static fields, which a full compile folds where nothing writes the
+        // field: an edited method reading such a field compiles in full. (An edit adding or removing a write changes its
+        // contribution, which declined above.)
+        if (plans.Program.WrittenStaticFields is { } written)
+        {
+            var foldable = typeDefinitionResolvers.Create(metadata);
+            foreach (var method in analyzed.Methods)
+            {
+                var loads = method.Body.Body.Instructions;
+                for (var index = 0; index < loads.Length; index++)
+                {
+                    if (loads[index].Operation != CilOperation.LoadStaticField ||
+                        index > 0 && loads[index - 1].Operation == CilOperation.Volatile)
+                    {
+                        continue;
+                    }
+                    var field = fields.GetField(CilOperands.FieldKey(loads[index].Operand));
+                    if (!written.Contains(field.Key) &&
+                        Analysis.Constants.StaticFieldConstantLoads.HoldsFoldableDefault(field, foldable))
+                    {
+                        return Declined($"{method.Method.CanonicalName} reads {symbols.Format(field.DeclaringType)}.{field.Name}, " +
+                            "which nothing wrote in the last compile, so a full compile folds it");
+                    }
+                }
+            }
+        }
+
         // A call dispatched by receiver flow has the targets of the receivers other methods bring it, which an edit
         // anywhere can change and a method analyzed alone cannot know.
         if (analyzed.Sites.DispatchCallSites.Values.FirstOrDefault(site =>

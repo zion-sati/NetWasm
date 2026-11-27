@@ -94,6 +94,11 @@ internal sealed class ValueFrameEntryEmitter(
                     ManagedMemoryEmitter.EmitStoreByType(code, layouts.Target, fields[field].Offset, fields[field].Type,
                         fields[field].Size, context.VectorScratch);
                 }
+                // The padding the fields do not cover is zero, as a whole copy of the argument would leave it.
+                var argumentLocal = context.ArgumentLocal(argumentIndex);
+                StructResults.StructPaddingEmitter.Emit(code, layouts.Target, fieldArgument.Shape, writer =>
+                    writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                        WasmInstructionOperand.Unsigned((uint)argumentLocal))));
                 if (aggregateValues.TryInitializeArgument(code, header, context, argumentIndex))
                 {
                     addresses.Emit(code, context, offset);

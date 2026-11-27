@@ -78,6 +78,49 @@ public sealed class CallableLoadingEmitterTests
         Assert.True(ContainsManagedThrow(code.ToArray()));
     }
 
+    // A function load picks its function as a call picks its target, so in an audit build its receiver is checked
+    // against the load's audited receivers before the type id picks the function.
+    [Fact]
+    public void AnAuditedVirtualFunctionLoadChecksItsReceiverBeforeItPicksTheFunction()
+    {
+        var program = new FakeProgram();
+        var caller = CreateMethodInstance(program);
+        var site = new DispatchCallSiteModel(
+            caller.CanonicalName,
+            0,
+            caller,
+            [new DispatchTargetModel(caller.DeclaringType, caller)])
+        {
+            BoundedTargets = true,
+            AuditedReceivers = [caller.DeclaringType],
+            AuditMessage = "audited",
+            AuditFailure = caller,
+        };
+        var header = Header(new CilMethodBody(program.GetMethod(EntryKey), 3, [], [])
+        {
+            MethodInstance = caller,
+        });
+        var target = CreateInstructionModuleTarget(program) with
+        {
+            DispatchCallSites = Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(site.Key, site)),
+        };
+        var code = new RecordingInstructionWriter();
+        var request = new InstructionEmissionRequest(
+            header,
+            I(0, CilOperation.LoadVirtualFunction, new CilOperand.Entity(EntryKey)),
+            [CliValueKind.ManagedReference],
+            CreateMethodEmissionContext(),
+            target);
+        var audits = new RecordingReceiverFlowAudits();
+
+        var (emitter, _) = CreateVirtualFunctionEmitter(audits: audits);
+        LoadVirtualFunction(emitter, request, code, CreateFunctionIndexResolver(program));
+
+        Assert.Same(site, Assert.Single(audits.Sites));
+        var opcodes = code.ToArray();
+        Assert.InRange(Array.IndexOf(opcodes, WasmOpcodes.Drop), 0, Array.IndexOf(opcodes, WasmOpcodes.I32Load) - 1);
+    }
+
     [Fact]
     public void ExposesVirtualFunctionLoadCommandThroughProviderContract()
     {
@@ -229,10 +272,32 @@ public sealed class CallableLoadingEmitterTests
             new InstructionCommandFactory());
     }
 
+    // These loads are not audited; ReceiverFlowAuditCompilationTests covers audited loads end to end.
+    private sealed class NoReceiverFlowAudits : IReceiverFlowAuditEmitter
+    {
+        public void Emit(IWasmInstructionWriter code, DispatchCallSiteModel site, int receiverLocal, int typeIdLocal,
+            IFunctionIndexResolver functionIndices)
+        {
+        }
+    }
+
+    // Writes a drop where the audit's check would go, and keeps the site it was given.
+    private sealed class RecordingReceiverFlowAudits : IReceiverFlowAuditEmitter
+    {
+        public List<DispatchCallSiteModel> Sites { get; } = [];
+
+        public void Emit(IWasmInstructionWriter code, DispatchCallSiteModel site, int receiverLocal, int typeIdLocal,
+            IFunctionIndexResolver functionIndices)
+        {
+            Sites.Add(site);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Drop));
+        }
+    }
+
     private static (
         IVirtualFunctionLoader Loader,
         InstructionCommandProvider Provider) CreateVirtualFunctionEmitter(
-            WasmTarget target = WasmTarget.Wasm32)
+            WasmTarget target = WasmTarget.Wasm32, IReceiverFlowAuditEmitter? audits = null)
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var emitter = new VirtualFunctionLoadEmitter(
@@ -240,7 +305,8 @@ public sealed class CallableLoadingEmitterTests
             new VirtualDispatchCasePlanner(layouts, new FakeIntrinsics()),
             new KeyedDispatchEmitter(),
             new ImplicitExceptionEmitter(layouts),
-            new InstructionCommandFactory());
+            new InstructionCommandFactory(),
+            audits ?? new NoReceiverFlowAudits());
         return (
             new[] { emitter }.Cast<IVirtualFunctionLoader>().Single(),
             new[] { emitter }.Cast<InstructionCommandProvider>().Single());

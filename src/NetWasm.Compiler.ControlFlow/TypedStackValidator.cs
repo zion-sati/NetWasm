@@ -18,6 +18,11 @@ public sealed record ValidatedControlFlowGraph(
     // The deepest evaluation stack any instruction leaves.
     public int MaximumStackDepth { get; init; }
 
+    // Each block's stack after its last instruction, before it meets its successors' other predecessors: a native int
+    // that a join takes as a managed pointer (Merge) is still a native int here.
+    public ImmutableDictionary<int, ImmutableArray<CliValueKind>> ExitStacks { get; init; } =
+        ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty;
+
     // Where a value met a slot of the other of int32 and native int, which ECMA-335 III.1.6 lets
     // an argument, a store to a local, argument or field, or a return coerce implicitly.
     public ImmutableArray<ImplicitCoercion> ImplicitCoercions { get; init; } = [];
@@ -52,6 +57,7 @@ public sealed class TypedStackValidator(
         };
         var pending = new Queue<int>();
         var instructionEntryStacks = new Dictionary<int, ImmutableArray<CliValueKind>>();
+        var exitStacks = new Dictionary<int, ImmutableArray<CliValueKind>>();
         var coercions = new List<ImplicitCoercion>();
         var maximumDepth = 0;
         pending.Enqueue(graph.Entry.Index);
@@ -78,6 +84,7 @@ public sealed class TypedStackValidator(
                 }
             }
 
+            exitStacks[blockIndex] = [.. stack];
             foreach (var successor in graph.Successors[blockIndex])
             {
                 var outgoing = stack.ToImmutableArray();
@@ -107,6 +114,7 @@ public sealed class TypedStackValidator(
             instructionEntryStacks.ToImmutableDictionary())
         {
             MaximumStackDepth = maximumDepth,
+            ExitStacks = exitStacks.ToImmutableDictionary(),
             ImplicitCoercions = [.. coercions.Distinct()],
         };
 

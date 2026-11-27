@@ -96,6 +96,15 @@ internal static class MethodContributionFingerprint
             (facts.RequiresTypeAttributes ? 256 : 0) | (facts.RequiresInterfaces ? 512 : 0) |
             (facts.RequiresManifestResources ? 1024 : 0) | (facts.RequiresAssemblyNames ? 2048 : 0) |
             (facts.RequiresAssemblyEnumeration ? 4096 : 0));
+        // The static fields it writes: whether any reachable code writes a field decides whether the unwritten-field
+        // fold folds every load of it, in any method.
+        var instructions = analysis.Body.Body.Instructions;
+        for (var index = 0; index < instructions.Length; index++)
+        {
+            if (Constants.StaticFieldWrites.Writes(instructions, index))
+                names.Add(CilOperands.FieldKey(instructions[index].Operand).ToString());
+        }
+        Set(19);
         // Whether the body allocates by itself: with the methods it calls, that decides which
         // methods allocate, and so every caller's safepoints.
         var allocates = false;

@@ -29,6 +29,15 @@ public sealed record ReachableProgram(
     internal ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>> TypeDependencyPaths { get; init; } =
         ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>>.Empty;
 
+    // How the closure reached each host import method (WIT, JavaScript or native), by definition.
+    internal ImmutableDictionary<EntityKey, ImmutableStack<CompilerDependencyStep>> ImportDependencyPaths { get; init; } =
+        ImmutableDictionary<EntityKey, ImmutableStack<CompilerDependencyStep>>.Empty;
+
+    // The static fields reachable code writes, where the unwritten-field fold ran: every load of any other field that
+    // holds a foldable default reads that default. A later compile's early cutoff declines an edited method that reads
+    // a field outside it. Null where the fold did not run.
+    internal ImmutableHashSet<EntityKey>? WrittenStaticFields { get; init; }
+
     public ImmutableHashSet<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
 
     // Types RuntimeHelpers.GetUninitializedObject creates; empty unless it is reachable.

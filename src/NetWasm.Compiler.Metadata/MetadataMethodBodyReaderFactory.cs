@@ -92,7 +92,7 @@ public sealed class MetadataMethodBodyReaderFactory(
             new MetadataTypeSignatureResolver(
                 signatureTypes,
                 stackTypes),
-            new MetadataCallSiteSignatureResolver(),
+            new MetadataCallSiteSignatureResolver(stackTypes),
             stackTypes,
             new TypedReferenceCallResolver(new MetadataTypeFinderFactory(_materializations), snapshot, methods, stackTypes));
         var assemblies = new ManagedAssemblyResolver(

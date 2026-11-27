@@ -558,13 +558,15 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
         // A static field nothing writes reads as its default, so the code its value decides folds,
-        // as an exit code nothing sets decides the process exit; a whole-program fact, as the other
-        // whole-program reductions take.
+        // as an exit code nothing sets decides the process exit. At every level: the code it folds
+        // away is what CoreLib's pay-for-use guards cut (a date's culture formatter, local time and
+        // the clock behind a field the program never sets), so without it a level would reach other
+        // host imports, which a host withholding a capability, or a build without a world, observes.
+        // The early cutoff declines an edit that changes what it folds.
         var unwrittenStaticFieldsOverride = options?.UnwrittenStaticFieldFolding ?? ManagedUnwrittenStaticFieldFolding.Auto;
         var unwrittenStaticFields = unwrittenStaticFieldsOverride switch
         {
-            ManagedUnwrittenStaticFieldFolding.Auto => wholeProgramDefaults
-                ? UnwrittenStaticFieldFoldingPolicy.WholeProgram : UnwrittenStaticFieldFoldingPolicy.Disabled,
+            ManagedUnwrittenStaticFieldFolding.Auto => UnwrittenStaticFieldFoldingPolicy.WholeProgram,
             ManagedUnwrittenStaticFieldFolding.Disabled => UnwrittenStaticFieldFoldingPolicy.Disabled,
             ManagedUnwrittenStaticFieldFolding.Enabled => UnwrittenStaticFieldFoldingPolicy.WholeProgram,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
@@ -606,7 +608,6 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              newObjectsOverride == ManagedNewObjectNullCheckElimination.Enabled ||
              strengthReductionOverride == ManagedLoopStrengthReduction.Enabled ||
              rangeBranchesOverride == ManagedRangeBranchFolding.Enabled ||
-             unwrittenStaticFieldsOverride == ManagedUnwrittenStaticFieldFolding.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {

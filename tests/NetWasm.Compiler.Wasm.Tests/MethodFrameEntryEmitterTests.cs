@@ -181,6 +181,49 @@ public sealed class MethodFrameEntryEmitterTests
         Assert.Equal([0, size, 2 * size, 2 * size + 4, capture.Offset], addresses.Offsets.Order().ToArray());
     }
 
+    // A struct argument passed by its fields is stored into its frame copy field by field, then its padding as zeros:
+    // the frame's memory holds what an earlier call's frame left there (MemoryPack's int? showed an address), and a
+    // whole copy of the argument would have carried the zeros its padding had.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AnArgumentPassedByItsFieldsStoresItsPaddingAsZeros(WasmTarget target)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var addresses = new RecordingValueFrameAddressEmitter();
+        var nullable = CliTypeIdentity.Named(Assembly, "Test", "NullableInt", true);
+        var values = new FixedArgumentValueLayout(new(nullable, 8, 4, []));
+        var boolean = CliTypeIdentity.Primitive("bool", CliValueKind.I4);
+        var int32 = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var shape = new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultShape(nullable,
+            [new(0, 1, boolean, CliValueKind.I4), new(4, 4, int32, CliValueKind.I4)], 8);
+        var context = CreateMethodEmissionContext() with
+        {
+            ParameterOffset = 1,
+            ValueLayout = new ValueFrameLayout(8, [], ImmutableDictionary<int, int>.Empty.Add(0, 0), [], []),
+            FieldArguments = ImmutableDictionary<int, FieldArgument>.Empty.Add(0, new(shape, FirstParameter: 5)),
+        };
+        var emitter = new ValueFrameEntryEmitter(layouts, values, new RecordingArgumentSignatureTypeResolver(nullable),
+            imports, addresses, new ValueFrameInitializationEmitter(layouts, values, addresses), new RecordingValueCopies(),
+            new ManagedAggregateValueInitializer(layouts));
+        var code = new RecordingInstructionWriter();
+
+        emitter.Emit(code, new StructuredMethodHeader(new FakeProgram().GetMethod(EntryKey), null, 1, [], [], []),
+            context);
+
+        var stores = code.ToInstructions()
+            .Where(static instruction => instruction.Opcode is WasmOpcodes.I32Store8 or WasmOpcodes.I32Store16 or
+                WasmOpcodes.I32Store)
+            .Select(static instruction => (instruction.Opcode, instruction.Operand.Offset))
+            .ToArray();
+        Assert.Equal(
+        [
+            (WasmOpcodes.I32Store8, 0u), (WasmOpcodes.I32Store, 4u),
+            (WasmOpcodes.I32Store16, 1u), (WasmOpcodes.I32Store8, 3u),
+        ], stores);
+    }
+
     private sealed class FixedArgumentValueLayout(ValueLayout layout) : IValueLayoutProvider
     {
         public ValueLayout GetValueLayout(CliTypeIdentity type)
